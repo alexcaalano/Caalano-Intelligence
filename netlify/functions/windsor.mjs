@@ -248,14 +248,34 @@ async function buildBlend(c, from, to, preset, key) {
   const metaLeads = fb.reduce((a, r) => a + num(r.actions_lead), 0)
   const googleSpend = gg.reduce((a, r) => a + num(r.spend), 0)
   const googleConv = gg.reduce((a, r) => a + num(r.conversions), 0)
-  const crm = blendCrm(opps, stageIndex(pipes))
+  const idx = stageIndex(pipes)
+  const crm = blendCrm(opps, idx)
+  // Per-pipeline funnels so the UI can offer a pipeline selector — a "booking"
+  // means different things across pipelines, so they're kept separate.
+  const nameOf = {}, stagesOf = {}
+  for (const p of pipes) {
+    if (!p.pipeline_id) continue
+    nameOf[p.pipeline_id] = p.pipeline_name || p.pipeline_id
+    stagesOf[p.pipeline_id] = asArray(p.pipeline_stages).map((s) => ({ id: s.id, name: s.name, pos: s.position })).sort((a, b) => a.pos - b.pos)
+  }
+  const byPipe = new Map()
+  for (const r of opps) { const pid = r.opportunity_pipeline_id || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(r) }
+  const pipelines = [...byPipe.entries()]
+    .map(([id, rows]) => {
+      // opps currently sitting at each stage, in pipeline order (won/lost/open all counted where they sit)
+      const at = new Map(); const openAt = new Map()
+      for (const r of rows) { const sid = r.opportunity_pipeline_stage_id; at.set(sid, (at.get(sid) || 0) + 1); const st = String(r.opportunity_status || '').toLowerCase(); if (st !== 'lost' && st !== 'abandoned') openAt.set(sid, (openAt.get(sid) || 0) + 1) }
+      const stages = (stagesOf[id] || []).map((s) => ({ name: s.name, pos: s.pos, count: at.get(s.id) || 0, active: openAt.get(s.id) || 0 }))
+      return { id, name: nameOf[id] || 'Unnamed pipeline', crm: blendCrm(rows, idx), stages }
+    })
+    .sort((a, b) => b.crm.leads - a.crm.leads)
   return {
     hasCrm: !!c.ghl, hasMeta: !!c.meta, hasGoogle: !!c.google,
     paid: {
       adSpend: metaSpend + googleSpend, metaSpend, googleSpend,
       metaLeads, googleConv, adConversions: metaLeads + googleConv,
     },
-    crm,
+    crm, pipelines,
   }
 }
 

@@ -267,6 +267,12 @@ tbody tr:hover { background: var(--panel-2); }
 .sc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-bottom: 6px; }
 .sc-v { font-size: 19px; font-weight: 750; letter-spacing: -.01em; }
 
+/* Caalano360 header + pipeline selector */
+.c360-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 22px 2px 12px; }
+.pipe-sel { display: flex; align-items: center; gap: 8px; }
+.pipe-sel label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.pipe-sel select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; max-width: 320px; }
+
 /* Caalano360 mini stats */
 .c360-mini { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 7px; }
 .c360-mini > div { display: flex; align-items: baseline; justify-content: space-between; }

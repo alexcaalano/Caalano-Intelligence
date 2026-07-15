@@ -404,7 +404,10 @@ function OverallTab({ client, currency, side }) {
 /* ============ Caalano360 — blended paid + CRM ============ */
 function Caalano360({ blend, client, currency, range }) {
   const b = blend
-  const p = b.paid, c = b.crm
+  const pipes = b.pipelines || []
+  const [pid, setPid] = useState('all')
+  const p = b.paid
+  const c = pid === 'all' ? b.crm : (pipes.find((x) => x.id === pid)?.crm || b.crm)
   const spend = p.adSpend
   const roas = spend ? c.revenue / spend : 0
   const chan = [{ name: 'Meta', value: p.metaSpend, color: '#4f7cff' }, { name: 'Google', value: p.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
@@ -415,9 +418,22 @@ function Caalano360({ blend, client, currency, range }) {
     { stage: 'Shown', count: c.shown, color: '#0ea5e9' },
     { stage: 'Won', count: c.won, color: '#12b886' },
   ]
+  const activeStages = pid !== 'all'
+    ? (pipes.find((x) => x.id === pid)?.stages || [])
+    : (pipes.length === 1 ? pipes[0].stages : null)
+  const stageMax = activeStages ? Math.max(1, ...activeStages.map((s) => s.count)) : 1
+  const stageName = pid !== 'all' ? pipes.find((x) => x.id === pid)?.name : (pipes.length === 1 ? pipes[0].name : null)
   return (
     <>
-      <div className="section-title">Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}</span></div>
+      <div className="c360-head">
+        <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}</span></div>
+        {pipes.length > 1 && <div className="pipe-sel"><label>Pipeline</label>
+          <select value={pid} onChange={(e) => setPid(e.target.value)}>
+            <option value="all">All pipelines ({fmtNumber(b.crm.leads)})</option>
+            {pipes.map((x) => <option key={x.id} value={x.id}>{x.name} ({fmtNumber(x.crm.leads)})</option>)}
+          </select>
+        </div>}
+      </div>
       <div className="scorecard">
         <Sc label="Ad Spend" value={fmtCurrency(spend, currency)} />
         <Sc label="Total Leads" value={fmtNumber(c.leads)} />
@@ -451,6 +467,15 @@ function Caalano360({ blend, client, currency, range }) {
           </div>
         </div>
       </div>
+      {activeStages && activeStages.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
+        <h3>Where clients are in the pipeline</h3><p className="cap">{stageName} · opportunities by stage, first to last</p>
+        <div className="funnel">{activeStages.map((s, i) => {
+          const hue = 210 + Math.round((i / Math.max(1, activeStages.length - 1)) * -70)
+          return (<div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}</span></div>)
+        })}</div>
+        <p className="caveat">Live count of opportunities currently sitting at each stage of the pipeline, in order. Lost / abandoned deals are shown at the stage they dropped out of.</p>
+      </div>}
+      {pipes.length > 1 && pid === 'all' && <p className="caveat" style={{ marginTop: 10 }}>This account runs {pipes.length} pipelines — pick one from the selector above to see its stage-by-stage breakdown.</p>}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>
   )

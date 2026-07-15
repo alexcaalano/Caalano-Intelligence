@@ -785,6 +785,34 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           </div>
         </div>
       </div>
+      {activeStages && activeStages.length > 0 ? (() => {
+        let acc = 0; const reached = []
+        for (let i = activeStages.length - 1; i >= 0; i--) { acc += activeStages[i].count; reached[i] = acc }
+        const total = reached[0] || 1
+        return (
+          <div className="card chart-card" style={{ marginTop: 14 }}>
+            <h3>Full funnel pass-through</h3><p className="cap">{stageName} · reached · % of leads · step conversion · cost per stage (attributed spend {money(spend)})</p>
+            <div className="pfunnel">
+              <div className="pf-row pf-head"><span className="pf-stage">Stage</span><span className="pf-bar">Reached</span><span className="pf-num">% leads</span><span className="pf-num">Step conv</span><span className="pf-num">Cost / stage</span></div>
+              {activeStages.map((s, i) => {
+                const val = reached[i]; const pctLeads = (val / total) * 100
+                const stepConv = i === 0 ? null : (reached[i - 1] ? (val / reached[i - 1]) * 100 : 0)
+                const hue = 210 + Math.round((i / Math.max(1, activeStages.length - 1)) * -70)
+                return (
+                  <div className="pf-row" key={s.pos}>
+                    <span className="pf-stage" title={s.name}>{s.name}</span>
+                    <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, pctLeads)}%`, background: `hsl(${hue} 70% 55%)` }}>{fmtNumber(val)}</span></span>
+                    <span className="pf-num">{fmtPct(pctLeads, 1)}</span>
+                    <span className={`pf-num ${stepConv == null ? '' : stepConv >= 60 ? 'good' : stepConv < 30 ? 'bad' : ''}`}>{stepConv == null ? '—' : fmtPct(stepConv, 0)}</span>
+                    <span className="pf-num">{val ? money(spend / val) : '—'}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="caveat">Reached = opportunities currently at that stage or beyond (so they passed through it). Step conv = % who moved from the previous stage into this one. Cost / stage = attributed ad spend ÷ reached.</p>
+          </div>
+        )
+      })() : (b.hasCrm && pipes.length > 1 && <p className="caveat" style={{ marginTop: 12 }}>Pick a pipeline above to see the full funnel pass-through.</p>)}
       {b.hasCrm && <UtmSection attr={utmAttr} currency={currency} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>

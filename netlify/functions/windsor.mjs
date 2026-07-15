@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -249,16 +249,29 @@ async function buildTrends(key) {
   const dayIndex = new Map(days.map((d, i) => [d, i])) // 0 = today, larger = older
   const mk = () => new Float64Array(56)
   const cl = {}
-  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), booked: mk() })
+  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false })
   for (const r of fb) { const id = metaId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.metaSpend[di] += num(r.spend); e.metaLeads[di] += num(r.actions_lead) }
   for (const r of gg) { const id = googleId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.gSpend[di] += num(r.spend); e.gConv[di] += num(r.conversions) }
+  // Windsor blended booked (fallback when the GHL app isn't connected / a client's fetch fails)
   const idxByAcct = {}; { const byAcct = {}; for (const p of pipes) { const id = ghlId[norm(p.account_id)]; if (!id) continue; (byAcct[id] = byAcct[id] || []).push(p) } for (const [id, arr] of Object.entries(byAcct)) idxByAcct[id] = stageIndex(arr) }
   for (const r of opps) {
     const id = ghlId[norm(r.account_id)]; if (!id) continue
     const di = dayIndex.get(String(r.opportunity_created_at || '').slice(0, 10)); if (di == null) continue
     const e = ensure(id); const idx = idxByAcct[id]; const pi = idx && idx.get(r.opportunity_pipeline_id)
     const st = String(r.opportunity_status || '').toLowerCase(); const stg = pi ? pi.byId[r.opportunity_pipeline_stage_id] : null; const pos = stg ? stg.pos : -1
-    if (st === 'won' || (pi && pi.bookPos != null && pos >= pi.bookPos)) e.booked[di]++
+    if (st === 'won' || (pi && pi.bookPos != null && pos >= pi.bookPos)) e.wBooked[di]++
+  }
+  // GHL direct API: UTM-split booked calls per channel (meta / google / other).
+  const ghlOK = await isConnected().catch(() => false)
+  if (ghlOK) {
+    const ghlClients = Object.entries(CLIENTS).filter(([, c]) => c.ghl)
+    await Promise.all(ghlClients.map(async ([id, c]) => {
+      try {
+        const rows = await bookedTrends(c.ghl, dstr(start), dstr(today))
+        const e = ensure(id); e.ghlBooked = true
+        for (const r of rows) { const di = dayIndex.get(r.date); if (di == null) continue; e.bAll[di]++; if (r.channel === 'meta') e.bMeta[di]++; else if (r.channel === 'google') e.bGoogle[di]++ }
+      } catch { /* keep Windsor blended fallback */ }
+    }))
   }
   const WINDOWS = [3, 7, 14, 21, 28]
   const sumR = (arr, a, b) => { let s = 0; for (let i = a; i < b; i++) s += arr[i]; return s }
@@ -266,6 +279,7 @@ async function buildTrends(key) {
   for (const [id, c] of Object.entries(CLIENTS)) {
     if (!c.meta && !c.google && !c.ghl) continue
     const E = ensure(id)
+    const blendedBooked = E.ghlBooked ? E.bAll : E.wBooked
     const windows = WINDOWS.map((n) => {
       const ms = sumR(E.metaSpend, 0, n), msp = sumR(E.metaSpend, n, 2 * n)
       const ml = sumR(E.metaLeads, 0, n), mlp = sumR(E.metaLeads, n, 2 * n)
@@ -273,13 +287,12 @@ async function buildTrends(key) {
       const gc = sumR(E.gConv, 0, n), gcp = sumR(E.gConv, n, 2 * n)
       return {
         n,
-        meta: { spend: ms, spendPrev: msp, results: ml, resultsPrev: mlp },
-        google: { spend: gs, spendPrev: gsp, results: gc, resultsPrev: gcp },
-        blended: { spend: ms + gs, spendPrev: msp + gsp, results: ml + gc, resultsPrev: mlp + gcp },
-        booked: sumR(E.booked, 0, n), bookedPrev: sumR(E.booked, n, 2 * n),
+        meta: { spend: ms, spendPrev: msp, results: ml, resultsPrev: mlp, booked: sumR(E.bMeta, 0, n), bookedPrev: sumR(E.bMeta, n, 2 * n) },
+        google: { spend: gs, spendPrev: gsp, results: gc, resultsPrev: gcp, booked: sumR(E.bGoogle, 0, n), bookedPrev: sumR(E.bGoogle, n, 2 * n) },
+        blended: { spend: ms + gs, spendPrev: msp + gsp, results: ml + gc, resultsPrev: mlp + gcp, booked: sumR(blendedBooked, 0, n), bookedPrev: sumR(blendedBooked, n, 2 * n) },
       }
     })
-    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, windows }
+    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows }
   }
   return { clients: out }
 }

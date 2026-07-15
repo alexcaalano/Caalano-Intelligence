@@ -59,8 +59,24 @@ body {
   display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 19px;
   box-shadow: 0 6px 18px rgba(109,94,252,.45);
 }
-.brand h1 { font-size: 14.5px; margin: 0; letter-spacing: -.01em; line-height: 1.15; }
-.brand p { margin: 2px 0 0; font-size: 11px; color: var(--muted); }
+/* 360 mark — gradient ring + tight "360" */
+.logo-360 {
+  position: relative; background: radial-gradient(120% 120% at 30% 20%, #9b8cff 0%, #6d5efc 45%, #12b886 120%);
+  overflow: hidden;
+}
+.logo-360::before {
+  content: ''; position: absolute; inset: 6px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.55); border-right-color: transparent; border-bottom-color: transparent;
+  transform: rotate(-20deg);
+}
+.logo-360 span { font-size: 12.5px; font-weight: 850; letter-spacing: -.02em; z-index: 1; text-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.brand h1 { font-size: 15px; margin: 0; letter-spacing: -.02em; line-height: 1.15; font-weight: 800; }
+.brand-name .b360 {
+  background: linear-gradient(90deg, var(--brand-2), #12b886);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;
+  font-weight: 850;
+}
+.brand p { margin: 2px 0 0; font-size: 11px; color: var(--muted); letter-spacing: .01em; }
 .nav { display: flex; flex-direction: column; gap: 3px; }
 @media (max-width: 900px) { .nav { flex-direction: row; } }
 .nav button {
@@ -399,6 +415,9 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .alert-row { display: flex; align-items: center; gap: 9px; padding: 8px 6px; border-radius: 8px; cursor: pointer; border-top: 1px solid var(--border); }
 .alert-row:hover { background: var(--panel-2); }
 .al-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--neg); box-shadow: 0 0 0 3px rgba(240,67,91,.16); flex-shrink: 0; }
+.al-dot.ok { background: var(--pos); box-shadow: 0 0 0 3px rgba(23,178,106,.16); }
+.alert-row.ok { cursor: default; }
+.alert-row.ok:hover { background: transparent; }
 .al-name { font-weight: 650; font-size: 13px; }
 .al-meta { margin-left: auto; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 

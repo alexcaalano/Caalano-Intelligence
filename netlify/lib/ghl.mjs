@@ -201,6 +201,28 @@ function rollupSubset(opps, idx, reasonName) {
   }
 }
 
+// Booked opportunities over a window, each tagged with its created date and
+// first-touch paid channel (meta / google / other) — powers UTM-split
+// cost-per-booked in the Daily Performance rolling windows.
+export async function bookedTrends(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const [opps, idx] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to),
+    pipelineStageIndex(locTok, locationId),
+  ])
+  const out = []
+  for (const o of opps) {
+    const pi = idx.get(o.pipelineId)
+    const st = String(o.status || '').toLowerCase()
+    const stg = pi ? pi.byId[o.pipelineStageId] : null
+    const pos = stg ? stg.pos : -1
+    const isWon = st === 'won'
+    if (!(isWon || (pi && pi.bookPos != null && pos >= pi.bookPos))) continue
+    out.push({ date: String(o.createdAt || '').slice(0, 10), channel: channelOf(utmOf(o)) })
+  }
+  return out
+}
+
 export async function buildAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)
   const [opps, pipelines, reasons] = await Promise.all([

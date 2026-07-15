@@ -136,7 +136,12 @@ function Overview({ rows, currency, periodLabel, live, alerts, onPick }) {
           <span className="al-dot" /><span className="al-name">{nameOf(a.id)}</span>
           <span className="al-meta">$0 yesterday · was ~{fmtCurrency(a.avgDaily, currency)}/day</span>
         </div>
-      )) : <p className="cap" style={{ margin: '4px 0 0', color: 'var(--pos)' }}>✓ Every {title} account spent yesterday.</p>}
+      )) : (
+        <div className="alert-row ok">
+          <span className="al-dot ok" /><span className="al-name">All accounts active</span>
+          <span className="al-meta">every {title} account spent yesterday</span>
+        </div>
+      )}
     </div>
   )
   const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks, conversions: a.conversions + r.conversions, metaSpend: a.metaSpend + r.metaSpend, googleSpend: a.googleSpend + r.googleSpend }), { spend: 0, impressions: 0, clicks: 0, conversions: 0, metaSpend: 0, googleSpend: 0 })
@@ -243,8 +248,8 @@ function ClientTrend({ row, tr, currency, onPick }) {
       <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period</span></div>
       <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '—'} cur={cpl} prev={cplP} /> })}</div>
       {tr.hasCrm && <>
-        <div className="tr-row-lab">Cost / Booked Call <span className="sub">· {eff === 'blended' ? 'total' : eff} spend ÷ booked calls</span></div>
-        <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpb = w.booked ? d.spend / w.booked : null; const cpbP = w.bookedPrev ? d.spendPrev / w.bookedPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpb != null ? money(cpb) : '—'} cur={cpb} prev={cpbP} /> })}</div>
+        <div className="tr-row-lab">Cost / Booked Call <span className="sub">· {eff === 'blended' ? 'total spend' : `${eff} spend`} ÷ booked calls{tr.utmBooked && eff !== 'blended' ? ' (UTM-matched)' : ''}</span></div>
+        <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpb = d.booked ? d.spend / d.booked : null; const cpbP = d.bookedPrev ? d.spendPrev / d.bookedPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpb != null ? money(cpb) : '—'} cur={cpb} prev={cpbP} /> })}</div>
       </>}
     </div>
   )
@@ -259,7 +264,7 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
     <div className="tr-list">
       {list.map((r) => <ClientTrend key={r.id} row={r} tr={clients[r.id]} currency={currency} onPick={onPick} />)}
       {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
-      <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages and aren't channel-split, so the Meta / Google toggle divides that channel's spend by total booked calls.</p>
+      <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages; where UTM attribution is connected they're split by first-touch channel, so Meta / Google cost-per-booked uses that channel's own bookings. Otherwise the toggle divides that channel's spend by total booked calls.</p>
     </div>
   )
 }
@@ -1646,7 +1651,7 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="side">
-        <div className="brand"><div className="logo">C</div><div><h1>Caalano Digital</h1><p>Reporting Dashboard</p></div></div>
+        <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div></div>
         <nav className="nav">
           <button className={view === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
           <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>

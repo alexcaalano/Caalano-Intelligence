@@ -246,12 +246,8 @@ function ClientTrend({ row, tr, currency, onPick }) {
         <button className="tr-name" onClick={() => onPick(row.c)} title="Open client workspace">{row.name} <span className="tr-open">↗</span></button>
         {chanOpts.length > 1 && <div className="chan-toggle sm">{chanOpts.map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
       </div>
-      <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period</span></div>
-      <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} /> })}</div>
-      {tr.hasCrm && <>
-        <div className="tr-row-lab">Cost / Booked Call <span className="sub">· {eff === 'blended' ? 'total spend' : `${eff} spend`} ÷ booked calls{tr.utmBooked && eff !== 'blended' ? ' (UTM-matched)' : ''} · % = booking rate (booked ÷ leads)</span></div>
-        <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpb = d.booked ? d.spend / d.booked : null; const cpbP = d.bookedPrev ? d.spendPrev / d.bookedPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpb != null ? money(cpb) : '-'} cur={cpb} prev={cpbP} sub={br != null ? `${br.toFixed(1)}% booked` : null} /> })}</div>
-      </>}
+      <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period{tr.hasCrm ? ' · % = booking rate (booked ÷ leads)' : ''}</span></div>
+      <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} sub={tr.hasCrm && br != null ? `${br.toFixed(1)}% booked` : null} /> })}</div>
     </div>
   )
 }

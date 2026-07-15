@@ -51,6 +51,16 @@ const FIELDS = {
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
 const norm = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
 
+// Everything reports against Australian Eastern time (Sydney). "Today" is the
+// current calendar day there, represented as a UTC-midnight Date so the existing
+// getUTCDay / setUTCDate arithmetic operates on the correct local day.
+const TZ = 'Australia/Sydney'
+function tzToday() {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const g = (t) => p.find((x) => x.type === t).value
+  return new Date(`${g('year')}-${g('month')}-${g('day')}T00:00:00Z`)
+}
+
 // The equal-length period immediately before [from,to] — for ±vs-previous deltas.
 function prevRange(from, to) {
   if (!from || !to) return { from: null, to: null }
@@ -185,7 +195,7 @@ async function buildOverview(from, to, preset, key) {
   const metaRev = {}, googleRev = {}, ghlRev = {}
   for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[norm(c.meta)] = id; if (c.google) googleRev[norm(c.google)] = id; if (c.ghl) ghlRev[norm(c.ghl)] = id }
   // last-8-day daily spend (yesterday + prior week) for zero-spend alerts
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+  const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
   const yest = new Date(today); yest.setUTCDate(yest.getUTCDate() - 1)
   const base0 = new Date(today); base0.setUTCDate(base0.getUTCDate() - 8)
@@ -236,7 +246,7 @@ async function buildOverview(from, to, preset, key) {
 async function buildTrends(key) {
   const metaId = {}, googleId = {}, ghlId = {}
   for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaId[norm(c.meta)] = id; if (c.google) googleId[norm(c.google)] = id; if (c.ghl) ghlId[norm(c.ghl)] = id }
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+  const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
   const start = new Date(today); start.setUTCDate(start.getUTCDate() - 55)
   const [fb, gg, opps, pipes] = await Promise.all([
@@ -316,7 +326,7 @@ function mondayOf(dateStr) {
 }
 // Weekly (Mon–Sun) traffic-light data for one client over the last N weeks.
 async function buildWeekly(c, weeks, key) {
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+  const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
   // Only report fully completed weeks: the current (in-progress) week is excluded,
   // so the newest bucket is the week ending last Sunday. If today IS Sunday, this

@@ -68,32 +68,25 @@ async function ghlPost(locTok, path, bodyObj) {
 }
 
 // --- data pulls (paged, bounded) ---
-async function allOpportunities(locTok, locationId, from, to, cap = 2000) {
+// opportunities/search returns the opportunity, its contact AND an inline
+// `attributions` array (first/last touch, UTMs) — one call, no N+1 lookups.
+async function allOpportunities(locTok, locationId, from, to, cap = 3000) {
   const out = []; let startAfter, startAfterId, guard = 0
   while (guard++ < 40 && out.length < cap) {
     const q = { location_id: locationId, limit: 100 }
     if (from) q.startDate = new Date(from + 'T00:00:00Z').getTime()
     if (to) q.endDate = new Date(to + 'T23:59:59Z').getTime()
-    if (startAfter) { q.startAfter = startAfter; q.startAfterId = startAfterId }
+    if (startAfter != null) { q.startAfter = startAfter; q.startAfterId = startAfterId }
     const j = await ghlGet(locTok, '/opportunities/search', q)
     const batch = j.opportunities || []
     out.push(...batch)
     const meta = j.meta || {}
-    if (!batch.length || !meta.startAfterId || meta.startAfterId === startAfterId) break
-    startAfter = meta.startAfter; startAfterId = meta.startAfterId
+    const nextId = meta.startAfterId || (batch.length ? batch[batch.length - 1].id : null)
+    const nextAfter = meta.startAfter || (batch.length ? (batch[batch.length - 1].sort || [])[0] : null)
+    if (batch.length < 100 || !nextId || nextId === startAfterId) break
+    startAfter = nextAfter; startAfterId = nextId
   }
   return out
-}
-async function contactsByIds(locTok, ids) {
-  // hydrate attribution for a set of contact ids (bounded)
-  const map = new Map(); const list = [...new Set(ids.filter(Boolean))].slice(0, 2000)
-  const CH = 8
-  for (let i = 0; i < list.length; i += CH) {
-    const chunk = list.slice(i, i + CH)
-    const res = await Promise.all(chunk.map((id) => ghlGet(locTok, `/contacts/${id}`, {}).then((j) => j.contact || j).catch(() => null)))
-    for (const c of res) if (c && c.id) map.set(c.id, c)
-  }
-  return map
 }
 async function pipelineStageIndex(locTok, locationId) {
   const j = await ghlGet(locTok, '/opportunities/pipelines', { locationId }).catch(() => ({ pipelines: [] }))
@@ -113,16 +106,16 @@ async function pipelineStageIndex(locTok, locationId) {
   return idx
 }
 
-// first-touch attribution → normalised utm fields
-function utmOf(contact) {
-  const a = (contact && (contact.attributionSource || {})) || {}
-  const g = (k) => a[k] || a[k?.toLowerCase?.()] || null
-  const source = g('utmSource') || a.utm_source || a.sessionSource || a.source || null
-  const medium = g('utmMedium') || a.utm_medium || a.medium || null
-  const campaign = g('utmCampaign') || a.utm_campaign || a.campaign || null
-  const content = g('utmContent') || a.utm_content || null
-  const term = g('utmTerm') || a.utm_term || null
-  return { source, medium, campaign, content, term, adId: a.adId || a.fbAdId || null }
+// first-touch UTMs from an opportunity's inline `attributions` array
+function utmOf(opp) {
+  const atts = Array.isArray(opp.attributions) ? opp.attributions : []
+  const a = atts.find((x) => x.isFirst) || atts[0] || {}
+  const source = a.utmSource || a.utm_source || a.utmSessionSource || a.sessionSource || null
+  const medium = a.utmMedium || a.utm_medium || a.medium || null
+  const campaign = a.utmCampaign || a.utm_campaign || a.campaign || null
+  const content = a.utmContent || a.utm_content || null
+  const term = a.utmTerm || a.utm_term || a.utmKeyword || null
+  return { source, medium, campaign, content, term, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null }
 }
 
 export async function buildAttribution(locationId, from, to) {
@@ -131,9 +124,6 @@ export async function buildAttribution(locationId, from, to) {
     allOpportunities(locTok, locationId, from, to),
     pipelineStageIndex(locTok, locationId),
   ])
-  const contactIds = opps.map((o) => o.contactId || o.contact?.id).filter(Boolean)
-  const contacts = await contactsByIds(locTok, contactIds)
-
   const dim = { source: new Map(), medium: new Map(), campaign: new Map(), content: new Map() }
   const bump = (map, keyRaw, o, pi) => {
     const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
@@ -148,30 +138,31 @@ export async function buildAttribution(locationId, from, to) {
     if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) e.shown++
     map.set(key, e)
   }
-  let matched = 0
+  let attributed = 0
   for (const o of opps) {
-    const c = contacts.get(o.contactId || o.contact?.id)
-    const u = utmOf(c)
-    if (u.source || u.campaign) matched++
+    const u = utmOf(o)
+    if (u.source || u.campaign) attributed++
     const pi = idx.get(o.pipelineId)
     bump(dim.source, u.source, o, pi)
     bump(dim.medium, u.medium, o, pi)
     bump(dim.campaign, u.campaign, o, pi)
     bump(dim.content, u.content, o, pi)
   }
-  const top = (map) => [...map.values()].sort((a, b) => b.leads - a.leads).slice(0, 30)
+  const top = (map) => [...map.values()].sort((a, b) => b.leads - a.leads).slice(0, 40)
   return {
-    connected: true,
-    opps: opps.length, contactsResolved: contacts.size, attributed: matched,
+    connected: true, opps: opps.length, attributed,
     bySource: top(dim.source), byMedium: top(dim.medium), byCampaign: top(dim.campaign), byCreative: top(dim.content),
   }
 }
 
-// Debug: raw shapes to confirm field names once connected.
+// Debug: raw opportunity + attribution shapes to confirm paid-UTM field names.
 export async function sampleAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)
-  const opps = await allOpportunities(locTok, locationId, from, to, 5)
-  const ids = opps.map((o) => o.contactId || o.contact?.id).filter(Boolean).slice(0, 3)
-  const contacts = await contactsByIds(locTok, ids)
-  return { oppSample: opps.slice(0, 3), contactSample: [...contacts.values()].map((c) => ({ id: c.id, attributionSource: c.attributionSource, lastAttributionSource: c.lastAttributionSource })) }
+  const opps = await allOpportunities(locTok, locationId, from, to, 20)
+  const withUtm = opps.find((o) => (o.attributions || []).some((a) => a.utmCampaign || a.utmSource || a.utmContent))
+  return {
+    total: opps.length,
+    firstThree: opps.slice(0, 3).map((o) => ({ status: o.status, source: o.source, pipelineStageId: o.pipelineStageId, attributions: o.attributions })),
+    firstPaidExample: withUtm ? { name: withUtm.name, attributions: withUtm.attributions } : null,
+  }
 }

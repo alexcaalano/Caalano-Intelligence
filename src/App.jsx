@@ -384,8 +384,8 @@ function WeeklyTab({ rows, currency, nonce }) {
             const cpa = T.won ? T.spend / T.won : 0
             const avgDeal = T.won ? T.wonValue / T.won : 0
             const roas = T.spend ? T.wonValue / T.spend : 0
-            const fmtD = (ds) => { try { return new Date(ds + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) } catch { return ds } }
-            const endSun = W.length ? (() => { const d = new Date(W[W.length - 1].week + 'T00:00:00'); d.setDate(d.getDate() + 6); return d.toISOString().slice(0, 10) })() : null
+            const fmtD = (ds) => { try { return new Date(ds + 'T00:00:00Z').toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' }) } catch { return ds } }
+            const endSun = W.length ? (() => { const d = new Date(W[W.length - 1].week + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 6); return d.toISOString().slice(0, 10) })() : null
             const rangeLbl = W.length ? `${W[0].label} to ${W[W.length - 1].label} · ${fmtD(W[0].week)} to ${fmtD(endSun)}` : ''
             return (
               <>

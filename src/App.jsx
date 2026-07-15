@@ -162,7 +162,7 @@ function Overview({ rows, currency, periodLabel, live, alerts, onPick }) {
       </div>
       {alerts && (alerts.meta || alerts.google) && <>
         <div className="section-title">Account health <span className="sub">· $0 spend yesterday with an active prior week - likely paused / failed payment</span></div>
-        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <div className="grid alerts-2">
           <AlertCol title="Meta" color="#4f7cff" list={alerts.meta || []} />
           <AlertCol title="Google" color="#12b886" list={alerts.google || []} />
         </div>
@@ -1679,6 +1679,7 @@ export default function App() {
   const [range, setRange] = useState(() => presetRange('last_30d'))
   const [enabled, setEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('caalano_enabled') || '{}') } catch { return {} } })
   const [refreshKey, setRefreshKey] = useState(0)
+  const [navOpen, setNavOpen] = useState(false)
   const agency = useAgencyLive(range, refreshKey)
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); try { localStorage.setItem('caalano_theme', theme) } catch {} }, [theme])
@@ -1694,25 +1695,31 @@ export default function App() {
   const visibleClients = data.clients.filter((c) => enabled[c.id] !== false)
   const rows = computeRows(visibleClients, agency.data)
   const idx = picked ? data.clients.findIndex((c) => c.id === picked.id) : -1
-  const go = (v) => { setView(v); setPicked(null) }
+  const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
 
   return (
     <div className="shell">
-      <aside className="side">
-        <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div></div>
+      {navOpen && <div className="nav-overlay" onClick={() => setNavOpen(false)} />}
+      <aside className={`side ${navOpen ? 'open' : ''}`}>
+        <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div><button className="side-close" onClick={() => setNavOpen(false)} aria-label="Close menu">✕</button></div>
         <nav className="nav">
           <button className={view === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
           <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
           <button className={view === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
-          <button className="settings-btn" onClick={() => setShowSettings(true)}><span className="ic">⚙</span>Settings</button>
+          <button className="settings-btn" onClick={() => { setShowSettings(true); setNavOpen(false) }}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
           <div className="foot-note">Live data via the Meta and Google API - Meta, Google, Caalano Systems.</div>
         </div>
       </aside>
 
       <main className="main">
+        <div className="mtop">
+          <button className="burger" onClick={() => setNavOpen(true)} aria-label="Open menu">☰</button>
+          <div className="logo logo-360 sm"><span>360</span></div>
+          <b className="mtop-name">Caalano<span className="b360">360</span></b>
+        </div>
         <div className="head">
           <div>
             <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Daily Performance' : view === 'weekly' ? 'Weekly Traffic Light' : 'Clients'}</h2>

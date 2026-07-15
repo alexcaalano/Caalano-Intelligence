@@ -627,10 +627,8 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const camps = b.campaigns || []
   const multi = pipes.length > 1
   const [pid, setPid] = useState('all')
-  const [showLink, setShowLink] = useState(false)
-  const [manual, setManual] = useState(() => loadCampMap(client.id))
-  useEffect(() => { setManual(loadCampMap(client.id)); setPid('all') }, [client.id])
-  const setLink = (name, target) => setManual((m) => { const nx = { ...m }; if (target === 'auto') delete nx[name]; else nx[name] = target; saveCampMap(client.id, nx); return nx })
+  useEffect(() => { setPid('all') }, [client.id])
+  const manual = loadCampMap(client.id) // editing lives in Settings; read latest each render
   const effTarget = (name) => manual[name] ?? (camps.find((x) => x.name === name)?.auto) ?? 'all'
   // attribute campaign spend to the selected pipeline (or 'all' = account totals)
   const attrFor = (id) => {
@@ -696,7 +694,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
               <PieChart><Pie data={chan} dataKey="value" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={2} stroke="none">{chan.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => money(v)} /></PieChart>
             </ResponsiveContainer>
             <div className="legend">{chan.map((x) => <span key={x.name}><i className="swatch" style={{ background: x.color }} /> {x.name} {money(x.value)}</span>)}</div>
-          </> : <p className="cap">{multi ? 'No campaigns attributed to this pipeline yet — use “Link campaigns”.' : 'No ad spend in this range.'}</p>}
+          </> : <p className="cap">{multi ? 'No campaigns attributed to this pipeline yet — link them in Settings.' : 'No ad spend in this range.'}</p>}
           <div className="c360-mini">
             <div><span className="l">Ad-reported conversions</span><span className="v">{fmtNumber(attr.adConversions)}</span></div>
             <div><span className="l">Open pipeline value</span><span className="v">{money(c.openValue)}</span></div>
@@ -707,22 +705,15 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
       {camps.length > 0 && <div className="card" style={{ marginTop: 14 }}>
         <div className="link-head">
           <div><h3 style={{ margin: 0, fontSize: 15 }}>{pid === 'all' ? 'Campaigns' : 'Attributed campaigns'} <span className="cap" style={{ fontWeight: 400 }}>· {attr.campaigns.length} feeding {pid === 'all' ? 'the account' : 'this pipeline'}</span></h3></div>
-          {multi && <button className="link-btn" onClick={() => setShowLink((s) => !s)}>{showLink ? 'Done' : '⚙ Link campaigns'}</button>}
+          {multi && <span className="cap">Edit links in Settings ⚙</span>}
         </div>
-        {showLink && multi && <p className="caveat" style={{ marginTop: 0 }}>Assign each campaign to a pipeline, or “All pipelines” to share its spend across every funnel. Auto = matched by name. Saved in this browser.</p>}
         <div className="camp-list">
           {attr.campaigns.map((cc) => (
             <div className="camp-row" key={cc.source + cc.name}>
               {srcBadge(cc.source)}
               <span className="camp-nm" title={cc.name}>{cc.name}</span>
               <span className="camp-sp">{money(cc.spend)}</span>
-              {showLink && multi
-                ? <select className="camp-lnk" value={manual[cc.name] ?? 'auto'} onChange={(e) => setLink(cc.name, e.target.value)}>
-                    <option value="auto">Auto{cc.auto && cc.auto !== 'all' ? ` · ${pipes.find((x) => x.id === cc.auto)?.name?.slice(0, 22) || 'matched'}` : cc.auto === 'all' ? ' · all' : ''}</option>
-                    <option value="all">All pipelines</option>
-                    {pipes.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                  </select>
-                : <span className="camp-tgt">{cc.target === 'all' ? 'All pipelines' : (pipes.find((x) => x.id === cc.target)?.name || '—')}</span>}
+              <span className="camp-tgt">{cc.target === 'all' ? 'All pipelines' : (pipes.find((x) => x.id === cc.target)?.name || '—')}</span>
             </div>
           ))}
         </div>
@@ -891,28 +882,85 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
 }
 
 /* ============ Settings ============ */
+// Campaign → pipeline linker, per client. Fetches the client's campaigns +
+// pipelines on expand and writes overrides to the shared localStorage map that
+// Caalano360 reads for spend attribution.
+function CampaignLinker({ clientId }) {
+  const [open, setOpen] = useState(false)
+  const [st, setSt] = useState({ status: 'idle', blend: null })
+  const [manual, setManual] = useState(() => loadCampMap(clientId))
+  useEffect(() => {
+    if (!open || st.status !== 'idle') return
+    setSt({ status: 'loading', blend: null })
+    const r = presetRange('last_30d')
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+      .then((j) => setSt({ status: 'ok', blend: j.blend }))
+      .catch(() => setSt({ status: 'err', blend: null }))
+  }, [open, st.status, clientId])
+  const setLink = (name, target) => setManual((m) => { const nx = { ...m }; if (target === 'auto') delete nx[name]; else nx[name] = target; saveCampMap(clientId, nx); return nx })
+  const b = st.blend
+  const pipes = (b && b.pipelines) || []
+  const camps = (b && b.campaigns) || []
+  return (
+    <div className="linker">
+      <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Link campaigns to pipelines</button>
+      {open && <div className="linker-body">
+        {st.status === 'loading' ? <Spinner label="Loading campaigns…" />
+          : st.status === 'err' ? <p className="cap">Couldn't load — this client may have no ad accounts or Caalano Systems mapped.</p>
+            : !camps.length ? <p className="cap">No campaigns found in the last 30 days.</p>
+              : !pipes.length ? <p className="cap">No Caalano Systems pipelines to link to.</p>
+                : <>
+                  <p className="cap" style={{ marginTop: 0 }}>Assign each campaign to a pipeline, or “All pipelines” to share its spend. Auto = matched by name.</p>
+                  {camps.map((cc) => (
+                    <div className="camp-row" key={cc.source + cc.name}>
+                      <span className="src-badge" style={{ background: cc.source === 'Meta' ? '#4f7cff' : '#12b886' }}>{cc.source === 'Meta' ? 'M' : 'G'}</span>
+                      <span className="camp-nm" title={cc.name}>{cc.name}</span>
+                      <select className="camp-lnk" value={manual[cc.name] ?? 'auto'} onChange={(e) => setLink(cc.name, e.target.value)}>
+                        <option value="auto">Auto{cc.auto && cc.auto !== 'all' ? ` · ${pipes.find((p) => p.id === cc.auto)?.name?.slice(0, 20) || 'matched'}` : ' · all'}</option>
+                        <option value="all">All pipelines</option>
+                        {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </>}
+      </div>}
+    </div>
+  )
+}
 function Settings({ config, enabled, setEnabled, onClose }) {
   if (!config) return null
+  const w = config.availableAccounts?.windsor || {}
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><h3>Settings · Clients & connections</h3><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-head"><h3>Settings</h3><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
-          <div className="set-note">Toggle clients on or off, and see which Meta / Google / CRM account each maps to. Changes persist in this browser now. With the live API backend, toggling a client on will trigger its data pull automatically, and new-client onboarding writes here.</div>
-          <div className="set-note" style={{ background: 'rgba(245,165,36,.12)' }}>Connected via Windsor.ai — Meta: <b>{config.availableAccounts?.windsor?.facebook ?? '—'}</b> accounts · Google: <b>{config.availableAccounts?.windsor?.google_ads ?? '—'}</b> · Caalano Systems: <b>{config.availableAccounts?.windsor?.gohighlevel ?? '—'}</b> sub-accounts.</div>
-          {config.clients.map((c) => (
-            <div className="set-client" key={c.id}>
-              <div className="row1">
-                <div><div className="nm">{c.name}</div><div className="ver">{c.deep ? 'Deep dashboards built' : 'Summary only'}</div></div>
-                <div className={`toggle ${enabled[c.id] !== false ? 'on' : ''}`} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
+          <div className="set-stats">
+            <div className="set-stat"><div className="v">{config.clients.length}</div><div className="l">Clients</div></div>
+            <div className="set-stat"><div className="v">{w.facebook ?? '—'}</div><div className="l">Meta accounts</div></div>
+            <div className="set-stat"><div className="v">{w.google_ads ?? '—'}</div><div className="l">Google accounts</div></div>
+            <div className="set-stat"><div className="v">{w.gohighlevel ?? '—'}</div><div className="l">Caalano Systems</div></div>
+          </div>
+          <div className="set-note">Toggle clients on or off, see their mapped accounts, and link each ad campaign to a Caalano Systems pipeline so paid spend attributes correctly in Caalano360. Changes persist in this browser.</div>
+          {config.clients.map((c) => {
+            const on = enabled[c.id] !== false
+            const canLink = (c.meta || c.google) && c.ghl
+            return (
+              <div className={`set-client ${on ? '' : 'is-off'}`} key={c.id}>
+                <div className="row1">
+                  <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
+                  <div className={`toggle ${on ? 'on' : ''}`} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
+                </div>
+                <div className="ids">
+                  <span className="idtag">Meta <b>{c.meta || '—'}</b></span>
+                  <span className="idtag">Google <b>{c.google || '—'}</b></span>
+                  <span className="idtag">Caalano Systems <b>{c.ghl || '—'}</b></span>
+                </div>
+                {canLink && <CampaignLinker clientId={c.id} />}
               </div>
-              <div className="ids">
-                <span className="idtag">Meta <b>{c.meta || '—'}</b></span>
-                <span className="idtag">Google <b>{c.google || '—'}</b></span>
-                <span className="idtag">Caalano Systems <b>{c.ghl || '—'}</b></span>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </div>

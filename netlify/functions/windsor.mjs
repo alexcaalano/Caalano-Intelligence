@@ -9,6 +9,8 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
+import { buildAttribution, sampleAttribution, isConnected } from '../lib/ghl.mjs'
+
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
   'finr-advisory':   { meta: '562656435170426',  google: null, ghl: 'A2lu96mobIYMdB9gcHte' },
@@ -48,6 +50,17 @@ const FIELDS = {
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
 const norm = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
+
+// The equal-length period immediately before [from,to] — for ±vs-previous deltas.
+function prevRange(from, to) {
+  if (!from || !to) return { from: null, to: null }
+  const f = new Date(from + 'T00:00:00Z'), t = new Date(to + 'T00:00:00Z')
+  const days = Math.round((t - f) / 86400000) + 1
+  const pt = new Date(f); pt.setUTCDate(pt.getUTCDate() - 1)
+  const pf = new Date(pt); pf.setUTCDate(pf.getUTCDate() - (days - 1))
+  const isod = (d) => d.toISOString().slice(0, 10)
+  return { from: isod(pf), to: isod(pt) }
+}
 
 async function windsorFetch(connector, fields, from, to, preset, key) {
   const p = new URLSearchParams({ api_key: key, fields: fields.join(',') })
@@ -99,14 +112,24 @@ function rollupMeta(adRows, dayRows, accRows) {
   for (const r of accRows) { totals.spend += num(r.spend); totals.impressions += num(r.impressions); totals.clicks += num(r.clicks); totals.linkClicks += num(r.inline_link_clicks); totals.leads += num(r.actions_lead); totals.videoViews += num(r.actions_video_view); totals.reach += num(r.reach) }
   return { campaigns, adsets: adsetsWithParent, ads, daily, totals }
 }
+function metaTotals(accRows) {
+  const t = { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0 }
+  for (const r of accRows) { t.spend += num(r.spend); t.impressions += num(r.impressions); t.clicks += num(r.clicks); t.linkClicks += num(r.inline_link_clicks); t.leads += num(r.actions_lead); t.videoViews += num(r.actions_video_view); t.reach += num(r.reach) }
+  return t
+}
 async function buildMeta(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
-  const [adRows, dayRows, accRows] = await Promise.all([
+  const pr = prevRange(from, to)
+  const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view']
+  const [adRows, dayRows, accRows, prevRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead'], from, to, preset, key).then(filt),
-    windsorFetch('facebook', ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
+    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
   ])
-  return rollupMeta(adRows, dayRows, accRows)
+  const roll = rollupMeta(adRows, dayRows, accRows)
+  roll.prev = metaTotals(prevRows)
+  return roll
 }
 
 const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
@@ -136,13 +159,13 @@ function rollupGoogle(cg, kw, st, dy, days) {
   const kwAgg = aggBy(kw, (r) => r.keyword_text)
   const kwMeta = new Map()
   for (const r of kw) { const t = r.keyword_text; if (!t) continue; const e = kwMeta.get(t) || { match: titleCase(r.match_type) || '—', qsSum: 0, campaign: r.campaign || null, adGroup: cleanAg(r) || null }; e.qsSum += num(r.quality_score); if (!e.match || e.match === '—') e.match = titleCase(r.match_type) || '—'; kwMeta.set(t, e) }
-  const keywords = [...kwAgg.entries()].map(([text, v]) => { const m = kwMeta.get(text) || {}; const qs = m.qsSum ? Math.max(1, Math.min(10, Math.round(m.qsSum / days))) : ''; return { text, match: m.match || '—', qs, campaign: m.campaign, adGroup: m.adGroup, ...v } }).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 60)
+  const keywords = [...kwAgg.entries()].map(([text, v]) => { const m = kwMeta.get(text) || {}; const qs = m.qsSum ? Math.max(1, Math.min(10, Math.round(m.qsSum / days))) : ''; return { text, match: m.match || '—', qs, campaign: m.campaign, adGroup: m.adGroup, ...v } }).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 300)
   const mt = new Map()
   for (const r of kw) { const t = titleCase(r.match_type); if (!t) continue; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
   // search terms with parent campaign / ad group / matched keyword
   const stAgg = new Map(), stMeta = new Map()
   for (const r of st) { const term = r.search_term; if (!term) continue; const e = stAgg.get(term) || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); stAgg.set(term, e); if (!stMeta.has(term)) stMeta.set(term, { campaign: r.campaign || null, adGroup: cleanAg(r) || null, keyword: r.keyword_text || null }) }
-  const searchTerms = [...stAgg.entries()].map(([term, v]) => ({ term, ...(stMeta.get(term) || {}), ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 80)
+  const searchTerms = [...stAgg.entries()].map(([term, v]) => ({ term, ...(stMeta.get(term) || {}), ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 300)
   const dmap = new Map()
   for (const r of dy) { const d = String(r.date || '').slice(0, 10); if (!d) continue; const e = dmap.get(d) || { date: d, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); dmap.set(d, e) }
   const daily = [...dmap.values()].sort((a, b) => a.date.localeCompare(b.date))
@@ -175,13 +198,17 @@ async function buildOverview(from, to, preset, key) {
 
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
-  const [cg, kw, st, dy] = await Promise.all([
+  const pr = prevRange(from, to)
+  const [cg, kw, st, dy, prev] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
+    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
   ])
-  return rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
+  const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
+  roll.prev = prev.reduce((a, r) => ({ cost: a.cost + num(r.spend), impressions: a.impressions + num(r.impressions), clicks: a.clicks + num(r.clicks), conversions: a.conversions + num(r.conversions) }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
+  return roll
 }
 
 /* ===== Caalano360 blend: paid + CRM in one call =====
@@ -369,6 +396,17 @@ export default async (req) => {
 
   const c = CLIENTS[client]
   if (!c) return json({ error: `unknown client ${client}` }, 404)
+
+  // UTM attribution via the GoHighLevel API (Windsor can't provide UTMs).
+  if (channel === 'attribution') {
+    if (!c.ghl) return json({ error: `no Caalano Systems account for ${client}` }, 404)
+    if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
+    try {
+      const fn = url.searchParams.get('debug') ? sampleAttribution : buildAttribution
+      const attribution = await fn(c.ghl, from, to)
+      return json({ client, channel, period: { from, to, preset }, attribution }, 200, !url.searchParams.get('debug'))
+    } catch (e) { return json({ connected: true, error: String(e.message || e) }, 502) }
+  }
 
   // Caalano360 — blended paid + CRM aggregate for a single client.
   if (channel === 'blend') {

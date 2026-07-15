@@ -200,7 +200,16 @@ function CrmLive({ ghl, currency }) {
 }
 
 /* ============ Meta deep ============ */
-function Sc({ label, value }) { return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div></div> }
+function ScDelta({ cur, prev, goodWhenDown }) {
+  if (cur == null || prev == null) return null
+  if (!prev) return <div className="sc-d flat">no prior data</div>
+  const pct = ((cur - prev) / Math.abs(prev)) * 100
+  const up = pct >= 0; const good = goodWhenDown ? !up : up
+  return <div className={`sc-d ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))} <span className="sc-vs">vs prev</span></div>
+}
+function Sc({ label, value, cur, prev, goodWhenDown }) {
+  return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} /></div>
+}
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
 const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg; return r <= 0.85 ? 'rgba(23,178,106,.28)' : r <= 1.15 ? 'rgba(245,165,36,.28)' : 'rgba(240,67,91,.28)' }
@@ -213,22 +222,24 @@ function MetaDeep({ deep, currency }) {
   const cpm = t.impressions ? t.spend / t.impressions * 1000 : 0
   const cpl = t.leads ? t.spend / t.leads : 0
   const cpcLink = t.linkClicks ? t.spend / t.linkClicks : 0
+  const pv = m.prev || null
+  const D = (fn) => (pv ? fn(pv) : null) // previous-period value or null
   const daily = (m.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpl: d.leads ? d.spend / d.leads : 0, cpm: d.impressions ? d.spend / d.impressions * 1000 : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpc: d.clicks ? d.spend / d.clicks : 0 }))
   const adsets = sel ? m.adsets.filter((a) => a.campaign === sel) : m.adsets
   const ads = (sel ? m.ads.filter((a) => a.campaign === sel) : m.ads).slice(0, 24)
   return (
     <>
       <div className="scorecard">
-        <Sc label="Cost" value={fmtCurrency(t.spend, currency)} />
-        <Sc label="Impressions" value={fmtNumber(t.impressions)} />
-        <Sc label="Reach" value={fmtNumber(t.reach)} />
-        <Sc label="CPM" value={fmtCurrency(cpm, currency)} />
-        <Sc label="Link Clicks" value={fmtNumber(t.linkClicks)} />
-        <Sc label="CPC (Link)" value={fmtCurrency(cpcLink, currency)} />
-        <Sc label="CTR" value={fmtPct(t.impressions ? t.clicks / t.impressions * 100 : 0, 2)} />
-        <Sc label="Leads" value={fmtNumber(t.leads)} />
-        <Sc label="CPL" value={fmtCurrency(cpl, currency)} />
-        <Sc label="CVR" value={fmtPct(t.linkClicks ? t.leads / t.linkClicks * 100 : 0, 2)} />
+        <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown />
+        <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
+        <Sc label="Reach" value={fmtNumber(t.reach)} cur={t.reach} prev={D((x) => x.reach)} />
+        <Sc label="CPM" value={fmtCurrency(cpm, currency)} cur={cpm} prev={D((x) => x.impressions ? x.spend / x.impressions * 1000 : 0)} goodWhenDown />
+        <Sc label="Link Clicks" value={fmtNumber(t.linkClicks)} cur={t.linkClicks} prev={D((x) => x.linkClicks)} />
+        <Sc label="CPC (Link)" value={fmtCurrency(cpcLink, currency)} cur={cpcLink} prev={D((x) => x.linkClicks ? x.spend / x.linkClicks : 0)} goodWhenDown />
+        <Sc label="CTR" value={fmtPct(t.impressions ? t.clicks / t.impressions * 100 : 0, 2)} cur={rate(t.clicks, t.impressions)} prev={D((x) => rate(x.clicks, x.impressions))} />
+        <Sc label="Leads" value={fmtNumber(t.leads)} cur={t.leads} prev={D((x) => x.leads)} />
+        <Sc label="CPL" value={fmtCurrency(cpl, currency)} cur={cpl} prev={D((x) => x.leads ? x.spend / x.leads : 0)} goodWhenDown />
+        <Sc label="CVR" value={fmtPct(t.linkClicks ? t.leads / t.linkClicks * 100 : 0, 2)} cur={rate(t.leads, t.linkClicks)} prev={D((x) => rate(x.leads, x.linkClicks))} />
       </div>
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day</p>
@@ -292,6 +303,8 @@ function GoogleDeep({ deep, currency }) {
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   const costPerConv = t.conversions ? t.cost / t.conversions : 0
   const avgCpc = t.clicks ? t.cost / t.clicks : 0
+  const gv = g.prev || null
+  const D = (fn) => (gv ? fn(gv) : null)
   const pickCamp = (n) => setSel((s) => (s.campaign === n ? { campaign: null, adGroup: null } : { campaign: n, adGroup: null }))
   const pickAg = (n) => setSel((s) => ({ ...s, adGroup: s.adGroup === n ? null : n }))
   const inSel = (r) => (!sel.campaign || r.campaign === sel.campaign) && (!sel.adGroup || r.adGroup === sel.adGroup)
@@ -307,14 +320,14 @@ function GoogleDeep({ deep, currency }) {
   return (
     <>
       <div className="scorecard">
-        <Sc label="Cost" value={fmtCurrency(t.cost, currency)} />
-        <Sc label="Impressions" value={fmtNumber(t.impressions)} />
-        <Sc label="Clicks" value={fmtNumber(t.clicks)} />
-        <Sc label="CTR" value={fmtPct(rate(t.clicks, t.impressions), 2)} />
-        <Sc label="Avg CPC" value={fmtCurrency(avgCpc, currency)} />
-        <Sc label="Conversions" value={fmtNumber(t.conversions)} />
-        <Sc label="Cost / Conv" value={fmtCurrency(costPerConv, currency)} />
-        <Sc label="Conv. Rate" value={fmtPct(rate(t.conversions, t.clicks), 2)} />
+        <Sc label="Cost" value={fmtCurrency(t.cost, currency)} cur={t.cost} prev={D((x) => x.cost)} goodWhenDown />
+        <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
+        <Sc label="Clicks" value={fmtNumber(t.clicks)} cur={t.clicks} prev={D((x) => x.clicks)} />
+        <Sc label="CTR" value={fmtPct(rate(t.clicks, t.impressions), 2)} cur={rate(t.clicks, t.impressions)} prev={D((x) => rate(x.clicks, x.impressions))} />
+        <Sc label="Avg CPC" value={fmtCurrency(avgCpc, currency)} cur={avgCpc} prev={D((x) => x.clicks ? x.cost / x.clicks : 0)} goodWhenDown />
+        <Sc label="Conversions" value={fmtNumber(t.conversions)} cur={t.conversions} prev={D((x) => x.conversions)} />
+        <Sc label="Cost / Conv" value={fmtCurrency(costPerConv, currency)} cur={costPerConv} prev={D((x) => x.conversions ? x.cost / x.conversions : 0)} goodWhenDown />
+        <Sc label="Conv. Rate" value={fmtPct(rate(t.conversions, t.clicks), 2)} cur={rate(t.conversions, t.clicks)} prev={D((x) => rate(x.conversions, x.clicks))} />
         <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
       </div>

@@ -1177,7 +1177,8 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   }
   const p = b.paid
   // UTM-split CRM (Meta / Google / All) from the direct Caalano Systems attribution feed.
-  const channels = (utmAttr && utmAttr.status === 'ok' && utmAttr.data && utmAttr.data.attribution && utmAttr.data.attribution.channels) || null
+  const attribData = (utmAttr && utmAttr.status === 'ok' && utmAttr.data && utmAttr.data.attribution) || null
+  const channels = (attribData && attribData.channels) || null
   const canChan = !!channels && ((channels.meta?.totals?.leads || 0) > 0 || (channels.google?.totals?.leads || 0) > 0)
   const norm360 = (t) => ({ leads: t.leads, booked: t.booked, shown: t.shown, won: t.won, revenue: t.revenue, avgValue: t.avgWonValue, openValue: t.openValue, lost: t.lost, open: t.open })
   const chSel = chan !== 'all' && channels ? channels[chan] : null
@@ -1254,6 +1255,39 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label="ROAS" value={spend ? `${roas.toFixed(2)}×` : '-'} cur={spend ? roas : null} prev={pv && pc && pv.adSpend ? pc.revenue / pv.adSpend : null} />
         <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} cur={rate(c.won, c.leads)} prev={pc ? rate(pc.won, pc.leads) : null} />
       </div>
+      {b.hasCrm && (() => {
+        const adLeads = (p.metaLeads || 0) + (p.googleConv || 0)
+        const crmLeads = b.crm.leads
+        const variance = adLeads ? ((crmLeads - adLeads) / adLeads) * 100 : null
+        const opps = attribData ? attribData.opps : null
+        const attributed = attribData ? attribData.attributed : null
+        const cov = opps ? (attributed / opps) * 100 : null
+        const covCls = cov == null ? '' : cov >= 80 ? 'good' : cov >= 50 ? 'warn' : 'bad'
+        const chMeta = channels ? (channels.meta?.totals?.leads || 0) : 0
+        const chGoogle = channels ? (channels.google?.totals?.leads || 0) : 0
+        const chOther = channels ? (channels.other?.totals?.leads || 0) : 0
+        const totCh = chMeta + chGoogle + chOther || 1
+        return (
+          <div className="card th-card" style={{ marginTop: 14 }}>
+            <div className="th-head">
+              <h3>Tracking health &amp; lead reconciliation</h3>
+              {cov != null && <span className={`th-cov ${covCls}`}>{cov.toFixed(0)}% of opportunities have a source tag</span>}
+            </div>
+            <div className="th-grid">
+              <div className="th-stat"><div className="th-l">Ad-reported leads</div><div className="th-v">{fmtNumber(adLeads)}</div><div className="th-sub">Meta {fmtNumber(p.metaLeads || 0)} · Google {fmtNumber(p.googleConv || 0)}</div></div>
+              <div className="th-stat"><div className="th-l">CRM opportunities</div><div className="th-v">{fmtNumber(crmLeads)}</div><div className="th-sub">created in {rangeLabel(range)}</div></div>
+              <div className="th-stat"><div className="th-l">Variance</div><div className={`th-v ${variance == null ? '' : Math.abs(variance) <= 15 ? 'good' : Math.abs(variance) <= 35 ? 'warn' : 'bad'}`}>{variance == null ? '-' : `${variance > 0 ? '+' : ''}${variance.toFixed(0)}%`}</div><div className="th-sub">CRM vs ad-reported</div></div>
+              <div className="th-stat"><div className="th-l">Tagged source split</div>
+                {attribData ? <>
+                  <div className="th-bar"><span style={{ width: `${(chMeta / totCh) * 100}%`, background: '#4f7cff' }} /><span style={{ width: `${(chGoogle / totCh) * 100}%`, background: '#12b886' }} /><span style={{ width: `${(chOther / totCh) * 100}%`, background: 'var(--faint)' }} /></div>
+                  <div className="th-sub">Meta {fmtNumber(chMeta)} · Google {fmtNumber(chGoogle)} · Other/untagged {fmtNumber(chOther)}</div>
+                </> : <div className="th-sub">Connect Caalano Systems for source tagging.</div>}
+              </div>
+            </div>
+            <p className="caveat">Ad-reported leads are what Meta/Google count; CRM opportunities are what actually landed in Caalano Systems. A large gap usually means duplicate/again-counted ad conversions or leads not reaching the CRM. Source-tag coverage tells you how much of the Caalano360 channel split you can trust - low coverage means many opportunities arrived without a UTM.</p>
+          </div>
+        )
+      })()}
       <div className="grid two" style={{ marginTop: 14 }}>
         <div className="card chart-card"><h3>Key events</h3><p className="cap">{keSel.length ? 'Your key pipeline stages' : 'Default: leads → booked → shown → won'} · reached · % of leads · cost per stage</p>
           <div className="pfunnel pf4">

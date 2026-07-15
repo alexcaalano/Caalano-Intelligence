@@ -543,6 +543,24 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .cal-day.inr { background: rgba(109,94,252,.16); border-radius: 0; }
 .cal-day.sel { background: var(--brand); color: #fff; font-weight: 700; }
 
+/* Tracking health & lead reconciliation (Caalano360) */
+.th-card { padding: 16px 18px; }
+.th-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.th-head h3 { margin: 0; font-size: 14px; }
+.th-cov { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+.th-cov.good { color: var(--pos); background: rgba(23,178,106,.13); }
+.th-cov.warn { color: var(--warn); background: rgba(245,165,36,.14); }
+.th-cov.bad { color: var(--neg); background: rgba(240,67,91,.13); }
+.th-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 760px) { .th-grid { grid-template-columns: repeat(2, 1fr); } }
+.th-stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; padding: 12px 13px; }
+.th-l { font-size: 11px; color: var(--muted); font-weight: 600; }
+.th-v { font-size: 22px; font-weight: 760; margin: 6px 0 4px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.th-v.good { color: var(--pos); } .th-v.warn { color: var(--warn); } .th-v.bad { color: var(--neg); }
+.th-sub { font-size: 11px; color: var(--faint); }
+.th-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); margin: 8px 0 6px; }
+.th-bar span { display: block; height: 100%; }
+
 /* ============ Mobile responsiveness (<=900px). Desktop is unaffected. ============ */
 .alerts-2 { grid-template-columns: 1fr 1fr; }
 @media (max-width: 760px) { .alerts-2 { grid-template-columns: 1fr; } }

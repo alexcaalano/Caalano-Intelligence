@@ -316,6 +316,11 @@ tbody tr:hover { background: var(--panel-2); }
 tr.row-sel > td { background: rgba(109,94,252,.14); }
 tr.row-sel > td:first-child { box-shadow: inset 3px 0 0 var(--brand); font-weight: 650; }
 
+/* Sortable table headers */
+.sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.sort-th:hover { color: var(--text); }
+.sort-ar { color: var(--brand); font-weight: 800; }
+
 /* Caalano360 outcome columns (UTM-joined CRM outcomes on ad tables) */
 .c360-col { background: rgba(18,184,134,.09); font-variant-numeric: tabular-nums; }
 th.c360-col { color: #12b886; font-size: 10.5px; }

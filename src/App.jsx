@@ -402,15 +402,36 @@ function OverallTab({ client, currency, side }) {
 }
 
 /* ============ Caalano360 — blended paid + CRM ============ */
+const CMAP_KEY = 'caalano_campmap'
+function loadCampMap(clientId) { try { return (JSON.parse(localStorage.getItem(CMAP_KEY) || '{}')[clientId]) || {} } catch { return {} } }
+function saveCampMap(clientId, map) { try { const all = JSON.parse(localStorage.getItem(CMAP_KEY) || '{}'); all[clientId] = map; localStorage.setItem(CMAP_KEY, JSON.stringify(all)) } catch {} }
+
 function Caalano360({ blend, client, currency, range }) {
   const b = blend
   const pipes = b.pipelines || []
+  const camps = b.campaigns || []
+  const multi = pipes.length > 1
   const [pid, setPid] = useState('all')
+  const [showLink, setShowLink] = useState(false)
+  const [manual, setManual] = useState(() => loadCampMap(client.id))
+  useEffect(() => { setManual(loadCampMap(client.id)); setPid('all') }, [client.id])
+  const setLink = (name, target) => setManual((m) => { const nx = { ...m }; if (target === 'auto') delete nx[name]; else nx[name] = target; saveCampMap(client.id, nx); return nx })
+  const effTarget = (name) => manual[name] ?? (camps.find((x) => x.name === name)?.auto) ?? 'all'
+  // attribute campaign spend to the selected pipeline (or 'all' = account totals)
+  const attrFor = (id) => {
+    let metaSpend = 0, googleSpend = 0, adConversions = 0; const list = []
+    for (const cc of camps) { const t = effTarget(cc.name); if (t === id || t === 'all') { if (cc.source === 'Meta') metaSpend += cc.spend; else googleSpend += cc.spend; adConversions += cc.conv; list.push({ ...cc, target: t }) } }
+    return { metaSpend, googleSpend, adSpend: metaSpend + googleSpend, adConversions, campaigns: list }
+  }
   const p = b.paid
   const c = pid === 'all' ? b.crm : (pipes.find((x) => x.id === pid)?.crm || b.crm)
-  const spend = p.adSpend
+  const attr = pid === 'all'
+    ? { adSpend: p.adSpend, metaSpend: p.metaSpend, googleSpend: p.googleSpend, adConversions: p.adConversions, campaigns: camps.map((x) => ({ ...x, target: effTarget(x.name) })) }
+    : attrFor(pid)
+  const spend = attr.adSpend
   const roas = spend ? c.revenue / spend : 0
-  const chan = [{ name: 'Meta', value: p.metaSpend, color: '#4f7cff' }, { name: 'Google', value: p.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
+  const money = (v) => fmtCurrency(v, currency)
+  const chan = [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }, { name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
   const fmax = Math.max(1, c.leads)
   const funnel = [
     { stage: 'Leads', count: c.leads, color: '#4f7cff' },
@@ -423,11 +444,12 @@ function Caalano360({ blend, client, currency, range }) {
     : (pipes.length === 1 ? pipes[0].stages : null)
   const stageMax = activeStages ? Math.max(1, ...activeStages.map((s) => s.count)) : 1
   const stageName = pid !== 'all' ? pipes.find((x) => x.id === pid)?.name : (pipes.length === 1 ? pipes[0].name : null)
+  const srcBadge = (s) => <span className="src-badge" style={{ background: s === 'Meta' ? '#4f7cff' : '#12b886' }}>{s === 'Meta' ? 'M' : 'G'}</span>
   return (
     <>
       <div className="c360-head">
-        <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}</span></div>
-        {pipes.length > 1 && <div className="pipe-sel"><label>Pipeline</label>
+        <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}{pid !== 'all' ? ' · attributed spend' : ''}</span></div>
+        {multi && <div className="pipe-sel"><label>Pipeline</label>
           <select value={pid} onChange={(e) => setPid(e.target.value)}>
             <option value="all">All pipelines ({fmtNumber(b.crm.leads)})</option>
             {pipes.map((x) => <option key={x.id} value={x.id}>{x.name} ({fmtNumber(x.crm.leads)})</option>)}
@@ -435,16 +457,16 @@ function Caalano360({ blend, client, currency, range }) {
         </div>}
       </div>
       <div className="scorecard">
-        <Sc label="Ad Spend" value={fmtCurrency(spend, currency)} />
+        <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} />
         <Sc label="Total Leads" value={fmtNumber(c.leads)} />
         <Sc label="Bookings Made" value={fmtNumber(c.booked)} />
         <Sc label="Shown Bookings" value={fmtNumber(c.shown)} />
         <Sc label="Won Clients" value={fmtNumber(c.won)} />
-        <Sc label="Revenue Closed" value={fmtCurrency(c.revenue, currency)} />
-        <Sc label="Avg Order Value" value={c.won ? fmtCurrency(c.avgValue, currency) : '—'} />
-        <Sc label="Cost / Lead" value={c.leads ? fmtCurrency(spend / c.leads, currency) : '—'} />
-        <Sc label="Cost / Booked" value={c.booked ? fmtCurrency(spend / c.booked, currency) : '—'} />
-        <Sc label="Cost / Won" value={c.won ? fmtCurrency(spend / c.won, currency) : '—'} />
+        <Sc label="Revenue Closed" value={money(c.revenue)} />
+        <Sc label="Avg Order Value" value={c.won ? money(c.avgValue) : '—'} />
+        <Sc label="Cost / Lead" value={spend && c.leads ? money(spend / c.leads) : '—'} />
+        <Sc label="Cost / Booked" value={spend && c.booked ? money(spend / c.booked) : '—'} />
+        <Sc label="Cost / Won" value={spend && c.won ? money(spend / c.won) : '—'} />
         <Sc label="ROAS" value={spend ? `${roas.toFixed(2)}×` : '—'} />
         <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} />
       </div>
@@ -453,20 +475,43 @@ function Caalano360({ blend, client, currency, range }) {
           <div className="funnel">{funnel.map((s) => (<div className="fn" key={s.stage}><span className="lab">{s.stage}</span><span className="bar" style={{ width: `${Math.max(9, (s.count / fmax) * 100)}%`, background: s.color }}>{fmtNumber(s.count)}</span></div>))}</div>
           <p className="caveat">Bookings &amp; shown are derived from each opportunity's pipeline stage position (Caalano Systems stage names), so they track the live pipeline rather than a separate calendar feed.</p>
         </div>
-        <div className="card chart-card"><h3>Ad spend by channel</h3><p className="cap">Meta + Google split feeding the pipeline</p>
+        <div className="card chart-card"><h3>Ad spend by channel</h3><p className="cap">{pid === 'all' ? 'Meta + Google split across the account' : 'Attributed to this pipeline'}</p>
           {chan.length ? <>
             <ResponsiveContainer width="100%" height={190}>
-              <PieChart><Pie data={chan} dataKey="value" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={2} stroke="none">{chan.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => fmtCurrency(v, currency)} /></PieChart>
+              <PieChart><Pie data={chan} dataKey="value" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={2} stroke="none">{chan.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => money(v)} /></PieChart>
             </ResponsiveContainer>
-            <div className="legend">{chan.map((x) => <span key={x.name}><i className="swatch" style={{ background: x.color }} /> {x.name} {fmtCurrency(x.value, currency)}</span>)}</div>
-          </> : <p className="cap">No ad spend in this range.</p>}
+            <div className="legend">{chan.map((x) => <span key={x.name}><i className="swatch" style={{ background: x.color }} /> {x.name} {money(x.value)}</span>)}</div>
+          </> : <p className="cap">{multi ? 'No campaigns attributed to this pipeline yet — use “Link campaigns”.' : 'No ad spend in this range.'}</p>}
           <div className="c360-mini">
-            <div><span className="l">Ad-reported conversions</span><span className="v">{fmtNumber(p.adConversions)}</span></div>
-            <div><span className="l">Open pipeline value</span><span className="v">{fmtCurrency(c.openValue, currency)}</span></div>
+            <div><span className="l">Ad-reported conversions</span><span className="v">{fmtNumber(attr.adConversions)}</span></div>
+            <div><span className="l">Open pipeline value</span><span className="v">{money(c.openValue)}</span></div>
             <div><span className="l">Lost / abandoned</span><span className="v">{fmtNumber(c.lost)}</span></div>
           </div>
         </div>
       </div>
+      {camps.length > 0 && <div className="card" style={{ marginTop: 14 }}>
+        <div className="link-head">
+          <div><h3 style={{ margin: 0, fontSize: 15 }}>{pid === 'all' ? 'Campaigns' : 'Attributed campaigns'} <span className="cap" style={{ fontWeight: 400 }}>· {attr.campaigns.length} feeding {pid === 'all' ? 'the account' : 'this pipeline'}</span></h3></div>
+          {multi && <button className="link-btn" onClick={() => setShowLink((s) => !s)}>{showLink ? 'Done' : '⚙ Link campaigns'}</button>}
+        </div>
+        {showLink && multi && <p className="caveat" style={{ marginTop: 0 }}>Assign each campaign to a pipeline, or “All pipelines” to share its spend across every funnel. Auto = matched by name. Saved in this browser.</p>}
+        <div className="camp-list">
+          {attr.campaigns.map((cc) => (
+            <div className="camp-row" key={cc.source + cc.name}>
+              {srcBadge(cc.source)}
+              <span className="camp-nm" title={cc.name}>{cc.name}</span>
+              <span className="camp-sp">{money(cc.spend)}</span>
+              {showLink && multi
+                ? <select className="camp-lnk" value={manual[cc.name] ?? 'auto'} onChange={(e) => setLink(cc.name, e.target.value)}>
+                    <option value="auto">Auto{cc.auto && cc.auto !== 'all' ? ` · ${pipes.find((x) => x.id === cc.auto)?.name?.slice(0, 22) || 'matched'}` : cc.auto === 'all' ? ' · all' : ''}</option>
+                    <option value="all">All pipelines</option>
+                    {pipes.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                  </select>
+                : <span className="camp-tgt">{cc.target === 'all' ? 'All pipelines' : (pipes.find((x) => x.id === cc.target)?.name || '—')}</span>}
+            </div>
+          ))}
+        </div>
+      </div>}
       {activeStages && activeStages.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Where clients are in the pipeline</h3><p className="cap">{stageName} · opportunities by stage, first to last</p>
         <div className="funnel">{activeStages.map((s, i) => {

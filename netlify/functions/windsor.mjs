@@ -236,18 +236,54 @@ function blendCrm(oppRows, idx) {
     avgValue: won ? Math.round(revenue / won) : 0,
   }
 }
+// Campaign ↔ pipeline auto-matching by name. Splits camelCase, drops
+// boilerplate + geo/date tokens, folds known synonyms (BA≈Buyers Advocacy,
+// FIN≈Finance, ASD≈Autism), then scores each campaign against every pipeline
+// weighting rarer shared tokens higher. Unconfident matches default to 'all'.
+const SYN_GROUPS = [['ba', 'buyers', 'buyer', 'advocacy'], ['fin', 'finr', 'finance', 'financial'], ['asd', 'autism', 'autistic'], ['adhd'], ['property', 'pp', 'properties'], ['investment', 'invest', 'investing'], ['allied', 'alliedhealth'], ['sensory']]
+const synKey = (w) => { for (const g of SYN_GROUPS) if (g.includes(w)) return g[0]; return w }
+const BLEND_STOP = new Set('web leads lead gen sales pipeline campaign funnel new ads ad national melbourne sydney brisbane perth adelaide search brand impression awareness reach traffic conversion conversions share cd cdc leadgen abo cbo asc test copy the and for of to with prospecting retargeting remarketing simon follow up'.split(' '))
+function blendToks(name) {
+  const out = new Set()
+  const spaced = String(name || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[\[\]]/g, ' ').toLowerCase()
+  for (const w of spaced.split(/[^a-z0-9]+/)) { if (!w || /^\d+$/.test(w) || w.length < 2 || BLEND_STOP.has(w)) continue; out.add(synKey(w)) }
+  return out
+}
+function autoMatch(pipelinesArr, camps) {
+  const pInfo = pipelinesArr.map((p) => ({ id: p.id, leads: p.crm.leads, keys: blendToks(p.name) }))
+  const df = new Map()
+  for (const p of pInfo) for (const k of p.keys) df.set(k, (df.get(k) || 0) + 1)
+  const res = new Map()
+  for (const c of camps) {
+    const ck = blendToks(c.name)
+    let best = null, bestScore = 0
+    for (const p of pInfo) {
+      let s = 0; for (const k of p.keys) if (ck.has(k)) s += 1 / (df.get(k) || 1)
+      if (s > bestScore || (s === bestScore && s > 0 && best && p.leads > best.leads)) { bestScore = s; best = p }
+    }
+    res.set(c.name, best && bestScore >= 0.5 ? best.id : 'all')
+  }
+  return res
+}
+function campAgg(rows, source, convField) {
+  const m = new Map()
+  for (const r of rows) { const n = r.campaign; if (!n) continue; const e = m.get(n) || { name: n, source, spend: 0, conv: 0 }; e.spend += num(r.spend); e.conv += num(r[convField]); m.set(n, e) }
+  return [...m.values()]
+}
 async function buildBlend(c, from, to, preset, key) {
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
   const [fb, gg, opps, pipes] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', 'actions_lead'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
-    c.google ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'actions_lead'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
   ])
-  const metaSpend = fb.reduce((a, r) => a + num(r.spend), 0)
-  const metaLeads = fb.reduce((a, r) => a + num(r.actions_lead), 0)
-  const googleSpend = gg.reduce((a, r) => a + num(r.spend), 0)
-  const googleConv = gg.reduce((a, r) => a + num(r.conversions), 0)
+  const metaCamps = campAgg(fb, 'Meta', 'actions_lead')
+  const googleCamps = campAgg(gg, 'Google', 'conversions')
+  const metaSpend = metaCamps.reduce((a, r) => a + r.spend, 0)
+  const metaLeads = metaCamps.reduce((a, r) => a + r.conv, 0)
+  const googleSpend = googleCamps.reduce((a, r) => a + r.spend, 0)
+  const googleConv = googleCamps.reduce((a, r) => a + r.conv, 0)
   const idx = stageIndex(pipes)
   const crm = blendCrm(opps, idx)
   // Per-pipeline funnels so the UI can offer a pipeline selector — a "booking"
@@ -269,13 +305,18 @@ async function buildBlend(c, from, to, preset, key) {
       return { id, name: nameOf[id] || 'Unnamed pipeline', crm: blendCrm(rows, idx), stages }
     })
     .sort((a, b) => b.crm.leads - a.crm.leads)
+  const allCamps = [...metaCamps, ...googleCamps]
+  const auto = autoMatch(pipelines, allCamps)
+  const campaigns = allCamps
+    .map((x) => ({ name: x.name, source: x.source, spend: Math.round(x.spend), conv: Math.round(x.conv), auto: auto.get(x.name) || 'all' }))
+    .sort((a, b) => b.spend - a.spend)
   return {
     hasCrm: !!c.ghl, hasMeta: !!c.meta, hasGoogle: !!c.google,
     paid: {
-      adSpend: metaSpend + googleSpend, metaSpend, googleSpend,
-      metaLeads, googleConv, adConversions: metaLeads + googleConv,
+      adSpend: Math.round(metaSpend + googleSpend), metaSpend: Math.round(metaSpend), googleSpend: Math.round(googleSpend),
+      metaLeads: Math.round(metaLeads), googleConv: Math.round(googleConv), adConversions: Math.round(metaLeads + googleConv),
     },
-    crm, pipelines,
+    crm, pipelines, campaigns,
   }
 }
 

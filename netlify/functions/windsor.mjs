@@ -154,6 +154,20 @@ export default async (req) => {
   const accountId = c[channel]
   if (!accountId) return json({ error: `no ${channel} account for ${client}` }, 404)
 
+  // Field probe: request a broad set of candidate google keyword/search-term
+  // field names and report which Windsor recognises + which carry data.
+  if (url.searchParams.get('probe') === '1') {
+    const cand = ['campaign', 'ad_group_name', 'keyword', 'criteria', 'keyword_text', 'search_keyword', 'search_term', 'search_query', 'query', 'search_keyword_match_type', 'keyword_match_type', 'match_type', 'quality_score', 'historical_quality_score', 'spend', 'clicks', 'conversions']
+    try {
+      const rows = await windsorFetch('google_ads', ['account_id', ...cand], from, to, preset, key)
+      const mine = rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+      const recognised = mine[0] ? Object.keys(mine[0]) : []
+      const populated = {}
+      for (const f of cand) populated[f] = mine.filter((r) => r[f] !== null && r[f] !== undefined && r[f] !== '').length
+      return json({ probe: 'google_ads', accountId, rowCount: mine.length, recognisedFields: recognised, populatedCounts: populated, sample: mine.slice(0, 3) })
+    } catch (e) { return json({ probe: 'google_ads', error: String(e.message || e) }, 502) }
+  }
+
   try {
     const fields = [...spec.dims, ...spec.metrics]
     const rowsAll = await windsorFetch(spec.connector, fields, from, to, preset, key)

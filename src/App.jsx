@@ -303,26 +303,58 @@ function OverallTab({ client, currency, side }) {
 }
 
 const PRESETS = [
+  { id: 'today', label: 'Today' },
   { id: 'last_7d', label: 'Last 7 days' },
+  { id: 'last_14d', label: 'Last 14 days' },
   { id: 'last_30d', label: 'Last 30 days' },
-  { id: 'last_month', label: 'Last month' },
   { id: 'this_month', label: 'This month' },
+  { id: 'last_month', label: 'Last month' },
 ]
+const rangeQuery = (r) => (r.from && r.to ? `from=${r.from}&to=${r.to}` : `preset=${r.preset || 'last_30d'}`)
+const rangeLabel = (r) => (r.from && r.to ? `${r.from} → ${r.to}` : (PRESETS.find((p) => p.id === r.preset)?.label || 'Last 30 days'))
 
 // Fetch live deep data for the active channel from the Windsor.ai Netlify function.
-function useLiveDeep(clientId, channel, preset) {
+function useLiveDeep(clientId, channel, range) {
   const [state, setState] = useState({ status: 'idle', data: null })
+  const q = rangeQuery(range)
   useEffect(() => {
     if (!channel) { setState({ status: 'idle', data: null }); return }
     let alive = true
     setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&preset=${preset}`)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j && !j.error ? j : null }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [clientId, channel, preset])
+  }, [clientId, channel, q])
   return state
+}
+
+function DateRange({ range, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [from, setFrom] = useState(range.from || '')
+  const [to, setTo] = useState(range.to || '')
+  const applyCustom = () => { if (from && to) { onChange({ from, to }); setOpen(false) } }
+  return (
+    <div className="date-sel">
+      <label>Period</label>
+      <div className="dr">
+        <button className="dr-btn" onClick={() => setOpen((o) => !o)}>{rangeLabel(range)} <span style={{ opacity: .55 }}>▾</span></button>
+        {open && <>
+          <div className="dr-backdrop" onClick={() => setOpen(false)} />
+          <div className="dr-pop">
+            <div className="dr-presets">{PRESETS.map((p) => <button key={p.id} className={range.preset === p.id && !range.from ? 'active' : ''} onClick={() => { onChange({ preset: p.id }); setOpen(false) }}>{p.label}</button>)}</div>
+            <div className="dr-custom">
+              <div className="dr-cap">Custom range</div>
+              <div className="dr-row"><span>From</span><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+              <div className="dr-row"><span>To</span><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+              <button className="dr-apply" onClick={applyCustom} disabled={!from || !to}>Apply range</button>
+            </div>
+          </div>
+        </>}
+      </div>
+    </div>
+  )
 }
 
 function LiveBadge({ mode, label }) {
@@ -333,15 +365,15 @@ function LiveBadge({ mode, label }) {
 
 function ClientWorkspace({ client, index, data, onBack }) {
   const [tab, setTab] = useState('overall')
-  const [preset, setPreset] = useState('last_30d')
+  const [range, setRange] = useState({ preset: 'last_30d' })
   const [baked, setBaked] = useState(undefined)
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
   const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'ghl' : null
-  const live = useLiveDeep(client.id, channel, preset)
+  const live = useLiveDeep(client.id, channel, range)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const tabs = [{ id: 'overall', label: 'Overall Business' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
-  const presetLabel = PRESETS.find((p) => p.id === preset)?.label
+  const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
     if (live.status !== 'ok' || !live.data || !live.data[ch]) return false
     const d = live.data[ch]
@@ -356,7 +388,7 @@ function ClientWorkspace({ client, index, data, onBack }) {
         <div className="cw-top">
           <span className="avatar" style={{ background: acolor(index) }}>{initials(client.name)}</span>
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span></h2><div className="meta">{client.industry}</div></div>
-          <div className="date-sel"><label>Period</label><select value={preset} onChange={(e) => setPreset(e.target.value)}>{PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>
+          <DateRange range={range} onChange={setRange} />
         </div>
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>

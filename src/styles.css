@@ -192,6 +192,22 @@ tbody tr:hover { background: var(--panel-2); }
 .date-sel { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .date-sel label { font-size: 11.5px; color: var(--muted); font-weight: 600; }
 .date-sel select { background: var(--panel); color: var(--text); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.dr { position: relative; }
+.dr-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 12px; font-size: 12.5px; font-weight: 650; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.dr-btn:hover { background: var(--panel-2); }
+.dr-backdrop { position: fixed; inset: 0; z-index: 40; }
+.dr-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 41; display: flex; background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; min-width: 340px; }
+.dr-presets { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-right: 1px solid var(--border); min-width: 148px; }
+.dr-presets button { text-align: left; border: 0; background: transparent; color: var(--muted); padding: 8px 11px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.dr-presets button:hover { background: var(--panel-2); color: var(--text); }
+.dr-presets button.active { background: var(--brand); color: #fff; }
+.dr-custom { padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; min-width: 180px; }
+.dr-cap { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.dr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dr-row span { font-size: 12px; color: var(--muted); }
+.dr-row input { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12px; color-scheme: dark light; }
+.dr-apply { margin-top: 4px; background: var(--brand); color: #fff; border: 0; border-radius: 9px; padding: 9px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.dr-apply:disabled { opacity: .45; cursor: default; }
 .subtabs { display: flex; gap: 4px; margin-top: 14px; border-bottom: 1px solid var(--border); }
 .subtabs button { border: 0; background: transparent; color: var(--muted); padding: 9px 15px; font-size: 13px; font-weight: 650; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .subtabs button:hover { color: var(--text); }

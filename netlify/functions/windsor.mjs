@@ -353,7 +353,12 @@ async function buildWeekly(c, weeks, key) {
       booked: b.booked, shown: b.shown, won: b.won, wonValue: Math.round(b.wonValue),
     }
   })
-  return { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, weeks: out }
+  // Named lost reasons over the window (GHL direct API) for the lost-reasons pie.
+  let lostReasons = []
+  if (c.ghl && await isConnected().catch(() => false)) {
+    try { const crm = await buildCrm(c.ghl, dstr(start), dstr(today)); lostReasons = crm.lostReasons || [] } catch {}
+  }
+  return { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, weeks: out, lostReasons }
 }
 
 // Geographic conversions — where conversions happen. Google Ads geo reports

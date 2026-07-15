@@ -1,4 +1,4 @@
-// GoHighLevel agency OAuth — two jobs:
+// GoHighLevel agency OAuth - two jobs:
 //   ?start=1  → redirect the agency admin to GoHighLevel's consent screen
 //   ?code=... → GoHighLevel redirects back here; we exchange the code for an
 //               agency (company) token and store it in Netlify Blobs.
@@ -52,8 +52,8 @@ export default async (req) => {
       const t = await exchangeCode(code, redirectUri)
       const isCompany = String(t.userType || '').toLowerCase() === 'company' && !!t.companyId
       const badge = isCompany
-        ? '<p style="color:#12b886;font-weight:700">✅ Agency (Company) token — this can read every sub-account.</p>'
-        : `<p style="color:#f5a524;font-weight:700">⚠️ This is a <b>${t.userType || 'Location'}</b> token${t.companyId ? '' : ' (no companyId)'} — it can only read ONE sub-account. Re-authorise and pick your <b>Agency</b> (not a single location).</p>`
+        ? '<p style="color:#12b886;font-weight:700">✅ Agency (Company) token - this can read every sub-account.</p>'
+        : `<p style="color:#f5a524;font-weight:700">⚠️ This is a <b>${t.userType || 'Location'}</b> token${t.companyId ? '' : ' (no companyId)'} - it can only read ONE sub-account. Re-authorise and pick your <b>Agency</b> (not a single location).</p>`
       return page('Caalano Systems connected', `${badge}<p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Re-authorise</a> · <a style="color:#9b8cff" href="/">Back to dashboard</a></p>`)
     } catch (e) {
       return page('Connection failed', `<p style="color:#f0435b">${String(e.message || e)}</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Try again</a></p>`)

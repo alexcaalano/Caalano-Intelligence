@@ -4,7 +4,7 @@
 //               agency (company) token and store it in Netlify Blobs.
 // Scopes requested are read-only. The redirect URI is derived from this
 // function's own URL, so it works on any domain without hard-coding.
-import { exchangeCode, isConnected } from '../lib/ghl.mjs'
+import { exchangeCode, isConnected, loadTokens } from '../lib/ghl.mjs'
 
 // Exactly the read scopes the dashboard uses. locations.readonly is the one
 // that works at agency level (to mint sub-account tokens); opportunities +
@@ -26,7 +26,13 @@ export default async (req) => {
   const clientId = process.env.GHL_CLIENT_ID
 
   if (url.searchParams.get('status') === '1') {
-    return new Response(JSON.stringify({ connected: await isConnected().catch(() => false), hasClientId: !!clientId }), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+    const t = await loadTokens().catch(() => null)
+    return new Response(JSON.stringify({
+      connected: !!t, hasClientId: !!clientId,
+      tokenType: t ? (t.userType || 'unknown') : null,
+      hasCompanyId: t ? !!t.companyId : null,
+      companyId: t && t.companyId ? String(t.companyId).slice(0, 6) + '…' : null,
+    }), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
   }
 
   if (!clientId) return page('Not configured', '<p>Set <code>GHL_CLIENT_ID</code> and <code>GHL_CLIENT_SECRET</code> in Netlify, then reload.</p>')
@@ -43,8 +49,12 @@ export default async (req) => {
   const code = url.searchParams.get('code')
   if (code) {
     try {
-      await exchangeCode(code, redirectUri)
-      return page('✅ Caalano Systems connected', '<p>UTM attribution is now live in the dashboard. You can close this tab.</p><p><a style="color:#9b8cff" href="/">Back to dashboard</a></p>')
+      const t = await exchangeCode(code, redirectUri)
+      const isCompany = String(t.userType || '').toLowerCase() === 'company' && !!t.companyId
+      const badge = isCompany
+        ? '<p style="color:#12b886;font-weight:700">✅ Agency (Company) token — this can read every sub-account.</p>'
+        : `<p style="color:#f5a524;font-weight:700">⚠️ This is a <b>${t.userType || 'Location'}</b> token${t.companyId ? '' : ' (no companyId)'} — it can only read ONE sub-account. Re-authorise and pick your <b>Agency</b> (not a single location).</p>`
+      return page('Caalano Systems connected', `${badge}<p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Re-authorise</a> · <a style="color:#9b8cff" href="/">Back to dashboard</a></p>`)
     } catch (e) {
       return page('Connection failed', `<p style="color:#f0435b">${String(e.message || e)}</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Try again</a></p>`)
     }

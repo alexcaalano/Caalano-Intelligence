@@ -1,0 +1,25 @@
+{
+  "note": "Client onboarding + account mapping. Toggling and edits persist in your browser now; with the live API backend these write to the shared store and drive what gets pulled.",
+  "ghlAgencyConnected": false,
+  "clients": [
+    { "id": "ablycalm", "name": "ablycalm", "meta": "2531025873751747", "google": null, "ghl": null, "enabled": true, "deep": false },
+    { "id": "finr-advisory", "name": "Finr Advisory", "meta": "562656435170426", "google": null, "ghl": null, "enabled": true, "deep": false },
+    { "id": "nexia-health", "name": "Nexia Health Care", "meta": "538799668712983", "google": "7742763045", "ghl": null, "enabled": true, "deep": true },
+    { "id": "pool-haus", "name": "Pool Haus", "meta": "722206724104428", "google": "8811208709", "ghl": null, "enabled": true, "deep": false },
+    { "id": "healan-centre", "name": "Healan Centre", "meta": "1332047794857601", "google": "7090212791", "ghl": null, "enabled": true, "deep": false },
+    { "id": "simchat", "name": "Simchat", "meta": "3329764523983981", "google": "2246720300", "ghl": null, "enabled": true, "deep": false },
+    { "id": "swift-emergency", "name": "Swift Emergency", "meta": "1080637839761918", "google": "3884940021", "ghl": null, "enabled": true, "deep": false },
+    { "id": "ido-ido", "name": "IDO IDO", "meta": "1446200046468733", "google": null, "ghl": null, "enabled": true, "deep": false },
+    { "id": "owl-psa", "name": "Owl PSA", "meta": "24559773240339868", "google": null, "ghl": null, "enabled": true, "deep": false },
+    { "id": "psychology-hub", "name": "The Psychology Hub", "meta": "1849212035791025", "google": "6078216945", "ghl": null, "enabled": true, "deep": false },
+    { "id": "a2z", "name": "A2Z", "meta": "3872288763038641", "google": null, "ghl": null, "enabled": true, "deep": false },
+    { "id": "book-a-midwife", "name": "Book a Midwife", "meta": "1234556101481974", "google": null, "ghl": null, "enabled": true, "deep": false },
+    { "id": "rlm-telehealth", "name": "RLM Telehealth", "meta": "1179972323913025", "google": null, "ghl": null, "enabled": true, "deep": false }
+  ],
+  "availableAccounts": {
+    "meta": { "connections": ["mumesh72@gmail.com", "Alex Serrano (9100303526651742)"], "total": 127 },
+    "google": { "connections": ["alex@caalanodigital.com.au"], "total": 31 },
+    "ga4": { "connections": ["marketing@caalanodigital.com.au"], "total": 20 },
+    "ghl": { "connectedLocation": "Caalano Digital HQ (4iJNxErzfROlH5M5akcm)", "agencyTokenConnected": false }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "id": "nexia-health",
+  "period": { "label": "June 2026", "start": "2026-06-01", "end": "2026-06-30" },
+  "meta": {
+    "campaigns": [
+      { "name": "CD_01_Lead Gen_Consultation_ADHD Assessments", "spend": 4556.87, "impressions": 218209, "clicks": 3243, "linkClicks": 1711, "leads": 213 },
+      { "name": "CDc_08_Leads_AlliedHealth_Local_Melb", "spend": 3561.26, "impressions": 110166, "clicks": 1088, "linkClicks": 614, "leads": 57 },
+      { "name": "CDc_06_Impressions", "spend": 150.08, "impressions": 13263, "clicks": 60, "linkClicks": 29, "leads": 0 }
+    ],
+    "adsets": [
+      { "name": "CD_01_Broad_Syd+Melb+Perth", "campaign": "ADHD Assessments", "spend": 3053.14, "impressions": 160116, "clicks": 2073, "leads": 77 },
+      { "name": "CDas_004_Allied Health_MEL_INT_Adv+", "campaign": "Allied Health", "spend": 3391.87, "impressions": 105434, "clicks": 1053, "leads": 57 },
+      { "name": "CD_07_Broad_Low Qualification", "campaign": "ADHD Assessments", "spend": 1126.13, "impressions": 44700, "clicks": 931, "leads": 122 },
+      { "name": "CD_08_Broad_Low Qual With Budget", "campaign": "ADHD Assessments", "spend": 377.60, "impressions": 13393, "clicks": 239, "leads": 14 },
+      { "name": "CDas_005_Allied Health_MEL_Broad_Adv+", "campaign": "Allied Health", "spend": 169.39, "impressions": 4732, "clicks": 35, "leads": 0 },
+      { "name": "CDas_01_Ret_Leads", "campaign": "Impressions", "spend": 150.08, "impressions": 13263, "clicks": 60, "leads": 0 }
+    ],
+    "ads": [
+      { "name": "CDa_047_Img_Text Only_F16", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax7-1.xx.fbcdn.net/v/t45.1600-4/516639599_122258228804024522_7913414738270702268_n.jpg?_nc_cat=105&ccb=1-7&_nc_ohc=fA3oqI25wIIQ7kNvwH_Co1i&_nc_oc=AdqkHoquoXDzPwur_p5rzEMcHwSYky1dVQkqgvmudqEzgP8WnVN5p_rqGIvsSdCBWK0&_nc_zt=1&_nc_ht=scontent-lax7-1.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQB0OgwJHx_LgPriotftW-pNqZYcdDqqAq4QkmE-Z3hL7w&oe=6A5D3658", "spend": 2385.66, "impressions": 136602, "clicks": 1695, "linkClicks": 915, "leads": 58, "videoViews": 0 },
+      { "name": "CDa_057_Vid_Psychiatrists_F18", "type": "Video", "quality": "AVERAGE", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t15.5256-10/581128301_809518275041407_5675683371859873365_n.jpg?_nc_cat=111&ccb=1-7&_nc_ohc=nMR7WDDwtE4Q7kNvwEKam3q&_nc_oc=AdrEPUwih1zeaKlTkUiwVrLFVlazndO-luZEsFndEmp6bL6B8sqSJlqc1w-MQfEpgGs&_nc_zt=23&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=5fad0e&_nc_sid=58080a&oh=00_AQBRbjCcskbImkCc1CkMH9pd-vRjKILcefSOxMwkG0Ja9w&oe=6A5D4242", "spend": 938.24, "impressions": 36541, "clicks": 749, "linkClicks": 384, "leads": 94, "videoViews": 7528 },
+      { "name": "CDa_059_Vid_Waitlists-Dharsh_F15", "type": "Video", "quality": "AVERAGE", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t15.5256-10/588628376_1156517876195555_5304346068002671186_n.jpg?_nc_cat=103&ccb=1-7&_nc_ohc=TBZl0jxDS64Q7kNvwF4tcLl&_nc_oc=AdrG1tY93KNwF7SyaI8aJbcgVOehzOQFoXJdbmLmosN8gwt5NLVvRbihU_NA4WNOjB0&_nc_zt=23&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=5fad0e&_nc_sid=58080a&oh=00_AQCTcVRqd67BIM91P-p98bToD7cYZf8--cciUfrfGZEnSw&oe=6A5D24FB", "spend": 181.95, "impressions": 5174, "clicks": 108, "linkClicks": 54, "leads": 9, "videoViews": 1163 },
+      { "name": "CDa_053_Img_Us v Them_Wait Times_F10", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-1.xx.fbcdn.net/v/t45.1600-4/569380585_122274470168024522_4076016014827716713_n.png?_nc_cat=104&ccb=1-7&_nc_ohc=RBhRln6s6YAQ7kNvwHIwQ9V&_nc_oc=Adow3l9CscvKf1j5TxwAAXnfDIDSlBKylsqZ_KxWeEhxS5WI0N0Mn52qkratcoxU9Ns&_nc_zt=1&_nc_ht=scontent-lax3-1.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQBhFVStTePcZknGkXRrwobvyZucHdpz3VERU19z1YLGDA&oe=6A5D2838", "spend": 165.52, "impressions": 7908, "clicks": 91, "linkClicks": 53, "leads": 5, "videoViews": 0 },
+      { "name": "CDa_045_Img_Video Call White_F18", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t45.1600-4/517925680_122258227664024522_6332950354658384133_n.jpg?_nc_cat=100&ccb=1-7&_nc_ohc=KUah1r_YMFIQ7kNvwHSUDgF&_nc_oc=Ador-tLdVrDJ6tjcosvoMcz0O5zIAY6h7n3ZRymdIJnG174rgIjbJVepGipkKpTH04c&_nc_zt=1&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=MP7ks5upQh_f69TDaszwMA&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQBBs2PtOExscKMxGBtfW-IeygvlyutGciBv4jalFH6cug&oe=6A5D232E", "spend": 139.52, "impressions": 6373, "clicks": 137, "linkClicks": 82, "leads": 24, "videoViews": 0 },
+      { "name": "CD_01_Single_Video_Dharshini_Don't Wait 18 Months_F10", "type": "Video", "quality": "AVERAGE", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t15.13418-10/460903227_1716345728936679_2314774841313722131_n.jpg?_nc_cat=100&ccb=1-7&_nc_ohc=i9a3_SKQoiwQ7kNvwEnYfE7&_nc_oc=Adr24mIRc3AbTOvQ5dIVDPVCjEEiVSo9BBIUWbQD5RsIMXTbaCZdUUR6gMoW8LUPuFM&_nc_zt=23&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=aaa768&_nc_sid=58080a&oh=00_AQD2Gzs9lM8QFI6TqvhauwPI82ZwVV5CWUjn1pCxDxm9yQ&oe=6A5D38CE", "spend": 111.49, "impressions": 3967, "clicks": 74, "linkClicks": 37, "leads": 3, "videoViews": 1082 },
+      { "name": "CDa_044_Img_Young Guy On Phone_F10", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t45.1600-4/516561048_122258227472024522_197589833834503253_n.jpg?_nc_cat=107&ccb=1-7&_nc_ohc=HMw3PquoWuUQ7kNvwEi91Yq&_nc_oc=AdowCATJ2sc0dwQrpmbUooEzqbg2VeCQGYc1RQy_J8khDqaiYJOAlXWLVIayTBEaijg&_nc_zt=1&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQDS7KO4CuSy-gHOgfpgyn30YL973GDrq-Fh-sBEy_RNyQ&oe=6A5D398B", "spend": 112.17, "impressions": 3376, "clicks": 61, "linkClicks": 29, "leads": 2, "videoViews": 0 },
+      { "name": "CDa_042_Vid_TrustBuilder_Bella", "type": "Video", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-1.xx.fbcdn.net/v/t15.13418-10/481070771_1549471275718629_3146225212380798423_n.jpg?_nc_cat=109&ccb=1-7&_nc_ohc=DzcaydT8QwkQ7kNvwFxKYwB&_nc_oc=AdrqaG-gZIZIeCRkiYR8E51BEjZ3OcytAKZSScY9nGR2UivmGwBI6zgLYUg2tNaoNtM&_nc_zt=23&_nc_ht=scontent-lax3-1.xx&edm=AOgd6ZUEAAAA&_nc_gid=MP7ks5upQh_f69TDaszwMA&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=c3b633&_nc_sid=58080a&oh=00_AQCXoa5v-FKUOQh9twkC6R0DoSrSdoat-OHOWGOOxMVx-w&oe=6A5D1F9C", "spend": 106.75, "impressions": 8815, "clicks": 43, "linkClicks": 17, "leads": 0, "videoViews": 728 },
+      { "name": "CD_061_Img_Allied Health_Occupational Therapy_F13", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t45.1600-4/622060262_25627015906963216_2065488179375687195_n.png?_nc_cat=106&ccb=1-7&_nc_ohc=qLp4j1jvPbEQ7kNvwE2aLjk&_nc_oc=Adr5mecsI7J5SjcvJpMBP0CBVPqeVAH85VR-RUcCY3kbAqxhu3hIvBbuIDYXPMzo_ME&_nc_zt=1&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=MP7ks5upQh_f69TDaszwMA&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQBClCXi81TBBeUQTd1IlSjjzBs0dXuJVjX74sZt7Y3CMA&oe=6A5D28D8", "spend": 96.08, "impressions": 2397, "clicks": 30, "linkClicks": 11, "leads": 2, "videoViews": 0 },
+      { "name": "CD_059_Img_Allied Health_Occupational Therapy_F13", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t45.1600-4/621611448_25625688333762640_6352117916944291670_n.png?_nc_cat=100&ccb=1-7&_nc_ohc=DBvpqsdR4A0Q7kNvwHfpEj5&_nc_oc=AdrR9MHoEYRr8WIVgE92d8mcjLrBn-c8rVoAaUMSWYU9yZ19wDDiSrBbsjDHSJOjREI&_nc_zt=1&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=MP7ks5upQh_f69TDaszwMA&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQAq1TyATheZYj6r6GdwaOUOnxZT7Xp318TbXNEW805ang&oe=6A5D32F9", "spend": 71.38, "impressions": 1832, "clicks": 16, "linkClicks": 7, "leads": 0, "videoViews": 0 },
+      { "name": "CDa_055_Img_Allied Health_Speech Girl_F13", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-1.xx.fbcdn.net/v/t45.1600-4/513713229_122256517820024522_2088950165522436664_n.jpg?_nc_cat=109&ccb=1-7&_nc_ohc=ERI0KFVJQQ4Q7kNvwEQRPQO&_nc_oc=AdoGhbfjFQ2XlVPHYet-uYxONs_TRE8JBma976qlkCaMlqaTiqBxea_uk2GsVPQwU5s&_nc_zt=1&_nc_ht=scontent-lax3-1.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQDRulu9JLMhxxtStd_DEiQCdo_Am2pNyeL6jNCuvGUtRg&oe=6A5D284A", "spend": 61.92, "impressions": 1278, "clicks": 13, "linkClicks": 5, "leads": 1, "videoViews": 0 },
+      { "name": "CDa_053a_Img_Allied Health_iPad_F13", "type": "Image", "quality": "UNKNOWN", "thumb": "https://scontent-lax3-2.xx.fbcdn.net/v/t45.1600-4/496939821_122247932690024522_3291181273359999509_n.jpg?_nc_cat=107&ccb=1-7&_nc_ohc=wrcIICQFfucQ7kNvwEnzaEr&_nc_oc=Ado6FH1N-U_j0uBgwksoQ1xD1MNfZ1LUPysJss9DcCsdGWeUYLMceMnFD8cYMZqOkbc&_nc_zt=1&_nc_ht=scontent-lax3-2.xx&edm=AOgd6ZUEAAAA&_nc_gid=7-MLY8sfrquM-lR_ZF7obQ&stp=c0.5000x0.5000f_dst-emg0_p64x64_q75_tt6&ur=52f3c4&_nc_sid=58080a&oh=00_AQD8Ms286ihiwbPceDoizJ8Tc-Xfo_jbsegXIPBZ-n2Rzw&oe=6A5D1255", "spend": 69.06, "impressions": 1730, "clicks": 18, "linkClicks": 8, "leads": 0, "videoViews": 0 }
+    ]
+  },
+  "google": {
+    "campaigns": [
+      { "name": "CD_01_Search_ADHD_&_ASD_Melbourne", "status": "Enabled", "cost": 2727.00, "impressions": 11926, "clicks": 772, "conversions": 80.0 },
+      { "name": "CD_04_AlliedHealth_Melbourne", "status": "Enabled", "cost": 1557.62, "impressions": 4879, "clicks": 141, "conversions": 10.0 },
+      { "name": "CD_06_Search_ADHD_&_ASD_National", "status": "Enabled", "cost": 1197.15, "impressions": 5258, "clicks": 333, "conversions": 40.0 },
+      { "name": "CD_03_Brand_Impression_Share", "status": "Enabled", "cost": 147.13, "impressions": 859, "clicks": 179, "conversions": 15.0 }
+    ],
+    "adGroups": [
+      { "name": "ADHD Melbourne", "cost": 1338.38, "impressions": 6567, "clicks": 369, "conversions": 39.71 },
+      { "name": "ADHD_National", "cost": 1189.61, "impressions": 5217, "clicks": 330, "conversions": 40.0 },
+      { "name": "Occupational Therapy", "cost": 947.17, "impressions": 2751, "clicks": 79, "conversions": 6.0 },
+      { "name": "ADHD Psychiatry Melbourne", "cost": 920.05, "impressions": 3575, "clicks": 269, "conversions": 22.91 },
+      { "name": "Speech Pathology", "cost": 610.44, "impressions": 2128, "clicks": 62, "conversions": 4.0 },
+      { "name": "ASD Melbourne", "cost": 263.80, "impressions": 1421, "clicks": 68, "conversions": 7.0 },
+      { "name": "Brand_Exact", "cost": 147.13, "impressions": 859, "clicks": 179, "conversions": 15.0 },
+      { "name": "Brand Melbourne", "cost": 204.76, "impressions": 363, "clicks": 66, "conversions": 10.39 },
+      { "name": "ASD_National", "cost": 7.54, "impressions": 41, "clicks": 3, "conversions": 0.0 }
+    ],
+    "keywords": [
+      { "text": "adhd", "match": "Broad", "cost": 966.99, "impressions": 4270, "clicks": 272, "conversions": 28.0, "qs": 5 },
+      { "text": "psychiatrist melbourne", "match": "Broad", "cost": 70.66, "impressions": 552, "clicks": 23, "conversions": 1.5, "qs": 1 },
+      { "text": "adhd psychiatrist", "match": "Broad", "cost": 65.17, "impressions": 248, "clicks": 17, "conversions": 0.21, "qs": 6 },
+      { "text": "adhd diagnosis", "match": "Broad", "cost": 37.49, "impressions": 109, "clicks": 5, "conversions": 1.0, "qs": 7 },
+      { "text": "adhd clinic", "match": "Broad", "cost": 37.05, "impressions": 160, "clicks": 8, "conversions": 2.0, "qs": 4 },
+      { "text": "adhd clinic melbourne", "match": "Broad", "cost": 33.79, "impressions": 93, "clicks": 4, "conversions": 0.0, "qs": 6 },
+      { "text": "psychiatrist adhd", "match": "Phrase", "cost": 22.68, "impressions": 42, "clicks": 5, "conversions": 1.0, "qs": 4 },
+      { "text": "adhd assessment melbourne", "match": "Phrase", "cost": 20.91, "impressions": 118, "clicks": 6, "conversions": 2.0, "qs": 7 },
+      { "text": "asd", "match": "Broad", "cost": 19.82, "impressions": 225, "clicks": 8, "conversions": 0.0, "qs": 5 },
+      { "text": "adhd testing", "match": "Broad", "cost": 15.0, "impressions": 104, "clicks": 5, "conversions": 1.0, "qs": 6 },
+      { "text": "doctor for adhd", "match": "Broad", "cost": 10.69, "impressions": 144, "clicks": 5, "conversions": 1.0, "qs": 5 },
+      { "text": "adhd melbourne", "match": "Broad", "cost": 9.33, "impressions": 127, "clicks": 4, "conversions": 0.0, "qs": 5 },
+      { "text": "adhd diagnosis online", "match": "Broad", "cost": 6.30, "impressions": 72, "clicks": 3, "conversions": 1.0, "qs": 6 },
+      { "text": "adhd psychologist melbourne", "match": "Broad", "cost": 0.0, "impressions": 46, "clicks": 0, "conversions": 0.0, "qs": 2 }
+    ],
+    "matchTypes": [
+      { "type": "Broad", "cost": 1305.24, "clicks": 372, "conversions": 37.7 },
+      { "type": "Phrase", "cost": 50.81, "clicks": 18, "conversions": 3.0 },
+      { "type": "Exact", "cost": 1.01, "clicks": 1, "conversions": 0.0 }
+    ],
+    "matchTypeNote": "Aggregated from the top keywords by spend; Broad match carries almost all spend.",
+    "searchTermsTotal": 3818,
+    "keywordsTotal": 152
+  }
+}

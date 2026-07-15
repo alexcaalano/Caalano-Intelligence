@@ -226,6 +226,15 @@ export async function buildAttribution(locationId, from, to) {
   }
   // split opportunities by paid channel for the Caalano360 toggle
   const buckets = { meta: [], google: [], other: [] }
+  // per-source drill-down: where each source's cohort ended up (pipeline stage,
+  // status) plus its medium / campaign / creative breakdown.
+  const srcDetail = new Map()
+  const sd = (keyRaw) => {
+    const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
+    let e = srcDetail.get(key)
+    if (!e) { e = { medium: new Map(), campaign: new Map(), content: new Map(), stages: new Map(), status: { won: 0, lost: 0, abandoned: 0, open: 0 } }; srcDetail.set(key, e) }
+    return e
+  }
   let attributed = 0
   for (const o of opps) {
     const u = utmOf(o)
@@ -237,11 +246,33 @@ export async function buildAttribution(locationId, from, to) {
     bump(dim.campaign, u.campaign, o, pi)
     bump(dim.content, u.content, o, pi)
     bump(dim.term, u.term, o, pi)
+    // per-source cohort detail
+    const det = sd(u.source)
+    const st = String(o.status || '').toLowerCase()
+    if (st === 'won') det.status.won++; else if (st === 'lost') det.status.lost++; else if (st === 'abandoned') det.status.abandoned++; else det.status.open++
+    const stg = pi ? pi.byId[o.pipelineStageId] : null
+    const sname = stg ? stg.name : 'Unknown'; const spos = stg ? stg.pos : 999
+    const se = det.stages.get(sname) || { name: sname, pos: spos, count: 0 }; se.count++; se.pos = Math.min(se.pos, spos); det.stages.set(sname, se)
+    bump(det.medium, u.medium, o, pi)
+    bump(det.campaign, u.campaign, o, pi)
+    bump(det.content, u.content, o, pi)
   }
   const top = (map, n = 40) => [...map.values()].sort((a, b) => b.leads - a.leads).slice(0, n)
+  const bySource = top(dim.source).map((r) => {
+    const det = srcDetail.get(r.name)
+    if (!det) return r
+    return {
+      ...r,
+      detail: {
+        stages: [...det.stages.values()].sort((a, b) => a.pos - b.pos),
+        status: det.status,
+        byMedium: top(det.medium, 20), byCampaign: top(det.campaign, 20), byCreative: top(det.content, 20),
+      },
+    }
+  })
   return {
     connected: true, opps: opps.length, attributed,
-    bySource: top(dim.source), byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
+    bySource, byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
     channels: {
       all: rollupSubset(opps, idx, reasonName),
       meta: rollupSubset(buckets.meta, idx, reasonName),

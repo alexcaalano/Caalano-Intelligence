@@ -814,14 +814,56 @@ function useAttribution(clientId, range, nonce = 0) {
 }
 // classify a UTM source string into a paid channel (mirror of the backend)
 const chanOfSource = (name) => { const s = String(name || '').toLowerCase(); if (/(facebook|instagram|\bfb\b|\bmeta\b|\big\b|fbclid|fb_|ig_)/.test(s)) return 'meta'; if (/(google|adwords|youtube|\bgdn\b|gclid|goog)/.test(s)) return 'google'; return 'other' }
-function UtmTable({ label, first, rows, currency }) {
+function MiniDimTable({ rows, currency }) {
+  if (!rows || !rows.length) return <p className="cap" style={{ margin: '2px 0' }}>—</p>
+  const money = (v) => fmtCurrency(v, currency)
+  return <div className="mini-scroll" style={{ maxHeight: 180 }}><table className="mini-table mt4"><thead><tr><th>Name</th><th>Leads</th><th>Won</th><th>Rev</th></tr></thead>
+    <tbody>{rows.map((r) => (<tr key={r.name}><td className="ca-name" title={r.name}><span>{r.name}</span></td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.won)}</td><td>{r.revenue ? money(r.revenue) : '—'}</td></tr>))}</tbody></table></div>
+}
+// Cohort drill-down for one UTM source: where they ended up + sub-breakdowns.
+function UtmSourceDetail({ d, currency }) {
+  if (!d) return <span className="cap">No breakdown captured for this source.</span>
+  const st = d.status || {}
+  const smax = Math.max(1, ...(d.stages || []).map((s) => s.count))
+  return (
+    <div className="utm-detail">
+      <div className="utm-detail-col">
+        <div className="mini-cap">Where this cohort is now</div>
+        <div className="status-chips">
+          <span className="sch won">Won {fmtNumber(st.won || 0)}</span>
+          <span className="sch open">Open {fmtNumber(st.open || 0)}</span>
+          <span className="sch lost">Lost {fmtNumber(st.lost || 0)}</span>
+          <span className="sch ab">Abandoned {fmtNumber(st.abandoned || 0)}</span>
+        </div>
+        <div className="mini-cap" style={{ marginTop: 12 }}>By pipeline stage</div>
+        {(d.stages || []).length ? (d.stages || []).map((s) => (
+          <div className="loc-row" key={s.name}><span className="loc-nm" title={s.name}>{s.name}</span><span className="loc-bar"><span className="loc-fill" style={{ width: `${(s.count / smax) * 100}%` }} /></span><span className="loc-ct">{fmtNumber(s.count)}</span></div>
+        )) : <p className="cap">—</p>}
+      </div>
+      <div className="utm-detail-col">
+        <div className="mini-cap">By medium</div>
+        <MiniDimTable rows={d.byMedium} currency={currency} />
+        <div className="mini-cap" style={{ marginTop: 12 }}>By campaign</div>
+        <MiniDimTable rows={d.byCampaign} currency={currency} />
+      </div>
+      <div className="utm-detail-col">
+        <div className="mini-cap">By creative (utm_content)</div>
+        <MiniDimTable rows={d.byCreative} currency={currency} />
+      </div>
+    </div>
+  )
+}
+function UtmTable({ label, first, rows, currency, renderDetail }) {
   const [s, on] = useSort('leads')
+  const [open, setOpen] = useState(null)
   const money = (v) => fmtCurrency(v, currency)
   const hasSpend = rows.some((r) => r.spend != null)
+  const clickable = !!renderDetail
   const withCalc = rows.map((r) => ({ ...r, l2w: rate(r.won, r.leads) }))
+  const colCount = 7 + (hasSpend ? 2 : 0)
   return (
     <div>
-      <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>{label}</div>
+      <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>{label}{clickable ? <span className="sub"> · click a row to drill into that cohort</span> : null}</div>
       <div className="table-wrap"><table><thead><tr>
         <SortTh k="name" sort={s} on={on}>{first}</SortTh>
         <SortTh k="leads" sort={s} on={on}>Leads</SortTh>
@@ -833,13 +875,19 @@ function UtmTable({ label, first, rows, currency }) {
         {hasSpend && <SortTh k="roas" sort={s} on={on}>ROAS</SortTh>}
         <SortTh k="l2w" sort={s} on={on}>Lead→Won</SortTh>
       </tr></thead>
-        <tbody>{sortRows(withCalc, s).map((r) => (<tr key={r.name}>
-          <td>{r.name}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.shown)}</td><td>{fmtNumber(r.won)}</td>
-          {hasSpend && <td>{r.cWon != null ? money(r.cWon) : '—'}</td>}
-          <td>{money(r.revenue)}</td>
-          {hasSpend && <td>{r.roas != null ? `${r.roas.toFixed(2)}×` : '—'}</td>}
-          <td>{fmtPct(r.l2w, 1)}</td>
-        </tr>))}</tbody></table></div>
+        <tbody>{sortRows(withCalc, s).map((r) => (
+          <React.Fragment key={r.name}>
+            <tr className={open === r.name ? 'row-sel' : ''} style={{ cursor: clickable ? 'pointer' : 'default' }} onClick={() => clickable && setOpen(open === r.name ? null : r.name)}>
+              <td>{clickable ? <span className="drill-tw">{open === r.name ? '▾' : '▸'} {r.name}</span> : r.name}</td>
+              <td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.shown)}</td><td>{fmtNumber(r.won)}</td>
+              {hasSpend && <td>{r.cWon != null ? money(r.cWon) : '—'}</td>}
+              <td>{money(r.revenue)}</td>
+              {hasSpend && <td>{r.roas != null ? `${r.roas.toFixed(2)}×` : '—'}</td>}
+              <td>{fmtPct(r.l2w, 1)}</td>
+            </tr>
+            {clickable && open === r.name && <tr className="sub-row"><td colSpan={colCount}>{renderDetail(r)}</td></tr>}
+          </React.Fragment>
+        ))}</tbody></table></div>
     </div>
   )
 }
@@ -863,7 +911,7 @@ function UtmSection({ attr, currency, paid }) {
   return (
     <>
       <div className="lvl-title">UTM attribution <span className="sub">· first-touch · {fmtNumber(a.attributed)} of {fmtNumber(a.opps)} opportunities tagged</span></div>
-      <UtmTable label="By source" first="Source" rows={srcRows} currency={currency} />
+      <UtmTable label="By source" first="Source" rows={srcRows} currency={currency} renderDetail={(r) => <UtmSourceDetail d={r.detail} currency={currency} />} />
       {a.byCampaign && a.byCampaign.length ? <UtmTable label="By campaign" first="Campaign" rows={a.byCampaign} currency={currency} /> : null}
       {a.byCreative && a.byCreative.length ? <UtmTable label="By creative (utm_content)" first="Creative" rows={a.byCreative} currency={currency} /> : null}
       <p className="caveat">First-touch UTMs from Caalano Systems attribution, mapped to down-funnel outcomes. "(not set)" = no UTM captured (direct / organic / untagged link). Cost/Won &amp; ROAS on By source attribute each channel's ad spend across its sources by lead share.</p>

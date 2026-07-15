@@ -404,6 +404,19 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .tr-d { font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
 .tr-d.up { color: var(--pos); } .tr-d.down { color: var(--neg); } .tr-d.flat { color: var(--faint); font-weight: 500; }
 
+/* UTM by-source cohort drill-down */
+.drill-tw { font-weight: 600; }
+.mini-table.mt4 td + td, .mini-table.mt4 th + th { text-align: right; }
+.utm-detail { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 18px; padding: 4px 2px 6px; text-align: left; white-space: normal; }
+@media (max-width: 900px) { .utm-detail { grid-template-columns: 1fr; } }
+.utm-detail-col { min-width: 0; }
+.status-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sch { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 7px; }
+.sch.won { color: var(--pos); background: rgba(23,178,106,.14); }
+.sch.open { color: #a9c0ff; background: rgba(79,124,255,.16); }
+.sch.lost { color: var(--neg); background: rgba(240,67,91,.14); }
+.sch.ab { color: var(--warn); background: rgba(245,165,36,.14); }
+
 /* Refresh button */
 .refresh-btn { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); border-radius: 10px; padding: 9px 14px; font-size: 12.5px; font-weight: 650; cursor: pointer; white-space: nowrap; }
 .refresh-btn:hover { background: var(--brand); color: #fff; border-color: var(--brand); }

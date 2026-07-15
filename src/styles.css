@@ -103,7 +103,9 @@ body {
 .section-title { font-size: 14px; font-weight: 700; margin: 26px 2px 13px; display: flex; align-items: baseline; gap: 9px; }
 .section-title .sub { font-size: 12px; color: var(--muted); font-weight: 500; }
 
-.two { grid-template-columns: 1.5fr 1fr; align-items: start; }
+.two { grid-template-columns: 1.5fr 1fr; align-items: stretch; }
+.grid.two > .card { display: flex; flex-direction: column; }
+.grid.two > .chart-card .funnel { margin-bottom: auto; }
 @media (max-width: 880px) { .two { grid-template-columns: 1fr; } }
 .chart-card h3 { margin: 0 0 3px; font-size: 14px; }
 .chart-card .cap { margin: 0 0 13px; font-size: 12px; color: var(--muted); }

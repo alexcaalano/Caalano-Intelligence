@@ -124,7 +124,9 @@ async function pipelineStageIndex(locTok, locationId) {
 function utmOf(opp) {
   const atts = Array.isArray(opp.attributions) ? opp.attributions : []
   const a = atts.find((x) => x.isFirst) || atts[0] || {}
-  const source = a.utmSource || a.utm_source || a.utmSessionSource || a.sessionSource || null
+  // Prefer session source (first-touch channel the visitor arrived from) over
+  // the utm_source tag, per the Caalano360 attribution model.
+  const source = a.utmSessionSource || a.sessionSource || a.utmSource || a.utm_source || null
   const medium = a.utmMedium || a.utm_medium || a.medium || null
   const campaign = a.utmCampaign || a.utm_campaign || a.campaign || null
   const content = a.utmContent || a.utm_content || null

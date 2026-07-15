@@ -234,9 +234,13 @@ function TrendCell({ label, value, cur, prev, goodWhenDown = true }) {
   )
 }
 function ClientTrend({ row, tr, currency, onPick }) {
-  const both = row.hasMeta && row.hasGoogle
-  const [chan, setChan] = useState('blended')
-  const eff = both ? chan : (row.hasMeta ? 'meta' : 'google')
+  // Channels this client runs, plus a blended view when they run both. Shown as
+  // a toggle so Google-only (and Meta-only) clients can still filter to theirs.
+  const chanOpts = [['blended', 'Blended']]
+  if (row.hasMeta) chanOpts.push(['meta', 'Meta'])
+  if (row.hasGoogle) chanOpts.push(['google', 'Google'])
+  const [chan, setChan] = useState(row.hasMeta && row.hasGoogle ? 'blended' : row.hasGoogle ? 'google' : 'meta')
+  const eff = chan
   const money = (v) => fmtCurrency(v, currency)
   const wins = tr.windows || []
   const resultLabel = eff === 'google' ? 'Cost / Conversion' : eff === 'meta' ? 'Cost / Lead' : 'Cost / Result (blended)'
@@ -244,11 +248,13 @@ function ClientTrend({ row, tr, currency, onPick }) {
     <div className="card tr-card">
       <div className="tr-head">
         <button className="tr-name" onClick={() => onPick(row.c)} title="Open client workspace">{row.name} <span className="tr-open">↗</span></button>
-        {both && <div className="chan-toggle sm">{[['blended', 'Blended'], ['meta', 'Meta'], ['google', 'Google']].map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
+        {chanOpts.length > 1 && <div className="chan-toggle sm">{chanOpts.map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
       </div>
       <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period</span></div>
       <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '—'} cur={cpl} prev={cplP} /> })}</div>
       {row.hasCrm && <>
+        <div className="tr-row-lab">Booked Calls <span className="sub">· count · vs previous equal period</span></div>
+        <div className="tr-grid">{wins.map((w) => <TrendCell key={w.n} label={WLABEL[w.n]} value={fmtNumber(w.booked)} cur={w.booked} prev={w.bookedPrev} goodWhenDown={false} />)}</div>
         <div className="tr-row-lab">Cost / Booked Call <span className="sub">· {eff === 'blended' ? 'total' : eff} spend ÷ booked calls</span></div>
         <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpb = w.booked ? d.spend / w.booked : null; const cpbP = w.bookedPrev ? d.spendPrev / w.bookedPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpb != null ? money(cpb) : '—'} cur={cpb} prev={cpbP} /> })}</div>
       </>}

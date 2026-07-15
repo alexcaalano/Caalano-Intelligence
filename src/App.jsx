@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ComposedChart, ReferenceLine,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ComposedChart, ReferenceLine, LabelList,
 } from 'recharts'
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
@@ -296,7 +296,9 @@ function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, c
         <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
         <Tooltip formatter={(v, n) => (n === countName ? fmtNumber(v) : fmtCurrency(v, currency))} />
         <Legend />
-        <Bar yAxisId="r" dataKey={countKey} name={countName} fill={countColor || '#bcd0ff'} radius={[3, 3, 0, 0]} maxBarSize={42} />
+        <Bar yAxisId="r" dataKey={countKey} name={countName} fill={countColor || '#bcd0ff'} radius={[3, 3, 0, 0]} maxBarSize={42}>
+          <LabelList dataKey={countKey} position="insideTop" fill="var(--text)" fontSize={10} fontWeight={700} formatter={(v) => (v ? fmtNumber(v) : '')} />
+        </Bar>
         <Line yAxisId="l" type="monotone" dataKey={costKey} name={costName} stroke={costColor || '#4f7cff'} strokeWidth={2.5} dot={{ r: 3 }} />
         {kpi != null && kpi > 0 && <ReferenceLine yAxisId="l" y={kpi} stroke="var(--text)" strokeDasharray="5 4" label={{ value: `KPI ${fmtCurrency(kpi, currency)}`, fontSize: 10, fill: 'var(--muted)', position: 'insideTopRight' }} />}
       </ComposedChart>
@@ -387,16 +389,24 @@ function WeeklyTab({ rows, currency, nonce }) {
                         <Line yAxisId="l" type="monotone" dataKey="showRate" name="Show rate" stroke="#8fcabe" strokeWidth={2.5} dot={{ r: 3 }} />
                       </ComposedChart></ResponsiveContainer>
                     </div>
-                    <div className="card chart-card"><h3>Clients Won</h3><p className="cap">Won value (bars) &amp; cost per acquisition (line) by week</p>
-                      <WkDual data={W} costKey="cpa" costName="CPA" countKey="wonValue" countName="Value" kpi={Number(kpis.cpa) || null} currency={currency} costColor="#6d5efc" countColor="#c9c1ff" />
+                    <div className="card chart-card"><h3>Clients Won</h3><p className="cap">Wins (bars) with won value labelled &amp; cost per acquisition (line) by week</p>
+                      <ResponsiveContainer width="100%" height={240}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 16 }}>
+                        <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} /><YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v, nm) => (nm === 'Wins' ? fmtNumber(v) : fmtCurrency(v, currency))} /><Legend />
+                        <Bar yAxisId="r" dataKey="won" name="Wins" fill="#c9c1ff" radius={[3, 3, 0, 0]} maxBarSize={42}>
+                          <LabelList dataKey="won" position="insideTop" fill="var(--text)" fontSize={10} fontWeight={700} formatter={(v) => (v ? fmtNumber(v) : '')} />
+                          <LabelList dataKey="wonValue" position="top" fill="var(--muted)" fontSize={9.5} formatter={(v) => (v ? '$' + fmtCompact(v) : '')} />
+                        </Bar>
+                        <Line yAxisId="l" type="monotone" dataKey="cpa" name="CPA" stroke="#6d5efc" strokeWidth={2.5} dot={{ r: 3 }} />
+                        {Number(kpis.cpa) > 0 && <ReferenceLine yAxisId="l" y={Number(kpis.cpa)} stroke="var(--text)" strokeDasharray="5 4" label={{ value: `KPI ${money(kpis.cpa)}`, fontSize: 10, fill: 'var(--muted)', position: 'insideTopRight' }} />}
+                      </ComposedChart></ResponsiveContainer>
                     </div>
                     <div className="card chart-card"><h3>Funnel</h3><p className="cap">Leads → Appt's → Shown → Won by week</p>
-                      <ResponsiveContainer width="100%" height={240}><BarChart data={W} margin={{ left: -6, right: 6, top: 10 }}>
+                      <ResponsiveContainer width="100%" height={240}><BarChart data={W} margin={{ left: -6, right: 6, top: 14 }}>
                         <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip /><Legend />
-                        <Bar dataKey="leads" name="Leads" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={16} />
-                        <Bar dataKey="booked" name="Appt's" fill="#b0325f" radius={[3, 3, 0, 0]} maxBarSize={16} />
-                        <Bar dataKey="shown" name="Shown" fill="#2f8f83" radius={[3, 3, 0, 0]} maxBarSize={16} />
-                        <Bar dataKey="won" name="Won" fill="#6d5efc" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                        <Bar dataKey="leads" name="Leads" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={20}><LabelList dataKey="leads" position="top" fill="var(--muted)" fontSize={9.5} formatter={(v) => (v ? fmtNumber(v) : '')} /></Bar>
+                        <Bar dataKey="booked" name="Appt's" fill="#b0325f" radius={[3, 3, 0, 0]} maxBarSize={20}><LabelList dataKey="booked" position="top" fill="var(--muted)" fontSize={9.5} formatter={(v) => (v ? fmtNumber(v) : '')} /></Bar>
+                        <Bar dataKey="shown" name="Shown" fill="#2f8f83" radius={[3, 3, 0, 0]} maxBarSize={20}><LabelList dataKey="shown" position="top" fill="var(--muted)" fontSize={9.5} formatter={(v) => (v ? fmtNumber(v) : '')} /></Bar>
+                        <Bar dataKey="won" name="Won" fill="#6d5efc" radius={[3, 3, 0, 0]} maxBarSize={20}><LabelList dataKey="won" position="top" fill="var(--muted)" fontSize={9.5} formatter={(v) => (v ? fmtNumber(v) : '')} /></Bar>
                       </BarChart></ResponsiveContainer>
                     </div>
                   </>}

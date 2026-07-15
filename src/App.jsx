@@ -763,22 +763,6 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           </div>
         </div>
       </div>
-      {camps.length > 0 && <div className="card" style={{ marginTop: 14 }}>
-        <div className="link-head">
-          <div><h3 style={{ margin: 0, fontSize: 15 }}>{pid === 'all' ? 'Campaigns' : 'Attributed campaigns'} <span className="cap" style={{ fontWeight: 400 }}>· {attr.campaigns.length} feeding {pid === 'all' ? 'the account' : 'this pipeline'}</span></h3></div>
-          {multi && <span className="cap">Edit links in Settings ⚙</span>}
-        </div>
-        <div className="camp-list">
-          {attr.campaigns.map((cc) => (
-            <div className="camp-row" key={cc.source + cc.name}>
-              {srcBadge(cc.source)}
-              <span className="camp-nm" title={cc.name}>{cc.name}</span>
-              <span className="camp-sp">{money(cc.spend)}</span>
-              <span className="camp-tgt">{cc.target === 'all' ? 'All pipelines' : (pipes.find((x) => x.id === cc.target)?.name || '—')}</span>
-            </div>
-          ))}
-        </div>
-      </div>}
       {b.hasCrm && <UtmSection attr={utmAttr} currency={currency} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>
@@ -830,9 +814,9 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
     let alive = true
     setState({ status: 'loading', data: null })
     fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((r) => r.json().catch(() => ({ error: `Server returned HTTP ${r.status} (the pull may have timed out).` })))
       .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j || null }) })
-      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: { error: 'Network error reaching the data function.' } }) })
     return () => { alive = false }
   }, [clientId, channel, q, nonce])
   return state

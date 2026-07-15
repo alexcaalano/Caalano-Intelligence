@@ -425,12 +425,13 @@ export default async (req) => {
     if (!c.ghl) return json({ error: `no Caalano Systems account for ${client}` }, 404)
     if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
     try {
-      const crm = await buildCrm(c.ghl, from, to)
-      try {
-        const users = await windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(c.ghl)))
-        const uName = {}; for (const u of users) if (u.user_id) uName[u.user_id] = u.user_name
-        crm.byUser = crm.byUser.map((r) => ({ ...r, name: uName[r.id] || (r.id === 'unassigned' ? 'Unassigned' : 'User ' + String(r.id).slice(-4)) }))
-      } catch { crm.byUser = crm.byUser.map((r) => ({ ...r, name: r.id === 'unassigned' ? 'Unassigned' : 'User ' + String(r.id).slice(-4) })) }
+      // Pull CRM + the Windsor user-name lookup in parallel to shave latency.
+      const [crm, usersRows] = await Promise.all([
+        buildCrm(c.ghl, from, to),
+        windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(c.ghl))).catch(() => []),
+      ])
+      const uName = {}; for (const u of usersRows) if (u.user_id) uName[u.user_id] = u.user_name
+      crm.byUser = crm.byUser.map((r) => ({ ...r, name: uName[r.id] || (r.id === 'unassigned' ? 'Unassigned' : 'User ' + String(r.id).slice(-4)) }))
       return json({ client, channel, period: { from, to, preset }, crm }, 200, true)
     } catch (e) { return json({ connected: true, error: String(e.message || e) }, 502) }
   }

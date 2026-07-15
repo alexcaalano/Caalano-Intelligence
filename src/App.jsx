@@ -570,16 +570,20 @@ function OverallTab({ client, currency, side }) {
 /* ============ CRM — live from GoHighLevel (Caalano Systems) ============ */
 function CrmGhl({ crm, currency, clientId }) {
   const kpis = loadKpis(clientId)
-  const t = crm.totals
   const pipes = crm.pipelines || []
   const [pid, setPid] = useState(pipes.length === 1 ? pipes[0].id : 'all')
   const [openUser, setOpenUser] = useState(null)
   const [uSort, onUSort] = useSort('won')
   const money = (v) => fmtCurrency(v, currency)
   const pipe = pid === 'all' ? null : pipes.find((p) => p.id === pid)
+  // Every scorecard / breakdown pivots to the selected pipeline.
+  const t = pipe ? pipe.totals : crm.totals
+  const lostReasons = pipe ? (pipe.lostReasons || []) : (crm.lostReasons || [])
+  const lostByStage = pipe ? (pipe.lostByStage || []) : (crm.lostByStage || [])
+  const byUser = pipe ? (pipe.byUser || []) : (crm.byUser || [])
   const stages = pipe ? pipe.stages : (pipes.length === 1 ? pipes[0].stages : null)
   const stageMax = stages ? Math.max(1, ...stages.map((s) => s.count)) : 1
-  const lostMax = Math.max(1, ...(crm.lostByStage || []).map((s) => s.count))
+  const lostMax = Math.max(1, ...lostByStage.map((s) => s.count))
   return (
     <>
       <div className="scorecard">
@@ -595,54 +599,65 @@ function CrmGhl({ crm, currency, clientId }) {
         <Sc label="Avg Days to Won" value={t.avgDaysToWon != null ? `${t.avgDaysToWon}d` : '—'} />
       </div>
       <div className="c360-head">
-        <div className="section-title" style={{ margin: 0 }}>Pipeline stages <span className="sub">· opportunities by stage, first to last</span></div>
+        <div className="section-title" style={{ margin: 0 }}>Pipeline stages <span className="sub">· {pipe ? pipe.name : 'all pipelines'} · pass-through vs. live position</span></div>
         {pipes.length > 1 && <div className="pipe-sel"><label>Pipeline</label>
           <select value={pid} onChange={(e) => setPid(e.target.value)}>
-            <option value="all">Select a pipeline…</option>
+            <option value="all">All pipelines</option>
             {pipes.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmtNumber(p.leads)})</option>)}
           </select></div>}
       </div>
-      {stages && stages.length ? <div className="card chart-card">
-        <div className="funnel">{stages.map((s, i) => {
-          const hue = 210 + Math.round((i / Math.max(1, stages.length - 1)) * -70)
-          const tgt = kpis.stages && kpis.stages[s.name]
-          return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}{tgt ? <span className={`fn-tgt ${s.count >= tgt ? 'good' : 'bad'}`}>/ {fmtNumber(tgt)} {s.count >= tgt ? '✓' : ''}</span> : ''}</span></div>
-        })}</div>
-        {kpis.stages && Object.keys(kpis.stages).length > 0 && <p className="caveat">Green = at or above your target for that stage (set in Settings). </p>}
-      </div> : <p className="caveat">This account runs {pipes.length} pipelines — pick one above to see its stage-by-stage breakdown.</p>}
-      {stages && stages.length > 1 && (() => {
+      {stages && stages.length ? (() => {
         let acc = 0; const reached = []
         for (let i = stages.length - 1; i >= 0; i--) { acc += stages[i].count; reached[i] = acc }
         const top = reached[0] || 1
         return (
-          <div className="card chart-card" style={{ marginTop: 14 }}>
-            <h3>Stage pass-through</h3><p className="cap">How many opportunities reached each stage — spot the drop-offs</p>
-            <div className="funnel">{stages.map((s, i) => {
-              const val = reached[i]; const pct = (val / top) * 100
-              const drop = i > 0 ? reached[i - 1] - val : 0
-              const dropPct = i > 0 && reached[i - 1] ? Math.round((drop / reached[i - 1]) * 100) : 0
-              return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, pct)}%`, background: '#12b886' }}>{fmtNumber(val)}{i > 0 && drop > 0 ? <span className="drop">−{dropPct}%</span> : ''}</span></div>
-            })}</div>
-            <p className="caveat">Cumulative: the top row is every opportunity in this pipeline; each row below is how many progressed to that stage or beyond. Lost / abandoned deals count up to the stage they dropped at.</p>
+          <div className="grid two">
+            <div className="card chart-card"><h3>Stage pass-through</h3><p className="cap">Reached that stage or beyond · % of leads · next-step conversion</p>
+              <div className="pfunnel pf4">
+                <div className="pf-row pf-head"><span className="pf-stage">Stage</span><span className="pf-bar">Reached</span><span className="pf-num">% leads</span><span className="pf-num">Next step</span></div>
+                {stages.map((s, i) => {
+                  const val = reached[i]; const pctLeads = (val / top) * 100
+                  const nextConv = i === 0 ? null : (reached[i - 1] ? (val / reached[i - 1]) * 100 : 0)
+                  const hue = 210 + Math.round((i / Math.max(1, stages.length - 1)) * -70)
+                  return (
+                    <div className="pf-row" key={s.pos}>
+                      <span className="pf-stage" title={s.name}>{s.name}</span>
+                      <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, pctLeads)}%`, background: `hsl(${hue} 70% 55%)` }}>{fmtNumber(val)}</span></span>
+                      <span className="pf-num">{fmtPct(pctLeads, 1)}</span>
+                      <span className={`pf-num ${nextConv == null ? '' : nextConv >= 60 ? 'good' : nextConv < 30 ? 'bad' : ''}`}>{nextConv == null ? '—' : fmtPct(nextConv, 0)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="caveat">Reached = opportunities at that stage or further (they passed through it). % leads = reached ÷ everyone in the pipeline. Next step = % who moved from the stage above into this one.</p>
+            </div>
+            <div className="card chart-card"><h3>Where opportunities sit</h3><p className="cap">Live count at each stage, first to last</p>
+              <div className="funnel">{stages.map((s, i) => {
+                const hue = 210 + Math.round((i / Math.max(1, stages.length - 1)) * -70)
+                const tgt = kpis.stages && kpis.stages[s.name]
+                return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}{tgt ? <span className={`fn-tgt ${s.count >= tgt ? 'good' : 'bad'}`}>/ {fmtNumber(tgt)} {s.count >= tgt ? '✓' : ''}</span> : ''}</span></div>
+              })}</div>
+              {kpis.stages && Object.keys(kpis.stages).length > 0 && <p className="caveat">Green = at or above your target for that stage (set in Settings).</p>}
+            </div>
           </div>
         )
-      })()}
+      })() : <p className="caveat">This account runs {pipes.length} pipelines — pick one above to see its stage-by-stage breakdown.</p>}
       <div className="grid two" style={{ marginTop: 14 }}>
         <div className="card chart-card"><h3>Why deals are lost</h3><p className="cap">Named lost reasons · {fmtNumber(t.lost + t.abandoned)} lost / abandoned</p>
-          {crm.lostReasons.length ? <>
-            <ResponsiveContainer width="100%" height={220}><PieChart><Pie data={crm.lostReasons} dataKey="count" nameKey="name" innerRadius={52} outerRadius={84} paddingAngle={2} stroke="none">{crm.lostReasons.map((x, i) => <Cell key={i} fill={acolor(i)} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer>
-            <div className="legend" style={{ flexWrap: 'wrap' }}>{crm.lostReasons.slice(0, 8).map((x, i) => <span key={i}><i className="swatch" style={{ background: acolor(i) }} /> {x.name} {x.count}</span>)}</div>
+          {lostReasons.length ? <>
+            <ResponsiveContainer width="100%" height={220}><PieChart><Pie data={lostReasons} dataKey="count" nameKey="name" innerRadius={52} outerRadius={84} paddingAngle={2} stroke="none">{lostReasons.map((x, i) => <Cell key={i} fill={acolor(i)} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer>
+            <div className="legend" style={{ flexWrap: 'wrap' }}>{lostReasons.slice(0, 8).map((x, i) => <span key={i}><i className="swatch" style={{ background: acolor(i) }} /> {x.name} {x.count}</span>)}</div>
           </> : <p className="cap">No lost deals in range.</p>}
         </div>
         <div className="card chart-card"><h3>% lost by stage</h3><p className="cap">Where deals drop out of the funnel</p>
-          {(crm.lostByStage || []).length ? crm.lostByStage.map((s) => (
+          {lostByStage.length ? lostByStage.map((s) => (
             <div className="bar-row" key={s.stage} style={{ gridTemplateColumns: '150px 1fr 46px' }}><span className="nm" title={s.stage}>{s.stage}</span><span className="bar-track"><span className="bar-fill" style={{ width: `${(s.count / lostMax) * 100}%`, background: 'var(--neg)' }} /></span><span className="ct">{s.count}</span></div>
           )) : <p className="cap">No lost deals in range.</p>}
         </div>
       </div>
-      <div className="lvl-title">User performance <span className="sub">· {crm.byUser.length} users · click a row for their lost reasons</span></div>
+      <div className="lvl-title">User performance <span className="sub">· {byUser.length} users{pipe ? ` · ${pipe.name}` : ''} · click a row for their lost reasons</span></div>
       <div className="table-wrap"><table><thead><tr><SortTh k="name" sort={uSort} on={onUSort}>User</SortTh><SortTh k="leads" sort={uSort} on={onUSort}>Leads</SortTh><SortTh k="open" sort={uSort} on={onUSort}>Open</SortTh><SortTh k="won" sort={uSort} on={onUSort}>Won</SortTh><SortTh k="lost" sort={uSort} on={onUSort}>Lost</SortTh><SortTh k="wonValue" sort={uSort} on={onUSort}>Won value</SortTh><SortTh k="convRate" sort={uSort} on={onUSort}>Conv. rate</SortTh></tr></thead>
-        <tbody>{sortRows(crm.byUser, uSort).map((u) => (
+        <tbody>{sortRows(byUser, uSort).map((u) => (
           <React.Fragment key={u.id}>
             <tr className={openUser === u.id ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setOpenUser(openUser === u.id ? null : u.id)}>
               <td>{u.name}</td><td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.open)}</td><td>{fmtNumber(u.won)}</td><td>{fmtNumber(u.lost)}</td><td>{money(u.wonValue)}</td><td>{fmtPct(u.convRate, 1)}</td>

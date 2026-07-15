@@ -252,16 +252,10 @@ export async function buildAttribution(locationId, from, to) {
 // Full CRM rollup straight from GoHighLevel — richer than Windsor (named lost
 // reasons, exact timestamps, per-user). User names come from Windsor for now
 // (users.readonly deferred); assignedTo ids are returned for the caller to map.
-export async function buildCrm(locationId, from, to) {
-  const locTok = await locationToken(locationId)
-  const [opps, pipelines, reasons] = await Promise.all([
-    allOpportunities(locTok, locationId, from, to),
-    fetchPipelines(locTok, locationId),
-    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
-  ])
-  const idx = stageIndexFrom(pipelines)
-  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
-
+// Aggregate one opportunity subset (whole account, or one pipeline) into
+// totals + per-user + lost-reason breakdowns. Shared by the account view and
+// every per-pipeline view so the whole CRM board can pivot by pipeline.
+function aggregateCrm(opps, idx, reasonName) {
   let leads = 0, open = 0, won = 0, lost = 0, abandoned = 0, revenue = 0, openValue = 0, cycleSum = 0, cycleN = 0
   const byUser = new Map(), lostAgg = new Map(), lostByStage = new Map()
   for (const o of opps) {
@@ -284,7 +278,37 @@ export async function buildCrm(locationId, from, to) {
     } else { open++; openValue += val; u.open++ }
     byUser.set(uid, u)
   }
-  // per-pipeline ordered stages + booked/shown/won funnel
+  const closed = won + lost + abandoned
+  return {
+    totals: {
+      leads, open, won, lost, abandoned, revenue: Math.round(revenue), openValue: Math.round(openValue),
+      avgWonValue: won ? Math.round(revenue / won) : 0,
+      closeRate: closed ? +(100 * won / closed).toFixed(1) : 0,
+      avgDaysToWon: cycleN ? +(cycleSum / cycleN / 86400000).toFixed(1) : null,
+    },
+    byUser: [...byUser.values()].map((u) => ({
+      id: u.id, leads: u.leads, open: u.open, won: u.won, lost: u.lost, wonValue: Math.round(u.wonValue),
+      convRate: u.leads ? +(100 * u.won / u.leads).toFixed(1) : 0,
+      lostReasons: [...u.lostReasons.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    })).sort((a, b) => b.won - a.won || b.leads - a.leads),
+    lostReasons: [...lostAgg.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    lostByStage: [...lostByStage.entries()].map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count),
+  }
+}
+
+export async function buildCrm(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const [opps, pipelines, reasons] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to),
+    fetchPipelines(locTok, locationId),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const account = aggregateCrm(opps, idx, reasonName)
+
+  // per-pipeline: ordered stage counts + funnel + a full rollup so every
+  // scorecard, lost-reason and user table pivots when a pipeline is selected.
   const byPipe = new Map()
   for (const o of opps) { const pid = o.pipelineId || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(o) }
   const pipesOut = [...byPipe.entries()].map(([pid, rows]) => {
@@ -297,26 +321,17 @@ export async function buildCrm(locationId, from, to) {
       if (isWon) w++; if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) b++; if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) sh++
     }
     const stages = (pi ? pi.stages : []).map((s) => ({ name: s.name, pos: s.pos, count: at.get(s.id) || 0, active: openAt.get(s.id) || 0 }))
-    return { id: pid, name: (pi && pi.name) || 'Unnamed pipeline', leads: rows.length, stages, funnel: { leads: l, booked: b, shown: sh, won: w } }
+    const a = aggregateCrm(rows, idx, reasonName)
+    return { id: pid, name: (pi && pi.name) || 'Unnamed pipeline', leads: rows.length, stages, funnel: { leads: l, booked: b, shown: sh, won: w }, totals: a.totals, byUser: a.byUser, lostReasons: a.lostReasons, lostByStage: a.lostByStage }
   }).sort((a, b) => b.leads - a.leads)
 
-  const closed = won + lost + abandoned
   return {
     connected: true,
-    totals: {
-      leads, open, won, lost, abandoned, revenue: Math.round(revenue), openValue: Math.round(openValue),
-      avgWonValue: won ? Math.round(revenue / won) : 0,
-      closeRate: closed ? +(100 * won / closed).toFixed(1) : 0,
-      avgDaysToWon: cycleN ? +(cycleSum / cycleN / 86400000).toFixed(1) : null,
-    },
+    totals: account.totals,
     pipelines: pipesOut,
-    byUser: [...byUser.values()].map((u) => ({
-      id: u.id, leads: u.leads, open: u.open, won: u.won, lost: u.lost, wonValue: Math.round(u.wonValue),
-      convRate: u.leads ? +(100 * u.won / u.leads).toFixed(1) : 0,
-      lostReasons: [...u.lostReasons.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
-    })).sort((a, b) => b.won - a.won || b.leads - a.leads),
-    lostReasons: [...lostAgg.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
-    lostByStage: [...lostByStage.entries()].map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count),
+    byUser: account.byUser,
+    lostReasons: account.lostReasons,
+    lostByStage: account.lostByStage,
   }
 }
 

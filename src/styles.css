@@ -270,6 +270,12 @@ tbody tr:hover { background: var(--panel-2); }
 .sc-d.up { color: var(--pos); } .sc-d.down { color: var(--neg); } .sc-d.flat { color: var(--faint); font-weight: 500; }
 .sc-vs { color: var(--faint); font-weight: 500; }
 
+/* CRM sub-rows (lost reasons per user) */
+.sub-row td { background: var(--panel-2); padding: 10px 14px !important; }
+.reason-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.reason-chip { font-size: 11.5px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 9px; color: var(--muted); }
+.reason-chip b { color: var(--text); margin-left: 2px; }
+
 /* Caalano360 header + pipeline selector */
 .c360-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 22px 2px 12px; }
 .pipe-sel { display: flex; align-items: center; gap: 8px; }

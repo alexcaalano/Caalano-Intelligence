@@ -88,22 +88,31 @@ async function allOpportunities(locTok, locationId, from, to, cap = 3000) {
   }
   return out
 }
-async function pipelineStageIndex(locTok, locationId) {
+const BOOK_RE = /(book|appointment|\bappt\b|discovery call|consult|scheduled)/i
+const SHOW_RE = /(attend|showed|\bheld\b|payment collect|\bpaid\b|qualified|onboard|welcome)/i
+const STAGE_EXC = /(cancel|no.?show|no.?answer|disqualif|lost)/i
+async function fetchPipelines(locTok, locationId) {
   const j = await ghlGet(locTok, '/opportunities/pipelines', { locationId }).catch(() => ({ pipelines: [] }))
+  return j.pipelines || []
+}
+function stageIndexFrom(pipelines) {
   const idx = new Map()
-  for (const p of (j.pipelines || [])) {
+  for (const p of pipelines) {
     const byId = {}; let bookPos = null, showPos = null
-    const stages = (p.stages || []).slice().sort((a, b) => (a.position || 0) - (b.position || 0))
-    stages.forEach((s, i) => {
-      const pos = s.position ?? i; byId[s.id] = { name: s.name, pos }
+    const stages = (p.stages || []).map((s, i) => ({ id: s.id, name: s.name, pos: s.position ?? i })).sort((a, b) => a.pos - b.pos)
+    for (const s of stages) {
+      byId[s.id] = { name: s.name, pos: s.pos }
       const nm = String(s.name || '')
-      if (/(cancel|no.?show|no.?answer|disqualif|lost)/i.test(nm)) return
-      if (/(book|appointment|\bappt\b|discovery call|consult|scheduled)/i.test(nm)) bookPos = bookPos == null ? pos : Math.min(bookPos, pos)
-      if (/(attend|showed|\bheld\b|payment collect|\bpaid\b|qualified|onboard|welcome)/i.test(nm)) showPos = showPos == null ? pos : Math.min(showPos, pos)
-    })
-    idx.set(p.id, { byId, bookPos, showPos })
+      if (STAGE_EXC.test(nm)) continue
+      if (BOOK_RE.test(nm)) bookPos = bookPos == null ? s.pos : Math.min(bookPos, s.pos)
+      if (SHOW_RE.test(nm)) showPos = showPos == null ? s.pos : Math.min(showPos, s.pos)
+    }
+    idx.set(p.id, { name: p.name, stages, byId, bookPos, showPos })
   }
   return idx
+}
+async function pipelineStageIndex(locTok, locationId) {
+  return stageIndexFrom(await fetchPipelines(locTok, locationId))
 }
 
 // first-touch UTMs from an opportunity's inline `attributions` array
@@ -152,6 +161,77 @@ export async function buildAttribution(locationId, from, to) {
   return {
     connected: true, opps: opps.length, attributed,
     bySource: top(dim.source), byMedium: top(dim.medium), byCampaign: top(dim.campaign), byCreative: top(dim.content),
+  }
+}
+
+// Full CRM rollup straight from GoHighLevel — richer than Windsor (named lost
+// reasons, exact timestamps, per-user). User names come from Windsor for now
+// (users.readonly deferred); assignedTo ids are returned for the caller to map.
+export async function buildCrm(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const [opps, pipelines, reasons] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to),
+    fetchPipelines(locTok, locationId),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+
+  let leads = 0, open = 0, won = 0, lost = 0, abandoned = 0, revenue = 0, openValue = 0, cycleSum = 0, cycleN = 0
+  const byUser = new Map(), lostAgg = new Map(), lostByStage = new Map()
+  for (const o of opps) {
+    leads++
+    const st = String(o.status || '').toLowerCase(); const val = num(o.monetaryValue); const uid = o.assignedTo || 'unassigned'
+    const u = byUser.get(uid) || { id: uid, leads: 0, open: 0, won: 0, lost: 0, wonValue: 0, lostReasons: new Map() }
+    u.leads++
+    if (st === 'won') {
+      won++; revenue += val; u.won++; u.wonValue += val
+      const ca = Date.parse(o.createdAt), sc = Date.parse(o.lastStatusChangeAt)
+      if (ca && sc && sc >= ca) { cycleSum += sc - ca; cycleN++ }
+    } else if (st === 'lost' || st === 'abandoned') {
+      if (st === 'lost') lost++; else abandoned++
+      u.lost++
+      const rn = reasonName[o.lostReasonId] || (o.lostReasonId ? 'Other' : 'Not set')
+      lostAgg.set(rn, (lostAgg.get(rn) || 0) + 1)
+      u.lostReasons.set(rn, (u.lostReasons.get(rn) || 0) + 1)
+      const pi = idx.get(o.pipelineId); const sn = (pi && pi.byId[o.pipelineStageId]?.name) || 'Unknown'
+      lostByStage.set(sn, (lostByStage.get(sn) || 0) + 1)
+    } else { open++; openValue += val; u.open++ }
+    byUser.set(uid, u)
+  }
+  // per-pipeline ordered stages + booked/shown/won funnel
+  const byPipe = new Map()
+  for (const o of opps) { const pid = o.pipelineId || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(o) }
+  const pipesOut = [...byPipe.entries()].map(([pid, rows]) => {
+    const pi = idx.get(pid); const at = new Map(), openAt = new Map()
+    let l = 0, b = 0, sh = 0, w = 0
+    for (const o of rows) {
+      const sid = o.pipelineStageId; at.set(sid, (at.get(sid) || 0) + 1)
+      const st = String(o.status || '').toLowerCase(); if (st !== 'lost' && st !== 'abandoned') openAt.set(sid, (openAt.get(sid) || 0) + 1)
+      l++; const stg = pi ? pi.byId[sid] : null; const pos = stg ? stg.pos : -1; const isWon = st === 'won'
+      if (isWon) w++; if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) b++; if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) sh++
+    }
+    const stages = (pi ? pi.stages : []).map((s) => ({ name: s.name, pos: s.pos, count: at.get(s.id) || 0, active: openAt.get(s.id) || 0 }))
+    return { id: pid, name: (pi && pi.name) || 'Unnamed pipeline', leads: rows.length, stages, funnel: { leads: l, booked: b, shown: sh, won: w } }
+  }).sort((a, b) => b.leads - a.leads)
+
+  const closed = won + lost + abandoned
+  return {
+    connected: true,
+    totals: {
+      leads, open, won, lost, abandoned, revenue: Math.round(revenue), openValue: Math.round(openValue),
+      avgWonValue: won ? Math.round(revenue / won) : 0,
+      closeRate: closed ? +(100 * won / closed).toFixed(1) : 0,
+      avgDaysToWon: cycleN ? +(cycleSum / cycleN / 86400000).toFixed(1) : null,
+    },
+    pipelines: pipesOut,
+    byUser: [...byUser.values()].map((u) => ({
+      id: u.id, leads: u.leads, open: u.open, won: u.won, lost: u.lost, wonValue: Math.round(u.wonValue),
+      convRate: u.leads ? +(100 * u.won / u.leads).toFixed(1) : 0,
+      lostReasons: [...u.lostReasons.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    })).sort((a, b) => b.won - a.won || b.leads - a.leads),
+    lostReasons: [...lostAgg.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    lostByStage: [...lostByStage.entries()].map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count),
   }
 }
 

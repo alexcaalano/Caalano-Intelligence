@@ -414,6 +414,73 @@ function OverallTab({ client, currency, side }) {
   )
 }
 
+/* ============ CRM — live from GoHighLevel (Caalano Systems) ============ */
+function CrmGhl({ crm, currency }) {
+  const t = crm.totals
+  const pipes = crm.pipelines || []
+  const [pid, setPid] = useState(pipes.length === 1 ? pipes[0].id : 'all')
+  const [openUser, setOpenUser] = useState(null)
+  const money = (v) => fmtCurrency(v, currency)
+  const pipe = pid === 'all' ? null : pipes.find((p) => p.id === pid)
+  const stages = pipe ? pipe.stages : (pipes.length === 1 ? pipes[0].stages : null)
+  const stageMax = stages ? Math.max(1, ...stages.map((s) => s.count)) : 1
+  const lostMax = Math.max(1, ...(crm.lostByStage || []).map((s) => s.count))
+  return (
+    <>
+      <div className="scorecard">
+        <Sc label="Leads" value={fmtNumber(t.leads)} />
+        <Sc label="Open" value={fmtNumber(t.open)} />
+        <Sc label="Won" value={fmtNumber(t.won)} />
+        <Sc label="Lost" value={fmtNumber(t.lost)} />
+        <Sc label="Abandoned" value={fmtNumber(t.abandoned)} />
+        <Sc label="Close Rate" value={fmtPct(t.closeRate, 1)} />
+        <Sc label="Pipeline Value" value={money(t.openValue)} />
+        <Sc label="Won Value" value={money(t.revenue)} />
+        <Sc label="Avg Deal" value={t.won ? money(t.avgWonValue) : '—'} />
+        <Sc label="Avg Days to Won" value={t.avgDaysToWon != null ? `${t.avgDaysToWon}d` : '—'} />
+      </div>
+      <div className="c360-head">
+        <div className="section-title" style={{ margin: 0 }}>Pipeline stages <span className="sub">· opportunities by stage, first to last</span></div>
+        {pipes.length > 1 && <div className="pipe-sel"><label>Pipeline</label>
+          <select value={pid} onChange={(e) => setPid(e.target.value)}>
+            <option value="all">Select a pipeline…</option>
+            {pipes.map((p) => <option key={p.id} value={p.id}>{p.name} ({fmtNumber(p.leads)})</option>)}
+          </select></div>}
+      </div>
+      {stages && stages.length ? <div className="card chart-card">
+        <div className="funnel">{stages.map((s, i) => {
+          const hue = 210 + Math.round((i / Math.max(1, stages.length - 1)) * -70)
+          return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}</span></div>
+        })}</div>
+      </div> : <p className="caveat">This account runs {pipes.length} pipelines — pick one above to see its stage-by-stage breakdown.</p>}
+      <div className="grid two" style={{ marginTop: 14 }}>
+        <div className="card chart-card"><h3>Why deals are lost</h3><p className="cap">Named lost reasons · {fmtNumber(t.lost + t.abandoned)} lost / abandoned</p>
+          {crm.lostReasons.length ? <>
+            <ResponsiveContainer width="100%" height={220}><PieChart><Pie data={crm.lostReasons} dataKey="count" nameKey="name" innerRadius={52} outerRadius={84} paddingAngle={2} stroke="none">{crm.lostReasons.map((x, i) => <Cell key={i} fill={acolor(i)} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer>
+            <div className="legend" style={{ flexWrap: 'wrap' }}>{crm.lostReasons.slice(0, 8).map((x, i) => <span key={i}><i className="swatch" style={{ background: acolor(i) }} /> {x.name} {x.count}</span>)}</div>
+          </> : <p className="cap">No lost deals in range.</p>}
+        </div>
+        <div className="card chart-card"><h3>% lost by stage</h3><p className="cap">Where deals drop out of the funnel</p>
+          {(crm.lostByStage || []).length ? crm.lostByStage.map((s) => (
+            <div className="bar-row" key={s.stage} style={{ gridTemplateColumns: '150px 1fr 46px' }}><span className="nm" title={s.stage}>{s.stage}</span><span className="bar-track"><span className="bar-fill" style={{ width: `${(s.count / lostMax) * 100}%`, background: 'var(--neg)' }} /></span><span className="ct">{s.count}</span></div>
+          )) : <p className="cap">No lost deals in range.</p>}
+        </div>
+      </div>
+      <div className="lvl-title">User performance <span className="sub">· {crm.byUser.length} users · click a row for their lost reasons</span></div>
+      <div className="table-wrap"><table><thead><tr><th>User</th><th>Leads</th><th>Open</th><th>Won</th><th>Lost</th><th>Won value</th><th>Conv. rate</th></tr></thead>
+        <tbody>{crm.byUser.map((u) => (
+          <React.Fragment key={u.id}>
+            <tr className={openUser === u.id ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setOpenUser(openUser === u.id ? null : u.id)}>
+              <td>{u.name}</td><td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.open)}</td><td>{fmtNumber(u.won)}</td><td>{fmtNumber(u.lost)}</td><td>{money(u.wonValue)}</td><td>{fmtPct(u.convRate, 1)}</td>
+            </tr>
+            {openUser === u.id && <tr className="sub-row"><td colSpan={7}>{u.lostReasons.length ? <div className="reason-chips">{u.lostReasons.map((r) => <span key={r.name} className="reason-chip">{r.name} <b>{r.count}</b></span>)}</div> : <span className="cap">No lost deals for this user.</span>}</td></tr>}
+          </React.Fragment>
+        ))}</tbody></table></div>
+      <p className="caveat">Live from Caalano Systems via the agency connection. Assigned-user names resolve once <code>users.readonly</code> is added; speed-to-lead follows with <code>conversations.readonly</code>.</p>
+    </>
+  )
+}
+
 /* ============ Caalano360 — blended paid + CRM ============ */
 const CMAP_KEY = 'caalano_campmap'
 function loadCampMap(clientId) { try { return (JSON.parse(localStorage.getItem(CMAP_KEY) || '{}')[clientId]) || {} } catch { return {} } }
@@ -656,7 +723,7 @@ function ClientWorkspace({ client, index, data, range, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
-  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'ghl' : tab === 'overall' ? 'blend' : null
+  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'crm' : tab === 'overall' ? 'blend' : null
   const live = useLiveDeep(client.id, channel, range)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
@@ -681,7 +748,12 @@ function ClientWorkspace({ client, index, data, range, onBack }) {
       </div>
       <div style={{ marginTop: 16 }}>
         {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
-        {tab === 'crm' && (live.status === 'loading' ? <div className="card">Loading live CRM…</div> : liveOK('ghl') ? <CrmLive ghl={live.data.ghl} currency={data.currency} /> : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>)}
+        {tab === 'crm' && (
+          live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano Systems CRM…" /></div>
+            : live.data && live.data.connected === false ? <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected yet.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>Authorise the agency connection at <code>/.netlify/functions/caalano-connect</code> to unlock live CRM + UTM attribution.</p></div>
+              : live.data && live.data.crm ? <CrmGhl crm={live.data.crm} currency={data.currency} />
+                : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
+        )}
         {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} /></>)}
         {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} /></>)}
       </div>

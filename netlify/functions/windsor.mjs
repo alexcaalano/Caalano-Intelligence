@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, isConnected } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, isConnected } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -396,6 +396,23 @@ export default async (req) => {
 
   const c = CLIENTS[client]
   if (!c) return json({ error: `unknown client ${client}` }, 404)
+
+  // Full CRM straight from the GoHighLevel API (richer than Windsor: named
+  // lost reasons, exact timings, per-user). Assigned-user names are resolved
+  // from Windsor's users table until users.readonly is added to the OAuth app.
+  if (channel === 'crm') {
+    if (!c.ghl) return json({ error: `no Caalano Systems account for ${client}` }, 404)
+    if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
+    try {
+      const crm = await buildCrm(c.ghl, from, to)
+      try {
+        const users = await windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(c.ghl)))
+        const uName = {}; for (const u of users) if (u.user_id) uName[u.user_id] = u.user_name
+        crm.byUser = crm.byUser.map((r) => ({ ...r, name: uName[r.id] || (r.id === 'unassigned' ? 'Unassigned' : 'User ' + String(r.id).slice(-4)) }))
+      } catch { crm.byUser = crm.byUser.map((r) => ({ ...r, name: r.id === 'unassigned' ? 'Unassigned' : 'User ' + String(r.id).slice(-4) })) }
+      return json({ client, channel, period: { from, to, preset }, crm }, 200, true)
+    } catch (e) { return json({ connected: true, error: String(e.message || e) }, 502) }
+  }
 
   // UTM attribution via the GoHighLevel API (Windsor can't provide UTMs).
   if (channel === 'attribution') {

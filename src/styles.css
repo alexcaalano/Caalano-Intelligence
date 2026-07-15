@@ -305,6 +305,9 @@ tbody tr:hover { background: var(--panel-2); }
 tr.row-sel > td { background: rgba(109,94,252,.14); }
 tr.row-sel > td:first-child { box-shadow: inset 3px 0 0 var(--brand); font-weight: 650; }
 
+/* Day drill-down block */
+.day-drill { border-left: 3px solid var(--brand); padding-left: 12px; margin: 6px 0 4px; }
+
 /* Colour-coded cost cell */
 .cpl-cell { display: inline-block; padding: 2px 8px; border-radius: 6px; font-weight: 650; }
 

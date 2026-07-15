@@ -121,14 +121,16 @@ async function buildMeta(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const pr = prevRange(from, to)
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view']
-  const [adRows, dayRows, accRows, prevRows] = await Promise.all([
+  const [adRows, dayRows, accRows, prevRows, adDayRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead'], from, to, preset, key).then(filt),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
+    windsorFetch('facebook', ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead'], from, to, preset, key).then(filt),
   ])
   const roll = rollupMeta(adRows, dayRows, accRows)
   roll.prev = metaTotals(prevRows)
+  roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name, ad: r.ad_name, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: num(r.actions_lead) })).filter((r) => r.date && r.ad)
   return roll
 }
 
@@ -199,15 +201,17 @@ async function buildOverview(from, to, preset, key) {
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const pr = prevRange(from, to)
-  const [cg, kw, st, dy, prev] = await Promise.all([
+  const [cg, kw, st, dy, prev, agDay] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
+    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
   roll.prev = prev.reduce((a, r) => ({ cost: a.cost + num(r.spend), impressions: a.impressions + num(r.impressions), clicks: a.clicks + num(r.clicks), conversions: a.conversions + num(r.conversions) }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
+  roll.adGroupDaily = agDay.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adGroup: r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null), cost: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), conversions: num(r.conversions) })).filter((r) => r.date && r.campaign)
   return roll
 }
 

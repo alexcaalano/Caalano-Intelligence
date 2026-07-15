@@ -390,17 +390,7 @@ function WeeklyTab({ rows, currency, nonce }) {
             return (
               <>
                 <div className="section-title" style={{ marginTop: 4 }}>{clientName} <span className="sub">· weekly (Mon to Sun) · {rangeLbl}</span></div>
-                <div className="card ai-card">
-                  <div className="ai-head">
-                    <div className="ai-title">✨ AI insights {ai ? <span className="sub">· {ai.weekRange} · generated {new Date(ai.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads Meta + Google vs CRM outcomes</span>}</div>
-                    <button className="ai-btn" onClick={genInsights} disabled={aiLoading}>{aiLoading ? 'Generating…' : ai ? '↻ Regenerate' : '✨ Generate AI insights'}</button>
-                  </div>
-                  {aiErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{aiErr}</p>}
-                  {aiLoading ? <Spinner label="Claude is analysing this client…" />
-                    : ai ? <MdText text={ai.insights} />
-                      : <p className="cap" style={{ margin: 0 }}>Generate a written briefing that interprets this client's weekly Meta / Google performance against their Caalano Systems bookings, wins and lost reasons. It only runs when you click, and stays saved to this client until you regenerate.</p>}
-                </div>
-                <div className="wk-tiles">
+                <div className="wk-tiles wk-tiles-9">
                   <WkTile label="Pacing (avg/wk)" value={money(avgSpend)} num={avgSpend} target={kpis.wkSpend} goodWhenDown />
                   <WkTile label="Meta CPL" value={mCpl ? money(mCpl) : '-'} num={mCpl} target={kpis.metaCpl} goodWhenDown />
                   <WkTile label="All Leads CPL" value={aCpl ? money(aCpl) : '-'} num={aCpl} target={kpis.cpl} goodWhenDown />
@@ -410,6 +400,16 @@ function WeeklyTab({ rows, currency, nonce }) {
                   <WkTile label="Won Value" value={money(T.wonValue)} num={null} />
                   <WkTile label="Avg Deal Value" value={T.won ? money(avgDeal) : '-'} num={null} />
                   <WkTile label="ROAS" value={`${roas.toFixed(2)}×`} num={null} />
+                </div>
+                <div className="card ai-card" style={{ marginTop: 14 }}>
+                  <div className="ai-head">
+                    <div className="ai-title">✨ AI insights {ai ? <span className="sub">· {ai.weekRange} · generated {new Date(ai.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads Meta + Google vs CRM outcomes</span>}</div>
+                    <button className="ai-btn" onClick={genInsights} disabled={aiLoading}>{aiLoading ? 'Generating…' : ai ? '↻ Regenerate' : '✨ Generate AI insights'}</button>
+                  </div>
+                  {aiErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{aiErr}</p>}
+                  {aiLoading ? <Spinner label="Claude is analysing this client…" />
+                    : ai ? <MdText text={ai.insights} />
+                      : <p className="cap" style={{ margin: 0 }}>Generate a written briefing that interprets this client's weekly Meta / Google performance against their Caalano Systems bookings, wins and lost reasons. It only runs when you click, and stays saved to this client until you regenerate.</p>}
                 </div>
                 <div className="wk-grid">
                   <div className="card chart-card"><h3>Overall Spend Pacing</h3><p className="cap">Spend per week vs weekly target</p>

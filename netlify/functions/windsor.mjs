@@ -399,12 +399,16 @@ function campAgg(rows, source, convField) {
 }
 async function buildBlend(c, from, to, preset, key) {
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
-  const [fb, gg, opps, pipes, userRows] = await Promise.all([
+  const pr = prevRange(from, to)
+  const [fb, gg, opps, pipes, userRows, pFb, pGg, pOpps] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'actions_lead'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at', 'opportunity_assigned_to'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend'], pr.from, pr.to, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend'], pr.from, pr.to, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value'], pr.from, pr.to, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
   ])
   const metaCamps = campAgg(fb, 'Meta', 'actions_lead')
   const googleCamps = campAgg(gg, 'Google', 'conversions')
@@ -449,13 +453,23 @@ async function buildBlend(c, from, to, preset, key) {
   const campaigns = allCamps
     .map((x) => ({ name: x.name, source: x.source, spend: Math.round(x.spend), conv: Math.round(x.conv), auto: auto.get(x.name) || 'all' }))
     .sort((a, b) => b.spend - a.spend)
+  // Previous equal-length period (account level) for ±vs-previous deltas.
+  let prev = null
+  if (pr.from) {
+    const pMetaSpend = pFb.reduce((a, r) => a + num(r.spend), 0)
+    const pGoogleSpend = pGg.reduce((a, r) => a + num(r.spend), 0)
+    prev = {
+      adSpend: Math.round(pMetaSpend + pGoogleSpend), metaSpend: Math.round(pMetaSpend), googleSpend: Math.round(pGoogleSpend),
+      crm: blendCrm(pOpps, idx),
+    }
+  }
   return {
     hasCrm: !!c.ghl, hasMeta: !!c.meta, hasGoogle: !!c.google,
     paid: {
       adSpend: Math.round(metaSpend + googleSpend), metaSpend: Math.round(metaSpend), googleSpend: Math.round(googleSpend),
       metaLeads: Math.round(metaLeads), googleConv: Math.round(googleConv), adConversions: Math.round(metaLeads + googleConv),
     },
-    crm: account.crm, pipelines: account.pipelines, users, campaigns,
+    crm: account.crm, pipelines: account.pipelines, users, campaigns, prev,
   }
 }
 

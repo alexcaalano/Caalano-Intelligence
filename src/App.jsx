@@ -990,6 +990,10 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const spend = chan === 'meta' ? attr.metaSpend : chan === 'google' ? attr.googleSpend : attr.adSpend
   const lostReasons = chSel ? chSel.lostReasons : (channels && channels.all ? channels.all.lostReasons : null)
   const roas = spend ? c.revenue / spend : 0
+  // Previous equal-length period — deltas only at account level (no per-pipeline
+  // / channel / user split in the prior period).
+  const pv = (uid === 'all' && chan === 'all' && pid === 'all' && b.prev) ? b.prev : null
+  const pc = pv ? pv.crm : null
   const money = (v) => fmtCurrency(v, currency)
   const chanPie = chan === 'meta' ? [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }].filter((x) => x.value > 0)
     : chan === 'google' ? [{ name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
@@ -1036,18 +1040,18 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         </div>
       </div>
       <div className="scorecard">
-        <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} />
-        <Sc label="Total Leads" value={fmtNumber(c.leads)} />
-        <Sc label="Bookings Made" value={fmtNumber(c.booked)} />
-        <Sc label="Shown Bookings" value={fmtNumber(c.shown)} />
-        <Sc label="Won Clients" value={fmtNumber(c.won)} />
-        <Sc label="Revenue Closed" value={money(c.revenue)} />
-        <Sc label="Avg Deal Value" value={c.won ? money(c.avgValue) : '—'} />
-        <Sc label="Cost / Lead" value={spend && c.leads ? money(spend / c.leads) : '—'} />
-        <Sc label="Cost / Booked" value={spend && c.booked ? money(spend / c.booked) : '—'} />
-        <Sc label="Cost / Won" value={spend && c.won ? money(spend / c.won) : '—'} />
-        <Sc label="ROAS" value={spend ? `${roas.toFixed(2)}×` : '—'} />
-        <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} />
+        <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} cur={spend} prev={pv ? pv.adSpend : null} />
+        <Sc label="Total Leads" value={fmtNumber(c.leads)} cur={c.leads} prev={pc ? pc.leads : null} />
+        <Sc label="Bookings Made" value={fmtNumber(c.booked)} cur={c.booked} prev={pc ? pc.booked : null} />
+        <Sc label="Shown Bookings" value={fmtNumber(c.shown)} cur={c.shown} prev={pc ? pc.shown : null} />
+        <Sc label="Won Clients" value={fmtNumber(c.won)} cur={c.won} prev={pc ? pc.won : null} />
+        <Sc label="Revenue Closed" value={money(c.revenue)} cur={c.revenue} prev={pc ? pc.revenue : null} />
+        <Sc label="Avg Deal Value" value={c.won ? money(c.avgValue) : '—'} cur={c.avgValue} prev={pc ? pc.avgValue : null} />
+        <Sc label="Cost / Lead" value={spend && c.leads ? money(spend / c.leads) : '—'} cur={spend && c.leads ? spend / c.leads : null} prev={pv && pc && pc.leads ? pv.adSpend / pc.leads : null} goodWhenDown />
+        <Sc label="Cost / Booked" value={spend && c.booked ? money(spend / c.booked) : '—'} cur={spend && c.booked ? spend / c.booked : null} prev={pv && pc && pc.booked ? pv.adSpend / pc.booked : null} goodWhenDown />
+        <Sc label="Cost / Won" value={spend && c.won ? money(spend / c.won) : '—'} cur={spend && c.won ? spend / c.won : null} prev={pv && pc && pc.won ? pv.adSpend / pc.won : null} goodWhenDown />
+        <Sc label="ROAS" value={spend ? `${roas.toFixed(2)}×` : '—'} cur={spend ? roas : null} prev={pv && pc && pv.adSpend ? pc.revenue / pv.adSpend : null} />
+        <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} cur={rate(c.won, c.leads)} prev={pc ? rate(pc.won, pc.leads) : null} />
       </div>
       <div className="grid two" style={{ marginTop: 14 }}>
         <div className="card chart-card"><h3>Key events</h3><p className="cap">{keSel.length ? 'Your key pipeline stages' : 'Default: leads → booked → shown → won'} · reached · % of leads · cost per stage</p>

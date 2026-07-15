@@ -399,11 +399,12 @@ function campAgg(rows, source, convField) {
 }
 async function buildBlend(c, from, to, preset, key) {
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
-  const [fb, gg, opps, pipes] = await Promise.all([
+  const [fb, gg, opps, pipes, userRows] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'actions_lead'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at', 'opportunity_assigned_to'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
   ])
   const metaCamps = campAgg(fb, 'Meta', 'actions_lead')
   const googleCamps = campAgg(gg, 'Google', 'conversions')
@@ -412,7 +413,6 @@ async function buildBlend(c, from, to, preset, key) {
   const googleSpend = googleCamps.reduce((a, r) => a + r.spend, 0)
   const googleConv = googleCamps.reduce((a, r) => a + r.conv, 0)
   const idx = stageIndex(pipes)
-  const crm = blendCrm(opps, idx)
   // Per-pipeline funnels so the UI can offer a pipeline selector — a "booking"
   // means different things across pipelines, so they're kept separate.
   const nameOf = {}, stagesOf = {}
@@ -421,19 +421,31 @@ async function buildBlend(c, from, to, preset, key) {
     nameOf[p.pipeline_id] = p.pipeline_name || p.pipeline_id
     stagesOf[p.pipeline_id] = asArray(p.pipeline_stages).map((s) => ({ id: s.id, name: s.name, pos: s.position })).sort((a, b) => a.pos - b.pos)
   }
-  const byPipe = new Map()
-  for (const r of opps) { const pid = r.opportunity_pipeline_id || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(r) }
-  const pipelines = [...byPipe.entries()]
-    .map(([id, rows]) => {
-      // opps currently sitting at each stage, in pipeline order (won/lost/open all counted where they sit)
-      const at = new Map(); const openAt = new Map()
-      for (const r of rows) { const sid = r.opportunity_pipeline_stage_id; at.set(sid, (at.get(sid) || 0) + 1); const st = String(r.opportunity_status || '').toLowerCase(); if (st !== 'lost' && st !== 'abandoned') openAt.set(sid, (openAt.get(sid) || 0) + 1) }
-      const stages = (stagesOf[id] || []).map((s) => ({ name: s.name, pos: s.pos, count: at.get(s.id) || 0, active: openAt.get(s.id) || 0 }))
-      return { id, name: nameOf[id] || 'Unnamed pipeline', crm: blendCrm(rows, idx), stages }
-    })
-    .sort((a, b) => b.crm.leads - a.crm.leads)
+  // Build a full CRM view (account totals + per-pipeline funnels) for any opp
+  // subset — the whole account, or one assigned user.
+  const crmView = (rows) => {
+    const byPipe = new Map()
+    for (const r of rows) { const pid = r.opportunity_pipeline_id || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(r) }
+    const pipelines = [...byPipe.entries()]
+      .map(([id, prows]) => {
+        const at = new Map(); const openAt = new Map()
+        for (const r of prows) { const sid = r.opportunity_pipeline_stage_id; at.set(sid, (at.get(sid) || 0) + 1); const st = String(r.opportunity_status || '').toLowerCase(); if (st !== 'lost' && st !== 'abandoned') openAt.set(sid, (openAt.get(sid) || 0) + 1) }
+        const stages = (stagesOf[id] || []).map((s) => ({ name: s.name, pos: s.pos, count: at.get(s.id) || 0, active: openAt.get(s.id) || 0 }))
+        return { id, name: nameOf[id] || 'Unnamed pipeline', crm: blendCrm(prows, idx), stages }
+      })
+      .sort((a, b) => b.crm.leads - a.crm.leads)
+    return { crm: blendCrm(rows, idx), pipelines }
+  }
+  const account = crmView(opps)
+  // Per-assigned-user boards for the Caalano360 user filter.
+  const uName = {}; for (const u of userRows) if (u.user_id) uName[u.user_id] = u.user_name
+  const byUid = new Map()
+  for (const r of opps) { const uid = r.opportunity_assigned_to || 'unassigned'; if (!byUid.has(uid)) byUid.set(uid, []); byUid.get(uid).push(r) }
+  const users = [...byUid.entries()]
+    .map(([uid, rows]) => ({ id: uid, name: uName[uid] || (uid === 'unassigned' ? 'Unassigned' : 'User ' + String(uid).slice(-4)), leads: rows.length, ...crmView(rows) }))
+    .sort((a, b) => b.leads - a.leads)
   const allCamps = [...metaCamps, ...googleCamps]
-  const auto = autoMatch(pipelines, allCamps)
+  const auto = autoMatch(account.pipelines, allCamps)
   const campaigns = allCamps
     .map((x) => ({ name: x.name, source: x.source, spend: Math.round(x.spend), conv: Math.round(x.conv), auto: auto.get(x.name) || 'all' }))
     .sort((a, b) => b.spend - a.spend)
@@ -443,7 +455,7 @@ async function buildBlend(c, from, to, preset, key) {
       adSpend: Math.round(metaSpend + googleSpend), metaSpend: Math.round(metaSpend), googleSpend: Math.round(googleSpend),
       metaLeads: Math.round(metaLeads), googleConv: Math.round(googleConv), adConversions: Math.round(metaLeads + googleConv),
     },
-    crm, pipelines, campaigns,
+    crm: account.crm, pipelines: account.pipelines, users, campaigns,
   }
 }
 

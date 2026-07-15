@@ -952,13 +952,20 @@ function reachedByStage(pipelines) {
 
 function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const b = blend
-  const pipes = b.pipelines || []
+  const users = b.users || []
   const camps = b.campaigns || []
-  const multi = pipes.length > 1
+  const [uid, setUid] = useState('all')
   const [pid, setPid] = useState('all')
   const [chan, setChan] = useState('all')
-  useEffect(() => { setPid('all'); setChan('all') }, [client.id])
-  useEffect(() => { setPid('all') }, [chan])
+  useEffect(() => { setPid('all'); setChan('all'); setUid('all') }, [client.id])
+  useEffect(() => { setPid('all') }, [chan, uid])
+  // User + channel are separate filters over the same CRM feed; only one at a
+  // time (the channel split has no per-user breakdown).
+  useEffect(() => { if (uid !== 'all') setChan('all') }, [uid])
+  useEffect(() => { if (chan !== 'all') setUid('all') }, [chan])
+  // Base CRM view: whole account or one assigned user.
+  const base = uid !== 'all' ? (users.find((u) => u.id === uid) || b) : b
+  const pipes = base.pipelines || []
   const manual = loadCampMap(client.id) // editing lives in Settings; read latest each render
   const effTarget = (name) => manual[name] ?? (camps.find((x) => x.name === name)?.auto) ?? 'all'
   // attribute campaign spend to the selected pipeline (or 'all' = account totals)
@@ -974,7 +981,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const norm360 = (t) => ({ leads: t.leads, booked: t.booked, shown: t.shown, won: t.won, revenue: t.revenue, avgValue: t.avgWonValue, openValue: t.openValue, lost: t.lost, open: t.open })
   const chSel = chan !== 'all' && channels ? channels[chan] : null
   const pipesSrc = chSel ? (chSel.pipelines || []) : pipes
-  const crmAll = chSel ? norm360(chSel.totals) : b.crm
+  const crmAll = chSel ? norm360(chSel.totals) : base.crm
   const multiSrc = pipesSrc.length > 1
   const c = pid === 'all' ? crmAll : (pipesSrc.find((x) => x.id === pid)?.crm || crmAll)
   const attr = pid === 'all'
@@ -1007,12 +1014,18 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   return (
     <>
       <div className="c360-head">
-        <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}{chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}{pid !== 'all' ? ' · attributed spend' : ''}</span></div>
+        <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}{chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}{uid !== 'all' ? ` · ${users.find((u) => u.id === uid)?.name || 'user'}` : ''}{pid !== 'all' ? ' · attributed spend' : ''}</span></div>
         <div className="c360-controls">
           {canChan && <div className="chan-toggle">
             {[['all', 'All'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => (
               <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{lbl}</button>
             ))}
+          </div>}
+          {users.length > 1 && <div className="pipe-sel"><label>User</label>
+            <select value={uid} onChange={(e) => setUid(e.target.value)}>
+              <option value="all">All users ({fmtNumber(b.crm.leads)})</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({fmtNumber(u.leads)})</option>)}
+            </select>
           </div>}
           {multiSrc && <div className="pipe-sel"><label>Pipeline</label>
             <select value={pid} onChange={(e) => setPid(e.target.value)}>

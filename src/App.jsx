@@ -1122,17 +1122,23 @@ function KeyEventsEditor({ clientId }) {
       .catch(() => setSt({ status: 'err', blend: null }))
   }, [open, st.status, clientId])
   const pipes = (st.blend && st.blend.pipelines) || []
-  const stageNames = [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))]
+  const withStages = pipes.filter((p) => (p.stages || []).length)
+  const multi = withStages.length > 1
   const toggle = (n) => setSel((prev) => { const nx = prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]; saveKeyEvents(clientId, nx); return nx })
   return (
     <div className="linker">
       <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>
       {open && <div className="linker-body">
-        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages that count as key events for this client — they drive the Key Events funnel &amp; cost-per-stage in Caalano360. Leave empty for the default leads → booked → shown → won.</p>
+        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages that count as key events for this client — they drive the Key Events funnel &amp; cost-per-stage in Caalano360. Leave empty for the default leads → booked → shown → won.{multi ? ' Stages are grouped by pipeline below.' : ''}</p>
         {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
-          : stageNames.length ? <div className="kev-list">{stageNames.map((n) => (
-            <label className={`kev-item ${sel.includes(n) ? 'on' : ''}`} key={n}><input type="checkbox" checked={sel.includes(n)} onChange={() => toggle(n)} /><span title={n}>{n}</span></label>
-          ))}</div>
+          : withStages.length ? withStages.map((p) => (
+            <div className="kev-group" key={p.id}>
+              {multi && <div className="kev-pipe">{p.name}</div>}
+              <div className="kev-list">{(p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => (
+                <label className={`kev-item ${sel.includes(s.name) ? 'on' : ''}`} key={s.name}><input type="checkbox" checked={sel.includes(s.name)} onChange={() => toggle(s.name)} /><span title={s.name}>{s.name}</span></label>
+              ))}</div>
+            </div>
+          ))
           : st.status === 'ok' ? <p className="cap">No Caalano Systems pipeline stages found.</p>
             : <p className="cap">Couldn’t load pipeline stages.</p>}
       </div>}

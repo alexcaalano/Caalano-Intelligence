@@ -297,6 +297,9 @@ tbody tr:hover { background: var(--panel-2); }
 .kev-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kev-item input { accent-color: var(--accent); cursor: pointer; }
 .kev-item.on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.kev-group { margin-top: 10px; }
+.kev-group:first-of-type { margin-top: 4px; }
+.kev-pipe { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; margin: 0 0 7px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
 
 /* CRM sub-rows (lost reasons per user) */
 .sub-row td { background: var(--panel-2); padding: 10px 14px !important; }

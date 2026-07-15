@@ -182,11 +182,12 @@ function rollupGoogle(cg, kw, st, dy, days) {
 // Agency roll-up: pull all Meta + Google accounts in two calls, map each back
 // to its client, and return per-client paid metrics for the whole roster.
 async function buildOverview(from, to, preset, key) {
-  const metaRev = {}, googleRev = {}
-  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[norm(c.meta)] = id; if (c.google) googleRev[norm(c.google)] = id }
-  const [fb, gg] = await Promise.all([
+  const metaRev = {}, googleRev = {}, ghlRev = {}
+  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[norm(c.meta)] = id; if (c.google) googleRev[norm(c.google)] = id; if (c.ghl) ghlRev[norm(c.ghl)] = id }
+  const [fb, gg, opps] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', 'actions_lead'], from, to, preset, key),
     windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
+    windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key).catch(() => []),
   ])
   const clients = {}
   const ensure = (id) => (clients[id] = clients[id] || {})
@@ -199,6 +200,11 @@ async function buildOverview(from, to, preset, key) {
     const id = googleRev[norm(r.account_id)]; if (!id) continue
     const e = ensure(id); e.google = e.google || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
     e.google.cost += num(r.spend); e.google.impressions += num(r.impressions); e.google.clicks += num(r.clicks); e.google.conversions += num(r.conversions)
+  }
+  for (const r of opps) {
+    const id = ghlRev[norm(r.account_id)]; if (!id) continue
+    const e = ensure(id); e.crm = e.crm || { revenue: 0, won: 0 }
+    if (String(r.opportunity_status || '').toLowerCase() === 'won') { e.crm.revenue += num(r.opportunity_monetary_value); e.crm.won++ }
   }
   return { clients }
 }

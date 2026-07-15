@@ -119,7 +119,8 @@ function computeRows(snapClients, live) {
     const impressions = (meta?.impressions || 0) + (google?.impressions || 0)
     const clicks = (meta?.clicks || 0) + (google?.clicks || 0)
     const conversions = (meta?.leads || 0) + (google?.conversions || 0)
-    return { c, i, id: c.id, name: c.name, industry: c.industry, track: c.trackingStatus, spend, impressions, clicks, conversions, cpl: conversions ? spend / conversions : 0, ctr: impressions ? (clicks / impressions) * 100 : 0, metaSpend: meta?.spend || 0, googleSpend: google?.cost || 0, hasMeta: !!c.meta, hasGoogle: !!c.google }
+    const revenue = (lm && lm.crm && lm.crm.revenue) || 0
+    return { c, i, id: c.id, name: c.name, industry: c.industry, track: c.trackingStatus, spend, impressions, clicks, conversions, revenue, cpl: conversions ? spend / conversions : 0, ctr: impressions ? (clicks / impressions) * 100 : 0, roas: spend ? revenue / spend : 0, metaSpend: meta?.spend || 0, googleSpend: google?.cost || 0, hasMeta: !!c.meta, hasGoogle: !!c.google }
   })
 }
 
@@ -128,7 +129,8 @@ function Overview({ rows, currency, periodLabel, live, onPick }) {
   const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks, conversions: a.conversions + r.conversions, metaSpend: a.metaSpend + r.metaSpend, googleSpend: a.googleSpend + r.googleSpend }), { spend: 0, impressions: 0, clicks: 0, conversions: 0, metaSpend: 0, googleSpend: 0 })
   const cpl = t.conversions ? t.spend / t.conversions : 0
   const ctr = t.impressions ? (t.clicks / t.impressions) * 100 : 0
-  const byClient = rows.map((r) => ({ name: r.name, spend: r.spend, color: acolor(r.i) })).filter((x) => x.spend > 0).sort((a, b) => b.spend - a.spend)
+  const byClient = rows.map((r) => ({ name: r.name, spend: r.spend, revenue: r.revenue || 0, color: acolor(r.i) })).filter((x) => x.spend > 0 || x.revenue > 0).sort((a, b) => b.spend - a.spend)
+  const chartH = Math.max(140, byClient.length * 30)
   return (
     <>
       <div className="section-title">Paid performance <span className="sub">· Meta + Google · {periodLabel} · {live ? 'live' : 'snapshot fallback'}</span></div>
@@ -140,14 +142,25 @@ function Overview({ rows, currency, periodLabel, live, onPick }) {
       </div>
       <div className="grid two" style={{ marginTop: 14 }}>
         <div className="card chart-card">
-          <h3>Ad spend by client</h3><p className="cap">Combined Meta + Google · {periodLabel}</p>
-          <ResponsiveContainer width="100%" height={Math.max(230, byClient.length * 34)}>
+          <h3>Ad spend &amp; revenue by client</h3><p className="cap">Ad spend (Meta + Google) vs. closed revenue · {periodLabel}</p>
+          <div className="mini-cap">Ad spend</div>
+          <ResponsiveContainer width="100%" height={chartH}>
             <BarChart data={byClient} layout="vertical" margin={{ left: 8, right: 18 }}>
               <CartesianGrid horizontal={false} stroke="var(--border)" />
               <XAxis type="number" tickFormatter={fmtCompact} stroke="var(--muted)" fontSize={11} />
               <YAxis type="category" dataKey="name" width={130} stroke="var(--muted)" fontSize={11} />
               <Tooltip formatter={(v) => fmtCurrency(v, currency)} cursor={{ fill: 'var(--panel-2)' }} />
-              <Bar dataKey="spend" radius={[0, 6, 6, 0]}>{byClient.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar>
+              <Bar dataKey="spend" name="Ad spend" radius={[0, 6, 6, 0]}>{byClient.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="mini-cap" style={{ marginTop: 8 }}>Revenue closed</div>
+          <ResponsiveContainer width="100%" height={chartH}>
+            <BarChart data={byClient} layout="vertical" margin={{ left: 8, right: 18 }}>
+              <CartesianGrid horizontal={false} stroke="var(--border)" />
+              <XAxis type="number" tickFormatter={fmtCompact} stroke="var(--muted)" fontSize={11} />
+              <YAxis type="category" dataKey="name" width={130} stroke="var(--muted)" fontSize={11} />
+              <Tooltip formatter={(v) => fmtCurrency(v, currency)} cursor={{ fill: 'var(--panel-2)' }} />
+              <Bar dataKey="revenue" name="Revenue" radius={[0, 6, 6, 0]}>{byClient.map((e, i) => <Cell key={i} fill="#12b886" />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -172,7 +185,7 @@ function ClientTable({ rows, currency, onPick }) {
   const Th = ({ k, children }) => <th onClick={() => setKey(k)}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
     <div className="table-wrap"><table>
-      <thead><tr><Th k="name">Client</Th><Th k="spend">Spend</Th><Th k="conversions">Results</Th><Th k="cpl">Cost / result</Th><Th k="ctr">CTR</Th><th>Tracking</th><th>Channels</th></tr></thead>
+      <thead><tr><Th k="name">Client</Th><Th k="spend">Spend</Th><Th k="conversions">Results</Th><Th k="cpl">Cost / result</Th><Th k="revenue">Revenue</Th><Th k="roas">ROAS</Th><Th k="ctr">CTR</Th><th>Tracking</th><th>Channels</th></tr></thead>
       <tbody>{sorted.map((r) => {
         const tk = TRACK[r.track] || TRACK.full; const has = r.conversions > 0
         return (
@@ -181,6 +194,8 @@ function ClientTable({ rows, currency, onPick }) {
             <td>{fmtCurrency(r.spend, currency)}</td>
             <td>{has ? fmtNumber(r.conversions) : '—'}</td>
             <td>{has ? fmtCurrency(r.cpl, currency) : '—'}</td>
+            <td>{r.revenue ? fmtCurrency(r.revenue, currency) : '—'}</td>
+            <td>{r.revenue && r.spend ? `${r.roas.toFixed(2)}×` : '—'}</td>
             <td>{fmtPct(r.ctr, 2)}</td>
             <td><span className={`tk ${tk.cls}`}>{tk.label}</span></td>
             <td><div className="chan-tags">{r.hasMeta && <span className="chan" style={{ background: '#4f7cff' }}>Meta</span>}{r.hasGoogle && <span className="chan" style={{ background: '#12b886' }}>Google</span>}</div></td>

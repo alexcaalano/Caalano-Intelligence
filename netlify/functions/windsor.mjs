@@ -214,12 +214,12 @@ async function buildGoogle(accountId, from, to, preset, key) {
     pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
     windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key).then(filt),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key).then(filt),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
-  const caMap = new Map()
-  for (const r of ca) { const n = r.conversion_action_name; if (!n) continue; const e = caMap.get(n) || { name: n, category: titleCase(String(r.conversion_action_category || '').replace(/_/g, ' ')), conversions: 0, allConversions: 0, value: 0 }; e.conversions += num(r.conversions); e.allConversions += num(r.all_conversions); e.value += num(r.conversions_value); caMap.set(n, e) }
-  roll.conversionActions = [...caMap.values()].filter((x) => x.allConversions > 0).sort((a, b) => b.allConversions - a.allConversions)
+  // Detailed rows (campaign, ad group, action) so the UI can filter them to the
+  // drilled-into campaign / ad group; the front-end aggregates by action name.
+  roll.conversionActions = ca.map((r) => ({ campaign: r.campaign || null, adGroup: r.ad_group_name || null, name: r.conversion_action_name, category: titleCase(String(r.conversion_action_category || '').replace(/_/g, ' ')), conversions: num(r.conversions), allConversions: num(r.all_conversions), value: num(r.conversions_value) })).filter((r) => r.name && r.allConversions > 0).slice(0, 3000)
   roll.prev = prev.reduce((a, r) => ({ cost: a.cost + num(r.spend), impressions: a.impressions + num(r.impressions), clicks: a.clicks + num(r.clicks), conversions: a.conversions + num(r.conversions) }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   roll.adGroupDaily = agDay.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adGroup: r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null), cost: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), conversions: num(r.conversions) })).filter((r) => r.date && r.campaign)
   roll.searchTermDaily = stDay.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adGroup: r.ad_group_name || null, keyword: null, term: r.search_term, cost: num(r.spend), clicks: num(r.clicks), conversions: num(r.conversions) })).filter((r) => r.date && r.term && (r.cost > 0 || r.clicks > 0)).sort((a, b) => b.cost - a.cost).slice(0, 2500)

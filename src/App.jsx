@@ -435,6 +435,9 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const keywords = g.keywords.filter(matchCA)
   const searchTerms = (g.searchTerms || []).filter((r) => matchCA(r))
   const selLabel = [sel.campaign, sel.adGroup, sel.keyword].filter(Boolean).join(' › ')
+  // conversion actions + match types respond to the drill-down selection
+  const caAgg = (() => { const m = new Map(); for (const r of (g.conversionActions || [])) { if (!matchCA(r)) continue; const e = m.get(r.name) || { name: r.name, category: r.category, conversions: 0, allConversions: 0, value: 0 }; e.conversions += r.conversions; e.allConversions += r.allConversions; e.value += r.value; m.set(r.name, e) } return [...m.values()].sort((a, b) => b.allConversions - a.allConversions) })()
+  const matchAgg = (() => { const m = new Map(); for (const k of keywords) { const type = k.match || '—'; const e = m.get(type) || { type, cost: 0 }; e.cost += k.cost; m.set(type, e) } return [...m.values()].filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost) })()
   const daily = (g.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpc: d.clicks ? d.cost / d.clicks : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpconv: d.conversions ? d.cost / d.conversions : 0 }))
   const qKw = g.keywords.filter((k) => k.qs !== '' && k.qs != null)
   const avgQs = qKw.length ? qKw.reduce((a, k) => a + k.qs, 0) / qKw.length : 0
@@ -479,17 +482,19 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
           </div>
           <p className="caveat">Low quality scores inflate CPCs — tighten ad-to-keyword relevance or pause the worst offenders.</p>
         </div>
-        <div className="card chart-card"><h3>Spend by match type</h3><p className="cap">Where the budget is landing</p>
-          <ResponsiveContainer width="100%" height={150}>
-            <PieChart><Pie data={g.matchTypes} dataKey="cost" nameKey="type" innerRadius={38} outerRadius={62} paddingAngle={2} stroke="none">{g.matchTypes.map((x) => <Cell key={x.type} fill={mtColor(x.type)} />)}</Pie><Tooltip formatter={(v) => fmtCurrency(v, currency)} /></PieChart>
-          </ResponsiveContainer>
-          <div className="legend" style={{ flexWrap: 'wrap', fontSize: 11 }}>{g.matchTypes.map((x) => <span key={x.type}><i className="swatch" style={{ background: mtColor(x.type) }} /> {x.type} {fmtCurrency(x.cost, currency)}</span>)}</div>
+        <div className="card chart-card"><h3>Spend by match type</h3><p className="cap">{selLabel ? `In ${selLabel}` : 'Where the budget is landing'}</p>
+          {matchAgg.length ? <>
+            <ResponsiveContainer width="100%" height={150}>
+              <PieChart><Pie data={matchAgg} dataKey="cost" nameKey="type" innerRadius={38} outerRadius={62} paddingAngle={2} stroke="none">{matchAgg.map((x) => <Cell key={x.type} fill={mtColor(x.type)} />)}</Pie><Tooltip formatter={(v) => fmtCurrency(v, currency)} /></PieChart>
+            </ResponsiveContainer>
+            <div className="legend" style={{ flexWrap: 'wrap', fontSize: 11 }}>{matchAgg.map((x) => <span key={x.type}><i className="swatch" style={{ background: mtColor(x.type) }} /> {x.type} {fmtCurrency(x.cost, currency)}</span>)}</div>
+          </> : <p className="cap">No keyword spend{selLabel ? ` in ${selLabel}` : ''}.</p>}
         </div>
       </div>
-      {g.conversionActions && g.conversionActions.length > 0 && <>
-        <div className="lvl-title">Conversion actions <span className="sub">· what Google is counting as a conversion</span></div>
+      {caAgg.length > 0 && <>
+        <div className="lvl-title">Conversion actions <span className="sub">· what Google is counting{selLabel ? ` · in ${selLabel}` : ''}</span></div>
         <div className="table-wrap"><table><thead><tr><th>Action</th><th>Category</th><th>Conversions</th><th>All conv.</th><th>Value</th></tr></thead>
-          <tbody>{g.conversionActions.map((a) => (<tr key={a.name}><td>{a.name}</td><td><span className="q-badge q-unk">{a.category || '—'}</span></td><td>{fmtNumber(a.conversions)}</td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '—'}</td></tr>))}</tbody></table></div>
+          <tbody>{caAgg.map((a) => (<tr key={a.name}><td>{a.name}</td><td><span className="q-badge q-unk">{a.category || '—'}</span></td><td>{fmtNumber(a.conversions)}</td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '—'}</td></tr>))}</tbody></table></div>
       </>}
       <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched)' : ''}</span></div>
       <div className="table-wrap"><table><GHead first="Campaign" o360 sort={cSort} on={onCSort} />

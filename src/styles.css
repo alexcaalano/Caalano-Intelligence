@@ -386,6 +386,24 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .pg-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .mini-cap { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin: 2px 0 2px 2px; }
 
+/* Client performance trends */
+.tr-list { display: flex; flex-direction: column; gap: 16px; }
+.tr-card { padding: 18px 18px 20px; }
+.tr-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.tr-name { background: none; border: 0; color: var(--text); font-size: 16px; font-weight: 750; letter-spacing: -.01em; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 6px; }
+.tr-name:hover { color: var(--brand-2); }
+.tr-open { font-size: 12px; color: var(--faint); }
+.chan-toggle.sm button { padding: 5px 11px; font-size: 11.5px; }
+.tr-row-lab { font-size: 12px; font-weight: 700; color: var(--muted); margin: 14px 2px 8px; }
+.tr-row-lab .sub { font-weight: 500; color: var(--faint); }
+.tr-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+@media (max-width: 760px) { .tr-grid { grid-template-columns: repeat(2, 1fr); } }
+.tr-sc { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; }
+.tr-lab { font-size: 10.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.tr-val { font-size: 22px; font-weight: 760; margin: 7px 0 5px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tr-d { font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.tr-d.up { color: var(--pos); } .tr-d.down { color: var(--neg); } .tr-d.flat { color: var(--faint); font-weight: 500; }
+
 /* Refresh button */
 .refresh-btn { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); border-radius: 10px; padding: 9px 14px; font-size: 12.5px; font-weight: 650; cursor: pointer; white-space: nowrap; }
 .refresh-btn:hover { background: var(--brand); color: #fff; border-color: var(--brand); }

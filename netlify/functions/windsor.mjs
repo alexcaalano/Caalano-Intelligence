@@ -209,6 +209,59 @@ async function buildOverview(from, to, preset, key) {
   return { clients }
 }
 
+// Rolling-window trends: for each client, blended/Meta/Google spend + results +
+// booked calls over the last 3/7/14/21/28 days, each vs the equal prior window.
+async function buildTrends(key) {
+  const metaId = {}, googleId = {}, ghlId = {}
+  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaId[norm(c.meta)] = id; if (c.google) googleId[norm(c.google)] = id; if (c.ghl) ghlId[norm(c.ghl)] = id }
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+  const dstr = (d) => d.toISOString().slice(0, 10)
+  const start = new Date(today); start.setUTCDate(start.getUTCDate() - 55)
+  const [fb, gg, opps, pipes] = await Promise.all([
+    windsorFetch('facebook', ['account_id', 'date', 'spend', 'actions_lead'], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at'], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
+  ])
+  const days = []; for (let i = 0; i < 56; i++) { const d = new Date(today); d.setUTCDate(d.getUTCDate() - i); days.push(dstr(d)) }
+  const dayIndex = new Map(days.map((d, i) => [d, i])) // 0 = today, larger = older
+  const mk = () => new Float64Array(56)
+  const cl = {}
+  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), booked: mk() })
+  for (const r of fb) { const id = metaId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.metaSpend[di] += num(r.spend); e.metaLeads[di] += num(r.actions_lead) }
+  for (const r of gg) { const id = googleId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.gSpend[di] += num(r.spend); e.gConv[di] += num(r.conversions) }
+  const idxByAcct = {}; { const byAcct = {}; for (const p of pipes) { const id = ghlId[norm(p.account_id)]; if (!id) continue; (byAcct[id] = byAcct[id] || []).push(p) } for (const [id, arr] of Object.entries(byAcct)) idxByAcct[id] = stageIndex(arr) }
+  for (const r of opps) {
+    const id = ghlId[norm(r.account_id)]; if (!id) continue
+    const di = dayIndex.get(String(r.opportunity_created_at || '').slice(0, 10)); if (di == null) continue
+    const e = ensure(id); const idx = idxByAcct[id]; const pi = idx && idx.get(r.opportunity_pipeline_id)
+    const st = String(r.opportunity_status || '').toLowerCase(); const stg = pi ? pi.byId[r.opportunity_pipeline_stage_id] : null; const pos = stg ? stg.pos : -1
+    if (st === 'won' || (pi && pi.bookPos != null && pos >= pi.bookPos)) e.booked[di]++
+  }
+  const WINDOWS = [3, 7, 14, 21, 28]
+  const sumR = (arr, a, b) => { let s = 0; for (let i = a; i < b; i++) s += arr[i]; return s }
+  const out = {}
+  for (const [id, c] of Object.entries(CLIENTS)) {
+    if (!c.meta && !c.google && !c.ghl) continue
+    const E = ensure(id)
+    const windows = WINDOWS.map((n) => {
+      const ms = sumR(E.metaSpend, 0, n), msp = sumR(E.metaSpend, n, 2 * n)
+      const ml = sumR(E.metaLeads, 0, n), mlp = sumR(E.metaLeads, n, 2 * n)
+      const gs = sumR(E.gSpend, 0, n), gsp = sumR(E.gSpend, n, 2 * n)
+      const gc = sumR(E.gConv, 0, n), gcp = sumR(E.gConv, n, 2 * n)
+      return {
+        n,
+        meta: { spend: ms, spendPrev: msp, results: ml, resultsPrev: mlp },
+        google: { spend: gs, spendPrev: gsp, results: gc, resultsPrev: gcp },
+        blended: { spend: ms + gs, spendPrev: msp + gsp, results: ml + gc, resultsPrev: mlp + gcp },
+        booked: sumR(E.booked, 0, n), bookedPrev: sumR(E.booked, n, 2 * n),
+      }
+    })
+    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, windows }
+  }
+  return { clients: out }
+}
+
 // Geographic conversions — where conversions happen. Google Ads geo reports
 // can't always combine a location dim with other segments, so we probe a few
 // candidate Windsor field names one at a time and use the first that returns
@@ -448,6 +501,12 @@ export default async (req) => {
   // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.
   if (url.searchParams.get('scope') === 'agency') {
     try { const ov = await buildOverview(from, to, preset, key); return json({ scope: 'agency', period: { from, to, preset }, ...ov }, 200, true) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
+  // Rolling-window performance trends across all clients (own date logic).
+  if (url.searchParams.get('scope') === 'trends') {
+    try { const tr = await buildTrends(key); return json({ scope: 'trends', ...tr }, 200, true) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

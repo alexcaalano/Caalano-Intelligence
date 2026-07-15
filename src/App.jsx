@@ -206,6 +206,70 @@ function ClientTable({ rows, currency, onPick }) {
   )
 }
 
+/* ============ Client performance trends ============ */
+function useTrends(nonce = 0) {
+  const [state, setState] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true; setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=trends${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: j && j.clients ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [nonce])
+  return state
+}
+const WLABEL = { 3: 'Last 3 days', 7: 'Last 7 days', 14: 'Last 14 days', 21: 'Last 21 days', 28: 'Last 28 days' }
+// One scorecard: value + % change vs the prior equal window (lower cost = good).
+function TrendCell({ label, value, cur, prev, goodWhenDown = true }) {
+  const has = prev != null && prev > 0 && cur != null
+  const pct = has ? ((cur - prev) / prev) * 100 : null
+  const dir = pct == null ? 'flat' : (goodWhenDown ? (pct <= 0 ? 'up' : 'down') : (pct >= 0 ? 'up' : 'down'))
+  return (
+    <div className="tr-sc">
+      <div className="tr-lab">{label}</div>
+      <div className="tr-val">{value}</div>
+      {pct != null ? <div className={`tr-d ${dir}`}>{pct > 0 ? '▲' : pct < 0 ? '▼' : '■'} {Math.abs(pct).toFixed(0)}%</div> : <div className="tr-d flat">no prior</div>}
+    </div>
+  )
+}
+function ClientTrend({ row, tr, currency, onPick }) {
+  const both = row.hasMeta && row.hasGoogle
+  const [chan, setChan] = useState('blended')
+  const eff = both ? chan : (row.hasMeta ? 'meta' : 'google')
+  const money = (v) => fmtCurrency(v, currency)
+  const wins = tr.windows || []
+  const resultLabel = eff === 'google' ? 'Cost / Conversion' : eff === 'meta' ? 'Cost / Lead' : 'Cost / Result (blended)'
+  return (
+    <div className="card tr-card">
+      <div className="tr-head">
+        <button className="tr-name" onClick={() => onPick(row.c)} title="Open client workspace">{row.name} <span className="tr-open">↗</span></button>
+        {both && <div className="chan-toggle sm">{[['blended', 'Blended'], ['meta', 'Meta'], ['google', 'Google']].map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
+      </div>
+      <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period</span></div>
+      <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '—'} cur={cpl} prev={cplP} /> })}</div>
+      {row.hasCrm && <>
+        <div className="tr-row-lab">Cost / Booked Call <span className="sub">· {eff === 'blended' ? 'total' : eff} spend ÷ booked calls</span></div>
+        <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpb = w.booked ? d.spend / w.booked : null; const cpbP = w.bookedPrev ? d.spendPrev / w.bookedPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpb != null ? money(cpb) : '—'} cur={cpb} prev={cpbP} /> })}</div>
+      </>}
+    </div>
+  )
+}
+function TrendsTab({ rows, currency, nonce, onPick }) {
+  const tr = useTrends(nonce)
+  if (tr.status === 'loading') return <div className="card"><Spinner label="Loading performance trends…" /></div>
+  if (tr.status === 'err' || !tr.data || !tr.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load trends — try Refresh.</p></div>
+  const clients = tr.data.clients
+  const list = rows.filter((r) => clients[r.id] && (r.hasMeta || r.hasGoogle))
+  return (
+    <div className="tr-list">
+      {list.map((r) => <ClientTrend key={r.id} row={r} tr={clients[r.id]} currency={currency} onPick={onPick} />)}
+      {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
+      <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages and aren't channel-split, so the Meta / Google toggle divides that channel's spend by total booked calls.</p>
+    </div>
+  )
+}
+
 /* ============ CRM (pipeline) ============ */
 function CrmTab({ ghl, currency }) {
   const lmax = Math.max(...ghl.lostReasons.map((s) => s.count))
@@ -1364,6 +1428,7 @@ export default function App() {
         <div className="brand"><div className="logo">C</div><div><h1>Caalano Digital</h1><p>Reporting Dashboard</p></div></div>
         <nav className="nav">
           <button className={view === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
+          <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Client Performance Trends</button>
           <button className={view === 'clients' ? 'active' : ''} onClick={() => go('clients')}><span className="ic">❑</span>Clients</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
@@ -1376,14 +1441,15 @@ export default function App() {
       <main className="main">
         <div className="head">
           <div>
-            <h2>{view === 'overview' ? 'Agency Overview' : 'Clients'}</h2>
-            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Client Performance Trends' : 'Clients'}</h2>
+            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : view === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />
           <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
         </div>
         {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} onPick={(c) => { setPicked(c); setView('clients') }} />}
+        {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'clients' && !picked && <ClientTable rows={rows} currency={data.currency} onPick={setPicked} />}
         {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} nonce={refreshKey} onBack={() => setPicked(null)} />}
       </main>

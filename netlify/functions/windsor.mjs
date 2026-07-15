@@ -128,7 +128,9 @@ export default async (req) => {
   const from = url.searchParams.get('from'); const to = url.searchParams.get('to'); const preset = url.searchParams.get('preset')
   const debug = url.searchParams.get('debug')
   const key = process.env.WINDSOR_API_KEY
-  const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=1800' } })
+  // Only cache successful, non-debug responses. Errors and debug must never be
+  // cached, or a transient failure gets replayed by the CDN.
+  const json = (obj, status = 200, cache = false) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? 'public, max-age=600' : 'no-store' } })
 
   if (!key) return json({ error: 'WINDSOR_API_KEY not set' }, 500)
   const c = CLIENTS[client]
@@ -144,7 +146,7 @@ export default async (req) => {
     const rows = rowsAll.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
     if (debug) return json({ channel, accountId, fieldsRequested: fields, rowCount: rows.length, sample: rows.slice(0, 3), sampleKeys: rows[0] ? Object.keys(rows[0]) : [] })
     const out = channel === 'meta' ? { meta: rollupMeta(rows) } : channel === 'google' ? { google: rollupGoogle(rows) } : { ghl: rollupGhl(rows) }
-    return json({ client, channel, period: { from, to, preset }, ...out })
+    return json({ client, channel, period: { from, to, preset }, ...out }, 200, true)
   } catch (e) {
     return json({ error: String(e.message || e) }, 502)
   }

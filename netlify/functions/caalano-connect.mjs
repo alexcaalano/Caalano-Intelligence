@@ -18,7 +18,7 @@ const page = (title, body) => new Response(
 
 export default async (req) => {
   const url = new URL(req.url)
-  const redirectUri = `${url.origin}/.netlify/functions/ghl-oauth`
+  const redirectUri = `${url.origin}/.netlify/functions/caalano-connect`
   const clientId = process.env.GHL_CLIENT_ID
 
   if (url.searchParams.get('status') === '1') {
@@ -42,10 +42,10 @@ export default async (req) => {
       await exchangeCode(code, redirectUri)
       return page('✅ Caalano Systems connected', '<p>UTM attribution is now live in the dashboard. You can close this tab.</p><p><a style="color:#9b8cff" href="/">Back to dashboard</a></p>')
     } catch (e) {
-      return page('Connection failed', `<p style="color:#f0435b">${String(e.message || e)}</p><p><a style="color:#9b8cff" href="/.netlify/functions/ghl-oauth?start=1">Try again</a></p>`)
+      return page('Connection failed', `<p style="color:#f0435b">${String(e.message || e)}</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Try again</a></p>`)
     }
   }
 
   const connected = await isConnected().catch(() => false)
-  return page('Connect Caalano Systems', `<p>${connected ? 'Already connected. Re-authorise to refresh access.' : 'Authorise agency access to unlock UTM attribution.'}</p><p><a style="display:inline-block;margin-top:12px;background:#6d5efc;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:700" href="/.netlify/functions/ghl-oauth?start=1">${connected ? 'Re-authorise' : 'Connect GoHighLevel'}</a></p>`)
+  return page('Connect Caalano Systems', `<p>${connected ? 'Already connected. Re-authorise to refresh access.' : 'Authorise agency access to unlock UTM attribution.'}</p><p><a style="display:inline-block;margin-top:12px;background:#6d5efc;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:700" href="/.netlify/functions/caalano-connect?start=1">${connected ? 'Re-authorise' : 'Connect Caalano Systems'}</a></p>`)
 }

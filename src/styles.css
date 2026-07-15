@@ -282,6 +282,16 @@ tbody tr:hover { background: var(--panel-2); }
 .sc-d { font-size: 11px; font-weight: 700; margin-top: 5px; display: flex; align-items: center; gap: 4px; }
 .sc-d.up { color: var(--pos); } .sc-d.down { color: var(--neg); } .sc-d.flat { color: var(--faint); font-weight: 500; }
 .sc-vs { color: var(--faint); font-weight: 500; }
+.sc-kpi { font-size: 10.5px; font-weight: 700; margin-top: 4px; }
+.sc-kpi.good { color: var(--pos); } .sc-kpi.bad { color: var(--neg); }
+.fn-tgt { font-weight: 700; margin-left: 8px; opacity: .95; }
+.fn-tgt.good { color: #eafff5; } .fn-tgt.bad { color: #ffe0e6; }
+.kpi-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.kpi-inputs label, .kpi-stage { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.kpi-stage { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.kpi-stage span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpi-inputs input, .kpi-stage input { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12px; width: 100%; }
+.kpi-stage input { max-width: 110px; }
 
 /* CRM sub-rows (lost reasons per user) */
 .sub-row td { background: var(--panel-2); padding: 10px 14px !important; }

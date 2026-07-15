@@ -247,14 +247,15 @@ function ScDelta({ cur, prev, goodWhenDown }) {
   const up = pct >= 0; const good = goodWhenDown ? !up : up
   return <div className={`sc-d ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))} <span className="sc-vs">vs prev</span></div>
 }
-function Sc({ label, value, cur, prev, goodWhenDown }) {
-  return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} /></div>
+function Sc({ label, value, cur, prev, goodWhenDown, kpi }) {
+  return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
 }
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
 const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg; return r <= 0.85 ? 'rgba(23,178,106,.28)' : r <= 1.15 ? 'rgba(245,165,36,.28)' : 'rgba(240,67,91,.28)' }
 
-function MetaDeep({ deep, currency, attr }) {
+function MetaDeep({ deep, currency, attr, clientId }) {
+  const kpis = loadKpis(clientId)
   const [sel, setSel] = useState(null)
   const [day, setDay] = useState(null)
   const [campSort, onCampSort] = useSort('spend')
@@ -303,7 +304,7 @@ function MetaDeep({ deep, currency, attr }) {
         <Sc label="CTR (All)" value={fmtPct(rate(t.clicks, t.impressions), 2)} cur={rate(t.clicks, t.impressions)} prev={D((x) => rate(x.clicks, x.impressions))} />
         <Sc label="Link CTR" value={fmtPct(rate(t.linkClicks, t.impressions), 2)} cur={rate(t.linkClicks, t.impressions)} prev={D((x) => rate(x.linkClicks, x.impressions))} />
         <Sc label="Leads" value={fmtNumber(t.leads)} cur={t.leads} prev={D((x) => x.leads)} />
-        <Sc label="CPL" value={fmtCurrency(cpl, currency)} cur={cpl} prev={D((x) => x.leads ? x.spend / x.leads : 0)} goodWhenDown />
+        <Sc label="CPL" value={fmtCurrency(cpl, currency)} cur={cpl} prev={D((x) => x.leads ? x.spend / x.leads : 0)} goodWhenDown kpi={kpis.metaCpl ? { text: `Target ${fmtCurrency(kpis.metaCpl, currency)}`, cls: kpiClass(cpl, kpis.metaCpl, true) } : null} />
         <Sc label="CVR (Lead)" value={fmtPct(rate(t.leads, t.linkClicks), 2)} cur={rate(t.leads, t.linkClicks)} prev={D((x) => rate(x.leads, x.linkClicks))} />
         {crmTot && <Sc label="Scheduled Appts" value={fmtNumber(crmTot.booked)} />}
         {crmTot && <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '—'} />}
@@ -406,7 +407,8 @@ function MetaDeep({ deep, currency, attr }) {
 const qsClass = (n) => n === '' || n == null ? 'q-unk' : n >= 7 ? 'q-above' : n >= 4 ? 'q-avg' : 'q-low'
 const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
 const mtColor = (t) => MT_COLOR[t] || '#8b5cf6'
-function GoogleDeep({ deep, currency, attr }) {
+function GoogleDeep({ deep, currency, attr, clientId }) {
+  const kpis = loadKpis(clientId)
   const [sel, setSel] = useState({ campaign: null, adGroup: null })
   const [day, setDay] = useState(null)
   const [cSort, onCSort] = useSort('cost')
@@ -448,7 +450,7 @@ function GoogleDeep({ deep, currency, attr }) {
         <Sc label="CTR" value={fmtPct(rate(t.clicks, t.impressions), 2)} cur={rate(t.clicks, t.impressions)} prev={D((x) => rate(x.clicks, x.impressions))} />
         <Sc label="Avg CPC" value={fmtCurrency(avgCpc, currency)} cur={avgCpc} prev={D((x) => x.clicks ? x.cost / x.clicks : 0)} goodWhenDown />
         <Sc label="Conversions" value={fmtNumber(t.conversions)} cur={t.conversions} prev={D((x) => x.conversions)} />
-        <Sc label="Cost / Conv" value={fmtCurrency(costPerConv, currency)} cur={costPerConv} prev={D((x) => x.conversions ? x.cost / x.conversions : 0)} goodWhenDown />
+        <Sc label="Cost / Conv" value={fmtCurrency(costPerConv, currency)} cur={costPerConv} prev={D((x) => x.conversions ? x.cost / x.conversions : 0)} goodWhenDown kpi={kpis.googleCostConv ? { text: `Target ${fmtCurrency(kpis.googleCostConv, currency)}`, cls: kpiClass(costPerConv, kpis.googleCostConv, true) } : null} />
         <Sc label="Conv. Rate" value={fmtPct(rate(t.conversions, t.clicks), 2)} cur={rate(t.conversions, t.clicks)} prev={D((x) => rate(x.conversions, x.clicks))} />
         <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
@@ -561,7 +563,8 @@ function OverallTab({ client, currency, side }) {
 }
 
 /* ============ CRM — live from GoHighLevel (Caalano Systems) ============ */
-function CrmGhl({ crm, currency }) {
+function CrmGhl({ crm, currency, clientId }) {
+  const kpis = loadKpis(clientId)
   const t = crm.totals
   const pipes = crm.pipelines || []
   const [pid, setPid] = useState(pipes.length === 1 ? pipes[0].id : 'all')
@@ -597,8 +600,10 @@ function CrmGhl({ crm, currency }) {
       {stages && stages.length ? <div className="card chart-card">
         <div className="funnel">{stages.map((s, i) => {
           const hue = 210 + Math.round((i / Math.max(1, stages.length - 1)) * -70)
-          return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}</span></div>
+          const tgt = kpis.stages && kpis.stages[s.name]
+          return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}{tgt ? <span className={`fn-tgt ${s.count >= tgt ? 'good' : 'bad'}`}>/ {fmtNumber(tgt)} {s.count >= tgt ? '✓' : ''}</span> : ''}</span></div>
         })}</div>
+        {kpis.stages && Object.keys(kpis.stages).length > 0 && <p className="caveat">Green = at or above your target for that stage (set in Settings). </p>}
       </div> : <p className="caveat">This account runs {pipes.length} pipelines — pick one above to see its stage-by-stage breakdown.</p>}
       {stages && stages.length > 1 && (() => {
         let acc = 0; const reached = []
@@ -927,12 +932,12 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
         {tab === 'crm' && (
           live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano Systems CRM…" /></div>
             : live.data && live.data.connected === false ? <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected yet.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>Authorise the agency connection at <code>/.netlify/functions/caalano-connect</code> to unlock live CRM + UTM attribution.</p></div>
-              : live.data && live.data.crm ? <CrmGhl crm={live.data.crm} currency={data.currency} />
+              : live.data && live.data.crm ? <CrmGhl crm={live.data.crm} currency={data.currency} clientId={client.id} />
                 : live.data && live.data.error ? <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load CRM for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{live.data.error}</p><p style={{ maxWidth: 460, margin: '8px auto 0' }}>If this is a token / access error, the agency app may not have access to this sub-account. Try the audit endpoint <code>?scope=ghlaudit</code>.</p></div>
                   : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
         )}
-        {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} /></>)}
-        {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} /></>)}
+        {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
+        {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
       </div>
     </>
   )
@@ -942,6 +947,41 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
 // Campaign → pipeline linker, per client. Fetches the client's campaigns +
 // pipelines on expand and writes overrides to the shared localStorage map that
 // Caalano360 reads for spend attribution.
+function KpiEditor({ clientId }) {
+  const [open, setOpen] = useState(false)
+  const [k, setK] = useState(() => loadKpis(clientId))
+  const [st, setSt] = useState({ status: 'idle', blend: null })
+  useEffect(() => {
+    if (!open || st.status !== 'idle') return
+    setSt({ status: 'loading', blend: null })
+    const r = presetRange('last_30d')
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+      .then((j) => setSt({ status: 'ok', blend: j.blend }))
+      .catch(() => setSt({ status: 'err', blend: null }))
+  }, [open, st.status, clientId])
+  const set = (patch) => setK((p) => { const nx = { ...p, ...patch }; saveKpis(clientId, nx); return nx })
+  const setStage = (name, val) => setK((p) => { const stages = { ...(p.stages || {}) }; if (val === '') delete stages[name]; else stages[name] = Number(val); const nx = { ...p, stages }; saveKpis(clientId, nx); return nx })
+  const pipes = (st.blend && st.blend.pipelines) || []
+  const stageNames = [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))]
+  const numOr = (v) => (v == null || v === '' ? '' : v)
+  return (
+    <div className="linker">
+      <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} KPI targets</button>
+      {open && <div className="linker-body">
+        <div className="kpi-inputs">
+          <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+        </div>
+        {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
+          : stageNames.length ? <>
+            <div className="cap" style={{ marginTop: 4 }}>Target leads at each pipeline stage</div>
+            {stageNames.map((n) => <label className="kpi-stage" key={n}><span title={n}>{n}</span><input type="number" min="0" value={numOr(k.stages && k.stages[n])} onChange={(e) => setStage(n, e.target.value)} placeholder="—" /></label>)}
+          </> : st.status === 'ok' ? <p className="cap">No Caalano Systems pipeline stages found.</p> : null}
+      </div>}
+    </div>
+  )
+}
 function CampaignLinker({ clientId }) {
   const [open, setOpen] = useState(false)
   const [st, setSt] = useState({ status: 'idle', blend: null })
@@ -1015,6 +1055,7 @@ function Settings({ config, enabled, setEnabled, onClose }) {
                   <span className="idtag">Caalano Systems <b>{c.ghl || '—'}</b></span>
                 </div>
                 {canLink && <CampaignLinker clientId={c.id} />}
+                {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}
               </div>
             )
           })}

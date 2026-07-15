@@ -60,10 +60,10 @@ async function windsorFetch(connector, fields, from, to, preset, key) {
   return j.data || j.result || []
 }
 
-function rollupMeta(rows) {
+function rollupMeta(adRows, dayRows, accRows) {
   const by = (keyFn) => {
     const m = new Map()
-    for (const r of rows) {
+    for (const r of adRows) {
       const k = keyFn(r); if (!k) continue
       const e = m.get(k) || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0 }
       e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks)
@@ -72,15 +72,41 @@ function rollupMeta(rows) {
     }
     return m
   }
-  const campaigns = [...by((r) => r.campaign).entries()].map(([name, v]) => ({ name, ...v }))
-  const adsets = [...by((r) => r.adset_name).entries()].map(([name, v]) => ({ name, ...v }))
-  const ads = rows.map((r) => ({
-    name: r.ad_name, type: /video/i.test(r.quality_ranking) ? 'Video' : (num(r.actions_video_view) > 0 ? 'Video' : 'Image'),
-    quality: r.quality_ranking || 'UNKNOWN', thumb: r.thumbnail_url,
+  const campaigns = [...by((r) => r.campaign).entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.spend - a.spend)
+  const adsets = [...by((r) => r.adset_name).entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.spend - a.spend)
+  // rebuild adset->campaign so ad sets can carry their parent campaign for drill-down
+  const adsetCampaign = {}
+  for (const r of adRows) { if (r.adset_name && r.campaign && !adsetCampaign[r.adset_name]) adsetCampaign[r.adset_name] = r.campaign }
+  const adsetsWithParent = adsets.map((a) => ({ ...a, campaign: adsetCampaign[a.name] || null }))
+  const ads = adRows.map((r) => ({
+    name: r.ad_name, campaign: r.campaign, adset: r.adset_name,
+    type: num(r.actions_video_view) > 0 ? 'Video' : 'Image',
+    quality: r.quality_ranking || 'UNKNOWN', thumb: r.thumbnail_url, igUrl: r.instagram_permalink_url || null,
     spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks),
     linkClicks: num(r.inline_link_clicks), leads: num(r.actions_lead), videoViews: num(r.actions_video_view),
-  })).filter((a) => a.name).sort((a, b) => b.spend - a.spend).slice(0, 24)
-  return { campaigns: campaigns.sort((a, b) => b.spend - a.spend), adsets: adsets.sort((a, b) => b.spend - a.spend), ads }
+  })).filter((a) => a.name).sort((a, b) => b.spend - a.spend)
+  // daily series, sorted ascending by date
+  const dmap = new Map()
+  for (const r of dayRows) {
+    const d = String(r.date || '').slice(0, 10); if (!d) continue
+    const e = dmap.get(d) || { date: d, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0 }
+    e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.linkClicks += num(r.inline_link_clicks); e.leads += num(r.actions_lead)
+    dmap.set(d, e)
+  }
+  const daily = [...dmap.values()].sort((a, b) => a.date.localeCompare(b.date))
+  // account totals (reach/frequency are only correct from an account-level pull)
+  const totals = { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0 }
+  for (const r of accRows) { totals.spend += num(r.spend); totals.impressions += num(r.impressions); totals.clicks += num(r.clicks); totals.linkClicks += num(r.inline_link_clicks); totals.leads += num(r.actions_lead); totals.videoViews += num(r.actions_video_view); totals.reach += num(r.reach) }
+  return { campaigns, adsets: adsetsWithParent, ads, daily, totals }
+}
+async function buildMeta(accountId, from, to, preset, key) {
+  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const [adRows, dayRows, accRows] = await Promise.all([
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view'], from, to, preset, key).then(filt),
+  ])
+  return rollupMeta(adRows, dayRows, accRows)
 }
 
 const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
@@ -99,27 +125,29 @@ function aggBy(rowsIn, keyFn) {
   }
   return m
 }
-// cg = campaign/adgroup rows, kw = keyword rows, st = search-term rows.
-function rollupGoogle(cg, kw, st, days) {
+// cg = campaign/adgroup rows, kw = keyword rows, st = search-term rows, dy = daily rows.
+function rollupGoogle(cg, kw, st, dy, days) {
   const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
   const campaigns = [...aggBy(cg, (r) => r.campaign).entries()].map(([name, v]) => ({ name, status: 'Enabled', ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
-  const adGroups = [...aggBy(cg, cleanAg).entries()].map(([name, v]) => ({ name, ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
-  // keywords: aggregate by text, keep dominant match type + approx quality score
+  const agCampaign = {}
+  for (const r of cg) { const ag = cleanAg(r); if (ag && r.campaign && !agCampaign[ag]) agCampaign[ag] = r.campaign }
+  const adGroups = [...aggBy(cg, cleanAg).entries()].map(([name, v]) => ({ name, campaign: agCampaign[name] || null, ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
+  // keywords: aggregate by text, carry campaign/ad group, dominant match type + approx quality score
   const kwAgg = aggBy(kw, (r) => r.keyword_text)
   const kwMeta = new Map()
-  for (const r of kw) { const t = r.keyword_text; if (!t) continue; const e = kwMeta.get(t) || { match: titleCase(r.match_type) || '—', qsSum: 0 }; e.qsSum += num(r.quality_score); if (!e.match || e.match === '—') e.match = titleCase(r.match_type) || '—'; kwMeta.set(t, e) }
-  const keywords = [...kwAgg.entries()].map(([text, v]) => { const meta = kwMeta.get(text) || {}; const qs = meta.qsSum ? Math.max(1, Math.min(10, Math.round(meta.qsSum / days))) : ''; return { text, match: meta.match || '—', qs, ...v } }).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 30)
+  for (const r of kw) { const t = r.keyword_text; if (!t) continue; const e = kwMeta.get(t) || { match: titleCase(r.match_type) || '—', qsSum: 0, campaign: r.campaign || null, adGroup: cleanAg(r) || null }; e.qsSum += num(r.quality_score); if (!e.match || e.match === '—') e.match = titleCase(r.match_type) || '—'; kwMeta.set(t, e) }
+  const keywords = [...kwAgg.entries()].map(([text, v]) => { const m = kwMeta.get(text) || {}; const qs = m.qsSum ? Math.max(1, Math.min(10, Math.round(m.qsSum / days))) : ''; return { text, match: m.match || '—', qs, campaign: m.campaign, adGroup: m.adGroup, ...v } }).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 60)
   const mt = new Map()
   for (const r of kw) { const t = titleCase(r.match_type); if (!t) continue; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
-  const stAgg = aggBy(st, (r) => r.search_term)
-  const searchTerms = [...stAgg.entries()].map(([term, v]) => ({ term, ...v })).sort((a, b) => b.cost - a.cost).slice(0, 40)
-  return {
-    campaigns, adGroups, keywords,
-    matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost),
-    matchTypeNote: 'Live from Windsor.ai — spend by keyword match type.',
-    searchTerms,
-    keywordsTotal: kwAgg.size, searchTermsTotal: stAgg.size,
-  }
+  // search terms with parent campaign / ad group / matched keyword
+  const stAgg = new Map(), stMeta = new Map()
+  for (const r of st) { const term = r.search_term; if (!term) continue; const e = stAgg.get(term) || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); stAgg.set(term, e); if (!stMeta.has(term)) stMeta.set(term, { campaign: r.campaign || null, adGroup: cleanAg(r) || null, keyword: r.keyword_text || null }) }
+  const searchTerms = [...stAgg.entries()].map(([term, v]) => ({ term, ...(stMeta.get(term) || {}), ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 80)
+  const dmap = new Map()
+  for (const r of dy) { const d = String(r.date || '').slice(0, 10); if (!d) continue; const e = dmap.get(d) || { date: d, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); dmap.set(d, e) }
+  const daily = [...dmap.values()].sort((a, b) => a.date.localeCompare(b.date))
+  const totals = campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
+  return { campaigns, adGroups, keywords, matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost), searchTerms, daily, totals, keywordsTotal: kwAgg.size, searchTermsTotal: stAgg.size }
 }
 // Agency roll-up: pull all Meta + Google accounts in two calls, map each back
 // to its client, and return per-client paid metrics for the whole roster.
@@ -147,12 +175,88 @@ async function buildOverview(from, to, preset, key) {
 
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
-  const [cg, kw, st] = await Promise.all([
+  const [cg, kw, st, dy] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
+    windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
   ])
-  return rollupGoogle(cg, kw, st, daysInRange(from, to, preset))
+  return rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
+}
+
+/* ===== Caalano360 blend: paid + CRM in one call =====
+   Stage names come from the Pipelines table (pipeline_stages), so we can
+   classify each opportunity as "booked" / "shown" by the POSITION of its
+   current stage vs the first booking/attended stage in its own pipeline.
+   Won always implies booked+shown. */
+const BOOK_RE = /(book|appointment|\bappt\b|discovery call|consult|scheduled)/i
+const SHOW_RE = /(attend|showed|\bheld\b|payment collect|\bpaid\b|qualified|onboard|welcome)/i
+const STAGE_EXC = /(cancel|no.?show|no.?answer|disqualif|not booked|lost)/i
+
+const asArray = (v) => {
+  if (Array.isArray(v)) return v
+  if (typeof v === 'string' && v.trim()) { try { const j = JSON.parse(v); return Array.isArray(j) ? j : [] } catch { return [] } }
+  return []
+}
+function stageIndex(pipeRows) {
+  const idx = new Map()
+  for (const p of pipeRows) {
+    const stages = asArray(p.pipeline_stages)
+    const byId = {}; let bookPos = null, showPos = null
+    for (const s of stages) {
+      byId[s.id] = { name: s.name, pos: s.position }
+      const nm = String(s.name || '')
+      if (STAGE_EXC.test(nm)) continue
+      if (BOOK_RE.test(nm)) bookPos = bookPos == null ? s.position : Math.min(bookPos, s.position)
+      if (SHOW_RE.test(nm)) showPos = showPos == null ? s.position : Math.min(showPos, s.position)
+    }
+    if (p.pipeline_id) idx.set(p.pipeline_id, { byId, bookPos, showPos })
+  }
+  return idx
+}
+function blendCrm(oppRows, idx) {
+  let leads = 0, booked = 0, shown = 0, won = 0, lost = 0, open = 0, revenue = 0, openValue = 0
+  for (const r of oppRows) {
+    leads++
+    const st = String(r.opportunity_status || '').toLowerCase()
+    const val = num(r.opportunity_monetary_value)
+    const pi = idx.get(r.opportunity_pipeline_id)
+    const stage = pi ? pi.byId[r.opportunity_pipeline_stage_id] : null
+    const pos = stage ? stage.pos : -1
+    const isWon = st === 'won'
+    if (isWon) { won++; revenue += val }
+    else if (st === 'lost' || st === 'abandoned') lost++
+    else { open++; openValue += val }
+    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) booked++
+    if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) shown++
+  }
+  return {
+    leads, booked, shown, won, lost, open,
+    revenue: Math.round(revenue), openValue: Math.round(openValue),
+    avgValue: won ? Math.round(revenue / won) : 0,
+  }
+}
+async function buildBlend(c, from, to, preset, key) {
+  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+  const [fb, gg, opps, pipes] = await Promise.all([
+    c.meta ? windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', 'actions_lead'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
+  ])
+  const metaSpend = fb.reduce((a, r) => a + num(r.spend), 0)
+  const metaLeads = fb.reduce((a, r) => a + num(r.actions_lead), 0)
+  const googleSpend = gg.reduce((a, r) => a + num(r.spend), 0)
+  const googleConv = gg.reduce((a, r) => a + num(r.conversions), 0)
+  const crm = blendCrm(opps, stageIndex(pipes))
+  return {
+    hasCrm: !!c.ghl, hasMeta: !!c.meta, hasGoogle: !!c.google,
+    paid: {
+      adSpend: metaSpend + googleSpend, metaSpend, googleSpend,
+      metaLeads, googleConv, adConversions: metaLeads + googleConv,
+    },
+    crm,
+  }
 }
 
 function rollupGhl(rows) {
@@ -204,6 +308,13 @@ export default async (req) => {
 
   const c = CLIENTS[client]
   if (!c) return json({ error: `unknown client ${client}` }, 404)
+
+  // Caalano360 — blended paid + CRM aggregate for a single client.
+  if (channel === 'blend') {
+    try { const blend = await buildBlend(c, from, to, preset, key); return json({ client, channel, period: { from, to, preset }, blend }, 200, true) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
   const spec = FIELDS[channel]
   if (!spec) return json({ error: `unknown channel ${channel}` }, 400)
   const accountId = c[channel]
@@ -228,12 +339,15 @@ export default async (req) => {
       const google = await buildGoogle(accountId, from, to, preset, key)
       return json({ client, channel, period: { from, to, preset }, google }, 200, true)
     }
+    if (channel === 'meta') {
+      const meta = await buildMeta(accountId, from, to, preset, key)
+      return json({ client, channel, period: { from, to, preset }, meta }, 200, true)
+    }
     const fields = [...spec.dims, ...spec.metrics]
     const rowsAll = await windsorFetch(spec.connector, fields, from, to, preset, key)
     const rows = rowsAll.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
     if (debug) return json({ channel, accountId, fieldsRequested: fields, rowCount: rows.length, sample: rows.slice(0, 3), sampleKeys: rows[0] ? Object.keys(rows[0]) : [] })
-    const out = channel === 'meta' ? { meta: rollupMeta(rows) } : { ghl: rollupGhl(rows) }
-    return json({ client, channel, period: { from, to, preset }, ...out }, 200, true)
+    return json({ client, channel, period: { from, to, preset }, ghl: rollupGhl(rows) }, 200, true)
   } catch (e) {
     return json({ error: String(e.message || e) }, 502)
   }

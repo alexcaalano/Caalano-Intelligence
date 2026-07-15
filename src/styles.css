@@ -259,3 +259,46 @@ tbody tr:hover { background: var(--panel-2); }
 .set-note { font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 10px; padding: 12px 14px; line-height: 1.5; margin-bottom: 16px; }
 .empty-deep { text-align: center; padding: 40px 20px; color: var(--muted); }
 .empty-deep .big { font-size: 30px; margin-bottom: 10px; }
+
+/* Scorecard tiles */
+.scorecard { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+.scorecard.sc-2 { grid-template-columns: 1fr 1fr; margin: 6px 0 4px; }
+.sc { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow); }
+.sc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-bottom: 6px; }
+.sc-v { font-size: 19px; font-weight: 750; letter-spacing: -.01em; }
+
+/* Caalano360 mini stats */
+.c360-mini { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+.c360-mini > div { display: flex; align-items: baseline; justify-content: space-between; }
+.c360-mini .l { font-size: 12px; color: var(--muted); }
+.c360-mini .v { font-size: 13.5px; font-weight: 700; }
+
+/* Drill-down selected row */
+tr.row-sel > td { background: rgba(109,94,252,.14); }
+tr.row-sel > td:first-child { box-shadow: inset 3px 0 0 var(--brand); font-weight: 650; }
+
+/* Colour-coded cost cell */
+.cpl-cell { display: inline-block; padding: 2px 8px; border-radius: 6px; font-weight: 650; }
+
+/* Creative → Instagram link */
+.cre .cre-play { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: rgba(0,0,0,.6); color: #fff; font-size: 14px; font-weight: 800; text-decoration: none; backdrop-filter: blur(4px); z-index: 2; }
+.cre .cre-play:hover { background: var(--brand); }
+
+/* Spinner */
+.spin-wrap { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.spin { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--border-2); border-top-color: var(--brand); display: inline-block; animation: spin .7s linear infinite; }
+.spin.sm { width: 13px; height: 13px; border-width: 2px; margin-right: 2px; vertical-align: -1px; }
+.spin-lbl { font-size: 13px; color: var(--muted); font-weight: 600; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Calendar */
+.cal { display: flex; flex-direction: column; gap: 8px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; font-weight: 700; }
+.cal-head button { border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; font-size: 14px; line-height: 1; }
+.cal-head button:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-dow span { text-align: center; font-size: 10px; color: var(--faint); font-weight: 700; padding: 2px 0; }
+.cal-day { border: 0; background: transparent; color: var(--text); font-size: 12px; height: 30px; border-radius: 7px; cursor: pointer; font-weight: 550; }
+.cal-day:hover { background: var(--panel-2); }
+.cal-day.inr { background: rgba(109,94,252,.16); border-radius: 0; }
+.cal-day.sel { background: var(--brand); color: #fff; font-weight: 700; }

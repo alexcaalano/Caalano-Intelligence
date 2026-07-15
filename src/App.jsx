@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
+  ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ComposedChart,
 } from 'recharts'
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
@@ -200,99 +200,174 @@ function CrmLive({ ghl, currency }) {
 }
 
 /* ============ Meta deep ============ */
-const qClass = (q) => q === 'ABOVE_AVERAGE' ? 'q-above' : q === 'AVERAGE' ? 'q-avg' : q === 'BELOW_AVERAGE' ? 'q-below' : 'q-unk'
+function Sc({ label, value }) { return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div></div> }
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
+const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg; return r <= 0.85 ? 'rgba(23,178,106,.28)' : r <= 1.15 ? 'rgba(245,165,36,.28)' : 'rgba(240,67,91,.28)' }
+
 function MetaDeep({ deep, currency }) {
+  const [sel, setSel] = useState(null)
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
   const m = deep.meta
-  const tot = m.campaigns.reduce((a, c) => ({ spend: a.spend + c.spend, imp: a.imp + c.impressions, clk: a.clk + c.clicks, leads: a.leads + c.leads }), { spend: 0, imp: 0, clk: 0, leads: 0 })
-  const avgCpl = tot.leads ? tot.spend / tot.leads : 0
-  const ads = [...m.ads].sort((a, b) => b.spend - a.spend)
-  const Row = ({ n, sp, im, ck, ld }) => (
-    <tr><td>{n}</td><td>{fmtCurrency(sp, currency)}</td><td>{fmtNumber(im)}</td><td>{fmtPct(rate(ck, im), 2)}</td><td>{fmtNumber(ld)}</td><td>{ld ? fmtCurrency(sp / ld, currency) : '—'}</td></tr>
-  )
+  const t = m.totals || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, reach: 0 }
+  const cpm = t.impressions ? t.spend / t.impressions * 1000 : 0
+  const cpl = t.leads ? t.spend / t.leads : 0
+  const cpcLink = t.linkClicks ? t.spend / t.linkClicks : 0
+  const daily = (m.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpl: d.leads ? d.spend / d.leads : 0, cpm: d.impressions ? d.spend / d.impressions * 1000 : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpc: d.clicks ? d.spend / d.clicks : 0 }))
+  const adsets = sel ? m.adsets.filter((a) => a.campaign === sel) : m.adsets
+  const ads = (sel ? m.ads.filter((a) => a.campaign === sel) : m.ads).slice(0, 24)
   return (
     <>
-      <div className="grid kpis">
-        <Kpi label="Spend" value={fmtCurrency(tot.spend, currency)} flat={`${m.campaigns.length} campaigns`} />
-        <Kpi label="Leads" value={fmtNumber(tot.leads)} flat={`${fmtCurrency(avgCpl, currency)} / lead`} />
-        <Kpi label="Impressions" value={fmtCompact(tot.imp)} flat={`${fmtNumber(tot.clk)} clicks`} />
-        <Kpi label="CTR" value={fmtPct(rate(tot.clk, tot.imp), 2)} flat="all clicks" />
+      <div className="scorecard">
+        <Sc label="Cost" value={fmtCurrency(t.spend, currency)} />
+        <Sc label="Impressions" value={fmtNumber(t.impressions)} />
+        <Sc label="Reach" value={fmtNumber(t.reach)} />
+        <Sc label="CPM" value={fmtCurrency(cpm, currency)} />
+        <Sc label="Link Clicks" value={fmtNumber(t.linkClicks)} />
+        <Sc label="CPC (Link)" value={fmtCurrency(cpcLink, currency)} />
+        <Sc label="CTR" value={fmtPct(t.impressions ? t.clicks / t.impressions * 100 : 0, 2)} />
+        <Sc label="Leads" value={fmtNumber(t.leads)} />
+        <Sc label="CPL" value={fmtCurrency(cpl, currency)} />
+        <Sc label="CVR" value={fmtPct(t.linkClicks ? t.leads / t.linkClicks * 100 : 0, 2)} />
       </div>
-      <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}</span></div>
+      {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
+        <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day</p>
+        <ResponsiveContainer width="100%" height={250}>
+          <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" interval="preserveStartEnd" />
+            <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+            <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+            <Tooltip formatter={(v, n) => (n === 'Leads' ? fmtNumber(v) : fmtCurrency(v, currency))} />
+            <Legend />
+            <Bar yAxisId="l" dataKey="leads" name="Leads" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={26} />
+            <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#4f7cff" strokeWidth={2} dot={false} />
+            <Line yAxisId="r" dataKey="cpl" name="CPL" stroke="#ec4899" strokeWidth={2} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>}
+      <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}</span></div>
       <div className="table-wrap"><table><thead><tr><th>Campaign</th><th>Spend</th><th>Impr.</th><th>CTR</th><th>Leads</th><th>CPL</th></tr></thead>
-        <tbody>{[...m.campaigns].sort((a, b) => b.spend - a.spend).map((c) => <Row key={c.name} n={c.name} sp={c.spend} im={c.impressions} ck={c.clicks} ld={c.leads} />)}</tbody></table></div>
-      <div className="lvl-title">Ad sets <span className="sub">· {m.adsets.length}</span></div>
+        <tbody>{m.campaigns.map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(rate(c.clicks, c.impressions), 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.leads ? fmtCurrency(c.spend / c.leads, currency) : '—'}</td></tr>))}</tbody></table></div>
+      <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''}</span></div>
       <div className="table-wrap"><table><thead><tr><th>Ad set</th><th>Spend</th><th>Impr.</th><th>CTR</th><th>Leads</th><th>CPL</th></tr></thead>
-        <tbody>{[...m.adsets].sort((a, b) => b.spend - a.spend).map((c) => <Row key={c.name} n={c.name} sp={c.spend} im={c.impressions} ck={c.clicks} ld={c.leads} />)}</tbody></table></div>
-      <div className="lvl-title">Creatives <span className="sub">· top {ads.length} by spend · CPL vs account avg {fmtCurrency(avgCpl, currency)}</span></div>
+        <tbody>{adsets.map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(rate(c.clicks, c.impressions), 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.leads ? fmtCurrency(c.spend / c.leads, currency) : '—'}</td></tr>))}</tbody></table></div>
+      <div className="lvl-title">Creatives <span className="sub">· {ads.length}{sel ? ` in "${sel}"` : ''} · CPL vs account avg {fmtCurrency(cpl, currency)}</span></div>
       <div className="cre-grid">{ads.map((a) => {
-        const cpl = a.leads ? a.spend / a.leads : 0
+        const acpl = a.leads ? a.spend / a.leads : 0
         const hook = a.type === 'Video' ? rate(a.videoViews, a.impressions) : null
-        const cvr = rate(a.leads, a.linkClicks)
         return (
           <div className="cre" key={a.name}>
-            <div className="thumb"><span className="type">{a.type}</span><img src={a.thumb} alt="" loading="lazy" onError={(e) => { e.target.style.display = 'none' }} /></div>
+            <div className="thumb"><span className="type">{a.type}</span>{a.igUrl && <a className="cre-play" href={a.igUrl} target="_blank" rel="noreferrer" title="View on Instagram">↗</a>}<img src={a.thumb} alt="" loading="lazy" onError={(e) => { e.target.style.display = 'none' }} /></div>
             <div className="body">
               <div className="nm" title={a.name}>{a.name}</div>
               <div className="stats">
                 <div className="st"><div className="l">Spend</div><div className="v">{fmtCurrency(a.spend, currency)}</div></div>
-                <div className="st"><div className="l">CPL</div><div className={`v ${a.leads ? (cpl <= avgCpl ? 'good' : 'bad') : ''}`}>{a.leads ? fmtCurrency(cpl, currency) : '—'}</div></div>
-                <div className="st"><div className="l">CTR</div><div className="v">{fmtPct(rate(a.clicks, a.impressions), 2)}</div></div>
-                <div className="st"><div className="l">{hook != null ? 'Hook rate' : 'Lead rate'}</div><div className="v">{hook != null ? fmtPct(hook, 1) : fmtPct(cvr, 1)}</div></div>
+                <div className="st"><div className="l">Leads</div><div className="v">{fmtNumber(a.leads)}</div></div>
+                <div className="st"><div className="l">CPL</div><div className={`v ${a.leads ? (acpl <= cpl ? 'good' : 'bad') : ''}`}>{a.leads ? fmtCurrency(acpl, currency) : '—'}</div></div>
+                <div className="st"><div className="l">Link CTR</div><div className="v">{fmtPct(rate(a.linkClicks, a.impressions), 2)}</div></div>
+                <div className="st"><div className="l">CVR</div><div className="v">{fmtPct(rate(a.leads, a.linkClicks), 1)}</div></div>
+                <div className="st"><div className="l">{hook != null ? 'Hook rate' : ''}</div><div className="v">{hook != null ? fmtPct(hook, 1) : ''}</div></div>
               </div>
             </div>
           </div>
         )
       })}</div>
-      <p className="caveat">Creative thumbnails come straight from Reporting Ninja (Meta CDN) and refresh with each data pull. Hook rate = 3-second video plays ÷ impressions.</p>
+      <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first</span></div>
+      <div className="table-wrap"><table><thead><tr><th>Day</th><th>Spend</th><th>CPM</th><th>CTR</th><th>CPC</th><th>Leads</th><th>CPL</th></tr></thead>
+        <tbody>{[...daily].reverse().map((d) => (<tr key={d.date}><td>{d.label}</td><td>{fmtCurrency(d.spend, currency)}</td><td>{fmtCurrency(d.cpm, currency)}</td><td>{fmtPct(d.ctr, 2)}</td><td>{fmtCurrency(d.cpc, currency)}</td><td>{fmtNumber(d.leads)}</td><td>{d.leads ? <span className="cpl-cell" style={{ background: cplColor(d.cpl, cpl) }}>{fmtCurrency(d.cpl, currency)}</span> : '—'}</td></tr>))}</tbody></table></div>
+      <p className="caveat">Creative thumbnails from Windsor.ai (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by Windsor; ↗ opens the Instagram post where available.</p>
     </>
   )
 }
 
 /* ============ Google deep ============ */
 const qsClass = (n) => n === '' || n == null ? 'q-unk' : n >= 7 ? 'q-above' : n >= 4 ? 'q-avg' : 'q-low'
+const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
+const mtColor = (t) => MT_COLOR[t] || '#8b5cf6'
 function GoogleDeep({ deep, currency }) {
+  const [sel, setSel] = useState({ campaign: null, adGroup: null })
   if (!deep?.google) return <EmptyDeep channel="Google Ads" />
   const g = deep.google
-  const tot = g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, imp: a.imp + c.impressions, clk: a.clk + c.clicks, conv: a.conv + c.conversions }), { cost: 0, imp: 0, clk: 0, conv: 0 })
-  const mtMax = Math.max(1, ...g.matchTypes.map((x) => x.cost))
-  const GRow = ({ n, st, co, im, ck, cv }) => (<tr><td>{n}{st && st !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{st}</span> : null}</td><td>{fmtCurrency(co, currency)}</td><td>{fmtNumber(im)}</td><td>{fmtPct(rate(ck, im), 2)}</td><td>{fmtNumber(cv)}</td><td>{cv ? fmtCurrency(co / cv, currency) : '—'}</td></tr>)
+  const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
+  const costPerConv = t.conversions ? t.cost / t.conversions : 0
+  const avgCpc = t.clicks ? t.cost / t.clicks : 0
+  const pickCamp = (n) => setSel((s) => (s.campaign === n ? { campaign: null, adGroup: null } : { campaign: n, adGroup: null }))
+  const pickAg = (n) => setSel((s) => ({ ...s, adGroup: s.adGroup === n ? null : n }))
+  const inSel = (r) => (!sel.campaign || r.campaign === sel.campaign) && (!sel.adGroup || r.adGroup === sel.adGroup)
+  const adGroups = g.adGroups.filter((a) => !sel.campaign || a.campaign === sel.campaign)
+  const keywords = g.keywords.filter(inSel)
+  const searchTerms = (g.searchTerms || []).filter(inSel)
+  const selLabel = sel.adGroup ? `${sel.campaign} › ${sel.adGroup}` : sel.campaign
+  const daily = (g.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpc: d.clicks ? d.cost / d.clicks : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpconv: d.conversions ? d.cost / d.conversions : 0 }))
+  const qKw = g.keywords.filter((k) => k.qs !== '' && k.qs != null)
+  const avgQs = qKw.length ? qKw.reduce((a, k) => a + k.qs, 0) / qKw.length : 0
+  const GHead = ({ first }) => (<thead><tr><th>{first}</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th></tr></thead>)
+  const GCells = (r) => (<><td>{fmtCurrency(r.cost, currency)}</td><td>{fmtNumber(r.impressions)}</td><td>{fmtPct(rate(r.clicks, r.impressions), 2)}</td><td>{fmtCurrency(r.clicks ? r.cost / r.clicks : 0, currency)}</td><td>{fmtNumber(r.conversions)}</td><td>{r.conversions ? fmtCurrency(r.cost / r.conversions, currency) : '—'}</td></>)
   return (
     <>
-      <div className="grid kpis">
-        <Kpi label="Cost" value={fmtCurrency(tot.cost, currency)} flat={`${g.campaigns.length} campaigns`} />
-        <Kpi label="Conversions" value={fmtNumber(tot.conv)} flat={`${fmtCurrency(tot.conv ? tot.cost / tot.conv : 0, currency)} / conv`} />
-        <Kpi label="Clicks" value={fmtNumber(tot.clk)} flat={`${fmtPct(rate(tot.clk, tot.imp), 2)} CTR`} />
-        <Kpi label="Keywords" value={fmtNumber(g.keywordsTotal)} flat={`${fmtNumber(g.searchTermsTotal)} search terms`} />
+      <div className="scorecard">
+        <Sc label="Cost" value={fmtCurrency(t.cost, currency)} />
+        <Sc label="Impressions" value={fmtNumber(t.impressions)} />
+        <Sc label="Clicks" value={fmtNumber(t.clicks)} />
+        <Sc label="CTR" value={fmtPct(rate(t.clicks, t.impressions), 2)} />
+        <Sc label="Avg CPC" value={fmtCurrency(avgCpc, currency)} />
+        <Sc label="Conversions" value={fmtNumber(t.conversions)} />
+        <Sc label="Cost / Conv" value={fmtCurrency(costPerConv, currency)} />
+        <Sc label="Conv. Rate" value={fmtPct(rate(t.conversions, t.clicks), 2)} />
+        <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
+        <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
       </div>
-      <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Campaign</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>Conv.</th><th>Cost/conv</th></tr></thead>
-        <tbody>{[...g.campaigns].sort((a, b) => b.cost - a.cost).map((c) => <GRow key={c.name} n={c.name} st={c.status} co={c.cost} im={c.impressions} ck={c.clicks} cv={c.conversions} />)}</tbody></table></div>
-      <div className="lvl-title">Ad groups <span className="sub">· {g.adGroups.length}</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Ad group</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>Conv.</th><th>Cost/conv</th></tr></thead>
-        <tbody>{[...g.adGroups].sort((a, b) => b.cost - a.cost).map((c) => <GRow key={c.name} n={c.name} co={c.cost} im={c.impressions} ck={c.clicks} cv={c.conversions} />)}</tbody></table></div>
-      <div className="grid two" style={{ marginTop: 4 }}>
-        <div className="card chart-card"><h3>Spend by match type</h3><p className="cap">{g.matchTypeNote}</p>
-          {g.matchTypes.map((x) => (<div className="bar-row" key={x.type} style={{ gridTemplateColumns: '90px 1fr 70px' }}><span className="nm">{x.type}</span><span className="bar-track"><span className="bar-fill" style={{ width: `${(x.cost / mtMax) * 100}%`, background: x.type === 'Broad' ? 'var(--warn)' : x.type === 'Phrase' ? 'var(--brand)' : 'var(--pos)' }} /></span><span className="ct" style={{ fontSize: 11 }}>{fmtCurrency(x.cost, currency)}</span></div>))}
-          <p className="caveat">Broad match carries almost all spend. Watch the search-term report to catch waste before it compounds.</p>
+      {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
+        <h3>Daily trend</h3><p className="cap">Spend, Conversions and Cost / Conversion by day</p>
+        <ResponsiveContainer width="100%" height={250}>
+          <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" interval="preserveStartEnd" />
+            <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+            <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+            <Tooltip formatter={(v, n) => (n === 'Conversions' ? fmtNumber(v) : fmtCurrency(v, currency))} />
+            <Legend />
+            <Bar yAxisId="l" dataKey="conversions" name="Conversions" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={26} />
+            <Line yAxisId="r" dataKey="cost" name="Spend" stroke="#4f7cff" strokeWidth={2} dot={false} />
+            <Line yAxisId="r" dataKey="cpconv" name="Cost / Conv" stroke="#ec4899" strokeWidth={2} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>}
+      <div className="grid two" style={{ marginTop: 14 }}>
+        <div className="card chart-card"><h3>Spend by match type</h3><p className="cap">Where the budget is landing</p>
+          <ResponsiveContainer width="100%" height={210}>
+            <PieChart><Pie data={g.matchTypes} dataKey="cost" nameKey="type" innerRadius={54} outerRadius={84} paddingAngle={2} stroke="none">{g.matchTypes.map((x) => <Cell key={x.type} fill={mtColor(x.type)} />)}</Pie><Tooltip formatter={(v) => fmtCurrency(v, currency)} /></PieChart>
+          </ResponsiveContainer>
+          <div className="legend" style={{ flexWrap: 'wrap' }}>{g.matchTypes.map((x) => <span key={x.type}><i className="swatch" style={{ background: mtColor(x.type) }} /> {x.type} {fmtCurrency(x.cost, currency)}</span>)}</div>
         </div>
         <div className="card chart-card"><h3>Quality snapshot</h3><p className="cap">Historical quality score on top keywords</p>
-          <div className="stat-hero" style={{ gap: 20 }}>
-            <div className="s"><div className="v">{(g.keywords.filter(k => k.qs !== '' && k.qs != null).reduce((a, k) => a + k.qs, 0) / Math.max(1, g.keywords.filter(k => k.qs !== '' && k.qs != null).length)).toFixed(1)}</div><div className="l">Avg quality score</div></div>
-            <div className="s"><div className="v">{g.keywords.filter(k => k.qs !== '' && k.qs <= 3).length}</div><div className="l">Low-QS keywords (≤3)</div></div>
+          <div className="scorecard sc-2">
+            <Sc label="Avg quality score" value={avgQs ? avgQs.toFixed(1) : '—'} />
+            <Sc label="Low-QS keywords (≤3)" value={fmtNumber(g.keywords.filter((k) => k.qs !== '' && k.qs != null && k.qs <= 3).length)} />
           </div>
-          <p className="caveat">Low quality scores (e.g. "psychiatrist melbourne" at QS 1) inflate CPCs — tighten ad-to-keyword relevance or pause.</p>
+          <p className="caveat">Low quality scores inflate CPCs — tighten ad-to-keyword relevance or pause the worst offenders.</p>
         </div>
       </div>
-      <div className="lvl-title">Keywords <span className="sub">· top {g.keywords.length} of {fmtNumber(g.keywordsTotal)} by spend</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Keyword</th><th>Match</th><th>Cost</th><th>Clicks</th><th>Conv.</th><th>QS</th></tr></thead>
-        <tbody>{[...g.keywords].sort((a, b) => b.cost - a.cost).map((k) => (<tr key={k.text + k.match}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.clicks)}</td><td>{fmtNumber(k.conversions)}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>
-
-      <div className="lvl-title">Search terms <span className="sub">· top {g.searchTerms ? g.searchTerms.length : 0} of {fmtNumber(g.searchTermsTotal)} actual queries by spend</span></div>
-      {g.searchTerms && g.searchTerms.length ? (
-        <div className="table-wrap"><table><thead><tr><th>Search term</th><th>Cost</th><th>Clicks</th><th>Conv.</th><th>Cost / conv</th></tr></thead>
-          <tbody>{g.searchTerms.map((t) => (<tr key={t.term}><td>{t.term}</td><td>{fmtCurrency(t.cost, currency)}</td><td>{fmtNumber(t.clicks)}</td><td>{fmtNumber(t.conversions)}</td><td>{t.conversions ? fmtCurrency(t.cost / t.conversions, currency) : '—'}</td></tr>))}</tbody></table></div>
-      ) : <p className="caveat">No search-term data in this range.</p>}
+      <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}</span></div>
+      <div className="table-wrap"><table><GHead first="Campaign" />
+        <tbody>{[...g.campaigns].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}</tr>))}</tbody></table></div>
+      <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
+      <div className="table-wrap"><table><GHead first="Ad group" />
+        <tbody>{[...adGroups].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.name} className={sel.adGroup === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c.name)}><td>{c.name}</td>{GCells(c)}</tr>))}</tbody></table></div>
+      <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''}</span></div>
+      <div className="table-wrap"><table><thead><tr><th>Keyword</th><th>Match</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th><th>QS</th></tr></thead>
+        <tbody>{[...keywords].sort((a, b) => b.cost - a.cost).map((k) => (<tr key={k.text + k.match}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '—'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>
+      <div className="lvl-title">Search terms <span className="sub">· {searchTerms.length} of {fmtNumber(g.searchTermsTotal)} actual queries by spend{selLabel ? ` · in ${selLabel}` : ''}</span></div>
+      {searchTerms.length ? (
+        <div className="table-wrap"><table><thead><tr><th>Search term</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>Clicks</th><th>Conv.</th><th>Cost / conv</th></tr></thead>
+          <tbody>{searchTerms.map((s) => (<tr key={s.term}><td>{s.term}</td><td>{fmtCurrency(s.cost, currency)}</td><td>{fmtNumber(s.impressions)}</td><td>{fmtPct(rate(s.clicks, s.impressions), 2)}</td><td>{fmtNumber(s.clicks)}</td><td>{fmtNumber(s.conversions)}</td><td>{s.conversions ? fmtCurrency(s.cost / s.conversions, currency) : '—'}</td></tr>))}</tbody></table></div>
+      ) : <p className="caveat">No search-term data in this range{selLabel ? ` for ${selLabel}` : ''}.</p>}
+      {daily.length > 0 && <>
+        <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first</span></div>
+        <div className="table-wrap"><table><thead><tr><th>Day</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th></tr></thead>
+          <tbody>{[...daily].reverse().map((d) => (<tr key={d.date}><td>{d.label}</td><td>{fmtCurrency(d.cost, currency)}</td><td>{fmtNumber(d.impressions)}</td><td>{fmtPct(d.ctr, 2)}</td><td>{fmtCurrency(d.cpc, currency)}</td><td>{fmtNumber(d.conversions)}</td><td>{d.conversions ? <span className="cpl-cell" style={{ background: cplColor(d.cpconv, costPerConv) }}>{fmtCurrency(d.cpconv, currency)}</span> : '—'}</td></tr>))}</tbody></table></div>
+      </>}
     </>
   )
 }
@@ -326,16 +401,96 @@ function OverallTab({ client, currency, side }) {
   )
 }
 
+/* ============ Caalano360 — blended paid + CRM ============ */
+function Caalano360({ blend, client, currency, range }) {
+  const b = blend
+  const p = b.paid, c = b.crm
+  const spend = p.adSpend
+  const roas = spend ? c.revenue / spend : 0
+  const chan = [{ name: 'Meta', value: p.metaSpend, color: '#4f7cff' }, { name: 'Google', value: p.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
+  const fmax = Math.max(1, c.leads)
+  const funnel = [
+    { stage: 'Leads', count: c.leads, color: '#4f7cff' },
+    { stage: 'Bookings', count: c.booked, color: '#6d5efc' },
+    { stage: 'Shown', count: c.shown, color: '#0ea5e9' },
+    { stage: 'Won', count: c.won, color: '#12b886' },
+  ]
+  return (
+    <>
+      <div className="section-title">Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}</span></div>
+      <div className="scorecard">
+        <Sc label="Ad Spend" value={fmtCurrency(spend, currency)} />
+        <Sc label="Total Leads" value={fmtNumber(c.leads)} />
+        <Sc label="Bookings Made" value={fmtNumber(c.booked)} />
+        <Sc label="Shown Bookings" value={fmtNumber(c.shown)} />
+        <Sc label="Won Clients" value={fmtNumber(c.won)} />
+        <Sc label="Revenue Closed" value={fmtCurrency(c.revenue, currency)} />
+        <Sc label="Avg Order Value" value={c.won ? fmtCurrency(c.avgValue, currency) : '—'} />
+        <Sc label="Cost / Lead" value={c.leads ? fmtCurrency(spend / c.leads, currency) : '—'} />
+        <Sc label="Cost / Booked" value={c.booked ? fmtCurrency(spend / c.booked, currency) : '—'} />
+        <Sc label="Cost / Won" value={c.won ? fmtCurrency(spend / c.won, currency) : '—'} />
+        <Sc label="ROAS" value={spend ? `${roas.toFixed(2)}×` : '—'} />
+        <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} />
+      </div>
+      <div className="grid two" style={{ marginTop: 14 }}>
+        <div className="card chart-card"><h3>Lead-to-client funnel</h3><p className="cap">Opportunities created → booked → shown → won</p>
+          <div className="funnel">{funnel.map((s) => (<div className="fn" key={s.stage}><span className="lab">{s.stage}</span><span className="bar" style={{ width: `${Math.max(9, (s.count / fmax) * 100)}%`, background: s.color }}>{fmtNumber(s.count)}</span></div>))}</div>
+          <p className="caveat">Bookings &amp; shown are derived from each opportunity's pipeline stage position (Caalano Systems stage names), so they track the live pipeline rather than a separate calendar feed.</p>
+        </div>
+        <div className="card chart-card"><h3>Ad spend by channel</h3><p className="cap">Meta + Google split feeding the pipeline</p>
+          {chan.length ? <>
+            <ResponsiveContainer width="100%" height={190}>
+              <PieChart><Pie data={chan} dataKey="value" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={2} stroke="none">{chan.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => fmtCurrency(v, currency)} /></PieChart>
+            </ResponsiveContainer>
+            <div className="legend">{chan.map((x) => <span key={x.name}><i className="swatch" style={{ background: x.color }} /> {x.name} {fmtCurrency(x.value, currency)}</span>)}</div>
+          </> : <p className="cap">No ad spend in this range.</p>}
+          <div className="c360-mini">
+            <div><span className="l">Ad-reported conversions</span><span className="v">{fmtNumber(p.adConversions)}</span></div>
+            <div><span className="l">Open pipeline value</span><span className="v">{fmtCurrency(c.openValue, currency)}</span></div>
+            <div><span className="l">Lost / abandoned</span><span className="v">{fmtNumber(c.lost)}</span></div>
+          </div>
+        </div>
+      </div>
+      {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
+    </>
+  )
+}
+
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const PRESETS = [
   { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
   { id: 'last_7d', label: 'Last 7 days' },
   { id: 'last_14d', label: 'Last 14 days' },
   { id: 'last_30d', label: 'Last 30 days' },
+  { id: 'this_week', label: 'This week' },
+  { id: 'last_week', label: 'Last week' },
   { id: 'this_month', label: 'This month' },
   { id: 'last_month', label: 'Last month' },
+  { id: 'this_year', label: 'This year' },
 ]
-const rangeQuery = (r) => (r.from && r.to ? `from=${r.from}&to=${r.to}` : `preset=${r.preset || 'last_30d'}`)
-const rangeLabel = (r) => (r.from && r.to ? `${r.from} → ${r.to}` : (PRESETS.find((p) => p.id === r.preset)?.label || 'Last 30 days'))
+function presetRange(id) {
+  const now = new Date(); now.setHours(12, 0, 0, 0)
+  const shift = (n) => { const d = new Date(now); d.setDate(d.getDate() - n); return d }
+  const monday = (d) => { const x = new Date(d); const wd = (x.getDay() + 6) % 7; x.setDate(x.getDate() - wd); return x }
+  const label = PRESETS.find((p) => p.id === id)?.label || 'Last 30 days'
+  const mk = (f, t) => ({ from: iso(f), to: iso(t), label, preset: id })
+  switch (id) {
+    case 'today': return mk(now, now)
+    case 'yesterday': return mk(shift(1), shift(1))
+    case 'last_7d': return mk(shift(7), shift(1))
+    case 'last_14d': return mk(shift(14), shift(1))
+    case 'last_30d': return mk(shift(30), shift(1))
+    case 'this_week': return mk(monday(now), now)
+    case 'last_week': { const s = monday(shift(7)); const e = new Date(s); e.setDate(e.getDate() + 6); return mk(s, e) }
+    case 'this_month': return mk(new Date(now.getFullYear(), now.getMonth(), 1), now)
+    case 'last_month': return mk(new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 0))
+    case 'this_year': return mk(new Date(now.getFullYear(), 0, 1), now)
+    default: return mk(shift(30), shift(1))
+  }
+}
+const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
+const rangeLabel = (r) => r.label || `${r.from} → ${r.to}`
 
 // Fetch live deep data for the active channel from the Windsor.ai Netlify function.
 function useLiveDeep(clientId, channel, range) {
@@ -354,26 +509,53 @@ function useLiveDeep(clientId, channel, range) {
   return state
 }
 
-function DateRange({ range, onChange }) {
+function Spinner({ label }) {
+  return <div className="spin-wrap"><span className="spin" />{label && <span className="spin-lbl">{label}</span>}</div>
+}
+
+function Calendar({ from, to, onPick }) {
+  const base = to ? new Date(to + 'T12:00') : new Date()
+  const [view, setView] = useState(new Date(base.getFullYear(), base.getMonth(), 1))
+  const [a, setA] = useState(from || null)
+  const [b, setB] = useState(to || null)
+  const y = view.getFullYear(), m = view.getMonth()
+  const startPad = (new Date(y, m, 1).getDay() + 6) % 7
+  const dim = new Date(y, m + 1, 0).getDate()
+  const cells = []
+  for (let i = 0; i < startPad; i++) cells.push(null)
+  for (let d = 1; d <= dim; d++) cells.push(iso(new Date(y, m, d)))
+  const click = (ds) => { if (!a || (a && b)) { setA(ds); setB(null) } else if (ds < a) { setB(a); setA(ds) } else setB(ds) }
+  const inRange = (ds) => a && b && ds > a && ds < b
+  return (
+    <div className="cal">
+      <div className="cal-head">
+        <button onClick={() => setView(new Date(y, m - 1, 1))}>‹</button>
+        <span>{view.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}</span>
+        <button onClick={() => setView(new Date(y, m + 1, 1))}>›</button>
+      </div>
+      <div className="cal-grid cal-dow">{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <span key={i}>{d}</span>)}</div>
+      <div className="cal-grid">
+        {cells.map((ds, i) => ds
+          ? <button key={i} className={`cal-day ${ds === a || ds === b ? 'sel' : ''} ${inRange(ds) ? 'inr' : ''}`} onClick={() => click(ds)}>{parseInt(ds.slice(-2), 10)}</button>
+          : <span key={i} />)}
+      </div>
+      <button className="dr-apply" disabled={!a || !b} onClick={() => onPick({ from: a, to: b, label: `${a} → ${b}` })}>Apply {a && b ? 'range' : ''}</button>
+    </div>
+  )
+}
+
+function DateRange({ range, onChange, busy }) {
   const [open, setOpen] = useState(false)
-  const [from, setFrom] = useState(range.from || '')
-  const [to, setTo] = useState(range.to || '')
-  const applyCustom = () => { if (from && to) { onChange({ from, to }); setOpen(false) } }
   return (
     <div className="date-sel">
       <label>Period</label>
       <div className="dr">
-        <button className="dr-btn" onClick={() => setOpen((o) => !o)}>{rangeLabel(range)} <span style={{ opacity: .55 }}>▾</span></button>
+        <button className="dr-btn" onClick={() => setOpen((o) => !o)}>{busy && <span className="spin sm" />}📅 {rangeLabel(range)} <span style={{ opacity: .55 }}>▾</span></button>
         {open && <>
           <div className="dr-backdrop" onClick={() => setOpen(false)} />
           <div className="dr-pop">
-            <div className="dr-presets">{PRESETS.map((p) => <button key={p.id} className={range.preset === p.id && !range.from ? 'active' : ''} onClick={() => { onChange({ preset: p.id }); setOpen(false) }}>{p.label}</button>)}</div>
-            <div className="dr-custom">
-              <div className="dr-cap">Custom range</div>
-              <div className="dr-row"><span>From</span><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-              <div className="dr-row"><span>To</span><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-              <button className="dr-apply" onClick={applyCustom} disabled={!from || !to}>Apply range</button>
-            </div>
+            <div className="dr-presets">{PRESETS.map((p) => <button key={p.id} className={range.preset === p.id ? 'active' : ''} onClick={() => { onChange(presetRange(p.id)); setOpen(false) }}>{p.label}</button>)}</div>
+            <div className="dr-custom"><div className="dr-cap">Custom range</div><Calendar from={range.from} to={range.to} onPick={(r) => { onChange(r); setOpen(false) }} /></div>
           </div>
         </>}
       </div>
@@ -391,10 +573,10 @@ function ClientWorkspace({ client, index, data, range, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
-  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'ghl' : null
+  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'ghl' : tab === 'overall' ? 'blend' : null
   const live = useLiveDeep(client.id, channel, range)
   const tk = TRACK[client.trackingStatus] || TRACK.full
-  const tabs = [{ id: 'overall', label: 'Overall Business' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
+  const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
@@ -415,7 +597,7 @@ function ClientWorkspace({ client, index, data, range, onBack }) {
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {tab === 'overall' && <OverallTab client={client} currency={data.currency} side="cur" />}
+        {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
         {tab === 'crm' && (live.status === 'loading' ? <div className="card">Loading live CRM…</div> : liveOK('ghl') ? <CrmLive ghl={live.data.ghl} currency={data.currency} /> : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>)}
         {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} /></>)}
         {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} /></>)}
@@ -460,9 +642,9 @@ export default function App() {
   const [err, setErr] = useState(null)
   const [view, setView] = useState('overview')
   const [picked, setPicked] = useState(null)
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'light' } catch { return 'light' } })
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'dark' } catch { return 'dark' } })
   const [showSettings, setShowSettings] = useState(false)
-  const [range, setRange] = useState({ preset: 'last_30d' })
+  const [range, setRange] = useState(() => presetRange('last_30d'))
   const [enabled, setEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('caalano_enabled') || '{}') } catch { return {} } })
   const agency = useAgencyLive(range)
 
@@ -503,7 +685,7 @@ export default function App() {
             <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          <DateRange range={range} onChange={setRange} />
+          <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />
         </div>
         {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'clients' && !picked && <ClientTable rows={rows} currency={data.currency} onPick={setPicked} />}

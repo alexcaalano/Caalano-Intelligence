@@ -83,28 +83,52 @@ function rollupMeta(rows) {
   return { campaigns: campaigns.sort((a, b) => b.spend - a.spend), adsets: adsets.sort((a, b) => b.spend - a.spend), ads }
 }
 
-function rollupGoogle(rows) {
-  const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
-  const agg = (rowsIn, keyFn) => {
-    const m = new Map()
-    for (const r of rowsIn) {
-      const k = keyFn(r); if (!k) continue
-      const e = m.get(k) || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
-      e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions)
-      m.set(k, e)
-    }
-    return m
+const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+function daysInRange(from, to, preset) {
+  if (from && to) { const d = Math.round((new Date(to) - new Date(from)) / 86400000) + 1; return d > 0 ? d : 30 }
+  const m = { today: 1, last_7d: 7, last_14d: 14, last_30d: 30, this_month: 30, last_month: 30 }
+  return m[preset] || 30
+}
+function aggBy(rowsIn, keyFn) {
+  const m = new Map()
+  for (const r of rowsIn) {
+    const k = keyFn(r); if (!k) continue
+    const e = m.get(k) || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
+    e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions)
+    m.set(k, e)
   }
-  const campaigns = [...agg(rows, (r) => r.campaign).entries()].map(([name, v]) => ({ name, status: 'Enabled', ...v })).sort((a, b) => b.cost - a.cost)
-  const adGroups = [...agg(rows, cleanAg).entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.cost - a.cost)
-  const kwRows = rows.filter((r) => r.keyword)
-  const kwMap = agg(kwRows, (r) => r.keyword)
+  return m
+}
+// cg = campaign/adgroup rows, kw = keyword rows, st = search-term rows.
+function rollupGoogle(cg, kw, st, days) {
+  const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
+  const campaigns = [...aggBy(cg, (r) => r.campaign).entries()].map(([name, v]) => ({ name, status: 'Enabled', ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
+  const adGroups = [...aggBy(cg, cleanAg).entries()].map(([name, v]) => ({ name, ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
+  // keywords: aggregate by text, keep dominant match type + approx quality score
+  const kwAgg = aggBy(kw, (r) => r.keyword_text)
   const kwMeta = new Map()
-  for (const r of kwRows) { const e = kwMeta.get(r.keyword) || { match: r.search_keyword_match_type || '—', qs: '' }; const q = num(r.quality_score); if (q) e.qs = Math.max(e.qs || 0, q); if (!e.match || e.match === '—') e.match = r.search_keyword_match_type || '—'; kwMeta.set(r.keyword, e) }
-  const keywords = [...kwMap.entries()].map(([text, v]) => ({ text, match: kwMeta.get(text)?.match || '—', qs: kwMeta.get(text)?.qs ?? '', ...v })).sort((a, b) => b.cost - a.cost).slice(0, 25)
+  for (const r of kw) { const t = r.keyword_text; if (!t) continue; const e = kwMeta.get(t) || { match: titleCase(r.match_type) || '—', qsSum: 0 }; e.qsSum += num(r.quality_score); if (!e.match || e.match === '—') e.match = titleCase(r.match_type) || '—'; kwMeta.set(t, e) }
+  const keywords = [...kwAgg.entries()].map(([text, v]) => { const meta = kwMeta.get(text) || {}; const qs = meta.qsSum ? Math.max(1, Math.min(10, Math.round(meta.qsSum / days))) : ''; return { text, match: meta.match || '—', qs, ...v } }).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 30)
   const mt = new Map()
-  for (const r of kwRows) { const t = r.search_keyword_match_type; if (!t) continue; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
-  return { campaigns, adGroups, keywords, matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost), matchTypeNote: 'Live from Windsor.ai — spend by keyword match type.', keywordsTotal: new Set(kwRows.map((r) => r.keyword)).size, searchTermsTotal: null }
+  for (const r of kw) { const t = titleCase(r.match_type); if (!t) continue; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
+  const stAgg = aggBy(st, (r) => r.search_term)
+  const searchTerms = [...stAgg.entries()].map(([term, v]) => ({ term, ...v })).sort((a, b) => b.cost - a.cost).slice(0, 40)
+  return {
+    campaigns, adGroups, keywords,
+    matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost),
+    matchTypeNote: 'Live from Windsor.ai — spend by keyword match type.',
+    searchTerms,
+    keywordsTotal: kwAgg.size, searchTermsTotal: stAgg.size,
+  }
+}
+async function buildGoogle(accountId, from, to, preset, key) {
+  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const [cg, kw, st] = await Promise.all([
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
+    windsorFetch('google_ads', ['account_id', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
+    windsorFetch('google_ads', ['account_id', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt),
+  ])
+  return rollupGoogle(cg, kw, st, daysInRange(from, to, preset))
 }
 
 function rollupGhl(rows) {
@@ -169,11 +193,15 @@ export default async (req) => {
   }
 
   try {
+    if (channel === 'google') {
+      const google = await buildGoogle(accountId, from, to, preset, key)
+      return json({ client, channel, period: { from, to, preset }, google }, 200, true)
+    }
     const fields = [...spec.dims, ...spec.metrics]
     const rowsAll = await windsorFetch(spec.connector, fields, from, to, preset, key)
     const rows = rowsAll.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
     if (debug) return json({ channel, accountId, fieldsRequested: fields, rowCount: rows.length, sample: rows.slice(0, 3), sampleKeys: rows[0] ? Object.keys(rows[0]) : [] })
-    const out = channel === 'meta' ? { meta: rollupMeta(rows) } : channel === 'google' ? { google: rollupGoogle(rows) } : { ghl: rollupGhl(rows) }
+    const out = channel === 'meta' ? { meta: rollupMeta(rows) } : { ghl: rollupGhl(rows) }
     return json({ client, channel, period: { from, to, preset }, ...out }, 200, true)
   } catch (e) {
     return json({ error: String(e.message || e) }, 502)

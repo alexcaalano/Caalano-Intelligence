@@ -265,10 +265,15 @@ function GoogleDeep({ deep, currency }) {
           <p className="caveat">Low quality scores (e.g. "psychiatrist melbourne" at QS 1) inflate CPCs — tighten ad-to-keyword relevance or pause.</p>
         </div>
       </div>
-      <div className="lvl-title">Keywords <span className="sub">· top {g.keywords.length} of {g.keywordsTotal} by spend</span></div>
+      <div className="lvl-title">Keywords <span className="sub">· top {g.keywords.length} of {fmtNumber(g.keywordsTotal)} by spend</span></div>
       <div className="table-wrap"><table><thead><tr><th>Keyword</th><th>Match</th><th>Cost</th><th>Clicks</th><th>Conv.</th><th>QS</th></tr></thead>
-        <tbody>{[...g.keywords].sort((a, b) => b.cost - a.cost).map((k) => (<tr key={k.text}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.clicks)}</td><td>{fmtNumber(k.conversions)}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>
-      <p className="caveat">Search-term analysis (which actual queries triggered ads, and where spend leaked) covers {fmtNumber(g.searchTermsTotal)} terms — the ranked view lands with the live API pull.</p>
+        <tbody>{[...g.keywords].sort((a, b) => b.cost - a.cost).map((k) => (<tr key={k.text + k.match}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.clicks)}</td><td>{fmtNumber(k.conversions)}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>
+
+      <div className="lvl-title">Search terms <span className="sub">· top {g.searchTerms ? g.searchTerms.length : 0} of {fmtNumber(g.searchTermsTotal)} actual queries by spend</span></div>
+      {g.searchTerms && g.searchTerms.length ? (
+        <div className="table-wrap"><table><thead><tr><th>Search term</th><th>Cost</th><th>Clicks</th><th>Conv.</th><th>Cost / conv</th></tr></thead>
+          <tbody>{g.searchTerms.map((t) => (<tr key={t.term}><td>{t.term}</td><td>{fmtCurrency(t.cost, currency)}</td><td>{fmtNumber(t.clicks)}</td><td>{fmtNumber(t.conversions)}</td><td>{t.conversions ? fmtCurrency(t.cost / t.conversions, currency) : '—'}</td></tr>))}</tbody></table></div>
+      ) : <p className="caveat">No search-term data in this range.</p>}
     </>
   )
 }

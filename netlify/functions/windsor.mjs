@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, isConnected } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -391,6 +391,16 @@ export default async (req) => {
   const json = (obj, status = 200, cache = false) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? 'public, max-age=600' : 'no-store' } })
 
   if (!key) return json({ error: 'WINDSOR_API_KEY not set' }, 500)
+
+  // Agency-wide Caalano Systems access/scope audit across every mapped client.
+  if (url.searchParams.get('scope') === 'ghlaudit') {
+    if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
+    try {
+      const entries = Object.entries(CLIENTS).filter(([, cc]) => cc.ghl)
+      const audit = await Promise.all(entries.map(async ([id, cc]) => ({ client: id, location: cc.ghl, ...(await auditLocation(cc.ghl)) })))
+      return json({ audit }, 200)
+    } catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
 
   // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.
   if (url.searchParams.get('scope') === 'agency') {

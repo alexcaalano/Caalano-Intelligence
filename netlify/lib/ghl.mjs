@@ -235,6 +235,26 @@ export async function buildCrm(locationId, from, to) {
   }
 }
 
+// Access/scope audit for one sub-account: can we mint a location token, and
+// does each read scope work? Used by the agency-wide audit endpoint.
+export async function auditLocation(locationId) {
+  const out = {}
+  let locTok
+  try { locTok = await locationToken(locationId); out.access = 'ok' }
+  catch (e) { out.access = 'FAIL: ' + String(e.message || e).replace(/\s+/g, ' ').slice(0, 140); return out }
+  const probe = async (label, path, query) => {
+    try { await ghlGet(locTok, path, query); out[label] = 'ok' }
+    catch (e) { out[label] = 'FAIL ' + String(e.message || e).replace(/\s+/g, ' ').slice(0, 90) }
+  }
+  await probe('opportunities', '/opportunities/search', { location_id: locationId, limit: 1 })
+  await probe('pipelines', '/opportunities/pipelines', { locationId })
+  await probe('lostReasons', '/opportunities/lost-reason', { locationId, limit: 1 })
+  await probe('contacts', '/contacts/', { locationId, limit: 1 })
+  await probe('users', '/users/search', { locationId, limit: 1 })
+  await probe('conversations', '/conversations/search', { locationId, limit: 1 })
+  return out
+}
+
 // Debug: raw opportunity + attribution shapes to confirm paid-UTM field names.
 export async function sampleAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)

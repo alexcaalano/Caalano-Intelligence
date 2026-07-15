@@ -242,7 +242,7 @@ function ClientTrend({ row, tr, currency, onPick }) {
       </div>
       <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period</span></div>
       <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '—'} cur={cpl} prev={cplP} /> })}</div>
-      {row.hasCrm && <>
+      {tr.hasCrm && <>
         <div className="tr-row-lab">Cost / Booked Call <span className="sub">· {eff === 'blended' ? 'total' : eff} spend ÷ booked calls</span></div>
         <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpb = w.booked ? d.spend / w.booked : null; const cpbP = w.bookedPrev ? d.spendPrev / w.bookedPrev : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpb != null ? money(cpb) : '—'} cur={cpb} prev={cpbP} /> })}</div>
       </>}

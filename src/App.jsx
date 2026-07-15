@@ -294,10 +294,10 @@ function WkTile({ label, value, num, target, goodWhenDown = true }) {
   const dir = pct == null ? 'flat' : (goodWhenDown ? (pct <= 0 ? 'up' : 'down') : (pct >= 0 ? 'up' : 'down'))
   return <div className="wk-tile"><div className="wk-lab">{label}</div><div className="wk-val">{value}</div>{pct != null ? <div className={`wk-d ${dir}`}>{pct > 0 ? '▲' : pct < 0 ? '▼' : '■'} {Math.abs(pct).toFixed(1)}% vs KPI</div> : <div className="wk-d flat">no KPI set</div>}</div>
 }
-// cost-$ bars (left axis) + count bars (right axis) + optional KPI line ($ left)
+// volume bars (right axis) + cost-$ line (left axis) + optional KPI line ($ left)
 function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, costColor, countColor }) {
   return (
-    <ResponsiveContainer width="100%" height={230}>
+    <ResponsiveContainer width="100%" height={240}>
       <ComposedChart data={data} margin={{ left: -4, right: 6, top: 10 }}>
         <CartesianGrid stroke="var(--border)" vertical={false} />
         <XAxis dataKey="label" fontSize={11} stroke="var(--muted)" />
@@ -305,8 +305,8 @@ function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, c
         <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
         <Tooltip formatter={(v, n) => (n === countName ? fmtNumber(v) : fmtCurrency(v, currency))} />
         <Legend />
-        <Bar yAxisId="r" dataKey={countKey} name={countName} fill={countColor || '#bcd0ff'} radius={[3, 3, 0, 0]} maxBarSize={34} />
-        <Bar yAxisId="l" dataKey={costKey} name={costName} fill={costColor || '#4f7cff'} radius={[3, 3, 0, 0]} maxBarSize={16} />
+        <Bar yAxisId="r" dataKey={countKey} name={countName} fill={countColor || '#bcd0ff'} radius={[3, 3, 0, 0]} maxBarSize={42} />
+        <Line yAxisId="l" type="monotone" dataKey={costKey} name={costName} stroke={costColor || '#4f7cff'} strokeWidth={2.5} dot={{ r: 3 }} />
         {kpi != null && kpi > 0 && <ReferenceLine yAxisId="l" y={kpi} stroke="var(--text)" strokeDasharray="5 4" label={{ value: `KPI ${fmtCurrency(kpi, currency)}`, fontSize: 10, fill: 'var(--muted)', position: 'insideTopRight' }} />}
       </ComposedChart>
     </ResponsiveContainer>
@@ -367,48 +367,42 @@ function WeeklyTab({ rows, currency, nonce }) {
                   <WkTile label="Avg Deal Value" value={T.won ? money(avgDeal) : '—'} num={null} />
                   <WkTile label="ROAS" value={`${roas.toFixed(2)}×`} num={null} />
                 </div>
-                <div className="grid two" style={{ marginTop: 14 }}>
+                <div className="wk-grid">
                   <div className="card chart-card"><h3>Overall Spend Pacing</h3><p className="cap">Spend per week vs weekly target</p>
-                    <ResponsiveContainer width="100%" height={230}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
+                    <ResponsiveContainer width="100%" height={240}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
                       <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} /><Tooltip formatter={(v) => money(v)} />
-                      <Bar dataKey="spend" name="Spend" fill="#e2504f" radius={[3, 3, 0, 0]} maxBarSize={44} />
+                      <Bar dataKey="spend" name="Spend" fill="#e2504f" radius={[3, 3, 0, 0]} maxBarSize={46} />
                       {Number(kpis.wkSpend) > 0 && <ReferenceLine y={Number(kpis.wkSpend)} stroke="var(--text)" strokeDasharray="5 4" label={{ value: `KPI ${money(kpis.wkSpend)}`, fontSize: 10, fill: 'var(--muted)', position: 'insideTopRight' }} />}
                     </ComposedChart></ResponsiveContainer>
                   </div>
-                  <div className="card chart-card"><h3>All Leads</h3><p className="cap">All-leads CPL ($) &amp; lead volume by week</p>
+                  <div className="card chart-card"><h3>All Leads</h3><p className="cap">Lead volume (bars) &amp; all-leads CPL (line) by week</p>
                     <WkDual data={W} costKey="cpl" costName="CPL" countKey="leads" countName="Leads" kpi={Number(kpis.cpl) || null} currency={currency} costColor="#f5a524" countColor="#ffe2b0" />
                   </div>
-                </div>
-                <div className="grid two" style={{ marginTop: 14 }}>
-                  {wk.data.hasMeta && <div className="card chart-card"><h3>Meta Leads</h3><p className="cap">Meta CPL ($) &amp; leads by week</p>
+                  {wk.data.hasMeta && <div className="card chart-card"><h3>Meta Leads</h3><p className="cap">Leads (bars) &amp; Meta CPL (line) by week</p>
                     <WkDual data={W} costKey="metaCplV" costName="CPL" countKey="metaLeads" countName="Leads" kpi={Number(kpis.metaCpl) || null} currency={currency} costColor="#4f7cff" countColor="#bcd0ff" />
                   </div>}
                   {wk.data.hasGoogle && <div className="card chart-card"><h3>Google Leads</h3><p className="cap">Google conversions by week</p>
-                    <ResponsiveContainer width="100%" height={230}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
+                    <ResponsiveContainer width="100%" height={240}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
                       <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v) => fmtNumber(v)} />
-                      <Bar dataKey="googleConv" name="Conv." fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={44} />
+                      <Bar dataKey="googleConv" name="Conv." fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={46} />
                     </ComposedChart></ResponsiveContainer>
                   </div>}
-                </div>
-                {wk.data.hasCrm && <>
-                  <div className="grid two" style={{ marginTop: 14 }}>
-                    <div className="card chart-card"><h3>Appointments Booked</h3><p className="cap">Cost per booked appt ($) &amp; appointments by week</p>
+                  {wk.data.hasCrm && <>
+                    <div className="card chart-card"><h3>Appointments Booked</h3><p className="cap">Appointments (bars) &amp; cost per booked appt (line) by week</p>
                       <WkDual data={W} costKey="cpba" costName="CPBA" countKey="booked" countName="Appt's" kpi={Number(kpis.cpba) || null} currency={currency} costColor="#b0325f" countColor="#f2c3d6" />
                     </div>
-                    <div className="card chart-card"><h3>Shown Appointments</h3><p className="cap">Show rate (%) &amp; shown appts by week</p>
-                      <ResponsiveContainer width="100%" height={230}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
+                    <div className="card chart-card"><h3>Shown Appointments</h3><p className="cap">Shown (bars) &amp; show rate (line) by week</p>
+                      <ResponsiveContainer width="100%" height={240}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
                         <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} /><YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v, nm) => (nm === 'Show rate' ? fmtPct(v, 1) : fmtNumber(v))} /><Legend />
-                        <Bar yAxisId="r" dataKey="shown" name="Shown" fill="#2f8f83" radius={[3, 3, 0, 0]} maxBarSize={34} />
-                        <Bar yAxisId="l" dataKey="showRate" name="Show rate" fill="#8fcabe" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                        <Bar yAxisId="r" dataKey="shown" name="Shown" fill="#2f8f83" radius={[3, 3, 0, 0]} maxBarSize={42} />
+                        <Line yAxisId="l" type="monotone" dataKey="showRate" name="Show rate" stroke="#8fcabe" strokeWidth={2.5} dot={{ r: 3 }} />
                       </ComposedChart></ResponsiveContainer>
                     </div>
-                  </div>
-                  <div className="grid two" style={{ marginTop: 14 }}>
-                    <div className="card chart-card"><h3>Clients Won</h3><p className="cap">Cost per acquisition ($) &amp; won value by week</p>
+                    <div className="card chart-card"><h3>Clients Won</h3><p className="cap">Won value (bars) &amp; cost per acquisition (line) by week</p>
                       <WkDual data={W} costKey="cpa" costName="CPA" countKey="wonValue" countName="Value" kpi={Number(kpis.cpa) || null} currency={currency} costColor="#6d5efc" countColor="#c9c1ff" />
                     </div>
                     <div className="card chart-card"><h3>Funnel</h3><p className="cap">Leads → Appt's → Shown → Won by week</p>
-                      <ResponsiveContainer width="100%" height={230}><BarChart data={W} margin={{ left: -6, right: 6, top: 10 }}>
+                      <ResponsiveContainer width="100%" height={240}><BarChart data={W} margin={{ left: -6, right: 6, top: 10 }}>
                         <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip /><Legend />
                         <Bar dataKey="leads" name="Leads" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={16} />
                         <Bar dataKey="booked" name="Appt's" fill="#b0325f" radius={[3, 3, 0, 0]} maxBarSize={16} />
@@ -416,8 +410,8 @@ function WeeklyTab({ rows, currency, nonce }) {
                         <Bar dataKey="won" name="Won" fill="#6d5efc" radius={[3, 3, 0, 0]} maxBarSize={16} />
                       </BarChart></ResponsiveContainer>
                     </div>
-                  </div>
-                </>}
+                  </>}
+                </div>
                 <p className="caveat">Weeks run Monday–Sunday (ISO week number shown). Leads = Meta leads + Google conversions. Appointments / shown / won come from Caalano Systems pipeline stages (opportunities created that week). KPI lines &amp; vs-KPI deltas use the weekly targets you set per client in Settings.</p>
               </>
             )

@@ -389,6 +389,19 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .pg-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .mini-cap { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin: 2px 0 2px 2px; }
 
+/* Account-health alerts (Overview) */
+.alert-col { padding: 14px 16px; }
+.alert-head { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; font-size: 13px; font-weight: 700; }
+.alert-head .chan { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 5px; color: #fff; }
+.al-count { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.al-count.bad { color: var(--neg); background: rgba(240,67,91,.13); }
+.al-count.ok { color: var(--pos); background: rgba(23,178,106,.13); }
+.alert-row { display: flex; align-items: center; gap: 9px; padding: 8px 6px; border-radius: 8px; cursor: pointer; border-top: 1px solid var(--border); }
+.alert-row:hover { background: var(--panel-2); }
+.al-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--neg); box-shadow: 0 0 0 3px rgba(240,67,91,.16); flex-shrink: 0; }
+.al-name { font-weight: 650; font-size: 13px; }
+.al-meta { margin-left: auto; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+
 /* Client performance trends */
 .tr-list { display: flex; flex-direction: column; gap: 16px; }
 .tr-card { padding: 18px 18px 20px; }

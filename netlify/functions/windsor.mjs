@@ -184,10 +184,17 @@ function rollupGoogle(cg, kw, st, dy, days) {
 async function buildOverview(from, to, preset, key) {
   const metaRev = {}, googleRev = {}, ghlRev = {}
   for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[norm(c.meta)] = id; if (c.google) googleRev[norm(c.google)] = id; if (c.ghl) ghlRev[norm(c.ghl)] = id }
-  const [fb, gg, opps] = await Promise.all([
+  // last-8-day daily spend (yesterday + prior week) for zero-spend alerts
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+  const dstr = (d) => d.toISOString().slice(0, 10)
+  const yest = new Date(today); yest.setUTCDate(yest.getUTCDate() - 1)
+  const base0 = new Date(today); base0.setUTCDate(base0.getUTCDate() - 8)
+  const [fb, gg, opps, fbD, ggD] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', 'actions_lead'], from, to, preset, key),
     windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key).catch(() => []),
+    windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
   ])
   const clients = {}
   const ensure = (id) => (clients[id] = clients[id] || {})
@@ -206,7 +213,22 @@ async function buildOverview(from, to, preset, key) {
     const e = ensure(id); e.crm = e.crm || { revenue: 0, won: 0 }
     if (String(r.opportunity_status || '').toLowerCase() === 'won') { e.crm.revenue += num(r.opportunity_monetary_value); e.crm.won++ }
   }
-  return { clients }
+  // Zero-spend alerts: an account that spent over the prior week but $0 yesterday
+  // has likely paused (failed payment / budget exhausted / manual pause).
+  const yStr = dstr(yest)
+  const daySplit = (rows, revMap) => {
+    const per = {}
+    for (const r of rows) { const id = revMap[norm(r.account_id)]; if (!id) continue; const d = String(r.date || '').slice(0, 10); const e = per[id] = per[id] || { yest: 0, base: 0 }; if (d === yStr) e.yest += num(r.spend); else e.base += num(r.spend) }
+    return per
+  }
+  const perMeta = daySplit(fbD, metaRev), perGoogle = daySplit(ggD, googleRev)
+  const flag = (per, hasKey) => {
+    const out = []
+    for (const [id, c] of Object.entries(CLIENTS)) { if (!c[hasKey]) continue; const e = per[id] || { yest: 0, base: 0 }; if (e.base > 1 && e.yest < 0.01) out.push({ id, avgDaily: Math.round(e.base / 7) }) }
+    return out.sort((a, b) => b.avgDaily - a.avgDaily)
+  }
+  const alerts = { checkedDate: yStr, meta: flag(perMeta, 'meta'), google: flag(perGoogle, 'google') }
+  return { clients, alerts }
 }
 
 // Rolling-window trends: for each client, blended/Meta/Google spend + results +

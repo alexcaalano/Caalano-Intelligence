@@ -125,7 +125,20 @@ function computeRows(snapClients, live) {
 }
 
 /* ============ Overview ============ */
-function Overview({ rows, currency, periodLabel, live, onPick }) {
+function Overview({ rows, currency, periodLabel, live, alerts, onPick }) {
+  const rowById = Object.fromEntries(rows.map((r) => [r.id, r]))
+  const nameOf = (id) => rowById[id]?.name || id
+  const AlertCol = ({ title, color, list }) => (
+    <div className="card alert-col">
+      <div className="alert-head"><span className="chan" style={{ background: color }}>{title}</span>{list.length ? <span className="al-count bad">{list.length} paused</span> : <span className="al-count ok">all active</span>}</div>
+      {list.length ? list.map((a) => (
+        <div className="alert-row" key={a.id} onClick={() => rowById[a.id] && onPick(rowById[a.id].c)}>
+          <span className="al-dot" /><span className="al-name">{nameOf(a.id)}</span>
+          <span className="al-meta">$0 yesterday · was ~{fmtCurrency(a.avgDaily, currency)}/day</span>
+        </div>
+      )) : <p className="cap" style={{ margin: '4px 0 0', color: 'var(--pos)' }}>✓ Every {title} account spent yesterday.</p>}
+    </div>
+  )
   const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks, conversions: a.conversions + r.conversions, metaSpend: a.metaSpend + r.metaSpend, googleSpend: a.googleSpend + r.googleSpend }), { spend: 0, impressions: 0, clicks: 0, conversions: 0, metaSpend: 0, googleSpend: 0 })
   const cpl = t.conversions ? t.spend / t.conversions : 0
   const ctr = t.impressions ? (t.clicks / t.impressions) * 100 : 0
@@ -142,6 +155,13 @@ function Overview({ rows, currency, periodLabel, live, onPick }) {
         <Kpi label="Revenue Generated" tag="CRM" value={fmtCurrency(totalRev, currency)} />
         <Kpi label="ROAS" tag="CRM" value={totalRev && t.spend ? `${roas.toFixed(2)}×` : '—'} />
       </div>
+      {alerts && (alerts.meta || alerts.google) && <>
+        <div className="section-title">Account health <span className="sub">· $0 spend yesterday with an active prior week — likely paused / failed payment</span></div>
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <AlertCol title="Meta" color="#4f7cff" list={alerts.meta || []} />
+          <AlertCol title="Google" color="#12b886" list={alerts.google || []} />
+        </div>
+      </>}
       <div className="section-title">Client leaderboard <span className="sub">· click a row to open the client workspace</span></div>
       <ClientTable rows={rows} currency={currency} onPick={onPick} />
     </>
@@ -1631,7 +1651,6 @@ export default function App() {
           <button className={view === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
           <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
           <button className={view === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
-          <button className={view === 'clients' ? 'active' : ''} onClick={() => go('clients')}><span className="ic">❑</span>Clients</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
           <button className="settings-btn" onClick={() => setShowSettings(true)}><span className="ic">⚙</span>Settings</button>
@@ -1650,11 +1669,10 @@ export default function App() {
           <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />
           <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
         </div>
-        {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} onPick={(c) => { setPicked(c); setView('clients') }} />}
+        {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
-        {view === 'clients' && !picked && <ClientTable rows={rows} currency={data.currency} onPick={setPicked} />}
-        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} nonce={refreshKey} onBack={() => setPicked(null)} />}
+        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
       </main>
 
       {showSettings && <Settings config={config} enabled={enabled} setEnabled={setEnabled} onClose={() => setShowSettings(false)} />}

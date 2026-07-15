@@ -794,7 +794,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label="Shown Bookings" value={fmtNumber(c.shown)} />
         <Sc label="Won Clients" value={fmtNumber(c.won)} />
         <Sc label="Revenue Closed" value={money(c.revenue)} />
-        <Sc label="Avg Order Value" value={c.won ? money(c.avgValue) : '—'} />
+        <Sc label="Avg Deal Value" value={c.won ? money(c.avgValue) : '—'} />
         <Sc label="Cost / Lead" value={spend && c.leads ? money(spend / c.leads) : '—'} />
         <Sc label="Cost / Booked" value={spend && c.booked ? money(spend / c.booked) : '—'} />
         <Sc label="Cost / Won" value={spend && c.won ? money(spend / c.won) : '—'} />

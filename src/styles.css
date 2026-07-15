@@ -292,6 +292,11 @@ tbody tr:hover { background: var(--panel-2); }
 .kpi-stage span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-inputs input, .kpi-stage input { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12px; width: 100%; }
 .kpi-stage input { max-width: 110px; }
+.kev-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.kev-item { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--muted); font-weight: 600; cursor: pointer; max-width: 100%; }
+.kev-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kev-item input { accent-color: var(--accent); cursor: pointer; }
+.kev-item.on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
 /* CRM sub-rows (lost reasons per user) */
 .sub-row td { background: var(--panel-2); padding: 10px 14px !important; }

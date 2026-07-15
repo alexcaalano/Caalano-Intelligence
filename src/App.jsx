@@ -719,6 +719,25 @@ function saveKpis(clientId, k) { try { const all = JSON.parse(localStorage.getIt
 // colour helper: is `actual` hitting `target`? goodWhenUnder for cost metrics.
 function kpiClass(actual, target, goodWhenUnder) { if (target == null || target === '' || !actual) return ''; const hit = goodWhenUnder ? actual <= target : actual >= target; return hit ? 'good' : 'bad' }
 
+/* Per-client key events — array of pipeline stage names to feature as the
+   Caalano360 funnel (with cost per stage). Empty = default leads→booked→shown→won. */
+const KEV_KEY = 'caalano_keyevents'
+function loadKeyEvents(clientId) { try { return (JSON.parse(localStorage.getItem(KEV_KEY) || '{}')[clientId]) || [] } catch { return [] } }
+function saveKeyEvents(clientId, arr) { try { const all = JSON.parse(localStorage.getItem(KEV_KEY) || '{}'); all[clientId] = arr; localStorage.setItem(KEV_KEY, JSON.stringify(all)) } catch {} }
+// reached-per-stage across a set of pipelines: cumulative from the last stage
+// (an opp at a stage passed through every earlier stage), summed by stage name.
+function reachedByStage(pipelines) {
+  const m = new Map(); let total = 0
+  for (const p of pipelines) {
+    const sts = (p.stages || []).slice().sort((a, b) => a.pos - b.pos)
+    let acc = 0; const reached = []
+    for (let i = sts.length - 1; i >= 0; i--) { acc += sts[i].count; reached[i] = acc }
+    if (sts.length) total += reached[0]
+    sts.forEach((s, i) => m.set(s.name, (m.get(s.name) || 0) + reached[i]))
+  }
+  return { m, total }
+}
+
 function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const b = blend
   const pipes = b.pipelines || []
@@ -756,13 +775,17 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const chanPie = chan === 'meta' ? [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }].filter((x) => x.value > 0)
     : chan === 'google' ? [{ name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
     : [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }, { name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
-  const fmax = Math.max(1, c.leads)
-  const funnel = [
-    { stage: 'Leads', count: c.leads, color: '#4f7cff' },
-    { stage: 'Bookings', count: c.booked, color: '#6d5efc' },
-    { stage: 'Shown', count: c.shown, color: '#0ea5e9' },
-    { stage: 'Won', count: c.won, color: '#12b886' },
-  ]
+  // Key Events funnel — user-chosen pipeline stages (Settings), else the
+  // default leads → booked → shown → won. Cost per stage = spend ÷ reached.
+  const keyEvents = loadKeyEvents(client.id)
+  const scopePipes = pid !== 'all' ? pipesSrc.filter((x) => x.id === pid) : pipesSrc
+  const rmap = reachedByStage(scopePipes)
+  const keSel = keyEvents.filter((n) => rmap.m.has(n))
+  const keTotal = Math.max(1, c.leads || rmap.total)
+  const keRows = keSel.length
+    ? keSel.map((n) => ({ stage: n, count: rmap.m.get(n) || 0 })).sort((a, b) => b.count - a.count)
+    : [{ stage: 'Leads', count: c.leads }, { stage: 'Bookings', count: c.booked }, { stage: 'Shown', count: c.shown }, { stage: 'Won', count: c.won }]
+  const keMax = Math.max(1, ...keRows.map((r) => r.count))
   const activeStages = pid !== 'all'
     ? (pipesSrc.find((x) => x.id === pid)?.stages || [])
     : (pipesSrc.length === 1 ? pipesSrc[0].stages : null)
@@ -802,9 +825,23 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} />
       </div>
       <div className="grid two" style={{ marginTop: 14 }}>
-        <div className="card chart-card"><h3>Lead-to-client funnel</h3><p className="cap">Opportunities created → booked → shown → won</p>
-          <div className="funnel">{funnel.map((s) => (<div className="fn" key={s.stage}><span className="lab">{s.stage}</span><span className="bar" style={{ width: `${Math.max(9, (s.count / fmax) * 100)}%`, background: s.color }}>{fmtNumber(s.count)}</span></div>))}</div>
-          <p className="caveat">Bookings &amp; shown are derived from each opportunity's pipeline stage position (Caalano Systems stage names), so they track the live pipeline rather than a separate calendar feed.</p>
+        <div className="card chart-card"><h3>Key events</h3><p className="cap">{keSel.length ? 'Your key pipeline stages' : 'Default: leads → booked → shown → won'} · reached · % of leads · cost per stage</p>
+          <div className="pfunnel pf4">
+            <div className="pf-row pf-head"><span className="pf-stage">Stage</span><span className="pf-bar">Reached</span><span className="pf-num">% leads</span><span className="pf-num">Cost / stage</span></div>
+            {keRows.map((s, i) => {
+              const pct = (s.count / keTotal) * 100
+              const hue = 210 + Math.round((i / Math.max(1, keRows.length - 1)) * -70)
+              return (
+                <div className="pf-row" key={s.stage}>
+                  <span className="pf-stage" title={s.stage}>{s.stage}</span>
+                  <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, (s.count / keMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{fmtNumber(s.count)}</span></span>
+                  <span className="pf-num">{fmtPct(pct, 1)}</span>
+                  <span className="pf-num">{spend && s.count ? money(spend / s.count) : '—'}</span>
+                </div>
+              )
+            })}
+          </div>
+          <p className="caveat">{keSel.length ? 'Key events are the pipeline stages you selected in Settings.' : 'Set a client’s key events in Settings to replace the default stages.'} Reached = opportunities that got to that stage or beyond. Cost / stage = attributed spend ({money(spend)}) ÷ reached.</p>
         </div>
         <div className="card chart-card"><h3>Ad spend by channel</h3><p className="cap">{pid === 'all' ? 'Meta + Google split across the account' : 'Attributed to this pipeline'}</p>
           {chanPie.length ? <>
@@ -1071,6 +1108,37 @@ function KpiEditor({ clientId }) {
     </div>
   )
 }
+function KeyEventsEditor({ clientId }) {
+  const [open, setOpen] = useState(false)
+  const [sel, setSel] = useState(() => loadKeyEvents(clientId))
+  const [st, setSt] = useState({ status: 'idle', blend: null })
+  useEffect(() => {
+    if (!open || st.status !== 'idle') return
+    setSt({ status: 'loading', blend: null })
+    const r = presetRange('last_30d')
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+      .then((j) => setSt({ status: 'ok', blend: j.blend }))
+      .catch(() => setSt({ status: 'err', blend: null }))
+  }, [open, st.status, clientId])
+  const pipes = (st.blend && st.blend.pipelines) || []
+  const stageNames = [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))]
+  const toggle = (n) => setSel((prev) => { const nx = prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]; saveKeyEvents(clientId, nx); return nx })
+  return (
+    <div className="linker">
+      <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>
+      {open && <div className="linker-body">
+        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages that count as key events for this client — they drive the Key Events funnel &amp; cost-per-stage in Caalano360. Leave empty for the default leads → booked → shown → won.</p>
+        {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
+          : stageNames.length ? <div className="kev-list">{stageNames.map((n) => (
+            <label className={`kev-item ${sel.includes(n) ? 'on' : ''}`} key={n}><input type="checkbox" checked={sel.includes(n)} onChange={() => toggle(n)} /><span title={n}>{n}</span></label>
+          ))}</div>
+          : st.status === 'ok' ? <p className="cap">No Caalano Systems pipeline stages found.</p>
+            : <p className="cap">Couldn’t load pipeline stages.</p>}
+      </div>}
+    </div>
+  )
+}
 function CampaignLinker({ clientId }) {
   const [open, setOpen] = useState(false)
   const [st, setSt] = useState({ status: 'idle', blend: null })
@@ -1144,6 +1212,7 @@ function Settings({ config, enabled, setEnabled, onClose }) {
                   <span className="idtag">Caalano Systems <b>{c.ghl || '—'}</b></span>
                 </div>
                 {canLink && <CampaignLinker clientId={c.id} />}
+                {c.ghl && <KeyEventsEditor clientId={c.id} />}
                 {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}
               </div>
             )

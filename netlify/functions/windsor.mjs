@@ -461,9 +461,15 @@ export default async (req) => {
         windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(c.ghl))).catch(() => []),
       ])
       const uName = {}; for (const u of usersRows) if (u.user_id) uName[u.user_id] = u.user_name
-      const nameRows = (rows) => rows.map((r) => ({ ...r, name: uName[r.id] || (r.id === 'unassigned' ? 'Unassigned' : 'User ' + String(r.id).slice(-4)) }))
+      const nameOf = (id) => uName[id] || (id === 'unassigned' ? 'Unassigned' : 'User ' + String(id).slice(-4))
+      const nameRows = (rows) => rows.map((r) => ({ ...r, name: nameOf(r.id) }))
       crm.byUser = nameRows(crm.byUser)
       for (const p of crm.pipelines || []) if (p.byUser) p.byUser = nameRows(p.byUser)
+      for (const u of crm.users || []) {
+        u.name = nameOf(u.id)
+        if (u.byUser) u.byUser = nameRows(u.byUser)
+        for (const p of u.pipelines || []) if (p.byUser) p.byUser = nameRows(p.byUser)
+      }
       return json({ client, channel, period: { from, to, preset }, crm }, 200, true)
     } catch (e) { return json({ connected: true, error: String(e.message || e) }, 502) }
   }

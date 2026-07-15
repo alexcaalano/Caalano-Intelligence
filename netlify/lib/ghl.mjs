@@ -298,22 +298,13 @@ function aggregateCrm(opps, idx, reasonName) {
   }
 }
 
-export async function buildCrm(locationId, from, to) {
-  const locTok = await locationToken(locationId)
-  const [opps, pipelines, reasons] = await Promise.all([
-    allOpportunities(locTok, locationId, from, to),
-    fetchPipelines(locTok, locationId),
-    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
-  ])
-  const idx = stageIndexFrom(pipelines)
-  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
-  const account = aggregateCrm(opps, idx, reasonName)
-
-  // per-pipeline: ordered stage counts + funnel + a full rollup so every
-  // scorecard, lost-reason and user table pivots when a pipeline is selected.
+// A full CRM board (totals + ordered per-pipeline funnels + lost reasons + per
+// user) for an opportunity subset — the whole account, or one user's slice.
+function crmBoard(opps, idx, reasonName) {
+  const agg = aggregateCrm(opps, idx, reasonName)
   const byPipe = new Map()
   for (const o of opps) { const pid = o.pipelineId || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(o) }
-  const pipesOut = [...byPipe.entries()].map(([pid, rows]) => {
+  const pipelines = [...byPipe.entries()].map(([pid, rows]) => {
     const pi = idx.get(pid); const at = new Map(), openAt = new Map()
     let l = 0, b = 0, sh = 0, w = 0
     for (const o of rows) {
@@ -326,14 +317,33 @@ export async function buildCrm(locationId, from, to) {
     const a = aggregateCrm(rows, idx, reasonName)
     return { id: pid, name: (pi && pi.name) || 'Unnamed pipeline', leads: rows.length, stages, funnel: { leads: l, booked: b, shown: sh, won: w }, totals: a.totals, byUser: a.byUser, lostReasons: a.lostReasons, lostByStage: a.lostByStage }
   }).sort((a, b) => b.leads - a.leads)
+  return { totals: agg.totals, pipelines, byUser: agg.byUser, lostReasons: agg.lostReasons, lostByStage: agg.lostByStage }
+}
+
+export async function buildCrm(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const [opps, pipelines, reasons] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to),
+    fetchPipelines(locTok, locationId),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const board = crmBoard(opps, idx, reasonName)
+
+  // Per-user boards so the whole CRM view can be filtered to one assigned user.
+  const byUid = new Map()
+  for (const o of opps) { const uid = o.assignedTo || 'unassigned'; if (!byUid.has(uid)) byUid.set(uid, []); byUid.get(uid).push(o) }
+  const users = [...byUid.entries()].map(([uid, rows]) => ({ id: uid, leads: rows.length, ...crmBoard(rows, idx, reasonName) })).sort((a, b) => b.leads - a.leads)
 
   return {
     connected: true,
-    totals: account.totals,
-    pipelines: pipesOut,
-    byUser: account.byUser,
-    lostReasons: account.lostReasons,
-    lostByStage: account.lostByStage,
+    totals: board.totals,
+    pipelines: board.pipelines,
+    byUser: board.byUser,
+    lostReasons: board.lostReasons,
+    lostByStage: board.lostByStage,
+    users,
   }
 }
 

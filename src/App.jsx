@@ -605,22 +605,36 @@ function OverallTab({ client, currency, side }) {
 /* ============ CRM — live from GoHighLevel (Caalano Systems) ============ */
 function CrmGhl({ crm, currency, clientId }) {
   const kpis = loadKpis(clientId)
-  const pipes = crm.pipelines || []
-  const [pid, setPid] = useState(pipes.length === 1 ? pipes[0].id : 'all')
+  const allUsers = crm.users || []
+  const [uid, setUid] = useState('all')
+  // Board source pivots by the selected user (or the whole account).
+  const src = uid === 'all' ? crm : (allUsers.find((u) => u.id === uid) || crm)
+  const pipes = src.pipelines || []
+  const [pid, setPid] = useState('all')
+  useEffect(() => { setPid('all') }, [uid])
   const [openUser, setOpenUser] = useState(null)
   const [uSort, onUSort] = useSort('won')
   const money = (v) => fmtCurrency(v, currency)
   const pipe = pid === 'all' ? null : pipes.find((p) => p.id === pid)
-  // Every scorecard / breakdown pivots to the selected pipeline.
-  const t = pipe ? pipe.totals : crm.totals
-  const lostReasons = pipe ? (pipe.lostReasons || []) : (crm.lostReasons || [])
-  const lostByStage = pipe ? (pipe.lostByStage || []) : (crm.lostByStage || [])
-  const byUser = pipe ? (pipe.byUser || []) : (crm.byUser || [])
+  // Every scorecard / breakdown pivots to the selected pipeline (within the user).
+  const t = pipe ? pipe.totals : src.totals
+  const lostReasons = pipe ? (pipe.lostReasons || []) : (src.lostReasons || [])
+  const lostByStage = pipe ? (pipe.lostByStage || []) : (src.lostByStage || [])
+  const byUser = crm.byUser || []
   const stages = pipe ? pipe.stages : (pipes.length === 1 ? pipes[0].stages : null)
   const stageMax = stages ? Math.max(1, ...stages.map((s) => s.count)) : 1
   const lostMax = Math.max(1, ...lostByStage.map((s) => s.count))
   return (
     <>
+      {allUsers.length > 1 && <div className="c360-head" style={{ marginTop: 0 }}>
+        <div className="section-title" style={{ margin: 0 }}>Caalano Systems CRM <span className="sub">· {uid === 'all' ? 'all users' : (allUsers.find((u) => u.id === uid)?.name || 'user')}{uid !== 'all' ? ' · filtered' : ''}</span></div>
+        <div className="pipe-sel"><label>User</label>
+          <select value={uid} onChange={(e) => setUid(e.target.value)}>
+            <option value="all">All users ({fmtNumber(crm.totals.leads)})</option>
+            {allUsers.map((u) => <option key={u.id} value={u.id}>{u.name} ({fmtNumber(u.leads)})</option>)}
+          </select>
+        </div>
+      </div>}
       <div className="scorecard">
         <Sc label="Leads" value={fmtNumber(t.leads)} />
         <Sc label="Open" value={fmtNumber(t.open)} />
@@ -719,25 +733,61 @@ function useAttribution(clientId, range, nonce = 0) {
   }, [clientId, q, nonce])
   return state
 }
-function UtmSection({ attr, currency }) {
-  const { status, data } = attr || { status: 'loading', data: null }
+// classify a UTM source string into a paid channel (mirror of the backend)
+const chanOfSource = (name) => { const s = String(name || '').toLowerCase(); if (/(facebook|instagram|\bfb\b|\bmeta\b|\big\b|fbclid|fb_|ig_)/.test(s)) return 'meta'; if (/(google|adwords|youtube|\bgdn\b|gclid|goog)/.test(s)) return 'google'; return 'other' }
+function UtmTable({ label, first, rows, currency }) {
+  const [s, on] = useSort('leads')
   const money = (v) => fmtCurrency(v, currency)
+  const hasSpend = rows.some((r) => r.spend != null)
+  const withCalc = rows.map((r) => ({ ...r, l2w: rate(r.won, r.leads) }))
+  return (
+    <div>
+      <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>{label}</div>
+      <div className="table-wrap"><table><thead><tr>
+        <SortTh k="name" sort={s} on={on}>{first}</SortTh>
+        <SortTh k="leads" sort={s} on={on}>Leads</SortTh>
+        <SortTh k="booked" sort={s} on={on}>Booked</SortTh>
+        <SortTh k="shown" sort={s} on={on}>Shown</SortTh>
+        <SortTh k="won" sort={s} on={on}>Won</SortTh>
+        {hasSpend && <SortTh k="cWon" sort={s} on={on}>C/Won</SortTh>}
+        <SortTh k="revenue" sort={s} on={on}>Revenue</SortTh>
+        {hasSpend && <SortTh k="roas" sort={s} on={on}>ROAS</SortTh>}
+        <SortTh k="l2w" sort={s} on={on}>Lead→Won</SortTh>
+      </tr></thead>
+        <tbody>{sortRows(withCalc, s).map((r) => (<tr key={r.name}>
+          <td>{r.name}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.shown)}</td><td>{fmtNumber(r.won)}</td>
+          {hasSpend && <td>{r.cWon != null ? money(r.cWon) : '—'}</td>}
+          <td>{money(r.revenue)}</td>
+          {hasSpend && <td>{r.roas != null ? `${r.roas.toFixed(2)}×` : '—'}</td>}
+          <td>{fmtPct(r.l2w, 1)}</td>
+        </tr>))}</tbody></table></div>
+    </div>
+  )
+}
+function UtmSection({ attr, currency, paid }) {
+  const { status, data } = attr || { status: 'loading', data: null }
   if (status === 'loading') return <div className="card" style={{ marginTop: 14 }}><Spinner label="Loading UTM attribution…" /></div>
   if (data && data.connected === false) return <div className="card" style={{ marginTop: 14 }}><b>Connect Caalano Systems</b> to unlock UTM attribution (source → campaign → creative → booked/shown/won).</div>
   const a = data && data.attribution
   if (!a) return null
-  const dims = [['By source', 'bySource'], ['By campaign', 'byCampaign'], ['By creative (utm_content)', 'byCreative']]
+  // Attribute each paid channel's spend across its UTM sources by lead share, so
+  // the By-source table can show a cost-per-won and ROAS per source.
+  const bySource = a.bySource || []
+  const chLeads = { meta: 0, google: 0, other: 0 }
+  for (const r of bySource) chLeads[chanOfSource(r.name)] += r.leads
+  const chSpend = { meta: (paid && paid.meta) || 0, google: (paid && paid.google) || 0, other: 0 }
+  const srcRows = bySource.map((r) => {
+    const ch = chanOfSource(r.name)
+    const spend = chLeads[ch] ? chSpend[ch] * (r.leads / chLeads[ch]) : 0
+    return { ...r, spend, cWon: r.won ? spend / r.won : null, roas: spend ? r.revenue / spend : null }
+  })
   return (
     <>
       <div className="lvl-title">UTM attribution <span className="sub">· first-touch · {fmtNumber(a.attributed)} of {fmtNumber(a.opps)} opportunities tagged</span></div>
-      {dims.map(([label, key]) => (a[key] && a[key].length) ? (
-        <div key={key}>
-          <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>{label}</div>
-          <div className="table-wrap"><table><thead><tr><th>{label.replace('By ', '')}</th><th>Leads</th><th>Booked</th><th>Shown</th><th>Won</th><th>Revenue</th><th>Lead→Won</th></tr></thead>
-            <tbody>{a[key].map((r) => (<tr key={r.name}><td>{r.name}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.shown)}</td><td>{fmtNumber(r.won)}</td><td>{money(r.revenue)}</td><td>{fmtPct(rate(r.won, r.leads), 1)}</td></tr>))}</tbody></table></div>
-        </div>
-      ) : null)}
-      <p className="caveat">First-touch UTMs from Caalano Systems attribution, mapped to down-funnel outcomes. "(not set)" = no UTM captured (direct / organic / untagged link).</p>
+      <UtmTable label="By source" first="Source" rows={srcRows} currency={currency} />
+      {a.byCampaign && a.byCampaign.length ? <UtmTable label="By campaign" first="Campaign" rows={a.byCampaign} currency={currency} /> : null}
+      {a.byCreative && a.byCreative.length ? <UtmTable label="By creative (utm_content)" first="Creative" rows={a.byCreative} currency={currency} /> : null}
+      <p className="caveat">First-touch UTMs from Caalano Systems attribution, mapped to down-funnel outcomes. "(not set)" = no UTM captured (direct / organic / untagged link). Cost/Won &amp; ROAS on By source attribute each channel's ad spend across its sources by lead share.</p>
     </>
   )
 }
@@ -941,7 +991,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           </div>
         )
       })()}
-      {b.hasCrm && <UtmSection attr={utmAttr} currency={currency} />}
+      {b.hasCrm && <UtmSection attr={utmAttr} currency={currency} paid={{ meta: p.metaSpend, google: p.googleSpend }} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>
   )

@@ -71,19 +71,24 @@ async function ghlPost(locTok, path, bodyObj) {
 // opportunities/search returns the opportunity, its contact AND an inline
 // `attributions` array (first/last touch, UTMs) — one call, no N+1 lookups.
 async function allOpportunities(locTok, locationId, from, to, cap = 1500) {
+  // GHL opportunities/search has no startDate/endDate range params, so we page
+  // newest-first and filter by createdAt in memory, stopping once a page is
+  // entirely older than the window.
   const out = []; let startAfter, startAfterId, guard = 0
-  while (guard++ < 16 && out.length < cap) {
-    const q = { location_id: locationId, limit: 100 }
-    if (from) q.startDate = new Date(from + 'T00:00:00Z').getTime()
-    if (to) q.endDate = new Date(to + 'T23:59:59Z').getTime()
+  const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
+  const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
+  while (guard++ < 25 && out.length < cap) {
+    const q = { location_id: locationId, limit: 100, order: 'added_desc' }
     if (startAfter != null) { q.startAfter = startAfter; q.startAfterId = startAfterId }
     const j = await ghlGet(locTok, '/opportunities/search', q)
     const batch = j.opportunities || []
-    out.push(...batch)
+    let oldest = Infinity
+    for (const o of batch) { const ms = Date.parse(o.createdAt); if (ms < oldest) oldest = ms; if ((fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)) out.push(o) }
     const meta = j.meta || {}
     const nextId = meta.startAfterId || (batch.length ? batch[batch.length - 1].id : null)
     const nextAfter = meta.startAfter || (batch.length ? (batch[batch.length - 1].sort || [])[0] : null)
     if (batch.length < 100 || !nextId || nextId === startAfterId) break
+    if (fromMs != null && oldest < fromMs) break // page went past the window (newest-first)
     startAfter = nextAfter; startAfterId = nextId
   }
   return out

@@ -12,6 +12,13 @@ const AVATAR = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9'
 const acolor = (i) => AVATAR[i % AVATAR.length]
 const initials = (n) => n.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
 const PHASE_COLOR = { contact: '#4f7cff', 'appt-set': '#6d5efc', 'at-risk': '#f0435b', held: '#12b886', proposal: '#f5a524', onboarding: '#0ea5e9' }
+const TRACK = {
+  full: { label: 'Full tracking', cls: 'tk-full' },
+  wins_no_value: { label: 'Wins, no value', cls: 'tk-wins' },
+  intelligence_only: { label: 'Intel only', cls: 'tk-intel' },
+  no_outcome_tracking: { label: 'No tracking', cls: 'tk-none' },
+}
+const dash = (v, formatted) => (v ? formatted : '—')
 
 function Delta({ cur, prev, goodWhenDown = false }) {
   const pct = pctChange(cur, prev)
@@ -106,7 +113,7 @@ function ClientTable({ data, onPick }) {
   const [sort, setSort] = useState({ key: 'spend', dir: -1 })
   const rows = useMemo(() => data.clients.map((c, i) => {
     const { cur, prev } = clientTotals(c)
-    return { c, i, name: c.name, industry: c.industry, spend: cur.spend, conversions: cur.conversions, cpl: cur.cpl, ctr: cur.ctr, convChange: pctChange(cur.conversions, prev.conversions), hasMeta: !!c.meta, hasGoogle: !!c.google }
+    return { c, i, name: c.name, industry: c.industry, track: c.trackingStatus, spend: cur.spend, conversions: cur.conversions, cpl: cur.cpl, ctr: cur.ctr, convChange: pctChange(cur.conversions, prev.conversions), hasMeta: !!c.meta, hasGoogle: !!c.google }
   }), [data])
   const sorted = [...rows].sort((a, b) => (a[sort.key] > b[sort.key] ? 1 : -1) * sort.dir)
   const setKey = (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : -1 }))
@@ -116,20 +123,23 @@ function ClientTable({ data, onPick }) {
       <table>
         <thead><tr>
           <Th k="name">Client</Th><Th k="spend">Spend</Th><Th k="conversions">Results</Th>
-          <Th k="cpl">Cost / result</Th><Th k="ctr">CTR</Th><Th k="convChange">Results Δ</Th><th>Channels</th>
+          <Th k="cpl">Cost / result</Th><Th k="ctr">CTR</Th><th>Tracking</th><th>Channels</th>
         </tr></thead>
         <tbody>
-          {sorted.map((r) => (
+          {sorted.map((r) => {
+            const tk = TRACK[r.track] || TRACK.full
+            const hasResults = r.conversions > 0
+            return (
             <tr key={r.c.id} onClick={() => onPick(r.c)}>
               <td><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div>{r.name}<small>{r.industry}</small></div></div></td>
               <td>{fmtCurrency(r.spend, data.currency)}</td>
-              <td>{fmtNumber(r.conversions)}</td>
-              <td>{fmtCurrency(r.cpl, data.currency)}</td>
+              <td>{dash(hasResults, fmtNumber(r.conversions))}</td>
+              <td>{dash(hasResults, fmtCurrency(r.cpl, data.currency))}</td>
               <td>{fmtPct(r.ctr, 2)}</td>
-              <td><span className={`chip ${r.convChange >= 0 ? 'up' : 'down'}`}>{r.convChange >= 0 ? '+' : ''}{fmtPct(r.convChange)}</span></td>
+              <td><span className={`tk ${tk.cls}`}>{tk.label}</span></td>
               <td><div className="chan-tags">{r.hasMeta && <span className="chan" style={{ background: '#4f7cff' }}>Meta</span>}{r.hasGoogle && <span className="chan" style={{ background: '#12b886' }}>Google</span>}</div></td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
     </div>
@@ -153,17 +163,22 @@ function ChannelCard({ title, color, badge, currency, metrics }) {
 function ClientDetail({ client, currency, index, onBack }) {
   const { cur, prev } = clientTotals(client)
   const m = client.meta, g = client.google
+  const tk = TRACK[client.trackingStatus] || TRACK.full
+  const hasResults = cur.conversions > 0
   return (
     <>
       <button className="back" onClick={onBack}>← Back to all clients</button>
       <div className="detail-head">
         <span className="avatar" style={{ background: acolor(index) }}>{initials(client.name)}</span>
-        <div><h2>{client.name}</h2><p>{client.industry} · combined spend {fmtCurrency(cur.spend, currency)} · {fmtNumber(cur.conversions)} results</p></div>
+        <div>
+          <h2>{client.name} <span className={`tk ${tk.cls}`} style={{ verticalAlign: 'middle' }}>{tk.label}</span></h2>
+          <p>{client.industry} · combined spend {fmtCurrency(cur.spend, currency)}{hasResults ? ` · ${fmtNumber(cur.conversions)} results` : ' · outcomes not tracked'}</p>
+        </div>
       </div>
       <div className="grid kpis">
         <Kpi label="Total Spend" value={fmtCurrency(cur.spend, currency)} cur={cur.spend} prev={prev.spend} />
-        <Kpi label="Results" value={fmtNumber(cur.conversions)} cur={cur.conversions} prev={prev.conversions} />
-        <Kpi label="Cost / Result" value={fmtCurrency(cur.cpl, currency)} cur={cur.cpl} prev={prev.cpl} goodWhenDown />
+        <Kpi label="Results" value={hasResults ? fmtNumber(cur.conversions) : '—'} cur={cur.conversions} prev={prev.conversions} flat={hasResults ? null : 'not tracked in ad platform'} />
+        <Kpi label="Cost / Result" value={hasResults ? fmtCurrency(cur.cpl, currency) : '—'} cur={cur.cpl} prev={prev.cpl} goodWhenDown flat={hasResults ? null : 'n/a'} />
         <Kpi label="CTR" value={fmtPct(cur.ctr, 2)} cur={cur.ctr} prev={prev.ctr} />
       </div>
       <div className="grid two" style={{ marginTop: 14 }}>

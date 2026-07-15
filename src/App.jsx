@@ -49,7 +49,7 @@ function Overview({ data, onPick }) {
         <Kpi label="Blended Cost / Result" tag="ADS" value={fmtCurrency(t.cur.cpl, cur)} cur={t.cur.cpl} prev={t.prev.cpl} goodWhenDown />
         <Kpi label="Blended CTR" tag="ADS" value={fmtPct(t.cur.ctr, 2)} cur={t.cur.ctr} prev={t.prev.ctr} />
       </div>
-      <div className="section-title">New-business pipeline <span className="sub">· GoHighLevel · tracked, not invoiced</span></div>
+      <div className="section-title">New-business pipeline <span className="sub">· Caalano Systems · tracked, not invoiced</span></div>
       <div className="grid kpis">
         <Kpi label="Open Pipeline" tag="CRM" value={fmtNumber(g.summary.open)} flat={`${fmtCurrency(g.summary.openValue, cur)} recorded`} />
         <Kpi label="Won (tracked)" tag="CRM" value={fmtCurrency(g.summary.wonValue, cur)} flat={`${g.summary.won} deals · avg ${fmtCurrency(g.summary.avgWonValue, cur)}`} />
@@ -146,12 +146,12 @@ function CrmTab({ ghl, currency }) {
           <div className="legend" style={{ justifyContent: 'flex-start' }}><span><i className="swatch" style={{ background: 'var(--pos)' }} /> Won</span><span><i className="swatch" style={{ background: 'var(--brand)' }} /> Open</span><span><i className="swatch" style={{ background: 'var(--neg)' }} /> Lost</span></div>
         </div>
       </div>
-      <div className="note"><b>Scope.</b> This pipeline is the agency's own GoHighLevel HQ, pulled live via MCP. Per-client CRM (this client's own funnel) unlocks with an agency-level GoHighLevel token — the workspace is already built to swap it in.</div>
+      <div className="note"><b>Scope.</b> This pipeline is the agency's own Caalano Systems HQ, pulled live via MCP. Per-client CRM (this client's own funnel) unlocks with an agency-level Caalano Systems token — the workspace is already built to swap it in.</div>
     </>
   )
 }
 
-/* ============ Live per-client CRM (Windsor GoHighLevel) ============ */
+/* ============ Live per-client CRM (Windsor Caalano Systems) ============ */
 function CrmLive({ ghl, currency }) {
   const s = ghl.summary
   const srcMax = Math.max(1, ...ghl.sources.map((x) => x.won + x.open + x.lostSampled))
@@ -175,7 +175,7 @@ function CrmLive({ ghl, currency }) {
           {won.length ? <ResponsiveContainer width="100%" height={210}><LineChart data={won} margin={{ left: -18, right: 10, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" stroke="var(--muted)" fontSize={11} /><YAxis stroke="var(--muted)" fontSize={11} allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="count" stroke="#6d5efc" strokeWidth={2.5} dot={{ r: 3, fill: '#6d5efc' }} /></LineChart></ResponsiveContainer> : <p className="cap">No wins recorded in range.</p>}
         </div>
       </div>
-      <div className="note"><b>Live per-client CRM</b> from this client's own GoHighLevel via Windsor.ai. Stage-by-stage funnel and lost-reason names come next (they need the pipeline stage + reason ID to name mapping).</div>
+      <div className="note"><b>Live per-client CRM</b> from this client's own Caalano Systems via Windsor.ai. Stage-by-stage funnel and lost-reason names come next (they need the pipeline stage + reason ID to name mapping).</div>
     </>
   )
 }
@@ -399,7 +399,7 @@ function ClientWorkspace({ client, index, data, onBack }) {
       </div>
       <div style={{ marginTop: 16 }}>
         {tab === 'overall' && <OverallTab client={client} currency={data.currency} side="cur" />}
-        {tab === 'crm' && (live.status === 'loading' ? <div className="card">Loading live CRM…</div> : liveOK('ghl') ? <CrmLive ghl={live.data.ghl} currency={data.currency} /> : <div className="card empty-deep"><div className="big">🗂️</div><b>No GoHighLevel data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a GoHighLevel sub-account mapped, or has no opportunities in the selected period.</p></div>)}
+        {tab === 'crm' && (live.status === 'loading' ? <div className="card">Loading live CRM…</div> : liveOK('ghl') ? <CrmLive ghl={live.data.ghl} currency={data.currency} /> : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>)}
         {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} /></>)}
         {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} /></>)}
       </div>
@@ -416,7 +416,7 @@ function Settings({ config, enabled, setEnabled, onClose }) {
         <div className="m-head"><h3>Settings · Clients & connections</h3><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
           <div className="set-note">Toggle clients on or off, and see which Meta / Google / CRM account each maps to. Changes persist in this browser now. With the live API backend, toggling a client on will trigger its data pull automatically, and new-client onboarding writes here.</div>
-          <div className="set-note" style={{ background: 'rgba(245,165,36,.12)' }}>Reachable via MCP today — Meta: <b>{config.availableAccounts.meta.total}</b> accounts · Google: <b>{config.availableAccounts.google.total}</b> · GA4: <b>{config.availableAccounts.ga4.total}</b> · GoHighLevel: <b>{config.availableAccounts.ghl.agencyTokenConnected ? 'agency token' : 'HQ location only'}</b>.</div>
+          <div className="set-note" style={{ background: 'rgba(245,165,36,.12)' }}>Connected via Windsor.ai — Meta: <b>{config.availableAccounts?.windsor?.facebook ?? '—'}</b> accounts · Google: <b>{config.availableAccounts?.windsor?.google_ads ?? '—'}</b> · Caalano Systems: <b>{config.availableAccounts?.windsor?.gohighlevel ?? '—'}</b> sub-accounts.</div>
           {config.clients.map((c) => (
             <div className="set-client" key={c.id}>
               <div className="row1">
@@ -426,7 +426,7 @@ function Settings({ config, enabled, setEnabled, onClose }) {
               <div className="ids">
                 <span className="idtag">Meta <b>{c.meta || '—'}</b></span>
                 <span className="idtag">Google <b>{c.google || '—'}</b></span>
-                <span className="idtag">CRM <b>{c.ghl || 'agency token needed'}</b></span>
+                <span className="idtag">Caalano Systems <b>{c.ghl || '—'}</b></span>
               </div>
             </div>
           ))}
@@ -473,7 +473,7 @@ export default function App() {
         <div style={{ marginTop: 'auto' }}>
           <button className="settings-btn" onClick={() => setShowSettings(true)}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
-          <div className="foot-note">Live via Reporting Ninja + GoHighLevel. Refreshed {new Date(data.generatedAt).toLocaleDateString('en-AU')}.</div>
+          <div className="foot-note">Live data via Windsor.ai — Meta, Google, Caalano Systems.</div>
         </div>
       </aside>
 

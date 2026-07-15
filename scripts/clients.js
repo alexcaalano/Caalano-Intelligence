@@ -1,7 +1,7 @@
 // Client registry — the 13 active clients from the lead-pipeline-analysis roster.
 // Single source of truth the refresh pipeline iterates over. Account IDs come
 // from Reporting Ninja `list_connections`. `ghlLocationId` is reserved for when
-// an agency-level GoHighLevel token is added, to pull per-client CRM data.
+// an agency-level Caalano Systems token is added, to pull per-client CRM data.
 //
 // Connection keys:
 //   meta:   "mumesh72@gmail.com" or "Alex Serrano (9100303526651742)"

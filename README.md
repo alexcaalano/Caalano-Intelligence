@@ -1,12 +1,12 @@
 # Caalano · Reporting Dashboard
 
 An interactive, multi-platform reporting dashboard for Caalano Digital that
-brings **Meta Ads**, **Google Ads**, and **Caalano Systems (GoHighLevel)** into
+brings **Meta Ads**, **Google Ads**, and **Caalano Systems (Caalano Systems)** into
 one live view — an agency overview, per-client drill-down, and the agency's own
 new-business pipeline.
 
 Built with React + Vite + Recharts. Data is pulled from **Reporting Ninja**
-(paid/analytics) and **GoHighLevel** (CRM/pipeline).
+(paid/analytics) and **Caalano Systems** (CRM/pipeline).
 
 ## Live views
 - **Agency Overview** — blended KPIs (spend, results, cost/result, impressions,
@@ -14,7 +14,7 @@ Built with React + Vite + Recharts. Data is pulled from **Reporting Ninja**
   charts, and a sortable client leaderboard.
 - **Clients** — click any client to drill into their Meta and Google breakdown.
 - **Agency Pipeline** — open opportunities, pipeline value, and stage breakdown
-  from GoHighLevel.
+  from Caalano Systems.
 
 The current snapshot covers **June 2026 vs May 2026**.
 
@@ -38,7 +38,7 @@ refreshes) auto-builds and deploys.
   [`scripts/refresh.md`](scripts/refresh.md)
 
 ## Notes & next steps
-- **GHL scope:** the connector is currently authorised for one sub-account
+- **Caalano Systems scope:** the connector is currently authorised for one sub-account
   (Caalano Digital HQ). An agency-level API token unlocks per-client CRM data
   agency-wide — the data layer already supports it.
 - **More clients:** add rows to `scripts/clients.js`; the pipeline and UI scale

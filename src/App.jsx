@@ -22,8 +22,26 @@ const rate = (a, b) => (b ? (a / b) * 100 : 0)
 /* Caalano360 outcome join — match an ad-platform entity to CRM outcomes by UTM. */
 const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) { const k = unorm(e.name); if (k && !m.has(k)) m.set(k, e) } return m }
-function O360Head() {
-  return <>{['Booked', 'C/Book', 'Shown', 'C/Show', 'Won', 'Won val', 'ROAS'].map((h, i) => <th key={i} className={`c360-col${i === 0 ? ' c360-first' : ''}`}>{h}</th>)}</>
+// Caalano360 outcome columns (UTM-matched CRM results next to each ad row).
+const O360_COLS = [['booked', 'Booked'], ['cBook', 'C/Book'], ['shown', 'Shown'], ['cShow', 'C/Show'], ['won', 'Won'], ['cWon', 'C/Won'], ['wonVal', 'Won val'], ['roas', 'ROAS']]
+// Flatten an outcome into sortable numeric fields merged onto each ad row.
+function o360Fields(o, spend) {
+  if (!o) return { booked: null, cBook: null, shown: null, cShow: null, won: null, cWon: null, wonVal: null, roas: null, _has360: false }
+  return {
+    booked: o.booked, cBook: o.booked && spend ? spend / o.booked : null,
+    shown: o.shown, cShow: o.shown && spend ? spend / o.shown : null,
+    won: o.won, cWon: o.won && spend ? spend / o.won : null,
+    wonVal: o.revenue, roas: spend ? o.revenue / spend : null, _has360: true,
+  }
+}
+// A little "Caalano360" banner spanning the green columns, above the header row.
+function C360GrpRow({ left }) {
+  return <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={left} aria-hidden="true" /><th className="c360-grp" colSpan={O360_COLS.length}>Caalano360</th></tr>
+}
+function O360Head({ sort, on }) {
+  return <>{O360_COLS.map(([k, label], i) => (sort
+    ? <SortTh key={k} k={k} sort={sort} on={on} className={`c360-col${i === 0 ? ' c360-first' : ''}`}>{label}</SortTh>
+    : <th key={k} className={`c360-col${i === 0 ? ' c360-first' : ''}`}>{label}</th>))}</>
 }
 /* Sortable tables — click a header to sort; click again to flip direction. */
 function useSort(key0, dir0 = -1) {
@@ -42,20 +60,21 @@ function sortRows(rows, s) {
     return (av - bv) * s.dir
   })
 }
-function SortTh({ k, sort, on, children }) {
-  return <th className="sort-th" onClick={() => on(k)}>{children}<span className="sort-ar">{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</span></th>
+function SortTh({ k, sort, on, children, className }) {
+  return <th className={`sort-th${className ? ' ' + className : ''}`} onClick={() => on(k)}>{children}<span className="sort-ar">{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</span></th>
 }
-function o360Cells(o, spend, currency) {
-  if (!o) return <>{Array.from({ length: 7 }).map((_, i) => <td key={i} className={`c360-col dim${i === 0 ? ' c360-first' : ''}`}>—</td>)}</>
-  const roas = spend ? o.revenue / spend : 0
+// Renders the green Caalano360 cells from the sortable fields merged onto a row.
+function o360Cells(r, currency) {
+  if (!r || !r._has360) return <>{O360_COLS.map(([k], i) => <td key={k} className={`c360-col dim${i === 0 ? ' c360-first' : ''}`}>—</td>)}</>
   return <>
-    <td className="c360-col c360-first">{fmtNumber(o.booked)}</td>
-    <td className="c360-col">{o.booked && spend ? fmtCurrency(spend / o.booked, currency) : '—'}</td>
-    <td className="c360-col">{fmtNumber(o.shown)}</td>
-    <td className="c360-col">{o.shown && spend ? fmtCurrency(spend / o.shown, currency) : '—'}</td>
-    <td className="c360-col">{fmtNumber(o.won)}</td>
-    <td className="c360-col">{fmtCurrency(o.revenue, currency)}</td>
-    <td className="c360-col">{spend ? `${roas.toFixed(2)}×` : '—'}</td>
+    <td className="c360-col c360-first">{fmtNumber(r.booked || 0)}</td>
+    <td className="c360-col">{r.cBook != null ? fmtCurrency(r.cBook, currency) : '—'}</td>
+    <td className="c360-col">{fmtNumber(r.shown || 0)}</td>
+    <td className="c360-col">{r.cShow != null ? fmtCurrency(r.cShow, currency) : '—'}</td>
+    <td className="c360-col">{fmtNumber(r.won || 0)}</td>
+    <td className="c360-col">{r.cWon != null ? fmtCurrency(r.cWon, currency) : '—'}</td>
+    <td className="c360-col">{r.wonVal != null ? fmtCurrency(r.wonVal, currency) : '—'}</td>
+    <td className="c360-col">{r.roas != null ? `${r.roas.toFixed(2)}×` : '—'}</td>
   </>
 }
 const PHASE_COLOR = { contact: '#4f7cff', 'appt-set': '#6d5efc', 'at-risk': '#f0435b', held: '#12b886', proposal: '#f5a524', onboarding: '#0ea5e9' }
@@ -261,6 +280,8 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const [campSort, onCampSort] = useSort('spend')
   const [adsetSort, onAdsetSort] = useSort('spend')
   const [creSort, onCreSort] = useSort('spend')
+  const [crePage, setCrePage] = useState(0)
+  useEffect(() => { setCrePage(0) }, [sel])
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
   const m = deep.meta
   const A = attr && attr.data && attr.data.attribution
@@ -279,7 +300,10 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const daily = (m.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpl: d.leads ? d.spend / d.leads : 0, cpm: d.impressions ? d.spend / d.impressions * 1000 : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpc: d.clicks ? d.spend / d.clicks : 0 }))
   const adsets = sel ? m.adsets.filter((a) => a.campaign === sel) : m.adsets
   const adsFull = sel ? m.ads.filter((a) => a.campaign === sel) : m.ads
-  const ads = adsFull.slice(0, 24)
+  const CRE_PAGE = 15
+  const creTotalPages = Math.max(1, Math.ceil(adsFull.length / CRE_PAGE))
+  const crePageC = Math.min(crePage, creTotalPages - 1)
+  const ads = adsFull.slice(crePageC * CRE_PAGE, crePageC * CRE_PAGE + CRE_PAGE)
   // account averages for creative colour-coding (higher = better, except CPL)
   const avgLinkCtr = rate(t.linkClicks, t.impressions)
   const avgCvr = rate(t.leads, t.linkClicks)
@@ -326,25 +350,25 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         </ResponsiveContainer>
       </div>}
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched)' : ''}</span></div>
-      <div className="table-wrap"><table><thead><tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="ctr" sort={campSort} on={onCampSort}>CTR</SortTh><SortTh k="leads" sort={campSort} on={onCampSort}>Leads</SortTh><SortTh k="cpl" sort={campSort} on={onCampSort}>CPL</SortTh>{has360 && <O360Head />}</tr></thead>
-        <tbody>{sortRows(m.campaigns.map((c) => ({ ...c, ctr: rate(c.clicks, c.impressions), cpl: c.leads ? c.spend / c.leads : null })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(c.ctr, 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '—'}</td>{has360 && o360Cells(oCamp.get(unorm(c.name)), c.spend, currency)}</tr>))}</tbody></table></div>
+      <div className="table-wrap"><table><thead>{has360 && <C360GrpRow left={6} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="ctr" sort={campSort} on={onCampSort}>CTR</SortTh><SortTh k="leads" sort={campSort} on={onCampSort}>Leads</SortTh><SortTh k="cpl" sort={campSort} on={onCampSort}>CPL</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} />}</tr></thead>
+        <tbody>{sortRows(m.campaigns.map((c) => ({ ...c, ctr: rate(c.clicks, c.impressions), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oCamp.get(unorm(c.name)), c.spend) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(c.ctr, 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '—'}</td>{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''}</span></div>
-      <div className="table-wrap"><table><thead><tr><SortTh k="name" sort={adsetSort} on={onAdsetSort}>Ad set</SortTh><SortTh k="spend" sort={adsetSort} on={onAdsetSort}>Spend</SortTh><SortTh k="impressions" sort={adsetSort} on={onAdsetSort}>Impr.</SortTh><SortTh k="ctr" sort={adsetSort} on={onAdsetSort}>CTR</SortTh><SortTh k="leads" sort={adsetSort} on={onAdsetSort}>Leads</SortTh><SortTh k="cpl" sort={adsetSort} on={onAdsetSort}>CPL</SortTh>{has360 && <O360Head />}</tr></thead>
-        <tbody>{sortRows(adsets.map((c) => ({ ...c, ctr: rate(c.clicks, c.impressions), cpl: c.leads ? c.spend / c.leads : null })), adsetSort).map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(c.ctr, 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '—'}</td>{has360 && o360Cells(oTerm.get(unorm(c.name)), c.spend, currency)}</tr>))}</tbody></table></div>
+      <div className="table-wrap"><table><thead>{has360 && <C360GrpRow left={6} />}<tr><SortTh k="name" sort={adsetSort} on={onAdsetSort}>Ad set</SortTh><SortTh k="spend" sort={adsetSort} on={onAdsetSort}>Spend</SortTh><SortTh k="impressions" sort={adsetSort} on={onAdsetSort}>Impr.</SortTh><SortTh k="ctr" sort={adsetSort} on={onAdsetSort}>CTR</SortTh><SortTh k="leads" sort={adsetSort} on={onAdsetSort}>Leads</SortTh><SortTh k="cpl" sort={adsetSort} on={onAdsetSort}>CPL</SortTh>{has360 && <O360Head sort={adsetSort} on={onAdsetSort} />}</tr></thead>
+        <tbody>{sortRows(adsets.map((c) => ({ ...c, ctr: rate(c.clicks, c.impressions), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oTerm.get(unorm(c.name)), c.spend) })), adsetSort).map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(c.ctr, 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '—'}</td>{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       {formats.length > 0 && <>
         <div className="lvl-title">Performance by format <span className="sub">· image vs video</span></div>
         <div className="table-wrap"><table><thead><tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Leads</th><th>CPL</th><th>Hook rate</th></tr></thead>
           <tbody>{formats.map((f) => (<tr key={f.type}><td>{f.type}</td><td>{fmtNumber(f.count)}</td><td>{fmtCurrency(f.spend, currency)}</td><td>{fmtNumber(f.impressions)}</td><td>{fmtPct(rate(f.linkClicks, f.impressions), 2)}</td><td>{fmtNumber(f.leads)}</td><td>{f.leads ? fmtCurrency(f.spend / f.leads, currency) : '—'}</td><td>{f.type === 'Video' ? fmtPct(rate(f.videoViews, f.impressions), 1) : '—'}</td></tr>))}</tbody></table></div>
       </>}
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
-      <div className="table-wrap"><table><thead><tr>
-        <SortTh k="name" sort={creSort} on={onCreSort}>Creative</SortTh><SortTh k="type" sort={creSort} on={onCreSort}>Type</SortTh><SortTh k="spend" sort={creSort} on={onCreSort}>Spend</SortTh><SortTh k="impressions" sort={creSort} on={onCreSort}>Impr.</SortTh><SortTh k="linkCtr" sort={creSort} on={onCreSort}>Link CTR</SortTh><SortTh k="hook" sort={creSort} on={onCreSort}>Hook</SortTh><SortTh k="leads" sort={creSort} on={onCreSort}>Leads</SortTh><SortTh k="cvr" sort={creSort} on={onCreSort}>CVR</SortTh><SortTh k="cpl" sort={creSort} on={onCreSort}>CPL</SortTh>{has360 && <O360Head />}</tr></thead>
-        <tbody>{sortRows(adsFull.map((a) => ({ ...a, linkCtr: rate(a.linkClicks, a.impressions), hook: a.type === 'Video' ? rate(a.videoViews, a.impressions) : null, cvr: rate(a.leads, a.linkClicks), cpl: a.leads ? a.spend / a.leads : null })), creSort).map((a) => (<tr key={a.name}>
+      <div className="table-wrap"><table><thead>{has360 && <C360GrpRow left={9} />}<tr>
+        <SortTh k="name" sort={creSort} on={onCreSort}>Creative</SortTh><SortTh k="type" sort={creSort} on={onCreSort}>Type</SortTh><SortTh k="spend" sort={creSort} on={onCreSort}>Spend</SortTh><SortTh k="impressions" sort={creSort} on={onCreSort}>Impr.</SortTh><SortTh k="linkCtr" sort={creSort} on={onCreSort}>Link CTR</SortTh><SortTh k="hook" sort={creSort} on={onCreSort}>Hook</SortTh><SortTh k="leads" sort={creSort} on={onCreSort}>Leads</SortTh><SortTh k="cvr" sort={creSort} on={onCreSort}>CVR</SortTh><SortTh k="cpl" sort={creSort} on={onCreSort}>CPL</SortTh>{has360 && <O360Head sort={creSort} on={onCreSort} />}</tr></thead>
+        <tbody>{sortRows(adsFull.map((a) => ({ ...a, linkCtr: rate(a.linkClicks, a.impressions), hook: a.type === 'Video' ? rate(a.videoViews, a.impressions) : null, cvr: rate(a.leads, a.linkClicks), cpl: a.leads ? a.spend / a.leads : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend) })), creSort).map((a) => (<tr key={a.name}>
           <td title={a.name} style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</td><td>{a.type}</td><td>{fmtCurrency(a.spend, currency)}</td><td>{fmtNumber(a.impressions)}</td>
           <td className={gb(a.linkCtr, avgLinkCtr)}>{fmtPct(a.linkCtr, 2)}</td><td className={a.hook != null ? gb(a.hook, avgHook) : ''}>{a.hook != null ? fmtPct(a.hook, 1) : '—'}</td>
           <td>{fmtNumber(a.leads)}</td><td className={a.leads ? gb(a.cvr, avgCvr) : ''}>{a.leads ? fmtPct(a.cvr, 1) : '—'}</td>
           <td className={a.cpl != null ? (a.cpl <= cpl ? 'good' : 'bad') : ''}>{a.cpl != null ? fmtCurrency(a.cpl, currency) : '—'}</td>
-          {has360 && o360Cells(oCre.get(unorm(a.name)), a.spend, currency)}</tr>))}</tbody></table></div>
+          {has360 && o360Cells(a, currency)}</tr>))}</tbody></table></div>
       <div className="cre-grid">{ads.map((a) => {
         const acpl = a.leads ? a.spend / a.leads : 0
         const hook = a.type === 'Video' ? rate(a.videoViews, a.impressions) : null
@@ -369,10 +393,11 @@ function MetaDeep({ deep, currency, attr, clientId }) {
                   <div className="c360-tag">Caalano360</div>
                   <div className="stats">
                     <div className="st"><div className="l">Booked</div><div className="v">{fmtNumber(o.booked)}</div></div>
+                    <div className="st"><div className="l">C/Book</div><div className="v">{o.booked ? fmtCurrency(a.spend / o.booked, currency) : '—'}</div></div>
                     <div className="st"><div className="l">Shown</div><div className="v">{fmtNumber(o.shown)}</div></div>
                     <div className="st"><div className="l">Won</div><div className="v">{fmtNumber(o.won)}</div></div>
+                    <div className="st"><div className="l">C/Won</div><div className="v">{o.won ? fmtCurrency(a.spend / o.won, currency) : '—'}</div></div>
                     <div className="st"><div className="l">Won val</div><div className="v">{fmtCurrency(o.revenue, currency)}</div></div>
-                    <div className="st"><div className="l">C/Book</div><div className="v">{o.booked ? fmtCurrency(a.spend / o.booked, currency) : '—'}</div></div>
                     <div className="st"><div className="l">ROAS</div><div className="v">{a.spend ? `${roas.toFixed(2)}×` : '—'}</div></div>
                   </div>
                 </div>
@@ -381,6 +406,11 @@ function MetaDeep({ deep, currency, attr, clientId }) {
           </div>
         )
       })}</div>
+      {creTotalPages > 1 && <div className="pager">
+        <button className="pg-btn" disabled={crePageC === 0} onClick={() => setCrePage(crePageC - 1)}>‹ Prev</button>
+        <span className="pg-info">Page {crePageC + 1} of {creTotalPages} · {adsFull.length} creatives</span>
+        <button className="pg-btn" disabled={crePageC >= creTotalPages - 1} onClick={() => setCrePage(crePageC + 1)}>Next ›</button>
+      </div>}
       <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{m.adDaily ? ' · click a day to break it down' : ''}</span></div>
       <div className="table-wrap"><table><thead><tr><th>Day</th><th>Spend</th><th>CPM</th><th>CTR</th><th>CPC</th><th>Leads</th><th>CPL</th></tr></thead>
         <tbody>{[...daily].reverse().map((d) => (<tr key={d.date} className={day === d.date ? 'row-sel' : ''} style={{ cursor: m.adDaily ? 'pointer' : 'default' }} onClick={() => m.adDaily && setDay(day === d.date ? null : d.date)}><td>{d.label}</td><td>{fmtCurrency(d.spend, currency)}</td><td>{fmtCurrency(d.cpm, currency)}</td><td>{fmtPct(d.ctr, 2)}</td><td>{fmtCurrency(d.cpc, currency)}</td><td>{fmtNumber(d.leads)}</td><td>{d.leads ? <span className="cpl-cell" style={{ background: cplColor(d.cpl, cpl) }}>{fmtCurrency(d.cpl, currency)}</span> : '—'}</td></tr>))}</tbody></table></div>
@@ -438,10 +468,13 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   // conversion actions + match types respond to the drill-down selection
   const caAgg = (() => { const m = new Map(); for (const r of (g.conversionActions || [])) { if (!matchCA(r)) continue; const e = m.get(r.name) || { name: r.name, category: r.category, conversions: 0, allConversions: 0, value: 0 }; e.conversions += r.conversions; e.allConversions += r.allConversions; e.value += r.value; m.set(r.name, e) } return [...m.values()].sort((a, b) => b.allConversions - a.allConversions) })()
   const matchAgg = (() => { const m = new Map(); for (const k of keywords) { const type = k.match || '—'; const e = m.get(type) || { type, cost: 0 }; e.cost += k.cost; m.set(type, e) } return [...m.values()].filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost) })()
+  const locAgg = (g.geo && g.geo.locations) || []
+  const geoDim = g.geo && g.geo.dim
+  const locMax = Math.max(1, ...locAgg.map((l) => l.conversions))
   const daily = (g.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpc: d.clicks ? d.cost / d.clicks : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpconv: d.conversions ? d.cost / d.conversions : 0 }))
   const qKw = g.keywords.filter((k) => k.qs !== '' && k.qs != null)
   const avgQs = qKw.length ? qKw.reduce((a, k) => a + k.qs, 0) / qKw.length : 0
-  const GHead = ({ first, o360, sort, on }) => (<thead><tr><SortTh k="name" sort={sort} on={on}>{first}</SortTh><SortTh k="cost" sort={sort} on={on}>Cost</SortTh><SortTh k="impressions" sort={sort} on={on}>Impr.</SortTh><SortTh k="ctr" sort={sort} on={on}>CTR</SortTh><SortTh k="cpc" sort={sort} on={on}>CPC</SortTh><SortTh k="conversions" sort={sort} on={on}>Conv.</SortTh><SortTh k="costConv" sort={sort} on={on}>Cost/conv</SortTh>{o360 && has360 && <O360Head />}</tr></thead>)
+  const GHead = ({ first, o360, sort, on }) => (<thead>{o360 && has360 && <C360GrpRow left={7} />}<tr><SortTh k="name" sort={sort} on={on}>{first}</SortTh><SortTh k="cost" sort={sort} on={on}>Cost</SortTh><SortTh k="impressions" sort={sort} on={on}>Impr.</SortTh><SortTh k="ctr" sort={sort} on={on}>CTR</SortTh><SortTh k="cpc" sort={sort} on={on}>CPC</SortTh><SortTh k="conversions" sort={sort} on={on}>Conv.</SortTh><SortTh k="costConv" sort={sort} on={on}>Cost/conv</SortTh>{o360 && has360 && <O360Head sort={sort} on={on} />}</tr></thead>)
   const GCells = (r) => (<><td>{fmtCurrency(r.cost, currency)}</td><td>{fmtNumber(r.impressions)}</td><td>{fmtPct(rate(r.clicks, r.impressions), 2)}</td><td>{fmtCurrency(r.clicks ? r.cost / r.clicks : 0, currency)}</td><td>{fmtNumber(r.conversions)}</td><td>{r.conversions ? fmtCurrency(r.cost / r.conversions, currency) : '—'}</td></>)
   const gMetrics = (r) => ({ ...r, ctr: rate(r.clicks, r.impressions), cpc: r.clicks ? r.cost / r.clicks : null, costConv: r.conversions ? r.cost / r.conversions : null })
   return (
@@ -474,14 +507,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>}
-      <div className="grid" style={{ marginTop: 14, gridTemplateColumns: '1.5fr 1fr', gap: 14 }}>
-        <div className="card chart-card"><h3>Quality snapshot</h3><p className="cap">Historical quality score on top keywords</p>
-          <div className="scorecard sc-2">
-            <Sc label="Avg quality score" value={avgQs ? avgQs.toFixed(1) : '—'} />
-            <Sc label="Low-QS keywords (≤3)" value={fmtNumber(g.keywords.filter((k) => k.qs !== '' && k.qs != null && k.qs <= 3).length)} />
-          </div>
-          <p className="caveat">Low quality scores inflate CPCs — tighten ad-to-keyword relevance or pause the worst offenders.</p>
-        </div>
+      <div className="grid g3" style={{ marginTop: 14 }}>
         <div className="card chart-card"><h3>Spend by match type</h3><p className="cap">{selLabel ? `In ${selLabel}` : 'Where the budget is landing'}</p>
           {matchAgg.length ? <>
             <ResponsiveContainer width="100%" height={150}>
@@ -490,18 +516,27 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
             <div className="legend" style={{ flexWrap: 'wrap', fontSize: 11 }}>{matchAgg.map((x) => <span key={x.type}><i className="swatch" style={{ background: mtColor(x.type) }} /> {x.type} {fmtCurrency(x.cost, currency)}</span>)}</div>
           </> : <p className="cap">No keyword spend{selLabel ? ` in ${selLabel}` : ''}.</p>}
         </div>
+        <div className="card chart-card"><h3>Conversion actions</h3><p className="cap">What Google is counting{selLabel ? ` · in ${selLabel}` : ''}</p>
+          {caAgg.length ? <div className="mini-scroll"><table className="mini-table"><thead><tr><th>Action</th><th>Conv.</th><th>Value</th></tr></thead>
+            <tbody>{caAgg.map((a) => (<tr key={a.name}><td className="ca-name" title={a.name}>{a.name}<span className="ca-cat">{a.category || '—'}</span></td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '—'}</td></tr>))}</tbody></table></div>
+            : <p className="cap">No conversion actions{selLabel ? ` in ${selLabel}` : ''}.</p>}
+        </div>
+        <div className="card chart-card"><h3>Conversion locations</h3><p className="cap">Where conversions are happening{geoDim ? ` · by ${geoDim.replace(/_/g, ' ')}` : ''}</p>
+          {locAgg.length ? <div className="mini-scroll">{locAgg.map((l) => (
+            <div className="loc-row" key={l.name}>
+              <span className="loc-nm" title={l.name}>{l.name}</span>
+              <span className="loc-bar"><span className="loc-fill" style={{ width: `${(l.conversions / locMax) * 100}%` }} /></span>
+              <span className="loc-ct">{fmtNumber(l.conversions)}</span>
+            </div>
+          ))}</div> : <p className="cap">No location data in this range{g.geo ? '.' : ' — geo not available for this account.'}</p>}
+        </div>
       </div>
-      {caAgg.length > 0 && <>
-        <div className="lvl-title">Conversion actions <span className="sub">· what Google is counting{selLabel ? ` · in ${selLabel}` : ''}</span></div>
-        <div className="table-wrap"><table><thead><tr><th>Action</th><th>Category</th><th>Conversions</th><th>All conv.</th><th>Value</th></tr></thead>
-          <tbody>{caAgg.map((a) => (<tr key={a.name}><td>{a.name}</td><td><span className="q-badge q-unk">{a.category || '—'}</span></td><td>{fmtNumber(a.conversions)}</td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '—'}</td></tr>))}</tbody></table></div>
-      </>}
       <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched)' : ''}</span></div>
       <div className="table-wrap"><table><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
-        <tbody>{sortRows(g.campaigns.map(gMetrics), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(oCampG.get(unorm(c.name)), c.cost, currency)}</tr>))}</tbody></table></div>
+        <tbody>{sortRows(g.campaigns.map((c) => ({ ...gMetrics(c), ...o360Fields(oCampG.get(unorm(c.name)), c.cost) })), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
       <div className="table-wrap"><table><GHead first="Ad group" o360 sort={aSort} on={onASort} />
-        <tbody>{sortRows(adGroups.map(gMetrics), aSort).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(oAgG.get(unorm(c.name)), c.cost, currency)}</tr>))}</tbody></table></div>
+        <tbody>{sortRows(adGroups.map((c) => ({ ...gMetrics(c), ...o360Fields(oAgG.get(unorm(c.name)), c.cost) })), aSort).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms</span></div>
       <div className="table-wrap"><table><thead><tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh></tr></thead>
         <tbody>{sortRows(keywords.map(gMetrics), kSort).map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '—'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>

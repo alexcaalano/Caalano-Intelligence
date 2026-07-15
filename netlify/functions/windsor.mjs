@@ -203,10 +203,34 @@ async function buildOverview(from, to, preset, key) {
   return { clients }
 }
 
+// Geographic conversions — where conversions happen. Google Ads geo reports
+// can't always combine a location dim with other segments, so we probe a few
+// candidate Windsor field names one at a time and use the first that returns
+// populated, conversion-bearing rows. Returns {dim, locations:[{name,conversions,cost}]}.
+async function fetchGeo(accountId, from, to, preset, key) {
+  const cands = ['city', 'geo_target_city', 'region_name', 'region', 'country']
+  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  for (const dim of cands) {
+    try {
+      const rows = filt(await windsorFetch('google_ads', ['account_id', dim, 'conversions', 'spend'], from, to, preset, key))
+      const m = new Map()
+      for (const r of rows) {
+        const raw = r[dim]
+        if (raw == null || raw === '' || String(raw).toLowerCase() === 'null') continue
+        const e = m.get(raw) || { name: String(raw), conversions: 0, cost: 0 }
+        e.conversions += num(r.conversions); e.cost += num(r.spend); m.set(raw, e)
+      }
+      const list = [...m.values()].filter((x) => x.conversions > 0).sort((a, b) => b.conversions - a.conversions)
+      if (list.length) return { dim, locations: list.slice(0, 40) }
+    } catch { /* field not recognised — try the next candidate */ }
+  }
+  return { dim: null, locations: [] }
+}
+
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const pr = prevRange(from, to)
-  const [cg, kw, st, dy, prev, agDay, stDay, ca] = await Promise.all([
+  const [cg, kw, st, dy, prev, agDay, stDay, ca, geo] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
@@ -215,8 +239,10 @@ async function buildGoogle(accountId, from, to, preset, key) {
     windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key).then(filt),
+    fetchGeo(accountId, from, to, preset, key).catch(() => ({ dim: null, locations: [] })),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
+  roll.geo = geo
   // Detailed rows (campaign, ad group, action) so the UI can filter them to the
   // drilled-into campaign / ad group; the front-end aggregates by action name.
   roll.conversionActions = ca.map((r) => ({ campaign: r.campaign || null, adGroup: r.ad_group_name || null, name: r.conversion_action_name, category: titleCase(String(r.conversion_action_category || '').replace(/_/g, ' ')), conversions: num(r.conversions), allConversions: num(r.all_conversions), value: num(r.conversions_value) })).filter((r) => r.name && r.allConversions > 0).slice(0, 3000)

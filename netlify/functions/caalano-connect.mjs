@@ -6,9 +6,11 @@
 // function's own URL, so it works on any domain without hard-coding.
 import { exchangeCode, isConnected } from '../lib/ghl.mjs'
 
-// Only the scopes the app currently grants. users.readonly (assigned-user
-// names) and conversations.readonly (speed-to-lead) get added later.
-const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly']
+// Must match the scopes configured on the GoHighLevel app. If the app has
+// more scopes than the stored token was authorised with, GHL refuses to mint
+// location tokens ("not authorized for this scope") — so re-authorising with
+// the full set fixes it.
+const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly', 'users.readonly', 'conversations.readonly']
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 
 const page = (title, body) => new Response(

@@ -484,6 +484,11 @@ function GoogleDeep({ deep, currency, attr }) {
           <div className="legend" style={{ flexWrap: 'wrap', fontSize: 11 }}>{g.matchTypes.map((x) => <span key={x.type}><i className="swatch" style={{ background: mtColor(x.type) }} /> {x.type} {fmtCurrency(x.cost, currency)}</span>)}</div>
         </div>
       </div>
+      {g.conversionActions && g.conversionActions.length > 0 && <>
+        <div className="lvl-title">Conversion actions <span className="sub">· what Google is counting as a conversion</span></div>
+        <div className="table-wrap"><table><thead><tr><th>Action</th><th>Category</th><th>Conversions</th><th>All conv.</th><th>Value</th></tr></thead>
+          <tbody>{g.conversionActions.map((a) => (<tr key={a.name}><td>{a.name}</td><td><span className="q-badge q-unk">{a.category || '—'}</span></td><td>{fmtNumber(a.conversions)}</td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '—'}</td></tr>))}</tbody></table></div>
+      </>}
       <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched)' : ''}</span></div>
       <div className="table-wrap"><table><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
         <tbody>{sortRows(g.campaigns.map(gMetrics), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(oCampG.get(unorm(c.name)), c.cost, currency)}</tr>))}</tbody></table></div>

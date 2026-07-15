@@ -151,6 +151,35 @@ function CrmTab({ ghl, currency }) {
   )
 }
 
+/* ============ Live per-client CRM (Windsor GoHighLevel) ============ */
+function CrmLive({ ghl, currency }) {
+  const s = ghl.summary
+  const srcMax = Math.max(1, ...ghl.sources.map((x) => x.won + x.open + x.lostSampled))
+  const won = ghl.wonByMonth.map((w) => ({ ...w, label: w.month.slice(2) }))
+  return (
+    <>
+      <div className="card"><div className="stat-hero">
+        <div className="s"><div className="v">{s.open}</div><div className="l">Open opportunities</div></div>
+        <div className="s"><div className="v">{s.won}</div><div className="l">Won</div></div>
+        <div className="s"><div className="v">{fmtCurrency(s.wonValue, currency)}</div><div className="l">Won value (tracked)</div></div>
+        <div className="s"><div className="v">{fmtPct(s.closedWinRatePct, 1)}</div><div className="l">Close rate</div></div>
+        <div className="s"><div className="v">{s.lostTotal}</div><div className="l">Lost</div></div>
+      </div></div>
+      <div className="card insight" style={{ marginTop: 14 }}><span className="em">🔎</span><div><h4>Pipeline snapshot</h4><p>{ghl.biggestLeak}</p></div></div>
+      <div className="grid two" style={{ marginTop: 14 }}>
+        <div className="card chart-card"><h3>Lead source performance</h3><p className="cap">Won / open / lost by source</p>
+          {ghl.sources.map((x) => (<div className="bar-row" key={x.name} style={{ gridTemplateColumns: '150px 1fr 58px' }}><span className="nm">{x.name}</span><span className="bar-track" style={{ display: 'flex' }}><span style={{ width: `${(x.won / srcMax) * 100}%`, background: 'var(--pos)' }} /><span style={{ width: `${(x.open / srcMax) * 100}%`, background: 'var(--brand)' }} /><span style={{ width: `${(x.lostSampled / srcMax) * 100}%`, background: 'var(--neg)' }} /></span><span className="ct" style={{ fontSize: 11 }}>{x.won}/{x.open}/{x.lostSampled}</span></div>))}
+          <div className="legend" style={{ justifyContent: 'flex-start' }}><span><i className="swatch" style={{ background: 'var(--pos)' }} /> Won</span><span><i className="swatch" style={{ background: 'var(--brand)' }} /> Open</span><span><i className="swatch" style={{ background: 'var(--neg)' }} /> Lost</span></div>
+        </div>
+        <div className="card chart-card"><h3>Wins over time</h3><p className="cap">Deals won per month</p>
+          {won.length ? <ResponsiveContainer width="100%" height={210}><LineChart data={won} margin={{ left: -18, right: 10, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" stroke="var(--muted)" fontSize={11} /><YAxis stroke="var(--muted)" fontSize={11} allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="count" stroke="#6d5efc" strokeWidth={2.5} dot={{ r: 3, fill: '#6d5efc' }} /></LineChart></ResponsiveContainer> : <p className="cap">No wins recorded in range.</p>}
+        </div>
+      </div>
+      <div className="note"><b>Live per-client CRM</b> from this client's own GoHighLevel via Windsor.ai. Stage-by-stage funnel and lost-reason names come next (they need the pipeline stage + reason ID to name mapping).</div>
+    </>
+  )
+}
+
 /* ============ Meta deep ============ */
 const qClass = (q) => q === 'ABOVE_AVERAGE' ? 'q-above' : q === 'AVERAGE' ? 'q-avg' : q === 'BELOW_AVERAGE' ? 'q-below' : 'q-unk'
 function MetaDeep({ deep, currency }) {
@@ -307,13 +336,18 @@ function ClientWorkspace({ client, index, data, onBack }) {
   const [preset, setPreset] = useState('last_30d')
   const [baked, setBaked] = useState(undefined)
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
-  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : null
+  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'ghl' : null
   const live = useLiveDeep(client.id, channel, preset)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const tabs = [{ id: 'overall', label: 'Overall Business' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
   const presetLabel = PRESETS.find((p) => p.id === preset)?.label
-  const liveOK = (ch) => live.status === 'ok' && live.data && live.data[ch] && ((live.data[ch].campaigns && live.data[ch].campaigns.length) || (live.data[ch].ads && live.data[ch].ads.length))
+  const liveOK = (ch) => {
+    if (live.status !== 'ok' || !live.data || !live.data[ch]) return false
+    const d = live.data[ch]
+    if (ch === 'ghl') return !!d.summary
+    return (d.campaigns && d.campaigns.length) || (d.ads && d.ads.length)
+  }
   const srcFor = (ch) => (liveOK(ch) ? live.data : baked)
   return (
     <>
@@ -328,7 +362,7 @@ function ClientWorkspace({ client, index, data, onBack }) {
       </div>
       <div style={{ marginTop: 16 }}>
         {tab === 'overall' && <OverallTab client={client} currency={data.currency} side="cur" />}
-        {tab === 'crm' && <CrmTab ghl={data.ghl} currency={data.currency} />}
+        {tab === 'crm' && (live.status === 'loading' ? <div className="card">Loading live CRM…</div> : liveOK('ghl') ? <CrmLive ghl={live.data.ghl} currency={data.currency} /> : <div className="card empty-deep"><div className="big">🗂️</div><b>No GoHighLevel data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a GoHighLevel sub-account mapped, or has no opportunities in the selected period.</p></div>)}
         {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} /></>)}
         {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} /></>)}
       </div>

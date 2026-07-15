@@ -34,8 +34,10 @@ const FIELDS = {
   },
   google: {
     connector: 'google_ads',
-    dims: ['account_id', 'campaign', 'ad_group', 'keyword', 'search_keyword_match_type'], // VERIFY
-    metrics: ['spend', 'impressions', 'clicks', 'conversions', 'quality_score'], // VERIFY (spend may be 'cost')
+    // CONFIRMED via debug: campaign/keyword/match_type/spend/conversions/quality_score.
+    // ad_group returns a resource path, so also request ad_group_name for a readable label.
+    dims: ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'keyword', 'search_keyword_match_type'],
+    metrics: ['spend', 'impressions', 'clicks', 'conversions', 'quality_score'],
   },
   ghl: {
     connector: 'gohighlevel',
@@ -82,40 +84,52 @@ function rollupMeta(rows) {
 }
 
 function rollupGoogle(rows) {
-  const roll = (keyFn) => {
+  const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
+  const agg = (rowsIn, keyFn) => {
     const m = new Map()
-    for (const r of rows) {
+    for (const r of rowsIn) {
       const k = keyFn(r); if (!k) continue
       const e = m.get(k) || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
-      e.cost += num(r.spend || r.cost); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions)
-      m.get(k) || m.set(k, e); Object.assign(e, e)
+      e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions)
+      m.set(k, e)
     }
     return m
   }
-  const campaigns = [...roll((r) => r.campaign).entries()].map(([name, v]) => ({ name, status: 'Enabled', ...v }))
-  const adGroups = [...roll((r) => r.ad_group).entries()].map(([name, v]) => ({ name, ...v }))
-  const keywords = rows.filter((r) => r.keyword).map((r) => ({ text: r.keyword, match: r.search_keyword_match_type || '—', cost: num(r.spend || r.cost), impressions: num(r.impressions), clicks: num(r.clicks), conversions: num(r.conversions), qs: num(r.quality_score) || '' })).sort((a, b) => b.cost - a.cost).slice(0, 25)
+  const campaigns = [...agg(rows, (r) => r.campaign).entries()].map(([name, v]) => ({ name, status: 'Enabled', ...v })).sort((a, b) => b.cost - a.cost)
+  const adGroups = [...agg(rows, cleanAg).entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.cost - a.cost)
+  const kwRows = rows.filter((r) => r.keyword)
+  const kwMap = agg(kwRows, (r) => r.keyword)
+  const kwMeta = new Map()
+  for (const r of kwRows) { const e = kwMeta.get(r.keyword) || { match: r.search_keyword_match_type || '—', qs: '' }; const q = num(r.quality_score); if (q) e.qs = Math.max(e.qs || 0, q); if (!e.match || e.match === '—') e.match = r.search_keyword_match_type || '—'; kwMeta.set(r.keyword, e) }
+  const keywords = [...kwMap.entries()].map(([text, v]) => ({ text, match: kwMeta.get(text)?.match || '—', qs: kwMeta.get(text)?.qs ?? '', ...v })).sort((a, b) => b.cost - a.cost).slice(0, 25)
   const mt = new Map()
-  for (const r of rows) { const t = r.search_keyword_match_type || 'Unknown'; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend || r.cost); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
-  return { campaigns: campaigns.sort((a, b) => b.cost - a.cost), adGroups: adGroups.sort((a, b) => b.cost - a.cost), keywords, matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost), matchTypeNote: 'Live from Windsor.ai.', keywordsTotal: rows.length, searchTermsTotal: null }
+  for (const r of kwRows) { const t = r.search_keyword_match_type; if (!t) continue; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
+  return { campaigns, adGroups, keywords, matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost), matchTypeNote: 'Live from Windsor.ai — spend by keyword match type.', keywordsTotal: new Set(kwRows.map((r) => r.keyword)).size, searchTermsTotal: null }
 }
 
 function rollupGhl(rows) {
-  let open = 0, won = 0, lost = 0, wonValue = 0
+  let open = 0, won = 0, lost = 0, wonValue = 0, openValue = 0
   const lostR = new Map(), src = new Map(), wonMonth = new Map(), stage = new Map()
   for (const r of rows) {
     const st = String(r.opportunity_status || '').toLowerCase()
     const val = num(r.opportunity_monetary_value)
     if (st === 'won') { won++; wonValue += val; const mo = String(r.opportunity_created_at || '').slice(0, 7); if (mo) wonMonth.set(mo, (wonMonth.get(mo) || 0) + 1) }
     else if (st === 'lost' || st === 'abandoned') { lost++; const lr = r.opportunity_lost_reason_id || 'Not set'; lostR.set(lr, (lostR.get(lr) || 0) + 1) }
-    else { open++; const s = r.opportunity_pipeline_stage_id || 'stage'; stage.set(s, (stage.get(s) || 0) + 1) }
+    else { open++; openValue += val; const s = r.opportunity_pipeline_stage_id || 'stage'; stage.set(s, (stage.get(s) || 0) + 1) }
     const s = (r.opportunity_source || 'unknown').trim() || 'unknown'; const e = src.get(s) || { name: s, won: 0, open: 0, lostSampled: 0 }; if (st === 'won') e.won++; else if (st === 'lost') e.lostSampled++; else e.open++; src.set(s, e)
   }
   const closed = won + lost
+  const sources = [...src.values()].sort((a, b) => (b.won + b.open + b.lostSampled) - (a.won + a.open + a.lostSampled)).slice(0, 8)
+  const top = sources[0]
+  const total = open + won + lost
+  const biggestLeak = total
+    ? `${open} of ${total} opportunities are still open and ${lost} were lost, for a ${closed ? (100 * won / closed).toFixed(1) : 0}% close rate.${top ? ` "${top.name}" is the largest lead source.` : ''}`
+    : 'No opportunities in this range.'
   return {
-    summary: { open, openValue: 0, won, wonValue: Math.round(wonValue), avgWonValue: won ? Math.round(wonValue / won) : 0, lostTotal: lost, lostSampled: lost, closedWinRatePct: closed ? +(100 * won / closed).toFixed(1) : 0 },
+    summary: { open, openValue: Math.round(openValue), won, wonValue: Math.round(wonValue), avgWonValue: won ? Math.round(wonValue / won) : 0, lostTotal: lost, lostSampled: lost, closedWinRatePct: closed ? +(100 * won / closed).toFixed(1) : 0 },
+    biggestLeak,
     lostReasons: [...lostR.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 11),
-    sources: [...src.values()].sort((a, b) => (b.won + b.open + b.lostSampled) - (a.won + a.open + a.lostSampled)).slice(0, 8),
+    sources,
     wonByMonth: [...wonMonth.entries()].map(([month, count]) => ({ month, count })).sort((a, b) => a.month.localeCompare(b.month)),
     stages: [...stage.entries()].map(([id, count]) => ({ id, count })),
   }

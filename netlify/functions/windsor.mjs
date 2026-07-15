@@ -121,6 +121,30 @@ function rollupGoogle(cg, kw, st, days) {
     keywordsTotal: kwAgg.size, searchTermsTotal: stAgg.size,
   }
 }
+// Agency roll-up: pull all Meta + Google accounts in two calls, map each back
+// to its client, and return per-client paid metrics for the whole roster.
+async function buildOverview(from, to, preset, key) {
+  const metaRev = {}, googleRev = {}
+  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[norm(c.meta)] = id; if (c.google) googleRev[norm(c.google)] = id }
+  const [fb, gg] = await Promise.all([
+    windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', 'actions_lead'], from, to, preset, key),
+    windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
+  ])
+  const clients = {}
+  const ensure = (id) => (clients[id] = clients[id] || {})
+  for (const r of fb) {
+    const id = metaRev[norm(r.account_id)]; if (!id) continue
+    const e = ensure(id); e.meta = e.meta || { spend: 0, impressions: 0, clicks: 0, leads: 0 }
+    e.meta.spend += num(r.spend); e.meta.impressions += num(r.impressions); e.meta.clicks += num(r.clicks); e.meta.leads += num(r.actions_lead)
+  }
+  for (const r of gg) {
+    const id = googleRev[norm(r.account_id)]; if (!id) continue
+    const e = ensure(id); e.google = e.google || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
+    e.google.cost += num(r.spend); e.google.impressions += num(r.impressions); e.google.clicks += num(r.clicks); e.google.conversions += num(r.conversions)
+  }
+  return { clients }
+}
+
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const [cg, kw, st] = await Promise.all([
@@ -171,6 +195,13 @@ export default async (req) => {
   const json = (obj, status = 200, cache = false) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? 'public, max-age=600' : 'no-store' } })
 
   if (!key) return json({ error: 'WINDSOR_API_KEY not set' }, 500)
+
+  // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.
+  if (url.searchParams.get('scope') === 'agency') {
+    try { const ov = await buildOverview(from, to, preset, key); return json({ scope: 'agency', period: { from, to, preset }, ...ov }, 200, true) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
   const c = CLIENTS[client]
   if (!c) return json({ error: `unknown client ${client}` }, 404)
   const spec = FIELDS[channel]

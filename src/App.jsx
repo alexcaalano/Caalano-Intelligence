@@ -29,42 +29,65 @@ function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat }) {
     <div className="card kpi">
       <div className="top"><span className="label">{label}</span>{tag && <span className={`tag ${tag.toLowerCase()}`}>{tag}</span>}</div>
       <div className="value">{value}</div>
-      {flat ? <span className="flat">{flat}</span> : <Delta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />}
+      {flat ? <span className="flat">{flat}</span> : (cur != null && prev != null) ? <Delta cur={cur} prev={prev} goodWhenDown={goodWhenDown} /> : null}
     </div>
   )
 }
 
+/* ============ Agency live rollup ============ */
+function useAgencyLive(range) {
+  const [state, setState] = useState({ status: 'idle', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true
+    setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=agency&${q}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: j && !j.error && j.clients ? 'ok' : 'err', data: j && j.clients ? j : null }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [q])
+  return state
+}
+
+// Display rows from the roster (names) + live metrics, falling back to the baked snapshot.
+function computeRows(snapClients, live) {
+  return snapClients.map((c, i) => {
+    const lm = live && live.clients ? live.clients[c.id] : null
+    const meta = (lm && lm.meta) || (c.meta ? { spend: c.meta.spend, impressions: c.meta.impressions, clicks: c.meta.clicks, leads: c.meta.leads } : null)
+    const google = (lm && lm.google) || (c.google ? { cost: c.google.cost, impressions: c.google.impressions, clicks: c.google.clicks, conversions: c.google.conversions } : null)
+    const spend = (meta?.spend || 0) + (google?.cost || 0)
+    const impressions = (meta?.impressions || 0) + (google?.impressions || 0)
+    const clicks = (meta?.clicks || 0) + (google?.clicks || 0)
+    const conversions = (meta?.leads || 0) + (google?.conversions || 0)
+    return { c, i, id: c.id, name: c.name, industry: c.industry, track: c.trackingStatus, spend, impressions, clicks, conversions, cpl: conversions ? spend / conversions : 0, ctr: impressions ? (clicks / impressions) * 100 : 0, metaSpend: meta?.spend || 0, googleSpend: google?.cost || 0, hasMeta: !!c.meta, hasGoogle: !!c.google }
+  })
+}
+
 /* ============ Overview ============ */
-function Overview({ data, onPick }) {
-  const cur = data.currency
-  const t = useMemo(() => agencyTotals(data.clients), [data])
-  const g = data.ghl
-  const byClient = useMemo(() => data.clients.map((c, i) => ({ name: c.name, spend: clientTotals(c).cur.spend, color: acolor(i) })).sort((a, b) => b.spend - a.spend), [data])
+function Overview({ rows, currency, periodLabel, live, onPick }) {
+  const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks, conversions: a.conversions + r.conversions, metaSpend: a.metaSpend + r.metaSpend, googleSpend: a.googleSpend + r.googleSpend }), { spend: 0, impressions: 0, clicks: 0, conversions: 0, metaSpend: 0, googleSpend: 0 })
+  const cpl = t.conversions ? t.spend / t.conversions : 0
+  const ctr = t.impressions ? (t.clicks / t.impressions) * 100 : 0
+  const byClient = rows.map((r) => ({ name: r.name, spend: r.spend, color: acolor(r.i) })).filter((x) => x.spend > 0).sort((a, b) => b.spend - a.spend)
   return (
     <>
-      <div className="section-title">Paid performance <span className="sub">· Meta + Google · {data.period.label} vs {data.compareLabel}</span></div>
+      <div className="section-title">Paid performance <span className="sub">· Meta + Google · {periodLabel} · {live ? 'live' : 'snapshot fallback'}</span></div>
       <div className="grid kpis">
-        <Kpi label="Ad Spend" tag="ADS" value={fmtCurrency(t.cur.spend, cur)} cur={t.cur.spend} prev={t.prev.spend} />
-        <Kpi label="Leads & Conversions" tag="ADS" value={fmtNumber(t.cur.conversions)} cur={t.cur.conversions} prev={t.prev.conversions} />
-        <Kpi label="Blended Cost / Result" tag="ADS" value={fmtCurrency(t.cur.cpl, cur)} cur={t.cur.cpl} prev={t.prev.cpl} goodWhenDown />
-        <Kpi label="Blended CTR" tag="ADS" value={fmtPct(t.cur.ctr, 2)} cur={t.cur.ctr} prev={t.prev.ctr} />
-      </div>
-      <div className="section-title">New-business pipeline <span className="sub">· Caalano Systems · tracked, not invoiced</span></div>
-      <div className="grid kpis">
-        <Kpi label="Open Pipeline" tag="CRM" value={fmtNumber(g.summary.open)} flat={`${fmtCurrency(g.summary.openValue, cur)} recorded`} />
-        <Kpi label="Won (tracked)" tag="CRM" value={fmtCurrency(g.summary.wonValue, cur)} flat={`${g.summary.won} deals · avg ${fmtCurrency(g.summary.avgWonValue, cur)}`} />
-        <Kpi label="Close Rate" tag="CRM" value={fmtPct(g.summary.closedWinRatePct, 1)} flat={`${g.summary.won} of ${g.summary.won + g.summary.lostTotal} closed`} />
-        <Kpi label="Lost Deals" tag="CRM" value={fmtNumber(g.summary.lostTotal)} flat="open a client → CRM" />
+        <Kpi label="Ad Spend" tag="ADS" value={fmtCurrency(t.spend, currency)} />
+        <Kpi label="Leads & Conversions" tag="ADS" value={fmtNumber(t.conversions)} />
+        <Kpi label="Blended Cost / Result" tag="ADS" value={fmtCurrency(cpl, currency)} />
+        <Kpi label="Blended CTR" tag="ADS" value={fmtPct(ctr, 2)} />
       </div>
       <div className="grid two" style={{ marginTop: 14 }}>
         <div className="card chart-card">
-          <h3>Ad spend by client</h3><p className="cap">Combined Meta + Google, {data.period.label}</p>
+          <h3>Ad spend by client</h3><p className="cap">Combined Meta + Google · {periodLabel}</p>
           <ResponsiveContainer width="100%" height={Math.max(230, byClient.length * 34)}>
             <BarChart data={byClient} layout="vertical" margin={{ left: 8, right: 18 }}>
               <CartesianGrid horizontal={false} stroke="var(--border)" />
               <XAxis type="number" tickFormatter={fmtCompact} stroke="var(--muted)" fontSize={11} />
               <YAxis type="category" dataKey="name" width={130} stroke="var(--muted)" fontSize={11} />
-              <Tooltip formatter={(v) => fmtCurrency(v, cur)} cursor={{ fill: 'var(--panel-2)' }} />
+              <Tooltip formatter={(v) => fmtCurrency(v, currency)} cursor={{ fill: 'var(--panel-2)' }} />
               <Bar dataKey="spend" radius={[0, 6, 6, 0]}>{byClient.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -72,23 +95,19 @@ function Overview({ data, onPick }) {
         <div className="card chart-card">
           <h3>Channel split</h3><p className="cap">Share of ad spend</p>
           <ResponsiveContainer width="100%" height={210}>
-            <PieChart><Pie data={[{ name: 'Meta', value: t.cur.metaSpend }, { name: 'Google', value: t.cur.googleSpend }]} dataKey="value" innerRadius={56} outerRadius={86} paddingAngle={2} stroke="none"><Cell fill="#4f7cff" /><Cell fill="#12b886" /></Pie><Tooltip formatter={(v) => fmtCurrency(v, cur)} /></PieChart>
+            <PieChart><Pie data={[{ name: 'Meta', value: t.metaSpend }, { name: 'Google', value: t.googleSpend }]} dataKey="value" innerRadius={56} outerRadius={86} paddingAngle={2} stroke="none"><Cell fill="#4f7cff" /><Cell fill="#12b886" /></Pie><Tooltip formatter={(v) => fmtCurrency(v, currency)} /></PieChart>
           </ResponsiveContainer>
-          <div className="legend"><span><i className="swatch" style={{ background: '#4f7cff' }} /> Meta {fmtCurrency(t.cur.metaSpend, cur)}</span><span><i className="swatch" style={{ background: '#12b886' }} /> Google {fmtCurrency(t.cur.googleSpend, cur)}</span></div>
+          <div className="legend"><span><i className="swatch" style={{ background: '#4f7cff' }} /> Meta {fmtCurrency(t.metaSpend, currency)}</span><span><i className="swatch" style={{ background: '#12b886' }} /> Google {fmtCurrency(t.googleSpend, currency)}</span></div>
         </div>
       </div>
       <div className="section-title">Client leaderboard <span className="sub">· click a row to open the client workspace</span></div>
-      <ClientTable data={data} onPick={onPick} />
+      <ClientTable rows={rows} currency={currency} onPick={onPick} />
     </>
   )
 }
 
-function ClientTable({ data, onPick }) {
+function ClientTable({ rows, currency, onPick }) {
   const [sort, setSort] = useState({ key: 'spend', dir: -1 })
-  const rows = useMemo(() => data.clients.map((c, i) => {
-    const { cur, prev } = clientTotals(c)
-    return { c, i, name: c.name, industry: c.industry, track: c.trackingStatus, spend: cur.spend, conversions: cur.conversions, cpl: cur.cpl, ctr: cur.ctr, convChange: pctChange(cur.conversions, prev.conversions), hasMeta: !!c.meta, hasGoogle: !!c.google }
-  }), [data])
   const sorted = [...rows].sort((a, b) => (a[sort.key] > b[sort.key] ? 1 : -1) * sort.dir)
   const setKey = (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : -1 }))
   const Th = ({ k, children }) => <th onClick={() => setKey(k)}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
@@ -98,11 +117,11 @@ function ClientTable({ data, onPick }) {
       <tbody>{sorted.map((r) => {
         const tk = TRACK[r.track] || TRACK.full; const has = r.conversions > 0
         return (
-          <tr key={r.c.id} onClick={() => onPick(r.c)}>
+          <tr key={r.id} onClick={() => onPick(r.c)}>
             <td><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div>{r.name}<small>{r.industry}</small></div></div></td>
-            <td>{fmtCurrency(r.spend, data.currency)}</td>
+            <td>{fmtCurrency(r.spend, currency)}</td>
             <td>{has ? fmtNumber(r.conversions) : '—'}</td>
-            <td>{has ? fmtCurrency(r.cpl, data.currency) : '—'}</td>
+            <td>{has ? fmtCurrency(r.cpl, currency) : '—'}</td>
             <td>{fmtPct(r.ctr, 2)}</td>
             <td><span className={`tk ${tk.cls}`}>{tk.label}</span></td>
             <td><div className="chan-tags">{r.hasMeta && <span className="chan" style={{ background: '#4f7cff' }}>Meta</span>}{r.hasGoogle && <span className="chan" style={{ background: '#12b886' }}>Google</span>}</div></td>
@@ -368,9 +387,8 @@ function LiveBadge({ mode, label }) {
   return <div style={{ marginBottom: 10 }}><span className={`tk ${m.c}`}>{m.t}</span></div>
 }
 
-function ClientWorkspace({ client, index, data, onBack }) {
+function ClientWorkspace({ client, index, data, range, onBack }) {
   const [tab, setTab] = useState('overall')
-  const [range, setRange] = useState({ preset: 'last_30d' })
   const [baked, setBaked] = useState(undefined)
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
   const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'ghl' : null
@@ -393,7 +411,6 @@ function ClientWorkspace({ client, index, data, onBack }) {
         <div className="cw-top">
           <span className="avatar" style={{ background: acolor(index) }}>{initials(client.name)}</span>
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span></h2><div className="meta">{client.industry}</div></div>
-          <DateRange range={range} onChange={setRange} />
         </div>
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
@@ -443,11 +460,13 @@ export default function App() {
   const [err, setErr] = useState(null)
   const [view, setView] = useState('overview')
   const [picked, setPicked] = useState(null)
-  const [theme, setTheme] = useState('dark')
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'light' } catch { return 'light' } })
   const [showSettings, setShowSettings] = useState(false)
+  const [range, setRange] = useState({ preset: 'last_30d' })
   const [enabled, setEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('caalano_enabled') || '{}') } catch { return {} } })
+  const agency = useAgencyLive(range)
 
-  useEffect(() => { document.documentElement.setAttribute('data-theme', theme) }, [theme])
+  useEffect(() => { document.documentElement.setAttribute('data-theme', theme); try { localStorage.setItem('caalano_theme', theme) } catch {} }, [theme])
   useEffect(() => { try { localStorage.setItem('caalano_enabled', JSON.stringify(enabled)) } catch {} }, [enabled])
   useEffect(() => {
     fetch('data/snapshot.json').then((r) => { if (!r.ok) throw new Error('snapshot not found'); return r.json() }).then(setData).catch((e) => setErr(e.message))
@@ -458,7 +477,7 @@ export default function App() {
   if (!data) return <div className="main"><div className="card">Loading dashboard…</div></div>
 
   const visibleClients = data.clients.filter((c) => enabled[c.id] !== false)
-  const dataView = { ...data, clients: visibleClients }
+  const rows = computeRows(visibleClients, agency.data)
   const idx = picked ? data.clients.findIndex((c) => c.id === picked.id) : -1
   const go = (v) => { setView(v); setPicked(null) }
 
@@ -478,13 +497,17 @@ export default function App() {
       </aside>
 
       <main className="main">
-        {!picked && <div className="head">
-          <div><h2>{view === 'overview' ? 'Agency Overview' : 'Clients'}</h2><p>{view === 'overview' ? 'Blended paid performance plus the new-business pipeline.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p></div>
-          <div className="spacer" /><span className="pill"><span className="dot" /> Live · {data.period.label}</span>
-        </div>}
-        {view === 'overview' && <Overview data={dataView} onPick={(c) => { setPicked(c); setView('clients') }} />}
-        {view === 'clients' && !picked && <ClientTable data={dataView} onPick={setPicked} />}
-        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} onBack={() => setPicked(null)} />}
+        <div className="head">
+          <div>
+            <h2>{view === 'overview' ? 'Agency Overview' : 'Clients'}</h2>
+            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+          </div>
+          <div className="spacer" />
+          <DateRange range={range} onChange={setRange} />
+        </div>
+        {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} onPick={(c) => { setPicked(c); setView('clients') }} />}
+        {view === 'clients' && !picked && <ClientTable rows={rows} currency={data.currency} onPick={setPicked} />}
+        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} onBack={() => setPicked(null)} />}
       </main>
 
       {showSettings && <Settings config={config} enabled={enabled} setEnabled={setEnabled} onClose={() => setShowSettings(false)} />}

@@ -142,25 +142,16 @@ function Overview({ rows, currency, periodLabel, live, onPick }) {
       </div>
       <div className="grid two" style={{ marginTop: 14 }}>
         <div className="card chart-card">
-          <h3>Ad spend &amp; revenue by client</h3><p className="cap">Ad spend (Meta + Google) vs. closed revenue · {periodLabel}</p>
-          <div className="mini-cap">Ad spend</div>
-          <ResponsiveContainer width="100%" height={chartH}>
-            <BarChart data={byClient} layout="vertical" margin={{ left: 8, right: 18 }}>
+          <h3>Ad spend &amp; revenue by client</h3><p className="cap">Ad spend (faded) vs. closed revenue (solid) side by side · {periodLabel}</p>
+          <ResponsiveContainer width="100%" height={Math.max(200, byClient.length * 52)}>
+            <BarChart data={byClient} layout="vertical" margin={{ left: 8, right: 18 }} barGap={2} barCategoryGap="26%">
               <CartesianGrid horizontal={false} stroke="var(--border)" />
               <XAxis type="number" tickFormatter={fmtCompact} stroke="var(--muted)" fontSize={11} />
               <YAxis type="category" dataKey="name" width={130} stroke="var(--muted)" fontSize={11} />
               <Tooltip formatter={(v) => fmtCurrency(v, currency)} cursor={{ fill: 'var(--panel-2)' }} />
-              <Bar dataKey="spend" name="Ad spend" radius={[0, 6, 6, 0]}>{byClient.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          <div className="mini-cap" style={{ marginTop: 8 }}>Revenue closed</div>
-          <ResponsiveContainer width="100%" height={chartH}>
-            <BarChart data={byClient} layout="vertical" margin={{ left: 8, right: 18 }}>
-              <CartesianGrid horizontal={false} stroke="var(--border)" />
-              <XAxis type="number" tickFormatter={fmtCompact} stroke="var(--muted)" fontSize={11} />
-              <YAxis type="category" dataKey="name" width={130} stroke="var(--muted)" fontSize={11} />
-              <Tooltip formatter={(v) => fmtCurrency(v, currency)} cursor={{ fill: 'var(--panel-2)' }} />
-              <Bar dataKey="revenue" name="Revenue" radius={[0, 6, 6, 0]}>{byClient.map((e, i) => <Cell key={i} fill="#12b886" />)}</Bar>
+              <Legend />
+              <Bar dataKey="spend" name="Ad spend" fill="rgba(18,184,134,.35)" radius={[0, 5, 5, 0]} maxBarSize={13} />
+              <Bar dataKey="revenue" name="Revenue" fill="#12b886" radius={[0, 5, 5, 0]} maxBarSize={13} />
             </BarChart>
           </ResponsiveContainer>
         </div>

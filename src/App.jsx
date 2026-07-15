@@ -129,39 +129,18 @@ function Overview({ rows, currency, periodLabel, live, onPick }) {
   const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks, conversions: a.conversions + r.conversions, metaSpend: a.metaSpend + r.metaSpend, googleSpend: a.googleSpend + r.googleSpend }), { spend: 0, impressions: 0, clicks: 0, conversions: 0, metaSpend: 0, googleSpend: 0 })
   const cpl = t.conversions ? t.spend / t.conversions : 0
   const ctr = t.impressions ? (t.clicks / t.impressions) * 100 : 0
-  const byClient = rows.map((r) => ({ name: r.name, spend: r.spend, revenue: r.revenue || 0, color: acolor(r.i) })).filter((x) => x.spend > 0 || x.revenue > 0).sort((a, b) => b.spend - a.spend)
-  const chartH = Math.max(140, byClient.length * 30)
+  const totalRev = rows.reduce((a, r) => a + (r.revenue || 0), 0)
+  const roas = t.spend ? totalRev / t.spend : 0
   return (
     <>
       <div className="section-title">Paid performance <span className="sub">· Meta + Google · {periodLabel} · {live ? 'live' : 'snapshot fallback'}</span></div>
-      <div className="grid kpis">
+      <div className="grid kpis kpis-6">
         <Kpi label="Ad Spend" tag="ADS" value={fmtCurrency(t.spend, currency)} />
         <Kpi label="Leads & Conversions" tag="ADS" value={fmtNumber(t.conversions)} />
         <Kpi label="Blended Cost / Result" tag="ADS" value={fmtCurrency(cpl, currency)} />
         <Kpi label="Blended CTR" tag="ADS" value={fmtPct(ctr, 2)} />
-      </div>
-      <div className="grid two" style={{ marginTop: 14 }}>
-        <div className="card chart-card">
-          <h3>Ad spend &amp; revenue by client</h3><p className="cap">Ad spend (faded) vs. closed revenue (solid) side by side · {periodLabel}</p>
-          <ResponsiveContainer width="100%" height={Math.max(200, byClient.length * 52)}>
-            <BarChart data={byClient} layout="vertical" margin={{ left: 8, right: 18 }} barGap={2} barCategoryGap="26%">
-              <CartesianGrid horizontal={false} stroke="var(--border)" />
-              <XAxis type="number" tickFormatter={fmtCompact} stroke="var(--muted)" fontSize={11} />
-              <YAxis type="category" dataKey="name" width={130} stroke="var(--muted)" fontSize={11} />
-              <Tooltip formatter={(v) => fmtCurrency(v, currency)} cursor={{ fill: 'var(--panel-2)' }} />
-              <Legend />
-              <Bar dataKey="spend" name="Ad spend" fill="rgba(18,184,134,.35)" radius={[0, 5, 5, 0]} maxBarSize={13} />
-              <Bar dataKey="revenue" name="Revenue" fill="#12b886" radius={[0, 5, 5, 0]} maxBarSize={13} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="card chart-card">
-          <h3>Channel split</h3><p className="cap">Share of ad spend</p>
-          <ResponsiveContainer width="100%" height={210}>
-            <PieChart><Pie data={[{ name: 'Meta', value: t.metaSpend }, { name: 'Google', value: t.googleSpend }]} dataKey="value" innerRadius={56} outerRadius={86} paddingAngle={2} stroke="none"><Cell fill="#4f7cff" /><Cell fill="#12b886" /></Pie><Tooltip formatter={(v) => fmtCurrency(v, currency)} /></PieChart>
-          </ResponsiveContainer>
-          <div className="legend"><span><i className="swatch" style={{ background: '#4f7cff' }} /> Meta {fmtCurrency(t.metaSpend, currency)}</span><span><i className="swatch" style={{ background: '#12b886' }} /> Google {fmtCurrency(t.googleSpend, currency)}</span></div>
-        </div>
+        <Kpi label="Revenue Generated" tag="CRM" value={fmtCurrency(totalRev, currency)} />
+        <Kpi label="ROAS" tag="CRM" value={totalRev && t.spend ? `${roas.toFixed(2)}×` : '—'} />
       </div>
       <div className="section-title">Client leaderboard <span className="sub">· click a row to open the client workspace</span></div>
       <ClientTable rows={rows} currency={currency} onPick={onPick} />
@@ -481,7 +460,7 @@ function CrmLive({ ghl, currency }) {
           {won.length ? <ResponsiveContainer width="100%" height={210}><LineChart data={won} margin={{ left: -18, right: 10, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" stroke="var(--muted)" fontSize={11} /><YAxis stroke="var(--muted)" fontSize={11} allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="count" stroke="#6d5efc" strokeWidth={2.5} dot={{ r: 3, fill: '#6d5efc' }} /></LineChart></ResponsiveContainer> : <p className="cap">No wins recorded in range.</p>}
         </div>
       </div>
-      <div className="note"><b>Live per-client CRM</b> from this client's own Caalano Systems via Windsor.ai. Stage-by-stage funnel and lost-reason names come next (they need the pipeline stage + reason ID to name mapping).</div>
+      <div className="note"><b>Live per-client CRM</b> from this client's own Caalano Systems via the Meta and Google API. Stage-by-stage funnel and lost-reason names come next (they need the pipeline stage + reason ID to name mapping).</div>
     </>
   )
 }
@@ -656,7 +635,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
           </div>
         )
       })()}
-      <p className="caveat">Creative thumbnails from Windsor.ai (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by Windsor; ↗ opens the Instagram post where available.</p>
+      <p className="caveat">Creative thumbnails from the Meta and Google API (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by the API; ↗ opens the Instagram post where available.</p>
     </>
   )
 }
@@ -1650,21 +1629,21 @@ export default function App() {
         <div className="brand"><div className="logo">C</div><div><h1>Caalano Digital</h1><p>Reporting Dashboard</p></div></div>
         <nav className="nav">
           <button className={view === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
-          <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Client Performance Trends</button>
+          <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
           <button className={view === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
           <button className={view === 'clients' ? 'active' : ''} onClick={() => go('clients')}><span className="ic">❑</span>Clients</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
           <button className="settings-btn" onClick={() => setShowSettings(true)}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
-          <div className="foot-note">Live data via Windsor.ai — Meta, Google, Caalano Systems.</div>
+          <div className="foot-note">Live data via the Meta and Google API — Meta, Google, Caalano Systems.</div>
         </div>
       </aside>
 
       <main className="main">
         <div className="head">
           <div>
-            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Client Performance Trends' : view === 'weekly' ? 'Weekly Traffic Light' : 'Clients'}</h2>
+            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Daily Performance' : view === 'weekly' ? 'Weekly Traffic Light' : 'Clients'}</h2>
             <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : view === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : view === 'weekly' ? 'One client at a time, reported Monday–Sunday by ISO week — spend pacing, leads, appointments and wins vs KPI.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />

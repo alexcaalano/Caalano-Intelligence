@@ -262,6 +262,65 @@ async function buildTrends(key) {
   return { clients: out }
 }
 
+// ISO week number for a YYYY-MM-DD date.
+function isoWeek(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  const day = (d.getUTCDay() + 6) % 7
+  d.setUTCDate(d.getUTCDate() - day + 3)
+  const firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4))
+  const fd = (firstThu.getUTCDay() + 6) % 7
+  firstThu.setUTCDate(firstThu.getUTCDate() - fd + 3)
+  return 1 + Math.round((d - firstThu) / (7 * 86400000))
+}
+// Monday-of-week (UTC) for a date string, as YYYY-MM-DD.
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00Z')
+  const dw = (d.getUTCDay() + 6) % 7
+  d.setUTCDate(d.getUTCDate() - dw)
+  return d.toISOString().slice(0, 10)
+}
+// Weekly (Mon–Sun) traffic-light data for one client over the last N weeks.
+async function buildWeekly(c, weeks, key) {
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+  const dstr = (d) => d.toISOString().slice(0, 10)
+  const curDow = (today.getUTCDay() + 6) % 7
+  const curMon = new Date(today); curMon.setUTCDate(curMon.getUTCDate() - curDow)
+  const weekStarts = []
+  for (let i = weeks - 1; i >= 0; i--) { const w = new Date(curMon); w.setUTCDate(w.getUTCDate() - 7 * i); weekStarts.push(dstr(w)) }
+  const wkIndex = new Map(weekStarts.map((w, i) => [w, i]))
+  const start = weekStarts[0]
+  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+  const [fb, gg, opps, pipes] = await Promise.all([
+    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', 'actions_lead'], start, dstr(today), null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, dstr(today), null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], start, dstr(today), null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], start, dstr(today), null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+  ])
+  const B = weekStarts.map((w) => ({ week: w, weekNum: isoWeek(w), metaSpend: 0, gSpend: 0, metaLeads: 0, gConv: 0, crmLeads: 0, booked: 0, shown: 0, won: 0, wonValue: 0 }))
+  for (const r of fb) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].metaSpend += num(r.spend); B[i].metaLeads += num(r.actions_lead) }
+  for (const r of gg) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].gSpend += num(r.spend); B[i].gConv += num(r.conversions) }
+  const idx = stageIndex(pipes)
+  for (const r of opps) {
+    const i = wkIndex.get(mondayOf(String(r.opportunity_created_at || '').slice(0, 10))); if (i == null) continue
+    const b = B[i]; b.crmLeads++
+    const pi = idx.get(r.opportunity_pipeline_id); const st = String(r.opportunity_status || '').toLowerCase()
+    const stg = pi ? pi.byId[r.opportunity_pipeline_stage_id] : null; const pos = stg ? stg.pos : -1; const isWon = st === 'won'
+    if (isWon) { b.won++; b.wonValue += num(r.opportunity_monetary_value) }
+    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) b.booked++
+    if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) b.shown++
+  }
+  const out = B.map((b) => {
+    const spend = b.metaSpend + b.gSpend, leads = b.metaLeads + b.gConv
+    return {
+      week: b.week, weekNum: b.weekNum, label: `W${b.weekNum}`,
+      spend: Math.round(spend), metaSpend: Math.round(b.metaSpend), googleSpend: Math.round(b.gSpend),
+      metaLeads: Math.round(b.metaLeads), googleConv: Math.round(b.gConv), leads: Math.round(leads),
+      booked: b.booked, shown: b.shown, won: b.won, wonValue: Math.round(b.wonValue),
+    }
+  })
+  return { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, weeks: out }
+}
+
 // Geographic conversions — where conversions happen. Google Ads geo reports
 // can't always combine a location dim with other segments, so we probe a few
 // candidate Windsor field names one at a time and use the first that returns
@@ -533,6 +592,15 @@ export default async (req) => {
   // Rolling-window performance trends across all clients (own date logic).
   if (url.searchParams.get('scope') === 'trends') {
     try { const tr = await buildTrends(key); return json({ scope: 'trends', ...tr }, 200, true) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
+  // Weekly (Mon–Sun) traffic-light board for one client.
+  if (url.searchParams.get('scope') === 'weekly') {
+    const cw = CLIENTS[client]
+    if (!cw) return json({ error: `unknown client ${client}` }, 404)
+    const weeks = Math.max(2, Math.min(16, parseInt(url.searchParams.get('weeks'), 10) || 6))
+    try { const wk = await buildWeekly(cw, weeks, key); return json({ scope: 'weekly', client, weeks, ...wk }, 200, true) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

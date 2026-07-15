@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ComposedChart,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ComposedChart, ReferenceLine,
 } from 'recharts'
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
@@ -271,6 +271,158 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
       {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
       <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages and aren't channel-split, so the Meta / Google toggle divides that channel's spend by total booked calls.</p>
     </div>
+  )
+}
+
+/* ============ Weekly Traffic Light ============ */
+function useWeekly(clientId, weeks, nonce = 0) {
+  const [state, setState] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    if (!clientId) return
+    let alive = true; setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=weekly&client=${clientId}&weeks=${weeks}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: j && j.weeks ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, weeks, nonce])
+  return state
+}
+function WkTile({ label, value, num, target, goodWhenDown = true }) {
+  const has = target != null && target !== '' && Number(target) > 0 && num != null && isFinite(num)
+  const pct = has ? ((num - Number(target)) / Number(target)) * 100 : null
+  const dir = pct == null ? 'flat' : (goodWhenDown ? (pct <= 0 ? 'up' : 'down') : (pct >= 0 ? 'up' : 'down'))
+  return <div className="wk-tile"><div className="wk-lab">{label}</div><div className="wk-val">{value}</div>{pct != null ? <div className={`wk-d ${dir}`}>{pct > 0 ? '▲' : pct < 0 ? '▼' : '■'} {Math.abs(pct).toFixed(1)}% vs KPI</div> : <div className="wk-d flat">no KPI set</div>}</div>
+}
+// cost-$ bars (left axis) + count bars (right axis) + optional KPI line ($ left)
+function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, costColor, countColor }) {
+  return (
+    <ResponsiveContainer width="100%" height={230}>
+      <ComposedChart data={data} margin={{ left: -4, right: 6, top: 10 }}>
+        <CartesianGrid stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="label" fontSize={11} stroke="var(--muted)" />
+        <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+        <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+        <Tooltip formatter={(v, n) => (n === countName ? fmtNumber(v) : fmtCurrency(v, currency))} />
+        <Legend />
+        <Bar yAxisId="r" dataKey={countKey} name={countName} fill={countColor || '#bcd0ff'} radius={[3, 3, 0, 0]} maxBarSize={34} />
+        <Bar yAxisId="l" dataKey={costKey} name={costName} fill={costColor || '#4f7cff'} radius={[3, 3, 0, 0]} maxBarSize={16} />
+        {kpi != null && kpi > 0 && <ReferenceLine yAxisId="l" y={kpi} stroke="var(--text)" strokeDasharray="5 4" label={{ value: `KPI ${fmtCurrency(kpi, currency)}`, fontSize: 10, fill: 'var(--muted)', position: 'insideTopRight' }} />}
+      </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+function WeeklyTab({ rows, currency, nonce }) {
+  const clients = rows
+  const [cid, setCid] = useState(clients[0]?.id || null)
+  const [weeks, setWeeks] = useState(6)
+  const wk = useWeekly(cid, weeks, nonce)
+  const kpis = cid ? loadKpis(cid) : {}
+  const money = (v) => fmtCurrency(v, currency)
+  const clientName = clients.find((c) => c.id === cid)?.name || '—'
+  return (
+    <>
+      <div className="c360-head" style={{ marginTop: 0 }}>
+        <div className="pipe-sel"><label>Client</label>
+          <select value={cid || ''} onChange={(e) => setCid(e.target.value)}>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </div>
+        <div className="pipe-sel"><label>Weeks</label>
+          <select value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>{[4, 6, 8, 12].map((n) => <option key={n} value={n}>Last {n} weeks</option>)}</select>
+        </div>
+      </div>
+      {wk.status === 'loading' ? <div className="card"><Spinner label="Loading weekly data…" /></div>
+        : wk.status === 'err' || !wk.data || !wk.data.weeks ? <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load weekly data — try Refresh.</p></div>
+          : (() => {
+            const W = wk.data.weeks.map((w) => ({
+              ...w,
+              cpl: w.leads ? w.spend / w.leads : 0,
+              metaCplV: w.metaLeads ? w.metaSpend / w.metaLeads : 0,
+              cpba: w.booked ? w.spend / w.booked : 0,
+              bookingRate: w.leads ? (w.booked / w.leads) * 100 : 0,
+              showRate: w.booked ? (w.shown / w.booked) * 100 : 0,
+              cpa: w.won ? w.spend / w.won : 0,
+            }))
+            const T = W.reduce((a, w) => ({ spend: a.spend + w.spend, metaSpend: a.metaSpend + w.metaSpend, metaLeads: a.metaLeads + w.metaLeads, leads: a.leads + w.leads, booked: a.booked + w.booked, shown: a.shown + w.shown, won: a.won + w.won, wonValue: a.wonValue + w.wonValue }), { spend: 0, metaSpend: 0, metaLeads: 0, leads: 0, booked: 0, shown: 0, won: 0, wonValue: 0 })
+            const n = W.length || 1
+            const avgSpend = T.spend / n
+            const mCpl = T.metaLeads ? T.metaSpend / T.metaLeads : 0
+            const aCpl = T.leads ? T.spend / T.leads : 0
+            const cpba = T.booked ? T.spend / T.booked : 0
+            const bookRate = T.leads ? (T.booked / T.leads) * 100 : 0
+            const cpa = T.won ? T.spend / T.won : 0
+            const avgDeal = T.won ? T.wonValue / T.won : 0
+            const roas = T.spend ? T.wonValue / T.spend : 0
+            const rangeLbl = W.length ? `${W[0].label} – ${W[W.length - 1].label}` : ''
+            return (
+              <>
+                <div className="section-title" style={{ marginTop: 4 }}>{clientName} <span className="sub">· weekly (Mon–Sun) · {rangeLbl}</span></div>
+                <div className="wk-tiles">
+                  <WkTile label="Pacing (avg/wk)" value={money(avgSpend)} num={avgSpend} target={kpis.wkSpend} goodWhenDown />
+                  <WkTile label="Meta CPL" value={mCpl ? money(mCpl) : '—'} num={mCpl} target={kpis.metaCpl} goodWhenDown />
+                  <WkTile label="All Leads CPL" value={aCpl ? money(aCpl) : '—'} num={aCpl} target={kpis.cpl} goodWhenDown />
+                  <WkTile label="CPBA" value={cpba ? money(cpba) : '—'} num={cpba} target={kpis.cpba} goodWhenDown />
+                  <WkTile label="Booking Rate" value={fmtPct(bookRate, 1)} num={bookRate} target={kpis.bookingRate} goodWhenDown={false} />
+                  <WkTile label="CPA (cost/won)" value={cpa ? money(cpa) : '—'} num={cpa} target={kpis.cpa} goodWhenDown />
+                  <WkTile label="Won Value" value={money(T.wonValue)} num={null} />
+                  <WkTile label="Avg Deal Value" value={T.won ? money(avgDeal) : '—'} num={null} />
+                  <WkTile label="ROAS" value={`${roas.toFixed(2)}×`} num={null} />
+                </div>
+                <div className="grid two" style={{ marginTop: 14 }}>
+                  <div className="card chart-card"><h3>Overall Spend Pacing</h3><p className="cap">Spend per week vs weekly target</p>
+                    <ResponsiveContainer width="100%" height={230}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
+                      <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} /><Tooltip formatter={(v) => money(v)} />
+                      <Bar dataKey="spend" name="Spend" fill="#e2504f" radius={[3, 3, 0, 0]} maxBarSize={44} />
+                      {Number(kpis.wkSpend) > 0 && <ReferenceLine y={Number(kpis.wkSpend)} stroke="var(--text)" strokeDasharray="5 4" label={{ value: `KPI ${money(kpis.wkSpend)}`, fontSize: 10, fill: 'var(--muted)', position: 'insideTopRight' }} />}
+                    </ComposedChart></ResponsiveContainer>
+                  </div>
+                  <div className="card chart-card"><h3>All Leads</h3><p className="cap">All-leads CPL ($) &amp; lead volume by week</p>
+                    <WkDual data={W} costKey="cpl" costName="CPL" countKey="leads" countName="Leads" kpi={Number(kpis.cpl) || null} currency={currency} costColor="#f5a524" countColor="#ffe2b0" />
+                  </div>
+                </div>
+                <div className="grid two" style={{ marginTop: 14 }}>
+                  {wk.data.hasMeta && <div className="card chart-card"><h3>Meta Leads</h3><p className="cap">Meta CPL ($) &amp; leads by week</p>
+                    <WkDual data={W} costKey="metaCplV" costName="CPL" countKey="metaLeads" countName="Leads" kpi={Number(kpis.metaCpl) || null} currency={currency} costColor="#4f7cff" countColor="#bcd0ff" />
+                  </div>}
+                  {wk.data.hasGoogle && <div className="card chart-card"><h3>Google Leads</h3><p className="cap">Google conversions by week</p>
+                    <ResponsiveContainer width="100%" height={230}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
+                      <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v) => fmtNumber(v)} />
+                      <Bar dataKey="googleConv" name="Conv." fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={44} />
+                    </ComposedChart></ResponsiveContainer>
+                  </div>}
+                </div>
+                {wk.data.hasCrm && <>
+                  <div className="grid two" style={{ marginTop: 14 }}>
+                    <div className="card chart-card"><h3>Appointments Booked</h3><p className="cap">Cost per booked appt ($) &amp; appointments by week</p>
+                      <WkDual data={W} costKey="cpba" costName="CPBA" countKey="booked" countName="Appt's" kpi={Number(kpis.cpba) || null} currency={currency} costColor="#b0325f" countColor="#f2c3d6" />
+                    </div>
+                    <div className="card chart-card"><h3>Shown Appointments</h3><p className="cap">Show rate (%) &amp; shown appts by week</p>
+                      <ResponsiveContainer width="100%" height={230}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
+                        <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} /><YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v, nm) => (nm === 'Show rate' ? fmtPct(v, 1) : fmtNumber(v))} /><Legend />
+                        <Bar yAxisId="r" dataKey="shown" name="Shown" fill="#2f8f83" radius={[3, 3, 0, 0]} maxBarSize={34} />
+                        <Bar yAxisId="l" dataKey="showRate" name="Show rate" fill="#8fcabe" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                      </ComposedChart></ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="grid two" style={{ marginTop: 14 }}>
+                    <div className="card chart-card"><h3>Clients Won</h3><p className="cap">Cost per acquisition ($) &amp; won value by week</p>
+                      <WkDual data={W} costKey="cpa" costName="CPA" countKey="wonValue" countName="Value" kpi={Number(kpis.cpa) || null} currency={currency} costColor="#6d5efc" countColor="#c9c1ff" />
+                    </div>
+                    <div className="card chart-card"><h3>Funnel</h3><p className="cap">Leads → Appt's → Shown → Won by week</p>
+                      <ResponsiveContainer width="100%" height={230}><BarChart data={W} margin={{ left: -6, right: 6, top: 10 }}>
+                        <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip /><Legend />
+                        <Bar dataKey="leads" name="Leads" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                        <Bar dataKey="booked" name="Appt's" fill="#b0325f" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                        <Bar dataKey="shown" name="Shown" fill="#2f8f83" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                        <Bar dataKey="won" name="Won" fill="#6d5efc" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                      </BarChart></ResponsiveContainer>
+                    </div>
+                  </div>
+                </>}
+                <p className="caveat">Weeks run Monday–Sunday (ISO week number shown). Leads = Meta leads + Google conversions. Appointments / shown / won come from Caalano Systems pipeline stages (opportunities created that week). KPI lines &amp; vs-KPI deltas use the weekly targets you set per client in Settings.</p>
+              </>
+            )
+          })()}
+    </>
   )
 }
 
@@ -1332,6 +1484,14 @@ function KpiEditor({ clientId }) {
           <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
           <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
         </div>
+        <div className="cap" style={{ marginTop: 4 }}>Weekly Traffic Light targets</div>
+        <div className="kpi-inputs">
+          <label>Weekly spend<input type="number" min="0" value={numOr(k.wkSpend)} onChange={(e) => set({ wkSpend: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ / week" /></label>
+          <label>All-leads CPL<input type="number" min="0" value={numOr(k.cpl)} onChange={(e) => set({ cpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Cost / booked appt<input type="number" min="0" value={numOr(k.cpba)} onChange={(e) => set({ cpba: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Cost / won (CPA)<input type="number" min="0" value={numOr(k.cpa)} onChange={(e) => set({ cpa: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Booking rate %<input type="number" min="0" value={numOr(k.bookingRate)} onChange={(e) => set({ bookingRate: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="% target" /></label>
+        </div>
         {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
           : stageNames.length ? <>
             <div className="cap" style={{ marginTop: 4 }}>Target leads at each pipeline stage</div>
@@ -1498,6 +1658,7 @@ export default function App() {
         <nav className="nav">
           <button className={view === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
           <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Client Performance Trends</button>
+          <button className={view === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
           <button className={view === 'clients' ? 'active' : ''} onClick={() => go('clients')}><span className="ic">❑</span>Clients</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
@@ -1510,8 +1671,8 @@ export default function App() {
       <main className="main">
         <div className="head">
           <div>
-            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Client Performance Trends' : 'Clients'}</h2>
-            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : view === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Client Performance Trends' : view === 'weekly' ? 'Weekly Traffic Light' : 'Clients'}</h2>
+            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : view === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : view === 'weekly' ? 'One client at a time, reported Monday–Sunday by ISO week — spend pacing, leads, appointments and wins vs KPI.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />
@@ -1519,6 +1680,7 @@ export default function App() {
         </div>
         {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
+        {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
         {view === 'clients' && !picked && <ClientTable rows={rows} currency={data.currency} onPick={setPicked} />}
         {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} nonce={refreshKey} onBack={() => setPicked(null)} />}
       </main>

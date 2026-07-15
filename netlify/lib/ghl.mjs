@@ -133,7 +133,7 @@ export async function buildAttribution(locationId, from, to) {
     allOpportunities(locTok, locationId, from, to),
     pipelineStageIndex(locTok, locationId),
   ])
-  const dim = { source: new Map(), medium: new Map(), campaign: new Map(), content: new Map() }
+  const dim = { source: new Map(), medium: new Map(), campaign: new Map(), content: new Map(), term: new Map() }
   const bump = (map, keyRaw, o, pi) => {
     const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
     const e = map.get(key) || { name: key, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }
@@ -156,11 +156,12 @@ export async function buildAttribution(locationId, from, to) {
     bump(dim.medium, u.medium, o, pi)
     bump(dim.campaign, u.campaign, o, pi)
     bump(dim.content, u.content, o, pi)
+    bump(dim.term, u.term, o, pi)
   }
-  const top = (map) => [...map.values()].sort((a, b) => b.leads - a.leads).slice(0, 40)
+  const top = (map, n = 40) => [...map.values()].sort((a, b) => b.leads - a.leads).slice(0, n)
   return {
     connected: true, opps: opps.length, attributed,
-    bySource: top(dim.source), byMedium: top(dim.medium), byCampaign: top(dim.campaign), byCreative: top(dim.content),
+    bySource: top(dim.source), byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
   }
 }
 

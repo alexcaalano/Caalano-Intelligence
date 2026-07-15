@@ -18,6 +18,26 @@ const TRACK = {
   no_outcome_tracking: { label: 'No tracking', cls: 'tk-none' },
 }
 const rate = (a, b) => (b ? (a / b) * 100 : 0)
+
+/* Caalano360 outcome join — match an ad-platform entity to CRM outcomes by UTM. */
+const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) { const k = unorm(e.name); if (k && !m.has(k)) m.set(k, e) } return m }
+function O360Head() {
+  return <>{['Booked', 'C/Book', 'Shown', 'C/Show', 'Won', 'Won val', 'ROAS'].map((h, i) => <th key={i} className={`c360-col${i === 0 ? ' c360-first' : ''}`}>{h}</th>)}</>
+}
+function o360Cells(o, spend, currency) {
+  if (!o) return <>{Array.from({ length: 7 }).map((_, i) => <td key={i} className={`c360-col dim${i === 0 ? ' c360-first' : ''}`}>—</td>)}</>
+  const roas = spend ? o.revenue / spend : 0
+  return <>
+    <td className="c360-col c360-first">{fmtNumber(o.booked)}</td>
+    <td className="c360-col">{o.booked && spend ? fmtCurrency(spend / o.booked, currency) : '—'}</td>
+    <td className="c360-col">{fmtNumber(o.shown)}</td>
+    <td className="c360-col">{o.shown && spend ? fmtCurrency(spend / o.shown, currency) : '—'}</td>
+    <td className="c360-col">{fmtNumber(o.won)}</td>
+    <td className="c360-col">{fmtCurrency(o.revenue, currency)}</td>
+    <td className="c360-col">{spend ? `${roas.toFixed(2)}×` : '—'}</td>
+  </>
+}
 const PHASE_COLOR = { contact: '#4f7cff', 'appt-set': '#6d5efc', 'at-risk': '#f0435b', held: '#12b886', proposal: '#f5a524', onboarding: '#0ea5e9' }
 
 function Delta({ cur, prev, goodWhenDown = false }) {
@@ -214,11 +234,16 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
 const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg; return r <= 0.85 ? 'rgba(23,178,106,.28)' : r <= 1.15 ? 'rgba(245,165,36,.28)' : 'rgba(240,67,91,.28)' }
 
-function MetaDeep({ deep, currency }) {
+function MetaDeep({ deep, currency, attr }) {
   const [sel, setSel] = useState(null)
   const [day, setDay] = useState(null)
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
   const m = deep.meta
+  const A = attr && attr.data && attr.data.attribution
+  const has360 = !!A
+  const oCamp = mkOutcomeMap(A && A.byCampaign)
+  const oTerm = mkOutcomeMap(A && A.byTerm)
+  const oCre = mkOutcomeMap(A && A.byCreative)
   const t = m.totals || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, reach: 0 }
   const cpm = t.impressions ? t.spend / t.impressions * 1000 : 0
   const cpl = t.leads ? t.spend / t.leads : 0
@@ -258,12 +283,12 @@ function MetaDeep({ deep, currency }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>}
-      <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Campaign</th><th>Spend</th><th>Impr.</th><th>CTR</th><th>Leads</th><th>CPL</th></tr></thead>
-        <tbody>{m.campaigns.map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(rate(c.clicks, c.impressions), 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.leads ? fmtCurrency(c.spend / c.leads, currency) : '—'}</td></tr>))}</tbody></table></div>
+      <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched)' : ''}</span></div>
+      <div className="table-wrap"><table><thead><tr><th>Campaign</th><th>Spend</th><th>Impr.</th><th>CTR</th><th>Leads</th><th>CPL</th>{has360 && <O360Head />}</tr></thead>
+        <tbody>{m.campaigns.map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(rate(c.clicks, c.impressions), 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.leads ? fmtCurrency(c.spend / c.leads, currency) : '—'}</td>{has360 && o360Cells(oCamp.get(unorm(c.name)), c.spend, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''}</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Ad set</th><th>Spend</th><th>Impr.</th><th>CTR</th><th>Leads</th><th>CPL</th></tr></thead>
-        <tbody>{adsets.map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(rate(c.clicks, c.impressions), 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.leads ? fmtCurrency(c.spend / c.leads, currency) : '—'}</td></tr>))}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>Ad set</th><th>Spend</th><th>Impr.</th><th>CTR</th><th>Leads</th><th>CPL</th>{has360 && <O360Head />}</tr></thead>
+        <tbody>{adsets.map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(rate(c.clicks, c.impressions), 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.leads ? fmtCurrency(c.spend / c.leads, currency) : '—'}</td>{has360 && o360Cells(oTerm.get(unorm(c.name)), c.spend, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Creatives <span className="sub">· {ads.length}{sel ? ` in "${sel}"` : ''} · CPL vs account avg {fmtCurrency(cpl, currency)}</span></div>
       <div className="cre-grid">{ads.map((a) => {
         const acpl = a.leads ? a.spend / a.leads : 0
@@ -281,6 +306,21 @@ function MetaDeep({ deep, currency }) {
                 <div className="st"><div className="l">CVR</div><div className="v">{fmtPct(rate(a.leads, a.linkClicks), 1)}</div></div>
                 <div className="st"><div className="l">{hook != null ? 'Hook rate' : ''}</div><div className="v">{hook != null ? fmtPct(hook, 1) : ''}</div></div>
               </div>
+              {has360 && (() => {
+                const o = oCre.get(unorm(a.name)); if (!o) return null
+                const roas = a.spend ? o.revenue / a.spend : 0
+                return <div className="cre-360">
+                  <div className="c360-tag">Caalano360</div>
+                  <div className="stats">
+                    <div className="st"><div className="l">Booked</div><div className="v">{fmtNumber(o.booked)}</div></div>
+                    <div className="st"><div className="l">Shown</div><div className="v">{fmtNumber(o.shown)}</div></div>
+                    <div className="st"><div className="l">Won</div><div className="v">{fmtNumber(o.won)}</div></div>
+                    <div className="st"><div className="l">Won val</div><div className="v">{fmtCurrency(o.revenue, currency)}</div></div>
+                    <div className="st"><div className="l">C/Book</div><div className="v">{o.booked ? fmtCurrency(a.spend / o.booked, currency) : '—'}</div></div>
+                    <div className="st"><div className="l">ROAS</div><div className="v">{a.spend ? `${roas.toFixed(2)}×` : '—'}</div></div>
+                  </div>
+                </div>
+              })()}
             </div>
           </div>
         )
@@ -311,11 +351,15 @@ function MetaDeep({ deep, currency }) {
 const qsClass = (n) => n === '' || n == null ? 'q-unk' : n >= 7 ? 'q-above' : n >= 4 ? 'q-avg' : 'q-low'
 const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
 const mtColor = (t) => MT_COLOR[t] || '#8b5cf6'
-function GoogleDeep({ deep, currency }) {
+function GoogleDeep({ deep, currency, attr }) {
   const [sel, setSel] = useState({ campaign: null, adGroup: null })
   const [day, setDay] = useState(null)
   if (!deep?.google) return <EmptyDeep channel="Google Ads" />
   const g = deep.google
+  const A = attr && attr.data && attr.data.attribution
+  const has360 = !!A
+  const oCampG = mkOutcomeMap(A && A.byCampaign)
+  const oAgG = mkOutcomeMap(A && A.byTerm)
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   const costPerConv = t.conversions ? t.cost / t.conversions : 0
   const avgCpc = t.clicks ? t.cost / t.clicks : 0
@@ -333,7 +377,7 @@ function GoogleDeep({ deep, currency }) {
   const daily = (g.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpc: d.clicks ? d.cost / d.clicks : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpconv: d.conversions ? d.cost / d.conversions : 0 }))
   const qKw = g.keywords.filter((k) => k.qs !== '' && k.qs != null)
   const avgQs = qKw.length ? qKw.reduce((a, k) => a + k.qs, 0) / qKw.length : 0
-  const GHead = ({ first }) => (<thead><tr><th>{first}</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th></tr></thead>)
+  const GHead = ({ first, o360 }) => (<thead><tr><th>{first}</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th>{o360 && has360 && <O360Head />}</tr></thead>)
   const GCells = (r) => (<><td>{fmtCurrency(r.cost, currency)}</td><td>{fmtNumber(r.impressions)}</td><td>{fmtPct(rate(r.clicks, r.impressions), 2)}</td><td>{fmtCurrency(r.clicks ? r.cost / r.clicks : 0, currency)}</td><td>{fmtNumber(r.conversions)}</td><td>{r.conversions ? fmtCurrency(r.cost / r.conversions, currency) : '—'}</td></>)
   return (
     <>
@@ -380,12 +424,12 @@ function GoogleDeep({ deep, currency }) {
           <p className="caveat">Low quality scores inflate CPCs — tighten ad-to-keyword relevance or pause the worst offenders.</p>
         </div>
       </div>
-      <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}</span></div>
-      <div className="table-wrap"><table><GHead first="Campaign" />
-        <tbody>{[...g.campaigns].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}</tr>))}</tbody></table></div>
+      <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched)' : ''}</span></div>
+      <div className="table-wrap"><table><GHead first="Campaign" o360 />
+        <tbody>{[...g.campaigns].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(oCampG.get(unorm(c.name)), c.cost, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
-      <div className="table-wrap"><table><GHead first="Ad group" />
-        <tbody>{[...adGroups].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}</tr>))}</tbody></table></div>
+      <div className="table-wrap"><table><GHead first="Ad group" o360 />
+        <tbody>{[...adGroups].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(oAgG.get(unorm(c.name)), c.cost, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms</span></div>
       <div className="table-wrap"><table><thead><tr><th>Keyword</th><th>Match</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th><th>QS</th></tr></thead>
         <tbody>{[...keywords].sort((a, b) => b.cost - a.cost).map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '—'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>
@@ -543,8 +587,8 @@ function useAttribution(clientId, range, nonce = 0) {
   }, [clientId, q, nonce])
   return state
 }
-function UtmSection({ clientId, range, currency, nonce }) {
-  const { status, data } = useAttribution(clientId, range, nonce)
+function UtmSection({ attr, currency }) {
+  const { status, data } = attr || { status: 'loading', data: null }
   const money = (v) => fmtCurrency(v, currency)
   if (status === 'loading') return <div className="card" style={{ marginTop: 14 }}><Spinner label="Loading UTM attribution…" /></div>
   if (data && data.connected === false) return <div className="card" style={{ marginTop: 14 }}><b>Connect Caalano Systems</b> to unlock UTM attribution (source → campaign → creative → booked/shown/won).</div>
@@ -571,7 +615,7 @@ const CMAP_KEY = 'caalano_campmap'
 function loadCampMap(clientId) { try { return (JSON.parse(localStorage.getItem(CMAP_KEY) || '{}')[clientId]) || {} } catch { return {} } }
 function saveCampMap(clientId, map) { try { const all = JSON.parse(localStorage.getItem(CMAP_KEY) || '{}'); all[clientId] = map; localStorage.setItem(CMAP_KEY, JSON.stringify(all)) } catch {} }
 
-function Caalano360({ blend, client, currency, range, nonce }) {
+function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const b = blend
   const pipes = b.pipelines || []
   const camps = b.campaigns || []
@@ -677,7 +721,7 @@ function Caalano360({ blend, client, currency, range, nonce }) {
           ))}
         </div>
       </div>}
-      {b.hasCrm && <UtmSection clientId={client.id} range={range} currency={currency} nonce={nonce} />}
+      {b.hasCrm && <UtmSection attr={utmAttr} currency={currency} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>
   )
@@ -802,6 +846,7 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
   const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'crm' : tab === 'overall' ? 'blend' : null
   const live = useLiveDeep(client.id, channel, range, nonce)
+  const attr = useAttribution(client.id, range, nonce)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
@@ -824,7 +869,7 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
+        {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
         {tab === 'crm' && (
           live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano Systems CRM…" /></div>
             : live.data && live.data.connected === false ? <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected yet.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>Authorise the agency connection at <code>/.netlify/functions/caalano-connect</code> to unlock live CRM + UTM attribution.</p></div>
@@ -832,8 +877,8 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
                 : live.data && live.data.error ? <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load CRM for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{live.data.error}</p><p style={{ maxWidth: 460, margin: '8px auto 0' }}>If this is a token / access error, the agency app may not have access to this sub-account. Try the audit endpoint <code>?scope=ghlaudit</code>.</p></div>
                   : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
         )}
-        {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} /></>)}
-        {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} /></>)}
+        {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} /></>)}
+        {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} /></>)}
       </div>
     </>
   )

@@ -469,8 +469,8 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 /* Weekly Traffic Light */
 .wk-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 4px; }
 /* 9-across KPI row that fills the width (squishes on smaller screens) */
-.wk-tiles-9 { grid-template-columns: repeat(9, 1fr); gap: 8px; }
-@media (max-width: 1280px) { .wk-tiles-9 { grid-template-columns: repeat(5, 1fr); } }
+.wk-tiles-9 { grid-template-columns: repeat(8, 1fr); gap: 8px; }
+@media (max-width: 1280px) { .wk-tiles-9 { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 760px) { .wk-tiles-9 { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 480px) { .wk-tiles-9 { grid-template-columns: repeat(2, 1fr); } }
 .wk-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; box-shadow: var(--shadow); }

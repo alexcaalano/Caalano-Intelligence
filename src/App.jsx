@@ -394,7 +394,6 @@ function WeeklyTab({ rows, currency, nonce }) {
                   <WkTile label="Pacing (avg/wk)" value={money(avgSpend)} num={avgSpend} target={kpis.wkSpend} goodWhenDown />
                   <WkTile label="Meta CPL" value={mCpl ? money(mCpl) : '-'} num={mCpl} target={kpis.metaCpl} goodWhenDown />
                   <WkTile label="All Leads CPL" value={aCpl ? money(aCpl) : '-'} num={aCpl} target={kpis.cpl} goodWhenDown />
-                  <WkTile label="CPBA" value={cpba ? money(cpba) : '-'} num={cpba} target={kpis.cpba} goodWhenDown />
                   <WkTile label="Booking Rate" value={fmtPct(bookRate, 1)} num={bookRate} target={kpis.bookingRate} goodWhenDown={false} />
                   <WkTile label="CPA (cost/won)" value={cpa ? money(cpa) : '-'} num={cpa} target={kpis.cpa} goodWhenDown />
                   <WkTile label="Won Value" value={money(T.wonValue)} num={null} />
@@ -429,8 +428,11 @@ function WeeklyTab({ rows, currency, nonce }) {
                     <WkDual data={W} costKey="gCostConv" costName="Cost/conv" countKey="googleConv" countName="Conv." kpi={Number(kpis.googleCostConv) || null} currency={currency} costColor="#0e8f6a" countColor="#a7e8d3" />
                   </div>}
                   {wk.data.hasCrm && <>
-                    <div className="card chart-card"><h3>Appointments Booked</h3><p className="cap">Appointments (bars) &amp; cost per booked appt (line) by week</p>
-                      <WkDual data={W} costKey="cpba" costName="CPBA" countKey="booked" countName="Appt's" kpi={Number(kpis.cpba) || null} currency={currency} costColor="#b0325f" countColor="#f2c3d6" />
+                    <div className="card chart-card"><h3>Appointments Booked</h3><p className="cap">Booked appointments by week</p>
+                      <ResponsiveContainer width="100%" height={240}><BarChart data={W} margin={{ left: -4, right: 6, top: 14 }}>
+                        <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v) => fmtNumber(v)} />
+                        <Bar dataKey="booked" name="Appt's" fill="#b0325f" radius={[3, 3, 0, 0]} maxBarSize={46}><LabelList dataKey="booked" position="insideTop" fill="#fff" fontSize={10} fontWeight={700} formatter={(v) => (v ? fmtNumber(v) : '')} /></Bar>
+                      </BarChart></ResponsiveContainer>
                     </div>
                     <div className="card chart-card"><h3>Shown Appointments</h3><p className="cap">Shown (bars) &amp; show rate (line) by week</p>
                       <ResponsiveContainer width="100%" height={240}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>

@@ -481,6 +481,43 @@ function CrmGhl({ crm, currency }) {
   )
 }
 
+/* ============ UTM attribution (GoHighLevel first-touch) ============ */
+function useAttribution(clientId, range) {
+  const [state, setState] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q])
+  return state
+}
+function UtmSection({ clientId, range, currency }) {
+  const { status, data } = useAttribution(clientId, range)
+  const money = (v) => fmtCurrency(v, currency)
+  if (status === 'loading') return <div className="card" style={{ marginTop: 14 }}><Spinner label="Loading UTM attribution…" /></div>
+  if (data && data.connected === false) return <div className="card" style={{ marginTop: 14 }}><b>Connect Caalano Systems</b> to unlock UTM attribution (source → campaign → creative → booked/shown/won).</div>
+  const a = data && data.attribution
+  if (!a) return null
+  const dims = [['By source', 'bySource'], ['By campaign', 'byCampaign'], ['By creative (utm_content)', 'byCreative']]
+  return (
+    <>
+      <div className="lvl-title">UTM attribution <span className="sub">· first-touch · {fmtNumber(a.attributed)} of {fmtNumber(a.opps)} opportunities tagged</span></div>
+      {dims.map(([label, key]) => (a[key] && a[key].length) ? (
+        <div key={key}>
+          <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>{label}</div>
+          <div className="table-wrap"><table><thead><tr><th>{label.replace('By ', '')}</th><th>Leads</th><th>Booked</th><th>Shown</th><th>Won</th><th>Revenue</th><th>Lead→Won</th></tr></thead>
+            <tbody>{a[key].map((r) => (<tr key={r.name}><td>{r.name}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.shown)}</td><td>{fmtNumber(r.won)}</td><td>{money(r.revenue)}</td><td>{fmtPct(rate(r.won, r.leads), 1)}</td></tr>))}</tbody></table></div>
+        </div>
+      ) : null)}
+      <p className="caveat">First-touch UTMs from Caalano Systems attribution, mapped to down-funnel outcomes. "(not set)" = no UTM captured (direct / organic / untagged link).</p>
+    </>
+  )
+}
+
 /* ============ Caalano360 — blended paid + CRM ============ */
 const CMAP_KEY = 'caalano_campmap'
 function loadCampMap(clientId) { try { return (JSON.parse(localStorage.getItem(CMAP_KEY) || '{}')[clientId]) || {} } catch { return {} } }
@@ -601,6 +638,7 @@ function Caalano360({ blend, client, currency, range }) {
         <p className="caveat">Live count of opportunities currently sitting at each stage of the pipeline, in order. Lost / abandoned deals are shown at the stage they dropped out of.</p>
       </div>}
       {pipes.length > 1 && pid === 'all' && <p className="caveat" style={{ marginTop: 10 }}>This account runs {pipes.length} pipelines — pick one from the selector above to see its stage-by-stage breakdown.</p>}
+      {b.hasCrm && <UtmSection clientId={client.id} range={range} currency={currency} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>
   )

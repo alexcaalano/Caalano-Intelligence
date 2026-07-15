@@ -687,6 +687,13 @@ const CMAP_KEY = 'caalano_campmap'
 function loadCampMap(clientId) { try { return (JSON.parse(localStorage.getItem(CMAP_KEY) || '{}')[clientId]) || {} } catch { return {} } }
 function saveCampMap(clientId, map) { try { const all = JSON.parse(localStorage.getItem(CMAP_KEY) || '{}'); all[clientId] = map; localStorage.setItem(CMAP_KEY, JSON.stringify(all)) } catch {} }
 
+/* Per-client KPI targets — { metaCpl, googleCostConv, stages: { [stageName]: leadsTarget } } */
+const KPI_KEY = 'caalano_kpis'
+function loadKpis(clientId) { try { return (JSON.parse(localStorage.getItem(KPI_KEY) || '{}')[clientId]) || {} } catch { return {} } }
+function saveKpis(clientId, k) { try { const all = JSON.parse(localStorage.getItem(KPI_KEY) || '{}'); all[clientId] = k; localStorage.setItem(KPI_KEY, JSON.stringify(all)) } catch {} }
+// colour helper: is `actual` hitting `target`? goodWhenUnder for cost metrics.
+function kpiClass(actual, target, goodWhenUnder) { if (target == null || target === '' || !actual) return ''; const hit = goodWhenUnder ? actual <= target : actual >= target; return hit ? 'good' : 'bad' }
+
 function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const b = blend
   const pipes = b.pipelines || []

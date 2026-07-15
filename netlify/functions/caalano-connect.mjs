@@ -6,11 +6,11 @@
 // function's own URL, so it works on any domain without hard-coding.
 import { exchangeCode, isConnected } from '../lib/ghl.mjs'
 
-// Must match the scopes configured on the GoHighLevel app. If the app has
-// more scopes than the stored token was authorised with, GHL refuses to mint
-// location tokens ("not authorized for this scope") — so re-authorising with
-// the full set fixes it.
-const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly', 'users.readonly', 'conversations.readonly']
+// Exactly the read scopes the dashboard uses. locations.readonly is the one
+// that works at agency level (to mint sub-account tokens); opportunities +
+// contacts cover CRM + attribution. Keep the GoHighLevel app trimmed to these
+// three so the token and app scope sets match and location-token minting works.
+const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly']
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 
 const page = (title, body) => new Response(

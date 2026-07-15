@@ -171,6 +171,10 @@ tbody tr:hover { background: var(--panel-2); }
 .tk-wins { color: #ffcf7a; background: rgba(245,165,36,.16); }
 .tk-intel { color: #a9c0ff; background: rgba(79,124,255,.16); }
 .tk-none { color: #ff9aa8; background: rgba(240,67,91,.15); }
+.tk.cov { font-variant-numeric: tabular-nums; }
+.tk.cov.good { color: var(--pos); background: rgba(23,178,106,.14); }
+.tk.cov.warn { color: var(--warn); background: rgba(245,165,36,.15); }
+.tk.cov.bad { color: var(--neg); background: rgba(240,67,91,.14); }
 
 /* Bars */
 .bar-row { display: grid; grid-template-columns: 190px 1fr 42px; gap: 12px; align-items: center; margin: 8px 0; font-size: 12.5px; }

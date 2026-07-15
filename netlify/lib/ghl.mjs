@@ -223,6 +223,16 @@ export async function bookedTrends(locationId, from, to) {
   return out
 }
 
+// Lightweight source-tag coverage for one location (no pipeline/stage work):
+// how many opportunities carry a UTM, split by classified channel.
+export async function attributionCoverage(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const opps = await allOpportunities(locTok, locationId, from, to)
+  let attributed = 0; const ch = { meta: 0, google: 0, other: 0 }
+  for (const o of opps) { const u = utmOf(o); if (u.source || u.campaign) attributed++; ch[channelOf(u)]++ }
+  return { opps: opps.length, attributed, meta: ch.meta, google: ch.google, other: ch.other }
+}
+
 export async function buildAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)
   const [opps, pipelines, reasons] = await Promise.all([

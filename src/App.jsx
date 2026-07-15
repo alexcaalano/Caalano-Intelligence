@@ -109,6 +109,21 @@ function useAgencyLive(range, nonce = 0) {
   return state
 }
 
+// Lazy UTM source-tag coverage per client (populates the leaderboard after render).
+function useCoverage(range, nonce = 0) {
+  const [cov, setCov] = useState(null)
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setCov(null)
+    fetch(`/.netlify/functions/windsor?scope=coverage&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setCov(j && j.coverage ? j.coverage : {}) })
+      .catch(() => { if (alive) setCov({}) })
+    return () => { alive = false }
+  }, [q, nonce])
+  return cov
+}
+
 // Display rows from the roster (names) + live metrics, falling back to the baked snapshot.
 function computeRows(snapClients, live) {
   return snapClients.map((c, i) => {
@@ -125,7 +140,8 @@ function computeRows(snapClients, live) {
 }
 
 /* ============ Overview ============ */
-function Overview({ rows, currency, periodLabel, live, alerts, onPick }) {
+function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onPick }) {
+  const coverage = useCoverage(range, nonce)
   const rowById = Object.fromEntries(rows.map((r) => [r.id, r]))
   const nameOf = (id) => rowById[id]?.name || id
   const AlertCol = ({ title, color, list }) => (
@@ -168,21 +184,23 @@ function Overview({ rows, currency, periodLabel, live, alerts, onPick }) {
         </div>
       </>}
       <div className="section-title">Client leaderboard <span className="sub">· click a row to open the client workspace</span></div>
-      <ClientTable rows={rows} currency={currency} onPick={onPick} />
+      <ClientTable rows={rows} currency={currency} coverage={coverage} onPick={onPick} />
     </>
   )
 }
 
-function ClientTable({ rows, currency, onPick }) {
+function ClientTable({ rows, currency, coverage, onPick }) {
   const [sort, setSort] = useState({ key: 'spend', dir: -1 })
+  const covPct = (id) => { const cv = coverage && coverage[id]; return cv && cv.opps ? (cv.attributed / cv.opps) * 100 : null }
   const sorted = [...rows].sort((a, b) => (a[sort.key] > b[sort.key] ? 1 : -1) * sort.dir)
   const setKey = (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : -1 }))
   const Th = ({ k, children }) => <th onClick={() => setKey(k)}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
     <div className="table-wrap"><table>
-      <thead><tr><Th k="name">Client</Th><Th k="spend">Spend</Th><Th k="conversions">Results</Th><Th k="cpl">Cost / result</Th><Th k="revenue">Revenue</Th><Th k="roas">ROAS</Th><Th k="ctr">CTR</Th><th>Tracking</th><th>Channels</th></tr></thead>
+      <thead><tr><Th k="name">Client</Th><Th k="spend">Spend</Th><Th k="conversions">Results</Th><Th k="cpl">Cost / result</Th><Th k="revenue">Revenue</Th><Th k="roas">ROAS</Th><Th k="ctr">CTR</Th><th title="% of CRM opportunities carrying a UTM source tag">Tracking</th><th>Channels</th></tr></thead>
       <tbody>{sorted.map((r) => {
-        const tk = TRACK[r.track] || TRACK.full; const has = r.conversions > 0
+        const has = r.conversions > 0
+        const cp = covPct(r.id); const cvCls = cp == null ? '' : cp >= 80 ? 'good' : cp >= 50 ? 'warn' : 'bad'
         return (
           <tr key={r.id} onClick={() => onPick(r.c)}>
             <td><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div>{r.name}<small>{r.industry}</small></div></div></td>
@@ -192,7 +210,7 @@ function ClientTable({ rows, currency, onPick }) {
             <td>{r.revenue ? fmtCurrency(r.revenue, currency) : '-'}</td>
             <td>{r.revenue && r.spend ? `${r.roas.toFixed(2)}×` : '-'}</td>
             <td>{fmtPct(r.ctr, 2)}</td>
-            <td><span className={`tk ${tk.cls}`}>{tk.label}</span></td>
+            <td>{!r.c.ghl ? <span className="tk" style={{ opacity: .5 }}>no CRM</span> : coverage == null ? <span className="tk" style={{ opacity: .5 }}>…</span> : cp == null ? <span className="tk" style={{ opacity: .5 }}>-</span> : <span className={`tk cov ${cvCls}`} title={`${coverage[r.id].attributed} of ${coverage[r.id].opps} opportunities tagged`}>{cp.toFixed(0)}%</span>}</td>
             <td><div className="chan-tags">{r.hasMeta && <span className="chan" style={{ background: '#4f7cff' }}>Meta</span>}{r.hasGoogle && <span className="chan" style={{ background: '#12b886' }}>Google</span>}</div></td>
           </tr>
         )
@@ -1763,7 +1781,7 @@ export default function App() {
           <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />
           <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
         </div>
-        {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} onPick={(c) => { setPicked(c); setView('clients') }} />}
+        {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
         {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}

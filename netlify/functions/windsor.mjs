@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -649,6 +649,15 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'trends') {
     try { const tr = await buildTrends(key); return json({ scope: 'trends', ...tr }, 200, true) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
+  // Agency-wide UTM source-tag coverage per client (lazy-loaded for the leaderboard).
+  if (url.searchParams.get('scope') === 'coverage') {
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'coverage', connected: false, coverage: {} })
+    const entries = Object.entries(CLIENTS).filter(([, cc]) => cc.ghl)
+    const out = {}
+    await Promise.all(entries.map(async ([id, cc]) => { try { out[id] = await attributionCoverage(cc.ghl, from, to) } catch { out[id] = null } }))
+    return json({ scope: 'coverage', connected: true, coverage: out }, 200, true)
   }
 
   // Weekly (Mon–Sun) traffic-light board for one client.

@@ -70,9 +70,9 @@ async function ghlPost(locTok, path, bodyObj) {
 // --- data pulls (paged, bounded) ---
 // opportunities/search returns the opportunity, its contact AND an inline
 // `attributions` array (first/last touch, UTMs) — one call, no N+1 lookups.
-async function allOpportunities(locTok, locationId, from, to, cap = 3000) {
+async function allOpportunities(locTok, locationId, from, to, cap = 1500) {
   const out = []; let startAfter, startAfterId, guard = 0
-  while (guard++ < 40 && out.length < cap) {
+  while (guard++ < 16 && out.length < cap) {
     const q = { location_id: locationId, limit: 100 }
     if (from) q.startDate = new Date(from + 'T00:00:00Z').getTime()
     if (to) q.endDate = new Date(to + 'T23:59:59Z').getTime()

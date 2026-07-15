@@ -35,18 +35,18 @@ function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat }) {
 }
 
 /* ============ Agency live rollup ============ */
-function useAgencyLive(range) {
+function useAgencyLive(range, nonce = 0) {
   const [state, setState] = useState({ status: 'idle', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true
     setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=agency&${q}`)
+    fetch(`/.netlify/functions/windsor?scope=agency&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: j && !j.error && j.clients ? 'ok' : 'err', data: j && j.clients ? j : null }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [q])
+  }, [q, nonce])
   return state
 }
 
@@ -321,13 +321,15 @@ function GoogleDeep({ deep, currency }) {
   const avgCpc = t.clicks ? t.cost / t.clicks : 0
   const gv = g.prev || null
   const D = (fn) => (gv ? fn(gv) : null)
-  const pickCamp = (n) => setSel((s) => (s.campaign === n ? { campaign: null, adGroup: null } : { campaign: n, adGroup: null }))
-  const pickAg = (n) => setSel((s) => ({ ...s, adGroup: s.adGroup === n ? null : n }))
-  const inSel = (r) => (!sel.campaign || r.campaign === sel.campaign) && (!sel.adGroup || r.adGroup === sel.adGroup)
+  const pickCamp = (n) => setSel((s) => (s.campaign === n && !s.adGroup && !s.keyword ? {} : { campaign: n }))
+  const pickAg = (a) => setSel((s) => (s.adGroup === a.name && s.campaign === a.campaign && !s.keyword ? { campaign: a.campaign } : { campaign: a.campaign, adGroup: a.name }))
+  const pickKw = (k) => setSel((s) => (s.keyword === k.text ? { campaign: k.campaign, adGroup: k.adGroup } : { campaign: k.campaign, adGroup: k.adGroup, keyword: k.text }))
+  const pickTerm = (tm) => setSel((s) => (s.keyword === tm.keyword && s.adGroup === tm.adGroup ? { campaign: tm.campaign, adGroup: tm.adGroup } : { campaign: tm.campaign, adGroup: tm.adGroup, keyword: tm.keyword }))
+  const matchCA = (r) => (!sel.campaign || r.campaign === sel.campaign) && (!sel.adGroup || r.adGroup === sel.adGroup)
   const adGroups = g.adGroups.filter((a) => !sel.campaign || a.campaign === sel.campaign)
-  const keywords = g.keywords.filter(inSel)
-  const searchTerms = (g.searchTerms || []).filter(inSel)
-  const selLabel = sel.adGroup ? `${sel.campaign} › ${sel.adGroup}` : sel.campaign
+  const keywords = g.keywords.filter(matchCA)
+  const searchTerms = (g.searchTerms || []).filter((r) => matchCA(r) && (!sel.keyword || r.keyword === sel.keyword))
+  const selLabel = [sel.campaign, sel.adGroup, sel.keyword].filter(Boolean).join(' › ')
   const daily = (g.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpc: d.clicks ? d.cost / d.clicks : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpconv: d.conversions ? d.cost / d.conversions : 0 }))
   const qKw = g.keywords.filter((k) => k.qs !== '' && k.qs != null)
   const avgQs = qKw.length ? qKw.reduce((a, k) => a + k.qs, 0) / qKw.length : 0
@@ -383,14 +385,14 @@ function GoogleDeep({ deep, currency }) {
         <tbody>{[...g.campaigns].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
       <div className="table-wrap"><table><GHead first="Ad group" />
-        <tbody>{[...adGroups].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.name} className={sel.adGroup === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c.name)}><td>{c.name}</td>{GCells(c)}</tr>))}</tbody></table></div>
-      <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''}</span></div>
+        <tbody>{[...adGroups].sort((a, b) => b.cost - a.cost).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}</tr>))}</tbody></table></div>
+      <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms</span></div>
       <div className="table-wrap"><table><thead><tr><th>Keyword</th><th>Match</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th><th>QS</th></tr></thead>
-        <tbody>{[...keywords].sort((a, b) => b.cost - a.cost).map((k) => (<tr key={k.text + k.match}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '—'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>
-      <div className="lvl-title">Search terms <span className="sub">· {searchTerms.length} of {fmtNumber(g.searchTermsTotal)} actual queries by spend{selLabel ? ` · in ${selLabel}` : ''}</span></div>
+        <tbody>{[...keywords].sort((a, b) => b.cost - a.cost).map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '—'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '—' : k.qs}</span></td></tr>))}</tbody></table></div>
+      <div className="lvl-title">Search terms <span className="sub">· {searchTerms.length} of {fmtNumber(g.searchTermsTotal)} actual queries by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter to its keyword</span></div>
       {searchTerms.length ? (
-        <div className="table-wrap"><table><thead><tr><th>Search term</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>Clicks</th><th>Conv.</th><th>Cost / conv</th></tr></thead>
-          <tbody>{searchTerms.map((s) => (<tr key={s.term}><td>{s.term}</td><td>{fmtCurrency(s.cost, currency)}</td><td>{fmtNumber(s.impressions)}</td><td>{fmtPct(rate(s.clicks, s.impressions), 2)}</td><td>{fmtNumber(s.clicks)}</td><td>{fmtNumber(s.conversions)}</td><td>{s.conversions ? fmtCurrency(s.cost / s.conversions, currency) : '—'}</td></tr>))}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>Search term</th><th>Matched keyword</th><th>Cost</th><th>CTR</th><th>Clicks</th><th>Conv.</th><th>Cost / conv</th></tr></thead>
+          <tbody>{searchTerms.map((s, i) => (<tr key={s.campaign + '|' + s.adGroup + '|' + s.keyword + '|' + s.term + i} className={sel.keyword && sel.keyword === s.keyword ? 'row-sel' : ''} style={{ cursor: s.keyword ? 'pointer' : 'default' }} onClick={() => s.keyword && pickTerm(s)}><td>{s.term}</td><td style={{ color: 'var(--muted)', fontSize: 12 }}>{s.keyword || '—'}</td><td>{fmtCurrency(s.cost, currency)}</td><td>{fmtPct(rate(s.clicks, s.impressions), 2)}</td><td>{fmtNumber(s.clicks)}</td><td>{fmtNumber(s.conversions)}</td><td>{s.conversions ? fmtCurrency(s.cost / s.conversions, currency) : '—'}</td></tr>))}</tbody></table></div>
       ) : <p className="caveat">No search-term data in this range{selLabel ? ` for ${selLabel}` : ''}.</p>}
       {daily.length > 0 && <>
         <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{g.adGroupDaily ? ' · click a day to break it down' : ''}</span></div>
@@ -482,6 +484,23 @@ function CrmGhl({ crm, currency }) {
           return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}</span></div>
         })}</div>
       </div> : <p className="caveat">This account runs {pipes.length} pipelines — pick one above to see its stage-by-stage breakdown.</p>}
+      {stages && stages.length > 1 && (() => {
+        let acc = 0; const reached = []
+        for (let i = stages.length - 1; i >= 0; i--) { acc += stages[i].count; reached[i] = acc }
+        const top = reached[0] || 1
+        return (
+          <div className="card chart-card" style={{ marginTop: 14 }}>
+            <h3>Stage pass-through</h3><p className="cap">How many opportunities reached each stage — spot the drop-offs</p>
+            <div className="funnel">{stages.map((s, i) => {
+              const val = reached[i]; const pct = (val / top) * 100
+              const drop = i > 0 ? reached[i - 1] - val : 0
+              const dropPct = i > 0 && reached[i - 1] ? Math.round((drop / reached[i - 1]) * 100) : 0
+              return <div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, pct)}%`, background: '#12b886' }}>{fmtNumber(val)}{i > 0 && drop > 0 ? <span className="drop">−{dropPct}%</span> : ''}</span></div>
+            })}</div>
+            <p className="caveat">Cumulative: the top row is every opportunity in this pipeline; each row below is how many progressed to that stage or beyond. Lost / abandoned deals count up to the stage they dropped at.</p>
+          </div>
+        )
+      })()}
       <div className="grid two" style={{ marginTop: 14 }}>
         <div className="card chart-card"><h3>Why deals are lost</h3><p className="cap">Named lost reasons · {fmtNumber(t.lost + t.abandoned)} lost / abandoned</p>
           {crm.lostReasons.length ? <>
@@ -511,21 +530,21 @@ function CrmGhl({ crm, currency }) {
 }
 
 /* ============ UTM attribution (GoHighLevel first-touch) ============ */
-function useAttribution(clientId, range) {
+function useAttribution(clientId, range, nonce = 0) {
   const [state, setState] = useState({ status: 'loading', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true; setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}`)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [clientId, q])
+  }, [clientId, q, nonce])
   return state
 }
-function UtmSection({ clientId, range, currency }) {
-  const { status, data } = useAttribution(clientId, range)
+function UtmSection({ clientId, range, currency, nonce }) {
+  const { status, data } = useAttribution(clientId, range, nonce)
   const money = (v) => fmtCurrency(v, currency)
   if (status === 'loading') return <div className="card" style={{ marginTop: 14 }}><Spinner label="Loading UTM attribution…" /></div>
   if (data && data.connected === false) return <div className="card" style={{ marginTop: 14 }}><b>Connect Caalano Systems</b> to unlock UTM attribution (source → campaign → creative → booked/shown/won).</div>
@@ -552,7 +571,7 @@ const CMAP_KEY = 'caalano_campmap'
 function loadCampMap(clientId) { try { return (JSON.parse(localStorage.getItem(CMAP_KEY) || '{}')[clientId]) || {} } catch { return {} } }
 function saveCampMap(clientId, map) { try { const all = JSON.parse(localStorage.getItem(CMAP_KEY) || '{}'); all[clientId] = map; localStorage.setItem(CMAP_KEY, JSON.stringify(all)) } catch {} }
 
-function Caalano360({ blend, client, currency, range }) {
+function Caalano360({ blend, client, currency, range, nonce }) {
   const b = blend
   const pipes = b.pipelines || []
   const camps = b.campaigns || []
@@ -658,16 +677,7 @@ function Caalano360({ blend, client, currency, range }) {
           ))}
         </div>
       </div>}
-      {activeStages && activeStages.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
-        <h3>Where clients are in the pipeline</h3><p className="cap">{stageName} · opportunities by stage, first to last</p>
-        <div className="funnel">{activeStages.map((s, i) => {
-          const hue = 210 + Math.round((i / Math.max(1, activeStages.length - 1)) * -70)
-          return (<div className="fn" key={s.pos}><span className="lab" title={s.name}>{s.name}</span><span className="bar" style={{ width: `${Math.max(6, (s.count / stageMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{s.count > 0 ? fmtNumber(s.count) : ''}</span></div>)
-        })}</div>
-        <p className="caveat">Live count of opportunities currently sitting at each stage of the pipeline, in order. Lost / abandoned deals are shown at the stage they dropped out of.</p>
-      </div>}
-      {pipes.length > 1 && pid === 'all' && <p className="caveat" style={{ marginTop: 10 }}>This account runs {pipes.length} pipelines — pick one from the selector above to see its stage-by-stage breakdown.</p>}
-      {b.hasCrm && <UtmSection clientId={client.id} range={range} currency={currency} />}
+      {b.hasCrm && <UtmSection clientId={client.id} range={range} currency={currency} nonce={nonce} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>
   )
@@ -710,19 +720,19 @@ const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
 const rangeLabel = (r) => r.label || `${r.from} → ${r.to}`
 
 // Fetch live deep data for the active channel from the Windsor.ai Netlify function.
-function useLiveDeep(clientId, channel, range) {
+function useLiveDeep(clientId, channel, range, nonce = 0) {
   const [state, setState] = useState({ status: 'idle', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     if (!channel) { setState({ status: 'idle', data: null }); return }
     let alive = true
     setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}`)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j && !j.error ? j : null }) })
+      .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j || null }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [clientId, channel, q])
+  }, [clientId, channel, q, nonce])
   return state
 }
 
@@ -786,12 +796,12 @@ function LiveBadge({ mode, label }) {
   return <div style={{ marginBottom: 10 }}><span className={`tk ${m.c}`}>{m.t}</span></div>
 }
 
-function ClientWorkspace({ client, index, data, range, onBack }) {
+function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
   const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'crm' : tab === 'overall' ? 'blend' : null
-  const live = useLiveDeep(client.id, channel, range)
+  const live = useLiveDeep(client.id, channel, range, nonce)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
@@ -814,12 +824,13 @@ function ClientWorkspace({ client, index, data, range, onBack }) {
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
+        {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
         {tab === 'crm' && (
           live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano Systems CRM…" /></div>
             : live.data && live.data.connected === false ? <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected yet.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>Authorise the agency connection at <code>/.netlify/functions/caalano-connect</code> to unlock live CRM + UTM attribution.</p></div>
               : live.data && live.data.crm ? <CrmGhl crm={live.data.crm} currency={data.currency} />
-                : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
+                : live.data && live.data.error ? <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load CRM for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{live.data.error}</p><p style={{ maxWidth: 460, margin: '8px auto 0' }}>If this is a token / access error, the agency app may not have access to this sub-account. Try the audit endpoint <code>?scope=ghlaudit</code>.</p></div>
+                  : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
         )}
         {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} /></>)}
         {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} /></>)}
@@ -868,7 +879,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [range, setRange] = useState(() => presetRange('last_30d'))
   const [enabled, setEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('caalano_enabled') || '{}') } catch { return {} } })
-  const agency = useAgencyLive(range)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const agency = useAgencyLive(range, refreshKey)
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); try { localStorage.setItem('caalano_theme', theme) } catch {} }, [theme])
   useEffect(() => { try { localStorage.setItem('caalano_enabled', JSON.stringify(enabled)) } catch {} }, [enabled])
@@ -908,10 +920,11 @@ export default function App() {
           </div>
           <div className="spacer" />
           <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />
+          <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
         </div>
         {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'clients' && !picked && <ClientTable rows={rows} currency={data.currency} onPick={setPicked} />}
-        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} onBack={() => setPicked(null)} />}
+        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} nonce={refreshKey} onBack={() => setPicked(null)} />}
       </main>
 
       {showSettings && <Settings config={config} enabled={enabled} setEnabled={setEnabled} onClose={() => setShowSettings(false)} />}

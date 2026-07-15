@@ -154,25 +154,30 @@ function aggBy(rowsIn, keyFn) {
 function rollupGoogle(cg, kw, st, dy, days) {
   const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
   const campaigns = [...aggBy(cg, (r) => r.campaign).entries()].map(([name, v]) => ({ name, status: 'Enabled', ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
-  const agCampaign = {}
-  for (const r of cg) { const ag = cleanAg(r); if (ag && r.campaign && !agCampaign[ag]) agCampaign[ag] = r.campaign }
-  const adGroups = [...aggBy(cg, cleanAg).entries()].map(([name, v]) => ({ name, campaign: agCampaign[name] || null, ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
-  // keywords: aggregate by text, carry campaign/ad group, dominant match type + approx quality score
-  const kwAgg = aggBy(kw, (r) => r.keyword_text)
-  const kwMeta = new Map()
-  for (const r of kw) { const t = r.keyword_text; if (!t) continue; const e = kwMeta.get(t) || { match: titleCase(r.match_type) || '—', qsSum: 0, campaign: r.campaign || null, adGroup: cleanAg(r) || null }; e.qsSum += num(r.quality_score); if (!e.match || e.match === '—') e.match = titleCase(r.match_type) || '—'; kwMeta.set(t, e) }
-  const keywords = [...kwAgg.entries()].map(([text, v]) => { const m = kwMeta.get(text) || {}; const qs = m.qsSum ? Math.max(1, Math.min(10, Math.round(m.qsSum / days))) : ''; return { text, match: m.match || '—', qs, campaign: m.campaign, adGroup: m.adGroup, ...v } }).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 300)
+  // Ad groups keyed by (campaign, ad group) so each row belongs to exactly one
+  // campaign — this is what makes campaign→ad-group drill-down filter correctly.
+  const agM = new Map()
+  for (const r of cg) { const ag = cleanAg(r), camp = r.campaign; if (!ag || !camp) continue; const k = camp + ' ' + ag; const e = agM.get(k) || { name: ag, campaign: camp, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); agM.set(k, e) }
+  const adGroups = [...agM.values()].filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
+  // Keywords keyed by (campaign, ad group, keyword) — a keyword that runs in two
+  // campaigns is two rows, each scoped, so drill-down never loses/merges them.
+  const kwM = new Map()
+  for (const r of kw) { const t = r.keyword_text; if (!t) continue; const camp = r.campaign || null, ag = cleanAg(r) || null; const k = camp + ' ' + ag + ' ' + t; const e = kwM.get(k) || { text: t, campaign: camp, adGroup: ag, match: titleCase(r.match_type) || '—', qsSum: 0, qsN: 0, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); if (num(r.quality_score)) { e.qsSum += num(r.quality_score); e.qsN++ } kwM.set(k, e) }
+  const keywords = [...kwM.values()].map((e) => ({ text: e.text, campaign: e.campaign, adGroup: e.adGroup, match: e.match, qs: e.qsN ? Math.max(1, Math.min(10, Math.round(e.qsSum / e.qsN))) : '', cost: e.cost, impressions: e.impressions, clicks: e.clicks, conversions: e.conversions })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 400)
   const mt = new Map()
   for (const r of kw) { const t = titleCase(r.match_type); if (!t) continue; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
-  // search terms with parent campaign / ad group / matched keyword
-  const stAgg = new Map(), stMeta = new Map()
-  for (const r of st) { const term = r.search_term; if (!term) continue; const e = stAgg.get(term) || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); stAgg.set(term, e); if (!stMeta.has(term)) stMeta.set(term, { campaign: r.campaign || null, adGroup: cleanAg(r) || null, keyword: r.keyword_text || null }) }
-  const searchTerms = [...stAgg.entries()].map(([term, v]) => ({ term, ...(stMeta.get(term) || {}), ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 300)
+  // Search terms keyed by (campaign, ad group, keyword, term) — carries its
+  // matched keyword so keyword↔search-term cross-filtering works both ways.
+  const stM = new Map()
+  for (const r of st) { const term = r.search_term; if (!term) continue; const camp = r.campaign || null, ag = cleanAg(r) || null, kwt = r.keyword_text || null; const k = camp + ' ' + ag + ' ' + kwt + ' ' + term; const e = stM.get(k) || { term, campaign: camp, adGroup: ag, keyword: kwt, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); stM.set(k, e) }
+  const searchTerms = [...stM.values()].filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 400)
   const dmap = new Map()
   for (const r of dy) { const d = String(r.date || '').slice(0, 10); if (!d) continue; const e = dmap.get(d) || { date: d, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); dmap.set(d, e) }
   const daily = [...dmap.values()].sort((a, b) => a.date.localeCompare(b.date))
   const totals = campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
-  return { campaigns, adGroups, keywords, matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost), searchTerms, daily, totals, keywordsTotal: kwAgg.size, searchTermsTotal: stAgg.size }
+  const keywordsTotal = new Set(kw.map((r) => r.keyword_text).filter(Boolean)).size
+  const searchTermsTotal = new Set(st.map((r) => r.search_term).filter(Boolean)).size
+  return { campaigns, adGroups, keywords, matchTypes: [...mt.values()].sort((a, b) => b.cost - a.cost), searchTerms, daily, totals, keywordsTotal, searchTermsTotal }
 }
 // Agency roll-up: pull all Meta + Google accounts in two calls, map each back
 // to its client, and return per-client paid metrics for the whole roster.

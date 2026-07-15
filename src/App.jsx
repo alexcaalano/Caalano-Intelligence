@@ -710,7 +710,9 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const camps = b.campaigns || []
   const multi = pipes.length > 1
   const [pid, setPid] = useState('all')
-  useEffect(() => { setPid('all') }, [client.id])
+  const [chan, setChan] = useState('all')
+  useEffect(() => { setPid('all'); setChan('all') }, [client.id])
+  useEffect(() => { setPid('all') }, [chan])
   const manual = loadCampMap(client.id) // editing lives in Settings; read latest each render
   const effTarget = (name) => manual[name] ?? (camps.find((x) => x.name === name)?.auto) ?? 'all'
   // attribute campaign spend to the selected pipeline (or 'all' = account totals)
@@ -720,14 +722,25 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
     return { metaSpend, googleSpend, adSpend: metaSpend + googleSpend, adConversions, campaigns: list }
   }
   const p = b.paid
-  const c = pid === 'all' ? b.crm : (pipes.find((x) => x.id === pid)?.crm || b.crm)
+  // UTM-split CRM (Meta / Google / All) from the direct Caalano Systems attribution feed.
+  const channels = (utmAttr && utmAttr.status === 'ok' && utmAttr.data && utmAttr.data.attribution && utmAttr.data.attribution.channels) || null
+  const canChan = !!channels && ((channels.meta?.totals?.leads || 0) > 0 || (channels.google?.totals?.leads || 0) > 0)
+  const norm360 = (t) => ({ leads: t.leads, booked: t.booked, shown: t.shown, won: t.won, revenue: t.revenue, avgValue: t.avgWonValue, openValue: t.openValue, lost: t.lost, open: t.open })
+  const chSel = chan !== 'all' && channels ? channels[chan] : null
+  const pipesSrc = chSel ? (chSel.pipelines || []) : pipes
+  const crmAll = chSel ? norm360(chSel.totals) : b.crm
+  const multiSrc = pipesSrc.length > 1
+  const c = pid === 'all' ? crmAll : (pipesSrc.find((x) => x.id === pid)?.crm || crmAll)
   const attr = pid === 'all'
     ? { adSpend: p.adSpend, metaSpend: p.metaSpend, googleSpend: p.googleSpend, adConversions: p.adConversions, campaigns: camps.map((x) => ({ ...x, target: effTarget(x.name) })) }
     : attrFor(pid)
-  const spend = attr.adSpend
+  const spend = chan === 'meta' ? attr.metaSpend : chan === 'google' ? attr.googleSpend : attr.adSpend
+  const lostReasons = chSel ? chSel.lostReasons : (channels && channels.all ? channels.all.lostReasons : null)
   const roas = spend ? c.revenue / spend : 0
   const money = (v) => fmtCurrency(v, currency)
-  const chan = [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }, { name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
+  const chanPie = chan === 'meta' ? [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }].filter((x) => x.value > 0)
+    : chan === 'google' ? [{ name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
+    : [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }, { name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
   const fmax = Math.max(1, c.leads)
   const funnel = [
     { stage: 'Leads', count: c.leads, color: '#4f7cff' },
@@ -736,21 +749,28 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
     { stage: 'Won', count: c.won, color: '#12b886' },
   ]
   const activeStages = pid !== 'all'
-    ? (pipes.find((x) => x.id === pid)?.stages || [])
-    : (pipes.length === 1 ? pipes[0].stages : null)
+    ? (pipesSrc.find((x) => x.id === pid)?.stages || [])
+    : (pipesSrc.length === 1 ? pipesSrc[0].stages : null)
   const stageMax = activeStages ? Math.max(1, ...activeStages.map((s) => s.count)) : 1
-  const stageName = pid !== 'all' ? pipes.find((x) => x.id === pid)?.name : (pipes.length === 1 ? pipes[0].name : null)
+  const stageName = pid !== 'all' ? pipesSrc.find((x) => x.id === pid)?.name : (pipesSrc.length === 1 ? pipesSrc[0].name : null)
   const srcBadge = (s) => <span className="src-badge" style={{ background: s === 'Meta' ? '#4f7cff' : '#12b886' }}>{s === 'Meta' ? 'M' : 'G'}</span>
   return (
     <>
       <div className="c360-head">
-        <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}{pid !== 'all' ? ' · attributed spend' : ''}</span></div>
-        {multi && <div className="pipe-sel"><label>Pipeline</label>
-          <select value={pid} onChange={(e) => setPid(e.target.value)}>
-            <option value="all">All pipelines ({fmtNumber(b.crm.leads)})</option>
-            {pipes.map((x) => <option key={x.id} value={x.id}>{x.name} ({fmtNumber(x.crm.leads)})</option>)}
-          </select>
-        </div>}
+        <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}{chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}{pid !== 'all' ? ' · attributed spend' : ''}</span></div>
+        <div className="c360-controls">
+          {canChan && <div className="chan-toggle">
+            {[['all', 'All'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => (
+              <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{lbl}</button>
+            ))}
+          </div>}
+          {multiSrc && <div className="pipe-sel"><label>Pipeline</label>
+            <select value={pid} onChange={(e) => setPid(e.target.value)}>
+              <option value="all">All pipelines ({fmtNumber(crmAll.leads)})</option>
+              {pipesSrc.map((x) => <option key={x.id} value={x.id}>{x.name} ({fmtNumber(x.crm.leads)})</option>)}
+            </select>
+          </div>}
+        </div>
       </div>
       <div className="scorecard">
         <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} />
@@ -772,12 +792,12 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           <p className="caveat">Bookings &amp; shown are derived from each opportunity's pipeline stage position (Caalano Systems stage names), so they track the live pipeline rather than a separate calendar feed.</p>
         </div>
         <div className="card chart-card"><h3>Ad spend by channel</h3><p className="cap">{pid === 'all' ? 'Meta + Google split across the account' : 'Attributed to this pipeline'}</p>
-          {chan.length ? <>
+          {chanPie.length ? <>
             <ResponsiveContainer width="100%" height={190}>
-              <PieChart><Pie data={chan} dataKey="value" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={2} stroke="none">{chan.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => money(v)} /></PieChart>
+              <PieChart><Pie data={chanPie} dataKey="value" nameKey="name" innerRadius={52} outerRadius={82} paddingAngle={2} stroke="none">{chanPie.map((x) => <Cell key={x.name} fill={x.color} />)}</Pie><Tooltip formatter={(v) => money(v)} /></PieChart>
             </ResponsiveContainer>
-            <div className="legend">{chan.map((x) => <span key={x.name}><i className="swatch" style={{ background: x.color }} /> {x.name} {money(x.value)}</span>)}</div>
-          </> : <p className="cap">{multi ? 'No campaigns attributed to this pipeline yet — link them in Settings.' : 'No ad spend in this range.'}</p>}
+            <div className="legend">{chanPie.map((x) => <span key={x.name}><i className="swatch" style={{ background: x.color }} /> {x.name} {money(x.value)}</span>)}</div>
+          </> : <p className="cap">{multiSrc ? 'No campaigns attributed to this pipeline yet — link them in Settings.' : 'No ad spend in this range.'}</p>}
           <div className="c360-mini">
             <div><span className="l">Ad-reported conversions</span><span className="v">{fmtNumber(attr.adConversions)}</span></div>
             <div><span className="l">Open pipeline value</span><span className="v">{money(c.openValue)}</span></div>
@@ -812,7 +832,28 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
             <p className="caveat">Reached = opportunities currently at that stage or beyond (so they passed through it). Step conv = % who moved from the previous stage into this one. Cost / stage = attributed ad spend ÷ reached.</p>
           </div>
         )
-      })() : (b.hasCrm && pipes.length > 1 && <p className="caveat" style={{ marginTop: 12 }}>Pick a pipeline above to see the full funnel pass-through.</p>)}
+      })() : (b.hasCrm && pipesSrc.length > 1 && <p className="caveat" style={{ marginTop: 12 }}>Pick a pipeline above to see the full funnel pass-through.</p>)}
+      {lostReasons && lostReasons.length > 0 && (() => {
+        const totLost = lostReasons.reduce((a, r) => a + r.count, 0) || 1
+        return (
+          <div className="card chart-card" style={{ marginTop: 14 }}>
+            <h3>Why leads are lost{chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'}` : ''}</h3>
+            <p className="cap">Lost / abandoned opportunities by reason{chan !== 'all' ? ' (this channel)' : ''}</p>
+            <div className="pfunnel">
+              {lostReasons.slice(0, 12).map((r, i) => {
+                const pct = (r.count / totLost) * 100
+                return (
+                  <div className="pf-row" key={r.name}>
+                    <span className="pf-stage" title={r.name}>{r.name}</span>
+                    <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, pct)}%`, background: `hsl(${350 - i * 6} 65% 55%)` }}>{fmtNumber(r.count)}</span></span>
+                    <span className="pf-num">{fmtPct(pct, 1)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
       {b.hasCrm && <UtmSection attr={utmAttr} currency={currency} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
     </>

@@ -132,12 +132,82 @@ function utmOf(opp) {
   return { source, medium, campaign, content, term, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null }
 }
 
+// Classify an opportunity's first-touch UTMs into a paid channel so the whole
+// Caalano360 view can pivot Meta-only / Google-only / All. Looks at source +
+// medium + click-id fingerprints.
+const META_RE = /(facebook|instagram|\bfb\b|\bmeta\b|\big\b|fbclid|fb_|ig_)/i
+const GOOGLE_RE = /(google|adwords|youtube|\bgdn\b|gclid|goog|dv360|gclsrc)/i
+function channelOf(u) {
+  const hay = `${u.source || ''} ${u.medium || ''} ${u.campaign || ''} ${u.adId || ''}`.toLowerCase()
+  if (META_RE.test(hay)) return 'meta'
+  if (GOOGLE_RE.test(hay)) return 'google'
+  return 'other'
+}
+
+// Full CRM-style rollup over an arbitrary opportunity subset (one channel, or
+// all). Mirrors buildCrm's shape so the frontend can render tiles, the ordered
+// pipeline funnel, stage pass-through and lost reasons for any channel filter.
+function rollupSubset(opps, idx, reasonName) {
+  let leads = 0, open = 0, won = 0, lost = 0, abandoned = 0, revenue = 0, openValue = 0, booked = 0, shown = 0, cycleSum = 0, cycleN = 0
+  const lostAgg = new Map()
+  for (const o of opps) {
+    leads++
+    const st = String(o.status || '').toLowerCase(); const val = num(o.monetaryValue)
+    const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
+    const isWon = st === 'won'
+    if (isWon) {
+      won++; revenue += val
+      const ca = Date.parse(o.createdAt), sc = Date.parse(o.lastStatusChangeAt)
+      if (ca && sc && sc >= ca) { cycleSum += sc - ca; cycleN++ }
+    } else if (st === 'lost' || st === 'abandoned') {
+      if (st === 'lost') lost++; else abandoned++
+      const rn = reasonName[o.lostReasonId] || (o.lostReasonId ? 'Other' : 'Not set')
+      lostAgg.set(rn, (lostAgg.get(rn) || 0) + 1)
+    } else { open++; openValue += val }
+    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) booked++
+    if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) shown++
+  }
+  // per-pipeline ordered stages with pass-through counts + full crm rollup
+  const byPipe = new Map()
+  for (const o of opps) { const pid = o.pipelineId || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(o) }
+  const pipelines = [...byPipe.entries()].map(([pid, rows]) => {
+    const pi = idx.get(pid); const at = new Map(), openAt = new Map()
+    let l = 0, b = 0, sh = 0, w = 0, ls = 0, op = 0, rev = 0, opv = 0
+    for (const o of rows) {
+      const sid = o.pipelineStageId; at.set(sid, (at.get(sid) || 0) + 1)
+      const st = String(o.status || '').toLowerCase(); const val = num(o.monetaryValue)
+      if (st !== 'lost' && st !== 'abandoned') openAt.set(sid, (openAt.get(sid) || 0) + 1)
+      l++; const stg = pi ? pi.byId[sid] : null; const pos = stg ? stg.pos : -1; const isWon = st === 'won'
+      if (isWon) { w++; rev += val } else if (st === 'lost' || st === 'abandoned') ls++; else { op++; opv += val }
+      if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) b++; if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) sh++
+    }
+    const stages = (pi ? pi.stages : []).map((s) => ({ name: s.name, pos: s.pos, count: at.get(s.id) || 0, active: openAt.get(s.id) || 0 }))
+    const crm = { leads: l, booked: b, shown: sh, won: w, lost: ls, open: op, revenue: Math.round(rev), openValue: Math.round(opv), avgValue: w ? Math.round(rev / w) : 0 }
+    return { id: pid, name: (pi && pi.name) || 'Unnamed pipeline', leads: rows.length, stages, funnel: { leads: l, booked: b, shown: sh, won: w }, crm }
+  }).sort((a, b) => b.leads - a.leads)
+  const closed = won + lost + abandoned
+  return {
+    totals: {
+      leads, open, won, lost, abandoned, booked, shown, revenue: Math.round(revenue), openValue: Math.round(openValue),
+      avgWonValue: won ? Math.round(revenue / won) : 0,
+      closeRate: closed ? +(100 * won / closed).toFixed(1) : 0,
+      convRate: leads ? +(100 * won / leads).toFixed(1) : 0,
+      avgDaysToWon: cycleN ? +(cycleSum / cycleN / 86400000).toFixed(1) : null,
+    },
+    pipelines,
+    lostReasons: [...lostAgg.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+  }
+}
+
 export async function buildAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)
-  const [opps, idx] = await Promise.all([
+  const [opps, pipelines, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, from, to),
-    pipelineStageIndex(locTok, locationId),
+    fetchPipelines(locTok, locationId),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
   ])
+  const idx = stageIndexFrom(pipelines)
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   const dim = { source: new Map(), medium: new Map(), campaign: new Map(), content: new Map(), term: new Map() }
   const bump = (map, keyRaw, o, pi) => {
     const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
@@ -152,10 +222,13 @@ export async function buildAttribution(locationId, from, to) {
     if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) e.shown++
     map.set(key, e)
   }
+  // split opportunities by paid channel for the Caalano360 toggle
+  const buckets = { meta: [], google: [], other: [] }
   let attributed = 0
   for (const o of opps) {
     const u = utmOf(o)
     if (u.source || u.campaign) attributed++
+    buckets[channelOf(u)].push(o)
     const pi = idx.get(o.pipelineId)
     bump(dim.source, u.source, o, pi)
     bump(dim.medium, u.medium, o, pi)
@@ -167,6 +240,12 @@ export async function buildAttribution(locationId, from, to) {
   return {
     connected: true, opps: opps.length, attributed,
     bySource: top(dim.source), byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
+    channels: {
+      all: rollupSubset(opps, idx, reasonName),
+      meta: rollupSubset(buckets.meta, idx, reasonName),
+      google: rollupSubset(buckets.google, idx, reasonName),
+      other: rollupSubset(buckets.other, idx, reasonName),
+    },
   }
 }
 

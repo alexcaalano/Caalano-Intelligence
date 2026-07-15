@@ -304,6 +304,11 @@ tbody tr:hover { background: var(--panel-2); }
 .pipe-sel { display: flex; align-items: center; gap: 8px; }
 .pipe-sel label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .pipe-sel select { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; max-width: 320px; }
+.c360-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chan-toggle { display: inline-flex; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 10px; padding: 3px; gap: 2px; }
+.chan-toggle button { background: transparent; color: var(--muted); border: none; border-radius: 7px; padding: 7px 15px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s; }
+.chan-toggle button:hover { color: var(--text); }
+.chan-toggle button.on { background: var(--accent); color: #fff; }
 
 /* Caalano360 campaign linker */
 .link-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }

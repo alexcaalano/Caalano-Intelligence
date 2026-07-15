@@ -6,7 +6,7 @@
 // function's own URL, so it works on any domain without hard-coding.
 import { exchangeCode, isConnected } from '../lib/ghl.mjs'
 
-const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly']
+const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly', 'users.readonly', 'conversations.readonly']
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 
 const page = (title, body) => new Response(

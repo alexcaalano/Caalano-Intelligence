@@ -1,0 +1,108 @@
+{
+  "generatedAt": "2026-07-15T00:00:00.000Z",
+  "period": { "label": "June 2026", "start": "2026-06-01", "end": "2026-06-30" },
+  "compareLabel": "May 2026",
+  "currency": "AUD",
+  "source": "Reporting Ninja (Meta Ads, Google Ads) + GoHighLevel (Caalano Systems)",
+  "clients": [
+    {
+      "id": "healan-centre",
+      "name": "Healan Centre",
+      "industry": "Healthcare",
+      "meta": {
+        "spend": 3311.99, "impressions": 201266, "clicks": 2823, "leads": 205,
+        "prev": { "spend": 3309.09, "impressions": 225067, "clicks": 2883, "leads": 203 }
+      },
+      "google": {
+        "cost": 1599.99, "impressions": 8170, "clicks": 927, "conversions": 200.95,
+        "prev": { "cost": 1456.21, "impressions": 7929, "clicks": 910, "conversions": 220.05 }
+      }
+    },
+    {
+      "id": "nexia-health",
+      "name": "Nexia Health Care",
+      "industry": "Healthcare",
+      "meta": {
+        "spend": 8268.21, "impressions": 341638, "clicks": 4391, "leads": 270,
+        "prev": { "spend": 8443.66, "impressions": 358275, "clicks": 5550, "leads": 349 }
+      },
+      "google": {
+        "cost": 5628.90, "impressions": 22922, "clicks": 1425, "conversions": 145.0,
+        "prev": { "cost": 5770.61, "impressions": 33071, "clicks": 2075, "conversions": 208.68 }
+      }
+    },
+    {
+      "id": "psychology-hub",
+      "name": "The Psychology Hub",
+      "industry": "Healthcare",
+      "meta": {
+        "spend": 3763.68, "impressions": 182384, "clicks": 5306, "leads": 368,
+        "prev": { "spend": 3646.62, "impressions": 173798, "clicks": 4616, "leads": 314 }
+      },
+      "google": {
+        "cost": 1524.54, "impressions": 6899, "clicks": 529, "conversions": 102.0,
+        "prev": { "cost": 1458.90, "impressions": 6558, "clicks": 574, "conversions": 100.0 }
+      }
+    },
+    {
+      "id": "pool-haus",
+      "name": "Pool Haus",
+      "industry": "Home & Trade",
+      "meta": {
+        "spend": 5064.16, "impressions": 116787, "clicks": 3192, "leads": 53,
+        "prev": { "spend": 3802.74, "impressions": 94264, "clicks": 2642, "leads": 72 }
+      },
+      "google": {
+        "cost": 1462.42, "impressions": 1709, "clicks": 110, "conversions": 4.0,
+        "prev": { "cost": 2077.95, "impressions": 3633, "clicks": 171, "conversions": 6.0 }
+      }
+    },
+    {
+      "id": "rugby-dc",
+      "name": "Rugby Development Coach",
+      "industry": "Sport & Education",
+      "meta": {
+        "spend": 2026.02, "impressions": 200518, "clicks": 4927, "leads": 623,
+        "prev": { "spend": 2743.66, "impressions": 312527, "clicks": 8305, "leads": 511 }
+      },
+      "google": null
+    },
+    {
+      "id": "simchat",
+      "name": "Simchat Health Centre",
+      "industry": "Healthcare",
+      "meta": {
+        "spend": 1500.99, "impressions": 57185, "clicks": 1478, "leads": 159,
+        "prev": { "spend": 1503.97, "impressions": 60437, "clicks": 1399, "leads": 135 }
+      },
+      "google": {
+        "cost": 2541.66, "impressions": 14381, "clicks": 855, "conversions": 111.0,
+        "prev": { "cost": 2529.16, "impressions": 13810, "clicks": 978, "conversions": 141.0 }
+      }
+    }
+  ],
+  "ghl": {
+    "locationName": "Caalano Digital — Agency HQ",
+    "pipelineName": "0. Lead to Sales Pipeline",
+    "openOpportunities": 50,
+    "openValue": 8700,
+    "stages": [
+      { "name": "15 Min - Shown", "count": 8 },
+      { "name": "RFP - Create Proposal", "count": 6 },
+      { "name": "15 Min - Booked", "count": 5 },
+      { "name": "New Lead", "count": 4 },
+      { "name": "15 Min - Confirmed", "count": 3 },
+      { "name": "45 Min - Cancelled", "count": 3 },
+      { "name": "Prop - Sent", "count": 3 },
+      { "name": "No Answer #1", "count": 2 },
+      { "name": "15 Min - Cancel", "count": 2 },
+      { "name": "45 Min - Proposal Ready", "count": 2 },
+      { "name": "45 Min - No Show", "count": 2 },
+      { "name": "Prop - Review Call", "count": 2 },
+      { "name": "CS Enquiry", "count": 2 },
+      { "name": "CS Account Creation", "count": 2 },
+      { "name": "Call Again", "count": 1 },
+      { "name": "45 Min - Scheduled", "count": 1 }
+    ]
+  }
+}

@@ -207,7 +207,7 @@ function GoogleDeep({ deep, currency }) {
   if (!deep?.google) return <EmptyDeep channel="Google Ads" />
   const g = deep.google
   const tot = g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, imp: a.imp + c.impressions, clk: a.clk + c.clicks, conv: a.conv + c.conversions }), { cost: 0, imp: 0, clk: 0, conv: 0 })
-  const mtMax = Math.max(...g.matchTypes.map((x) => x.cost))
+  const mtMax = Math.max(1, ...g.matchTypes.map((x) => x.cost))
   const GRow = ({ n, st, co, im, ck, cv }) => (<tr><td>{n}{st && st !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{st}</span> : null}</td><td>{fmtCurrency(co, currency)}</td><td>{fmtNumber(im)}</td><td>{fmtPct(rate(ck, im), 2)}</td><td>{fmtNumber(cv)}</td><td>{cv ? fmtCurrency(co / cv, currency) : '—'}</td></tr>)
   return (
     <>
@@ -273,19 +273,48 @@ function OverallTab({ client, currency, side }) {
   )
 }
 
+const PRESETS = [
+  { id: 'last_7d', label: 'Last 7 days' },
+  { id: 'last_30d', label: 'Last 30 days' },
+  { id: 'last_month', label: 'Last month' },
+  { id: 'this_month', label: 'This month' },
+]
+
+// Fetch live deep data for the active channel from the Windsor.ai Netlify function.
+function useLiveDeep(clientId, channel, preset) {
+  const [state, setState] = useState({ status: 'idle', data: null })
+  useEffect(() => {
+    if (!channel) { setState({ status: 'idle', data: null }); return }
+    let alive = true
+    setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&preset=${preset}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j && !j.error ? j : null }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, channel, preset])
+  return state
+}
+
+function LiveBadge({ mode, label }) {
+  const map = { live: { t: `● Live · ${label}`, c: 'tk-full' }, snapshot: { t: 'Snapshot · June 2026', c: 'tk-wins' } }
+  const m = map[mode]; if (!m) return null
+  return <div style={{ marginBottom: 10 }}><span className={`tk ${m.c}`}>{m.t}</span></div>
+}
+
 function ClientWorkspace({ client, index, data, onBack }) {
   const [tab, setTab] = useState('overall')
-  const [period, setPeriod] = useState('jun')
-  const [deep, setDeep] = useState(undefined)
-  useEffect(() => {
-    setDeep(undefined)
-    fetch(`data/clients/${client.id}.json`).then((r) => r.ok ? r.json() : null).then(setDeep).catch(() => setDeep(null))
-  }, [client.id])
-  const side = period === 'jun' ? 'cur' : 'prev'
+  const [preset, setPreset] = useState('last_30d')
+  const [baked, setBaked] = useState(undefined)
+  useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
+  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : null
+  const live = useLiveDeep(client.id, channel, preset)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const tabs = [{ id: 'overall', label: 'Overall Business' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
-  const deepReady = deep && (tab === 'meta' ? deep.meta : tab === 'google' ? deep.google : true)
+  const presetLabel = PRESETS.find((p) => p.id === preset)?.label
+  const liveOK = (ch) => live.status === 'ok' && live.data && live.data[ch] && ((live.data[ch].campaigns && live.data[ch].campaigns.length) || (live.data[ch].ads && live.data[ch].ads.length))
+  const srcFor = (ch) => (liveOK(ch) ? live.data : baked)
   return (
     <>
       <div className="cw-head">
@@ -293,16 +322,15 @@ function ClientWorkspace({ client, index, data, onBack }) {
         <div className="cw-top">
           <span className="avatar" style={{ background: acolor(index) }}>{initials(client.name)}</span>
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span></h2><div className="meta">{client.industry}</div></div>
-          <div className="date-sel"><label>Period</label><select value={period} onChange={(e) => setPeriod(e.target.value)}><option value="jun">June 2026</option><option value="may">May 2026</option></select></div>
+          <div className="date-sel"><label>Period</label><select value={preset} onChange={(e) => setPreset(e.target.value)}>{PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select></div>
         </div>
-        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}{(t.id === 'meta' || t.id === 'google') && deep && !deep[t.id] ? <span className="lock">🔒</span> : null}</button>)}</div>
+        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {(tab === 'meta' || tab === 'google') && period === 'may' && <div className="set-note">Deep breakdown was pulled for <b>June 2026</b>. Other date ranges populate live once the Reporting Ninja API backend is connected.</div>}
-        {tab === 'overall' && <OverallTab client={client} currency={data.currency} side={side} />}
+        {tab === 'overall' && <OverallTab client={client} currency={data.currency} side="cur" />}
         {tab === 'crm' && <CrmTab ghl={data.ghl} currency={data.currency} />}
-        {tab === 'meta' && (deep === undefined ? <div className="card">Loading…</div> : <MetaDeep deep={deep} currency={data.currency} />)}
-        {tab === 'google' && (deep === undefined ? <div className="card">Loading…</div> : <GoogleDeep deep={deep} currency={data.currency} />)}
+        {tab === 'meta' && (live.status === 'loading' && !baked ? <div className="card">Loading live Meta data…</div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} /></>)}
+        {tab === 'google' && (live.status === 'loading' && !baked ? <div className="card">Loading live Google data…</div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} /></>)}
       </div>
     </>
   )

@@ -328,6 +328,7 @@ function WeeklyTab({ rows, currency, nonce }) {
               ...w,
               cpl: w.leads ? w.spend / w.leads : 0,
               metaCplV: w.metaLeads ? w.metaSpend / w.metaLeads : 0,
+              gCostConv: w.googleConv ? w.googleSpend / w.googleConv : 0,
               cpba: w.booked ? w.spend / w.booked : 0,
               bookingRate: w.leads ? (w.booked / w.leads) * 100 : 0,
               showRate: w.booked ? (w.shown / w.booked) * 100 : 0,
@@ -372,11 +373,8 @@ function WeeklyTab({ rows, currency, nonce }) {
                   {wk.data.hasMeta && <div className="card chart-card"><h3>Meta Leads</h3><p className="cap">Leads (bars) &amp; Meta CPL (line) by week</p>
                     <WkDual data={W} costKey="metaCplV" costName="CPL" countKey="metaLeads" countName="Leads" kpi={Number(kpis.metaCpl) || null} currency={currency} costColor="#4f7cff" countColor="#bcd0ff" />
                   </div>}
-                  {wk.data.hasGoogle && <div className="card chart-card"><h3>Google Leads</h3><p className="cap">Google conversions by week</p>
-                    <ResponsiveContainer width="100%" height={240}><ComposedChart data={W} margin={{ left: -4, right: 6, top: 10 }}>
-                      <CartesianGrid stroke="var(--border)" vertical={false} /><XAxis dataKey="label" fontSize={11} stroke="var(--muted)" /><YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v) => fmtNumber(v)} />
-                      <Bar dataKey="googleConv" name="Conv." fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={46} />
-                    </ComposedChart></ResponsiveContainer>
+                  {wk.data.hasGoogle && <div className="card chart-card"><h3>Google Leads</h3><p className="cap">Conversions (bars) &amp; cost per conversion (line) by week</p>
+                    <WkDual data={W} costKey="gCostConv" costName="Cost/conv" countKey="googleConv" countName="Conv." kpi={Number(kpis.googleCostConv) || null} currency={currency} costColor="#0e8f6a" countColor="#a7e8d3" />
                   </div>}
                   {wk.data.hasCrm && <>
                     <div className="card chart-card"><h3>Appointments Booked</h3><p className="cap">Appointments (bars) &amp; cost per booked appt (line) by week</p>

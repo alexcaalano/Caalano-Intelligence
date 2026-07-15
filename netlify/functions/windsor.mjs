@@ -318,18 +318,24 @@ function mondayOf(dateStr) {
 async function buildWeekly(c, weeks, key) {
   const today = new Date(); today.setUTCHours(0, 0, 0, 0)
   const dstr = (d) => d.toISOString().slice(0, 10)
-  const curDow = (today.getUTCDay() + 6) % 7
+  // Only report fully completed weeks: the current (in-progress) week is excluded,
+  // so the newest bucket is the week ending last Sunday. If today IS Sunday, this
+  // week has just completed and counts.
+  const curDow = (today.getUTCDay() + 6) % 7 // 0 = Mon .. 6 = Sun
   const curMon = new Date(today); curMon.setUTCDate(curMon.getUTCDate() - curDow)
+  const anchorMon = new Date(curMon); if (curDow !== 6) anchorMon.setUTCDate(anchorMon.getUTCDate() - 7)
   const weekStarts = []
-  for (let i = weeks - 1; i >= 0; i--) { const w = new Date(curMon); w.setUTCDate(w.getUTCDate() - 7 * i); weekStarts.push(dstr(w)) }
+  for (let i = weeks - 1; i >= 0; i--) { const w = new Date(anchorMon); w.setUTCDate(w.getUTCDate() - 7 * i); weekStarts.push(dstr(w)) }
   const wkIndex = new Map(weekStarts.map((w, i) => [w, i]))
   const start = weekStarts[0]
+  const endSun = new Date(anchorMon); endSun.setUTCDate(endSun.getUTCDate() + 6) // last completed Sunday
+  const end = dstr(endSun)
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
   const [fb, gg, opps, pipes] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', 'actions_lead'], start, dstr(today), null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
-    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, dstr(today), null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], start, dstr(today), null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], start, dstr(today), null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', 'actions_lead'], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], start, end, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], start, end, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
   ])
   const B = weekStarts.map((w) => ({ week: w, weekNum: isoWeek(w), metaSpend: 0, gSpend: 0, metaLeads: 0, gConv: 0, crmLeads: 0, booked: 0, shown: 0, won: 0, wonValue: 0 }))
   for (const r of fb) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].metaSpend += num(r.spend); B[i].metaLeads += num(r.actions_lead) }
@@ -356,7 +362,7 @@ async function buildWeekly(c, weeks, key) {
   // Named lost reasons over the window (GHL direct API) for the lost-reasons pie.
   let lostReasons = []
   if (c.ghl && await isConnected().catch(() => false)) {
-    try { const crm = await buildCrm(c.ghl, dstr(start), dstr(today)); lostReasons = crm.lostReasons || [] } catch {}
+    try { const crm = await buildCrm(c.ghl, start, end); lostReasons = crm.lostReasons || [] } catch {}
   }
   return { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, weeks: out, lostReasons }
 }

@@ -639,8 +639,9 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const cpm = t.impressions ? t.spend / t.impressions * 1000 : 0
   const cpl = t.leads ? t.spend / t.leads : 0
   const cpcLink = t.linkClicks ? t.spend / t.linkClicks : 0
-  // No per-campaign previous period, so hide vs-prev deltas while filtered.
-  const pv = (m.prev && !sel) ? m.prev : null
+  // Previous period: whole account, or the selected campaign's own prior-period
+  // totals when filtered, so the vs-prev deltas keep working on a drill-in.
+  const pv = sel ? (selCamp && selCamp.prev ? selCamp.prev : null) : (m.prev || null)
   const D = (fn) => (pv ? fn(pv) : null) // previous-period value or null
   // Daily series. When a campaign is selected, rebuild it from the ad-level
   // daily breakdown filtered to that campaign, so the daily trend reconciles

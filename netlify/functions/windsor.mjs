@@ -96,18 +96,26 @@ function aggMeta(rows, keyField) {
   const m = new Map()
   for (const r of rows) {
     const k = r[keyField]; if (!k) continue
-    const e = m.get(k) || { name: k, campaign: r.campaign || null, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0 }
+    const e = m.get(k) || { name: k, campaign: r.campaign || null, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0 }
     e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks)
-    e.linkClicks += num(r.inline_link_clicks); e.leads += fbLeads(r); e.videoViews += num(r.actions_video_view)
+    e.linkClicks += num(r.inline_link_clicks); e.leads += fbLeads(r); e.videoViews += num(r.actions_video_view); e.reach += num(r.reach)
     m.set(k, e)
   }
   return [...m.values()]
 }
-function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows) {
+function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows) {
   // FIX A: campaign / ad-set counts come from Meta's own per-level breakdowns
   // (de-duplicated at each level), not from summing the ad rows, so they match
   // Meta Ads Manager instead of inflating via cross-ad attribution.
   const campaigns = aggMeta(campRows, 'campaign').map(({ campaign, ...v }) => v).sort((a, b) => b.spend - a.spend)
+  // Previous-period totals per campaign, so the scorecard can still show
+  // vs-prev deltas when the view is filtered to one campaign.
+  const prevCamp = new Map()
+  for (const c of aggMeta(pCampRows || [], 'campaign')) prevCamp.set(c.name, c)
+  for (const c of campaigns) {
+    const p = prevCamp.get(c.name)
+    c.prev = p ? { spend: p.spend, impressions: p.impressions, clicks: p.clicks, linkClicks: p.linkClicks, leads: p.leads, videoViews: p.videoViews, reach: p.reach } : null
+  }
   const adsetsWithParent = aggMeta(adsetRows, 'adset_name').sort((a, b) => b.spend - a.spend)
   const ads = adRows.map((r) => ({
     name: r.ad_name, campaign: r.campaign, adset: r.adset_name,
@@ -139,16 +147,18 @@ async function buildMeta(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const pr = prevRange(from, to)
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
-  const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows] = await Promise.all([
+  const campFields = ['account_id', 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
+  const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
     windsorFetch('facebook', ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
-    windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', campFields, from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
+    pr.from ? windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
   ])
-  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows)
+  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows)
   roll.prev = metaTotals(prevRows)
   roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name, ad: r.ad_name, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && r.ad)
   return roll

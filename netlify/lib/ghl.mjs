@@ -108,6 +108,12 @@ function zonedEndMs(dateStr, tz) {
   const next = new Date(Date.UTC(y, m - 1, d)); next.setUTCDate(next.getUTCDate() + 1)
   return zonedStartMs(next.toISOString().slice(0, 10), tz) - 1
 }
+// Local calendar date (YYYY-MM-DD) of an instant, in `tz`. Use this whenever we
+// display which day something happened on, so it matches the counting windows.
+function zonedDateStr(ms, tz) {
+  if (ms == null || isNaN(ms)) return null
+  return new Date(ms + tzOffsetMs(tz, ms)).toISOString().slice(0, 10)
+}
 
 // --- data pulls (paged, bounded) ---
 // opportunities/search returns the opportunity, its contact AND an inline
@@ -712,14 +718,14 @@ export async function apptTrace(locationId, q, from, to) {
       const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
       for (const ev of (j.events || [])) {
         const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)); if (!cid || !wanted.has(cid)) continue
-        const arr = byCid.get(cid) || []; arr.push({ status: ev.appointmentStatus || ev.status, booked: String(ev.dateAdded || '').slice(0, 10), call: String(ev.startTime || '').slice(0, 10) }); byCid.set(cid, arr)
+        const arr = byCid.get(cid) || []; arr.push({ status: ev.appointmentStatus || ev.status, booked: zonedDateStr(Date.parse(ev.dateAdded), tz), call: zonedDateStr(Date.parse(ev.startTime), tz) }); byCid.set(cid, arr)
       }
     } catch { /* skip */ }
   }
   const results = []
   for (const [cid, o] of wanted) {
     const u = utmOf(o)
-    results.push({ leadCreated: String(o.createdAt || '').slice(0, 10), status: o.status, utmContent: u.content, utmCampaign: u.campaign, appointments: byCid.get(cid) || [] })
+    results.push({ leadCreated: zonedDateStr(Date.parse(o.createdAt), tz), status: o.status, utmContent: u.content, utmCampaign: u.campaign, appointments: byCid.get(cid) || [] })
     if (results.length >= 30) break
   }
   return { tz, q, matchedLeads: wanted.size, results }

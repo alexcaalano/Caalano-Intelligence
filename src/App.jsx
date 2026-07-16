@@ -617,13 +617,28 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const oCamp = mkOutcomeMap(A && A.byCampaign)
   const oTerm = mkOutcomeMap(A && A.byTerm)
   const oCre = mkOutcomeMap(A && A.byCreative)
-  // account CRM totals (every opp lands in exactly one utm_campaign bucket incl. "(not set)")
-  const crmTot = A ? (A.byCampaign || []).reduce((a, x) => ({ booked: a.booked + x.booked, shown: a.shown + x.shown, won: a.won + x.won, revenue: a.revenue + x.revenue }), { booked: 0, shown: 0, won: 0, revenue: 0 }) : null
-  const t = m.totals || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, reach: 0 }
+  // Account totals - the fixed baseline for creative "vs account average" colour
+  // coding, regardless of any drill-in.
+  const acct = m.totals || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, reach: 0 }
+  // When a campaign is filtered, the top scorecard + Caalano360 tiles recompute
+  // for that campaign; otherwise they show the whole account.
+  const selCamp = sel ? (m.campaigns.find((c) => c.name === sel) || null) : null
+  const t = selCamp
+    ? { spend: selCamp.spend, impressions: selCamp.impressions, clicks: selCamp.clicks, linkClicks: selCamp.linkClicks, leads: selCamp.leads, reach: selCamp.reach || 0 }
+    : acct
+  // Caalano360 outcomes: the selected campaign's UTM-matched row, or every
+  // campaign summed (each opp lands in exactly one utm_campaign bucket).
+  const selOc = selCamp ? oCamp.get(unorm(sel)) : null
+  const crmTot = A
+    ? (selCamp
+      ? { booked: selOc ? selOc.booked : 0, shown: selOc ? selOc.shown : 0, won: selOc ? selOc.won : 0, revenue: selOc ? selOc.revenue : 0, cancelled: selOc ? (selOc.cancelled || 0) : 0 }
+      : (A.byCampaign || []).reduce((a, x) => ({ booked: a.booked + x.booked, shown: a.shown + x.shown, won: a.won + x.won, revenue: a.revenue + x.revenue, cancelled: a.cancelled + (x.cancelled || 0) }), { booked: 0, shown: 0, won: 0, revenue: 0, cancelled: 0 }))
+    : null
   const cpm = t.impressions ? t.spend / t.impressions * 1000 : 0
   const cpl = t.leads ? t.spend / t.leads : 0
   const cpcLink = t.linkClicks ? t.spend / t.linkClicks : 0
-  const pv = m.prev || null
+  // No per-campaign previous period, so hide vs-prev deltas while filtered.
+  const pv = (m.prev && !sel) ? m.prev : null
   const D = (fn) => (pv ? fn(pv) : null) // previous-period value or null
   // Daily series. When a campaign is selected, rebuild it from the ad-level
   // daily breakdown filtered to that campaign, so the daily trend reconciles
@@ -648,8 +663,8 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const crePageC = Math.min(crePage, creTotalPages - 1)
   const ads = adsFull.slice(crePageC * CRE_PAGE, crePageC * CRE_PAGE + CRE_PAGE)
   // account averages for creative colour-coding (higher = better, except CPL)
-  const avgLinkCtr = rate(t.linkClicks, t.impressions)
-  const avgCvr = rate(t.leads, t.linkClicks)
+  const avgLinkCtr = rate(acct.linkClicks, acct.impressions)
+  const avgCvr = rate(acct.leads, acct.linkClicks)
   const vidA = adsFull.filter((a) => a.type === 'Video')
   const avgHook = vidA.length ? rate(vidA.reduce((s, a) => s + a.videoViews, 0), vidA.reduce((s, a) => s + a.impressions, 0)) : 0
   const gb = (v, avg) => (avg ? (v >= avg ? 'good' : 'bad') : '')
@@ -663,6 +678,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   }).filter(Boolean)
   return (
     <>
+      {sel && <div className="filt-bar">Filtered to <b>{sel}</b><button className="filt-clear" onClick={() => setSel(null)}>clear ✕</button></div>}
       <div className="scorecard">
         <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown />
         <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
@@ -676,7 +692,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         <Sc label="Leads" value={fmtNumber(t.leads)} cur={t.leads} prev={D((x) => x.leads)} />
         <Sc label="CPL" value={fmtCurrency(cpl, currency)} cur={cpl} prev={D((x) => x.leads ? x.spend / x.leads : 0)} goodWhenDown kpi={kpis.metaCpl ? { text: `Target ${fmtCurrency(kpis.metaCpl, currency)}`, cls: kpiClass(cpl, kpis.metaCpl, true) } : null} />
         <Sc label="CVR (Lead)" value={fmtPct(rate(t.leads, t.linkClicks), 2)} cur={rate(t.leads, t.linkClicks)} prev={D((x) => rate(x.leads, x.linkClicks))} />
-        {crmTot && <Sc label="Scheduled Appts" value={fmtNumber(crmTot.booked)} />}
+        {crmTot && <Sc label="Scheduled Appts" value={<>{fmtNumber(crmTot.booked)}{crmTot.cancelled ? <span className="c360-canc" title={`${crmTot.cancelled} later cancelled`}> ({crmTot.cancelled}c)</span> : null}</>} />}
         {crmTot && <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} />}
       </div>
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>

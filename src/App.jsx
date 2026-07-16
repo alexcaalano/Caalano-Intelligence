@@ -2101,6 +2101,72 @@ function CampaignLinker({ clientId }) {
     </div>
   )
 }
+// Agency-wide contact self-booking tag audit. Walks each Caalano Systems
+// client one at a time (per-request) so we never hit the function timeout, and
+// reports which accounts carry a "customer booked appointment"-style tag, how
+// often it is applied, and the resulting contact self-booking rate.
+function TagAudit({ clients }) {
+  const [st, setSt] = useState({ status: 'idle', rows: [], msg: null })
+  const run = async () => {
+    setSt({ status: 'running', rows: [], msg: null })
+    const rows = []
+    for (const c of clients) {
+      try {
+        const r = await fetch(`/.netlify/functions/windsor?scope=tagaudit&client=${c.id}`)
+        const j = await r.json().catch(() => ({}))
+        if (j && j.connected === false) { setSt({ status: 'idle', rows: [], msg: 'Caalano Systems is not connected yet - connect it first, then re-run.' }); return }
+        rows.push({ id: c.id, name: c.name, a: (j && j.audit) || { error: j.error || 'no data' } })
+      } catch { rows.push({ id: c.id, name: c.name, a: { error: 'request failed' } }) }
+      setSt({ status: 'running', rows: [...rows], msg: null })
+    }
+    setSt({ status: 'done', rows, msg: null })
+  }
+  const withTag = st.rows.filter((r) => r.a && r.a.hasTag).length
+  const missing = st.rows.filter((r) => r.a && r.a.hasCrm && !r.a.hasTag).map((r) => r.name)
+  return (
+    <div className="tag-audit">
+      <div className="ta-head">
+        <div>
+          <div className="ta-t">Contact self-booking tag audit</div>
+          <div className="ta-s">Scans each account for a "customer booked appointment" style tag and how often it is applied, so you can see the contact self-booking rate and which accounts are missing the tag.</div>
+        </div>
+        <button className="print-btn" onClick={run} disabled={st.status === 'running'}>{st.status === 'running' ? `Scanning… ${st.rows.length}/${clients.length}` : st.status === 'done' ? '↻ Re-run' : '▶ Run tag audit'}</button>
+      </div>
+      {st.msg && <p className="cap" style={{ color: 'var(--warn)' }}>{st.msg}</p>}
+      {st.rows.length > 0 && (
+        <>
+          {st.status === 'done' && <p className="cap" style={{ margin: '2px 0 8px' }}><b>{withTag}</b> of {st.rows.length} accounts carry a booking tag.{missing.length ? <> Missing: <b>{missing.join(', ')}</b>.</> : ' All accounts have it.'}</p>}
+          <div className="table-wrap">
+            <table className="tag-audit-tbl">
+              <thead><tr><th>Account</th><th>Tag found</th><th>Tag name(s)</th><th>Applied</th><th>Self-book rate</th><th>Notes</th></tr></thead>
+              <tbody>
+                {st.rows.map((r) => {
+                  const a = r.a || {}
+                  if (a.error) return <tr key={r.id}><td className="ta-nm">{r.name}</td><td colSpan={5} className="ta-err">{a.error}</td></tr>
+                  if (!a.hasCrm) return <tr key={r.id}><td className="ta-nm">{r.name}</td><td colSpan={5} className="ta-muted">no Caalano Systems account</td></tr>
+                  const names = [...new Set([...(a.definedMatches || []), ...(a.appliedNames || [])])]
+                  const tagsReadable = (a.contactTagsAvailable || 0) > 0
+                  return (
+                    <tr key={r.id}>
+                      <td className="ta-nm">{r.name}</td>
+                      <td><span className={`tk ${a.hasTag ? 'tk-full' : 'tk-none'}`}>{a.hasTag ? 'Yes' : 'No'}</span></td>
+                      <td className="ta-tags">{names.length ? names.slice(0, 4).join(', ') + (names.length > 4 ? ` +${names.length - 4}` : '') : '-'}</td>
+                      <td>{tagsReadable ? `${fmtNumber(a.contactsWithTag)} / ${fmtNumber(a.sampled)}` : <span className="ta-muted">not on opps</span>}</td>
+                      <td>{a.selfBookRate != null ? <b>{a.selfBookRate}%</b> : <span className="ta-muted">-</span>}{a.selfBookRate != null && a.booked ? <span className="ta-sub"> ({a.self}/{a.booked} booked)</span> : ''}</td>
+                      <td className="ta-note">{!tagsReadable && a.hasTag ? 'Defined but not returned on opportunities - rate needs a contacts pull.' : a.definedErr ? 'Tag list blocked (scope), applied-scan only.' : a.hasTag ? 'From last ' + fmtNumber(a.sampled) + ' opps.' : 'No booking tag on this account.'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="caveat">The tag is a lifetime flag on the contact, so the self-booking rate is "share of booked deals whose contact self-booked at least once," sampled from the most recent opportunities. For a per-appointment figure we would add the appointments API. Rate is split by channel in the data if you want it surfaced next.</p>
+        </>
+      )}
+    </div>
+  )
+}
+
 function Settings({ config, enabled, setEnabled, onClose }) {
   if (!config) return null
   const w = config.availableAccounts?.windsor || {}
@@ -2116,6 +2182,7 @@ function Settings({ config, enabled, setEnabled, onClose }) {
             <div className="set-stat"><div className="v">{w.gohighlevel ?? '-'}</div><div className="l">Caalano Systems</div></div>
           </div>
           <div className="set-note">Toggle clients on or off, see their mapped accounts, and link each ad campaign to a Caalano Systems pipeline so paid spend attributes correctly in Caalano360. Changes persist in this browser.</div>
+          {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
           {config.clients.map((c) => {
             const on = enabled[c.id] !== false
             const canLink = (c.meta || c.google) && c.ghl

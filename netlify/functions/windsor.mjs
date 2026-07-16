@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -638,6 +638,22 @@ export default async (req) => {
       const audit = await Promise.all(entries.map(async ([id, cc]) => ({ client: id, location: cc.ghl, ...(await auditLocation(cc.ghl)) })))
       return json({ audit }, 200)
     } catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
+  // Contact self-booking tag audit. Per-client (client=<id>) to stay well under
+  // the function timeout; the UI walks the client list one at a time.
+  if (url.searchParams.get('scope') === 'tagaudit') {
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'tagaudit', connected: false, needsSetup: true })
+    const single = CLIENTS[client]
+    try {
+      if (client && single) {
+        if (!single.ghl) return json({ scope: 'tagaudit', connected: true, client, audit: { client, location: null, hasCrm: false } })
+        return json({ scope: 'tagaudit', connected: true, client, audit: { client, location: single.ghl, ...(await tagAudit(single.ghl)) } }, 200)
+      }
+      // No client given: return the list of GHL-enabled client ids to walk.
+      const clients = Object.entries(CLIENTS).filter(([, cc]) => cc.ghl).map(([id]) => id)
+      return json({ scope: 'tagaudit', connected: true, clients }, 200)
+    } catch (e) { return json({ scope: 'tagaudit', connected: true, client, audit: { client, error: String(e.message || e).slice(0, 140) } }, 200) }
   }
 
   // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.

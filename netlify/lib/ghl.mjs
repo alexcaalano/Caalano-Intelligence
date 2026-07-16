@@ -464,6 +464,58 @@ export async function auditLocation(locationId) {
   return out
 }
 
+// Contact-tag audit for the client self-booking tag ("customer booked
+// appointment"). Reports (1) whether a booking-ish tag is DEFINED in the
+// location and (2) how often it is actually APPLIED to opportunities' contacts,
+// so we get per-client coverage and a contact self-booking rate (booked deals
+// whose contact self-booked, split by paid channel).
+const BOOK_TAG_RE = /booked\s*app(t|ointment)|self.?book|customer\s*booked|contact\s*booked|book(ed)?\s*by\s*(customer|contact|self)/i
+export async function tagAudit(locationId, sample = 400) {
+  const locTok = await locationToken(locationId)
+  // 1) Tags defined in the location (authoritative existence check).
+  let definedCount = null, definedErr = null, definedMatches = []
+  try {
+    const j = await ghlGet(locTok, `/locations/${locationId}/tags`, {})
+    const names = (j.tags || []).map((t) => t && t.name).filter(Boolean)
+    definedCount = names.length
+    definedMatches = [...new Set(names.filter((n) => BOOK_TAG_RE.test(n)))]
+  } catch (e) { definedErr = String(e.message || e).replace(/\s+/g, ' ').slice(0, 120) }
+  // 2) Applied coverage across recent opportunities (inline contact tags).
+  const [opps, idx] = await Promise.all([
+    allOpportunities(locTok, locationId, null, null, sample),
+    pipelineStageIndex(locTok, locationId).catch(() => new Map()),
+  ])
+  const appliedNames = new Set()
+  let tagsFieldSeen = 0, contactsWithTag = 0
+  const mk = () => ({ booked: 0, self: 0 })
+  const ch = { all: mk(), meta: mk(), google: mk(), other: mk() }
+  for (const o of opps) {
+    const c = o.contact || {}
+    const tags = Array.isArray(c.tags) ? c.tags : (Array.isArray(o.tags) ? o.tags : null)
+    if (tags != null) tagsFieldSeen++
+    const matched = tags ? tags.filter((t) => BOOK_TAG_RE.test(String(t))) : []
+    if (matched.length) { contactsWithTag++; matched.forEach((t) => appliedNames.add(String(t))) }
+    const pi = idx.get(o.pipelineId); const st = String(o.status || '').toLowerCase()
+    const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
+    const isBooked = st === 'won' || (pi && pi.bookPos != null && pos >= pi.bookPos)
+    if (isBooked) {
+      const cc = channelOf(utmOf(o))
+      ch.all.booked++; ch[cc].booked++
+      if (matched.length) { ch.all.self++; ch[cc].self++ }
+    }
+  }
+  const rate = (x) => (x.booked ? Math.round((x.self / x.booked) * 100) : null)
+  return {
+    hasCrm: true,
+    definedCount, definedErr, definedMatches: definedMatches.slice(0, 12),
+    appliedNames: [...appliedNames].slice(0, 12),
+    sampled: opps.length, contactTagsAvailable: tagsFieldSeen, contactsWithTag,
+    booked: ch.all.booked, self: ch.all.self, selfBookRate: rate(ch.all),
+    byChannel: { meta: { ...ch.meta, rate: rate(ch.meta) }, google: { ...ch.google, rate: rate(ch.google) }, other: { ...ch.other, rate: rate(ch.other) } },
+    hasTag: definedMatches.length > 0 || appliedNames.size > 0,
+  }
+}
+
 // Debug: raw opportunity + attribution shapes to confirm paid-UTM field names.
 export async function sampleAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)

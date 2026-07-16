@@ -242,12 +242,17 @@ async function fetchAppointments(locTok, locationId, from, to) {
   const mark = (contactId, status, addedMs, startTimeMs) => {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
-    const e = byContact.get(contactId) || { bookedInPeriod: false, shownInPeriod: false, _live: false, _cancelled: false }
-    if (!APPT_INVALID_RE.test(s) && inPeriod(addedMs)) {
+    const invalid = APPT_INVALID_RE.test(s), cancelled = APPT_CANCEL_RE.test(s)
+    const e = byContact.get(contactId) || { bookedInPeriod: false, shownByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false }
+    if (!invalid && inPeriod(addedMs)) {
       e.bookedInPeriod = true // cancelled still counts as a booking on its creation day
-      if (APPT_CANCEL_RE.test(s)) e._cancelled = true; else e._live = true
+      if (cancelled) e._cancelled = true; else e._live = true
     }
-    if (s === 'showed' && inPeriod(startTimeMs)) e.shownInPeriod = true
+    if (s === 'showed' && inPeriod(startTimeMs)) e.shownByStatus = true
+    // A live (not cancelled/invalid) call that took place in-period. Lets the
+    // caller fall back to "shown by pipeline stage" when the appointment status
+    // was never set but the opportunity was advanced past the shown stage.
+    if (!invalid && !cancelled && inPeriod(startTimeMs)) e.hasCallInPeriod = true
     byContact.set(contactId, e)
   }
   let events = 0
@@ -269,7 +274,7 @@ async function fetchAppointments(locTok, locationId, from, to) {
     // is cancelled (a reschedule that landed on a live booking is not counted).
     e.cancelledInPeriod = e._cancelled && !e._live
     if (e.bookedInPeriod) bookedContacts++
-    if (e.shownInPeriod) shownContacts++
+    if (e.shownByStatus) shownContacts++
     if (e.cancelledInPeriod) cancelledContacts++
   }
   return { byContact, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
@@ -430,7 +435,7 @@ export async function buildAttribution(locationId, from, to) {
   const ent = (map, keyRaw) => {
     const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
     let e = map.get(key)
-    if (!e) { e = { name: key, leads: 0, booked: 0, shown: 0, cancelled: 0, won: 0, revenue: 0 }; map.set(key, e) }
+    if (!e) { e = { name: key, leads: 0, booked: 0, shown: 0, shownStage: 0, cancelled: 0, won: 0, revenue: 0 }; map.set(key, e) }
     return e
   }
   // Cohort bump: leads / won / revenue on the lead-creation date. When
@@ -485,12 +490,12 @@ export async function buildAttribution(locationId, from, to) {
   // show on the day the call happened. Each is credited to the creative that
   // first brought that contact in (their opportunity's UTMs). Only contacts with
   // an opportunity are counted, so internal / partner meetings never inflate it.
-  const mkAct = () => ({ booked: 0, shown: 0, cancelled: 0 })
+  const mkAct = () => ({ booked: 0, shown: 0, shownStage: 0, cancelled: 0 })
   const chanAct = { all: mkAct(), meta: mkAct(), google: mkAct(), other: mkAct() }
-  let bookedActions = 0, shownActions = 0, cancelledActions = 0
+  let bookedActions = 0, shownActions = 0, shownStageActions = 0, cancelledActions = 0
   if (useAppts) {
     for (const [cid, f] of apptByContact) {
-      if (!f.bookedInPeriod && !f.shownInPeriod) continue
+      if (!f.bookedInPeriod && !f.shownByStatus && !f.hasCallInPeriod) continue
       const o = contactUtm.get(cid); if (!o) continue // no lead we can attribute to
       const u = utmOf(o); const ch = channelOf(u)
       if (f.bookedInPeriod) {
@@ -503,10 +508,24 @@ export async function buildAttribution(locationId, from, to) {
         ent(dim.source, u.source).cancelled++; ent(dim.medium, u.medium).cancelled++; ent(dim.campaign, u.campaign).cancelled++; ent(dim.content, u.content).cancelled++; ent(dim.term, u.term).cancelled++
         const det = sd(u.source); ent(det.medium, u.medium).cancelled++; ent(det.campaign, u.campaign).cancelled++; ent(det.content, u.content).cancelled++
       }
-      if (f.shownInPeriod) {
+      // Shown = explicit "showed" status; else a fallback when the opportunity is
+      // at/beyond the shown pipeline stage (teams who advance the stage instead
+      // of marking the appointment). Both are dated by the in-period call, and
+      // the stage-inferred ones are tracked separately for the (Np) marker.
+      let shownHit = !!f.shownByStatus, viaStage = false
+      if (!shownHit && f.hasCallInPeriod) {
+        const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
+        if (String(o.status || '').toLowerCase() === 'won' || (pi && pi.showPos != null && pos >= pi.showPos)) { shownHit = true; viaStage = true }
+      }
+      if (shownHit) {
         shownActions++; chanAct.all.shown++; chanAct[ch].shown++
         ent(dim.source, u.source).shown++; ent(dim.medium, u.medium).shown++; ent(dim.campaign, u.campaign).shown++; ent(dim.content, u.content).shown++; ent(dim.term, u.term).shown++
         const det = sd(u.source); ent(det.medium, u.medium).shown++; ent(det.campaign, u.campaign).shown++; ent(det.content, u.content).shown++
+        if (viaStage) {
+          shownStageActions++; chanAct.all.shownStage++; chanAct[ch].shownStage++
+          ent(dim.source, u.source).shownStage++; ent(dim.medium, u.medium).shownStage++; ent(dim.campaign, u.campaign).shownStage++; ent(dim.content, u.content).shownStage++; ent(dim.term, u.term).shownStage++
+          ent(det.medium, u.medium).shownStage++; ent(det.campaign, u.campaign).shownStage++; ent(det.content, u.content).shownStage++
+        }
       }
     }
   }
@@ -532,11 +551,11 @@ export async function buildAttribution(locationId, from, to) {
     google: rollupSubset(buckets.google, idx, reasonName),
     other: rollupSubset(buckets.other, idx, reasonName),
   }
-  if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown; chan[k].totals.cancelled = chanAct[k].cancelled } }
+  if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown; chan[k].totals.shownStage = chanAct[k].shownStage; chan[k].totals.cancelled = chanAct[k].cancelled } }
 
   return {
     connected: true, opps: opps.length, attributed, tz,
-    appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, cancelled: cancelledActions },
+    appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, shownStage: shownStageActions, cancelled: cancelledActions },
     bySource, byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
     channels: chan,
   }

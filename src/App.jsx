@@ -29,7 +29,7 @@ function o360Fields(o, spend) {
   if (!o) return { booked: null, cancelled: null, cBook: null, shown: null, cShow: null, won: null, cWon: null, wonVal: null, roas: null, _has360: false }
   return {
     booked: o.booked, cancelled: o.cancelled || 0, cBook: o.booked && spend ? spend / o.booked : null,
-    shown: o.shown, cShow: o.shown && spend ? spend / o.shown : null,
+    shown: o.shown, shownStage: o.shownStage || 0, cShow: o.shown && spend ? spend / o.shown : null,
     won: o.won, cWon: o.won && spend ? spend / o.won : null,
     wonVal: o.revenue, roas: spend ? o.revenue / spend : null, _has360: true,
   }
@@ -80,7 +80,7 @@ function o360Cells(r, currency) {
   return <>
     <td className="c360-col c360-first">{fmtNumber(r.booked || 0)}{r.cancelled ? <span className="c360-canc" title={`${r.cancelled} of these later cancelled`}> ({r.cancelled}c)</span> : null}</td>
     <td className="c360-col">{r.cBook != null ? fmtCurrency(r.cBook, currency) : '-'}</td>
-    <td className="c360-col">{fmtNumber(r.shown || 0)}</td>
+    <td className="c360-col">{fmtNumber(r.shown || 0)}{r.shownStage ? <span className="c360-infer" title={`${r.shownStage} counted from pipeline stage (not marked shown)`}> ({r.shownStage}p)</span> : null}</td>
     <td className="c360-col">{r.cShow != null ? fmtCurrency(r.cShow, currency) : '-'}</td>
     <td className="c360-col">{fmtNumber(r.won || 0)}</td>
     <td className="c360-col">{r.cWon != null ? fmtCurrency(r.cWon, currency) : '-'}</td>
@@ -711,7 +711,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>}
-      <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled' : ''}</span></div>
+      <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} /><thead>{has360 && <C360GrpRow left={8} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="linkCtr" sort={campSort} on={onCampSort}>Link CTR</SortTh><SortTh k="hook" sort={campSort} on={onCampSort}>Hook</SortTh><SortTh k="leads" sort={campSort} on={onCampSort}>Leads</SortTh><SortTh k="cvr" sort={campSort} on={onCampSort}>CVR</SortTh><SortTh k="cpl" sort={campSort} on={onCampSort}>CPL</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} />}</tr></thead>
         <tbody>{sortRows(m.campaigns.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oCamp.get(unorm(c.name)), c.spend) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''}</span></div>
@@ -757,7 +757,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
                   <div className="stats">
                     <div className="st"><div className="l">Booked</div><div className="v">{fmtNumber(o.booked)}{o.cancelled ? <span className="c360-canc" title={`${o.cancelled} later cancelled`}> ({o.cancelled}c)</span> : null}</div></div>
                     <div className="st"><div className="l">C/Book</div><div className="v">{o.booked ? fmtCurrency(a.spend / o.booked, currency) : '-'}</div></div>
-                    <div className="st"><div className="l">Shown</div><div className="v">{fmtNumber(o.shown)}</div></div>
+                    <div className="st"><div className="l">Shown</div><div className="v">{fmtNumber(o.shown)}{o.shownStage ? <span className="c360-infer" title={`${o.shownStage} from pipeline stage`}> ({o.shownStage}p)</span> : null}</div></div>
                     <div className="st"><div className="l">Won</div><div className="v">{fmtNumber(o.won)}</div></div>
                     <div className="st"><div className="l">C/Won</div><div className="v">{o.won ? fmtCurrency(a.spend / o.won, currency) : '-'}</div></div>
                     <div className="st"><div className="l">Won val</div><div className="v">{fmtCurrency(o.revenue, currency)}</div></div>
@@ -895,7 +895,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
           ))}</div> : <p className="cap">No location data in this range{g.geo ? '.' : ' - geo not available for this account.'}</p>}
         </div>
       </div>
-      <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled' : ''}</span></div>
+      <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} /><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
         <tbody>{sortRows(g.campaigns.map((c) => ({ ...gMetrics(c), ...o360Fields(oCampG.get(unorm(c.name)), c.cost) })), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
@@ -1379,7 +1379,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const attribData = (utmAttr && utmAttr.status === 'ok' && utmAttr.data && utmAttr.data.attribution) || null
   const channels = (attribData && attribData.channels) || null
   const canChan = !!channels && ((channels.meta?.totals?.leads || 0) > 0 || (channels.google?.totals?.leads || 0) > 0)
-  const norm360 = (t) => ({ leads: t.leads, booked: t.booked, shown: t.shown, cancelled: t.cancelled || 0, won: t.won, revenue: t.revenue, avgValue: t.avgWonValue, openValue: t.openValue, lost: t.lost, open: t.open })
+  const norm360 = (t) => ({ leads: t.leads, booked: t.booked, shown: t.shown, shownStage: t.shownStage || 0, cancelled: t.cancelled || 0, won: t.won, revenue: t.revenue, avgValue: t.avgWonValue, openValue: t.openValue, lost: t.lost, open: t.open })
   const chSel = chan !== 'all' && channels ? channels[chan] : null
   const pipesSrc = chSel ? (chSel.pipelines || []) : pipes
   // Booked / Shown come from the date-of-action attribution feed so the blended
@@ -1390,7 +1390,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const crmAll = chSel
     ? norm360(chSel.totals)
     : (channels && channels.all && uid === 'all')
-      ? { ...base.crm, booked: channels.all.totals.booked, shown: channels.all.totals.shown, cancelled: channels.all.totals.cancelled || 0 }
+      ? { ...base.crm, booked: channels.all.totals.booked, shown: channels.all.totals.shown, shownStage: channels.all.totals.shownStage || 0, cancelled: channels.all.totals.cancelled || 0 }
       : base.crm
   const multiSrc = pipesSrc.length > 1
   const c = pid === 'all' ? crmAll : (pipesSrc.find((x) => x.id === pid)?.crm || crmAll)
@@ -1522,7 +1522,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} cur={spend} prev={pv ? pv.adSpend : null} />
         <Sc label="Total Leads" value={fmtNumber(c.leads)} cur={c.leads} prev={pc ? pc.leads : null} />
         <Sc label="Bookings Made" value={<>{fmtNumber(c.booked)}{c.cancelled ? <span className="c360-canc" title={`${c.cancelled} later cancelled`}> ({c.cancelled}c)</span> : null}</>} cur={c.booked} prev={pc ? pc.booked : null} />
-        <Sc label="Shown Bookings" value={fmtNumber(c.shown)} cur={c.shown} prev={pc ? pc.shown : null} />
+        <Sc label="Shown Bookings" value={<>{fmtNumber(c.shown)}{c.shownStage ? <span className="c360-infer" title={`${c.shownStage} counted from pipeline stage`}> ({c.shownStage}p)</span> : null}</>} cur={c.shown} prev={pc ? pc.shown : null} />
         {showSelfBook && <Sc label="Self-Booked Rate" value={fmtPct(sbRate, 1)} kpi={{ text: `${fmtNumber(sbSelf)}/${fmtNumber(sbBooked)} self-served`, cls: 'info' }} />}
         <Sc label={useClosed ? 'Won (closed)' : 'Won (created)'} value={fmtNumber(dWon)} cur={useClosed ? null : c.won} prev={!useClosed && pc ? pc.won : null} />
         <Sc label={useClosed ? 'Revenue (won in period)' : 'Revenue (created)'} value={money(dRev)} cur={useClosed ? null : c.revenue} prev={!useClosed && pc ? pc.revenue : null} />

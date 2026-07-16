@@ -1722,7 +1722,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
                   {unmatchedAd.length ? <ul className="attr-list">
                     {unmatchedAd.slice(0, 8).map((cc) => {
                       const sg = suggest(cc.name)
-                      return <li key={cc.source + cc.name}><span className="attr-nm" title={cc.name}>{srcBadge(cc.source)} {cc.name}</span><span className="attr-x">{money(cc.spend)}{sg ? <em title={`Unmatched CRM campaign "${sg}" looks related`}> · looks like "{sg}"</em> : ''}</span></li>
+                      return <li key={cc.source + cc.name} className="attr-li-col"><div className="attr-row"><span className="attr-nm" title={cc.name}>{srcBadge(cc.source)} {cc.name}</span><span className="attr-x">{money(cc.spend)}</span></div>{sg ? <div className="attr-sug" title={`Unmatched CRM campaign "${sg}" looks related`}>looks like &ldquo;{sg}&rdquo;</div> : null}</li>
                     })}
                     {unmatchedAd.length > 8 && <li className="attr-more">+{unmatchedAd.length - 8} more</li>}
                   </ul> : <p className="attr-empty">Every spending campaign matched a utm_campaign.</p>}

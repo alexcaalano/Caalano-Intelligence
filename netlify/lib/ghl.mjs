@@ -160,14 +160,16 @@ function contactIdOf(o) { return o.contactId || (o.contact && (o.contact.id || o
 // Real booked calendar appointments per contact. GHL keeps appointments
 // (calendar events) as a SEPARATE object from the opportunity pipeline stage,
 // so a lead can have a genuinely booked call while its opportunity was never
-// advanced past the intake stage. We pull appointments directly and join them
-// to opportunities by contactId, so a real booked call counts as "Booked"
-// against the creative/campaign regardless of pipeline stage. The window
-// extends well past `to` because an appointment for a lead created in-period is
-// usually scheduled days or weeks out.
-// A booked appointment counts as Booked unless it was cancelled or invalid. A
-// no-show still booked the call (it just was not attended), so it counts toward
-// Booked but not Shown - keeping the funnel Booked >= Shown.
+// advanced past intake. We pull appointments directly and return, per contact,
+// whether they have any booked / shown appointment. The caller joins these to
+// opportunities by contactId, so a lead counts as Booked / Shown on its
+// OPPORTUNITY-CREATION date (the day the lead came in) if that contact has an
+// appointment, no matter when the call itself is scheduled. Because only lead
+// contacts (those with an opportunity in the window) are ever looked up,
+// internal/partner meetings on the same calendars never inflate the counts.
+// The fetch window reaches back a little and well forward so a far-future call
+// booked by an in-period lead is still captured. A no-show still booked the
+// call; cancelled/invalid never count. Shown requires the call to be attended.
 const APPT_CANCEL_RE = /(cancel|invalid)/i
 async function fetchAppointments(locTok, locationId, from, to) {
   const byContact = new Map()
@@ -177,14 +179,12 @@ async function fetchAppointments(locTok, locationId, from, to) {
     calendars = j.calendars || j.calendar || []
   } catch (e) { return { byContact, connected: false, error: String(e.message || e).slice(0, 120) } }
   const DAY = 86400000
-  const startMs = from ? new Date(from + 'T00:00:00Z').getTime() - 7 * DAY : Date.now() - 400 * DAY
-  const endMs = to ? new Date(to + 'T23:59:59Z').getTime() + 120 * DAY : Date.now() + 120 * DAY
+  const startMs = (from ? new Date(from + 'T00:00:00Z').getTime() : Date.now() - 400 * DAY) - 7 * DAY
+  const endMs = (to ? new Date(to + 'T23:59:59Z').getTime() : Date.now()) + 180 * DAY
   const mark = (contactId, status) => {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
     const e = byContact.get(contactId) || { booked: 0, shown: 0 }
-    // Booked unless cancelled/invalid (no-shows still booked the call); shown
-    // only when actually attended.
     if (!APPT_CANCEL_RE.test(s)) e.booked++
     if (s === 'showed') e.shown++
     byContact.set(contactId, e)
@@ -588,6 +588,28 @@ export async function tagAudit(locationId, sample = 400) {
     byChannel: { meta: { ...ch.meta, rate: rate(ch.meta) }, google: { ...ch.google, rate: rate(ch.google) }, other: { ...ch.other, rate: rate(ch.other) } },
     hasTag: definedMatches.length > 0 || appliedNames.size > 0,
   }
+}
+
+// Debug (PII-free): for a window, how many leads created in it have a booked /
+// shown appointment - i.e. exactly what the opportunity-creation-date model
+// counts. Returns creative/campaign names and dates only, never contact names.
+export async function apptCohortCheck(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const [opps, appts] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to),
+    fetchAppointments(locTok, locationId, from, to).catch((e) => ({ byContact: new Map(), connected: false, error: String(e.message || e).slice(0, 120) })),
+  ])
+  const byC = appts.byContact instanceof Map ? appts.byContact : new Map()
+  const out = { from, to, oppsInWindow: opps.length, apptConnected: !!appts.connected, apptEvents: appts.events || 0, apptError: appts.error || null, bookedInCohort: 0, shownInCohort: 0, examples: [], leadDates: {} }
+  for (const o of opps) {
+    const d = String(o.createdAt || '').slice(0, 10); out.leadDates[d] = (out.leadDates[d] || 0) + 1
+    const a = byC.get(contactIdOf(o))
+    const booked = !!(a && a.booked > 0); const shown = !!(a && a.shown > 0)
+    if (booked) out.bookedInCohort++
+    if (shown) out.shownInCohort++
+    if (booked && out.examples.length < 15) { const u = utmOf(o); out.examples.push({ leadCreated: d, utmContent: u.content, utmCampaign: u.campaign, shown }) }
+  }
+  return out
 }
 
 // Debug: raw opportunity + attribution shapes to confirm paid-UTM field names.

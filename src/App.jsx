@@ -1377,6 +1377,71 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           </div>
         )
       })()}
+      {b.hasCrm && attribData && camps.length > 0 && (() => {
+        const oCamp = mkOutcomeMap(attribData.byCampaign)
+        const src = chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : null
+        const rows = camps
+          .filter((cc) => cc.spend > 0 && (!src || cc.source === src))
+          .map((cc) => {
+            const o = oCamp.get(unorm(cc.name))
+            const won = o ? o.won : null
+            const revenue = o ? o.revenue : null
+            const booked = o ? o.booked : null
+            return {
+              name: cc.name, source: cc.source, spend: cc.spend, leads: cc.conv,
+              booked, won, revenue,
+              cpl: cc.conv ? cc.spend / cc.conv : null,
+              roas: revenue != null ? revenue / cc.spend : null,
+              cpa: won ? cc.spend / won : null,
+              matched: !!o,
+            }
+          })
+          .sort((a, z) => z.spend - a.spend)
+        if (!rows.length) return null
+        const tot = rows.reduce((a, r) => ({ spend: a.spend + r.spend, leads: a.leads + r.leads, won: a.won + (r.won || 0), revenue: a.revenue + (r.revenue || 0) }), { spend: 0, leads: 0, won: 0, revenue: 0 })
+        const totRoas = tot.spend ? tot.revenue / tot.spend : 0
+        const matchedRev = rows.filter((r) => r.matched).length
+        const roasCls = (v) => v == null ? '' : v >= 3 ? 'good' : v >= 1 ? 'warn' : 'bad'
+        return (
+          <div className="card chart-card" style={{ marginTop: 14 }}>
+            <h3>Revenue &amp; ROAS by campaign</h3>
+            <p className="cap">Ad spend joined to Caalano Systems won revenue by campaign (UTM matched){src ? ` · ${src} only` : ''}</p>
+            <div className="table-wrap">
+              <table className="camp-roas">
+                <thead><tr>
+                  <th>Campaign</th><th>Src</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Won</th><th>Cost/Won</th><th>Revenue</th><th>ROAS</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.source + r.name}>
+                      <td className="camp-nm" title={r.name}>{r.name}</td>
+                      <td><span className={`src-b ${r.source === 'Meta' ? 'meta' : 'google'}`}>{r.source === 'Meta' ? 'M' : 'G'}</span></td>
+                      <td>{money(r.spend)}</td>
+                      <td>{fmtNumber(r.leads)}</td>
+                      <td>{r.cpl != null ? money(r.cpl) : '-'}</td>
+                      <td>{r.matched ? fmtNumber(r.won) : <span className="faint" title="No UTM-matched opportunities for this campaign">n/a</span>}</td>
+                      <td>{r.cpa != null ? money(r.cpa) : '-'}</td>
+                      <td>{r.matched ? money(r.revenue) : '-'}</td>
+                      <td className={`roas-c ${roasCls(r.roas)}`}>{r.roas != null ? `${r.roas.toFixed(2)}×` : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr>
+                  <td>Total ({rows.length})</td><td></td>
+                  <td>{money(tot.spend)}</td>
+                  <td>{fmtNumber(tot.leads)}</td>
+                  <td>{tot.leads ? money(tot.spend / tot.leads) : '-'}</td>
+                  <td>{fmtNumber(tot.won)}</td>
+                  <td>{tot.won ? money(tot.spend / tot.won) : '-'}</td>
+                  <td>{money(tot.revenue)}</td>
+                  <td className={`roas-c ${roasCls(totRoas)}`}>{totRoas ? `${totRoas.toFixed(2)}×` : '-'}</td>
+                </tr></tfoot>
+              </table>
+            </div>
+            <p className="caveat">Revenue is UTM-attributed won value for opportunities <b>created</b> in this window ({matchedRev} of {rows.length} campaigns matched a utm_campaign). Campaigns showing n/a had spend but no UTM-matched opportunities - check UTM tagging on their landing pages.</p>
+          </div>
+        )
+      })()}
       {b.hasCrm && (() => {
         const adLeads = (p.metaLeads || 0) + (p.googleConv || 0)
         const crmLeads = b.crm.leads

@@ -585,6 +585,20 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
   .ufun-cost { grid-area: cost; align-self: center; }
 }
 
+/* Revenue & ROAS by campaign (Caalano360) */
+.camp-roas { min-width: 760px; }
+.camp-roas tbody tr, .camp-roas tfoot tr { cursor: default; }
+.camp-roas tfoot td { border-top: 2px solid var(--border-2); font-weight: 760; color: var(--text); }
+.camp-roas .camp-nm { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.camp-roas .faint { color: var(--faint); }
+.src-b { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: #fff; font-size: 10px; font-weight: 800; }
+.src-b.meta { background: #4f7cff; }
+.src-b.google { background: #12b886; }
+.roas-c { font-variant-numeric: tabular-nums; font-weight: 700; }
+.roas-c.good { color: var(--pos); }
+.roas-c.warn { color: var(--warn); }
+.roas-c.bad { color: var(--neg); }
+
 /* ============ Mobile responsiveness (<=900px). Desktop is unaffected. ============ */
 .alerts-2 { grid-template-columns: 1fr 1fr; }
 @media (max-width: 760px) { .alerts-2 { grid-template-columns: 1fr; } }

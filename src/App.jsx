@@ -625,7 +625,22 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const cpcLink = t.linkClicks ? t.spend / t.linkClicks : 0
   const pv = m.prev || null
   const D = (fn) => (pv ? fn(pv) : null) // previous-period value or null
-  const daily = (m.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpl: d.leads ? d.spend / d.leads : 0, cpm: d.impressions ? d.spend / d.impressions * 1000 : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpc: d.clicks ? d.spend / d.clicks : 0 }))
+  // Daily series. When a campaign is selected, rebuild it from the ad-level
+  // daily breakdown filtered to that campaign, so the daily trend reconciles
+  // with the campaign / ad-set / creative tables (all from the same ad-level
+  // pull) instead of showing the account-wide date breakdown, which Meta
+  // returns with different totals.
+  const dailySrc = (sel && Array.isArray(m.adDaily)) ? (() => {
+    const dm = new Map()
+    for (const r of m.adDaily) {
+      if (r.campaign !== sel) continue
+      const e = dm.get(r.date) || { date: r.date, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0 }
+      e.spend += r.spend; e.impressions += r.impressions; e.clicks += r.clicks; e.linkClicks += r.linkClicks; e.leads += r.leads
+      dm.set(r.date, e)
+    }
+    return [...dm.values()].sort((a, b) => a.date.localeCompare(b.date))
+  })() : (m.daily || [])
+  const daily = dailySrc.map((d) => ({ ...d, label: dayLabel(d.date), cpl: d.leads ? d.spend / d.leads : 0, cpm: d.impressions ? d.spend / d.impressions * 1000 : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpc: d.clicks ? d.spend / d.clicks : 0 }))
   const adsets = sel ? m.adsets.filter((a) => a.campaign === sel) : m.adsets
   const adsFull = sel ? m.ads.filter((a) => a.campaign === sel) : m.ads
   const CRE_PAGE = 15
@@ -665,7 +680,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         {crmTot && <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} />}
       </div>
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
-        <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day</p>
+        <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : ' · whole account'}</p>
         <ResponsiveContainer width="100%" height={250}>
           <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -865,10 +880,10 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
         </div>
       </div>
       <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched)' : ''}</span></div>
-      <div className="table-wrap"><table><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} /><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
         <tbody>{sortRows(g.campaigns.map((c) => ({ ...gMetrics(c), ...o360Fields(oCampG.get(unorm(c.name)), c.cost) })), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
-      <div className="table-wrap"><table><GHead first="Ad group" o360 sort={aSort} on={onASort} />
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} /><GHead first="Ad group" o360 sort={aSort} on={onASort} />
         <tbody>{sortRows(adGroups.map((c) => ({ ...gMetrics(c), ...o360Fields(oAgG.get(unorm(c.name)), c.cost) })), aSort).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms</span></div>
       <div className="table-wrap"><table><thead><tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh></tr></thead>

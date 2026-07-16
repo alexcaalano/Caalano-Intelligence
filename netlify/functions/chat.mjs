@@ -45,7 +45,9 @@ ${JSON.stringify(context).slice(0, 24000)}`
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 900, system, messages: turns }),
+      // thinking disabled: Sonnet 5 defaults to adaptive thinking, which can
+      // consume the whole max_tokens budget and leave no text block.
+      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 900, thinking: { type: 'disabled' }, system, messages: turns }),
     })
     const j = await r.json().catch(() => ({}))
     if (!r.ok) return json({ error: (j.error && j.error.message) || `AI error ${r.status}` }, 502)

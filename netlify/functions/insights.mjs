@@ -10,7 +10,10 @@ async function callClaude(apiKey, prompt) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
+    // thinking disabled: Sonnet 5 runs adaptive thinking by default, which can
+    // eat the whole max_tokens budget and return no text block for a simple
+    // generation task. Disabling keeps the full budget for the answer.
+    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1500, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] }),
   })
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error((j.error && j.error.message) || `AI error ${r.status}`)
@@ -113,7 +116,7 @@ Be specific and numeric, reference the weeks by label (e.g. W27), and keep it un
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1500, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] }),
     })
     const j = await r.json().catch(() => ({}))
     if (!r.ok) return json({ error: (j.error && j.error.message) || `AI error ${r.status}` }, 502)

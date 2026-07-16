@@ -1326,9 +1326,14 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   }
   return (
     <>
+      <div className="print-head">
+        <div className="print-brand"><span className="print-logo">360</span><div><div className="print-t">Caalano360 report</div><div className="print-s">Prepared by Caalano Digital</div></div></div>
+        <div className="print-meta"><div className="print-cn">{client.name}</div><div className="print-s">{rangeLabel(range)}{chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''} · generated {new Date().toLocaleDateString()}</div></div>
+      </div>
       <div className="c360-head">
         <div className="section-title" style={{ margin: 0 }}>Caalano360 <span className="sub">· blended paid + Caalano Systems · {rangeLabel(range)}{chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}{uid !== 'all' ? ` · ${users.find((u) => u.id === uid)?.name || 'user'}` : ''}{pid !== 'all' ? ' · attributed spend' : ''}</span></div>
         <div className="c360-controls">
+          <button className="print-btn no-print" onClick={() => window.print()} title="Export this view as a PDF (print to PDF)">⤓ Export PDF</button>
           {canChan && <div className="chan-toggle">
             {[['all', 'All'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => (
               <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{lbl}</button>

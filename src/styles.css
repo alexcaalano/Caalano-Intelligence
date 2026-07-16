@@ -683,3 +683,38 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
   .scorecard { grid-template-columns: repeat(2, 1fr); }
   .cre-grid { grid-template-columns: 1fr; }
 }
+
+/* Print-only report header (Caalano360 PDF export). Hidden on screen. */
+.print-head { display: none; }
+.print-btn { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); font-size: 12px; font-weight: 700; padding: 7px 12px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
+.print-btn:hover { background: var(--elev); }
+
+/* ============ Print / PDF export (Caalano360). Flips to a light, ink-friendly palette. ============ */
+@media print {
+  :root {
+    --bg: #ffffff; --panel: #ffffff; --panel-2: #f7f9fc; --elev: #ffffff;
+    --border: #d9deea; --border-2: #c4ccdb; --text: #131722; --muted: #4a5261; --faint: #737c8c;
+    --shadow: none;
+  }
+  @page { margin: 12mm; }
+  html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .side, .mtop, .head, .nav-overlay, .cw-head .back, .subtabs, .c360-controls,
+  .no-print, .refresh-btn, .ai-btn, .settings-btn, .burger, .attr-diag, .th-card.pace-card .caveat { display: none !important; }
+  .shell { display: block !important; }
+  .main { padding: 0 !important; }
+  .cw-head { position: static !important; padding: 0 !important; margin: 0 !important; }
+  .cw-top { margin-bottom: 8px; }
+  .c360-head { display: none !important; }
+  .print-head { display: flex !important; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 12px; margin-bottom: 14px; border-bottom: 2px solid var(--border-2); }
+  .print-brand { display: flex; align-items: center; gap: 11px; }
+  .print-logo { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: linear-gradient(135deg, #6d5efc, #9b8cff); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: -.02em; }
+  .print-t { font-size: 16px; font-weight: 800; color: #131722; }
+  .print-s { font-size: 11px; color: #5b6473; }
+  .print-meta { text-align: right; }
+  .print-cn { font-size: 15px; font-weight: 700; color: #131722; }
+  .card, .chart-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; border: 1px solid var(--border) !important; }
+  .scorecard { break-inside: avoid; }
+  .ai-card, .th-card, .table-wrap { break-inside: avoid; }
+  .recharts-responsive-container { break-inside: avoid; }
+  a[href]::after { content: ''; }
+}

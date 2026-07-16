@@ -619,19 +619,22 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .pace-bud-sub { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--faint); }
 .pace-bud-sub b { color: var(--text); }
 
-/* Unified ad -> revenue funnel (Caalano360) */
-.ufun { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
-.ufun-stage { display: grid; grid-template-columns: 150px 1fr 170px; align-items: baseline; gap: 12px; padding: 11px 14px; background: var(--panel-2); border: 1px solid var(--border); border-left: 3px solid var(--brand); border-radius: 11px; }
-.ufun-lbl { font-size: 12px; font-weight: 700; color: var(--muted); }
-.ufun-val { font-size: 20px; font-weight: 760; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
-.ufun-cost { text-align: right; font-size: 12px; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
-.ufun-conn { display: flex; align-items: center; gap: 7px; padding: 3px 0 3px 20px; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.ufun-arrow { color: var(--brand-2); font-weight: 800; font-size: 13px; line-height: 1; }
+/* Unified ad -> revenue funnel diagram (Caalano360) */
+.funl2 { display: flex; flex-direction: column; margin-top: 6px; }
+.funl2-row { display: grid; grid-template-columns: 120px 1fr 158px; align-items: center; gap: 12px; }
+.funl2-lbl { font-size: 12px; font-weight: 700; color: var(--muted); text-align: right; white-space: nowrap; }
+.funl2-track { display: flex; justify-content: center; }
+.funl2-bar { height: 40px; min-width: 52px; border-radius: 9px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: width .25s ease; }
+.funl2-bar.end { background: repeating-linear-gradient(135deg, var(--panel-2), var(--panel-2) 9px, var(--panel) 9px, var(--panel) 18px); border: 1px dashed var(--border-2); box-shadow: none; }
+.funl2-val { font-size: 15px; font-weight: 780; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; padding: 0 8px; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.funl2-bar.end .funl2-val { color: var(--text); text-shadow: none; }
+.funl2-cost { font-size: 12px; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.funl2-conn { text-align: center; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; padding: 3px 0; }
 @media (max-width: 640px) {
-  .ufun-stage { grid-template-columns: 1fr auto; grid-template-areas: "lbl cost" "val cost"; gap: 2px 12px; }
-  .ufun-lbl { grid-area: lbl; }
-  .ufun-val { grid-area: val; }
-  .ufun-cost { grid-area: cost; align-self: center; }
+  .funl2-row { grid-template-columns: 74px 1fr 92px; gap: 7px; }
+  .funl2-lbl { font-size: 10.5px; white-space: normal; }
+  .funl2-cost { font-size: 10px; white-space: normal; }
+  .funl2-val { font-size: 13px; }
 }
 
 /* Revenue & ROAS by campaign (Caalano360) */

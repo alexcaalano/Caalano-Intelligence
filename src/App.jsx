@@ -1599,28 +1599,40 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         return (
           <div className="card chart-card" style={{ marginTop: 14 }}>
             <h3>Full funnel: ad spend → revenue</h3><p className="cap">{fs.lbl} · cost per step &amp; step conversion{chan === 'all' && (pid !== 'all' || uid !== 'all') ? ' · whole account (ignores pipeline/user filter)' : ''}</p>
-            <div className="ufun">
-              {stages.map((s, i) => {
-                const cost = costOf(s.key)
-                const hue = 210 + Math.round((i / (stages.length - 1)) * -70)
-                const nxt = stages[i + 1]
-                let connText = null
-                if (nxt) {
-                  if (nxt.key === 'impr') connText = null
-                  else if (nxt.key === 'revenue') connText = fWon ? `${convLbl.revenue} ${money(fRev / fWon)}` : null
-                  else connText = s.val ? `${convLbl[nxt.key]} ${fmtPct((nxt.val / s.val) * 100, 1)}` : `${convLbl[nxt.key]} -`
-                }
-                return (
-                  <React.Fragment key={s.key}>
-                    <div className="ufun-stage" style={{ borderLeftColor: `hsl(${hue} 70% 52%)` }}>
-                      <span className="ufun-lbl">{s.label}</span>
-                      <span className="ufun-val">{s.money ? money(s.val) : fmtNumber(s.val)}</span>
-                      <span className="ufun-cost">{cost != null ? `${costLbl[s.key]} ${money(cost)}` : s.key === 'revenue' && sp ? `ROAS ${(fRev / sp).toFixed(2)}×` : s.key === 'spend' ? 'input' : ''}</span>
-                    </div>
-                    {connText && <div className="ufun-conn"><span className="ufun-arrow">↓</span> {connText}</div>}
-                  </React.Fragment>
-                )
-              })}
+            <div className="funl2">
+              {(() => {
+                const body = stages.filter((s) => s.key !== 'spend' && s.key !== 'revenue')
+                const topVal = Math.max(1, ...body.map((s) => s.val || 0))
+                const widthOf = (v) => 16 + 84 * Math.pow(Math.max(0, v) / topVal, 0.35)
+                return stages.map((s, i) => {
+                  const cost = costOf(s.key)
+                  const hue = 210 + Math.round((i / (stages.length - 1)) * -70)
+                  const nxt = stages[i + 1]
+                  let connText = null
+                  if (nxt) {
+                    if (nxt.key === 'impr') connText = null
+                    else if (nxt.key === 'revenue') connText = fWon ? `${convLbl.revenue} ${money(fRev / fWon)}` : null
+                    else connText = s.val ? `${convLbl[nxt.key]} ${fmtPct((nxt.val / s.val) * 100, 1)}` : `${convLbl[nxt.key]} -`
+                  }
+                  const isEnd = s.key === 'spend' || s.key === 'revenue'
+                  const w = isEnd ? 100 : widthOf(s.val)
+                  const costTxt = cost != null ? `${costLbl[s.key]} ${money(cost)}` : s.key === 'revenue' && sp ? `ROAS ${(fRev / sp).toFixed(2)}×` : s.key === 'spend' ? 'input' : ''
+                  return (
+                    <React.Fragment key={s.key}>
+                      <div className="funl2-row">
+                        <span className="funl2-lbl">{s.label}</span>
+                        <div className="funl2-track">
+                          <div className={`funl2-bar${isEnd ? ' end' : ''}`} style={{ width: `${w}%`, background: isEnd ? undefined : `linear-gradient(90deg, hsl(${hue} 72% 46%), hsl(${hue} 72% 58%))` }}>
+                            <span className="funl2-val">{s.money ? money(s.val) : fmtNumber(s.val)}</span>
+                          </div>
+                        </div>
+                        <span className="funl2-cost">{costTxt}</span>
+                      </div>
+                      {connText && <div className="funl2-conn">↓ {connText}</div>}
+                    </React.Fragment>
+                  )
+                })
+              })()}
             </div>
             <p className="caveat">Spend / impressions / clicks are {fs.lbl === 'whole account' ? 'account' : fs.lbl} paid; leads → won come from Caalano Systems (leads = opportunities created). Cost per step = spend ÷ that step.{useClosed ? ' Won uses the Deal-won basis.' : ''}</p>
           </div>

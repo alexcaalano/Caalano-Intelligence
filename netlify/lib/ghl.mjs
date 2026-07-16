@@ -683,6 +683,48 @@ export async function tagAudit(locationId, sample = 400) {
   }
 }
 
+// Debug (PII-free): trace every lead whose creative/campaign UTM matches `q`,
+// with the exact date each of that lead's appointments was booked (dateAdded)
+// and its call date (startTime) + status, so we can see which day a booking
+// lands on. Returns dates, creative/campaign names and statuses only.
+export async function apptTrace(locationId, q, from, to) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const DAY = 86400000
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  const wopps = await allOpportunities(locTok, locationId, wideFrom, to, 1800)
+  const ql = String(q || '').toLowerCase()
+  const wanted = new Map() // contactId -> opp (matching the creative/campaign query)
+  for (const o of wopps) {
+    const u = utmOf(o)
+    const hay = `${u.content || ''} ${u.campaign || ''}`.toLowerCase()
+    if (ql && hay.includes(ql)) { const cid = contactIdOf(o); if (cid && !wanted.has(cid)) wanted.set(cid, o) }
+  }
+  const byCid = new Map()
+  let calendars = []
+  try { const j = await ghlGet(locTok, '/calendars/', { locationId }); calendars = j.calendars || j.calendar || [] } catch (e) { return { tz, q, error: String(e.message || e).slice(0, 160) } }
+  const startMs = (fromMs != null ? fromMs : Date.now() - 400 * DAY) - 30 * DAY
+  const endMs = (to ? zonedEndMs(to, tz) : Date.now()) + 180 * DAY
+  for (const cal of calendars) {
+    const calId = cal.id || cal._id || cal.calendarId; if (!calId) continue
+    try {
+      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
+      for (const ev of (j.events || [])) {
+        const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)); if (!cid || !wanted.has(cid)) continue
+        const arr = byCid.get(cid) || []; arr.push({ status: ev.appointmentStatus || ev.status, booked: String(ev.dateAdded || '').slice(0, 10), call: String(ev.startTime || '').slice(0, 10) }); byCid.set(cid, arr)
+      }
+    } catch { /* skip */ }
+  }
+  const results = []
+  for (const [cid, o] of wanted) {
+    const u = utmOf(o)
+    results.push({ leadCreated: String(o.createdAt || '').slice(0, 10), status: o.status, utmContent: u.content, utmCampaign: u.campaign, appointments: byCid.get(cid) || [] })
+    if (results.length >= 30) break
+  }
+  return { tz, q, matchedLeads: wanted.size, results }
+}
+
 // Debug (PII-free): for a window, the date-of-action booked / shown counts -
 // bookings created in the window and calls shown in the window, credited via a
 // wide opportunity lookback. Returns creative/campaign names and dates only.

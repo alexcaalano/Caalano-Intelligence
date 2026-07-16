@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, apptCohortCheck, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, apptCohortCheck, apptTrace, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -688,6 +688,15 @@ export default async (req) => {
     }
     if (out.crmTz && out.metaTz) out.aligned = out.crmTz === out.metaTz
     return json({ scope: 'tz', ...out }, 200, true)
+  }
+
+  // Debug (PII-free): trace a creative's leads and their appointment dates.
+  if (url.searchParams.get('scope') === 'appttrace') {
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'appttrace', connected: false, needsSetup: true })
+    const single = CLIENTS[client]
+    if (!single || !single.ghl) return json({ scope: 'appttrace', error: `client ${client} has no Caalano Systems location` }, 404)
+    try { return json({ scope: 'appttrace', client, trace: await apptTrace(single.ghl, url.searchParams.get('q') || '', from, to) }, 200) }
+    catch (e) { return json({ scope: 'appttrace', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
   // Debug (PII-free): booked/shown cohort check for one client + window.

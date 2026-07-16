@@ -231,10 +231,11 @@ export async function bookedTrends(locationId, from, to) {
 export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
   const locTok = await locationToken(locationId)
   const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
-  const opps = await allOpportunities(locTok, locationId, back, to, 3000)
+  const CAP = 2500 // allOpportunities pages up to ~25×100
+  const opps = await allOpportunities(locTok, locationId, back, to, CAP)
   const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
   const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
-  const capped = opps.length >= 3000
+  const capped = opps.length >= CAP
   const mk = () => ({ won: 0, revenue: 0 })
   const total = mk(), byPipeline = {}, byUser = {}, ch = { meta: mk(), google: mk(), other: mk() }
   for (const o of opps) {

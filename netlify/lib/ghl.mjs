@@ -586,6 +586,52 @@ export async function tagAudit(locationId, sample = 400) {
   }
 }
 
+// Debug: raw calendar + appointment shapes so we can confirm the live field
+// names (contactId, appointmentStatus) and whether the calendars scope is
+// readable at all. Also reports how many in-window opportunities each
+// appointment's contact matches, to prove the contactId join.
+export async function sampleAppointments(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const out = { locationId, from, to, calendars: null, calendarsError: null, sampleCalendars: [], events: 0, sampleEvents: [], statuses: {}, oppContactIds: 0, matchedContacts: 0 }
+  let calendars = []
+  try {
+    const j = await ghlGet(locTok, '/calendars/', { locationId })
+    calendars = j.calendars || j.calendar || []
+    out.calendars = calendars.length
+    out.sampleCalendars = calendars.slice(0, 20).map((c) => ({ id: c.id || c._id || c.calendarId, name: c.name, isActive: c.isActive }))
+  } catch (e) { out.calendarsError = String(e.message || e).slice(0, 200); return out }
+  const DAY = 86400000
+  const startMs = from ? new Date(from + 'T00:00:00Z').getTime() - 7 * DAY : Date.now() - 60 * DAY
+  const endMs = to ? new Date(to + 'T23:59:59Z').getTime() + 120 * DAY : Date.now() + 120 * DAY
+  const evContactIds = new Set()
+  for (const cal of calendars) {
+    const calId = cal.id || cal._id || cal.calendarId
+    if (!calId) continue
+    try {
+      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
+      const events = j.events || j.appointments || []
+      for (const ev of events) {
+        out.events++
+        const status = ev.appointmentStatus || ev.status || '(none)'
+        out.statuses[status] = (out.statuses[status] || 0) + 1
+        const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
+        if (cid) evContactIds.add(cid)
+        if (out.sampleEvents.length < 5) out.sampleEvents.push({ keys: Object.keys(ev).slice(0, 40), contactId: cid, appointmentStatus: ev.appointmentStatus, status: ev.status, title: ev.title, startTime: ev.startTime })
+      }
+    } catch (e) { if (!out.eventsError) out.eventsError = String(e.message || e).slice(0, 200) }
+  }
+  // Join against in-window opportunity contacts.
+  try {
+    const opps = await allOpportunities(locTok, locationId, from, to)
+    const oppCids = new Set(opps.map((o) => contactIdOf(o)).filter(Boolean))
+    out.oppContactIds = oppCids.size
+    out.matchedContacts = [...evContactIds].filter((id) => oppCids.has(id)).length
+    out.sampleOppContactIds = [...oppCids].slice(0, 5)
+    out.sampleEventContactIds = [...evContactIds].slice(0, 5)
+  } catch (e) { out.oppError = String(e.message || e).slice(0, 160) }
+  return out
+}
+
 // Debug: raw opportunity + attribution shapes to confirm paid-UTM field names.
 export async function sampleAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)

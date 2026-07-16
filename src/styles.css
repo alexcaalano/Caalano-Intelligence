@@ -719,6 +719,12 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 }
 @media print { .cc-dock { display: none !important; } }
 
+/* Per-client tracking diagnostics (Settings) */
+.cd-wrap { margin-top: 10px; }
+.cd-toggle { width: 100%; text-align: left; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; font-weight: 700; color: var(--text); cursor: pointer; }
+.cd-toggle:hover { background: var(--elev); border-color: var(--border-2); }
+.cd-sub { font-weight: 500; color: var(--faint); margin-left: 6px; }
+
 /* Contact tag audit (Settings) */
 .tag-audit { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 15px 16px; margin: 0 0 16px; }
 .ta-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }

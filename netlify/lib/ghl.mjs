@@ -629,6 +629,22 @@ export async function sampleAppointments(locationId, from, to) {
     out.sampleOppContactIds = [...oppCids].slice(0, 5)
     out.sampleEventContactIds = [...evContactIds].slice(0, 5)
   } catch (e) { out.oppError = String(e.message || e).slice(0, 160) }
+  // Wide join: 60-day opportunity lookback, to prove the contactId join works
+  // at all and reveal which creatives a booked appointment would credit. If
+  // this matches while the narrow window does not, the fix is the date window,
+  // not the id join.
+  try {
+    const DAY2 = 86400000
+    const wideFrom = new Date((to ? new Date(to + 'T23:59:59Z').getTime() : Date.now()) - 60 * DAY2).toISOString().slice(0, 10)
+    const wideTo = to || new Date().toISOString().slice(0, 10)
+    const wopps = await allOpportunities(locTok, locationId, wideFrom, wideTo, 2000)
+    const byCid = new Map()
+    for (const o of wopps) { const cid = contactIdOf(o); if (cid && !byCid.has(cid)) byCid.set(cid, o) }
+    out.wide = { from: wideFrom, to: wideTo, opps: wopps.length, oppContactIds: byCid.size }
+    const matched = [...evContactIds].filter((id) => byCid.has(id))
+    out.wide.matchedContacts = matched.length
+    out.wide.matchedExamples = matched.slice(0, 12).map((id) => { const u = utmOf(byCid.get(id)); return { contactId: id, created: String(byCid.get(id).createdAt || '').slice(0, 10), utmContent: u.content, utmCampaign: u.campaign } })
+  } catch (e) { out.wideError = String(e.message || e).slice(0, 160) }
   return out
 }
 

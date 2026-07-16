@@ -570,6 +570,27 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .th-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); margin: 8px 0 6px; }
 .th-bar span { display: block; height: 100%; }
 
+/* Attribution diagnostics (Caalano360) */
+.attr-diag { padding: 0; }
+.attr-diag > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; }
+.attr-diag > summary::-webkit-details-marker { display: none; }
+.attr-sum-t { font-size: 14px; font-weight: 700; color: var(--text); }
+.attr-sum-t::before { content: '▸'; color: var(--muted); margin-right: 8px; font-size: 11px; }
+.attr-diag[open] .attr-sum-t::before { content: '▾'; }
+.attr-body { padding: 0 18px 16px; }
+.attr-note { font-size: 12.5px; line-height: 1.5; color: var(--muted); background: rgba(245,165,36,.09); border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 10px; padding: 10px 13px; margin: 8px 0 4px; }
+.attr-note b { color: var(--text); }
+.attr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 12px; }
+@media (max-width: 760px) { .attr-cols { grid-template-columns: 1fr; } }
+.attr-h { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+.attr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.attr-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; }
+.attr-nm { display: flex; align-items: center; gap: 7px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.attr-x { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; flex-shrink: 0; }
+.attr-x em { color: var(--faint); font-style: italic; }
+.attr-more { color: var(--faint); font-size: 11.5px; }
+.attr-empty { font-size: 12px; color: var(--faint); margin: 0; }
+
 /* Goal pacing (Caalano360) */
 .pace-budget { background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; padding: 13px 15px; }
 .pace-bud-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }

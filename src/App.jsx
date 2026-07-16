@@ -1582,6 +1582,65 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           </div>
         )
       })()}
+      {b.hasCrm && attribData && camps.length > 0 && (() => {
+        const oCamp = mkOutcomeMap(attribData.byCampaign)
+        const adNames = new Set(camps.map((cc) => unorm(cc.name)).filter(Boolean))
+        const unmatchedAd = camps.filter((cc) => cc.spend > 0 && !oCamp.has(unorm(cc.name))).sort((a, z) => z.spend - a.spend)
+        const notSet = (attribData.byCampaign || []).find((x) => x.name === '(not set)') || null
+        const unmatchedUtm = (attribData.byCampaign || []).filter((x) => x.name !== '(not set)' && x.leads > 0 && !adNames.has(unorm(x.name))).sort((a, z) => (z.won - a.won) || (z.revenue - a.revenue) || (z.leads - a.leads))
+        // Only worth showing if there is an actual gap to close.
+        const lostRev = unmatchedUtm.reduce((s, x) => s + x.revenue, 0) + (notSet ? notSet.revenue : 0)
+        const gapSpend = unmatchedAd.reduce((s, x) => s + x.spend, 0)
+        if (!unmatchedAd.length && !unmatchedUtm.length && !(notSet && notSet.leads)) return null
+        const opps = attribData.opps || 0, attributed = attribData.attributed || 0
+        const cov = opps ? (attributed / opps) * 100 : null
+        const covCls = cov == null ? '' : cov >= 80 ? 'good' : cov >= 50 ? 'warn' : 'bad'
+        const toks = (s) => new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^\d+$/.test(w)))
+        const suggest = (name) => {
+          const a = toks(name); if (!a.size) return null
+          let best = null, bs = 0
+          for (const cnd of unmatchedUtm) { const bb = toks(cnd.name); let s = 0; for (const w of a) if (bb.has(w)) s++; const score = s / Math.max(1, Math.min(a.size, bb.size)); if (score > bs) { bs = score; best = cnd } }
+          return bs >= 0.34 && best ? best.name : null
+        }
+        return (
+          <details className="card th-card attr-diag" style={{ marginTop: 14 }}>
+            <summary>
+              <span className="attr-sum-t">Attribution diagnostics</span>
+              <span className={`th-cov ${covCls}`}>{cov == null ? 'no CRM data' : `${cov.toFixed(0)}% of leads UTM-tagged`}</span>
+            </summary>
+            <div className="attr-body">
+              <p className="cap" style={{ marginTop: 4 }}>Where paid spend and CRM revenue do not tie together. Fixing UTM tags at the source is what makes the ROAS-by-campaign numbers trustworthy.</p>
+              {notSet && notSet.leads > 0 && (
+                <div className="attr-note">
+                  <b>{fmtNumber(notSet.leads)} leads</b> ({fmtNumber(notSet.won)} won, {money(notSet.revenue)}) arrived with <b>no utm_campaign at all</b>. These can never be tied to a campaign until UTM tagging is added on the landing pages / lead forms.
+                </div>
+              )}
+              <div className="attr-cols">
+                <div>
+                  <div className="attr-h">Ad spend with no CRM match{gapSpend > 0 ? ` · ${money(gapSpend)}` : ''}</div>
+                  {unmatchedAd.length ? <ul className="attr-list">
+                    {unmatchedAd.slice(0, 8).map((cc) => {
+                      const sg = suggest(cc.name)
+                      return <li key={cc.source + cc.name}><span className="attr-nm" title={cc.name}>{srcBadge(cc.source)} {cc.name}</span><span className="attr-x">{money(cc.spend)}{sg ? <em title={`Unmatched CRM campaign "${sg}" looks related`}> · looks like "{sg}"</em> : ''}</span></li>
+                    })}
+                    {unmatchedAd.length > 8 && <li className="attr-more">+{unmatchedAd.length - 8} more</li>}
+                  </ul> : <p className="attr-empty">Every spending campaign matched a utm_campaign.</p>}
+                </div>
+                <div>
+                  <div className="attr-h">CRM revenue with no spend match{lostRev > 0 ? ` · ${money(lostRev)}` : ''}</div>
+                  {unmatchedUtm.length ? <ul className="attr-list">
+                    {unmatchedUtm.slice(0, 8).map((x) => (
+                      <li key={x.name}><span className="attr-nm" title={x.name}>{x.name}</span><span className="attr-x">{fmtNumber(x.leads)} leads · {fmtNumber(x.won)} won · {money(x.revenue)}</span></li>
+                    ))}
+                    {unmatchedUtm.length > 8 && <li className="attr-more">+{unmatchedUtm.length - 8} more</li>}
+                  </ul> : <p className="attr-empty">Every tagged campaign matched a spend row.</p>}
+                </div>
+              </div>
+              <p className="caveat">A utm_campaign that carries the ad campaign ID (or a shortened slug) instead of the exact campaign name will land here even though it is really the same campaign - the "looks like" hint flags the likely pair. Set the campaign to pipeline links in Settings to force a match for reporting.</p>
+            </div>
+          </details>
+        )
+      })()}
       {b.hasCrm && trend.status !== 'error' && (() => {
         const W = (trend.weeks || []).map((w) => ({ ...w, roas: w.spend ? +(w.wonValue / w.spend).toFixed(2) : 0 }))
         const hasData = W.some((w) => w.spend > 0 || w.leads > 0)

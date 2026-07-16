@@ -1217,6 +1217,11 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const [wonBasis, setWonBasis] = useState('created') // 'created' (marketing) | 'closed' (revenue)
   const [trendMetric, setTrendMetric] = useState('money') // 'money' | 'funnel'
   const trend = useWeeklyBlend(client.id, 13, nonce)
+  const kpis = loadKpis(client.id)
+  const [ai, setAi] = useState(() => loadInsights(client.id + ':360'))
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiErr, setAiErr] = useState(null)
+  useEffect(() => { setAi(loadInsights(client.id + ':360')); setAiErr(null) }, [client.id])
   useEffect(() => { setPid('all'); setChan('all'); setUid('all'); setWonBasis('created') }, [client.id])
   useEffect(() => { setPid('all') }, [chan, uid])
   // User + channel are separate filters over the same CRM feed; only one at a
@@ -1288,6 +1293,37 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const stageMax = activeStages ? Math.max(1, ...activeStages.map((s) => s.count)) : 1
   const stageName = pid !== 'all' ? pipesSrc.find((x) => x.id === pid)?.name : (pipesSrc.length === 1 ? pipesSrc[0].name : null)
   const srcBadge = (s) => <span className="src-badge" style={{ background: s === 'Meta' ? '#4f7cff' : '#12b886' }}>{s === 'Meta' ? 'M' : 'G'}</span>
+  const genInsights = async () => {
+    if (aiLoading) return
+    setAiLoading(true); setAiErr(null)
+    try {
+      const oCamp = attribData ? mkOutcomeMap(attribData.byCampaign) : null
+      const topCampaigns = camps.slice(0, 8).map((cc) => {
+        const o = oCamp ? oCamp.get(unorm(cc.name)) : null
+        return { name: cc.name, source: cc.source, spend: cc.spend, leads: cc.conv, won: o ? o.won : null, revenue: o ? o.revenue : null, roas: o && cc.spend ? o.revenue / cc.spend : null }
+      })
+      const chTot = (x) => x ? { leads: x.totals.leads, booked: x.totals.booked, shown: x.totals.shown, won: x.totals.won, revenue: x.totals.revenue } : null
+      const payload = {
+        mode: 'blend', clientName: client.name, period: rangeLabel(range),
+        scope: (chan === 'all' && pid === 'all' && uid === 'all') ? 'whole account' : 'filtered view',
+        blend: {
+          spend, metaSpend: p.metaSpend, googleSpend: p.googleSpend, impressions: p.impressions, clicks: p.clicks,
+          leads: c.leads, metaLeads: p.metaLeads, googleLeads: p.googleConv,
+          booked: c.booked, shown: c.shown, won: c.won, revenue: c.revenue, avgDeal: c.avgValue,
+          prev: pc ? { spend: pv.adSpend, leads: pc.leads, booked: pc.booked, won: pc.won, revenue: pc.revenue } : null,
+          wonClosed: wonClosed ? { won: wonClosed.total.won, revenue: wonClosed.total.revenue } : null,
+          channels: channels ? { meta: chTot(channels.meta), google: chTot(channels.google) } : null,
+          topCampaigns, lostReasons: lostReasons || [],
+          targets: { wkSpend: kpis.wkSpend, cpl: kpis.cpl, cpba: kpis.cpba, cpa: kpis.cpa, bookingRate: kpis.bookingRate },
+        },
+      }
+      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      const rec = { insights: j.insights, period: j.period || rangeLabel(range), generatedAt: j.generatedAt || new Date().toISOString(), model: j.model }
+      saveInsights(client.id + ':360', rec); setAi(rec)
+    } catch (e) { setAiErr(String(e.message || e)) } finally { setAiLoading(false) }
+  }
   return (
     <>
       <div className="c360-head">
@@ -1337,6 +1373,93 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label={useClosed ? 'ROAS *' : 'ROAS'} value={spend ? `${roas.toFixed(2)}×` : '-'} cur={useClosed ? null : (spend ? roas : null)} prev={!useClosed && pv && pc && pv.adSpend ? pc.revenue / pv.adSpend : null} />
         <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} cur={rate(c.won, c.leads)} prev={pc ? rate(pc.won, pc.leads) : null} />
       </div>
+      <div className="card ai-card" style={{ marginTop: 14 }}>
+        <div className="ai-head">
+          <div className="ai-title">✨ AI insights {ai ? <span className="sub">· {ai.period} · generated {new Date(ai.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads this blended view and tells you what it means</span>}</div>
+          <button className="ai-btn" onClick={genInsights} disabled={aiLoading}>{aiLoading ? 'Generating…' : ai ? '↻ Regenerate' : '✨ Generate AI insights'}</button>
+        </div>
+        {aiErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{aiErr}</p>}
+        {aiLoading ? <Spinner label="Claude is analysing the whole picture…" />
+          : ai ? <MdText text={ai.insights} />
+            : <p className="cap" style={{ margin: 0 }}>Generate a written read of this client's blended Meta + Google spend against their Caalano Systems funnel, revenue and targets for {rangeLabel(range)}. It only runs when you click, and stays saved to this client until you regenerate.</p>}
+      </div>
+      {(() => {
+        const hasTarget = [kpis.wkSpend, kpis.cpl, kpis.cpba, kpis.cpa, kpis.bookingRate].some((v) => Number(v) > 0)
+        if (!hasTarget || (spend <= 0 && c.leads <= 0)) return null
+        const wholeAccount = chan === 'all' && pid === 'all' && uid === 'all'
+        // Period elapsed (local calendar day, matching the range presets).
+        const dOf = (s) => new Date(s + 'T00:00:00')
+        const DAY = 86400000
+        const fromD = dOf(range.from), toD = dOf(range.to), todayD = dOf(iso(new Date()))
+        const totalDays = Math.max(1, Math.round((toD - fromD) / DAY) + 1)
+        const endD = todayD < toD ? todayD : toD
+        const elapsedDays = todayD < fromD ? 0 : Math.max(1, Math.round((endD - fromD) / DAY) + 1)
+        const inProgress = todayD <= toD
+        const fracEl = Math.min(1, elapsedDays / totalDays)
+        // Budget pacing (account-level target only, so whole-account scope only).
+        const wk = Number(kpis.wkSpend) || 0
+        const budget = wholeAccount && wk > 0 ? (() => {
+          const daily = wk / 7
+          const periodBudget = daily * totalDays
+          const expected = daily * elapsedDays
+          const projected = elapsedDays ? (spend / elapsedDays) * totalDays : spend
+          const paceRatio = expected ? spend / expected : 0
+          const off = Math.abs(paceRatio - 1)
+          const cls = off <= 0.1 ? 'good' : 'warn'
+          const word = paceRatio > 1.1 ? 'ahead of pace' : paceRatio < 0.9 ? 'behind pace' : 'on pace'
+          return { periodBudget, expected, projected, paceRatio, cls, word }
+        })() : null
+        // Efficiency KPIs vs target (reflect the active filter).
+        const eff = [
+          kpis.cpl > 0 && { l: 'Cost / Lead', v: c.leads ? spend / c.leads : null, t: Number(kpis.cpl), under: true },
+          kpis.cpba > 0 && { l: 'Cost / Booked', v: c.booked ? spend / c.booked : null, t: Number(kpis.cpba), under: true },
+          kpis.cpa > 0 && { l: 'Cost / Won', v: c.won ? spend / c.won : null, t: Number(kpis.cpa), under: true },
+          kpis.bookingRate > 0 && { l: 'Booking Rate', v: c.leads ? (c.booked / c.leads) * 100 : null, t: Number(kpis.bookingRate), under: false, pct: true },
+        ].filter(Boolean)
+        const pctBar = (n) => `${Math.min(100, Math.max(0, n * 100))}%`
+        return (
+          <div className="card th-card pace-card" style={{ marginTop: 14 }}>
+            <div className="th-head">
+              <h3>Goal pacing</h3>
+              <span className="th-cov" style={{ background: 'var(--panel-2)', color: 'var(--muted)' }}>{Math.round(fracEl * 100)}% of {rangeLabel(range).toLowerCase()} elapsed{inProgress ? '' : ' (complete)'}</span>
+            </div>
+            {budget && (
+              <div className="pace-budget">
+                <div className="pace-bud-top">
+                  <span><b>{money(spend)}</b> of {money(Math.round(budget.periodBudget))} budget</span>
+                  <span className={`pace-word ${budget.cls}`}>{budget.word}</span>
+                </div>
+                <div className="pace-track">
+                  <span className="pace-fill" style={{ width: pctBar(spend / budget.periodBudget) }} />
+                  <span className="pace-mark" style={{ left: pctBar(budget.expected / budget.periodBudget) }} title={`Today's pace: ${money(Math.round(budget.expected))}`} />
+                </div>
+                <div className="pace-bud-sub">
+                  <span>Pace to date: {money(Math.round(budget.expected))}</span>
+                  {inProgress && <span>Projected {rangeLabel(range).toLowerCase()}: <b>{money(Math.round(budget.projected))}</b></span>}
+                </div>
+              </div>
+            )}
+            {eff.length > 0 && (
+              <div className="th-grid" style={{ marginTop: budget ? 14 : 0 }}>
+                {eff.map((e) => {
+                  const hit = e.v == null ? null : e.under ? e.v <= e.t : e.v >= e.t
+                  const cls = hit == null ? '' : hit ? 'good' : 'bad'
+                  const val = e.v == null ? '-' : e.pct ? fmtPct(e.v, 1) : money(e.v)
+                  const tgt = e.pct ? `${e.t}%` : money(e.t)
+                  return (
+                    <div className="th-stat" key={e.l}>
+                      <div className="th-l">{e.l}</div>
+                      <div className={`th-v ${cls}`}>{val}</div>
+                      <div className="th-sub">Target {e.under ? '≤' : '≥'} {tgt} {hit == null ? '' : hit ? '· on target' : '· off target'}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <p className="caveat">{budget ? 'Budget pace assumes even daily spend from your weekly target. ' : ''}Efficiency targets reflect the current filter{wholeAccount ? '' : ' (channel / pipeline / user)'}. Cost per won uses lead-created wins. Set targets in Settings.</p>
+          </div>
+        )
+      })()}
       {b.hasCrm && (p.impressions > 0 || p.adSpend > 0) && (() => {
         const fs = chan === 'meta' ? { lbl: 'Meta', spend: p.metaSpend, impr: p.metaImpr || 0, clicks: p.metaClicks || 0, crm: channels?.meta?.totals }
           : chan === 'google' ? { lbl: 'Google', spend: p.googleSpend, impr: p.googleImpr || 0, clicks: p.googleClicks || 0, crm: channels?.google?.totals }

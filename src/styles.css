@@ -570,6 +570,19 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .th-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); margin: 8px 0 6px; }
 .th-bar span { display: block; height: 100%; }
 
+/* Goal pacing (Caalano360) */
+.pace-budget { background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; padding: 13px 15px; }
+.pace-bud-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
+.pace-bud-top b { color: var(--text); font-size: 15px; }
+.pace-word { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.pace-word.good { color: var(--pos); background: rgba(23,178,106,.13); }
+.pace-word.warn { color: var(--warn); background: rgba(245,165,36,.14); }
+.pace-track { position: relative; height: 12px; border-radius: 6px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); margin: 10px 0 8px; overflow: hidden; }
+.pace-fill { position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, #4f7cff, #6f8dff); border-radius: 6px; }
+.pace-mark { position: absolute; top: -2px; width: 2px; height: 16px; background: var(--text); border-radius: 2px; }
+.pace-bud-sub { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--faint); }
+.pace-bud-sub b { color: var(--text); }
+
 /* Unified ad -> revenue funnel (Caalano360) */
 .ufun { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
 .ufun-stage { display: grid; grid-template-columns: 150px 1fr 170px; align-items: baseline; gap: 12px; padding: 11px 14px; background: var(--panel-2); border: 1px solid var(--border); border-left: 3px solid var(--brand); border-radius: 11px; }

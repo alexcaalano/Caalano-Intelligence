@@ -5,11 +5,82 @@
 // Requires ANTHROPIC_API_KEY in Netlify env.
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
+// Shared: call Claude and normalise the response into { insights, model }.
+async function callClaude(apiKey, prompt) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error((j.error && j.error.message) || `AI error ${r.status}`)
+  const text = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim()
+  if (!text) throw new Error('empty AI response')
+  return { insights: text, model: j.model || 'claude-sonnet-5' }
+}
+
+const n0 = (v) => (v == null || isNaN(v) ? 0 : Math.round(v))
+const pct = (a, b) => (b ? ((a / b) * 100).toFixed(1) : '0.0')
+
+// Blended Caalano360 briefing: interprets the whole-picture snapshot for the
+// selected period (paid + CRM outcomes + targets), not the weekly board.
+async function blendInsights(apiKey, body) {
+  const { clientName, period, scope, blend: b } = body
+  if (!b) throw new Error('no blend data supplied')
+  const roas = b.spend ? (b.revenue / b.spend).toFixed(2) : '0.00'
+  const lines = []
+  lines.push(`Spend $${n0(b.spend)} (Meta $${n0(b.metaSpend)} / Google $${n0(b.googleSpend)}), impressions ${n0(b.impressions)}, clicks ${n0(b.clicks)}`)
+  lines.push(`Leads ${n0(b.leads)} (Meta ${n0(b.metaLeads)} / Google ${n0(b.googleLeads)}), booked ${n0(b.booked)}, shown ${n0(b.shown)}, won ${n0(b.won)}`)
+  lines.push(`Revenue $${n0(b.revenue)} (created basis), ROAS ${roas}x, avg deal $${n0(b.avgDeal)}`)
+  lines.push(`Funnel rates: lead->booked ${pct(b.booked, b.leads)}%, booked->shown ${pct(b.shown, b.booked)}%, shown->won ${pct(b.won, b.shown)}%, lead->won ${pct(b.won, b.leads)}%`)
+  if (b.wonClosed) lines.push(`Deals marked Won in this window (realised, any created date): ${n0(b.wonClosed.won)} worth $${n0(b.wonClosed.revenue)}`)
+  if (b.prev) lines.push(`Previous period: spend $${n0(b.prev.spend)}, leads ${n0(b.prev.leads)}, booked ${n0(b.prev.booked)}, won ${n0(b.prev.won)}, revenue $${n0(b.prev.revenue)}`)
+  if (b.channels) {
+    if (b.channels.meta) lines.push(`Meta CRM: leads ${n0(b.channels.meta.leads)}, booked ${n0(b.channels.meta.booked)}, won ${n0(b.channels.meta.won)}, revenue $${n0(b.channels.meta.revenue)}`)
+    if (b.channels.google) lines.push(`Google CRM: leads ${n0(b.channels.google.leads)}, booked ${n0(b.channels.google.booked)}, won ${n0(b.channels.google.won)}, revenue $${n0(b.channels.google.revenue)}`)
+  }
+  const camps = (b.topCampaigns || []).slice(0, 8).map((c) => `${c.name} (${c.source}): spend $${n0(c.spend)}, leads ${n0(c.leads)}, won ${n0(c.won)}, rev $${n0(c.revenue)}, ROAS ${c.roas != null ? c.roas.toFixed(2) + 'x' : 'n/a'}`).join('\n') || 'none'
+  const lost = (b.lostReasons || []).slice(0, 10).map((r) => `${r.name} (${r.count})`).join(', ') || 'none recorded'
+  const t = b.targets || {}
+  const targets = `Targets - weekly spend $${t.wkSpend || '-'}, all-leads CPL $${t.cpl || '-'}, cost/booked $${t.cpba || '-'}, cost/won $${t.cpa || '-'}, booking rate ${t.bookingRate || '-'}%`
+  const prompt = `You are a senior paid-media + CRM analyst at a marketing agency, briefing the account team on one client's blended results.
+
+Client: ${clientName || 'Client'}
+Period: ${period || 'selected period'} (${scope || 'whole account'})
+${targets}
+
+Blended performance this period:
+${lines.join('\n')}
+
+Top campaigns by spend (with CRM-attributed revenue):
+${camps}
+
+CRM lost reasons this period: ${lost}
+
+Write a concise briefing in markdown:
+1. **Headline** - one sentence on overall health this period, referencing ROAS and spend.
+2. **Funnel read** - 2-4 bullets on where leads convert or drop (booking rate, show rate, win rate) and cost per step vs targets. Cite specific numbers.
+3. **Channel split** - 1-2 bullets comparing Meta vs Google on efficiency and outcomes (only if both ran).
+4. **Revenue** - 1 bullet on created-basis revenue and, if provided, realised (won-in-period) revenue, and what the gap implies about sales-cycle lag.
+5. **Actions** - 2-3 concrete next steps.
+
+Be specific and numeric. Keep it under 300 words. Do not use em-dashes or en-dashes anywhere; use commas, colons or hyphens instead.`
+  const out = await callClaude(apiKey, prompt)
+  return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
+}
+
 export default async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return json({ error: 'AI insights not configured - add ANTHROPIC_API_KEY in Netlify, then redeploy.' }, 400)
   let body; try { body = await req.json() } catch { return json({ error: 'bad request body' }, 400) }
+
+  // Caalano360 blended briefing path.
+  if (body && (body.mode === 'blend' || body.blend)) {
+    try { return json(await blendInsights(apiKey, body)) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
   const { clientName, weekly, kpis } = body || {}
   if (!weekly || !Array.isArray(weekly.weeks) || !weekly.weeks.length) return json({ error: 'no weekly data supplied' }, 400)
 

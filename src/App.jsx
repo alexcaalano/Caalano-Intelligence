@@ -1207,6 +1207,90 @@ function reachedByStage(pipelines) {
   return { m, total }
 }
 
+// Compact, aggregate, whole-account snapshot for the client chatbot. No
+// individual contact PII - only rolled-up numbers the Caalano360 view already
+// shows. Kept small so the whole thing fits comfortably in the model context.
+function buildChatContext(b, attribData, camps, trendWeeks, kpis, range) {
+  const n = (v) => Math.round(v || 0)
+  const p = b.paid || {}, c = b.crm || {}
+  const channels = attribData && attribData.channels
+  const oCamp = attribData ? mkOutcomeMap(attribData.byCampaign) : null
+  const topCampaigns = (camps || []).slice(0, 15).map((cc) => {
+    const o = oCamp ? oCamp.get(unorm(cc.name)) : null
+    return { name: cc.name, source: cc.source, spend: n(cc.spend), leads: n(cc.conv), won: o ? o.won : null, revenue: o ? n(o.revenue) : null, roas: o && cc.spend ? +(o.revenue / cc.spend).toFixed(2) : null }
+  })
+  const chTot = (x) => x ? { leads: x.totals.leads, booked: x.totals.booked, shown: x.totals.shown, won: x.totals.won, revenue: n(x.totals.revenue) } : null
+  const all = channels && channels.all ? channels.all.totals : null
+  const selfPct = all && all.tagReadable && all.booked ? +(all.selfBooked / all.booked * 100).toFixed(1) : null
+  const bySource = attribData ? (attribData.bySource || []).slice(0, 10).map((s) => ({ name: s.name, leads: s.leads, booked: s.booked, won: s.won, revenue: n(s.revenue) })) : []
+  const lost = (channels && channels.all ? channels.all.lostReasons : null) || []
+  const weekly = (trendWeeks || []).map((w) => ({ week: w.label, spend: w.spend, leads: w.leads, booked: w.booked, shown: w.shown, won: w.won, revenue: w.wonValue }))
+  return {
+    period: rangeLabel(range),
+    paid: { spend: n(p.adSpend), metaSpend: n(p.metaSpend), googleSpend: n(p.googleSpend), impressions: n(p.impressions), clicks: n(p.clicks), metaLeads: n(p.metaLeads), googleLeads: n(p.googleConv) },
+    crm: { leads: c.leads, booked: c.booked, shown: c.shown, won: c.won, revenue: n(c.revenue), avgDeal: n(c.avgValue), selfBookingRatePct: selfPct },
+    channelsMetaVsGoogle: channels ? { meta: chTot(channels.meta), google: chTot(channels.google) } : null,
+    realisedWonInPeriod: b.wonClosed ? { won: b.wonClosed.total.won, revenue: n(b.wonClosed.total.revenue) } : null,
+    topCampaignsBySpend: topCampaigns,
+    topLeadSources: bySource,
+    lostReasons: lost.slice(0, 10),
+    weeklyTrend: weekly,
+    targets: { weeklySpend: kpis.wkSpend, cpl: kpis.cpl, costPerBooked: kpis.cpba, costPerWon: kpis.cpa, bookingRatePct: kpis.bookingRate },
+  }
+}
+
+// Client-scoped Q&A widget. Sends only the current client's snapshot to the
+// chat function, so it can never surface another client's data. History is
+// in-memory (never persisted) and resets when you switch clients.
+function ClientChat({ clientId, clientName, period, context }) {
+  const [open, setOpen] = useState(false)
+  const [msgs, setMsgs] = useState([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState(null)
+  useEffect(() => { setMsgs([]); setErr(null); setInput('') }, [clientId])
+  const send = async () => {
+    const q = input.trim(); if (!q || loading) return
+    const next = [...msgs, { role: 'user', content: q }]
+    setMsgs(next); setInput(''); setLoading(true); setErr(null)
+    try {
+      const r = await fetch('/.netlify/functions/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clientName, period, context, messages: next }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      setMsgs((m) => [...m, { role: 'assistant', content: j.reply }])
+    } catch (e) { setErr(String(e.message || e)) } finally { setLoading(false) }
+  }
+  const suggestions = ['How did Meta compare to Google this period?', 'Which campaign had the best ROAS?', 'Top reasons deals were lost?', 'How is the booking rate trending?']
+  return (
+    <div className={`cc-dock ${open ? 'open' : ''}`}>
+      {open ? (
+        <div className="cc-panel">
+          <div className="cc-head">
+            <div><b>Ask Caalano360</b><span className="cc-scope">{clientName} - this client only</span></div>
+            <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close chat">✕</button>
+          </div>
+          <div className="cc-body">
+            {msgs.length === 0 && <div className="cc-intro">
+              <p>Ask about {clientName}&apos;s blended results for {period}. Aggregate data only, scoped to this client.</p>
+              <div className="cc-sugg">{suggestions.map((s) => <button key={s} onClick={() => setInput(s)}>{s}</button>)}</div>
+            </div>}
+            {msgs.map((m, i) => <div key={i} className={`cc-msg ${m.role}`}>{m.role === 'assistant' ? <MdText text={m.content} /> : m.content}</div>)}
+            {loading && <div className="cc-msg assistant cc-thinking"><Spinner label="Thinking…" /></div>}
+            {err && <div className="cc-err">{err}</div>}
+          </div>
+          <div className="cc-input">
+            <textarea rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={`Ask about ${clientName}…`} />
+            <button className="cc-send" onClick={send} disabled={loading || !input.trim()}>Send</button>
+          </div>
+          <div className="cc-foot">Answers come from this client&apos;s loaded data only.</div>
+        </div>
+      ) : (
+        <button className="cc-launch" onClick={() => setOpen(true)} title="Ask about this client">💬 Ask Caalano360</button>
+      )}
+    </div>
+  )
+}
+
 function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const b = blend
   const users = b.users || []
@@ -1276,6 +1360,8 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const sbSelf = sbSlice ? (sbSlice.totals.selfBooked || 0) : 0
   const sbRate = sbBooked ? (sbSelf / sbBooked) * 100 : null
   const showSelfBook = !!(sbSlice && sbSlice.totals.tagReadable) && sbBooked > 0 && uid === 'all' && pid === 'all'
+  // Whole-account aggregate snapshot for the client chatbot (filter-independent).
+  const chatContext = useMemo(() => buildChatContext(b, attribData, camps, trend.weeks, kpis, range), [b, attribData, camps, trend.weeks, kpis, range])
   const roas = spend ? dRev / spend : 0
   // Previous equal-length period - deltas only at account level (no per-pipeline
   // / channel / user split in the prior period).
@@ -1823,6 +1909,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
       })()}
       {b.hasCrm && <UtmSection attr={utmAttr} currency={currency} paid={{ meta: p.metaSpend, google: p.googleSpend }} />}
       {!b.hasCrm && <div className="note"><b>No Caalano Systems account mapped</b> for {client.name}, so lead / booking / revenue tiles are blank. Map a Caalano Systems sub-account in Settings to blend CRM outcomes with paid spend.</div>}
+      <ClientChat clientId={client.id} clientName={client.name} period={rangeLabel(range)} context={chatContext} />
     </>
   )
 }

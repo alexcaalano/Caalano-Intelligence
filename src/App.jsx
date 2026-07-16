@@ -2041,6 +2041,72 @@ function LiveBadge({ mode, label }) {
   return <div style={{ marginBottom: 10 }}><span className={`tk ${m.c}`}>{m.t}</span></div>
 }
 
+// Cohort maturation - leads grouped by the week they came in, tracked through
+// the funnel. Older cohorts have had time to book/show/win so their rates run
+// higher; the most recent weeks are still "maturing". The ecommerce cohort grid,
+// for a services funnel (spend -> leads -> booked -> shown -> won -> revenue).
+function CohortView({ clientId, currency, nonce }) {
+  const wk = useWeekly(clientId, 12, nonce)
+  const money = (v) => fmtCurrency(v, currency)
+  if (wk.status === 'loading') return <div className="card"><Spinner label="Loading cohorts…" /></div>
+  if (wk.status !== 'ok' || !wk.data || !wk.data.weeks || !wk.data.weeks.length) return <div className="card empty-deep"><div className="big">📈</div><b>No cohort data yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Cohorts need Caalano Systems CRM data over several weeks. Once leads flow through the funnel this fills in.</p></div>
+  const W = wk.data.weeks // oldest -> newest
+  const rows = [...W].reverse() // newest first for the table
+  const N = W.length
+  const MATURING = 3 // the most recent weeks are still closing
+  const T = W.reduce((a, w) => ({ spend: a.spend + w.spend, leads: a.leads + w.leads, booked: a.booked + w.booked, shown: a.shown + w.shown, won: a.won + w.won, rev: a.rev + w.wonValue }), { spend: 0, leads: 0, booked: 0, shown: 0, won: 0, rev: 0 })
+  const mer = T.spend ? T.rev / T.spend : 0
+  const dater = (w) => { const d = new Date(w + 'T00:00:00Z'); const e = new Date(d); e.setUTCDate(e.getUTCDate() + 6); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]} - ${e.getUTCDate()} ${MON[e.getUTCMonth()]}` }
+  const maxWin = Math.max(0.01, ...W.map((w) => rate(w.won, w.leads)))
+  const maxBook = Math.max(0.01, ...W.map((w) => rate(w.booked, w.leads)))
+  const heat = (v, hi) => { if (!hi || v == null) return 'transparent'; const r = Math.min(1, v / hi); return `rgba(18,184,134,${(0.06 + r * 0.34).toFixed(2)})` }
+  const chart = W.map((w) => ({ label: w.label, book: +rate(w.booked, w.leads).toFixed(1), win: +rate(w.won, w.leads).toFixed(1) }))
+  return (
+    <>
+      <div className="section-title" style={{ marginTop: 4 }}>Cohort maturation <span className="sub">· leads by acquisition week, tracked through booked → shown → won</span></div>
+      <div className="unit-econ">
+        <div className="ue-tile hero"><div className="ue-l">MER · {N} wk</div><div className="ue-v">{mer ? `${mer.toFixed(2)}×` : '-'}</div><div className="ue-s">revenue ÷ spend</div></div>
+        <div className="ue-tile"><div className="ue-l">Spend</div><div className="ue-v">{money(T.spend)}</div><div className="ue-s">acquisition cost</div></div>
+        <div className="ue-tile"><div className="ue-l">Leads</div><div className="ue-v">{fmtNumber(T.leads)}</div><div className="ue-s">acquired</div></div>
+        <div className="ue-tile"><div className="ue-l">Booked</div><div className="ue-v">{fmtNumber(T.booked)}</div><div className="ue-s">{fmtPct(rate(T.booked, T.leads), 0)} of leads</div></div>
+        <div className="ue-tile"><div className="ue-l">Won</div><div className="ue-v">{fmtNumber(T.won)}</div><div className="ue-s">{fmtPct(rate(T.won, T.leads), 1)} of leads</div></div>
+        <div className="ue-tile"><div className="ue-l">Revenue</div><div className="ue-v">{money(T.rev)}</div><div className="ue-s">created basis</div></div>
+      </div>
+      <div className="card chart-card">
+        <h3>Conversion by cohort</h3><p className="cap">Book% and Win% for each acquisition week. Recent weeks sit lower because their deals are still closing.</p>
+        <ResponsiveContainer width="100%" height={230}>
+          <ComposedChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+            <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
+            <Tooltip formatter={(v, n) => [`${v}%`, n]} />
+            <Legend />
+            <Line dataKey="book" name="Book %" stroke="#6d5efc" strokeWidth={2} dot={false} />
+            <Line dataKey="win" name="Win %" stroke="#12b886" strokeWidth={2} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="table-wrap" style={{ marginTop: 14 }}><table><thead><tr>
+        <th style={{ textAlign: 'left' }}>Cohort week</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Booked</th><th>Book %</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th><th>Revenue</th><th>CAC</th><th>ROAS</th>
+      </tr></thead><tbody>
+        {rows.map((w, i) => {
+          const maturing = i < MATURING
+          const br = rate(w.booked, w.leads), sr = rate(w.shown, w.booked), wr = rate(w.won, w.leads)
+          return (<tr key={w.week} className={maturing ? 'coh-maturing' : ''}>
+            <td style={{ textAlign: 'left' }}>{w.label} <span className="cap">{dater(w.week)}</span>{maturing ? <span className="mat-badge" title="Recent cohort - deals still closing">maturing</span> : null}</td>
+            <td>{money(w.spend)}</td><td>{fmtNumber(w.leads)}</td><td>{w.leads ? money(w.spend / w.leads) : '-'}</td>
+            <td>{fmtNumber(w.booked)}</td><td style={{ background: heat(br, maxBook) }}>{fmtPct(br, 0)}</td>
+            <td>{fmtNumber(w.shown)}</td><td>{w.booked ? fmtPct(sr, 0) : '-'}</td>
+            <td>{fmtNumber(w.won)}</td><td style={{ background: heat(wr, maxWin) }}>{fmtPct(wr, 1)}</td>
+            <td>{money(w.wonValue)}</td><td>{w.won ? money(w.spend / w.won) : '-'}</td><td>{w.spend ? `${(w.wonValue / w.spend).toFixed(2)}×` : '-'}</td>
+          </tr>)
+        })}
+      </tbody></table></div>
+      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created, then follow them to booked / shown / won as of now. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. Booked / Shown / Won use pipeline-stage detection from the weekly feed.</p>
+    </>
+  )
+}
+
 function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
@@ -2051,6 +2117,7 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
+  if (client.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
     if (live.status !== 'ok' || !live.data || !live.data[ch]) return false
@@ -2080,6 +2147,7 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
         )}
         {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
         {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
+        {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
       </div>
     </>
   )

@@ -594,6 +594,10 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const [adsetSort, onAdsetSort] = useSort('spend')
   const [creSort, onCreSort] = useSort('spend')
   const [crePage, setCrePage] = useState(0)
+  const [preview, setPreview] = useState(null) // { src, x, y } - hover thumbnail preview
+  const showPrev = (src) => (e) => src && setPreview({ src, x: e.clientX, y: e.clientY })
+  const movePrev = (e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))
+  const hidePrev = () => setPreview(null)
   useEffect(() => { setCrePage(0) }, [sel])
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
   const m = deep.meta
@@ -680,11 +684,12 @@ function MetaDeep({ deep, currency, attr, clientId }) {
       <div className="table-wrap"><table><thead>{has360 && <C360GrpRow left={9} />}<tr>
         <SortTh k="name" sort={creSort} on={onCreSort}>Creative</SortTh><SortTh k="type" sort={creSort} on={onCreSort}>Type</SortTh><SortTh k="spend" sort={creSort} on={onCreSort}>Spend</SortTh><SortTh k="impressions" sort={creSort} on={onCreSort}>Impr.</SortTh><SortTh k="linkCtr" sort={creSort} on={onCreSort}>Link CTR</SortTh><SortTh k="hook" sort={creSort} on={onCreSort}>Hook</SortTh><SortTh k="leads" sort={creSort} on={onCreSort}>Leads</SortTh><SortTh k="cvr" sort={creSort} on={onCreSort}>CVR</SortTh><SortTh k="cpl" sort={creSort} on={onCreSort}>CPL</SortTh>{has360 && <O360Head sort={creSort} on={onCreSort} />}</tr></thead>
         <tbody>{sortRows(adsFull.map((a) => ({ ...a, linkCtr: rate(a.linkClicks, a.impressions), hook: a.type === 'Video' ? rate(a.videoViews, a.impressions) : null, cvr: rate(a.leads, a.linkClicks), cpl: a.leads ? a.spend / a.leads : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend) })), creSort).map((a) => (<tr key={a.name}>
-          <td title={a.name} style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</td><td>{a.type}</td><td>{fmtCurrency(a.spend, currency)}</td><td>{fmtNumber(a.impressions)}</td>
+          <td title={a.name}><div className="cre-cell">{a.thumb ? <img className="cre-th" src={a.thumb} alt="" loading="lazy" onMouseEnter={showPrev(a.thumb)} onMouseMove={movePrev} onMouseLeave={hidePrev} onError={(e) => { e.target.style.display = 'none' }} /> : <span className="cre-th cre-th-none" />}<span className="cre-cell-nm">{a.name}</span></div></td><td>{a.type}</td><td>{fmtCurrency(a.spend, currency)}</td><td>{fmtNumber(a.impressions)}</td>
           <td className={gb(a.linkCtr, avgLinkCtr)}>{fmtPct(a.linkCtr, 2)}</td><td className={a.hook != null ? gb(a.hook, avgHook) : ''}>{a.hook != null ? fmtPct(a.hook, 1) : '-'}</td>
           <td>{fmtNumber(a.leads)}</td><td className={a.leads ? gb(a.cvr, avgCvr) : ''}>{a.leads ? fmtPct(a.cvr, 1) : '-'}</td>
           <td className={a.cpl != null ? (a.cpl <= cpl ? 'good' : 'bad') : ''}>{a.cpl != null ? fmtCurrency(a.cpl, currency) : '-'}</td>
           {has360 && o360Cells(a, currency)}</tr>))}</tbody></table></div>
+      <div className="cre-sub"><span>Visual previews</span><small>hover a thumbnail in the table above to enlarge, or browse the cards below</small></div>
       <div className="cre-grid">{ads.map((a) => {
         const acpl = a.leads ? a.spend / a.leads : 0
         const hook = a.type === 'Video' ? rate(a.videoViews, a.impressions) : null
@@ -745,6 +750,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         )
       })()}
       <p className="caveat">Creative thumbnails from the Meta and Google API (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by the API; ↗ opens the Instagram post where available.</p>
+      {preview && <img className="cre-preview" src={preview.src} alt="" style={{ left: Math.min(preview.x + 18, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 268), top: Math.min(Math.max(12, preview.y - 120), (typeof window !== 'undefined' ? window.innerHeight : 800) - 300) }} onError={() => setPreview(null)} />}
     </>
   )
 }

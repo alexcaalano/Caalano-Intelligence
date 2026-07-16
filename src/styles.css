@@ -259,6 +259,17 @@ tbody tr:hover { background: var(--panel-2); }
 .qs { font-weight: 700; }
 
 /* Creative grid */
+/* Inline creative thumbnail in the table + hover preview */
+.cre-cell { display: flex; align-items: center; gap: 9px; min-width: 0; max-width: 260px; }
+.cre-th { width: 30px; height: 30px; flex-shrink: 0; object-fit: cover; border-radius: 6px; background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--border); cursor: zoom-in; }
+.cre-th-none { display: inline-block; box-shadow: inset 0 0 0 1px var(--border); }
+.cre-cell-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cre-preview { position: fixed; width: 250px; max-height: 290px; object-fit: contain; border-radius: 12px; background: var(--elev); border: 1px solid var(--border-2); padding: 5px; box-shadow: 0 12px 40px rgba(0,0,0,.55); z-index: 200; pointer-events: none; }
+/* Separator between the creative table and the visual preview cards */
+.cre-sub { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 26px 0 12px; padding-top: 18px; border-top: 1px solid var(--border); }
+.cre-sub span { font-size: 13px; font-weight: 700; color: var(--text); }
+.cre-sub small { font-size: 11.5px; color: var(--faint); }
+
 .cre-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 14px; }
 .cre { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
 .cre .thumb { position: relative; width: 100%; aspect-ratio: 1/1; background: var(--panel-2); overflow: hidden; }

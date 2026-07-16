@@ -1534,6 +1534,25 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           ? <><b>Deal-won basis:</b> Won, Revenue, Avg Deal, Cost/Won & ROAS below are deals <b>marked Won in {rangeLabel(range)}</b>, no matter when the lead was created - your realised revenue this window.{wonClosed.capped ? ' (High volume: some very old deals may be excluded.)' : ''} <b>*</b> Cost/Won & ROAS divide this period&apos;s spend by those wins, so they mix periods - read them as directional, not a clean efficiency figure. Leads, Bookings & Shown remain by lead-created date.</>
           : <><b>Lead-created basis:</b> Won & Revenue below are for opportunities <b>created in {rangeLabel(range)}</b> (the cohort your spend generated). This matches ad ROAS but a recent window keeps maturing as leads close. Switch to <b>Deal won</b> for realised revenue.</>}
       </p>}
+      {(() => {
+        // Unit economics - the ecommerce lens for a services business.
+        const ltvSet = Number(kpis.clientLtv) > 0 ? Number(kpis.clientLtv) : null
+        const ltv = ltvSet || (dWon ? dAov : null)
+        const cac = dWon && spend ? spend / dWon : null
+        const mer = spend ? dRev / spend : null
+        const ltvCac = ltv != null && cac ? ltv / cac : null
+        const cls = ltvCac == null ? '' : ltvCac >= 3 ? 'good' : ltvCac >= 1 ? 'ok' : 'bad'
+        return (
+          <div className="unit-econ">
+            <div className="ue-tile hero"><div className="ue-l">MER</div><div className="ue-v">{mer != null ? `${mer.toFixed(2)}×` : '-'}</div><div className="ue-s">revenue ÷ ad spend</div></div>
+            <div className="ue-tile"><div className="ue-l">New clients</div><div className="ue-v">{fmtNumber(dWon)}</div><div className="ue-s">{useClosed ? 'won in period' : 'from period leads'}</div></div>
+            <div className="ue-tile"><div className="ue-l">CAC</div><div className="ue-v">{cac != null ? money(cac) : '-'}</div><div className="ue-s">cost per new client</div></div>
+            <div className="ue-tile"><div className="ue-l">Avg deal</div><div className="ue-v">{dWon ? money(dAov) : '-'}</div><div className="ue-s">avg won value</div></div>
+            <div className="ue-tile"><div className="ue-l">LTV{!ltvSet ? ' *' : ''}</div><div className="ue-v">{ltv != null ? money(ltv) : '-'}</div><div className="ue-s">{ltvSet ? 'client lifetime value' : 'set in Settings · using avg deal'}</div></div>
+            <div className={`ue-tile ratio ${cls}`}><div className="ue-l">LTV : CAC</div><div className="ue-v">{ltvCac != null ? `${ltvCac.toFixed(1)}:1` : '-'}</div><div className="ue-s">{cls === 'good' ? 'healthy (3+)' : cls === 'ok' ? 'okay (1-3)' : cls === 'bad' ? 'underwater (<1)' : 'set LTV to unlock'}</div></div>
+          </div>
+        )
+      })()}
       <div className="scorecard">
         <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} cur={spend} prev={pv ? pv.adSpend : null} />
         <Sc label="Total Leads" value={fmtNumber(c.leads)} cur={c.leads} prev={pc ? pc.leads : null} />
@@ -2095,7 +2114,9 @@ function KpiEditor({ clientId }) {
         <div className="kpi-inputs">
           <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
           <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Avg client LTV<input type="number" min="0" value={numOr(k.clientLtv)} onChange={(e) => set({ clientLtv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ lifetime value" /></label>
         </div>
+        <div className="cap" style={{ marginTop: 2 }}>LTV powers the Caalano360 unit-economics header (LTV:CAC, profit per client). Leave blank to use average deal value.</div>
         <div className="cap" style={{ marginTop: 4 }}>Weekly Traffic Light targets</div>
         <div className="kpi-inputs">
           <label>Weekly spend<input type="number" min="0" value={numOr(k.wkSpend)} onChange={(e) => set({ wkSpend: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ / week" /></label>

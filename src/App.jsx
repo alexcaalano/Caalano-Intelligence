@@ -626,7 +626,10 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const formats = ['Video', 'Image'].map((type) => {
     const rs = adsFull.filter((a) => a.type === type); if (!rs.length) return null
     const s = rs.reduce((a, x) => ({ spend: a.spend + x.spend, impressions: a.impressions + x.impressions, linkClicks: a.linkClicks + x.linkClicks, leads: a.leads + x.leads, videoViews: a.videoViews + x.videoViews }), { spend: 0, impressions: 0, linkClicks: 0, leads: 0, videoViews: 0 })
-    return { type, count: rs.length, ...s }
+    // Roll up Caalano360 outcomes from this format's UTM-matched creatives (utm_content).
+    let oc = null
+    for (const x of rs) { const o = oCre.get(unorm(x.name)); if (o) { oc = oc || { booked: 0, shown: 0, won: 0, revenue: 0 }; oc.booked += o.booked; oc.shown += o.shown; oc.won += o.won; oc.revenue += o.revenue } }
+    return { type, count: rs.length, ...s, ...o360Fields(oc, s.spend) }
   }).filter(Boolean)
   return (
     <>
@@ -670,8 +673,8 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         <tbody>{sortRows(adsets.map((c) => ({ ...c, ctr: rate(c.clicks, c.impressions), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oTerm.get(unorm(c.name)), c.spend) })), adsetSort).map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td>{fmtPct(c.ctr, 2)}</td><td>{fmtNumber(c.leads)}</td><td>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
       {formats.length > 0 && <>
         <div className="lvl-title">Performance by format <span className="sub">· image vs video</span></div>
-        <div className="table-wrap"><table><thead><tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Leads</th><th>CPL</th><th>Hook rate</th></tr></thead>
-          <tbody>{formats.map((f) => (<tr key={f.type}><td>{f.type}</td><td>{fmtNumber(f.count)}</td><td>{fmtCurrency(f.spend, currency)}</td><td>{fmtNumber(f.impressions)}</td><td>{fmtPct(rate(f.linkClicks, f.impressions), 2)}</td><td>{fmtNumber(f.leads)}</td><td>{f.leads ? fmtCurrency(f.spend / f.leads, currency) : '-'}</td><td>{f.type === 'Video' ? fmtPct(rate(f.videoViews, f.impressions), 1) : '-'}</td></tr>))}</tbody></table></div>
+        <div className="table-wrap"><table><thead>{has360 && <C360GrpRow left={8} />}<tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Leads</th><th>CPL</th><th>Hook rate</th>{has360 && <O360Head />}</tr></thead>
+          <tbody>{formats.map((f) => (<tr key={f.type}><td>{f.type}</td><td>{fmtNumber(f.count)}</td><td>{fmtCurrency(f.spend, currency)}</td><td>{fmtNumber(f.impressions)}</td><td>{fmtPct(rate(f.linkClicks, f.impressions), 2)}</td><td>{fmtNumber(f.leads)}</td><td>{f.leads ? fmtCurrency(f.spend / f.leads, currency) : '-'}</td><td>{f.type === 'Video' ? fmtPct(rate(f.videoViews, f.impressions), 1) : '-'}</td>{has360 && o360Cells(f, currency)}</tr>))}</tbody></table></div>
       </>}
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
       <div className="table-wrap"><table><thead>{has360 && <C360GrpRow left={9} />}<tr>
@@ -1387,7 +1390,6 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
     : (pipesSrc.length === 1 ? pipesSrc[0].stages : null)
   const stageMax = activeStages ? Math.max(1, ...activeStages.map((s) => s.count)) : 1
   const stageName = pid !== 'all' ? pipesSrc.find((x) => x.id === pid)?.name : (pipesSrc.length === 1 ? pipesSrc[0].name : null)
-  const srcBadge = (s) => <span className="src-badge" style={{ background: s === 'Meta' ? '#4f7cff' : '#12b886' }}>{s === 'Meta' ? 'M' : 'G'}</span>
   const genInsights = async () => {
     if (aiLoading) return
     setAiLoading(true); setAiErr(null)

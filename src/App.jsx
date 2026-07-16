@@ -124,6 +124,21 @@ function useCoverage(range, nonce = 0) {
   return cov
 }
 
+// Blended weekly trend for one client (Caalano360). Reuses the weekly scope so
+// the completed-week bucketing / CRM outcome logic lives in one place.
+function useWeeklyBlend(clientId, weeks = 13, nonce = 0) {
+  const [state, setState] = useState({ status: 'loading', weeks: null })
+  useEffect(() => {
+    let alive = true; setState({ status: 'loading', weeks: null })
+    fetch(`/.netlify/functions/windsor?scope=weekly&client=${clientId}&weeks=${weeks}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: 'ok', weeks: (j && j.weeks) || [] }) })
+      .catch(() => { if (alive) setState({ status: 'error', weeks: null }) })
+    return () => { alive = false }
+  }, [clientId, weeks, nonce])
+  return state
+}
+
 // Display rows from the roster (names) + live metrics, falling back to the baked snapshot.
 function computeRows(snapClients, live) {
   return snapClients.map((c, i) => {
@@ -1200,6 +1215,8 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const [pid, setPid] = useState('all')
   const [chan, setChan] = useState('all')
   const [wonBasis, setWonBasis] = useState('created') // 'created' (marketing) | 'closed' (revenue)
+  const [trendMetric, setTrendMetric] = useState('money') // 'money' | 'funnel'
+  const trend = useWeeklyBlend(client.id, 13, nonce)
   useEffect(() => { setPid('all'); setChan('all'); setUid('all'); setWonBasis('created') }, [client.id])
   useEffect(() => { setPid('all') }, [chan, uid])
   // User + channel are separate filters over the same CRM feed; only one at a
@@ -1439,6 +1456,56 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
               </table>
             </div>
             <p className="caveat">Revenue is UTM-attributed won value for opportunities <b>created</b> in this window ({matchedRev} of {rows.length} campaigns matched a utm_campaign). Campaigns showing n/a had spend but no UTM-matched opportunities - check UTM tagging on their landing pages.</p>
+          </div>
+        )
+      })()}
+      {b.hasCrm && trend.status !== 'error' && (() => {
+        const W = (trend.weeks || []).map((w) => ({ ...w, roas: w.spend ? +(w.wonValue / w.spend).toFixed(2) : 0 }))
+        const hasData = W.some((w) => w.spend > 0 || w.leads > 0)
+        return (
+          <div className="card chart-card" style={{ marginTop: 14 }}>
+            <div className="c360-controls" style={{ marginBottom: 6 }}>
+              <div>
+                <h3>Blended trend over time</h3>
+                <p className="cap">Whole account, last {W.length || 13} completed weeks (Mon-Sun) · {trendMetric === 'money' ? 'spend vs revenue & ROAS' : 'leads → booked → shown → won'}</p>
+              </div>
+              <div className="chan-toggle">
+                <button className={trendMetric === 'money' ? 'on' : ''} onClick={() => setTrendMetric('money')}>Spend &amp; revenue</button>
+                <button className={trendMetric === 'funnel' ? 'on' : ''} onClick={() => setTrendMetric('funnel')}>Funnel volume</button>
+              </div>
+            </div>
+            {trend.status === 'loading' ? <Spinner label="Loading trend…" />
+              : !hasData ? <p className="caveat">No completed-week data yet for this account.</p>
+                : trendMetric === 'money' ? (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <ComposedChart data={W} margin={{ left: -6, right: 6, top: 8 }}>
+                      <CartesianGrid stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" interval="preserveStartEnd" />
+                      <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => money(v)} width={64} />
+                      <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => `${v}×`} width={40} />
+                      <Tooltip formatter={(v, n) => n === 'ROAS' ? `${(+v).toFixed(2)}×` : money(v)} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar yAxisId="l" dataKey="spend" name="Spend" fill="#4f7cff" radius={[3, 3, 0, 0]} />
+                      <Bar yAxisId="l" dataKey="wonValue" name="Revenue" fill="#12b886" radius={[3, 3, 0, 0]} />
+                      <Line yAxisId="r" type="monotone" dataKey="roas" name="ROAS" stroke="#f5a524" strokeWidth={2} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <LineChart data={W} margin={{ left: -6, right: 6, top: 8 }}>
+                      <CartesianGrid stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" interval="preserveStartEnd" />
+                      <YAxis fontSize={10} stroke="var(--muted)" width={36} allowDecimals={false} />
+                      <Tooltip formatter={(v) => fmtNumber(v)} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Line type="monotone" dataKey="leads" name="Leads" stroke="#4f7cff" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="booked" name="Booked" stroke="#12b886" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="shown" name="Shown" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="won" name="Won" stroke="#f5a524" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+            <p className="caveat">Revenue and won counts are lead-created basis (opportunities created that week). The current in-progress week is excluded, so the last bucket ends last Sunday. Whole-account view - channel / pipeline / user filters above do not apply here.</p>
           </div>
         )
       })()}

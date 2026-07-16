@@ -153,6 +153,54 @@ const BOOK_TAG_RE = /booked\s*app(t|ointment)|self.?book|customer\s*booked|conta
 function oppTags(o) { const c = o.contact || {}; return Array.isArray(c.tags) ? c.tags : (Array.isArray(o.tags) ? o.tags : null) }
 function isSelfBooked(o) { const t = oppTags(o); return t ? t.some((x) => BOOK_TAG_RE.test(String(x))) : false }
 
+// The contact an opportunity belongs to (used to join calendar appointments to
+// opportunities). GHL returns this as a flat contactId and/or a nested contact.
+function contactIdOf(o) { return o.contactId || (o.contact && (o.contact.id || o.contact._id)) || null }
+
+// Real booked calendar appointments per contact. GHL keeps appointments
+// (calendar events) as a SEPARATE object from the opportunity pipeline stage,
+// so a lead can have a genuinely booked call while its opportunity was never
+// advanced past the intake stage. We pull appointments directly and join them
+// to opportunities by contactId, so a real booked call counts as "Booked"
+// against the creative/campaign regardless of pipeline stage. The window
+// extends well past `to` because an appointment for a lead created in-period is
+// usually scheduled days or weeks out.
+const APPT_CANCEL_RE = /(cancel|invalid|no.?show)/i
+async function fetchAppointments(locTok, locationId, from, to) {
+  const byContact = new Map()
+  let calendars = []
+  try {
+    const j = await ghlGet(locTok, '/calendars/', { locationId })
+    calendars = j.calendars || j.calendar || []
+  } catch (e) { return { byContact, connected: false, error: String(e.message || e).slice(0, 120) } }
+  const DAY = 86400000
+  const startMs = from ? new Date(from + 'T00:00:00Z').getTime() - 7 * DAY : Date.now() - 400 * DAY
+  const endMs = to ? new Date(to + 'T23:59:59Z').getTime() + 120 * DAY : Date.now() + 120 * DAY
+  const mark = (contactId, status) => {
+    if (!contactId) return
+    const s = String(status || '').toLowerCase()
+    const e = byContact.get(contactId) || { booked: 0, shown: 0 }
+    // A booked appointment counts unless it was cancelled / invalid / no-show.
+    if (!APPT_CANCEL_RE.test(s)) e.booked++
+    if (s === 'showed') e.shown++
+    byContact.set(contactId, e)
+  }
+  let events = 0
+  for (const cal of calendars) {
+    const calId = cal.id || cal._id || cal.calendarId
+    if (!calId) continue
+    try {
+      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
+      for (const ev of (j.events || [])) {
+        events++
+        const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
+        mark(cid, ev.appointmentStatus || ev.status)
+      }
+    } catch { /* skip a calendar we cannot read; others still count */ }
+  }
+  return { byContact, connected: true, calendars: calendars.length, events }
+}
+
 // Full CRM-style rollup over an arbitrary opportunity subset (one channel, or
 // all). Mirrors buildCrm's shape so the frontend can render tiles, the ordered
 // pipeline funnel, stage pass-through and lost reasons for any channel filter.
@@ -174,8 +222,8 @@ function rollupSubset(opps, idx, reasonName) {
       const rn = reasonName[o.lostReasonId] || (o.lostReasonId ? 'Other' : 'Not set')
       lostAgg.set(rn, (lostAgg.get(rn) || 0) + 1)
     } else { open++; openValue += val }
-    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) { booked++; if (isSelfBooked(o)) selfBooked++ }
-    if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) shown++
+    if (isWon || o._apptBooked || (pi && pi.bookPos != null && pos >= pi.bookPos)) { booked++; if (isSelfBooked(o)) selfBooked++ }
+    if (isWon || o._apptShown || (pi && pi.showPos != null && pos >= pi.showPos)) shown++
   }
   // per-pipeline ordered stages with pass-through counts + full crm rollup
   const byPipe = new Map()
@@ -189,7 +237,7 @@ function rollupSubset(opps, idx, reasonName) {
       if (st !== 'lost' && st !== 'abandoned') openAt.set(sid, (openAt.get(sid) || 0) + 1)
       l++; const stg = pi ? pi.byId[sid] : null; const pos = stg ? stg.pos : -1; const isWon = st === 'won'
       if (isWon) { w++; rev += val } else if (st === 'lost' || st === 'abandoned') ls++; else { op++; opv += val }
-      if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) b++; if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) sh++
+      if (isWon || o._apptBooked || (pi && pi.bookPos != null && pos >= pi.bookPos)) b++; if (isWon || o._apptShown || (pi && pi.showPos != null && pos >= pi.showPos)) sh++
     }
     const stages = (pi ? pi.stages : []).map((s) => ({ name: s.name, pos: s.pos, count: at.get(s.id) || 0, active: openAt.get(s.id) || 0 }))
     const crm = { leads: l, booked: b, shown: sh, won: w, lost: ls, open: op, revenue: Math.round(rev), openValue: Math.round(opv), avgValue: w ? Math.round(rev / w) : 0 }
@@ -278,13 +326,25 @@ export async function attributionCoverage(locationId, from, to) {
 
 export async function buildAttribution(locationId, from, to) {
   const locTok = await locationToken(locationId)
-  const [opps, pipelines, reasons] = await Promise.all([
+  const [opps, pipelines, reasons, appts] = await Promise.all([
     allOpportunities(locTok, locationId, from, to),
     fetchPipelines(locTok, locationId),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+    fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), connected: false })),
   ])
   const idx = stageIndexFrom(pipelines)
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  // Join real booked appointments to each opportunity by contactId, so a booked
+  // call counts even when the pipeline stage was never advanced. Tags ride on
+  // the shared opp objects, so the per-channel buckets + rollups see them too.
+  const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
+  let apptBookedOpps = 0
+  for (const o of opps) {
+    const a = apptByContact.get(contactIdOf(o))
+    o._apptBooked = !!(a && a.booked > 0)
+    o._apptShown = !!(a && a.shown > 0)
+    if (o._apptBooked) apptBookedOpps++
+  }
   const dim = { source: new Map(), medium: new Map(), campaign: new Map(), content: new Map(), term: new Map() }
   const bump = (map, keyRaw, o, pi) => {
     const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
@@ -295,8 +355,8 @@ export async function buildAttribution(locationId, from, to) {
     const pos = stg ? stg.pos : -1
     const isWon = st === 'won'
     if (isWon) { e.won++; e.revenue += num(o.monetaryValue) }
-    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) e.booked++
-    if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) e.shown++
+    if (isWon || o._apptBooked || (pi && pi.bookPos != null && pos >= pi.bookPos)) e.booked++
+    if (isWon || o._apptShown || (pi && pi.showPos != null && pos >= pi.showPos)) e.shown++
     map.set(key, e)
   }
   // split opportunities by paid channel for the Caalano360 toggle
@@ -347,6 +407,7 @@ export async function buildAttribution(locationId, from, to) {
   })
   return {
     connected: true, opps: opps.length, attributed,
+    appointments: { connected: !!(appts && appts.connected), calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, matchedOpps: apptBookedOpps },
     bySource, byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
     channels: {
       all: rollupSubset(opps, idx, reasonName),

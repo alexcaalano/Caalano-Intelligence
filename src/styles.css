@@ -415,8 +415,10 @@ table.o360-tbl { table-layout: fixed; }
    absorbs the slack. cg-m is a constant width so the green block starts at the
    same x in every table (Campaigns/Ad sets have one fewer left column than
    Format/Creatives, and the name column soaks up that difference). */
-.o360-tbl col.cg-m { width: 98px; }
-.o360-tbl col.cg-g { width: 108px; }
+.o360-tbl col.cg-m { width: 96px; }
+.o360-tbl col.cg-g { width: 98px; }
+/* Narrower columns for the Book/Show/Win % rates (wide enough for the header). */
+.o360-tbl col.cg-gr { width: 78px; }
 th.c360-col { color: #12b886; font-size: 10.5px; }
 /* "(Nc)" cancelled marker inside the Booked cell - booked still counts the
    call on the day it was booked; this shows how many later cancelled. */

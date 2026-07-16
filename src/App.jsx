@@ -1379,10 +1379,19 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const attribData = (utmAttr && utmAttr.status === 'ok' && utmAttr.data && utmAttr.data.attribution) || null
   const channels = (attribData && attribData.channels) || null
   const canChan = !!channels && ((channels.meta?.totals?.leads || 0) > 0 || (channels.google?.totals?.leads || 0) > 0)
-  const norm360 = (t) => ({ leads: t.leads, booked: t.booked, shown: t.shown, won: t.won, revenue: t.revenue, avgValue: t.avgWonValue, openValue: t.openValue, lost: t.lost, open: t.open })
+  const norm360 = (t) => ({ leads: t.leads, booked: t.booked, shown: t.shown, cancelled: t.cancelled || 0, won: t.won, revenue: t.revenue, avgValue: t.avgWonValue, openValue: t.openValue, lost: t.lost, open: t.open })
   const chSel = chan !== 'all' && channels ? channels[chan] : null
   const pipesSrc = chSel ? (chSel.pipelines || []) : pipes
-  const crmAll = chSel ? norm360(chSel.totals) : base.crm
+  // Booked / Shown come from the date-of-action attribution feed so the blended
+  // funnel matches the Meta/Google tabs exactly. For the "All" channel we graft
+  // those onto the account CRM view (which carries leads/won/pipelines); this
+  // only applies at account level (uid all), since the attribution feed has no
+  // per-assigned-user split.
+  const crmAll = chSel
+    ? norm360(chSel.totals)
+    : (channels && channels.all && uid === 'all')
+      ? { ...base.crm, booked: channels.all.totals.booked, shown: channels.all.totals.shown, cancelled: channels.all.totals.cancelled || 0 }
+      : base.crm
   const multiSrc = pipesSrc.length > 1
   const c = pid === 'all' ? crmAll : (pipesSrc.find((x) => x.id === pid)?.crm || crmAll)
   const attr = pid === 'all'
@@ -1512,7 +1521,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
       <div className="scorecard">
         <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} cur={spend} prev={pv ? pv.adSpend : null} />
         <Sc label="Total Leads" value={fmtNumber(c.leads)} cur={c.leads} prev={pc ? pc.leads : null} />
-        <Sc label="Bookings Made" value={fmtNumber(c.booked)} cur={c.booked} prev={pc ? pc.booked : null} />
+        <Sc label="Bookings Made" value={<>{fmtNumber(c.booked)}{c.cancelled ? <span className="c360-canc" title={`${c.cancelled} later cancelled`}> ({c.cancelled}c)</span> : null}</>} cur={c.booked} prev={pc ? pc.booked : null} />
         <Sc label="Shown Bookings" value={fmtNumber(c.shown)} cur={c.shown} prev={pc ? pc.shown : null} />
         {showSelfBook && <Sc label="Self-Booked Rate" value={fmtPct(sbRate, 1)} kpi={{ text: `${fmtNumber(sbSelf)}/${fmtNumber(sbBooked)} self-served`, cls: 'info' }} />}
         <Sc label={useClosed ? 'Won (closed)' : 'Won (created)'} value={fmtNumber(dWon)} cur={useClosed ? null : c.won} prev={!useClosed && pc ? pc.won : null} />

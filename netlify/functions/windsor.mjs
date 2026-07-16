@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleAppointments, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -665,16 +665,6 @@ export default async (req) => {
       const clients = Object.entries(CLIENTS).filter(([, cc]) => cc.ghl).map(([id]) => id)
       return json({ scope: 'tagaudit', connected: true, clients }, 200)
     } catch (e) { return json({ scope: 'tagaudit', connected: true, client, audit: { client, error: String(e.message || e).slice(0, 140) } }, 200) }
-  }
-
-  // Debug: raw calendar / appointment shapes for one client, to confirm the
-  // live field names and the contactId join (scope=appts&client=<id>).
-  if (url.searchParams.get('scope') === 'appts') {
-    if (!(await isConnected().catch(() => false))) return json({ scope: 'appts', connected: false, needsSetup: true })
-    const single = CLIENTS[client]
-    if (!single || !single.ghl) return json({ scope: 'appts', error: `client ${client} has no Caalano Systems location` }, 404)
-    try { return json({ scope: 'appts', client, appts: await sampleAppointments(single.ghl, from, to) }, 200) }
-    catch (e) { return json({ scope: 'appts', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
   // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.

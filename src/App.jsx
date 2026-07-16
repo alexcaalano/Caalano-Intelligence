@@ -1320,6 +1320,63 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label={useClosed ? 'ROAS *' : 'ROAS'} value={spend ? `${roas.toFixed(2)}×` : '-'} cur={useClosed ? null : (spend ? roas : null)} prev={!useClosed && pv && pc && pv.adSpend ? pc.revenue / pv.adSpend : null} />
         <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} cur={rate(c.won, c.leads)} prev={pc ? rate(pc.won, pc.leads) : null} />
       </div>
+      {b.hasCrm && (p.impressions > 0 || p.adSpend > 0) && (() => {
+        const fs = chan === 'meta' ? { lbl: 'Meta', spend: p.metaSpend, impr: p.metaImpr || 0, clicks: p.metaClicks || 0, crm: channels?.meta?.totals }
+          : chan === 'google' ? { lbl: 'Google', spend: p.googleSpend, impr: p.googleImpr || 0, clicks: p.googleClicks || 0, crm: channels?.google?.totals }
+            : { lbl: 'whole account', spend: p.adSpend, impr: p.impressions || 0, clicks: p.clicks || 0, crm: b.crm }
+        const fc = fs.crm || {}
+        const fWonSlice = wonClosed ? (chan !== 'all' ? (wonClosed.channels && wonClosed.channels[chan]) : wonClosed.total) : null
+        const fWon = (useClosed && fWonSlice) ? fWonSlice.won : (fc.won || 0)
+        const fRev = (useClosed && fWonSlice) ? fWonSlice.revenue : (fc.revenue || 0)
+        const sp = fs.spend
+        const stages = [
+          { key: 'spend', label: 'Ad Spend', val: sp, money: true },
+          { key: 'impr', label: 'Impressions', val: fs.impr },
+          { key: 'clicks', label: 'Clicks', val: fs.clicks },
+          { key: 'leads', label: 'Leads', val: fc.leads || 0 },
+          { key: 'booked', label: 'Booked', val: fc.booked || 0 },
+          { key: 'shown', label: 'Shown', val: fc.shown || 0 },
+          { key: 'won', label: useClosed ? 'Won (closed)' : 'Won', val: fWon },
+          { key: 'revenue', label: 'Revenue', val: fRev, money: true },
+        ]
+        const costOf = (key) => key === 'impr' ? (sp && fs.impr ? sp / fs.impr * 1000 : null)
+          : key === 'clicks' ? (sp && fs.clicks ? sp / fs.clicks : null)
+            : key === 'leads' ? (sp && fc.leads ? sp / fc.leads : null)
+              : key === 'booked' ? (sp && fc.booked ? sp / fc.booked : null)
+                : key === 'shown' ? (sp && fc.shown ? sp / fc.shown : null)
+                  : key === 'won' ? (sp && fWon ? sp / fWon : null) : null
+        const costLbl = { impr: 'CPM', clicks: 'CPC', leads: 'CPL', booked: 'Cost/booked', shown: 'Cost/shown', won: 'Cost/won' }
+        const convLbl = { clicks: 'CTR', leads: 'Click→lead', booked: 'Lead→booked', shown: 'Booked→shown', won: 'Shown→won', revenue: 'Avg deal' }
+        return (
+          <div className="card chart-card" style={{ marginTop: 14 }}>
+            <h3>Full funnel: ad spend → revenue</h3><p className="cap">{fs.lbl} · cost per step &amp; step conversion{chan === 'all' && (pid !== 'all' || uid !== 'all') ? ' · whole account (ignores pipeline/user filter)' : ''}</p>
+            <div className="ufun">
+              {stages.map((s, i) => {
+                const cost = costOf(s.key)
+                const hue = 210 + Math.round((i / (stages.length - 1)) * -70)
+                const nxt = stages[i + 1]
+                let connText = null
+                if (nxt) {
+                  if (nxt.key === 'impr') connText = null
+                  else if (nxt.key === 'revenue') connText = fWon ? `${convLbl.revenue} ${money(fRev / fWon)}` : null
+                  else connText = s.val ? `${convLbl[nxt.key]} ${fmtPct((nxt.val / s.val) * 100, 1)}` : `${convLbl[nxt.key]} -`
+                }
+                return (
+                  <React.Fragment key={s.key}>
+                    <div className="ufun-stage" style={{ borderLeftColor: `hsl(${hue} 70% 52%)` }}>
+                      <span className="ufun-lbl">{s.label}</span>
+                      <span className="ufun-val">{s.money ? money(s.val) : fmtNumber(s.val)}</span>
+                      <span className="ufun-cost">{cost != null ? `${costLbl[s.key]} ${money(cost)}` : s.key === 'revenue' && sp ? `ROAS ${(fRev / sp).toFixed(2)}×` : s.key === 'spend' ? 'input' : ''}</span>
+                    </div>
+                    {connText && <div className="ufun-conn"><span className="ufun-arrow">↓</span> {connText}</div>}
+                  </React.Fragment>
+                )
+              })}
+            </div>
+            <p className="caveat">Spend / impressions / clicks are {fs.lbl === 'whole account' ? 'account' : fs.lbl} paid; leads → won come from Caalano Systems (leads = opportunities created). Cost per step = spend ÷ that step.{useClosed ? ' Won uses the Deal-won basis.' : ''}</p>
+          </div>
+        )
+      })()}
       {b.hasCrm && (() => {
         const adLeads = (p.metaLeads || 0) + (p.googleConv || 0)
         const crmLeads = b.crm.leads

@@ -509,15 +509,15 @@ function autoMatch(pipelinesArr, camps) {
 }
 function campAgg(rows, source, convField) {
   const m = new Map()
-  for (const r of rows) { const n = r.campaign; if (!n) continue; const e = m.get(n) || { name: n, source, spend: 0, conv: 0 }; e.spend += num(r.spend); e.conv += num(r[convField]); m.set(n, e) }
+  for (const r of rows) { const n = r.campaign; if (!n) continue; const e = m.get(n) || { name: n, source, spend: 0, conv: 0, impressions: 0, clicks: 0 }; e.spend += num(r.spend); e.conv += num(r[convField]); e.impressions += num(r.impressions); e.clicks += num(r.clicks); m.set(n, e) }
   return [...m.values()]
 }
 async function buildBlend(c, from, to, preset, key) {
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
   const pr = prevRange(from, to)
   const [fb, gg, opps, pipes, userRows, pFb, pGg, pOpps] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'actions_lead'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
-    c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'actions_lead', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at', 'opportunity_assigned_to'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
@@ -527,10 +527,9 @@ async function buildBlend(c, from, to, preset, key) {
   ])
   const metaCamps = campAgg(fb, 'Meta', 'actions_lead')
   const googleCamps = campAgg(gg, 'Google', 'conversions')
-  const metaSpend = metaCamps.reduce((a, r) => a + r.spend, 0)
-  const metaLeads = metaCamps.reduce((a, r) => a + r.conv, 0)
-  const googleSpend = googleCamps.reduce((a, r) => a + r.spend, 0)
-  const googleConv = googleCamps.reduce((a, r) => a + r.conv, 0)
+  const sum = (arr, k) => arr.reduce((a, r) => a + r[k], 0)
+  const metaSpend = sum(metaCamps, 'spend'), metaLeads = sum(metaCamps, 'conv'), metaImpr = sum(metaCamps, 'impressions'), metaClicks = sum(metaCamps, 'clicks')
+  const googleSpend = sum(googleCamps, 'spend'), googleConv = sum(googleCamps, 'conv'), googleImpr = sum(googleCamps, 'impressions'), googleClicks = sum(googleCamps, 'clicks')
   const idx = stageIndex(pipes)
   // Per-pipeline funnels so the UI can offer a pipeline selector — a "booking"
   // means different things across pipelines, so they're kept separate.
@@ -566,7 +565,7 @@ async function buildBlend(c, from, to, preset, key) {
   const allCamps = [...metaCamps, ...googleCamps]
   const auto = autoMatch(account.pipelines, allCamps)
   const campaigns = allCamps
-    .map((x) => ({ name: x.name, source: x.source, spend: Math.round(x.spend), conv: Math.round(x.conv), auto: auto.get(x.name) || 'all' }))
+    .map((x) => ({ name: x.name, source: x.source, spend: Math.round(x.spend), conv: Math.round(x.conv), impressions: Math.round(x.impressions), clicks: Math.round(x.clicks), auto: auto.get(x.name) || 'all' }))
     .sort((a, b) => b.spend - a.spend)
   // Previous equal-length period (account level) for ±vs-previous deltas.
   let prev = null
@@ -583,6 +582,8 @@ async function buildBlend(c, from, to, preset, key) {
     paid: {
       adSpend: Math.round(metaSpend + googleSpend), metaSpend: Math.round(metaSpend), googleSpend: Math.round(googleSpend),
       metaLeads: Math.round(metaLeads), googleConv: Math.round(googleConv), adConversions: Math.round(metaLeads + googleConv),
+      impressions: Math.round(metaImpr + googleImpr), clicks: Math.round(metaClicks + googleClicks),
+      metaImpr: Math.round(metaImpr), metaClicks: Math.round(metaClicks), googleImpr: Math.round(googleImpr), googleClicks: Math.round(googleClicks),
     },
     crm: account.crm, pipelines: account.pipelines, users, campaigns, prev,
   }

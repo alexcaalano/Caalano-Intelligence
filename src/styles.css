@@ -570,6 +570,21 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .th-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); margin: 8px 0 6px; }
 .th-bar span { display: block; height: 100%; }
 
+/* Unified ad -> revenue funnel (Caalano360) */
+.ufun { display: flex; flex-direction: column; gap: 0; margin-top: 4px; }
+.ufun-stage { display: grid; grid-template-columns: 150px 1fr 170px; align-items: baseline; gap: 12px; padding: 11px 14px; background: var(--panel-2); border: 1px solid var(--border); border-left: 3px solid var(--brand); border-radius: 11px; }
+.ufun-lbl { font-size: 12px; font-weight: 700; color: var(--muted); }
+.ufun-val { font-size: 20px; font-weight: 760; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
+.ufun-cost { text-align: right; font-size: 12px; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
+.ufun-conn { display: flex; align-items: center; gap: 7px; padding: 3px 0 3px 20px; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.ufun-arrow { color: var(--brand-2); font-weight: 800; font-size: 13px; line-height: 1; }
+@media (max-width: 640px) {
+  .ufun-stage { grid-template-columns: 1fr auto; grid-template-areas: "lbl cost" "val cost"; gap: 2px 12px; }
+  .ufun-lbl { grid-area: lbl; }
+  .ufun-val { grid-area: val; }
+  .ufun-cost { grid-area: cost; align-self: center; }
+}
+
 /* ============ Mobile responsiveness (<=900px). Desktop is unaffected. ============ */
 .alerts-2 { grid-template-columns: 1fr 1fr; }
 @media (max-width: 760px) { .alerts-2 { grid-template-columns: 1fr; } }

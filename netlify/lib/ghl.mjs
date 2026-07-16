@@ -146,17 +146,25 @@ function channelOf(u) {
   return 'other'
 }
 
+// Self-booking tag: contacts that booked their own appointment carry a
+// "customer booked appointment" style tag. Tags ride inline on the opportunity
+// (contact.tags), falling back to a top-level tags array on some API versions.
+const BOOK_TAG_RE = /booked\s*app(t|ointment)|self.?book|customer\s*booked|contact\s*booked|book(ed)?\s*by\s*(customer|contact|self)/i
+function oppTags(o) { const c = o.contact || {}; return Array.isArray(c.tags) ? c.tags : (Array.isArray(o.tags) ? o.tags : null) }
+function isSelfBooked(o) { const t = oppTags(o); return t ? t.some((x) => BOOK_TAG_RE.test(String(x))) : false }
+
 // Full CRM-style rollup over an arbitrary opportunity subset (one channel, or
 // all). Mirrors buildCrm's shape so the frontend can render tiles, the ordered
 // pipeline funnel, stage pass-through and lost reasons for any channel filter.
 function rollupSubset(opps, idx, reasonName) {
-  let leads = 0, open = 0, won = 0, lost = 0, abandoned = 0, revenue = 0, openValue = 0, booked = 0, shown = 0, cycleSum = 0, cycleN = 0
+  let leads = 0, open = 0, won = 0, lost = 0, abandoned = 0, revenue = 0, openValue = 0, booked = 0, shown = 0, selfBooked = 0, tagSeen = 0, cycleSum = 0, cycleN = 0
   const lostAgg = new Map()
   for (const o of opps) {
     leads++
     const st = String(o.status || '').toLowerCase(); const val = num(o.monetaryValue)
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
     const isWon = st === 'won'
+    if (oppTags(o) != null) tagSeen++
     if (isWon) {
       won++; revenue += val
       const ca = Date.parse(o.createdAt), sc = Date.parse(o.lastStatusChangeAt)
@@ -166,7 +174,7 @@ function rollupSubset(opps, idx, reasonName) {
       const rn = reasonName[o.lostReasonId] || (o.lostReasonId ? 'Other' : 'Not set')
       lostAgg.set(rn, (lostAgg.get(rn) || 0) + 1)
     } else { open++; openValue += val }
-    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) booked++
+    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) { booked++; if (isSelfBooked(o)) selfBooked++ }
     if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) shown++
   }
   // per-pipeline ordered stages with pass-through counts + full crm rollup
@@ -191,6 +199,7 @@ function rollupSubset(opps, idx, reasonName) {
   return {
     totals: {
       leads, open, won, lost, abandoned, booked, shown, revenue: Math.round(revenue), openValue: Math.round(openValue),
+      selfBooked, tagReadable: tagSeen > 0,
       avgWonValue: won ? Math.round(revenue / won) : 0,
       closeRate: closed ? +(100 * won / closed).toFixed(1) : 0,
       convRate: leads ? +(100 * won / leads).toFixed(1) : 0,
@@ -468,8 +477,8 @@ export async function auditLocation(locationId) {
 // appointment"). Reports (1) whether a booking-ish tag is DEFINED in the
 // location and (2) how often it is actually APPLIED to opportunities' contacts,
 // so we get per-client coverage and a contact self-booking rate (booked deals
-// whose contact self-booked, split by paid channel).
-const BOOK_TAG_RE = /booked\s*app(t|ointment)|self.?book|customer\s*booked|contact\s*booked|book(ed)?\s*by\s*(customer|contact|self)/i
+// whose contact self-booked, split by paid channel). BOOK_TAG_RE / oppTags are
+// shared with the attribution feed (defined near channelOf).
 export async function tagAudit(locationId, sample = 400) {
   const locTok = await locationToken(locationId)
   // 1) Tags defined in the location (authoritative existence check).

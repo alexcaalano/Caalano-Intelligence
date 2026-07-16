@@ -1267,6 +1267,15 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const dWon = useClosed ? wcSlice.won : c.won
   const dRev = useClosed ? wcSlice.revenue : c.revenue
   const dAov = useClosed ? wcSlice.avgValue : c.avgValue
+  // Contact self-booking rate from the attribution feed (booked deals whose
+  // contact self-booked via the "customer booked appointment" tag). Only the
+  // attribution channels carry it, so it is account / channel level (no per
+  // pipeline or user split) and shown only when tags are actually readable.
+  const sbSlice = channels ? channels[chan === 'all' ? 'all' : chan] : null
+  const sbBooked = sbSlice ? (sbSlice.totals.booked || 0) : 0
+  const sbSelf = sbSlice ? (sbSlice.totals.selfBooked || 0) : 0
+  const sbRate = sbBooked ? (sbSelf / sbBooked) * 100 : null
+  const showSelfBook = !!(sbSlice && sbSlice.totals.tagReadable) && sbBooked > 0 && uid === 'all' && pid === 'all'
   const roas = spend ? dRev / spend : 0
   // Previous equal-length period - deltas only at account level (no per-pipeline
   // / channel / user split in the prior period).
@@ -1369,6 +1378,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label="Total Leads" value={fmtNumber(c.leads)} cur={c.leads} prev={pc ? pc.leads : null} />
         <Sc label="Bookings Made" value={fmtNumber(c.booked)} cur={c.booked} prev={pc ? pc.booked : null} />
         <Sc label="Shown Bookings" value={fmtNumber(c.shown)} cur={c.shown} prev={pc ? pc.shown : null} />
+        {showSelfBook && <Sc label="Self-Booked Rate" value={fmtPct(sbRate, 1)} kpi={{ text: `${fmtNumber(sbSelf)}/${fmtNumber(sbBooked)} self-served`, cls: 'info' }} />}
         <Sc label={useClosed ? 'Won (closed)' : 'Won (created)'} value={fmtNumber(dWon)} cur={useClosed ? null : c.won} prev={!useClosed && pc ? pc.won : null} />
         <Sc label={useClosed ? 'Revenue (won in period)' : 'Revenue (created)'} value={money(dRev)} cur={useClosed ? null : c.revenue} prev={!useClosed && pc ? pc.revenue : null} />
         <Sc label="Avg Deal Value" value={dWon ? money(dAov) : '-'} cur={useClosed ? null : c.avgValue} prev={!useClosed && pc ? pc.avgValue : null} />

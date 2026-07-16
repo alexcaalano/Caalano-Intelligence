@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -679,11 +679,13 @@ export default async (req) => {
     if (!c.ghl) return json({ error: `no Caalano Systems account for ${client}` }, 404)
     if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
     try {
-      // Pull CRM + the Windsor user-name lookup in parallel to shave latency.
-      const [crm, usersRows] = await Promise.all([
+      // Pull CRM + user-name lookup + won-in-period (realised revenue) in parallel.
+      const [crm, usersRows, wonClosed] = await Promise.all([
         buildCrm(c.ghl, from, to),
         windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(c.ghl))).catch(() => []),
+        (from && to) ? wonInPeriod(c.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
+      crm.wonClosed = wonClosed
       const uName = {}; for (const u of usersRows) if (u.user_id) uName[u.user_id] = u.user_name
       const nameOf = (id) => uName[id] || (id === 'unassigned' ? 'Unassigned' : 'User ' + String(id).slice(-4))
       const nameRows = (rows) => rows.map((r) => ({ ...r, name: nameOf(r.id) }))
@@ -711,8 +713,14 @@ export default async (req) => {
 
   // Caalano360 — blended paid + CRM aggregate for a single client.
   if (channel === 'blend') {
-    try { const blend = await buildBlend(c, from, to, preset, key); return json({ client, channel, period: { from, to, preset }, blend }, 200, true) }
-    catch (e) { return json({ error: String(e.message || e) }, 502) }
+    try {
+      const [blend, wonClosed] = await Promise.all([
+        buildBlend(c, from, to, preset, key),
+        (c.ghl && from && to) ? wonInPeriod(c.ghl, from, to).catch(() => null) : Promise.resolve(null),
+      ])
+      blend.wonClosed = wonClosed
+      return json({ client, channel, period: { from, to, preset }, blend }, 200, true)
+    } catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 
   const spec = FIELDS[channel]

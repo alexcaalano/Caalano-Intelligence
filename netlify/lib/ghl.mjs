@@ -223,6 +223,39 @@ export async function bookedTrends(locationId, from, to) {
   return out
 }
 
+// Deals WON during [from,to] by status-change date, regardless of when the lead
+// was created (the "realised revenue" lens). Split by pipeline / paid channel /
+// assigned user so the Caalano360 + CRM filters can pivot it too. Looks back so
+// old leads that close in-period are captured; capped, so very old-created deals
+// may be missed (flagged via `capped`).
+export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
+  const locTok = await locationToken(locationId)
+  const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
+  const opps = await allOpportunities(locTok, locationId, back, to, 3000)
+  const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
+  const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
+  const capped = opps.length >= 3000
+  const mk = () => ({ won: 0, revenue: 0 })
+  const total = mk(), byPipeline = {}, byUser = {}, ch = { meta: mk(), google: mk(), other: mk() }
+  for (const o of opps) {
+    if (String(o.status || '').toLowerCase() !== 'won') continue
+    const sc = Date.parse(o.lastStatusChangeAt); if (!sc) continue
+    if (!((fromMs == null || sc >= fromMs) && (toMs == null || sc <= toMs))) continue
+    const val = num(o.monetaryValue)
+    total.won++; total.revenue += val
+    const pid = o.pipelineId || 'none'; (byPipeline[pid] = byPipeline[pid] || mk()); byPipeline[pid].won++; byPipeline[pid].revenue += val
+    const uid = o.assignedTo || 'unassigned'; (byUser[uid] = byUser[uid] || mk()); byUser[uid].won++; byUser[uid].revenue += val
+    const cc = channelOf(utmOf(o)); ch[cc].won++; ch[cc].revenue += val
+  }
+  const fin = (x) => ({ won: x.won, revenue: Math.round(x.revenue), avgValue: x.won ? Math.round(x.revenue / x.won) : 0 })
+  const finMap = (m) => { const o = {}; for (const k in m) o[k] = fin(m[k]); return o }
+  return {
+    total: fin(total), byPipeline: finMap(byPipeline), byUser: finMap(byUser),
+    channels: { all: fin(total), meta: fin(ch.meta), google: fin(ch.google), other: fin(ch.other) },
+    capped,
+  }
+}
+
 // Lightweight source-tag coverage for one location (no pipeline/stage work):
 // how many opportunities carry a UTM, split by classified channel.
 export async function attributionCoverage(locationId, from, to) {

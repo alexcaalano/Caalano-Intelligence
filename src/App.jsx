@@ -912,10 +912,19 @@ function CrmGhl({ crm, currency, clientId }) {
   useEffect(() => { setPid('all') }, [uid])
   const [openUser, setOpenUser] = useState(null)
   const [uSort, onUSort] = useSort('won')
+  const [wonBasis, setWonBasis] = useState('created')
+  useEffect(() => { setWonBasis('created') }, [clientId])
   const money = (v) => fmtCurrency(v, currency)
   const pipe = pid === 'all' ? null : pipes.find((p) => p.id === pid)
   // Every scorecard / breakdown pivots to the selected pipeline (within the user).
   const t = pipe ? pipe.totals : src.totals
+  // Won lens: 'created' (opps created in period) or 'closed' (marked Won in period).
+  const wonClosed = crm.wonClosed || null
+  const wcSlice = !wonClosed ? null : (pipe ? wonClosed.byPipeline[pid] : uid !== 'all' ? wonClosed.byUser[uid] : wonClosed.total)
+  const useClosed = wonBasis === 'closed' && !!wcSlice
+  const dWon = useClosed ? wcSlice.won : t.won
+  const dRev = useClosed ? wcSlice.revenue : t.revenue
+  const dAov = useClosed ? wcSlice.avgValue : t.avgWonValue
   const lostReasons = pipe ? (pipe.lostReasons || []) : (src.lostReasons || [])
   const lostByStage = pipe ? (pipe.lostByStage || []) : (src.lostByStage || [])
   const byUser = crm.byUser || []
@@ -933,18 +942,32 @@ function CrmGhl({ crm, currency, clientId }) {
           </select>
         </div>
       </div>}
+      {wonClosed && <div className="c360-head" style={{ marginTop: allUsers.length > 1 ? 12 : 0 }}>
+        <div className="section-title" style={{ margin: 0 }}>Won reporting basis <span className="sub">· {useClosed ? 'deals closed in period' : 'opportunities created in period'}</span></div>
+        <div className="pipe-sel"><label>Won by</label>
+          <div className="chan-toggle">
+            <button className={wonBasis === 'created' ? 'on' : ''} onClick={() => setWonBasis('created')} title="Opportunities created in this period">Lead created</button>
+            <button className={wonBasis === 'closed' ? 'on' : ''} onClick={() => setWonBasis('closed')} title="Deals marked Won in this period, any created date">Deal won</button>
+          </div>
+        </div>
+      </div>}
       <div className="scorecard">
         <Sc label="Leads" value={fmtNumber(t.leads)} />
         <Sc label="Open" value={fmtNumber(t.open)} />
-        <Sc label="Won" value={fmtNumber(t.won)} />
+        <Sc label={useClosed ? 'Won (closed)' : 'Won (created)'} value={fmtNumber(dWon)} />
         <Sc label="Lost" value={fmtNumber(t.lost)} />
         <Sc label="Abandoned" value={fmtNumber(t.abandoned)} />
         <Sc label="Close Rate" value={fmtPct(t.closeRate, 1)} />
         <Sc label="Pipeline Value" value={money(t.openValue)} />
-        <Sc label="Won Value" value={money(t.revenue)} />
-        <Sc label="Avg Deal" value={t.won ? money(t.avgWonValue) : '-'} />
+        <Sc label={useClosed ? 'Won Value (closed)' : 'Won Value (created)'} value={money(dRev)} />
+        <Sc label="Avg Deal" value={dWon ? money(dAov) : '-'} />
         <Sc label="Avg Days to Won" value={t.avgDaysToWon != null ? `${t.avgDaysToWon}d` : '-'} />
       </div>
+      {wonClosed && <p className={`basis-note ${useClosed ? 'closed' : ''}`}>
+        {useClosed
+          ? <><b>Deal-won basis:</b> Won &amp; Won Value are deals <b>marked Won in this period</b>, no matter when the lead was created - realised revenue.{wonClosed.capped ? ' (High volume: some very old deals may be excluded.)' : ''} Leads, Open, Lost, Close Rate &amp; Pipeline Value stay by lead-created date.</>
+          : <><b>Lead-created basis:</b> Won &amp; Won Value are opportunities <b>created in this period</b>. Switch to <b>Deal won</b> for revenue actually closed in the window, regardless of created date.</>}
+      </p>}
       <div className="c360-head">
         <div className="section-title" style={{ margin: 0 }}>Pipeline stages <span className="sub">· {pipe ? pipe.name : 'all pipelines'} · pass-through vs. live position</span></div>
         {pipes.length > 1 && <div className="pipe-sel"><label>Pipeline</label>
@@ -1176,7 +1199,8 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const [uid, setUid] = useState('all')
   const [pid, setPid] = useState('all')
   const [chan, setChan] = useState('all')
-  useEffect(() => { setPid('all'); setChan('all'); setUid('all') }, [client.id])
+  const [wonBasis, setWonBasis] = useState('created') // 'created' (marketing) | 'closed' (revenue)
+  useEffect(() => { setPid('all'); setChan('all'); setUid('all'); setWonBasis('created') }, [client.id])
   useEffect(() => { setPid('all') }, [chan, uid])
   // User + channel are separate filters over the same CRM feed; only one at a
   // time (the channel split has no per-user breakdown).
@@ -1209,7 +1233,19 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
     : attrFor(pid)
   const spend = chan === 'meta' ? attr.metaSpend : chan === 'google' ? attr.googleSpend : attr.adSpend
   const lostReasons = chSel ? chSel.lostReasons : (channels && channels.all ? channels.all.lostReasons : null)
-  const roas = spend ? c.revenue / spend : 0
+  // Won/revenue lens: 'created' (leads created in period, marketing cohort) or
+  // 'closed' (deals marked Won in period, any created date, from wonInPeriod).
+  const wonClosed = b.wonClosed || null
+  const wcSlice = !wonClosed ? null
+    : uid !== 'all' ? wonClosed.byUser[uid]
+      : chan !== 'all' ? (wonClosed.channels && wonClosed.channels[chan])
+        : pid !== 'all' ? wonClosed.byPipeline[pid]
+          : wonClosed.total
+  const useClosed = wonBasis === 'closed' && !!wcSlice
+  const dWon = useClosed ? wcSlice.won : c.won
+  const dRev = useClosed ? wcSlice.revenue : c.revenue
+  const dAov = useClosed ? wcSlice.avgValue : c.avgValue
+  const roas = spend ? dRev / spend : 0
   // Previous equal-length period - deltas only at account level (no per-pipeline
   // / channel / user split in the prior period).
   const pv = (uid === 'all' && chan === 'all' && pid === 'all' && b.prev) ? b.prev : null
@@ -1257,20 +1293,31 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
               {pipesSrc.map((x) => <option key={x.id} value={x.id}>{x.name} ({fmtNumber(x.crm.leads)})</option>)}
             </select>
           </div>}
+          {wonClosed && <div className="pipe-sel"><label>Won by</label>
+            <div className="chan-toggle">
+              <button className={wonBasis === 'created' ? 'on' : ''} onClick={() => setWonBasis('created')} title="Deals from leads created in this period (marketing cohort)">Lead created</button>
+              <button className={wonBasis === 'closed' ? 'on' : ''} onClick={() => setWonBasis('closed')} title="Deals marked Won in this period, any created date (realised revenue)">Deal won</button>
+            </div>
+          </div>}
         </div>
       </div>
+      {wonClosed && <p className={`basis-note ${useClosed ? 'closed' : ''}`}>
+        {useClosed
+          ? <><b>Deal-won basis:</b> Won, Revenue, Avg Deal, Cost/Won & ROAS below are deals <b>marked Won in {rangeLabel(range)}</b>, no matter when the lead was created - your realised revenue this window.{wonClosed.capped ? ' (High volume: some very old deals may be excluded.)' : ''} <b>*</b> Cost/Won & ROAS divide this period&apos;s spend by those wins, so they mix periods - read them as directional, not a clean efficiency figure. Leads, Bookings & Shown remain by lead-created date.</>
+          : <><b>Lead-created basis:</b> Won & Revenue below are for opportunities <b>created in {rangeLabel(range)}</b> (the cohort your spend generated). This matches ad ROAS but a recent window keeps maturing as leads close. Switch to <b>Deal won</b> for realised revenue.</>}
+      </p>}
       <div className="scorecard">
         <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} cur={spend} prev={pv ? pv.adSpend : null} />
         <Sc label="Total Leads" value={fmtNumber(c.leads)} cur={c.leads} prev={pc ? pc.leads : null} />
         <Sc label="Bookings Made" value={fmtNumber(c.booked)} cur={c.booked} prev={pc ? pc.booked : null} />
         <Sc label="Shown Bookings" value={fmtNumber(c.shown)} cur={c.shown} prev={pc ? pc.shown : null} />
-        <Sc label="Won Clients" value={fmtNumber(c.won)} cur={c.won} prev={pc ? pc.won : null} />
-        <Sc label="Revenue Closed" value={money(c.revenue)} cur={c.revenue} prev={pc ? pc.revenue : null} />
-        <Sc label="Avg Deal Value" value={c.won ? money(c.avgValue) : '-'} cur={c.avgValue} prev={pc ? pc.avgValue : null} />
+        <Sc label={useClosed ? 'Won (closed)' : 'Won (created)'} value={fmtNumber(dWon)} cur={useClosed ? null : c.won} prev={!useClosed && pc ? pc.won : null} />
+        <Sc label={useClosed ? 'Revenue (won in period)' : 'Revenue (created)'} value={money(dRev)} cur={useClosed ? null : c.revenue} prev={!useClosed && pc ? pc.revenue : null} />
+        <Sc label="Avg Deal Value" value={dWon ? money(dAov) : '-'} cur={useClosed ? null : c.avgValue} prev={!useClosed && pc ? pc.avgValue : null} />
         <Sc label="Cost / Lead" value={spend && c.leads ? money(spend / c.leads) : '-'} cur={spend && c.leads ? spend / c.leads : null} prev={pv && pc && pc.leads ? pv.adSpend / pc.leads : null} goodWhenDown />
         <Sc label="Cost / Booked" value={spend && c.booked ? money(spend / c.booked) : '-'} cur={spend && c.booked ? spend / c.booked : null} prev={pv && pc && pc.booked ? pv.adSpend / pc.booked : null} goodWhenDown />
-        <Sc label="Cost / Won" value={spend && c.won ? money(spend / c.won) : '-'} cur={spend && c.won ? spend / c.won : null} prev={pv && pc && pc.won ? pv.adSpend / pc.won : null} goodWhenDown />
-        <Sc label="ROAS" value={spend ? `${roas.toFixed(2)}×` : '-'} cur={spend ? roas : null} prev={pv && pc && pv.adSpend ? pc.revenue / pv.adSpend : null} />
+        <Sc label={useClosed ? 'Cost / Won *' : 'Cost / Won'} value={spend && dWon ? money(spend / dWon) : '-'} cur={useClosed ? null : (spend && c.won ? spend / c.won : null)} prev={!useClosed && pv && pc && pc.won ? pv.adSpend / pc.won : null} goodWhenDown />
+        <Sc label={useClosed ? 'ROAS *' : 'ROAS'} value={spend ? `${roas.toFixed(2)}×` : '-'} cur={useClosed ? null : (spend ? roas : null)} prev={!useClosed && pv && pc && pv.adSpend ? pc.revenue / pv.adSpend : null} />
         <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} cur={rate(c.won, c.leads)} prev={pc ? rate(pc.won, pc.leads) : null} />
       </div>
       {b.hasCrm && (() => {

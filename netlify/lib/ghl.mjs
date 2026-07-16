@@ -114,6 +114,13 @@ function zonedDateStr(ms, tz) {
   if (ms == null || isNaN(ms)) return null
   return new Date(ms + tzOffsetMs(tz, ms)).toISOString().slice(0, 10)
 }
+// UTC ms bounds of [from,to] in a location's timezone. Lets other feeds (e.g.
+// the Windsor CRM blend) filter opportunities to the same day window the direct
+// API uses, so lead counts reconcile across the dashboard.
+export async function periodBounds(locationId, from, to) {
+  const tz = await locationTimezone(locationId)
+  return { tz, fromMs: from ? zonedStartMs(from, tz) : null, toMs: to ? zonedEndMs(to, tz) : null }
+}
 
 // --- data pulls (paged, bounded) ---
 // opportunities/search returns the opportunity, its contact AND an inline

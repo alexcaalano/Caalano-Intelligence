@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -536,7 +536,7 @@ function campAgg(rows, source, convField) {
 async function buildBlend(c, from, to, preset, key) {
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
   const pr = prevRange(from, to)
-  const [fb, gg, opps, pipes, userRows, pFb, pGg, pOpps] = await Promise.all([
+  const [fb, gg, oppsRaw, pipes, userRows, pFb, pGg, pOppsRaw] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at', 'opportunity_assigned_to'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
@@ -544,8 +544,22 @@ async function buildBlend(c, from, to, preset, key) {
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
     pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend'], pr.from, pr.to, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
     pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend'], pr.from, pr.to, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
-    pr.from && c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value'], pr.from, pr.to, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], pr.from, pr.to, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
   ])
+  // Windsor's GoHighLevel feed returns opportunities on a broader basis than
+  // "created in period", so a short window (e.g. Today) over-counts leads vs the
+  // direct API. Filter to opportunities created inside the window, in the
+  // client's timezone, so the blend's leads / per-user / per-pipeline counts
+  // reconcile with the Meta and CRM tabs.
+  let opps = oppsRaw, pOpps = pOppsRaw
+  if (c.ghl && from && to) {
+    try {
+      const { fromMs, toMs } = await periodBounds(c.ghl, from, to)
+      const inWin = (lo, hi) => (r) => { const ms = Date.parse(r.opportunity_created_at); return isNaN(ms) ? true : ((lo == null || ms >= lo) && (hi == null || ms <= hi)) }
+      if (fromMs != null || toMs != null) opps = oppsRaw.filter(inWin(fromMs, toMs))
+      if (pr.from && pr.to) { const pb = await periodBounds(c.ghl, pr.from, pr.to); pOpps = pOppsRaw.filter(inWin(pb.fromMs, pb.toMs)) }
+    } catch { /* keep unfiltered on error */ }
+  }
   const metaCamps = campAgg(fb, 'Meta', fbLeads)
   const googleCamps = campAgg(gg, 'Google', 'conversions')
   const sum = (arr, k) => arr.reduce((a, r) => a + r[k], 0)

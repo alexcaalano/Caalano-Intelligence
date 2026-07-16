@@ -214,12 +214,17 @@ function contactIdOf(o) { return o.contactId || (o.contact && (o.contact.id || o
 //     Booked lands on the day the call was booked, no matter when the call is.
 //   shownInPeriod  - a call HAPPENED (startTime) within [from,to] and the
 //     contact showed, so Shown lands on the day the call took place.
-// The caller credits these only to lead contacts (those with an opportunity),
-// which filters out internal/partner meetings on the same calendars. The fetch
-// window (by startTime) reaches back a little and well forward so it captures
-// both future-dated bookings made in-period and calls that occurred in-period.
-// A no-show still booked the call; cancelled/invalid never count.
-const APPT_CANCEL_RE = /(cancel|invalid)/i
+//   cancelledInPeriod - every booking they made in-period was cancelled (a net
+//     cancellation, not a reschedule that landed on a live booking).
+// A booking counts as Booked on its creation day EVEN IF later cancelled - the
+// creative did its job by generating the call - so only truly invalid records
+// are excluded. Cancellations are tracked separately for transparency. The
+// caller credits these only to lead contacts (those with an opportunity), which
+// filters out internal/partner meetings on the same calendars. The fetch window
+// (by startTime) reaches back a little and well forward so it captures both
+// future-dated bookings made in-period and calls that occurred in-period.
+const APPT_INVALID_RE = /invalid/i
+const APPT_CANCEL_RE = /cancel/i
 async function fetchAppointments(locTok, locationId, from, to) {
   const byContact = new Map()
   let calendars = []
@@ -237,8 +242,11 @@ async function fetchAppointments(locTok, locationId, from, to) {
   const mark = (contactId, status, addedMs, startTimeMs) => {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
-    const e = byContact.get(contactId) || { bookedInPeriod: false, shownInPeriod: false }
-    if (!APPT_CANCEL_RE.test(s) && inPeriod(addedMs)) e.bookedInPeriod = true
+    const e = byContact.get(contactId) || { bookedInPeriod: false, shownInPeriod: false, _live: false, _cancelled: false }
+    if (!APPT_INVALID_RE.test(s) && inPeriod(addedMs)) {
+      e.bookedInPeriod = true // cancelled still counts as a booking on its creation day
+      if (APPT_CANCEL_RE.test(s)) e._cancelled = true; else e._live = true
+    }
     if (s === 'showed' && inPeriod(startTimeMs)) e.shownInPeriod = true
     byContact.set(contactId, e)
   }
@@ -255,9 +263,16 @@ async function fetchAppointments(locTok, locationId, from, to) {
       }
     } catch { /* skip a calendar we cannot read; others still count */ }
   }
-  let bookedContacts = 0, shownContacts = 0
-  for (const e of byContact.values()) { if (e.bookedInPeriod) bookedContacts++; if (e.shownInPeriod) shownContacts++ }
-  return { byContact, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts }
+  let bookedContacts = 0, shownContacts = 0, cancelledContacts = 0
+  for (const e of byContact.values()) {
+    // Net cancellation: they booked in-period and every one of those bookings
+    // is cancelled (a reschedule that landed on a live booking is not counted).
+    e.cancelledInPeriod = e._cancelled && !e._live
+    if (e.bookedInPeriod) bookedContacts++
+    if (e.shownInPeriod) shownContacts++
+    if (e.cancelledInPeriod) cancelledContacts++
+  }
+  return { byContact, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
 }
 
 // Full CRM-style rollup over an arbitrary opportunity subset (one channel, or
@@ -415,7 +430,7 @@ export async function buildAttribution(locationId, from, to) {
   const ent = (map, keyRaw) => {
     const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
     let e = map.get(key)
-    if (!e) { e = { name: key, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; map.set(key, e) }
+    if (!e) { e = { name: key, leads: 0, booked: 0, shown: 0, cancelled: 0, won: 0, revenue: 0 }; map.set(key, e) }
     return e
   }
   // Cohort bump: leads / won / revenue on the lead-creation date. When
@@ -470,8 +485,9 @@ export async function buildAttribution(locationId, from, to) {
   // show on the day the call happened. Each is credited to the creative that
   // first brought that contact in (their opportunity's UTMs). Only contacts with
   // an opportunity are counted, so internal / partner meetings never inflate it.
-  const chanAct = { all: { booked: 0, shown: 0 }, meta: { booked: 0, shown: 0 }, google: { booked: 0, shown: 0 }, other: { booked: 0, shown: 0 } }
-  let bookedActions = 0, shownActions = 0
+  const mkAct = () => ({ booked: 0, shown: 0, cancelled: 0 })
+  const chanAct = { all: mkAct(), meta: mkAct(), google: mkAct(), other: mkAct() }
+  let bookedActions = 0, shownActions = 0, cancelledActions = 0
   if (useAppts) {
     for (const [cid, f] of apptByContact) {
       if (!f.bookedInPeriod && !f.shownInPeriod) continue
@@ -481,6 +497,11 @@ export async function buildAttribution(locationId, from, to) {
         bookedActions++; chanAct.all.booked++; chanAct[ch].booked++
         ent(dim.source, u.source).booked++; ent(dim.medium, u.medium).booked++; ent(dim.campaign, u.campaign).booked++; ent(dim.content, u.content).booked++; ent(dim.term, u.term).booked++
         const det = sd(u.source); ent(det.medium, u.medium).booked++; ent(det.campaign, u.campaign).booked++; ent(det.content, u.content).booked++
+      }
+      if (f.cancelledInPeriod) {
+        cancelledActions++; chanAct.all.cancelled++; chanAct[ch].cancelled++
+        ent(dim.source, u.source).cancelled++; ent(dim.medium, u.medium).cancelled++; ent(dim.campaign, u.campaign).cancelled++; ent(dim.content, u.content).cancelled++; ent(dim.term, u.term).cancelled++
+        const det = sd(u.source); ent(det.medium, u.medium).cancelled++; ent(det.campaign, u.campaign).cancelled++; ent(det.content, u.content).cancelled++
       }
       if (f.shownInPeriod) {
         shownActions++; chanAct.all.shown++; chanAct[ch].shown++
@@ -511,11 +532,11 @@ export async function buildAttribution(locationId, from, to) {
     google: rollupSubset(buckets.google, idx, reasonName),
     other: rollupSubset(buckets.other, idx, reasonName),
   }
-  if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown } }
+  if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown; chan[k].totals.cancelled = chanAct[k].cancelled } }
 
   return {
     connected: true, opps: opps.length, attributed, tz,
-    appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions },
+    appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, cancelled: cancelledActions },
     bySource, byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
     channels: chan,
   }
@@ -749,14 +770,15 @@ export async function apptCohortCheck(locationId, from, to) {
   for (const o of wideOpps) { const cid = contactIdOf(o); if (cid && !contactUtm.has(cid)) contactUtm.set(cid, o) }
   const leadsInWindow = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
   const byC = appts.byContact instanceof Map ? appts.byContact : new Map()
-  const out = { from, to, tz, leadsInWindow: leadsInWindow.length, wideOpps: wideOpps.length, apptConnected: !!appts.connected, apptEvents: appts.events || 0, apptError: appts.error || null, bookedActions: 0, shownActions: 0, unattributed: 0, examples: [] }
+  const out = { from, to, tz, leadsInWindow: leadsInWindow.length, wideOpps: wideOpps.length, apptConnected: !!appts.connected, apptEvents: appts.events || 0, apptError: appts.error || null, bookedActions: 0, shownActions: 0, cancelledActions: 0, unattributed: 0, examples: [] }
   for (const [cid, f] of byC) {
     if (!f.bookedInPeriod && !f.shownInPeriod) continue
     const o = contactUtm.get(cid)
     if (!o) { if (f.bookedInPeriod) out.unattributed++; continue }
     if (f.bookedInPeriod) out.bookedActions++
     if (f.shownInPeriod) out.shownActions++
-    if (out.examples.length < 15) { const u = utmOf(o); out.examples.push({ leadCreated: String(o.createdAt || '').slice(0, 10), utmContent: u.content, utmCampaign: u.campaign, booked: f.bookedInPeriod, shown: f.shownInPeriod }) }
+    if (f.cancelledInPeriod) out.cancelledActions++
+    if (out.examples.length < 15) { const u = utmOf(o); out.examples.push({ leadCreated: zonedDateStr(Date.parse(o.createdAt), tz), utmContent: u.content, utmCampaign: u.campaign, booked: f.bookedInPeriod, cancelled: !!f.cancelledInPeriod, shown: f.shownInPeriod }) }
   }
   return out
 }

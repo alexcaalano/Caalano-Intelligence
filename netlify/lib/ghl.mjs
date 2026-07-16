@@ -67,6 +67,48 @@ async function ghlPost(locTok, path, bodyObj) {
   return JSON.parse(txt)
 }
 
+// --- timezone alignment ---
+// Every CRM date window is interpreted in the client's Caalano Systems location
+// timezone (auto-detected), so a "day" matches Meta (which reports in the ad
+// account timezone) and the CRM UI. Without this the window was UTC, so an
+// Australian "today" was really 10am->10am and morning leads slipped a day.
+const DEF_TZ = 'Australia/Sydney'
+const locTzCache = new Map()
+export async function locationTimezone(locationId) {
+  if (locTzCache.has(locationId)) return locTzCache.get(locationId)
+  let tz = DEF_TZ
+  try {
+    const locTok = await locationToken(locationId)
+    const j = await ghlGet(locTok, `/locations/${locationId}`, {})
+    const cand = (j.location && j.location.timezone) || j.timezone || null
+    if (cand) { try { new Intl.DateTimeFormat('en-US', { timeZone: cand }); tz = cand } catch { /* keep default */ } }
+  } catch { /* keep default */ }
+  locTzCache.set(locationId, tz)
+  return tz
+}
+// Offset (tz local - UTC) in ms at a given instant, DST-aware.
+function tzOffsetMs(tz, atMs) {
+  const dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const p = {}; for (const x of dtf.formatToParts(new Date(atMs))) p[x.type] = x.value
+  const hh = p.hour === '24' ? 0 : +p.hour
+  return Date.UTC(+p.year, +p.month - 1, +p.day, hh, +p.minute, +p.second) - atMs
+}
+// UTC ms for local midnight of `dateStr` (YYYY-MM-DD) in `tz`. Refines once so
+// DST-transition days land on the correct instant.
+function zonedStartMs(dateStr, tz) {
+  const [y, m, d] = String(dateStr).split('-').map(Number)
+  const guess = Date.UTC(y, m - 1, d, 0, 0, 0)
+  const off = tzOffsetMs(tz, guess); let ms = guess - off
+  const off2 = tzOffsetMs(tz, ms); if (off2 !== off) ms = guess - off2
+  return ms
+}
+// UTC ms for the last millisecond of `dateStr` in `tz` (start of next day - 1).
+function zonedEndMs(dateStr, tz) {
+  const [y, m, d] = String(dateStr).split('-').map(Number)
+  const next = new Date(Date.UTC(y, m - 1, d)); next.setUTCDate(next.getUTCDate() + 1)
+  return zonedStartMs(next.toISOString().slice(0, 10), tz) - 1
+}
+
 // --- data pulls (paged, bounded) ---
 // opportunities/search returns the opportunity, its contact AND an inline
 // `attributions` array (first/last touch, UTMs) — one call, no N+1 lookups.
@@ -75,8 +117,9 @@ async function allOpportunities(locTok, locationId, from, to, cap = 1500) {
   // newest-first and filter by createdAt in memory, stopping once a page is
   // entirely older than the window.
   const out = []; let startAfter, startAfterId, guard = 0
-  const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
-  const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
   while (guard++ < 25 && out.length < cap) {
     const q = { location_id: locationId, limit: 100, order: 'added_desc' }
     if (startAfter != null) { q.startAfter = startAfter; q.startAfterId = startAfterId }
@@ -179,8 +222,9 @@ async function fetchAppointments(locTok, locationId, from, to) {
     calendars = j.calendars || j.calendar || []
   } catch (e) { return { byContact, connected: false, error: String(e.message || e).slice(0, 120) } }
   const DAY = 86400000
-  const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
-  const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
   const startMs = (fromMs != null ? fromMs : Date.now() - 400 * DAY) - 7 * DAY
   const endMs = (toMs != null ? toMs : Date.now()) + 180 * DAY
   const inPeriod = (ms) => !isNaN(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
@@ -299,8 +343,9 @@ export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
   const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
   const CAP = 2500 // allOpportunities pages up to ~25×100
   const opps = await allOpportunities(locTok, locationId, back, to, CAP)
-  const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
-  const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
   const capped = opps.length >= CAP
   const mk = () => ({ won: 0, revenue: 0 })
   const total = mk(), byPipeline = {}, byUser = {}, ch = { meta: mk(), google: mk(), other: mk() }
@@ -338,8 +383,9 @@ export async function buildAttribution(locationId, from, to) {
   // Wide opportunity lookback so a booking made in-period by a lead who first
   // came in earlier can still be credited to the creative that brought them in.
   const DAY = 86400000
-  const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
-  const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
   const [wideOpps, pipelines, reasons, appts] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 1800),
@@ -462,7 +508,7 @@ export async function buildAttribution(locationId, from, to) {
   if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown } }
 
   return {
-    connected: true, opps: opps.length, attributed,
+    connected: true, opps: opps.length, attributed, tz,
     appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions },
     bySource, byMedium: top(dim.medium), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
     channels: chan,
@@ -643,18 +689,19 @@ export async function tagAudit(locationId, sample = 400) {
 export async function apptCohortCheck(locationId, from, to) {
   const locTok = await locationToken(locationId)
   const DAY = 86400000
-  const fromMs = from ? new Date(from + 'T00:00:00Z').getTime() : null
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
   const [wideOpps, appts] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 1800),
     fetchAppointments(locTok, locationId, from, to).catch((e) => ({ byContact: new Map(), connected: false, error: String(e.message || e).slice(0, 120) })),
   ])
-  const toMs = to ? new Date(to + 'T23:59:59Z').getTime() : null
   const contactUtm = new Map()
   for (const o of wideOpps) { const cid = contactIdOf(o); if (cid && !contactUtm.has(cid)) contactUtm.set(cid, o) }
   const leadsInWindow = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
   const byC = appts.byContact instanceof Map ? appts.byContact : new Map()
-  const out = { from, to, leadsInWindow: leadsInWindow.length, wideOpps: wideOpps.length, apptConnected: !!appts.connected, apptEvents: appts.events || 0, apptError: appts.error || null, bookedActions: 0, shownActions: 0, unattributed: 0, examples: [] }
+  const out = { from, to, tz, leadsInWindow: leadsInWindow.length, wideOpps: wideOpps.length, apptConnected: !!appts.connected, apptEvents: appts.events || 0, apptError: appts.error || null, bookedActions: 0, shownActions: 0, unattributed: 0, examples: [] }
   for (const [cid, f] of byC) {
     if (!f.bookedInPeriod && !f.shownInPeriod) continue
     const o = contactUtm.get(cid)

@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, apptCohortCheck, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, apptCohortCheck, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -665,6 +665,29 @@ export default async (req) => {
       const clients = Object.entries(CLIENTS).filter(([, cc]) => cc.ghl).map(([id]) => id)
       return json({ scope: 'tagaudit', connected: true, clients }, 200)
     } catch (e) { return json({ scope: 'tagaudit', connected: true, client, audit: { client, error: String(e.message || e).slice(0, 140) } }, 200) }
+  }
+
+  // Timezone alignment: the client's Caalano Systems location timezone (which
+  // now drives every CRM date window) plus a best-effort read of the Meta ad
+  // account timezone, so Settings can show they line up. The Meta probe is
+  // isolated - if the field name is not recognised it just returns null and
+  // never affects the main Meta data.
+  if (url.searchParams.get('scope') === 'tz') {
+    const c = CLIENTS[client]
+    if (!c) return json({ error: `unknown client ${client}` }, 404)
+    const out = { client, crmTz: null, metaTz: null, aligned: null }
+    if (c.ghl && (await isConnected().catch(() => false))) { try { out.crmTz = await locationTimezone(c.ghl) } catch { /* leave null */ } }
+    if (c.meta) {
+      for (const f of ['account_timezone_name', 'timezone_name', 'account_timezone']) {
+        try {
+          const rows = await windsorFetch('facebook', ['account_id', f], null, null, 'last_7d', key)
+          const v = rows && rows.length ? (rows[0][f] || null) : null
+          if (v) { out.metaTz = v; break }
+        } catch { /* unknown field / no data - try next */ }
+      }
+    }
+    if (out.crmTz && out.metaTz) out.aligned = out.crmTz === out.metaTz
+    return json({ scope: 'tz', ...out }, 200, true)
   }
 
   // Debug (PII-free): booked/shown cohort check for one client + window.

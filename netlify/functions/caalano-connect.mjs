@@ -8,9 +8,11 @@ import { exchangeCode, isConnected, loadTokens } from '../lib/ghl.mjs'
 
 // Exactly the read scopes the dashboard uses. locations.readonly is the one
 // that works at agency level (to mint sub-account tokens); opportunities +
-// contacts cover CRM + attribution. Keep the GoHighLevel app trimmed to these
-// three so the token and app scope sets match and location-token minting works.
-const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly']
+// contacts cover CRM + attribution; calendars + calendars/events let us count
+// real booked calls against a creative even when the pipeline stage was never
+// advanced. Keep the GoHighLevel app scope set matched to this list so the
+// token and app scopes agree and location-token minting works.
+const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly', 'calendars.readonly', 'calendars/events.readonly']
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 
 const page = (title, body) => new Response(

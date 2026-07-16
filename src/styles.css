@@ -361,6 +361,14 @@ tbody tr:hover { background: var(--panel-2); }
 .chan-toggle button:hover { color: var(--text); }
 .chan-toggle button.on { background: var(--brand); color: #fff; }
 
+/* Timezone alignment badge (Settings, per client) */
+.tz-badge { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 2px; font-size: 12px; }
+.tz-badge .tz-main { color: var(--muted); }
+.tz-badge .tz-main b { color: var(--text); font-weight: 700; }
+.tz-badge .tz-ok { color: #12b886; font-weight: 700; }
+.tz-badge .tz-warn { color: #f5a524; font-weight: 650; }
+.tz-badge .tz-sub { color: var(--faint); }
+
 /* Caalano360 campaign linker */
 .link-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .link-btn { border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); border-radius: 9px; padding: 7px 12px; font-size: 12px; font-weight: 650; cursor: pointer; white-space: nowrap; }

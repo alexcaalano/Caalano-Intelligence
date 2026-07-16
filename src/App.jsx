@@ -2348,6 +2348,30 @@ function TagAudit({ clients }) {
   )
 }
 
+// Per-client timezone alignment badge. All CRM reporting is bucketed by the
+// Caalano Systems location timezone; this shows it and confirms the Meta ad
+// account is on the same zone (so Meta and CRM days match).
+function TimezoneBadge({ clientId, hasMeta }) {
+  const [tz, setTz] = useState(null)
+  useEffect(() => {
+    let alive = true
+    fetch(`/.netlify/functions/windsor?scope=tz&client=${clientId}`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && j) setTz(j) }).catch(() => {})
+    return () => { alive = false }
+  }, [clientId])
+  if (!tz || !tz.crmTz) return null
+  return (
+    <div className="tz-badge">
+      <span className="tz-main">Reporting timezone <b>{tz.crmTz}</b></span>
+      {hasMeta && tz.metaTz && (
+        tz.aligned
+          ? <span className="tz-ok">Meta ad account matches ✓</span>
+          : <span className="tz-warn">Meta ad account is {tz.metaTz} - reporting uses the CRM zone</span>
+      )}
+      {hasMeta && !tz.metaTz && <span className="tz-sub">Meta zone not detected</span>}
+    </div>
+  )
+}
+
 function Settings({ config, enabled, setEnabled, onClose, currency }) {
   if (!config) return null
   const w = config.availableAccounts?.windsor || {}
@@ -2378,6 +2402,7 @@ function Settings({ config, enabled, setEnabled, onClose, currency }) {
                   <span className="idtag">Google <b>{c.google || '-'}</b></span>
                   <span className="idtag">Caalano Systems <b>{c.ghl || '-'}</b></span>
                 </div>
+                {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
                 {canLink && <CampaignLinker clientId={c.id} />}
                 {c.ghl && <KeyEventsEditor clientId={c.id} />}
                 {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}

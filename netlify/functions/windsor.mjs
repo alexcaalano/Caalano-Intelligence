@@ -32,7 +32,7 @@ const FIELDS = {
   meta: {
     connector: 'facebook',
     dims: ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking'], // CONFIRMED
-    metrics: ['spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view'], // spend/impr/clicks + video CONFIRMED; inline_link_clicks + actions_lead VERIFY
+    metrics: ['spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_leadgen_grouped', 'actions_onsite_conversion_lead_grouped', 'actions_offsite_conversion_fb_pixel_lead', 'actions_video_view'], // leads use native FB lead-form fields (Ads-Manager match), not the actions_lead superset
   },
   google: {
     connector: 'google_ads',
@@ -50,6 +50,13 @@ const FIELDS = {
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
 const norm = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
+// Meta "Leads" that matches Ads Manager. The bare `actions_lead` field is a
+// superset (native Facebook leads + off-Facebook website-pixel leads) and
+// double-counts, over-reporting. Ads Manager's Leads result is the native
+// lead-form outcome (Instant Form + on-Facebook lead/Messenger); website
+// conversion campaigns report under the pixel field, so use that as a fallback.
+const FB_LEAD_FIELDS = ['actions_leadgen_grouped', 'actions_onsite_conversion_lead_grouped', 'actions_offsite_conversion_fb_pixel_lead']
+const fbLeads = (r) => { const native = num(r.actions_leadgen_grouped) + num(r.actions_onsite_conversion_lead_grouped); return native || num(r.actions_offsite_conversion_fb_pixel_lead) }
 
 // Everything reports against Australian Eastern time (Sydney). "Today" is the
 // current calendar day there, represented as a UTC-midnight Date so the existing
@@ -83,64 +90,67 @@ async function windsorFetch(connector, fields, from, to, preset, key) {
   return j.data || j.result || []
 }
 
-function rollupMeta(adRows, dayRows, accRows) {
-  const by = (keyFn) => {
-    const m = new Map()
-    for (const r of adRows) {
-      const k = keyFn(r); if (!k) continue
-      const e = m.get(k) || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0 }
-      e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks)
-      e.linkClicks += num(r.inline_link_clicks); e.leads += num(r.actions_lead); e.videoViews += num(r.actions_video_view)
-      m.set(k, e)
-    }
-    return m
+// Aggregate a set of Meta rows by a key field into a metrics map. Leads use the
+// Ads-Manager-matching definition (fbLeads), not the double-counting superset.
+function aggMeta(rows, keyField) {
+  const m = new Map()
+  for (const r of rows) {
+    const k = r[keyField]; if (!k) continue
+    const e = m.get(k) || { name: k, campaign: r.campaign || null, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0 }
+    e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks)
+    e.linkClicks += num(r.inline_link_clicks); e.leads += fbLeads(r); e.videoViews += num(r.actions_video_view)
+    m.set(k, e)
   }
-  const campaigns = [...by((r) => r.campaign).entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.spend - a.spend)
-  const adsets = [...by((r) => r.adset_name).entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.spend - a.spend)
-  // rebuild adset->campaign so ad sets can carry their parent campaign for drill-down
-  const adsetCampaign = {}
-  for (const r of adRows) { if (r.adset_name && r.campaign && !adsetCampaign[r.adset_name]) adsetCampaign[r.adset_name] = r.campaign }
-  const adsetsWithParent = adsets.map((a) => ({ ...a, campaign: adsetCampaign[a.name] || null }))
+  return [...m.values()]
+}
+function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows) {
+  // FIX A: campaign / ad-set counts come from Meta's own per-level breakdowns
+  // (de-duplicated at each level), not from summing the ad rows, so they match
+  // Meta Ads Manager instead of inflating via cross-ad attribution.
+  const campaigns = aggMeta(campRows, 'campaign').map(({ campaign, ...v }) => v).sort((a, b) => b.spend - a.spend)
+  const adsetsWithParent = aggMeta(adsetRows, 'adset_name').sort((a, b) => b.spend - a.spend)
   const ads = adRows.map((r) => ({
     name: r.ad_name, campaign: r.campaign, adset: r.adset_name,
     type: num(r.actions_video_view) > 0 ? 'Video' : 'Image',
     quality: r.quality_ranking || 'UNKNOWN', thumb: r.thumbnail_url, igUrl: r.instagram_permalink_url || null,
     spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks),
-    linkClicks: num(r.inline_link_clicks), leads: num(r.actions_lead), videoViews: num(r.actions_video_view),
+    linkClicks: num(r.inline_link_clicks), leads: fbLeads(r), videoViews: num(r.actions_video_view),
   })).filter((a) => a.name).sort((a, b) => b.spend - a.spend)
   // daily series, sorted ascending by date
   const dmap = new Map()
   for (const r of dayRows) {
     const d = String(r.date || '').slice(0, 10); if (!d) continue
     const e = dmap.get(d) || { date: d, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0 }
-    e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.linkClicks += num(r.inline_link_clicks); e.leads += num(r.actions_lead)
+    e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.linkClicks += num(r.inline_link_clicks); e.leads += fbLeads(r)
     dmap.set(d, e)
   }
   const daily = [...dmap.values()].sort((a, b) => a.date.localeCompare(b.date))
   // account totals (reach/frequency are only correct from an account-level pull)
   const totals = { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0 }
-  for (const r of accRows) { totals.spend += num(r.spend); totals.impressions += num(r.impressions); totals.clicks += num(r.clicks); totals.linkClicks += num(r.inline_link_clicks); totals.leads += num(r.actions_lead); totals.videoViews += num(r.actions_video_view); totals.reach += num(r.reach) }
+  for (const r of accRows) { totals.spend += num(r.spend); totals.impressions += num(r.impressions); totals.clicks += num(r.clicks); totals.linkClicks += num(r.inline_link_clicks); totals.leads += fbLeads(r); totals.videoViews += num(r.actions_video_view); totals.reach += num(r.reach) }
   return { campaigns, adsets: adsetsWithParent, ads, daily, totals }
 }
 function metaTotals(accRows) {
   const t = { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0 }
-  for (const r of accRows) { t.spend += num(r.spend); t.impressions += num(r.impressions); t.clicks += num(r.clicks); t.linkClicks += num(r.inline_link_clicks); t.leads += num(r.actions_lead); t.videoViews += num(r.actions_video_view); t.reach += num(r.reach) }
+  for (const r of accRows) { t.spend += num(r.spend); t.impressions += num(r.impressions); t.clicks += num(r.clicks); t.linkClicks += num(r.inline_link_clicks); t.leads += fbLeads(r); t.videoViews += num(r.actions_video_view); t.reach += num(r.reach) }
   return t
 }
 async function buildMeta(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const pr = prevRange(from, to)
-  const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view']
-  const [adRows, dayRows, accRows, prevRows, adDayRows] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead', 'actions_video_view'], from, to, preset, key).then(filt),
-    windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead'], from, to, preset, key).then(filt),
+  const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
+  const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows] = await Promise.all([
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
-    windsorFetch('facebook', ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', 'actions_lead'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
   ])
-  const roll = rollupMeta(adRows, dayRows, accRows)
+  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows)
   roll.prev = metaTotals(prevRows)
-  roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name, ad: r.ad_name, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: num(r.actions_lead) })).filter((r) => r.date && r.ad)
+  roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name, ad: r.ad_name, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && r.ad)
   return roll
 }
 
@@ -200,7 +210,7 @@ async function buildOverview(from, to, preset, key) {
   const yest = new Date(today); yest.setUTCDate(yest.getUTCDate() - 1)
   const base0 = new Date(today); base0.setUTCDate(base0.getUTCDate() - 8)
   const [fb, gg, opps, fbD, ggD] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', 'actions_lead'], from, to, preset, key),
+    windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key),
     windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key).catch(() => []),
     windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
@@ -211,7 +221,7 @@ async function buildOverview(from, to, preset, key) {
   for (const r of fb) {
     const id = metaRev[norm(r.account_id)]; if (!id) continue
     const e = ensure(id); e.meta = e.meta || { spend: 0, impressions: 0, clicks: 0, leads: 0 }
-    e.meta.spend += num(r.spend); e.meta.impressions += num(r.impressions); e.meta.clicks += num(r.clicks); e.meta.leads += num(r.actions_lead)
+    e.meta.spend += num(r.spend); e.meta.impressions += num(r.impressions); e.meta.clicks += num(r.clicks); e.meta.leads += fbLeads(r)
   }
   for (const r of gg) {
     const id = googleRev[norm(r.account_id)]; if (!id) continue
@@ -250,7 +260,7 @@ async function buildTrends(key) {
   const dstr = (d) => d.toISOString().slice(0, 10)
   const start = new Date(today); start.setUTCDate(start.getUTCDate() - 55)
   const [fb, gg, opps, pipes] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'date', 'spend', 'actions_lead'], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
@@ -260,7 +270,7 @@ async function buildTrends(key) {
   const mk = () => new Float64Array(56)
   const cl = {}
   const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false })
-  for (const r of fb) { const id = metaId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.metaSpend[di] += num(r.spend); e.metaLeads[di] += num(r.actions_lead) }
+  for (const r of fb) { const id = metaId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.metaSpend[di] += num(r.spend); e.metaLeads[di] += fbLeads(r) }
   for (const r of gg) { const id = googleId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.gSpend[di] += num(r.spend); e.gConv[di] += num(r.conversions) }
   // Windsor blended booked (fallback when the GHL app isn't connected / a client's fetch fails)
   const idxByAcct = {}; { const byAcct = {}; for (const p of pipes) { const id = ghlId[norm(p.account_id)]; if (!id) continue; (byAcct[id] = byAcct[id] || []).push(p) } for (const [id, arr] of Object.entries(byAcct)) idxByAcct[id] = stageIndex(arr) }
@@ -342,13 +352,13 @@ async function buildWeekly(c, weeks, key) {
   const end = dstr(endSun)
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
   const [fb, gg, opps, pipes] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', 'actions_lead'], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], start, end, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], start, end, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
   ])
   const B = weekStarts.map((w) => ({ week: w, weekNum: isoWeek(w), metaSpend: 0, gSpend: 0, metaLeads: 0, gConv: 0, crmLeads: 0, booked: 0, shown: 0, won: 0, wonValue: 0 }))
-  for (const r of fb) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].metaSpend += num(r.spend); B[i].metaLeads += num(r.actions_lead) }
+  for (const r of fb) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].metaSpend += num(r.spend); B[i].metaLeads += fbLeads(r) }
   for (const r of gg) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].gSpend += num(r.spend); B[i].gConv += num(r.conversions) }
   const idx = stageIndex(pipes)
   for (const r of opps) {
@@ -508,15 +518,16 @@ function autoMatch(pipelinesArr, camps) {
   return res
 }
 function campAgg(rows, source, convField) {
+  const conv = typeof convField === 'function' ? convField : (r) => num(r[convField])
   const m = new Map()
-  for (const r of rows) { const n = r.campaign; if (!n) continue; const e = m.get(n) || { name: n, source, spend: 0, conv: 0, impressions: 0, clicks: 0 }; e.spend += num(r.spend); e.conv += num(r[convField]); e.impressions += num(r.impressions); e.clicks += num(r.clicks); m.set(n, e) }
+  for (const r of rows) { const n = r.campaign; if (!n) continue; const e = m.get(n) || { name: n, source, spend: 0, conv: 0, impressions: 0, clicks: 0 }; e.spend += num(r.spend); e.conv += conv(r); e.impressions += num(r.impressions); e.clicks += num(r.clicks); m.set(n, e) }
   return [...m.values()]
 }
 async function buildBlend(c, from, to, preset, key) {
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
   const pr = prevRange(from, to)
   const [fb, gg, opps, pipes, userRows, pFb, pGg, pOpps] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', 'actions_lead', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at', 'opportunity_assigned_to'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
@@ -525,7 +536,7 @@ async function buildBlend(c, from, to, preset, key) {
     pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend'], pr.from, pr.to, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
     pr.from && c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value'], pr.from, pr.to, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
   ])
-  const metaCamps = campAgg(fb, 'Meta', 'actions_lead')
+  const metaCamps = campAgg(fb, 'Meta', fbLeads)
   const googleCamps = campAgg(gg, 'Google', 'conversions')
   const sum = (arr, k) => arr.reduce((a, r) => a + r[k], 0)
   const metaSpend = sum(metaCamps, 'spend'), metaLeads = sum(metaCamps, 'conv'), metaImpr = sum(metaCamps, 'impressions'), metaClicks = sum(metaCamps, 'clicks')

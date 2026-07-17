@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -778,6 +778,14 @@ export default async (req) => {
     const weeks = Math.max(2, Math.min(16, parseInt(url.searchParams.get('weeks'), 10) || 6))
     try { const wk = await buildWeekly(cw, weeks, key); return json({ scope: 'weekly', client, weeks, ...wk }, 200, true) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
+  // Debug (PII-free): channel classification breakdown for one client + window.
+  if (url.searchParams.get('scope') === 'chandebug') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ error: `client ${client} has no Caalano Systems location` }, 404)
+    try { return json({ scope: 'chandebug', client, ...(await sampleChannels(cc.ghl, from, to)) }, 200) }
+    catch (e) { return json({ error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
   // Cohort maturation: leads by acquisition week through the funnel.

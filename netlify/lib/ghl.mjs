@@ -187,16 +187,23 @@ function utmOf(opp) {
   const campaign = a.utmCampaign || a.utm_campaign || a.campaign || null
   const content = a.utmContent || a.utm_content || null
   const term = a.utmTerm || a.utm_term || a.utmKeyword || null
-  return { source, medium, campaign, content, term, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null }
+  // Every string on the attribution that could fingerprint the channel, so
+  // classification never depends on a single field (e.g. GHL often reports the
+  // session source as "Paid Social" / "Paid Search" while the platform name
+  // only appears in utm_source).
+  const sig = [a.utmSessionSource, a.sessionSource, a.utmSource, a.utm_source, a.utmMedium, a.utm_medium, a.medium, a.utmCampaign, a.utm_campaign, a.campaign, a.utmAdSource, a.adSource, a.referrer, a.fbclid, a.gclid, a.fbAdId, a.adId]
+    .filter(Boolean).join(' ').toLowerCase()
+  return { source, medium, campaign, content, term, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null, sig }
 }
 
 // Classify an opportunity's first-touch UTMs into a paid channel so the whole
-// Caalano360 view can pivot Meta-only / Google-only / All. Looks at source +
-// medium + click-id fingerprints.
-const META_RE = /(facebook|instagram|\bfb\b|\bmeta\b|\big\b|fbclid|fb_|ig_)/i
-const GOOGLE_RE = /(google|adwords|youtube|\bgdn\b|gclid|goog|dv360|gclsrc)/i
+// Caalano360 view can pivot Meta-only / Google-only / All. Matches across every
+// attribution string (utmOf.sig): platform names, click-ids, and the generic
+// "Paid Social" (Meta) / "Paid Search" / cpc (Google) session-source labels.
+const META_RE = /(facebook|instagram|\bfb\b|\bmeta\b|\big\b|fbclid|fb_|ig_|paid.?social)/i
+const GOOGLE_RE = /(google|adwords|youtube|\bgdn\b|gclid|goog|dv360|gclsrc|paid.?search|\bcpc\b|\bppc\b|\bsem\b|search.?engine|google.?ads)/i
 function channelOf(u) {
-  const hay = `${u.source || ''} ${u.medium || ''} ${u.campaign || ''} ${u.adId || ''}`.toLowerCase()
+  const hay = u.sig || `${u.source || ''} ${u.medium || ''} ${u.campaign || ''} ${u.adId || ''}`.toLowerCase()
   if (META_RE.test(hay)) return 'meta'
   if (GOOGLE_RE.test(hay)) return 'google'
   return 'other'
@@ -808,6 +815,24 @@ export async function tagAudit(locationId, sample = 400) {
     booked: ch.all.booked, self: ch.all.self, selfBookRate: rate(ch.all),
     byChannel: { meta: { ...ch.meta, rate: rate(ch.meta) }, google: { ...ch.google, rate: rate(ch.google) }, other: { ...ch.other, rate: rate(ch.other) } },
     hasTag: definedMatches.length > 0 || appliedNames.size > 0,
+  }
+}
+
+// Debug (PII-free): how leads classify into meta / google / other, and the
+// distinct source|medium combos landing in "other" (so we can see what a
+// mis-classified paid lead looks like). No contact data.
+export async function sampleChannels(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const opps = await allOpportunities(locTok, locationId, from, to, 2000)
+  const counts = { meta: 0, google: 0, other: 0 }
+  const otherSigs = new Map()
+  for (const o of opps) {
+    const u = utmOf(o); const ch = channelOf(u); counts[ch]++
+    if (ch === 'other') { const key = `${u.source || '(none)'} | ${u.medium || '(none)'} | ${u.campaign || '(none)'}`; otherSigs.set(key, (otherSigs.get(key) || 0) + 1) }
+  }
+  return {
+    opps: opps.length, counts,
+    otherExamples: [...otherSigs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([sourceMediumCampaign, count]) => ({ sourceMediumCampaign, count })),
   }
 }
 

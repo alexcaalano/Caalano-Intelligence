@@ -2053,10 +2053,23 @@ function useCohorts(clientId, weeks = 12, nonce = 0) {
 function CohortView({ clientId, currency, nonce }) {
   const co = useCohorts(clientId, 12, nonce)
   const kpis = loadKpis(clientId)
+  const [chan, setChan] = useState('all')
   const money = (v) => fmtCurrency(v, currency)
   if (co.status === 'loading') return <div className="card"><Spinner label="Loading cohorts…" /></div>
   if (co.status !== 'ok' || !co.data || !co.data.weeks || !co.data.weeks.length) return <div className="card empty-deep"><div className="big">📈</div><b>No cohort data yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Cohorts need Caalano Systems CRM data over several weeks. Once leads flow through the funnel this fills in.</p></div>
-  const W = co.data.weeks // oldest -> newest
+  const raw = co.data.weeks // oldest -> newest
+  // Channel filter: All = every source (spend ÷ all leads = blended MER). Paid =
+  // Meta + Google only. Meta / Google = that channel's leads vs its own spend.
+  const hasMeta = raw.some((w) => (w.ch?.meta?.leads || 0) > 0 || w.metaSpend > 0)
+  const hasGoogle = raw.some((w) => (w.ch?.google?.leads || 0) > 0 || w.googleSpend > 0)
+  const opts = [['all', 'All']]; if (hasMeta) opts.push(['meta', 'Meta']); if (hasGoogle) opts.push(['google', 'Google']); if (hasMeta && hasGoogle) opts.push(['paid', 'Paid'])
+  const cur = opts.some(([k]) => k === chan) ? chan : 'all'
+  const pick = (w) => {
+    const f = (w.ch && w.ch[cur]) || {}
+    const spend = cur === 'meta' ? w.metaSpend : cur === 'google' ? w.googleSpend : w.adSpend
+    return { week: w.week, weekNum: w.weekNum, label: w.label, spend, leads: f.leads || 0, booked: f.booked || 0, cancelled: f.cancelled || 0, shown: f.shown || 0, shownStage: f.shownStage || 0, won: f.won || 0, revenue: f.revenue || 0, avgDaysToBook: f.avgDaysToBook ?? null, avgDaysToWon: f.avgDaysToWon ?? null }
+  }
+  const W = raw.map(pick) // resolved to the selected channel
   const rows = [...W].reverse() // newest first for the table
   const N = W.length
   const MATURING = 3 // the most recent weeks are still closing
@@ -2077,7 +2090,10 @@ function CohortView({ clientId, currency, nonce }) {
   const chart = W.map((w) => ({ label: w.label, book: +rate(w.booked, w.leads).toFixed(1), win: +rate(w.won, w.leads).toFixed(1) }))
   return (
     <>
-      <div className="section-title" style={{ marginTop: 4 }}>Cohort maturation <span className="sub">· leads by acquisition week, tracked to booked → shown → won · last {N} weeks</span></div>
+      <div className="c360-head">
+        <div className="section-title" style={{ margin: 0 }}>Cohort maturation <span className="sub">· leads by acquisition week, tracked to booked → shown → won · last {N} weeks{cur !== 'all' ? ` · ${opts.find(([k]) => k === cur)[1]}` : ''}</span></div>
+        {opts.length > 1 && <div className="c360-controls"><div className="chan-toggle">{opts.map(([k, l]) => <button key={k} className={cur === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div></div>}
+      </div>
       {co.data.hasCrm && !co.data.crmConnected && <p className="cap" style={{ color: 'var(--warn)', marginTop: 0 }}>Caalano Systems isn't returning CRM data - funnel columns will be blank.</p>}
       <div className="scorecard">
         <Sc label="Spend" value={money(T.spend)} />
@@ -2127,7 +2143,7 @@ function CohortView({ clientId, currency, nonce }) {
           </tr>)
         })}
       </tbody></table></div>
-      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won.</p>
+      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won. Channel: <b>All</b> = every lead source against total ad spend (blended MER - flatters paid efficiency if you get organic/referral leads); <b>Meta</b> / <b>Google</b> = only leads whose first-touch UTM is that channel, vs that channel's spend (true paid efficiency); <b>Paid</b> = Meta + Google combined.</p>
     </>
   )
 }

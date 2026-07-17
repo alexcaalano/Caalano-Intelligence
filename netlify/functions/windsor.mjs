@@ -370,12 +370,11 @@ async function buildCohortsView(c, weeks, key) {
   const cw = crm.weeks || []
   const out = weekStarts.map((w, i) => {
     const s = S[i]; const cc = cw[i] || {}
-    const metaSpend = Math.round(s.metaSpend), googleSpend = Math.round(s.googleSpend), spend = metaSpend + googleSpend
+    const metaSpend = Math.round(s.metaSpend), googleSpend = Math.round(s.googleSpend), adSpend = metaSpend + googleSpend
     return {
       week: w, weekNum: isoWeek(w), label: `W${isoWeek(w)}`,
-      spend, metaSpend, googleSpend, adLeads: Math.round(s.metaLeads + s.googleConv),
-      leads: cc.leads || 0, booked: cc.booked || 0, cancelled: cc.cancelled || 0, shown: cc.shown || 0, shownStage: cc.shownStage || 0,
-      won: cc.won || 0, revenue: cc.revenue || 0, avgDaysToBook: cc.avgDaysToBook ?? null, avgDaysToWon: cc.avgDaysToWon ?? null,
+      metaSpend, googleSpend, adSpend, adLeads: Math.round(s.metaLeads + s.googleConv),
+      ch: cc, // funnel per channel: all / meta / google / other / paid
     }
   })
   return { hasCrm: !!c.ghl, crmConnected: !!crm.connected, weeks: out, currentWeek: weekStarts[weekStarts.length - 1] }

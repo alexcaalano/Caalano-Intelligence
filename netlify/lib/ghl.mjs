@@ -612,11 +612,15 @@ export async function buildCohorts(locationId, from, to, weekCount, weekIndexOf)
     cohortAppointments(locTok, locationId, from, to),
   ])
   const idx = stageIndexFrom(pipelines)
-  const B = Array.from({ length: weekCount }, () => ({ leads: 0, booked: 0, cancelled: 0, shown: 0, shownStage: 0, won: 0, revenue: 0, dBookSum: 0, dBookN: 0, dWonSum: 0, dWonN: 0 }))
+  // Bucket each week's funnel by the lead's first-touch paid channel, so the
+  // caller can view All / Meta / Google / Paid. "All" includes organic; "Paid"
+  // is Meta + Google only (excludes organic/referral).
+  const mk = () => ({ leads: 0, booked: 0, cancelled: 0, shown: 0, shownStage: 0, won: 0, revenue: 0, dBookSum: 0, dBookN: 0, dWonSum: 0, dWonN: 0 })
+  const B = Array.from({ length: weekCount }, () => ({ meta: mk(), google: mk(), other: mk() }))
   for (const o of opps) {
     const createdMs = Date.parse(o.createdAt); if (isNaN(createdMs)) continue
     const wi = weekIndexOf(zonedDateStr(createdMs, tz)); if (wi == null || wi < 0 || wi >= B.length) continue
-    const b = B[wi]; b.leads++
+    const b = B[wi][channelOf(utmOf(o))]; b.leads++
     const ap = appts.byContact.get(contactIdOf(o))
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
     const isWon = String(o.status || '').toLowerCase() === 'won'
@@ -631,9 +635,11 @@ export async function buildCohorts(locationId, from, to, weekCount, weekIndexOf)
     if (isWon || apShown || stageShown) { b.shown++; if (!apShown && !isWon && stageShown) b.shownStage++ }
     if (isWon) { b.won++; b.revenue += num(o.monetaryValue); const sc = Date.parse(o.lastStatusChangeAt); if (sc && sc >= createdMs) { b.dWonSum += (sc - createdMs) / 86400000; b.dWonN++ } }
   }
+  const fin = (b) => ({ leads: b.leads, booked: b.booked, cancelled: b.cancelled, shown: b.shown, shownStage: b.shownStage, won: b.won, revenue: Math.round(b.revenue), avgDaysToBook: b.dBookN ? +(b.dBookSum / b.dBookN).toFixed(1) : null, avgDaysToWon: b.dWonN ? +(b.dWonSum / b.dWonN).toFixed(1) : null })
+  const sum = (...bs) => { const s = mk(); for (const b of bs) for (const k in s) s[k] += b[k]; return s }
   return {
     connected: true,
-    weeks: B.map((b) => ({ leads: b.leads, booked: b.booked, cancelled: b.cancelled, shown: b.shown, shownStage: b.shownStage, won: b.won, revenue: Math.round(b.revenue), avgDaysToBook: b.dBookN ? +(b.dBookSum / b.dBookN).toFixed(1) : null, avgDaysToWon: b.dWonN ? +(b.dWonSum / b.dWonN).toFixed(1) : null })),
+    weeks: B.map((w) => ({ meta: fin(w.meta), google: fin(w.google), other: fin(w.other), all: fin(sum(w.meta, w.google, w.other)), paid: fin(sum(w.meta, w.google)) })),
   }
 }
 

@@ -2140,9 +2140,12 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
   const live = useLiveDeep(client.id, channel, range, nonce)
   const attr = useAttribution(client.id, range, nonce)
   const tk = TRACK[client.trackingStatus] || TRACK.full
+  // The picked object can be a leaderboard row missing config fields; resolve
+  // the full client config by id so tab gating is reliable.
+  const cfg = (data.clients || []).find((c) => c.id === client.id) || client
   const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
-  if (client.google) tabs.push({ id: 'google', label: 'Google Ads' })
-  if (client.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
+  if (cfg.google) tabs.push({ id: 'google', label: 'Google Ads' })
+  if (cfg.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
     if (live.status !== 'ok' || !live.data || !live.data[ch]) return false

@@ -1439,6 +1439,13 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   // Whole-account aggregate snapshot for the client chatbot (filter-independent).
   const chatContext = useMemo(() => buildChatContext(b, attribData, camps, trend.weeks, kpis, range), [b, attribData, camps, trend.weeks, kpis, range])
   const roas = spend ? dRev / spend : 0
+  // LTV / LTV:CAC. LTV is a per-client setting (Settings), falling back to the
+  // average deal value; CAC = spend per won client.
+  const ltvSet = Number(kpis.clientLtv) > 0 ? Number(kpis.clientLtv) : null
+  const ltvVal = ltvSet || (dWon ? dAov : null)
+  const cacVal = dWon && spend ? spend / dWon : null
+  const ltvCac = ltvVal != null && cacVal ? ltvVal / cacVal : null
+  const ltvCacCls = ltvCac == null ? 'info' : ltvCac >= 3 ? 'good' : ltvCac >= 1 ? 'info' : 'bad'
   // Previous equal-length period - deltas only at account level (no per-pipeline
   // / channel / user split in the prior period).
   const pv = (uid === 'all' && chan === 'all' && pid === 'all' && b.prev) ? b.prev : null
@@ -1534,25 +1541,6 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
           ? <><b>Deal-won basis:</b> Won, Revenue, Avg Deal, Cost/Won & ROAS below are deals <b>marked Won in {rangeLabel(range)}</b>, no matter when the lead was created - your realised revenue this window.{wonClosed.capped ? ' (High volume: some very old deals may be excluded.)' : ''} <b>*</b> Cost/Won & ROAS divide this period&apos;s spend by those wins, so they mix periods - read them as directional, not a clean efficiency figure. Leads, Bookings & Shown remain by lead-created date.</>
           : <><b>Lead-created basis:</b> Won & Revenue below are for opportunities <b>created in {rangeLabel(range)}</b> (the cohort your spend generated). This matches ad ROAS but a recent window keeps maturing as leads close. Switch to <b>Deal won</b> for realised revenue.</>}
       </p>}
-      {(() => {
-        // Unit economics - the ecommerce lens for a services business.
-        const ltvSet = Number(kpis.clientLtv) > 0 ? Number(kpis.clientLtv) : null
-        const ltv = ltvSet || (dWon ? dAov : null)
-        const cac = dWon && spend ? spend / dWon : null
-        const mer = spend ? dRev / spend : null
-        const ltvCac = ltv != null && cac ? ltv / cac : null
-        const cls = ltvCac == null ? '' : ltvCac >= 3 ? 'good' : ltvCac >= 1 ? 'ok' : 'bad'
-        return (
-          <div className="unit-econ">
-            <div className="ue-tile hero"><div className="ue-l">MER</div><div className="ue-v">{mer != null ? `${mer.toFixed(2)}×` : '-'}</div><div className="ue-s">revenue ÷ ad spend</div></div>
-            <div className="ue-tile"><div className="ue-l">New clients</div><div className="ue-v">{fmtNumber(dWon)}</div><div className="ue-s">{useClosed ? 'won in period' : 'from period leads'}</div></div>
-            <div className="ue-tile"><div className="ue-l">CAC</div><div className="ue-v">{cac != null ? money(cac) : '-'}</div><div className="ue-s">cost per new client</div></div>
-            <div className="ue-tile"><div className="ue-l">Avg deal</div><div className="ue-v">{dWon ? money(dAov) : '-'}</div><div className="ue-s">avg won value</div></div>
-            <div className="ue-tile"><div className="ue-l">LTV{!ltvSet ? ' *' : ''}</div><div className="ue-v">{ltv != null ? money(ltv) : '-'}</div><div className="ue-s">{ltvSet ? 'client lifetime value' : 'set in Settings · using avg deal'}</div></div>
-            <div className={`ue-tile ratio ${cls}`}><div className="ue-l">LTV : CAC</div><div className="ue-v">{ltvCac != null ? `${ltvCac.toFixed(1)}:1` : '-'}</div><div className="ue-s">{cls === 'good' ? 'healthy (3+)' : cls === 'ok' ? 'okay (1-3)' : cls === 'bad' ? 'underwater (<1)' : 'set LTV to unlock'}</div></div>
-          </div>
-        )
-      })()}
       <div className="scorecard">
         <Sc label={pid === 'all' ? 'Ad Spend' : 'Attributed Spend'} value={money(spend)} cur={spend} prev={pv ? pv.adSpend : null} />
         <Sc label="Total Leads" value={fmtNumber(c.leads)} cur={c.leads} prev={pc ? pc.leads : null} />
@@ -1567,6 +1555,8 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         <Sc label={useClosed ? 'Cost / Won *' : 'Cost / Won'} value={spend && dWon ? money(spend / dWon) : '-'} cur={useClosed ? null : (spend && c.won ? spend / c.won : null)} prev={!useClosed && pv && pc && pc.won ? pv.adSpend / pc.won : null} goodWhenDown />
         <Sc label={useClosed ? 'ROAS *' : 'ROAS'} value={spend ? `${roas.toFixed(2)}×` : '-'} cur={useClosed ? null : (spend ? roas : null)} prev={!useClosed && pv && pc && pv.adSpend ? pc.revenue / pv.adSpend : null} />
         <Sc label="Conversion Rate" value={fmtPct(rate(c.won, c.leads), 1)} cur={rate(c.won, c.leads)} prev={pc ? rate(pc.won, pc.leads) : null} />
+        <Sc label={ltvSet ? 'LTV' : 'LTV (avg deal)'} value={ltvVal != null ? money(ltvVal) : '-'} flat={ltvSet ? null : 'set LTV in Settings'} />
+        <Sc label="LTV : CAC" value={ltvCac != null ? `${ltvCac.toFixed(1)}:1` : '-'} kpi={ltvCac != null ? { text: ltvCac >= 3 ? 'healthy' : ltvCac >= 1 ? 'okay' : 'underwater', cls: ltvCacCls } : null} />
       </div>
       <div className="card ai-card" style={{ marginTop: 14 }}>
         <div className="ai-head">

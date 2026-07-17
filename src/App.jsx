@@ -54,11 +54,17 @@ function O360Head({ sort, on }) {
     : <th key={k} className={`c360-col${i === 0 ? ' c360-first' : ''}`}>{label}</th>))}</>
 }
 // Fixed column widths so the Caalano360 green block lands in the same place in
-// every table. First (name) col absorbs slack; metric + green cols are fixed.
+// every table. The name (first) col gets an EXPLICIT width - not auto - because
+// with table-layout:fixed an auto col collapses to 0 once the fixed columns
+// exceed the viewport (which they do with the rate columns), hiding the names.
+// nameW = 190 + (9 - left)*CGM keeps the green block at a constant x across
+// tables with different left-column counts (green x = 190 + 8*CGM for all).
+const CGM = 96
 function O360ColGroup({ left, green = true }) {
+  const nameW = Math.max(150, 190 + (9 - left) * CGM)
   return (
     <colgroup>
-      <col />
+      <col style={{ width: nameW }} />
       {Array.from({ length: Math.max(0, left - 1) }, (_, i) => <col key={i} className="cg-m" />)}
       {green && O360_COLS.map(([k, , ty]) => <col key={k} className={ty === 'r' ? 'cg-gr' : 'cg-g'} />)}
     </colgroup>

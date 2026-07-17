@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -344,6 +344,43 @@ function mondayOf(dateStr) {
   d.setUTCDate(d.getUTCDate() - dw)
   return d.toISOString().slice(0, 10)
 }
+// Cohort maturation: leads grouped by the week they were created, tracked
+// through the funnel with maturation timing. Ad spend by week comes from
+// Windsor; the funnel comes from the accurate direct API (appointment-based).
+// Includes the current (in-progress) week so its "still maturing" state shows.
+async function buildCohortsView(c, weeks, key) {
+  const today = tzToday()
+  const dstr = (d) => d.toISOString().slice(0, 10)
+  const curDow = (today.getUTCDay() + 6) % 7 // 0 = Mon .. 6 = Sun
+  const curMon = new Date(today); curMon.setUTCDate(curMon.getUTCDate() - curDow)
+  const weekStarts = []
+  for (let i = weeks - 1; i >= 0; i--) { const w = new Date(curMon); w.setUTCDate(w.getUTCDate() - 7 * i); weekStarts.push(dstr(w)) }
+  const wkIndex = new Map(weekStarts.map((w, i) => [w, i]))
+  const start = weekStarts[0]; const end = dstr(today)
+  const weekIndexOf = (localDate) => { const i = wkIndex.get(mondayOf(localDate)); return i == null ? null : i }
+  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+  const [fb, gg, crm] = await Promise.all([
+    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    (c.ghl && await isConnected().catch(() => false)) ? ghlCohorts(c.ghl, start, end, weeks, weekIndexOf).catch(() => ({ connected: false, weeks: [] })) : Promise.resolve({ connected: false, weeks: [] }),
+  ])
+  const S = weekStarts.map(() => ({ metaSpend: 0, googleSpend: 0, metaLeads: 0, googleConv: 0 }))
+  for (const r of fb) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; S[i].metaSpend += num(r.spend); S[i].metaLeads += fbLeads(r) }
+  for (const r of gg) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; S[i].googleSpend += num(r.spend); S[i].googleConv += num(r.conversions) }
+  const cw = crm.weeks || []
+  const out = weekStarts.map((w, i) => {
+    const s = S[i]; const cc = cw[i] || {}
+    const metaSpend = Math.round(s.metaSpend), googleSpend = Math.round(s.googleSpend), spend = metaSpend + googleSpend
+    return {
+      week: w, weekNum: isoWeek(w), label: `W${isoWeek(w)}`,
+      spend, metaSpend, googleSpend, adLeads: Math.round(s.metaLeads + s.googleConv),
+      leads: cc.leads || 0, booked: cc.booked || 0, cancelled: cc.cancelled || 0, shown: cc.shown || 0, shownStage: cc.shownStage || 0,
+      won: cc.won || 0, revenue: cc.revenue || 0, avgDaysToBook: cc.avgDaysToBook ?? null, avgDaysToWon: cc.avgDaysToWon ?? null,
+    }
+  })
+  return { hasCrm: !!c.ghl, crmConnected: !!crm.connected, weeks: out, currentWeek: weekStarts[weekStarts.length - 1] }
+}
+
 // Weekly (Mon–Sun) traffic-light data for one client over the last N weeks.
 async function buildWeekly(c, weeks, key) {
   const today = tzToday()
@@ -741,6 +778,15 @@ export default async (req) => {
     if (!cw) return json({ error: `unknown client ${client}` }, 404)
     const weeks = Math.max(2, Math.min(16, parseInt(url.searchParams.get('weeks'), 10) || 6))
     try { const wk = await buildWeekly(cw, weeks, key); return json({ scope: 'weekly', client, weeks, ...wk }, 200, true) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
+  // Cohort maturation: leads by acquisition week through the funnel.
+  if (url.searchParams.get('scope') === 'cohorts') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ error: `unknown client ${client}` }, 404)
+    const weeks = Math.max(4, Math.min(26, parseInt(url.searchParams.get('weeks'), 10) || 12))
+    try { const co = await buildCohortsView(cc, weeks, key); return json({ scope: 'cohorts', client, weeks, ...co }, 200, true) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

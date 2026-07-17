@@ -568,6 +568,75 @@ export async function buildAttribution(locationId, from, to) {
   }
 }
 
+// --- Cohort maturation (leads grouped by the week they were created) ---
+// "Ever" appointment state per contact: has a live (non-cancelled) booking,
+// has shown, and the earliest booking timestamp (for lead->booking timing).
+async function cohortAppointments(locTok, locationId, from, to) {
+  const byContact = new Map()
+  let calendars = []
+  try { const j = await ghlGet(locTok, '/calendars/', { locationId }); calendars = j.calendars || j.calendar || [] }
+  catch { return { byContact, connected: false } }
+  const DAY = 86400000
+  const tz = await locationTimezone(locationId)
+  const startMs = (from ? zonedStartMs(from, tz) : Date.now() - 400 * DAY) - 7 * DAY
+  const endMs = (to ? zonedEndMs(to, tz) : Date.now()) + 180 * DAY
+  const mark = (cid, status, addedMs) => {
+    if (!cid) return
+    const s = String(status || '').toLowerCase()
+    if (APPT_INVALID_RE.test(s)) return
+    const e = byContact.get(cid) || { live: false, cancelled: false, shown: false, firstBookedMs: null }
+    if (APPT_CANCEL_RE.test(s)) e.cancelled = true; else e.live = true
+    if (s === 'showed') e.shown = true
+    if (!isNaN(addedMs) && (e.firstBookedMs == null || addedMs < e.firstBookedMs)) e.firstBookedMs = addedMs
+    byContact.set(cid, e)
+  }
+  for (const cal of calendars) {
+    const calId = cal.id || cal._id || cal.calendarId; if (!calId) continue
+    try {
+      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
+      for (const ev of (j.events || [])) mark(ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)), ev.appointmentStatus || ev.status, Date.parse(ev.dateAdded))
+    } catch { /* skip a calendar we cannot read */ }
+  }
+  return { byContact, connected: true }
+}
+
+// Per-cohort-week CRM funnel from the direct API - appointment-accurate, with
+// maturation timing. `weekIndexOf(localCreatedDate)` maps a lead's created date
+// (in the location timezone) to its week-bucket index, or null if out of range.
+export async function buildCohorts(locationId, from, to, weekCount, weekIndexOf) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const [opps, pipelines, appts] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to, 3000),
+    fetchPipelines(locTok, locationId),
+    cohortAppointments(locTok, locationId, from, to),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const B = Array.from({ length: weekCount }, () => ({ leads: 0, booked: 0, cancelled: 0, shown: 0, shownStage: 0, won: 0, revenue: 0, dBookSum: 0, dBookN: 0, dWonSum: 0, dWonN: 0 }))
+  for (const o of opps) {
+    const createdMs = Date.parse(o.createdAt); if (isNaN(createdMs)) continue
+    const wi = weekIndexOf(zonedDateStr(createdMs, tz)); if (wi == null || wi < 0 || wi >= B.length) continue
+    const b = B[wi]; b.leads++
+    const ap = appts.byContact.get(contactIdOf(o))
+    const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
+    const isWon = String(o.status || '').toLowerCase() === 'won'
+    const stageBooked = !!(pi && pi.bookPos != null && pos >= pi.bookPos)
+    const stageShown = !!(pi && pi.showPos != null && pos >= pi.showPos)
+    const apLive = !!(ap && ap.live), anyAppt = !!(ap && (ap.live || ap.cancelled)), apShown = !!(ap && ap.shown)
+    if (isWon || anyAppt || stageBooked) {
+      b.booked++
+      if (anyAppt && !apLive) b.cancelled++ // booked but every appointment cancelled
+      if (ap && ap.firstBookedMs != null) { const dd = (ap.firstBookedMs - createdMs) / 86400000; if (dd >= 0) { b.dBookSum += dd; b.dBookN++ } }
+    }
+    if (isWon || apShown || stageShown) { b.shown++; if (!apShown && !isWon && stageShown) b.shownStage++ }
+    if (isWon) { b.won++; b.revenue += num(o.monetaryValue); const sc = Date.parse(o.lastStatusChangeAt); if (sc && sc >= createdMs) { b.dWonSum += (sc - createdMs) / 86400000; b.dWonN++ } }
+  }
+  return {
+    connected: true,
+    weeks: B.map((b) => ({ leads: b.leads, booked: b.booked, cancelled: b.cancelled, shown: b.shown, shownStage: b.shownStage, won: b.won, revenue: Math.round(b.revenue), avgDaysToBook: b.dBookN ? +(b.dBookSum / b.dBookN).toFixed(1) : null, avgDaysToWon: b.dWonN ? +(b.dWonSum / b.dWonN).toFixed(1) : null })),
+  }
+}
+
 // Full CRM rollup straight from GoHighLevel — richer than Windsor (named lost
 // reasons, exact timestamps, per-user). User names come from Windsor for now
 // (users.readonly deferred); assignedTo ids are returned for the caller to map.

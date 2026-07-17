@@ -2031,21 +2031,45 @@ function LiveBadge({ mode, label }) {
   return <div style={{ marginBottom: 10 }}><span className={`tk ${m.c}`}>{m.t}</span></div>
 }
 
+function useCohorts(clientId, weeks = 12, nonce = 0) {
+  const [state, setState] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    if (!clientId) return
+    let alive = true; setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=cohorts&client=${clientId}&weeks=${weeks}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: j && j.weeks ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, weeks, nonce])
+  return state
+}
+
 // Cohort maturation - leads grouped by the week they came in, tracked through
-// the funnel. Older cohorts have had time to book/show/win so their rates run
-// higher; the most recent weeks are still "maturing". The ecommerce cohort grid,
-// for a services funnel (spend -> leads -> booked -> shown -> won -> revenue).
+// the funnel (appointment-accurate). Older cohorts have had time to book/show/
+// win so their rates run higher; recent weeks are still "maturing". The
+// ecommerce cohort grid for a services funnel: spend -> leads -> booked ->
+// shown -> won -> revenue, plus maturation timing (days to book / win).
 function CohortView({ clientId, currency, nonce }) {
-  const wk = useWeekly(clientId, 12, nonce)
+  const co = useCohorts(clientId, 12, nonce)
+  const kpis = loadKpis(clientId)
   const money = (v) => fmtCurrency(v, currency)
-  if (wk.status === 'loading') return <div className="card"><Spinner label="Loading cohorts…" /></div>
-  if (wk.status !== 'ok' || !wk.data || !wk.data.weeks || !wk.data.weeks.length) return <div className="card empty-deep"><div className="big">📈</div><b>No cohort data yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Cohorts need Caalano Systems CRM data over several weeks. Once leads flow through the funnel this fills in.</p></div>
-  const W = wk.data.weeks // oldest -> newest
+  if (co.status === 'loading') return <div className="card"><Spinner label="Loading cohorts…" /></div>
+  if (co.status !== 'ok' || !co.data || !co.data.weeks || !co.data.weeks.length) return <div className="card empty-deep"><div className="big">📈</div><b>No cohort data yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Cohorts need Caalano Systems CRM data over several weeks. Once leads flow through the funnel this fills in.</p></div>
+  const W = co.data.weeks // oldest -> newest
   const rows = [...W].reverse() // newest first for the table
   const N = W.length
   const MATURING = 3 // the most recent weeks are still closing
-  const T = W.reduce((a, w) => ({ spend: a.spend + w.spend, leads: a.leads + w.leads, booked: a.booked + w.booked, shown: a.shown + w.shown, won: a.won + w.won, rev: a.rev + w.wonValue }), { spend: 0, leads: 0, booked: 0, shown: 0, won: 0, rev: 0 })
+  const T = W.reduce((a, w) => ({ spend: a.spend + w.spend, leads: a.leads + w.leads, booked: a.booked + w.booked, shown: a.shown + w.shown, won: a.won + w.won, rev: a.rev + w.revenue }), { spend: 0, leads: 0, booked: 0, shown: 0, won: 0, rev: 0 })
   const mer = T.spend ? T.rev / T.spend : 0
+  const cac = T.won ? T.spend / T.won : null
+  const ltvSet = Number(kpis.clientLtv) > 0 ? Number(kpis.clientLtv) : null
+  const ltv = ltvSet || (T.won ? T.rev / T.won : null)
+  const ltvCac = ltv != null && cac ? ltv / cac : null
+  const matured = W.slice(0, Math.max(0, N - MATURING)) // stable cohorts for a timing read
+  const avg = (arr, f) => { const v = arr.map(f).filter((x) => x != null); return v.length ? +(v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : null }
+  const avgBook = avg(matured, (w) => w.avgDaysToBook)
+  const avgWon = avg(matured, (w) => w.avgDaysToWon)
   const dater = (w) => { const d = new Date(w + 'T00:00:00Z'); const e = new Date(d); e.setUTCDate(e.getUTCDate() + 6); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]} - ${e.getUTCDate()} ${MON[e.getUTCMonth()]}` }
   const maxWin = Math.max(0.01, ...W.map((w) => rate(w.won, w.leads)))
   const maxBook = Math.max(0.01, ...W.map((w) => rate(w.booked, w.leads)))
@@ -2053,16 +2077,22 @@ function CohortView({ clientId, currency, nonce }) {
   const chart = W.map((w) => ({ label: w.label, book: +rate(w.booked, w.leads).toFixed(1), win: +rate(w.won, w.leads).toFixed(1) }))
   return (
     <>
-      <div className="section-title" style={{ marginTop: 4 }}>Cohort maturation <span className="sub">· leads by acquisition week, tracked through booked → shown → won</span></div>
-      <div className="unit-econ">
-        <div className="ue-tile hero"><div className="ue-l">MER · {N} wk</div><div className="ue-v">{mer ? `${mer.toFixed(2)}×` : '-'}</div><div className="ue-s">revenue ÷ spend</div></div>
-        <div className="ue-tile"><div className="ue-l">Spend</div><div className="ue-v">{money(T.spend)}</div><div className="ue-s">acquisition cost</div></div>
-        <div className="ue-tile"><div className="ue-l">Leads</div><div className="ue-v">{fmtNumber(T.leads)}</div><div className="ue-s">acquired</div></div>
-        <div className="ue-tile"><div className="ue-l">Booked</div><div className="ue-v">{fmtNumber(T.booked)}</div><div className="ue-s">{fmtPct(rate(T.booked, T.leads), 0)} of leads</div></div>
-        <div className="ue-tile"><div className="ue-l">Won</div><div className="ue-v">{fmtNumber(T.won)}</div><div className="ue-s">{fmtPct(rate(T.won, T.leads), 1)} of leads</div></div>
-        <div className="ue-tile"><div className="ue-l">Revenue</div><div className="ue-v">{money(T.rev)}</div><div className="ue-s">created basis</div></div>
+      <div className="section-title" style={{ marginTop: 4 }}>Cohort maturation <span className="sub">· leads by acquisition week, tracked to booked → shown → won · last {N} weeks</span></div>
+      {co.data.hasCrm && !co.data.crmConnected && <p className="cap" style={{ color: 'var(--warn)', marginTop: 0 }}>Caalano Systems isn't returning CRM data - funnel columns will be blank.</p>}
+      <div className="scorecard">
+        <Sc label="Spend" value={money(T.spend)} />
+        <Sc label="Leads" value={fmtNumber(T.leads)} />
+        <Sc label="Booked" value={fmtNumber(T.booked)} flat={`${fmtPct(rate(T.booked, T.leads), 0)} of leads`} />
+        <Sc label="Shown" value={fmtNumber(T.shown)} flat={`${fmtPct(rate(T.shown, T.booked), 0)} of booked`} />
+        <Sc label="Won" value={fmtNumber(T.won)} flat={`${fmtPct(rate(T.won, T.leads), 1)} of leads`} />
+        <Sc label="Revenue" value={money(T.rev)} />
+        <Sc label="MER" value={mer ? `${mer.toFixed(2)}×` : '-'} />
+        <Sc label="CAC" value={cac != null ? money(cac) : '-'} />
+        {ltvCac != null && <Sc label="LTV : CAC" value={`${ltvCac.toFixed(1)}:1`} kpi={{ text: ltvCac >= 3 ? 'healthy' : ltvCac >= 1 ? 'okay' : 'underwater', cls: ltvCac >= 3 ? 'good' : ltvCac >= 1 ? 'info' : 'bad' }} />}
+        <Sc label="Avg days → book" value={avgBook != null ? `${avgBook}d` : '-'} />
+        <Sc label="Avg days → win" value={avgWon != null ? `${avgWon}d` : '-'} />
       </div>
-      <div className="card chart-card">
+      <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Conversion by cohort</h3><p className="cap">Book% and Win% for each acquisition week. Recent weeks sit lower because their deals are still closing.</p>
         <ResponsiveContainer width="100%" height={230}>
           <ComposedChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -2076,8 +2106,8 @@ function CohortView({ clientId, currency, nonce }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="table-wrap" style={{ marginTop: 14 }}><table><thead><tr>
-        <th style={{ textAlign: 'left' }}>Cohort week</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Booked</th><th>Book %</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th><th>Revenue</th><th>CAC</th><th>ROAS</th>
+      <div className="table-wrap" style={{ marginTop: 14 }}><table style={{ minWidth: 1180 }}><thead><tr>
+        <th style={{ textAlign: 'left' }}>Cohort week</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Booked</th><th>Book %</th><th>C/Book</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th><th>CAC</th><th>Revenue</th><th>ROAS</th><th>→ Book</th><th>→ Win</th>
       </tr></thead><tbody>
         {rows.map((w, i) => {
           const maturing = i < MATURING
@@ -2085,14 +2115,19 @@ function CohortView({ clientId, currency, nonce }) {
           return (<tr key={w.week} className={maturing ? 'coh-maturing' : ''}>
             <td style={{ textAlign: 'left' }}>{w.label} <span className="cap">{dater(w.week)}</span>{maturing ? <span className="mat-badge" title="Recent cohort - deals still closing">maturing</span> : null}</td>
             <td>{money(w.spend)}</td><td>{fmtNumber(w.leads)}</td><td>{w.leads ? money(w.spend / w.leads) : '-'}</td>
-            <td>{fmtNumber(w.booked)}</td><td style={{ background: heat(br, maxBook) }}>{fmtPct(br, 0)}</td>
-            <td>{fmtNumber(w.shown)}</td><td>{w.booked ? fmtPct(sr, 0) : '-'}</td>
-            <td>{fmtNumber(w.won)}</td><td style={{ background: heat(wr, maxWin) }}>{fmtPct(wr, 1)}</td>
-            <td>{money(w.wonValue)}</td><td>{w.won ? money(w.spend / w.won) : '-'}</td><td>{w.spend ? `${(w.wonValue / w.spend).toFixed(2)}×` : '-'}</td>
+            <td>{fmtNumber(w.booked)}{w.cancelled ? <span className="c360-canc" title={`${w.cancelled} later cancelled`}> ({w.cancelled}c)</span> : null}</td>
+            <td style={{ background: heat(br, maxBook) }}>{w.leads ? fmtPct(br, 0) : '-'}</td>
+            <td>{w.booked ? money(w.spend / w.booked) : '-'}</td>
+            <td>{fmtNumber(w.shown)}{w.shownStage ? <span className="c360-infer" title={`${w.shownStage} via pipeline stage`}> ({w.shownStage}p)</span> : null}</td>
+            <td>{w.booked ? fmtPct(sr, 0) : '-'}</td>
+            <td>{fmtNumber(w.won)}</td><td style={{ background: heat(wr, maxWin) }}>{w.leads ? fmtPct(wr, 1) : '-'}</td>
+            <td>{w.won ? money(w.spend / w.won) : '-'}</td>
+            <td>{money(w.revenue)}</td><td>{w.spend ? `${(w.revenue / w.spend).toFixed(2)}×` : '-'}</td>
+            <td>{w.avgDaysToBook != null ? `${w.avgDaysToBook}d` : '-'}</td><td>{w.avgDaysToWon != null ? `${w.avgDaysToWon}d` : '-'}</td>
           </tr>)
         })}
       </tbody></table></div>
-      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created, then follow them to booked / shown / won as of now. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. Booked / Shown / Won use pipeline-stage detection from the weekly feed.</p>
+      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won.</p>
     </>
   )
 }

@@ -242,8 +242,9 @@ tbody tr:hover { background: var(--panel-2); }
 .dr-row input { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12px; color-scheme: dark light; }
 .dr-apply { margin-top: 4px; background: var(--brand); color: #fff; border: 0; border-radius: 9px; padding: 9px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .dr-apply:disabled { opacity: .45; cursor: default; }
-.subtabs { display: flex; gap: 4px; margin-top: 14px; border-bottom: 1px solid var(--border); }
-.subtabs button { border: 0; background: transparent; color: var(--muted); padding: 9px 15px; font-size: 13px; font-weight: 650; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.subtabs { display: flex; gap: 4px; margin-top: 14px; border-bottom: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.subtabs::-webkit-scrollbar { display: none; }
+.subtabs button { border: 0; background: transparent; color: var(--muted); padding: 9px 15px; font-size: 13px; font-weight: 650; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; flex: 0 0 auto; }
 .subtabs button:hover { color: var(--text); }
 .subtabs button.active { color: var(--text); border-bottom-color: var(--brand); }
 .subtabs .lock { font-size: 10px; opacity: .6; margin-left: 5px; }

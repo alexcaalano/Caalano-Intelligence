@@ -2132,7 +2132,7 @@ function CohortView({ clientId, currency, nonce }) {
   )
 }
 
-function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
+function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
   useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
@@ -2140,11 +2140,12 @@ function ClientWorkspace({ client, index, data, range, nonce, onBack }) {
   const live = useLiveDeep(client.id, channel, range, nonce)
   const attr = useAttribution(client.id, range, nonce)
   const tk = TRACK[client.trackingStatus] || TRACK.full
-  // The picked object can be a leaderboard row missing config fields; resolve
-  // the full client config by id so tab gating is reliable.
-  const cfg = (data.clients || []).find((c) => c.id === client.id) || client
+  // The snapshot client carries metrics, not the account config (meta/google/
+  // ghl ids live in config.json), so resolve the config entry by id for tab
+  // gating. Google tab keys off the config account id; Cohorts needs the CRM.
+  const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
   const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
-  if (cfg.google) tabs.push({ id: 'google', label: 'Google Ads' })
+  if (cfg.google || client.google) tabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
@@ -2639,7 +2640,7 @@ export default function App() {
         {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
-        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
+        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} config={config} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
       </main>
 
       {showSettings && <Settings config={config} enabled={enabled} setEnabled={setEnabled} onClose={() => setShowSettings(false)} currency={data.currency} />}

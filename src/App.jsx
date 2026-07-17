@@ -2062,11 +2062,17 @@ function CohortView({ clientId, currency, nonce }) {
   // Meta + Google only. Meta / Google = that channel's leads vs its own spend.
   const hasMeta = raw.some((w) => (w.ch?.meta?.leads || 0) > 0 || w.metaSpend > 0)
   const hasGoogle = raw.some((w) => (w.ch?.google?.leads || 0) > 0 || w.googleSpend > 0)
-  const opts = [['all', 'All']]; if (hasMeta) opts.push(['meta', 'Meta']); if (hasGoogle) opts.push(['google', 'Google']); if (hasMeta && hasGoogle) opts.push(['paid', 'Paid'])
+  const hasOther = raw.some((w) => (w.ch?.other?.leads || 0) > 0)
+  const opts = [['all', 'All']]
+  if (hasOther) opts.push(['other', 'Non-Paid'])
+  if (hasMeta && hasGoogle) opts.push(['paid', 'Paid'])
+  if (hasMeta) opts.push(['meta', 'Meta'])
+  if (hasGoogle) opts.push(['google', 'Google'])
   const cur = opts.some(([k]) => k === chan) ? chan : 'all'
   const pick = (w) => {
     const f = (w.ch && w.ch[cur]) || {}
-    const spend = cur === 'meta' ? w.metaSpend : cur === 'google' ? w.googleSpend : w.adSpend
+    // Non-Paid has no ad spend, so its cost columns read blank.
+    const spend = cur === 'meta' ? w.metaSpend : cur === 'google' ? w.googleSpend : cur === 'other' ? 0 : w.adSpend
     return { week: w.week, weekNum: w.weekNum, label: w.label, spend, leads: f.leads || 0, booked: f.booked || 0, cancelled: f.cancelled || 0, shown: f.shown || 0, shownStage: f.shownStage || 0, won: f.won || 0, revenue: f.revenue || 0, avgDaysToBook: f.avgDaysToBook ?? null, avgDaysToWon: f.avgDaysToWon ?? null }
   }
   const W = raw.map(pick) // resolved to the selected channel
@@ -2075,7 +2081,7 @@ function CohortView({ clientId, currency, nonce }) {
   const MATURING = 3 // the most recent weeks are still closing
   const T = W.reduce((a, w) => ({ spend: a.spend + w.spend, leads: a.leads + w.leads, booked: a.booked + w.booked, shown: a.shown + w.shown, won: a.won + w.won, rev: a.rev + w.revenue }), { spend: 0, leads: 0, booked: 0, shown: 0, won: 0, rev: 0 })
   const mer = T.spend ? T.rev / T.spend : 0
-  const cac = T.won ? T.spend / T.won : null
+  const cac = T.won && T.spend ? T.spend / T.won : null
   const ltvSet = Number(kpis.clientLtv) > 0 ? Number(kpis.clientLtv) : null
   const ltv = ltvSet || (T.won ? T.rev / T.won : null)
   const ltvCac = ltv != null && cac ? ltv / cac : null
@@ -2096,7 +2102,7 @@ function CohortView({ clientId, currency, nonce }) {
       </div>
       {co.data.hasCrm && !co.data.crmConnected && <p className="cap" style={{ color: 'var(--warn)', marginTop: 0 }}>Caalano Systems isn't returning CRM data - funnel columns will be blank.</p>}
       <div className="scorecard">
-        <Sc label="Spend" value={money(T.spend)} />
+        <Sc label="Spend" value={T.spend ? money(T.spend) : '-'} />
         <Sc label="Leads" value={fmtNumber(T.leads)} />
         <Sc label="Booked" value={fmtNumber(T.booked)} flat={`${fmtPct(rate(T.booked, T.leads), 0)} of leads`} />
         <Sc label="Shown" value={fmtNumber(T.shown)} flat={`${fmtPct(rate(T.shown, T.booked), 0)} of booked`} />
@@ -2130,20 +2136,20 @@ function CohortView({ clientId, currency, nonce }) {
           const br = rate(w.booked, w.leads), sr = rate(w.shown, w.booked), wr = rate(w.won, w.leads)
           return (<tr key={w.week} className={maturing ? 'coh-maturing' : ''}>
             <td style={{ textAlign: 'left' }}>{w.label} <span className="cap">{dater(w.week)}</span>{maturing ? <span className="mat-badge" title="Recent cohort - deals still closing">maturing</span> : null}</td>
-            <td>{money(w.spend)}</td><td>{fmtNumber(w.leads)}</td><td>{w.leads ? money(w.spend / w.leads) : '-'}</td>
+            <td>{w.spend ? money(w.spend) : '-'}</td><td>{fmtNumber(w.leads)}</td><td>{w.leads && w.spend ? money(w.spend / w.leads) : '-'}</td>
             <td>{fmtNumber(w.booked)}{w.cancelled ? <span className="c360-canc" title={`${w.cancelled} later cancelled`}> ({w.cancelled}c)</span> : null}</td>
             <td style={{ background: heat(br, maxBook) }}>{w.leads ? fmtPct(br, 0) : '-'}</td>
-            <td>{w.booked ? money(w.spend / w.booked) : '-'}</td>
+            <td>{w.booked && w.spend ? money(w.spend / w.booked) : '-'}</td>
             <td>{fmtNumber(w.shown)}{w.shownStage ? <span className="c360-infer" title={`${w.shownStage} via pipeline stage`}> ({w.shownStage}p)</span> : null}</td>
             <td>{w.booked ? fmtPct(sr, 0) : '-'}</td>
             <td>{fmtNumber(w.won)}</td><td style={{ background: heat(wr, maxWin) }}>{w.leads ? fmtPct(wr, 1) : '-'}</td>
-            <td>{w.won ? money(w.spend / w.won) : '-'}</td>
+            <td>{w.won && w.spend ? money(w.spend / w.won) : '-'}</td>
             <td>{money(w.revenue)}</td><td>{w.spend ? `${(w.revenue / w.spend).toFixed(2)}×` : '-'}</td>
             <td>{w.avgDaysToBook != null ? `${w.avgDaysToBook}d` : '-'}</td><td>{w.avgDaysToWon != null ? `${w.avgDaysToWon}d` : '-'}</td>
           </tr>)
         })}
       </tbody></table></div>
-      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won. Channel: <b>All</b> = every lead source against total ad spend (blended MER - flatters paid efficiency if you get organic/referral leads); <b>Meta</b> / <b>Google</b> = only leads whose first-touch UTM is that channel, vs that channel's spend (true paid efficiency); <b>Paid</b> = Meta + Google combined.</p>
+      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won. Channel: <b>All</b> = every lead source against total ad spend (blended MER - flatters paid efficiency if you get organic/referral leads); <b>Non-Paid</b> = organic / referral / direct leads (no ad spend, so cost columns are blank); <b>Paid</b> = Meta + Google combined; <b>Meta</b> / <b>Google</b> = only leads whose first-touch UTM is that channel, vs that channel's own spend (true paid efficiency).</p>
     </>
   )
 }

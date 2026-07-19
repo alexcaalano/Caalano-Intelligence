@@ -43,8 +43,8 @@ const LEGACY_O360_COLS = [
 // (Settings: pipeline stages and/or booked calendars) the block becomes one
 // cost-per column per key event, then Cost/Won, Won value and ROAS for revenue
 // context. With none configured it falls back to the legacy fixed set.
-function buildO360Cols(keyEvents) {
-  const ke = normKeyEvents(keyEvents)
+function buildO360Cols(keyEvents, stagePos) {
+  const ke = orderKeyEvents(normKeyEvents(keyEvents), stagePos)
   if (!ke.length) return LEGACY_O360_COLS
   const short = (s) => (s && s.length > 15 ? s.slice(0, 14) + '…' : s)
   const cols = ke.map((k, i) => ({ key: 'ke' + i, label: (k.kind === 'calendar' ? '📅 ' : '') + short(k.label), full: k.label, ty: 'kecost', kind: k.kind, ref: k.ref }))
@@ -683,8 +683,10 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const A = attr && attr.data && attr.data.attribution
   const has360 = !!A
   // Green Caalano360 columns: the client's key events (cost per each) when
-  // configured, else the legacy Booked/Shown/Won block.
-  const o360cols = buildO360Cols(loadKeyEvents(clientId))
+  // configured, else the legacy Booked/Shown/Won block. Ordered by where each
+  // event sits in the pipeline (calendars via their linked stage).
+  const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
+  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos)
   const oCamp = mkOutcomeMap(A && A.byCampaign)
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
   // not utm_term - so match ad-set rows against byMedium.
@@ -763,7 +765,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const meCh = A && A.channels && A.channels.meta
   const meRows = (() => {
     const rmap = reachedByStage(meCh ? (meCh.pipelines || []) : [])
-    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'meta'))
+    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'meta'), stagePos)
     if (cfg.length) return cfg
     if (!meCh) return []
     const tt = meCh.totals
@@ -913,7 +915,8 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const g = deep.google
   const A = attr && attr.data && attr.data.attribution
   const has360 = !!A
-  const o360cols = buildO360Cols(loadKeyEvents(clientId))
+  const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
+  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos)
   const oCampG = mkOutcomeMap(A && A.byCampaign)
   const oAgG = mkOutcomeMap(A && A.byTerm)
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
@@ -1358,8 +1361,11 @@ function saveKpis(clientId, k) { try { const all = JSON.parse(localStorage.getIt
 // colour helper: is `actual` hitting `target`? goodWhenUnder for cost metrics.
 function kpiClass(actual, target, goodWhenUnder) { if (target == null || target === '' || !actual) return ''; const hit = goodWhenUnder ? actual <= target : actual >= target; return hit ? 'good' : 'bad' }
 
-/* Per-client key events - array of pipeline stage names to feature as the
-   Caalano360 funnel (with cost per stage). Empty = default leads→booked→shown→won. */
+/* Per-client key events - ordered array mixing pipeline stage names (strings)
+   and booked calendars ({ cal, label, stage? }) where `stage` links the calendar
+   to the pipeline stage it represents so it sits in the right funnel order. They
+   drive the Caalano360 / Meta / Google cost-per-event funnel and green columns.
+   Empty = default leads→booked→shown→won. */
 const KEV_KEY = 'caalano_keyevents'
 function loadKeyEvents(clientId) { try { return (JSON.parse(localStorage.getItem(KEV_KEY) || '{}')[clientId]) || [] } catch { return [] } }
 function saveKeyEvents(clientId, arr) { try { const all = JSON.parse(localStorage.getItem(KEV_KEY) || '{}'); all[clientId] = arr; localStorage.setItem(KEV_KEY, JSON.stringify(all)) } catch {} }
@@ -1383,10 +1389,35 @@ function reachedByStage(pipelines) {
 function normKeyEvents(arr) {
   return (arr || []).map((e) => {
     if (typeof e === 'string') return { kind: 'stage', ref: e, label: e }
-    if (e && e.cal) return { kind: 'calendar', ref: e.cal, label: e.label || 'Calendar' }
-    if (e && e.stage) return { kind: 'stage', ref: e.stage, label: e.label || e.stage }
+    // A calendar entry may be linked to a pipeline stage so we know where it
+    // sits in the funnel order (e.stage = the linked stage name).
+    if (e && e.cal) return { kind: 'calendar', ref: e.cal, label: e.label || 'Calendar', stage: e.stage || null }
+    if (e && e.stage && e.cal == null) return { kind: 'stage', ref: e.stage, label: e.label || e.stage }
     return null
   }).filter(Boolean)
+}
+// Stage name -> earliest pipeline position, across a set of pipelines. Lets us
+// order key events by where they actually sit in the funnel.
+function stagePosMap(pipelines) {
+  const m = new Map()
+  for (const p of pipelines || []) for (const s of (p.stages || [])) {
+    const pos = s.pos == null ? 999 : s.pos
+    if (!m.has(s.name) || pos < m.get(s.name)) m.set(s.name, pos)
+  }
+  return m
+}
+// Order key events by funnel position: stage events at their stage's position,
+// calendar events just before the stage they're linked to (the booking is what
+// moves the lead into that stage). Unlinked events keep their insertion order,
+// after the positioned ones. Stable within equal positions.
+function orderKeyEvents(list, stagePos) {
+  if (!stagePos || !stagePos.size) return list
+  const posOf = (e, i) => {
+    if (e.kind === 'stage') { const p = stagePos.get(e.ref); return p == null ? 900 + i : p }
+    const p = e.stage ? stagePos.get(e.stage) : null
+    return p == null ? 900 + i : p - 0.1 // calendar sits just ahead of its linked stage
+  }
+  return list.map((e, i) => ({ e, i, p: posOf(e, i) })).sort((a, b) => a.p - b.p || a.i - b.i).map((x) => x.e)
 }
 // Per-calendar booked / shown for a channel ('all' | 'meta' | 'google'), keyed
 // by calendar id, from the attribution feed's appointments.byCalendar.
@@ -1405,9 +1436,9 @@ function calCountMap(attribData, chan) {
 // events read their reached count from rmap; calendar events read booked/shown
 // from calMap. Returns [] when nothing configured resolves (caller shows a
 // default funnel).
-function keyEventRows(keyEvents, rmap, calMap) {
+function keyEventRows(keyEvents, rmap, calMap, stagePos) {
   const rows = []
-  for (const k of normKeyEvents(keyEvents)) {
+  for (const k of orderKeyEvents(normKeyEvents(keyEvents), stagePos)) {
     if (k.kind === 'calendar') {
       const cal = calMap && calMap.get(k.ref); if (!cal) continue
       rows.push({ label: k.label, count: cal.count, shown: cal.shown, cancelled: cal.cancelled, kind: 'calendar' })
@@ -1638,7 +1669,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const scopePipes = pid !== 'all' ? pipesSrc.filter((x) => x.id === pid) : pipesSrc
   const rmap = reachedByStage(scopePipes)
   const keCalMap = calCountMap(attribData, chan)
-  const keConfigured = keyEventRows(keyEvents, rmap, keCalMap)
+  const keConfigured = keyEventRows(keyEvents, rmap, keCalMap, stagePosMap(scopePipes))
   const keTotal = Math.max(1, c.leads || rmap.total)
   const keRows = keConfigured.length
     ? keConfigured
@@ -2574,22 +2605,39 @@ function KeyEventsEditor({ clientId }) {
   const pipes = (st.blend && st.blend.pipelines) || []
   const withStages = pipes.filter((p) => (p.stages || []).length)
   const multi = withStages.length > 1
-  const hasStage = (n) => sel.some((e) => (typeof e === 'string' ? e === n : e && e.stage === n))
+  // A stage entry is a bare name (or {stage} with no cal); a calendar entry is
+  // {cal, label, stage?} where `stage` is the pipeline stage it's linked to - so
+  // matching stage checkboxes must exclude calendar entries.
+  const hasStage = (n) => sel.some((e) => (typeof e === 'string' ? e === n : e && e.cal == null && e.stage === n))
   const hasCal = (id) => sel.some((e) => e && typeof e === 'object' && e.cal === id)
+  const calStageOf = (id) => { const e = sel.find((x) => x && x.cal === id); return (e && e.stage) || '' }
   const persist = (nx) => { saveKeyEvents(clientId, nx); return nx }
-  const toggleStage = (n) => setSel((prev) => persist(hasStage(n) ? prev.filter((e) => !(e === n || (e && e.stage === n))) : [...prev, n]))
+  const toggleStage = (n) => setSel((prev) => persist(hasStage(n) ? prev.filter((e) => !(e === n || (e && e.cal == null && e.stage === n))) : [...prev, n]))
   const toggleCal = (cal) => setSel((prev) => persist(hasCal(cal.id) ? prev.filter((e) => !(e && e.cal === cal.id)) : [...prev, { cal: cal.id, label: cal.name }]))
+  const linkCalStage = (id, stage) => setSel((prev) => persist(prev.map((e) => (e && e.cal === id ? { ...e, stage: stage || undefined } : e))))
+  const allStages = (() => { const m = new Map(); for (const p of withStages) for (const s of (p.stages || [])) if (!m.has(s.name)) m.set(s.name, s.pos == null ? 999 : s.pos); return [...m.entries()].sort((a, b) => a[1] - b[1]).map(([n]) => n) })()
   return (
     <div className="linker">
       <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>
       {open && <div className="linker-body">
-        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. Leave empty for the default leads → booked → shown → won.</p>
+        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. <b>Link each calendar to the pipeline stage it represents</b> so it sits in the right funnel order. Leave empty for the default leads → booked → shown → won.</p>
         <div className="kev-group">
-          <div className="kev-pipe">📅 Booked calendars</div>
+          <div className="kev-pipe">📅 Booked calendars <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· tick the ones that matter, then link each to its pipeline stage</span></div>
           {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
-            : cals.list.length ? <div className="kev-list">{cals.list.map((cal) => (
-              <label className={`kev-item ${hasCal(cal.id) ? 'on' : ''}`} key={cal.id}><input type="checkbox" checked={hasCal(cal.id)} onChange={() => toggleCal(cal)} /><span title={cal.name}>{cal.name}</span></label>
-            ))}</div>
+            : cals.list.length ? <div className="kev-callist">{cals.list.map((cal) => {
+              const on = hasCal(cal.id)
+              return (
+                <div className={`kev-cal ${on ? 'on' : ''}`} key={cal.id}>
+                  <label className={`kev-item ${on ? 'on' : ''}`}><input type="checkbox" checked={on} onChange={() => toggleCal(cal)} /><span title={cal.name}>{cal.name}</span></label>
+                  {on && (allStages.length
+                    ? <select className="kev-stage" value={calStageOf(cal.id)} onChange={(e) => linkCalStage(cal.id, e.target.value)} title="Link this calendar to the pipeline stage it represents, so it sits in the right funnel order">
+                        <option value="">↕ link to stage…</option>
+                        {allStages.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    : <span className="cap" style={{ opacity: .7 }}>loading stages…</span>)}
+                </div>
+              )
+            })}</div>
               : cals.status === 'ok' ? <p className="cap">No calendars found for this client.</p>
                 : <p className="cap">Couldn’t load calendars.</p>}
         </div>

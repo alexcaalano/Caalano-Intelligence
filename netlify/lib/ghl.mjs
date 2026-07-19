@@ -473,6 +473,10 @@ export async function buildAttribution(locationId, from, to) {
     if (!e) { e = { name: key, leads: 0, booked: 0, shown: 0, shownStage: 0, cancelled: 0, won: 0, revenue: 0 }; map.set(key, e) }
     return e
   }
+  // Per-entity breakdowns for the green Caalano360 columns: cals[calId] = booked
+  // into that calendar, stages[name] = reached that pipeline stage. Lazily
+  // allocated so entities with no bookings / stages stay small.
+  const bumpKey = (e, prop, key) => { if (!e || !key) return; const m = e[prop] || (e[prop] = {}); m[key] = (m[key] || 0) + 1 }
   // Cohort bump: leads / won / revenue on the lead-creation date. When
   // appointments are unavailable, fall back to pipeline-stage detection for
   // booked / shown so those clients are not left blank.
@@ -509,6 +513,19 @@ export async function buildAttribution(locationId, from, to) {
     bumpLead(dim.campaign, u.campaign, o, pi)
     bumpLead(dim.content, u.content, o, pi)
     bumpLead(dim.term, u.term, o, pi)
+    // Per-entity stage reach for the green key-event columns: which stages this
+    // lead reached (all stages at/behind its current stage; won reaches all).
+    if (pi && pi.stages && pi.stages.length) {
+      const pos = (pi.byId[o.pipelineStageId] || {}).pos
+      const isWonS = String(o.status || '').toLowerCase() === 'won'
+      const reached = isWonS ? pi.stages : (pos == null ? [] : pi.stages.filter((s) => s.pos <= pos))
+      for (const s of reached) {
+        bumpKey(ent(dim.campaign, u.campaign), 'stages', s.name)
+        bumpKey(ent(dim.medium, u.medium), 'stages', s.name)
+        bumpKey(ent(dim.content, u.content), 'stages', s.name)
+        bumpKey(ent(dim.term, u.term), 'stages', s.name)
+      }
+    }
     // per-source cohort detail
     const det = sd(u.source)
     const st = String(o.status || '').toLowerCase()
@@ -581,8 +598,15 @@ export async function buildAttribution(locationId, from, to) {
         f.cancelledInPeriod = f._cancelled && !f._live
         if (!f.bookedInPeriod && !f.shownByStatus && !f.cancelledInPeriod) continue
         const o = contactUtm.get(cid); if (!o) continue // only attributable leads
-        const ch = channelOf(utmOf(o))
-        if (f.bookedInPeriod) { cal.booked++; cal.ch[ch].booked++ }
+        const u = utmOf(o); const ch = channelOf(u)
+        if (f.bookedInPeriod) {
+          cal.booked++; cal.ch[ch].booked++
+          // Per-entity booked-into-this-calendar for the green key-event columns.
+          bumpKey(ent(dim.campaign, u.campaign), 'cals', calId)
+          bumpKey(ent(dim.medium, u.medium), 'cals', calId)
+          bumpKey(ent(dim.content, u.content), 'cals', calId)
+          bumpKey(ent(dim.term, u.term), 'cals', calId)
+        }
         if (f.shownByStatus) { cal.shown++; cal.ch[ch].shown++ }
         if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
       }

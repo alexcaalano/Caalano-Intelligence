@@ -24,49 +24,84 @@ const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) { const k = unorm(e.name); if (k && !m.has(k)) m.set(k, e) } return m }
 // Caalano360 outcome columns (UTM-matched CRM results next to each ad row).
 // Green Caalano360 columns. Trailing 'r' marks a narrow rate (%) column.
-const O360_COLS = [['booked', 'Booked'], ['cBook', 'C/Book'], ['shown', 'Shown'], ['cShow', 'C/Show'], ['won', 'Won'], ['cWon', 'C/Won'], ['wonVal', 'Won val'], ['roas', 'ROAS'], ['bookRate', 'Book %', 'r'], ['showRate', 'Show %', 'r'], ['winRate', 'Win %', 'r']]
-// Flatten an outcome into sortable numeric fields merged onto each ad row. Rates
-// use the row's own lead count as the denominator: Book% = booked/leads,
-// Show% = shown/booked, Win% = won/leads (won is created-basis, so Win% is the
-// clean lead->won conversion; Book%/Show% are date-of-action so read as
-// directional when a period is short).
-function o360Fields(o, spend, leads) {
-  if (!o) return { booked: null, cancelled: null, cBook: null, shown: null, cShow: null, won: null, cWon: null, wonVal: null, roas: null, bookRate: null, showRate: null, winRate: null, _has360: false }
+// Legacy fixed green columns - used when a client has no key events configured,
+// so existing views are unchanged. ty drives cell rendering + column width.
+const LEGACY_O360_COLS = [
+  { key: 'booked', label: 'Booked', ty: 'count', src: 'booked' },
+  { key: 'cBook', label: 'C/Book', ty: 'cost', src: 'booked', noun: 'booked' },
+  { key: 'shown', label: 'Shown', ty: 'count', src: 'shown' },
+  { key: 'cShow', label: 'C/Show', ty: 'cost', src: 'shown', noun: 'shown' },
+  { key: 'won', label: 'Won', ty: 'count', src: 'won' },
+  { key: 'cWon', label: 'C/Won', ty: 'cost', src: 'won', noun: 'won' },
+  { key: 'wonVal', label: 'Won val', ty: 'money', src: 'revenue' },
+  { key: 'roas', label: 'ROAS', ty: 'roas' },
+  { key: 'bookRate', label: 'Book %', ty: 'rate', num: 'booked', den: 'leads' },
+  { key: 'showRate', label: 'Show %', ty: 'rate', num: 'shown', den: 'booked' },
+  { key: 'winRate', label: 'Win %', ty: 'rate', num: 'won', den: 'leads' },
+]
+// Build the green Caalano360 columns for a client. With key events configured
+// (Settings: pipeline stages and/or booked calendars) the block becomes one
+// cost-per column per key event, then Cost/Won, Won value and ROAS for revenue
+// context. With none configured it falls back to the legacy fixed set.
+function buildO360Cols(keyEvents) {
+  const ke = normKeyEvents(keyEvents)
+  if (!ke.length) return LEGACY_O360_COLS
+  const short = (s) => (s && s.length > 15 ? s.slice(0, 14) + '…' : s)
+  const cols = ke.map((k, i) => ({ key: 'ke' + i, label: (k.kind === 'calendar' ? '📅 ' : '') + short(k.label), full: k.label, ty: 'kecost', kind: k.kind, ref: k.ref }))
+  cols.push({ key: 'cWon', label: 'C/Won', ty: 'cost', src: 'won' })
+  cols.push({ key: 'wonVal', label: 'Won val', ty: 'money', src: 'revenue' })
+  cols.push({ key: 'roas', label: 'ROAS', ty: 'roas' })
+  return cols
+}
+// Flatten an outcome `o` into numeric fields (for sorting) keyed by column key,
+// plus parallel `<key>N` raw counts for hover. Rates use the row's own lead
+// count where relevant. Works for both the legacy and key-event column sets.
+function o360Fields(o, spend, leads, cols) {
+  const C = cols || LEGACY_O360_COLS
+  if (!o) { const f = { _has360: false }; for (const c of C) f[c.key] = null; return f }
   const L = leads || 0
-  return {
-    booked: o.booked, cancelled: o.cancelled || 0, cBook: o.booked && spend ? spend / o.booked : null,
-    shown: o.shown, shownStage: o.shownStage || 0, cShow: o.shown && spend ? spend / o.shown : null,
-    won: o.won, cWon: o.won && spend ? spend / o.won : null,
-    wonVal: o.revenue, roas: spend ? o.revenue / spend : null,
-    bookRate: L ? (o.booked / L) * 100 : null,
-    showRate: o.booked ? (o.shown / o.booked) * 100 : null,
-    winRate: L ? (o.won / L) * 100 : null,
-    _has360: true,
+  const f = { _has360: true, booked: o.booked || 0, cancelled: o.cancelled || 0, shown: o.shown || 0, shownStage: o.shownStage || 0, won: o.won || 0, revenue: o.revenue || 0 }
+  for (const c of C) {
+    if (c.ty === 'kecost') {
+      const n = (c.kind === 'calendar' ? (o.cals && o.cals[c.ref]) : (o.stages && o.stages[c.ref])) || 0
+      f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n
+    } else if (c.ty === 'count') { f[c.key] = o[c.src] || 0 }
+    else if (c.ty === 'cost') { const n = o[c.src] || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
+    else if (c.ty === 'money') { f[c.key] = o[c.src] || 0 }
+    else if (c.ty === 'roas') { f[c.key] = spend ? (o.revenue || 0) / spend : null }
+    else if (c.ty === 'rate') { const den = c.den === 'leads' ? L : (o[c.den] || 0); f[c.key] = den ? ((o[c.num] || 0) / den) * 100 : null }
   }
+  return f
 }
 // A little "Caalano360" banner spanning the green columns, above the header row.
-function C360GrpRow({ left }) {
-  return <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={left} aria-hidden="true" /><th className="c360-grp" colSpan={O360_COLS.length}>Caalano360</th></tr>
+function C360GrpRow({ left, cols }) {
+  const C = cols || LEGACY_O360_COLS
+  return <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={left} aria-hidden="true" /><th className="c360-grp" colSpan={C.length}>Caalano360</th></tr>
 }
-function O360Head({ sort, on }) {
-  return <>{O360_COLS.map(([k, label], i) => (sort
-    ? <SortTh key={k} k={k} sort={sort} on={on} className={`c360-col${i === 0 ? ' c360-first' : ''}`}>{label}</SortTh>
-    : <th key={k} className={`c360-col${i === 0 ? ' c360-first' : ''}`}>{label}</th>))}</>
+function O360Head({ sort, on, cols }) {
+  const C = cols || LEGACY_O360_COLS
+  return <>{C.map((c, i) => {
+    const cn = `c360-col${i === 0 ? ' c360-first' : ''}`
+    const title = c.full ? `Cost per ${c.full}${c.kind === 'calendar' ? ' (booked into this calendar)' : ' (reached this stage)'}` : undefined
+    return sort
+      ? <SortTh key={c.key} k={c.key} sort={sort} on={on} className={cn} title={title}>{c.label}</SortTh>
+      : <th key={c.key} className={cn} title={title}>{c.label}</th>
+  })}</>
 }
 // Fixed column widths so the Caalano360 green block lands in the same place in
 // every table. The name (first) col gets an EXPLICIT width - not auto - because
 // with table-layout:fixed an auto col collapses to 0 once the fixed columns
-// exceed the viewport (which they do with the rate columns), hiding the names.
-// nameW = 190 + (9 - left)*CGM keeps the green block at a constant x across
-// tables with different left-column counts (green x = 190 + 8*CGM for all).
+// exceed the viewport, hiding the names. nameW = 190 + (9 - left)*CGM keeps the
+// green block at a constant x across tables with different left-column counts.
 const CGM = 96
-function O360ColGroup({ left, green = true }) {
+function O360ColGroup({ left, green = true, cols }) {
+  const C = cols || LEGACY_O360_COLS
   const nameW = Math.max(150, 190 + (9 - left) * CGM)
   return (
     <colgroup>
       <col style={{ width: nameW }} />
       {Array.from({ length: Math.max(0, left - 1) }, (_, i) => <col key={i} className="cg-m" />)}
-      {green && O360_COLS.map(([k, , ty]) => <col key={k} className={ty === 'r' ? 'cg-gr' : 'cg-g'} />)}
+      {green && C.map((c) => <col key={c.key} className={c.ty === 'rate' ? 'cg-gr' : 'cg-g'} />)}
     </colgroup>
   )
 }
@@ -90,22 +125,36 @@ function sortRows(rows, s) {
 function SortTh({ k, sort, on, children, className }) {
   return <th className={`sort-th${className ? ' ' + className : ''}`} onClick={() => on(k)}>{children}<span className="sort-ar">{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</span></th>
 }
-// Renders the green Caalano360 cells from the sortable fields merged onto a row.
-function o360Cells(r, currency) {
-  if (!r || !r._has360) return <>{O360_COLS.map(([k], i) => <td key={k} className={`c360-col dim${i === 0 ? ' c360-first' : ''}`}>-</td>)}</>
-  return <>
-    <td className="c360-col c360-first">{fmtNumber(r.booked || 0)}{r.cancelled ? <span className="c360-canc" title={`${r.cancelled} of these later cancelled`}> ({r.cancelled}c)</span> : null}</td>
-    <td className="c360-col">{r.cBook != null ? fmtCurrency(r.cBook, currency) : '-'}</td>
-    <td className="c360-col">{fmtNumber(r.shown || 0)}{r.shownStage ? <span className="c360-infer" title={`${r.shownStage} counted from pipeline stage (not marked shown)`}> ({r.shownStage}p)</span> : null}</td>
-    <td className="c360-col">{r.cShow != null ? fmtCurrency(r.cShow, currency) : '-'}</td>
-    <td className="c360-col">{fmtNumber(r.won || 0)}</td>
-    <td className="c360-col">{r.cWon != null ? fmtCurrency(r.cWon, currency) : '-'}</td>
-    <td className="c360-col">{r.wonVal != null ? fmtCurrency(r.wonVal, currency) : '-'}</td>
-    <td className="c360-col">{r.roas != null ? `${r.roas.toFixed(2)}×` : '-'}</td>
-    <td className="c360-col" title="Booked ÷ leads">{r.bookRate != null ? fmtPct(r.bookRate, 1) : '-'}</td>
-    <td className="c360-col" title="Shown ÷ booked">{r.showRate != null ? fmtPct(r.showRate, 1) : '-'}</td>
-    <td className="c360-col" title="Won ÷ leads (lead to sale)">{r.winRate != null ? fmtPct(r.winRate, 1) : '-'}</td>
-  </>
+// Renders the green Caalano360 cells for a row, driven by the column set. Cost
+// columns show the cost-per and carry the raw count on hover; key-event columns
+// do the same for a booked calendar or a reached pipeline stage.
+function o360Cells(r, currency, cols) {
+  const C = cols || LEGACY_O360_COLS
+  if (!r || !r._has360) return <>{C.map((c, i) => <td key={c.key} className={`c360-col dim${i === 0 ? ' c360-first' : ''}`}>-</td>)}</>
+  const money = (v) => fmtCurrency(v, currency)
+  return <>{C.map((c, i) => {
+    const cn = `c360-col${i === 0 ? ' c360-first' : ''}`
+    const v = r[c.key]
+    if (c.ty === 'kecost') {
+      const n = r[c.key + 'N'] || 0
+      const tip = `${fmtNumber(n)} ${c.kind === 'calendar' ? 'booked into' : 'reached'} ${c.full}`
+      return <td key={c.key} className={cn} title={tip}>{v != null ? money(v) : '-'}</td>
+    }
+    if (c.ty === 'cost') {
+      const n = r[c.key + 'N'] || 0
+      const tip = n ? `${fmtNumber(n)} ${c.noun || c.src}${c.key === 'cBook' && r.cancelled ? ` · ${r.cancelled} later cancelled` : ''}${c.key === 'cShow' && r.shownStage ? ` · ${r.shownStage} via pipeline stage` : ''}` : undefined
+      return <td key={c.key} className={cn} title={tip}>{v != null ? money(v) : '-'}</td>
+    }
+    if (c.ty === 'money') return <td key={c.key} className={cn}>{v != null ? money(v) : '-'}</td>
+    if (c.ty === 'roas') return <td key={c.key} className={cn}>{v != null ? `${v.toFixed(2)}×` : '-'}</td>
+    if (c.ty === 'count') {
+      if (c.key === 'booked') return <td key={c.key} className={cn}>{fmtNumber(v || 0)}{r.cancelled ? <span className="c360-canc" title={`${r.cancelled} later cancelled`}> ({r.cancelled}c)</span> : null}</td>
+      if (c.key === 'shown') return <td key={c.key} className={cn}>{fmtNumber(v || 0)}{r.shownStage ? <span className="c360-infer" title={`${r.shownStage} from pipeline stage`}> ({r.shownStage}p)</span> : null}</td>
+      return <td key={c.key} className={cn}>{fmtNumber(v || 0)}</td>
+    }
+    if (c.ty === 'rate') { const tip = c.key === 'bookRate' ? 'Booked ÷ leads' : c.key === 'showRate' ? 'Shown ÷ booked' : 'Won ÷ leads'; return <td key={c.key} className={cn} title={tip}>{v != null ? fmtPct(v, 1) : '-'}</td> }
+    return <td key={c.key} className={cn}>-</td>
+  })}</>
 }
 const PHASE_COLOR = { contact: '#4f7cff', 'appt-set': '#6d5efc', 'at-risk': '#f0435b', held: '#12b886', proposal: '#f5a524', onboarding: '#0ea5e9' }
 
@@ -633,6 +682,9 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const m = deep.meta
   const A = attr && attr.data && attr.data.attribution
   const has360 = !!A
+  // Green Caalano360 columns: the client's key events (cost per each) when
+  // configured, else the legacy Booked/Shown/Won block.
+  const o360cols = buildO360Cols(loadKeyEvents(clientId))
   const oCamp = mkOutcomeMap(A && A.byCampaign)
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
   // not utm_term - so match ad-set rows against byMedium.
@@ -695,8 +747,14 @@ function MetaDeep({ deep, currency, attr, clientId }) {
     const s = rs.reduce((a, x) => ({ spend: a.spend + x.spend, impressions: a.impressions + x.impressions, linkClicks: a.linkClicks + x.linkClicks, leads: a.leads + x.leads, videoViews: a.videoViews + x.videoViews }), { spend: 0, impressions: 0, linkClicks: 0, leads: 0, videoViews: 0 })
     // Roll up Caalano360 outcomes from this format's UTM-matched creatives (utm_content).
     let oc = null
-    for (const x of rs) { const o = oCre.get(unorm(x.name)); if (o) { oc = oc || { booked: 0, shown: 0, won: 0, revenue: 0 }; oc.booked += o.booked; oc.shown += o.shown; oc.won += o.won; oc.revenue += o.revenue } }
-    return { type, count: rs.length, ...s, ...o360Fields(oc, s.spend, s.leads) }
+    for (const x of rs) {
+      const o = oCre.get(unorm(x.name)); if (!o) continue
+      oc = oc || { booked: 0, shown: 0, shownStage: 0, cancelled: 0, won: 0, revenue: 0, cals: {}, stages: {} }
+      oc.booked += o.booked; oc.shown += o.shown; oc.shownStage += o.shownStage || 0; oc.cancelled += o.cancelled || 0; oc.won += o.won; oc.revenue += o.revenue
+      if (o.cals) for (const k in o.cals) oc.cals[k] = (oc.cals[k] || 0) + o.cals[k]
+      if (o.stages) for (const k in o.stages) oc.stages[k] = (oc.stages[k] || 0) + o.stages[k]
+    }
+    return { type, count: rs.length, ...s, ...o360Fields(oc, s.spend, s.leads, o360cols) }
   }).filter(Boolean)
   // Key events for the Meta channel: the client's configured pipeline stages +
   // booked calendars, scored against Meta-attributed CRM data and Meta spend.
@@ -754,25 +812,25 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         </ResponsiveContainer>
       </div>}
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
-      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} /><thead>{has360 && <C360GrpRow left={8} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="linkCtr" sort={campSort} on={onCampSort}>Link CTR</SortTh><SortTh k="hook" sort={campSort} on={onCampSort}>Hook</SortTh><SortTh k="leads" sort={campSort} on={onCampSort}>Leads</SortTh><SortTh k="cvr" sort={campSort} on={onCampSort}>CVR</SortTh><SortTh k="cpl" sort={campSort} on={onCampSort}>CPL</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} />}</tr></thead>
-        <tbody>{sortRows(m.campaigns.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="linkCtr" sort={campSort} on={onCampSort}>Link CTR</SortTh><SortTh k="hook" sort={campSort} on={onCampSort}>Hook</SortTh><SortTh k="leads" sort={campSort} on={onCampSort}>Leads</SortTh><SortTh k="cvr" sort={campSort} on={onCampSort}>CVR</SortTh><SortTh k="cpl" sort={campSort} on={onCampSort}>CPL</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} cols={o360cols} />}</tr></thead>
+        <tbody>{sortRows(m.campaigns.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''}</span></div>
-      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} /><thead>{has360 && <C360GrpRow left={8} />}<tr><SortTh k="name" sort={adsetSort} on={onAdsetSort}>Ad set</SortTh><SortTh k="spend" sort={adsetSort} on={onAdsetSort}>Spend</SortTh><SortTh k="impressions" sort={adsetSort} on={onAdsetSort}>Impr.</SortTh><SortTh k="linkCtr" sort={adsetSort} on={onAdsetSort}>Link CTR</SortTh><SortTh k="hook" sort={adsetSort} on={onAdsetSort}>Hook</SortTh><SortTh k="leads" sort={adsetSort} on={onAdsetSort}>Leads</SortTh><SortTh k="cvr" sort={adsetSort} on={onAdsetSort}>CVR</SortTh><SortTh k="cpl" sort={adsetSort} on={onAdsetSort}>CPL</SortTh>{has360 && <O360Head sort={adsetSort} on={onAdsetSort} />}</tr></thead>
-        <tbody>{sortRows(adsets.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oAdset.get(unorm(c.name)), c.spend, c.leads) })), adsetSort).map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={adsetSort} on={onAdsetSort}>Ad set</SortTh><SortTh k="spend" sort={adsetSort} on={onAdsetSort}>Spend</SortTh><SortTh k="impressions" sort={adsetSort} on={onAdsetSort}>Impr.</SortTh><SortTh k="linkCtr" sort={adsetSort} on={onAdsetSort}>Link CTR</SortTh><SortTh k="hook" sort={adsetSort} on={onAdsetSort}>Hook</SortTh><SortTh k="leads" sort={adsetSort} on={onAdsetSort}>Leads</SortTh><SortTh k="cvr" sort={adsetSort} on={onAdsetSort}>CVR</SortTh><SortTh k="cpl" sort={adsetSort} on={onAdsetSort}>CPL</SortTh>{has360 && <O360Head sort={adsetSort} on={onAdsetSort} cols={o360cols} />}</tr></thead>
+        <tbody>{sortRows(adsets.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oAdset.get(unorm(c.name)), c.spend, c.leads, o360cols) })), adsetSort).map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
       {formats.length > 0 && <>
         <div className="lvl-title">Performance by format <span className="sub">· image vs video</span></div>
-        <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} /><thead>{has360 && <C360GrpRow left={9} />}<tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Hook</th><th>Leads</th><th>CVR</th><th>CPL</th>{has360 && <O360Head />}</tr></thead>
-          <tbody>{formats.map((f) => (<tr key={f.type}><td>{f.type}</td><td>{fmtNumber(f.count)}</td><td>{fmtCurrency(f.spend, currency)}</td><td>{fmtNumber(f.impressions)}</td><td>{fmtPct(rate(f.linkClicks, f.impressions), 2)}</td><td>{f.type === 'Video' ? fmtPct(rate(f.videoViews, f.impressions), 1) : '-'}</td><td>{fmtNumber(f.leads)}</td><td>{f.leads ? fmtPct(rate(f.leads, f.linkClicks), 1) : '-'}</td><td>{f.leads ? fmtCurrency(f.spend / f.leads, currency) : '-'}</td>{has360 && o360Cells(f, currency)}</tr>))}</tbody></table></div>
+        <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Hook</th><th>Leads</th><th>CVR</th><th>CPL</th>{has360 && <O360Head cols={o360cols} />}</tr></thead>
+          <tbody>{formats.map((f) => (<tr key={f.type}><td>{f.type}</td><td>{fmtNumber(f.count)}</td><td>{fmtCurrency(f.spend, currency)}</td><td>{fmtNumber(f.impressions)}</td><td>{fmtPct(rate(f.linkClicks, f.impressions), 2)}</td><td>{f.type === 'Video' ? fmtPct(rate(f.videoViews, f.impressions), 1) : '-'}</td><td>{fmtNumber(f.leads)}</td><td>{f.leads ? fmtPct(rate(f.leads, f.linkClicks), 1) : '-'}</td><td>{f.leads ? fmtCurrency(f.spend / f.leads, currency) : '-'}</td>{has360 && o360Cells(f, currency, o360cols)}</tr>))}</tbody></table></div>
       </>}
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
-      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} /><thead>{has360 && <C360GrpRow left={9} />}<tr>
-        <SortTh k="name" sort={creSort} on={onCreSort}>Creative</SortTh><SortTh k="type" sort={creSort} on={onCreSort}>Type</SortTh><SortTh k="spend" sort={creSort} on={onCreSort}>Spend</SortTh><SortTh k="impressions" sort={creSort} on={onCreSort}>Impr.</SortTh><SortTh k="linkCtr" sort={creSort} on={onCreSort}>Link CTR</SortTh><SortTh k="hook" sort={creSort} on={onCreSort}>Hook</SortTh><SortTh k="leads" sort={creSort} on={onCreSort}>Leads</SortTh><SortTh k="cvr" sort={creSort} on={onCreSort}>CVR</SortTh><SortTh k="cpl" sort={creSort} on={onCreSort}>CPL</SortTh>{has360 && <O360Head sort={creSort} on={onCreSort} />}</tr></thead>
-        <tbody>{sortRows(adsFull.map((a) => ({ ...a, linkCtr: rate(a.linkClicks, a.impressions), hook: a.type === 'Video' ? rate(a.videoViews, a.impressions) : null, cvr: rate(a.leads, a.linkClicks), cpl: a.leads ? a.spend / a.leads : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads) })), creSort).map((a) => (<tr key={a.name}>
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr>
+        <SortTh k="name" sort={creSort} on={onCreSort}>Creative</SortTh><SortTh k="type" sort={creSort} on={onCreSort}>Type</SortTh><SortTh k="spend" sort={creSort} on={onCreSort}>Spend</SortTh><SortTh k="impressions" sort={creSort} on={onCreSort}>Impr.</SortTh><SortTh k="linkCtr" sort={creSort} on={onCreSort}>Link CTR</SortTh><SortTh k="hook" sort={creSort} on={onCreSort}>Hook</SortTh><SortTh k="leads" sort={creSort} on={onCreSort}>Leads</SortTh><SortTh k="cvr" sort={creSort} on={onCreSort}>CVR</SortTh><SortTh k="cpl" sort={creSort} on={onCreSort}>CPL</SortTh>{has360 && <O360Head sort={creSort} on={onCreSort} cols={o360cols} />}</tr></thead>
+        <tbody>{sortRows(adsFull.map((a) => ({ ...a, linkCtr: rate(a.linkClicks, a.impressions), hook: a.type === 'Video' ? rate(a.videoViews, a.impressions) : null, cvr: rate(a.leads, a.linkClicks), cpl: a.leads ? a.spend / a.leads : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads, o360cols) })), creSort).map((a) => (<tr key={a.name}>
           <td title={a.name}><div className="cre-cell">{a.thumb ? <img className="cre-th" src={a.thumb} alt="" loading="lazy" onMouseEnter={showPrev(a.thumb)} onMouseMove={movePrev} onMouseLeave={hidePrev} onError={(e) => { e.target.style.display = 'none' }} /> : <span className="cre-th cre-th-none" />}<span className="cre-cell-nm">{a.name}</span></div></td><td>{a.type}</td><td>{fmtCurrency(a.spend, currency)}</td><td>{fmtNumber(a.impressions)}</td>
           <td className={gb(a.linkCtr, avgLinkCtr)}>{fmtPct(a.linkCtr, 2)}</td><td className={a.hook != null ? gb(a.hook, avgHook) : ''}>{a.hook != null ? fmtPct(a.hook, 1) : '-'}</td>
           <td>{fmtNumber(a.leads)}</td><td className={a.leads ? gb(a.cvr, avgCvr) : ''}>{a.leads ? fmtPct(a.cvr, 1) : '-'}</td>
           <td className={a.cpl != null ? (a.cpl <= cpl ? 'good' : 'bad') : ''}>{a.cpl != null ? fmtCurrency(a.cpl, currency) : '-'}</td>
-          {has360 && o360Cells(a, currency)}</tr>))}</tbody></table></div>
+          {has360 && o360Cells(a, currency, o360cols)}</tr>))}</tbody></table></div>
       <div className="cre-sub"><span>Visual previews</span><small>hover a thumbnail in the table above to enlarge, or browse the cards below</small></div>
       <div className="cre-grid">{ads.map((a) => {
         const acpl = a.leads ? a.spend / a.leads : 0
@@ -855,6 +913,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const g = deep.google
   const A = attr && attr.data && attr.data.attribution
   const has360 = !!A
+  const o360cols = buildO360Cols(loadKeyEvents(clientId))
   const oCampG = mkOutcomeMap(A && A.byCampaign)
   const oAgG = mkOutcomeMap(A && A.byTerm)
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
@@ -880,7 +939,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const daily = (g.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpc: d.clicks ? d.cost / d.clicks : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpconv: d.conversions ? d.cost / d.conversions : 0 }))
   const qKw = g.keywords.filter((k) => k.qs !== '' && k.qs != null)
   const avgQs = qKw.length ? qKw.reduce((a, k) => a + k.qs, 0) / qKw.length : 0
-  const GHead = ({ first, o360, sort, on }) => (<thead>{o360 && has360 && <C360GrpRow left={7} />}<tr><SortTh k="name" sort={sort} on={on}>{first}</SortTh><SortTh k="cost" sort={sort} on={on}>Cost</SortTh><SortTh k="impressions" sort={sort} on={on}>Impr.</SortTh><SortTh k="ctr" sort={sort} on={on}>CTR</SortTh><SortTh k="cpc" sort={sort} on={on}>CPC</SortTh><SortTh k="conversions" sort={sort} on={on}>Conv.</SortTh><SortTh k="costConv" sort={sort} on={on}>Cost/conv</SortTh>{o360 && has360 && <O360Head sort={sort} on={on} />}</tr></thead>)
+  const GHead = ({ first, o360, sort, on }) => (<thead>{o360 && has360 && <C360GrpRow left={7} cols={o360cols} />}<tr><SortTh k="name" sort={sort} on={on}>{first}</SortTh><SortTh k="cost" sort={sort} on={on}>Cost</SortTh><SortTh k="impressions" sort={sort} on={on}>Impr.</SortTh><SortTh k="ctr" sort={sort} on={on}>CTR</SortTh><SortTh k="cpc" sort={sort} on={on}>CPC</SortTh><SortTh k="conversions" sort={sort} on={on}>Conv.</SortTh><SortTh k="costConv" sort={sort} on={on}>Cost/conv</SortTh>{o360 && has360 && <O360Head sort={sort} on={on} cols={o360cols} />}</tr></thead>)
   const GCells = (r) => (<><td>{fmtCurrency(r.cost, currency)}</td><td>{fmtNumber(r.impressions)}</td><td>{fmtPct(rate(r.clicks, r.impressions), 2)}</td><td>{fmtCurrency(r.clicks ? r.cost / r.clicks : 0, currency)}</td><td>{fmtNumber(r.conversions)}</td><td>{r.conversions ? fmtCurrency(r.cost / r.conversions, currency) : '-'}</td></>)
   const gMetrics = (r) => ({ ...r, ctr: rate(r.clicks, r.impressions), cpc: r.clicks ? r.cost / r.clicks : null, costConv: r.conversions ? r.cost / r.conversions : null })
   // Key events for the Google channel: configured pipeline stages + booked
@@ -956,11 +1015,11 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
         </div>
       </div>
       <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
-      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} /><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
-        <tbody>{sortRows(g.campaigns.map((c) => ({ ...gMetrics(c), ...o360Fields(oCampG.get(unorm(c.name)), c.cost, c.conversions) })), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} cols={o360cols} /><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
+        <tbody>{sortRows(g.campaigns.map((c) => ({ ...gMetrics(c), ...o360Fields(oCampG.get(unorm(c.name)), c.cost, c.conversions, o360cols) })), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
-      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} /><GHead first="Ad group" o360 sort={aSort} on={onASort} />
-        <tbody>{sortRows(adGroups.map((c) => ({ ...gMetrics(c), ...o360Fields(oAgG.get(unorm(c.name)), c.cost, c.conversions) })), aSort).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(c, currency)}</tr>))}</tbody></table></div>
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} cols={o360cols} /><GHead first="Ad group" o360 sort={aSort} on={onASort} />
+        <tbody>{sortRows(adGroups.map((c) => ({ ...gMetrics(c), ...o360Fields(oAgG.get(unorm(c.name)), c.cost, c.conversions, o360cols) })), aSort).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms</span></div>
       <div className="table-wrap"><table><thead><tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh></tr></thead>
         <tbody>{sortRows(keywords.map(gMetrics), kSort).map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '-'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '-' : k.qs}</span></td></tr>))}</tbody></table></div>

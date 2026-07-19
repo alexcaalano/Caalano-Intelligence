@@ -731,7 +731,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         {crmTot && <Sc label="Scheduled Appts" value={<>{fmtNumber(crmTot.booked)}{crmTot.cancelled ? <span className="c360-canc" title={`${crmTot.cancelled} later cancelled`}> ({crmTot.cancelled}c)</span> : null}</>} />}
         {crmTot && <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} />}
       </div>
-      {has360 && meRows.length > 0 && <KeyEventsFunnel
+      {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
         title="Key events · Meta" style={{ marginTop: 14 }}
         sub="Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · account level"
@@ -909,7 +909,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
         <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
       </div>
-      {has360 && gRows.length > 0 && <KeyEventsFunnel
+      {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={t.cost} currency={currency}
         title="Key events · Google" style={{ marginTop: 14 }}
         sub="Google-attributed leads through your key pipeline stages and booked calendars · cost per event = Google spend ÷ count"

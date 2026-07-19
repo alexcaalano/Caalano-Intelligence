@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -786,6 +786,15 @@ export default async (req) => {
     if (!cc || !cc.ghl) return json({ error: `client ${client} has no Caalano Systems location` }, 404)
     try { return json({ scope: 'chandebug', client, ...(await sampleChannels(cc.ghl, from, to)) }, 200) }
     catch (e) { return json({ error: String(e.message || e).slice(0, 200) }, 200) }
+  }
+
+  // Calendar list for one client, for the Settings booking-funnel-step editor.
+  if (url.searchParams.get('scope') === 'calendars') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'calendars', client, calendars: [] })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'calendars', client, connected: false, calendars: [] })
+    try { return json({ scope: 'calendars', client, connected: true, calendars: await listCalendars(cc.ghl) }, 200, true) }
+    catch (e) { return json({ scope: 'calendars', client, error: String(e.message || e).slice(0, 160), calendars: [] }, 200) }
   }
 
   // Cohort maturation: leads by acquisition week through the funnel.

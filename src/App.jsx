@@ -698,6 +698,20 @@ function MetaDeep({ deep, currency, attr, clientId }) {
     for (const x of rs) { const o = oCre.get(unorm(x.name)); if (o) { oc = oc || { booked: 0, shown: 0, won: 0, revenue: 0 }; oc.booked += o.booked; oc.shown += o.shown; oc.won += o.won; oc.revenue += o.revenue } }
     return { type, count: rs.length, ...s, ...o360Fields(oc, s.spend, s.leads) }
   }).filter(Boolean)
+  // Key events for the Meta channel: the client's configured pipeline stages +
+  // booked calendars, scored against Meta-attributed CRM data and Meta spend.
+  // Always account-level (independent of the campaign drill) so cost per event
+  // divides the whole Meta spend by the Meta-attributed count.
+  const meCh = A && A.channels && A.channels.meta
+  const meRows = (() => {
+    const rmap = reachedByStage(meCh ? (meCh.pipelines || []) : [])
+    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'meta'))
+    if (cfg.length) return cfg
+    if (!meCh) return []
+    const tt = meCh.totals
+    return [{ label: 'Leads', count: tt.leads, kind: 'stage' }, { label: 'Bookings', count: tt.booked, kind: 'stage' }, { label: 'Shown', count: tt.shown, kind: 'stage' }, { label: 'Won', count: tt.won, kind: 'stage' }]
+  })()
+  const meTotal = Math.max(1, meCh ? meCh.totals.leads : 0)
   return (
     <>
       {sel && <div className="filt-bar">Filtered to <b>{sel}</b><button className="filt-clear" onClick={() => setSel(null)}>clear ✕</button></div>}
@@ -717,6 +731,12 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         {crmTot && <Sc label="Scheduled Appts" value={<>{fmtNumber(crmTot.booked)}{crmTot.cancelled ? <span className="c360-canc" title={`${crmTot.cancelled} later cancelled`}> ({crmTot.cancelled}c)</span> : null}</>} />}
         {crmTot && <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} />}
       </div>
+      {has360 && meRows.length > 0 && <KeyEventsFunnel
+        rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
+        title="Key events · Meta" style={{ marginTop: 14 }}
+        sub="Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · account level"
+        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend, so it stays account-level even when you filter a campaign above. Configure which stages and calendars count in Settings → Key events.</>}
+      />}
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : ' · whole account'}</p>
         <ResponsiveContainer width="100%" height={250}>
@@ -863,6 +883,18 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const GHead = ({ first, o360, sort, on }) => (<thead>{o360 && has360 && <C360GrpRow left={7} />}<tr><SortTh k="name" sort={sort} on={on}>{first}</SortTh><SortTh k="cost" sort={sort} on={on}>Cost</SortTh><SortTh k="impressions" sort={sort} on={on}>Impr.</SortTh><SortTh k="ctr" sort={sort} on={on}>CTR</SortTh><SortTh k="cpc" sort={sort} on={on}>CPC</SortTh><SortTh k="conversions" sort={sort} on={on}>Conv.</SortTh><SortTh k="costConv" sort={sort} on={on}>Cost/conv</SortTh>{o360 && has360 && <O360Head sort={sort} on={on} />}</tr></thead>)
   const GCells = (r) => (<><td>{fmtCurrency(r.cost, currency)}</td><td>{fmtNumber(r.impressions)}</td><td>{fmtPct(rate(r.clicks, r.impressions), 2)}</td><td>{fmtCurrency(r.clicks ? r.cost / r.clicks : 0, currency)}</td><td>{fmtNumber(r.conversions)}</td><td>{r.conversions ? fmtCurrency(r.cost / r.conversions, currency) : '-'}</td></>)
   const gMetrics = (r) => ({ ...r, ctr: rate(r.clicks, r.impressions), cpc: r.clicks ? r.cost / r.clicks : null, costConv: r.conversions ? r.cost / r.conversions : null })
+  // Key events for the Google channel: configured pipeline stages + booked
+  // calendars, scored against Google-attributed CRM data and Google spend.
+  const gCh = A && A.channels && A.channels.google
+  const gRows = (() => {
+    const rmap = reachedByStage(gCh ? (gCh.pipelines || []) : [])
+    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'google'))
+    if (cfg.length) return cfg
+    if (!gCh) return []
+    const tt = gCh.totals
+    return [{ label: 'Leads', count: tt.leads, kind: 'stage' }, { label: 'Bookings', count: tt.booked, kind: 'stage' }, { label: 'Shown', count: tt.shown, kind: 'stage' }, { label: 'Won', count: tt.won, kind: 'stage' }]
+  })()
+  const gTotal = Math.max(1, gCh ? gCh.totals.leads : 0)
   return (
     <>
       <div className="scorecard">
@@ -877,6 +909,12 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
         <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
       </div>
+      {has360 && gRows.length > 0 && <KeyEventsFunnel
+        rows={gRows} total={gTotal} spend={t.cost} currency={currency}
+        title="Key events · Google" style={{ marginTop: 14 }}
+        sub="Google-attributed leads through your key pipeline stages and booked calendars · cost per event = Google spend ÷ count"
+        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google; cost per event divides the Google spend in this range. Configure which stages and calendars count in Settings → Key events.</>}
+      />}
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Daily trend</h3><p className="cap">Spend, Conversions and Cost / Conversion by day</p>
         <ResponsiveContainer width="100%" height={250}>
@@ -1280,6 +1318,79 @@ function reachedByStage(pipelines) {
   return { m, total }
 }
 
+// A key event is either a pipeline stage (legacy: a bare stage-name string) or a
+// booked calendar (new: { cal: '<calId>', label }). Normalise both to a common
+// shape so the same funnel can mix "reached this stage" with "booked this call".
+function normKeyEvents(arr) {
+  return (arr || []).map((e) => {
+    if (typeof e === 'string') return { kind: 'stage', ref: e, label: e }
+    if (e && e.cal) return { kind: 'calendar', ref: e.cal, label: e.label || 'Calendar' }
+    if (e && e.stage) return { kind: 'stage', ref: e.stage, label: e.label || e.stage }
+    return null
+  }).filter(Boolean)
+}
+// Per-calendar booked / shown for a channel ('all' | 'meta' | 'google'), keyed
+// by calendar id, from the attribution feed's appointments.byCalendar.
+function calCountMap(attribData, chan) {
+  const m = new Map()
+  const list = attribData && attribData.appointments && attribData.appointments.byCalendar
+  if (Array.isArray(list)) {
+    for (const cal of list) {
+      const src = (chan && chan !== 'all' && cal.ch && cal.ch[chan]) ? cal.ch[chan] : cal
+      m.set(cal.id, { name: cal.name, count: src.booked || 0, shown: src.shown || 0, cancelled: src.cancelled || 0 })
+    }
+  }
+  return m
+}
+// Build the ordered funnel rows for a client's configured key events. Stage
+// events read their reached count from rmap; calendar events read booked/shown
+// from calMap. Returns [] when nothing configured resolves (caller shows a
+// default funnel).
+function keyEventRows(keyEvents, rmap, calMap) {
+  const rows = []
+  for (const k of normKeyEvents(keyEvents)) {
+    if (k.kind === 'calendar') {
+      const cal = calMap && calMap.get(k.ref); if (!cal) continue
+      rows.push({ label: k.label, count: cal.count, shown: cal.shown, cancelled: cal.cancelled, kind: 'calendar' })
+    } else {
+      if (!rmap || !rmap.m.has(k.ref)) continue
+      rows.push({ label: k.label, count: rmap.m.get(k.ref) || 0, kind: 'stage' })
+    }
+  }
+  return rows
+}
+// Reusable Key Events funnel card: reached bar, % of leads, show % (calendar
+// events only) and cost per event. Used in Caalano360 and the Meta / Google
+// screens so the client's key events read the same everywhere.
+function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style }) {
+  if (!rows || !rows.length) return null
+  const money = (v) => fmtCurrency(v, currency)
+  const max = Math.max(1, ...rows.map((r) => r.count))
+  const anyCal = rows.some((r) => r.kind === 'calendar')
+  return (
+    <div className="card chart-card" style={style}><h3>{title}</h3>{sub ? <p className="cap">{sub}</p> : null}
+      <div className={`pfunnel ${anyCal ? 'pf5' : 'pf4'}`}>
+        <div className="pf-row pf-head"><span className="pf-stage">Event</span><span className="pf-bar">Reached</span><span className="pf-num">% leads</span>{anyCal ? <span className="pf-num">Show %</span> : null}<span className="pf-num">Cost / event</span></div>
+        {rows.map((s, i) => {
+          const pct = total ? (s.count / total) * 100 : 0
+          const hue = 210 + Math.round((i / Math.max(1, rows.length - 1)) * -70)
+          const showR = s.kind === 'calendar' && s.count ? (s.shown / s.count) * 100 : null
+          return (
+            <div className="pf-row" key={s.label + i}>
+              <span className="pf-stage" title={s.label}>{s.kind === 'calendar' ? <span className="ke-cal" title="Booked calendar appointment">📅 </span> : null}{s.label}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
+              <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, (s.count / max) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{fmtNumber(s.count)}</span></span>
+              <span className="pf-num">{fmtPct(pct, 1)}</span>
+              {anyCal ? <span className="pf-num">{showR == null ? '-' : fmtPct(showR, 0)}</span> : null}
+              <span className="pf-num">{spend && s.count ? money(spend / s.count) : '-'}</span>
+            </div>
+          )
+        })}
+      </div>
+      {caveat ? <p className="caveat">{caveat}</p> : null}
+    </div>
+  )
+}
+
 // Compact, aggregate, whole-account snapshot for the client chatbot. No
 // individual contact PII - only rolled-up numbers the Caalano360 view already
 // shows. Kept small so the whole thing fits comfortably in the model context.
@@ -1460,17 +1571,19 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const chanPie = chan === 'meta' ? [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }].filter((x) => x.value > 0)
     : chan === 'google' ? [{ name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
     : [{ name: 'Meta', value: attr.metaSpend, color: '#4f7cff' }, { name: 'Google', value: attr.googleSpend, color: '#12b886' }].filter((x) => x.value > 0)
-  // Key Events funnel - user-chosen pipeline stages (Settings), else the
-  // default leads → booked → shown → won. Cost per stage = spend ÷ reached.
+  // Key Events funnel - user-chosen pipeline stages AND booked calendars
+  // (Settings), else the default leads → booked → shown → won. Calendar events
+  // read booked/shown from the attribution feed (channel-aware); stage events
+  // read reached counts from the pipeline funnel. Cost per event = spend ÷ count.
   const keyEvents = loadKeyEvents(client.id)
   const scopePipes = pid !== 'all' ? pipesSrc.filter((x) => x.id === pid) : pipesSrc
   const rmap = reachedByStage(scopePipes)
-  const keSel = keyEvents.filter((n) => rmap.m.has(n))
+  const keCalMap = calCountMap(attribData, chan)
+  const keConfigured = keyEventRows(keyEvents, rmap, keCalMap)
   const keTotal = Math.max(1, c.leads || rmap.total)
-  const keRows = keSel.length
-    ? keSel.map((n) => ({ stage: n, count: rmap.m.get(n) || 0 })).sort((a, b) => b.count - a.count)
-    : [{ stage: 'Leads', count: c.leads }, { stage: 'Bookings', count: c.booked }, { stage: 'Shown', count: c.shown }, { stage: 'Won', count: c.won }]
-  const keMax = Math.max(1, ...keRows.map((r) => r.count))
+  const keRows = keConfigured.length
+    ? keConfigured
+    : [{ label: 'Leads', count: c.leads, kind: 'stage' }, { label: 'Bookings', count: c.booked, kind: 'stage' }, { label: 'Shown', count: c.shown, kind: 'stage' }, { label: 'Won', count: c.won, kind: 'stage' }]
   const activeStages = pid !== 'all'
     ? (pipesSrc.find((x) => x.id === pid)?.stages || [])
     : (pipesSrc.length === 1 ? pipesSrc[0].stages : null)
@@ -1836,24 +1949,12 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         )
       })()}
       <div className="grid two" style={{ marginTop: 14 }}>
-        <div className="card chart-card"><h3>Key events</h3><p className="cap">{keSel.length ? 'Your key pipeline stages' : 'Default: leads → booked → shown → won'} · reached · % of leads · cost per stage</p>
-          <div className="pfunnel pf4">
-            <div className="pf-row pf-head"><span className="pf-stage">Stage</span><span className="pf-bar">Reached</span><span className="pf-num">% leads</span><span className="pf-num">Cost / stage</span></div>
-            {keRows.map((s, i) => {
-              const pct = (s.count / keTotal) * 100
-              const hue = 210 + Math.round((i / Math.max(1, keRows.length - 1)) * -70)
-              return (
-                <div className="pf-row" key={s.stage}>
-                  <span className="pf-stage" title={s.stage}>{s.stage}</span>
-                  <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, (s.count / keMax) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{fmtNumber(s.count)}</span></span>
-                  <span className="pf-num">{fmtPct(pct, 1)}</span>
-                  <span className="pf-num">{spend && s.count ? money(spend / s.count) : '-'}</span>
-                </div>
-              )
-            })}
-          </div>
-          <p className="caveat">{keSel.length ? 'Key events are the pipeline stages you selected in Settings.' : 'Set a client’s key events in Settings to replace the default stages.'} Reached = opportunities that got to that stage or beyond. Cost / stage = attributed spend ({money(spend)}) ÷ reached.</p>
-        </div>
+        <KeyEventsFunnel
+          rows={keRows} total={keTotal} spend={spend} currency={currency}
+          title="Key events"
+          sub={`${keConfigured.length ? 'Your key events' : 'Default: leads → booked → shown → won'} · reached · % of leads${keRows.some((r) => r.kind === 'calendar') ? ' · show %' : ''} · cost per event${chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}`}
+          caveat={<>{keConfigured.length ? 'Key events are the pipeline stages and booked calendars you selected in Settings.' : 'Set a client’s key events in Settings (pipeline stages and/or booked calendars) to replace the default stages.'} 📅 = a booked calendar appointment (cost per booked call); other rows = opportunities that reached that pipeline stage or beyond. Cost / event = attributed spend ({money(spend)}) ÷ count.</>}
+        />
         <div className="card chart-card"><h3>Ad spend by channel</h3><p className="cap">{pid === 'all' ? 'Meta + Google split across the account' : 'Attributed to this pipeline'}</p>
           {chanPie.length ? <>
             <ResponsiveContainer width="100%" height={190}>
@@ -2393,6 +2494,7 @@ function KeyEventsEditor({ clientId }) {
   const [open, setOpen] = useState(false)
   const [sel, setSel] = useState(() => loadKeyEvents(clientId))
   const [st, setSt] = useState({ status: 'idle', blend: null })
+  const [cals, setCals] = useState({ status: 'idle', list: [] })
   useEffect(() => {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
@@ -2402,21 +2504,43 @@ function KeyEventsEditor({ clientId }) {
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
   }, [open, st.status, clientId])
+  useEffect(() => {
+    if (!open || cals.status !== 'idle') return
+    setCals({ status: 'loading', list: [] })
+    fetch(`/.netlify/functions/windsor?scope=calendars&client=${clientId}`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+      .then((j) => setCals({ status: 'ok', list: j.calendars || [] }))
+      .catch(() => setCals({ status: 'err', list: [] }))
+  }, [open, cals.status, clientId])
   const pipes = (st.blend && st.blend.pipelines) || []
   const withStages = pipes.filter((p) => (p.stages || []).length)
   const multi = withStages.length > 1
-  const toggle = (n) => setSel((prev) => { const nx = prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]; saveKeyEvents(clientId, nx); return nx })
+  const hasStage = (n) => sel.some((e) => (typeof e === 'string' ? e === n : e && e.stage === n))
+  const hasCal = (id) => sel.some((e) => e && typeof e === 'object' && e.cal === id)
+  const persist = (nx) => { saveKeyEvents(clientId, nx); return nx }
+  const toggleStage = (n) => setSel((prev) => persist(hasStage(n) ? prev.filter((e) => !(e === n || (e && e.stage === n))) : [...prev, n]))
+  const toggleCal = (cal) => setSel((prev) => persist(hasCal(cal.id) ? prev.filter((e) => !(e && e.cal === cal.id)) : [...prev, { cal: cal.id, label: cal.name }]))
   return (
     <div className="linker">
       <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>
       {open && <div className="linker-body">
-        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages that count as key events for this client - they drive the Key Events funnel &amp; cost-per-stage in Caalano360. Leave empty for the default leads → booked → shown → won.{multi ? ' Stages are grouped by pipeline below.' : ''}</p>
+        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. Leave empty for the default leads → booked → shown → won.</p>
+        <div className="kev-group">
+          <div className="kev-pipe">📅 Booked calendars</div>
+          {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
+            : cals.list.length ? <div className="kev-list">{cals.list.map((cal) => (
+              <label className={`kev-item ${hasCal(cal.id) ? 'on' : ''}`} key={cal.id}><input type="checkbox" checked={hasCal(cal.id)} onChange={() => toggleCal(cal)} /><span title={cal.name}>{cal.name}</span></label>
+            ))}</div>
+              : cals.status === 'ok' ? <p className="cap">No calendars found for this client.</p>
+                : <p className="cap">Couldn’t load calendars.</p>}
+        </div>
+        <div className="kev-pipe" style={{ marginTop: 10 }}>Pipeline stages{multi ? ' · grouped by pipeline' : ''}</div>
         {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
           : withStages.length ? withStages.map((p) => (
             <div className="kev-group" key={p.id}>
               {multi && <div className="kev-pipe">{p.name}</div>}
               <div className="kev-list">{(p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => (
-                <label className={`kev-item ${sel.includes(s.name) ? 'on' : ''}`} key={s.name}><input type="checkbox" checked={sel.includes(s.name)} onChange={() => toggle(s.name)} /><span title={s.name}>{s.name}</span></label>
+                <label className={`kev-item ${hasStage(s.name) ? 'on' : ''}`} key={s.name}><input type="checkbox" checked={hasStage(s.name)} onChange={() => toggleStage(s.name)} /><span title={s.name}>{s.name}</span></label>
               ))}</div>
             </div>
           ))

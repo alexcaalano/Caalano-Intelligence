@@ -241,11 +241,17 @@ const APPT_INVALID_RE = /invalid/i
 const APPT_CANCEL_RE = /cancel/i
 async function fetchAppointments(locTok, locationId, from, to) {
   const byContact = new Map()
+  // Same flags, but kept per (calendar × contact) so a client with several
+  // booking types (e.g. an online consult then an on-site quote) can be split
+  // by calendar. Deduping per contact WITHIN a calendar means a reschedule
+  // (cancel-and-rebook or a moved startTime) still nets to a single booking,
+  // while a genuinely different calendar counts as its own booking.
+  const perCalendar = new Map() // calId -> { name, byContact: Map<cid, flags> }
   let calendars = []
   try {
     const j = await ghlGet(locTok, '/calendars/', { locationId })
     calendars = j.calendars || j.calendar || []
-  } catch (e) { return { byContact, connected: false, error: String(e.message || e).slice(0, 120) } }
+  } catch (e) { return { byContact, perCalendar, connected: false, error: String(e.message || e).slice(0, 120) } }
   const DAY = 86400000
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
@@ -253,11 +259,11 @@ async function fetchAppointments(locTok, locationId, from, to) {
   const startMs = (fromMs != null ? fromMs : Date.now() - 400 * DAY) - 7 * DAY
   const endMs = (toMs != null ? toMs : Date.now()) + 180 * DAY
   const inPeriod = (ms) => !isNaN(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
-  const mark = (contactId, status, addedMs, startTimeMs) => {
+  const markInto = (map, contactId, status, addedMs, startTimeMs) => {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
     const invalid = APPT_INVALID_RE.test(s), cancelled = APPT_CANCEL_RE.test(s)
-    const e = byContact.get(contactId) || { bookedInPeriod: false, shownByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false }
+    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false }
     if (!invalid && inPeriod(addedMs)) {
       e.bookedInPeriod = true // cancelled still counts as a booking on its creation day
       if (cancelled) e._cancelled = true; else e._live = true
@@ -267,21 +273,28 @@ async function fetchAppointments(locTok, locationId, from, to) {
     // caller fall back to "shown by pipeline stage" when the appointment status
     // was never set but the opportunity was advanced past the shown stage.
     if (!invalid && !cancelled && inPeriod(startTimeMs)) e.hasCallInPeriod = true
-    byContact.set(contactId, e)
+    map.set(contactId, e)
   }
   let events = 0
   for (const cal of calendars) {
     const calId = cal.id || cal._id || cal.calendarId
     if (!calId) continue
+    let rec = perCalendar.get(calId)
+    if (!rec) { rec = { name: cal.name || cal.calendarName || 'Calendar', byContact: new Map() }; perCalendar.set(calId, rec) }
     try {
       const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
       for (const ev of (j.events || [])) {
         events++
         const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
-        mark(cid, ev.appointmentStatus || ev.status, Date.parse(ev.dateAdded), Date.parse(ev.startTime))
+        // GHL sometimes returns the field misspelled as "appoinmentStatus".
+        const st = ev.appointmentStatus || ev.appoinmentStatus || ev.status
+        const added = Date.parse(ev.dateAdded), start = Date.parse(ev.startTime)
+        mark(cid, st, added, start)
+        markInto(rec.byContact, cid, st, added, start)
       }
     } catch { /* skip a calendar we cannot read; others still count */ }
   }
+  function mark(contactId, status, addedMs, startTimeMs) { markInto(byContact, contactId, status, addedMs, startTimeMs) }
   let bookedContacts = 0, shownContacts = 0, cancelledContacts = 0
   for (const e of byContact.values()) {
     // Net cancellation: they booked in-period and every one of those bookings
@@ -291,7 +304,15 @@ async function fetchAppointments(locTok, locationId, from, to) {
     if (e.shownByStatus) shownContacts++
     if (e.cancelledInPeriod) cancelledContacts++
   }
-  return { byContact, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
+  return { byContact, perCalendar, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
+}
+
+// Lightweight calendar list for the Settings funnel-step editor: id + name only.
+export async function listCalendars(locationId) {
+  const locTok = await locationToken(locationId)
+  const j = await ghlGet(locTok, '/calendars/', { locationId })
+  const cals = j.calendars || j.calendar || []
+  return cals.map((c) => ({ id: c.id || c._id || c.calendarId, name: c.name || c.calendarName || 'Calendar' })).filter((c) => c.id)
 }
 
 // Full CRM-style rollup over an arbitrary opportunity subset (one channel, or
@@ -544,6 +565,32 @@ export async function buildAttribution(locationId, from, to) {
     }
   }
 
+  // Per-calendar booking funnel: split booked / shown / cancelled by which
+  // calendar the appointment was in, so a multi-step sales process (e.g. an
+  // online consult then an on-site quote) can be measured step by step. Only
+  // contacts we can attribute to a lead are counted (same policy as the totals),
+  // and each is split by channel (ch.meta / ch.google / ch.other) so the funnel
+  // honours the Meta / Google channel toggle. A reschedule is already deduped to
+  // one booking per (contact × calendar) upstream in fetchAppointments.
+  const byCalendar = []
+  if (useAppts && appts.perCalendar instanceof Map) {
+    const mkCh = () => ({ booked: 0, shown: 0, cancelled: 0 })
+    for (const [calId, rec] of appts.perCalendar) {
+      const cal = { id: calId, name: rec.name, booked: 0, shown: 0, cancelled: 0, ch: { meta: mkCh(), google: mkCh(), other: mkCh() } }
+      for (const [cid, f] of rec.byContact) {
+        f.cancelledInPeriod = f._cancelled && !f._live
+        if (!f.bookedInPeriod && !f.shownByStatus && !f.cancelledInPeriod) continue
+        const o = contactUtm.get(cid); if (!o) continue // only attributable leads
+        const ch = channelOf(utmOf(o))
+        if (f.bookedInPeriod) { cal.booked++; cal.ch[ch].booked++ }
+        if (f.shownByStatus) { cal.shown++; cal.ch[ch].shown++ }
+        if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
+      }
+      if (cal.booked || cal.shown || cal.cancelled) byCalendar.push(cal)
+    }
+    byCalendar.sort((a, b) => b.booked - a.booked)
+  }
+
   const top = (map, n = 40) => [...map.values()].sort((a, b) => b.leads - a.leads).slice(0, n)
   const bySource = top(dim.source).map((r) => {
     const det = srcDetail.get(r.name)
@@ -569,7 +616,7 @@ export async function buildAttribution(locationId, from, to) {
 
   return {
     connected: true, opps: opps.length, attributed, tz,
-    appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, shownStage: shownStageActions, cancelled: cancelledActions },
+    appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, shownStage: shownStageActions, cancelled: cancelledActions, byCalendar },
     bySource, byMedium: top(dim.medium, 300), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
     channels: chan,
   }

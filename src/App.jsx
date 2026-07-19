@@ -103,7 +103,7 @@ function O360ColGroup({ left, green = true, cols }) {
     <colgroup>
       <col style={{ width: nameW }} />
       {Array.from({ length: Math.max(0, left - 1) }, (_, i) => <col key={i} className="cg-m" />)}
-      {green && C.map((c) => <col key={c.key} className={c.ty === 'rate' ? 'cg-gr' : 'cg-g'} />)}
+      {green && C.map((c) => <col key={c.key} className={c.ty === 'rate' ? 'cg-gr' : c.ty === 'kecost' ? 'cg-ke' : 'cg-g'} />)}
     </colgroup>
   )
 }
@@ -1477,29 +1477,47 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos) {
   }
   return rows
 }
-// Reusable Key Events funnel card: reached bar, % of leads, show % (calendar
-// events only) and cost per event. Used in Caalano360 and the Meta / Google
-// screens so the client's key events read the same everywhere.
+// Reusable Key Events funnel card - the readable full picture of a client's key
+// events: full step name, count reached (bar), % of leads, next-step conversion
+// (this step ÷ the previous step), show % (calendar events) and cost per event.
+// Used in Caalano360 and the Meta / Google screens so key events read the same
+// everywhere. A leading "Leads" row anchors the funnel so the first key event
+// gets a meaningful next-step conversion.
 function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style }) {
   if (!rows || !rows.length) return null
   const money = (v) => fmtCurrency(v, currency)
-  const max = Math.max(1, ...rows.map((r) => r.count))
   const anyCal = rows.some((r) => r.kind === 'calendar')
+  // Prepend a Leads anchor so % of leads and the first next-step conversion read
+  // naturally, unless the caller already leads with a "Leads" row.
+  const hasLeads = /lead/i.test(rows[0].label || '') || (rows[0].kind === 'lead')
+  const full = hasLeads ? rows : [{ label: 'Leads', count: total || 0, kind: 'lead' }, ...rows]
+  const max = Math.max(1, ...full.map((r) => r.count))
   return (
     <div className="card chart-card" style={style}><h3>{title}</h3>{sub ? <p className="cap">{sub}</p> : null}
-      <div className={`pfunnel ${anyCal ? 'pf5' : 'pf4'}`}>
-        <div className="pf-row pf-head"><span className="pf-stage">Event</span><span className="pf-bar">Reached</span><span className="pf-num">% leads</span>{anyCal ? <span className="pf-num">Show %</span> : null}<span className="pf-num">Cost / event</span></div>
-        {rows.map((s, i) => {
+      <div className={`kef ${anyCal ? 'kef-show' : ''}`}>
+        <div className="kef-row kef-head">
+          <span className="kef-step">Step</span>
+          <span className="kef-bar">Reached</span>
+          <span className="kef-num">% leads</span>
+          <span className="kef-num" title="Conversion from the previous step into this one">Next step</span>
+          {anyCal ? <span className="kef-num">Show %</span> : null}
+          <span className="kef-num">Cost / event</span>
+        </div>
+        {full.map((s, i) => {
           const pct = total ? (s.count / total) * 100 : 0
-          const hue = 210 + Math.round((i / Math.max(1, rows.length - 1)) * -70)
+          const prev = i > 0 ? full[i - 1].count : null
+          const step = prev == null ? null : (prev ? (s.count / prev) * 100 : 0)
           const showR = s.kind === 'calendar' && s.count ? (s.shown / s.count) * 100 : null
+          const hue = 210 + Math.round((i / Math.max(1, full.length - 1)) * -70)
+          const isLead = s.kind === 'lead'
           return (
-            <div className="pf-row" key={s.label + i}>
-              <span className="pf-stage" title={s.label}>{s.kind === 'calendar' ? <span className="ke-cal" title="Booked calendar appointment">📅 </span> : null}{s.label}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
-              <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, (s.count / max) * 100)}%`, background: `hsl(${hue} 70% 55%)` }}>{fmtNumber(s.count)}</span></span>
-              <span className="pf-num">{fmtPct(pct, 1)}</span>
-              {anyCal ? <span className="pf-num">{showR == null ? '-' : fmtPct(showR, 0)}</span> : null}
-              <span className="pf-num">{spend && s.count ? money(spend / s.count) : '-'}</span>
+            <div className={`kef-row${isLead ? ' kef-lead' : ''}`} key={s.label + i}>
+              <span className="kef-step">{s.kind === 'calendar' ? <span className="ke-cal" title="Booked calendar appointment">📅 </span> : null}{s.label}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
+              <span className="kef-bar"><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}</span></span>
+              <span className="kef-num">{isLead ? '100%' : fmtPct(pct, 0)}</span>
+              <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`}>{step == null ? '—' : fmtPct(step, 0)}</span>
+              {anyCal ? <span className="kef-num">{showR == null ? '—' : fmtPct(showR, 0)}</span> : null}
+              <span className="kef-num kef-cost">{isLead ? (spend && s.count ? money(spend / s.count) : '—') : (spend && s.count ? money(spend / s.count) : '—')}</span>
             </div>
           )
         })}

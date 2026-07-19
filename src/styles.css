@@ -430,7 +430,12 @@ table.o360-tbl { table-layout: fixed; }
 .o360-tbl col.cg-g { width: 98px; }
 /* Narrower columns for the Book/Show/Win % rates (wide enough for the header). */
 .o360-tbl col.cg-gr { width: 78px; }
+/* Key-event cost columns are wider so the stage / calendar name is legible. */
+.o360-tbl col.cg-ke { width: 122px; }
 th.c360-col { color: #12b886; font-size: 10.5px; }
+/* Green key-event / group headers wrap to a few lines instead of clipping, so
+   the full stage / calendar name shows; hover still gives the complete title. */
+.o360-tbl th.c360-col { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; vertical-align: bottom; }
 /* "(Nc)" cancelled marker inside the Booked cell - booked still counts the
    call on the day it was booked; this shows how many later cancelled. */
 .c360-canc { color: #f5a524; font-size: 10px; font-weight: 600; }
@@ -572,6 +577,27 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .pfunnel.pf4 .pf-row { grid-template-columns: 140px 1fr 58px 66px; gap: 10px; }
 .pfunnel.pf5 .pf-row { grid-template-columns: 170px 1fr 62px 62px 88px; gap: 10px; }
 .ke-cal { opacity: .95; }
+/* Readable Key Events funnel: full step name (wraps), reached bar, %leads,
+   next-step conversion, show%, cost per event. */
+.kef { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.kef-row { display: grid; grid-template-columns: minmax(160px, 1.5fr) minmax(120px, 2.2fr) 62px 78px 96px; gap: 14px; align-items: center; font-size: 13px; padding: 7px 2px; border-bottom: 1px solid var(--border); }
+.kef.kef-show .kef-row { grid-template-columns: minmax(150px, 1.5fr) minmax(110px, 2fr) 58px 72px 60px 90px; }
+.kef-row.kef-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.kef-row:last-child { border-bottom: none; }
+.kef-row.kef-lead { opacity: .82; }
+.kef-step { font-weight: 650; line-height: 1.2; word-break: break-word; }
+.kef-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
+.kef-num.good { color: var(--pos); } .kef-num.bad { color: var(--neg); }
+.kef-cost { color: var(--text); }
+.kef-head .kef-num, .kef-head .kef-bar, .kef-head .kef-step { font-weight: 700; }
+.kef-bar { display: block; background: var(--panel-2); border-radius: 6px; overflow: hidden; min-height: 22px; }
+.kef-head .kef-bar { background: transparent; }
+.kef-fill { display: block; padding: 4px 9px; color: #04140d; font-weight: 800; font-size: 12px; border-radius: 6px; white-space: nowrap; text-align: right; min-width: 30px; box-sizing: border-box; }
+:root[data-theme='light'] .kef-fill { color: #04140d; }
+@media (max-width: 720px) {
+  .kef-row { grid-template-columns: minmax(96px, 1.3fr) minmax(70px, 1.6fr) 44px 52px 62px; gap: 7px; font-size: 11.5px; }
+  .kef.kef-show .kef-row { grid-template-columns: minmax(84px, 1.2fr) minmax(60px, 1.4fr) 40px 48px 40px 56px; gap: 5px; }
+}
 @media (max-width: 720px) { .pf-row { grid-template-columns: 120px 1fr 50px 56px 70px; gap: 6px; font-size: 11px; } .pfunnel.pf4 .pf-row { grid-template-columns: 100px 1fr 46px 52px; } .pfunnel.pf5 .pf-row { grid-template-columns: 108px 1fr 44px 44px 60px; } }
 
 /* Funnel drop-off label */

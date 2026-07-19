@@ -47,7 +47,7 @@ function buildO360Cols(keyEvents, stagePos) {
   const ke = resolveKeyEvents(keyEvents, stagePos)
   if (!ke.length) return LEGACY_O360_COLS
   const short = (s) => (s && s.length > 15 ? s.slice(0, 14) + '…' : s)
-  const cols = ke.map((k, i) => ({ key: 'ke' + i, label: (k.kind === 'calendar' ? '📅 ' : '') + short(k.label), full: k.label, ty: 'kecost', kind: k.kind, ref: k.ref, refs: k.refs }))
+  const cols = ke.map((k, i) => ({ key: 'ke' + i, label: (k.kind === 'calendar' ? '📅 ' : '') + short(k.label), full: k.label, ty: 'kecost', kind: k.kind, ref: k.ref, refs: k.refs, stage: k.stage }))
   cols.push({ key: 'cWon', label: 'C/Won', ty: 'cost', src: 'won' })
   cols.push({ key: 'wonVal', label: 'Won val', ty: 'money', src: 'revenue' })
   cols.push({ key: 'roas', label: 'ROAS', ty: 'roas' })
@@ -64,8 +64,14 @@ function o360Fields(o, spend, leads, cols) {
   for (const c of C) {
     if (c.ty === 'kecost') {
       let n = 0
-      if (c.kind === 'calendar') { if (o.cals) for (const r of (c.refs || [c.ref])) n += o.cals[r] || 0 }
-      else { n = (o.stages && o.stages[c.ref]) || 0 }
+      if (c.kind === 'calendar') {
+        let cal = 0; if (o.cals) for (const r of (c.refs || [c.ref])) cal += o.cals[r] || 0
+        // Linked stage as a fallback (leads that reached the stage but have no
+        // calendar booking), same approximation as the funnel.
+        const stageN = c.stage && o.stages ? (o.stages[c.stage] || 0) : 0
+        const fromStage = Math.max(0, stageN - cal)
+        n = cal + fromStage; f[c.key + 'C'] = cal; f[c.key + 'P'] = fromStage
+      } else { n = (o.stages && o.stages[c.ref]) || 0 }
       f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n
     } else if (c.ty === 'count') { f[c.key] = o[c.src] || 0 }
     else if (c.ty === 'cost') { const n = o[c.src] || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
@@ -139,8 +145,13 @@ function o360Cells(r, currency, cols) {
     const v = r[c.key]
     if (c.ty === 'kecost') {
       const n = r[c.key + 'N'] || 0
-      const tip = `${fmtNumber(n)} ${c.kind === 'calendar' ? 'booked into' : 'reached'} ${c.full}`
-      return <td key={c.key} className={cn} title={tip}>{v != null ? money(v) : '-'}</td>
+      const fromStage = r[c.key + 'P'] || 0, fromCal = r[c.key + 'C'] || 0
+      const tip = c.kind === 'calendar'
+        ? (fromStage
+          ? `${fmtNumber(n)} reached ${c.full} · ${fmtNumber(fromCal)} via calendar booking · ${fmtNumber(fromStage)} via pipeline-stage fallback`
+          : `${fmtNumber(n)} booked into ${c.full}`)
+        : `${fmtNumber(n)} reached ${c.full}`
+      return <td key={c.key} className={cn} title={tip}>{v != null ? money(v) : '-'}{fromStage ? <span className="c360-infer" title={tip}> ({fmtNumber(fromStage)}p)</span> : null}</td>
     }
     if (c.ty === 'cost') {
       const n = r[c.key + 'N'] || 0
@@ -1466,10 +1477,14 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos) {
   const rows = []
   for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
-      let count = 0, shown = 0, cancelled = 0, any = false
-      for (const r of (k.refs || [k.ref])) { const cal = calMap && calMap.get(r); if (cal) { any = true; count += cal.count; shown += cal.shown; cancelled += cal.cancelled } }
-      if (!any) continue
-      rows.push({ label: k.label, count, shown, cancelled, kind: 'calendar' })
+      let cal = 0, shown = 0, cancelled = 0, any = false
+      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; shown += c.shown; cancelled += c.cancelled } }
+      // Linked stage acts as a fallback: leads that reached the stage but we have
+      // no calendar booking for. Approximated as stageReached - calendar bookings.
+      const stageReached = k.stage && rmap && rmap.m.has(k.stage) ? (rmap.m.get(k.stage) || 0) : 0
+      const fromStage = Math.max(0, stageReached - cal)
+      if (!any && !fromStage) continue
+      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, shown, cancelled, kind: 'calendar' })
     } else {
       if (!rmap || !rmap.m.has(k.ref)) continue
       rows.push({ label: k.label, count: rmap.m.get(k.ref) || 0, kind: 'stage' })
@@ -1510,10 +1525,11 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
           const showR = s.kind === 'calendar' && s.count ? (s.shown / s.count) * 100 : null
           const hue = 210 + Math.round((i / Math.max(1, full.length - 1)) * -70)
           const isLead = s.kind === 'lead'
+          const barTip = s.fromStage ? `${fmtNumber(s.count)} total · ${fmtNumber(s.fromCal)} via calendar booking · ${fmtNumber(s.fromStage)} via pipeline-stage fallback` : undefined
           return (
             <div className={`kef-row${isLead ? ' kef-lead' : ''}`} key={s.label + i}>
               <span className="kef-step">{s.kind === 'calendar' ? <span className="ke-cal" title="Booked calendar appointment">📅 </span> : null}{s.label}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
-              <span className="kef-bar"><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}</span></span>
+              <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
               <span className="kef-num">{isLead ? '100%' : fmtPct(pct, 0)}</span>
               <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`}>{step == null ? '—' : fmtPct(step, 0)}</span>
               {anyCal ? <span className="kef-num">{showR == null ? '—' : fmtPct(showR, 0)}</span> : null}
@@ -2666,7 +2682,7 @@ function KeyEventsEditor({ clientId }) {
     <div className="linker">
       <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>
       {open && <div className="linker-body">
-        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. <b>Link each calendar to the pipeline stage it represents</b> so it sits in the right funnel order - and if several calendars mean the same step, link them to the same stage and they combine into one "Cost per [stage]". Leave empty for the default leads → booked → shown → won.</p>
+        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. <b>Link each calendar to the pipeline stage it represents</b> - the calendar and stage then count as one event (the stage is a fallback for leads that reached it without a tracked booking), and it sits in the right funnel order. You don't need to also add that stage on its own. If several calendars mean the same step, link them to the same stage and they combine. Leave empty for the default leads → booked → shown → won.</p>
         <div className="kev-group">
           <div className="kev-pipe">📅 Booked calendars <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· tick the ones that matter, then link each to its pipeline stage</span></div>
           {cals.status === 'loading' ? <Spinner label="Loading calendars…" />

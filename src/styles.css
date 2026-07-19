@@ -589,6 +589,8 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .kef-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
 .kef-num.good { color: var(--pos); } .kef-num.bad { color: var(--neg); }
 .kef-cost { color: var(--text); }
+/* "+Np" = leads counted via the linked pipeline-stage fallback (no calendar booking). */
+.kef-p { opacity: .7; font-weight: 700; font-size: 11px; }
 .kef-head .kef-num, .kef-head .kef-bar, .kef-head .kef-step { font-weight: 700; }
 .kef-bar { display: block; background: var(--panel-2); border-radius: 6px; overflow: hidden; min-height: 22px; }
 .kef-head .kef-bar { background: transparent; }

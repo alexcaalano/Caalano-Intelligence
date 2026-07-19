@@ -44,10 +44,10 @@ const LEGACY_O360_COLS = [
 // cost-per column per key event, then Cost/Won, Won value and ROAS for revenue
 // context. With none configured it falls back to the legacy fixed set.
 function buildO360Cols(keyEvents, stagePos) {
-  const ke = orderKeyEvents(normKeyEvents(keyEvents), stagePos)
+  const ke = resolveKeyEvents(keyEvents, stagePos)
   if (!ke.length) return LEGACY_O360_COLS
   const short = (s) => (s && s.length > 15 ? s.slice(0, 14) + '…' : s)
-  const cols = ke.map((k, i) => ({ key: 'ke' + i, label: (k.kind === 'calendar' ? '📅 ' : '') + short(k.label), full: k.label, ty: 'kecost', kind: k.kind, ref: k.ref }))
+  const cols = ke.map((k, i) => ({ key: 'ke' + i, label: (k.kind === 'calendar' ? '📅 ' : '') + short(k.label), full: k.label, ty: 'kecost', kind: k.kind, ref: k.ref, refs: k.refs }))
   cols.push({ key: 'cWon', label: 'C/Won', ty: 'cost', src: 'won' })
   cols.push({ key: 'wonVal', label: 'Won val', ty: 'money', src: 'revenue' })
   cols.push({ key: 'roas', label: 'ROAS', ty: 'roas' })
@@ -63,7 +63,9 @@ function o360Fields(o, spend, leads, cols) {
   const f = { _has360: true, booked: o.booked || 0, cancelled: o.cancelled || 0, shown: o.shown || 0, shownStage: o.shownStage || 0, won: o.won || 0, revenue: o.revenue || 0 }
   for (const c of C) {
     if (c.ty === 'kecost') {
-      const n = (c.kind === 'calendar' ? (o.cals && o.cals[c.ref]) : (o.stages && o.stages[c.ref])) || 0
+      let n = 0
+      if (c.kind === 'calendar') { if (o.cals) for (const r of (c.refs || [c.ref])) n += o.cals[r] || 0 }
+      else { n = (o.stages && o.stages[c.ref]) || 0 }
       f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n
     } else if (c.ty === 'count') { f[c.key] = o[c.src] || 0 }
     else if (c.ty === 'cost') { const n = o[c.src] || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
@@ -1419,6 +1421,30 @@ function orderKeyEvents(list, stagePos) {
   }
   return list.map((e, i) => ({ e, i, p: posOf(e, i) })).sort((a, b) => a.p - b.p || a.i - b.i).map((x) => x.e)
 }
+// Calendars linked to the SAME pipeline stage collapse into one key event for
+// that stage (bookings/shown summed) - so several calendars that mean the same
+// funnel step (e.g. three reps' Discovery Calls) read as a single "Cost per
+// [stage]". Every calendar event ends up with a `refs` array of its calendar
+// ids; a merged group is relabelled to its stage name. Unlinked calendars stay
+// on their own.
+function mergeCalKeyEvents(list) {
+  const out = []; const byStage = new Map()
+  for (const e of list) {
+    if (e.kind !== 'calendar') { out.push(e); continue }
+    if (e.stage) {
+      const g = byStage.get(e.stage)
+      if (g) { g.refs.push(e.ref); continue }
+      const merged = { kind: 'calendar', refs: [e.ref], label: e.label, stage: e.stage }
+      byStage.set(e.stage, merged); out.push(merged)
+    } else out.push({ kind: 'calendar', refs: [e.ref], label: e.label, stage: null })
+  }
+  for (const e of out) if (e.kind === 'calendar' && e.refs.length > 1) e.label = e.stage // read as the stage step
+  return out
+}
+// Normalise -> merge same-stage calendars -> order by funnel position.
+function resolveKeyEvents(keyEvents, stagePos) {
+  return orderKeyEvents(mergeCalKeyEvents(normKeyEvents(keyEvents)), stagePos)
+}
 // Per-calendar booked / shown for a channel ('all' | 'meta' | 'google'), keyed
 // by calendar id, from the attribution feed's appointments.byCalendar.
 function calCountMap(attribData, chan) {
@@ -1438,10 +1464,12 @@ function calCountMap(attribData, chan) {
 // default funnel).
 function keyEventRows(keyEvents, rmap, calMap, stagePos) {
   const rows = []
-  for (const k of orderKeyEvents(normKeyEvents(keyEvents), stagePos)) {
+  for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
-      const cal = calMap && calMap.get(k.ref); if (!cal) continue
-      rows.push({ label: k.label, count: cal.count, shown: cal.shown, cancelled: cal.cancelled, kind: 'calendar' })
+      let count = 0, shown = 0, cancelled = 0, any = false
+      for (const r of (k.refs || [k.ref])) { const cal = calMap && calMap.get(r); if (cal) { any = true; count += cal.count; shown += cal.shown; cancelled += cal.cancelled } }
+      if (!any) continue
+      rows.push({ label: k.label, count, shown, cancelled, kind: 'calendar' })
     } else {
       if (!rmap || !rmap.m.has(k.ref)) continue
       rows.push({ label: k.label, count: rmap.m.get(k.ref) || 0, kind: 'stage' })
@@ -2620,7 +2648,7 @@ function KeyEventsEditor({ clientId }) {
     <div className="linker">
       <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>
       {open && <div className="linker-body">
-        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. <b>Link each calendar to the pipeline stage it represents</b> so it sits in the right funnel order. Leave empty for the default leads → booked → shown → won.</p>
+        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. <b>Link each calendar to the pipeline stage it represents</b> so it sits in the right funnel order - and if several calendars mean the same step, link them to the same stage and they combine into one "Cost per [stage]". Leave empty for the default leads → booked → shown → won.</p>
         <div className="kev-group">
           <div className="kev-pipe">📅 Booked calendars <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· tick the ones that matter, then link each to its pipeline stage</span></div>
           {cals.status === 'loading' ? <Spinner label="Loading calendars…" />

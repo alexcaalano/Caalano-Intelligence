@@ -66,7 +66,7 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
   ke.forEach((k, i) => {
     if (k.kind === 'calendar') {
       groups.push({ label: '📅 ' + k.label, kind: 'calendar', span: 5 })
-      const ctx = { g: i, refs: k.refs || [k.ref], stage: k.stage, names: calNames, event: k.label }
+      const ctx = { g: i, refs: k.refs || [k.ref], stage: k.stage, pipeline: k.pipeline, names: calNames, event: k.label }
       cols.push({ key: `e${i}b`, sub: 'Booked', ty: 'count', metric: 'calBooked', gfirst: true, title: `Bookings for ${k.label}`, ...ctx })
       cols.push({ key: `e${i}br`, sub: 'Book Rate', ty: 'rate', metric: 'calBookRate', title: 'Booked ÷ leads', ...ctx })
       cols.push({ key: `e${i}cb`, sub: 'Cost / Booked', ty: 'cost', metric: 'calCost', title: `Spend ÷ ${k.label} bookings`, ...ctx })
@@ -85,7 +85,7 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
       cols.push({ key: `e${i}wro`, sub: 'ROAS', ty: 'roas', metric: 'roas', title: 'Revenue ÷ spend', ...ctx })
     } else {
       groups.push({ label: k.label, kind: 'stage', span: 3 })
-      const ctx = { g: i, ref: k.ref, event: k.label }
+      const ctx = { g: i, ref: k.ref, pipeline: k.pipeline, event: k.label }
       cols.push({ key: `e${i}r`, sub: 'Reached', ty: 'count', metric: 'stageReached', gfirst: true, title: `Reached ${k.label}`, ...ctx })
       cols.push({ key: `e${i}rr`, sub: 'Conv %', ty: 'rate', metric: 'stageRate', title: `Reached ÷ leads`, ...ctx })
       cols.push({ key: `e${i}c`, sub: 'Cost / Reach', ty: 'cost', metric: 'stageCost', title: `Spend ÷ ${k.label}`, ...ctx })
@@ -103,13 +103,15 @@ function o360Fields(o, spend, leads, desc) {
   const f = { _has360: true, booked: o.booked || 0, cancelled: o.cancelled || 0, shown: o.shown || 0, shownStage: o.shownStage || 0, won: o.won || 0, revenue: o.revenue || 0 }
   const agg = {}
   const calSum = (refs, mapName) => { let t = 0; const per = {}; const m = o[mapName]; if (m) for (const r of refs) { const n = m[r] || 0; if (n) { t += n; per[r] = n } } return { t, per } }
+  // Stage reach honouring the linked pipeline (pipelineId::name first).
+  const stg = (name, pipeline) => { if (!name || !o.stages) return 0; if (pipeline && o.stages[pipeline + '::' + name] != null) return o.stages[pipeline + '::' + name]; return o.stages[name] || 0 }
   for (const c of C) {
     const m = c.metric
     if (m && m.slice(0, 3) === 'cal') {
       let g = agg[c.g]
       if (!g) {
         const b = calSum(c.refs, 'cals'), sh = calSum(c.refs, 'calsShown')
-        const stageN = c.stage && o.stages ? (o.stages[c.stage] || 0) : 0
+        const stageN = stg(c.stage, c.pipeline)
         const fromStage = Math.max(0, stageN - b.t)
         g = agg[c.g] = { booked: b.t + fromStage, fromCal: b.t, fromStage, bookedPer: b.per, shown: sh.t, shownPer: sh.per }
       }
@@ -118,9 +120,9 @@ function o360Fields(o, spend, leads, desc) {
       else if (m === 'calCost') { f[c.key] = g.booked && spend ? spend / g.booked : null; f[c.key + 'N'] = g.booked }
       else if (m === 'calShown') { f[c.key] = g.shown; f[c.key + 'B'] = { per: g.shownPer } }
       else if (m === 'calShowRate') { f[c.key] = g.booked ? (g.shown / g.booked) * 100 : null }
-    } else if (m === 'stageReached') { f[c.key] = (o.stages && o.stages[c.ref]) || 0 }
-    else if (m === 'stageRate') { const n = (o.stages && o.stages[c.ref]) || 0; f[c.key] = L ? (n / L) * 100 : null }
-    else if (m === 'stageCost') { const n = (o.stages && o.stages[c.ref]) || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
+    } else if (m === 'stageReached') { f[c.key] = stg(c.ref, c.pipeline) }
+    else if (m === 'stageRate') { const n = stg(c.ref, c.pipeline); f[c.key] = L ? (n / L) * 100 : null }
+    else if (m === 'stageCost') { const n = stg(c.ref, c.pipeline); f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
     else if (m === 'wonCount') { f[c.key] = o.won || 0; f[c.key + 'B'] = { noVal: o.wonNoVal || null } }
     else if (m === 'wonRate') { f[c.key] = L ? ((o.won || 0) / L) * 100 : null }
     else if (m === 'wonCost') { const n = o.won || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
@@ -1833,7 +1835,13 @@ function reachedByStage(pipelines) {
     let acc = 0; const reached = []
     for (let i = sts.length - 1; i >= 0; i--) { acc += sts[i].count; reached[i] = acc }
     if (sts.length) total += reached[0]
-    sts.forEach((s, i) => m.set(s.name, (m.get(s.name) || 0) + reached[i]))
+    // Name total (cross-pipeline) AND a pipeline-scoped key so a stage linked to
+    // a specific pipeline resolves without colliding with a same-named stage
+    // elsewhere.
+    sts.forEach((s, i) => {
+      m.set(s.name, (m.get(s.name) || 0) + reached[i])
+      if (p.id) m.set(p.id + '::' + s.name, reached[i])
+    })
   }
   return { m, total }
 }
@@ -1843,13 +1851,21 @@ function reachedByStage(pipelines) {
 // shape so the same funnel can mix "reached this stage" with "booked this call".
 function normKeyEvents(arr) {
   return (arr || []).map((e) => {
-    if (typeof e === 'string') return { kind: 'stage', ref: e, label: e }
+    if (typeof e === 'string') return { kind: 'stage', ref: e, label: e, pipeline: null }
     // A calendar entry may be linked to a pipeline stage so we know where it
-    // sits in the funnel order (e.stage = the linked stage name).
-    if (e && e.cal) return { kind: 'calendar', ref: e.cal, label: e.label || 'Calendar', stage: e.stage || null }
-    if (e && e.stage && e.cal == null) return { kind: 'stage', ref: e.stage, label: e.label || e.stage }
+    // sits in the funnel order (e.stage = the linked stage name, e.pipeline =
+    // which pipeline that stage belongs to, for multi-pipeline clients).
+    if (e && e.cal) return { kind: 'calendar', ref: e.cal, label: e.label || 'Calendar', stage: e.stage || null, pipeline: e.pipeline || null }
+    if (e && e.stage && e.cal == null) return { kind: 'stage', ref: e.stage, label: e.label || e.stage, pipeline: e.pipeline || null }
     return null
   }).filter(Boolean)
+}
+// Look up a stage's reached count honouring the linked pipeline: pipeline-scoped
+// key (pipelineId::name) first, else the cross-pipeline name total.
+function stageReachOf(rmap, pipeline, name) {
+  if (!rmap || !rmap.m) return 0
+  if (pipeline && rmap.m.has(pipeline + '::' + name)) return rmap.m.get(pipeline + '::' + name) || 0
+  return rmap.m.get(name) || 0
 }
 // Stage name -> earliest pipeline position, across a set of pipelines. Lets us
 // order key events by where they actually sit in the funnel.
@@ -1858,6 +1874,7 @@ function stagePosMap(pipelines) {
   for (const p of pipelines || []) for (const s of (p.stages || [])) {
     const pos = s.pos == null ? 999 : s.pos
     if (!m.has(s.name) || pos < m.get(s.name)) m.set(s.name, pos)
+    if (p.id) m.set(p.id + '::' + s.name, pos) // pipeline-scoped position
   }
   return m
 }
@@ -1867,9 +1884,10 @@ function stagePosMap(pipelines) {
 // after the positioned ones. Stable within equal positions.
 function orderKeyEvents(list, stagePos) {
   if (!stagePos || !stagePos.size) return list
+  const posAt = (pipeline, name) => (pipeline && stagePos.has(pipeline + '::' + name) ? stagePos.get(pipeline + '::' + name) : stagePos.get(name))
   const posOf = (e, i) => {
-    if (e.kind === 'stage') { const p = stagePos.get(e.ref); return p == null ? 900 + i : p }
-    const p = e.stage ? stagePos.get(e.stage) : null
+    if (e.kind === 'stage') { const p = posAt(e.pipeline, e.ref); return p == null ? 900 + i : p }
+    const p = e.stage ? posAt(e.pipeline, e.stage) : null
     return p == null ? 900 + i : p - 0.1 // calendar sits just ahead of its linked stage
   }
   return list.map((e, i) => ({ e, i, p: posOf(e, i) })).sort((a, b) => a.p - b.p || a.i - b.i).map((x) => x.e)
@@ -1885,11 +1903,14 @@ function mergeCalKeyEvents(list) {
   for (const e of list) {
     if (e.kind !== 'calendar') { out.push(e); continue }
     if (e.stage) {
-      const g = byStage.get(e.stage)
+      // Merge calendars linked to the SAME pipeline stage (pipeline-scoped, so a
+      // same-named stage in a different pipeline stays separate).
+      const gk = (e.pipeline || '') + '::' + e.stage
+      const g = byStage.get(gk)
       if (g) { g.refs.push(e.ref); continue }
-      const merged = { kind: 'calendar', refs: [e.ref], label: e.label, stage: e.stage }
-      byStage.set(e.stage, merged); out.push(merged)
-    } else out.push({ kind: 'calendar', refs: [e.ref], label: e.label, stage: null })
+      const merged = { kind: 'calendar', refs: [e.ref], label: e.label, stage: e.stage, pipeline: e.pipeline || null }
+      byStage.set(gk, merged); out.push(merged)
+    } else out.push({ kind: 'calendar', refs: [e.ref], label: e.label, stage: null, pipeline: null })
   }
   for (const e of out) if (e.kind === 'calendar' && e.refs.length > 1) e.label = e.stage // read as the stage step
   return out
@@ -1923,17 +1944,18 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; shown += c.shown; cancelled += c.cancelled } }
       // Linked stage acts as a fallback: leads that reached the stage but we have
       // no calendar booking for. Approximated as stageReached - calendar bookings.
-      const stageReached = k.stage && rmap && rmap.m.has(k.stage) ? (rmap.m.get(k.stage) || 0) : 0
+      const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
       const fromStage = Math.max(0, stageReached - cal)
       if (!any && !fromStage) continue
       rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, shown, cancelled, kind: 'calendar' })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
-      const n = wonTotal != null ? wonTotal : (rmap && rmap.m.has(k.ref) ? rmap.m.get(k.ref) || 0 : 0)
+      const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
       rows.push({ label: k.label, count: n, kind: 'won' })
     } else {
-      if (!rmap || !rmap.m.has(k.ref)) continue
-      rows.push({ label: k.label, count: rmap.m.get(k.ref) || 0, kind: 'stage' })
+      const has = rmap && (rmap.m.has(k.ref) || (k.pipeline && rmap.m.has(k.pipeline + '::' + k.ref)))
+      if (!has) continue
+      rows.push({ label: k.label, count: stageReachOf(rmap, k.pipeline, k.ref), kind: 'stage' })
     }
   }
   return rows
@@ -3235,10 +3257,15 @@ function KeyEventsEditor({ clientId }) {
   const hasStage = (n) => sel.some((e) => (typeof e === 'string' ? e === n : e && e.cal == null && e.stage === n))
   const hasCal = (id) => sel.some((e) => e && typeof e === 'object' && e.cal === id)
   const calStageOf = (id) => { const e = sel.find((x) => x && x.cal === id); return (e && e.stage) || '' }
+  const calPipeOf = (id) => { const e = sel.find((x) => x && x.cal === id); return (e && e.pipeline) || '' }
   const persist = (nx) => { saveKeyEvents(clientId, nx); return nx }
   const toggleStage = (n) => setSel((prev) => persist(hasStage(n) ? prev.filter((e) => !(e === n || (e && e.cal == null && e.stage === n))) : [...prev, n]))
   const toggleCal = (cal) => setSel((prev) => persist(hasCal(cal.id) ? prev.filter((e) => !(e && e.cal === cal.id)) : [...prev, { cal: cal.id, label: cal.name }]))
-  const linkCalStage = (id, stage) => setSel((prev) => persist(prev.map((e) => (e && e.cal === id ? { ...e, stage: stage || undefined } : e))))
+  // Link a calendar to a pipeline (resets the stage) then to a stage within it.
+  // Single-pipeline clients auto-fill the pipeline so the link is still scoped.
+  const linkCalPipe = (id, pipeline) => setSel((prev) => persist(prev.map((e) => (e && e.cal === id ? { ...e, pipeline: pipeline || undefined, stage: undefined } : e))))
+  const linkCalStage = (id, stage) => setSel((prev) => persist(prev.map((e) => (e && e.cal === id ? { ...e, stage: stage || undefined, pipeline: (multi ? e.pipeline : (withStages[0] && withStages[0].id)) || e.pipeline || undefined } : e))))
+  const stagesOfPipe = (pid) => { const p = withStages.find((x) => x.id === pid); return p ? (p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => s.name) : [] }
   const allStages = (() => { const m = new Map(); for (const p of withStages) for (const s of (p.stages || [])) if (!m.has(s.name)) m.set(s.name, s.pos == null ? 999 : s.pos); return [...m.entries()].sort((a, b) => a[1] - b[1]).map(([n]) => n) })()
   return (
     <div className="linker">
@@ -3254,10 +3281,16 @@ function KeyEventsEditor({ clientId }) {
                 <div className={`kev-cal ${on ? 'on' : ''}`} key={cal.id}>
                   <label className={`kev-item ${on ? 'on' : ''}`}><input type="checkbox" checked={on} onChange={() => toggleCal(cal)} /><span title={cal.name}>{cal.name}</span></label>
                   {on && (allStages.length
-                    ? <select className="kev-stage" value={calStageOf(cal.id)} onChange={(e) => linkCalStage(cal.id, e.target.value)} title="Link this calendar to the pipeline stage it represents, so it sits in the right funnel order">
-                        <option value="">↕ link to stage…</option>
-                        {allStages.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                    ? <span className="kev-link">
+                        {multi && <select className="kev-stage" value={calPipeOf(cal.id)} onChange={(e) => linkCalPipe(cal.id, e.target.value)} title="Which pipeline this calendar's stage belongs to">
+                          <option value="">↕ pipeline…</option>
+                          {withStages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>}
+                        <select className="kev-stage" value={calStageOf(cal.id)} disabled={multi && !calPipeOf(cal.id)} onChange={(e) => linkCalStage(cal.id, e.target.value)} title="Link this calendar to the pipeline stage it represents, so it sits in the right funnel order">
+                          <option value="">↕ link to stage…</option>
+                          {(multi ? stagesOfPipe(calPipeOf(cal.id)) : (withStages[0] ? stagesOfPipe(withStages[0].id) : allStages)).map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </span>
                     : <span className="cap" style={{ opacity: .7 }}>loading stages…</span>)}
                 </div>
               )

@@ -755,11 +755,18 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
       const pos = (pi.byId[o.pipelineStageId] || {}).pos
       const isWonS = String(o.status || '').toLowerCase() === 'won'
       const reached = isWonS ? pi.stages : (pos == null ? [] : pi.stages.filter((s) => s.pos <= pos))
+      // Key each reached stage by name AND pipelineId::name, so a calendar/stage
+      // key event linked to a specific pipeline resolves correctly in
+      // multi-pipeline clients (e.g. FINR) without over-counting a same-named
+      // stage in another pipeline.
+      const pid = o.pipelineId
       for (const s of reached) {
-        bumpKey(ent(dim.campaign, u.campaign), 'stages', s.name)
-        bumpKey(ent(dim.medium, u.medium), 'stages', s.name)
-        bumpKey(ent(dim.content, u.content), 'stages', s.name)
-        bumpKey(ent(dim.term, u.term), 'stages', s.name)
+        for (const key of pid ? [s.name, pid + '::' + s.name] : [s.name]) {
+          bumpKey(ent(dim.campaign, u.campaign), 'stages', key)
+          bumpKey(ent(dim.medium, u.medium), 'stages', key)
+          bumpKey(ent(dim.content, u.content), 'stages', key)
+          bumpKey(ent(dim.term, u.term), 'stages', key)
+        }
       }
     }
     // Data-quality flag: a deal marked Won with no monetary value distorts

@@ -881,7 +881,7 @@ export default async (req) => {
     let fr = from, t = to
     if (period === 'prev') { const pr = prevRange(from, to); if (!pr.from) return json({ scope: 'ovrow', client, period, data: null }); fr = pr.from; t = pr.to }
     try {
-      const attr = await buildAttribution(cc.ghl, fr, t)
+      const attr = await buildAttribution(cc.ghl, fr, t, { lite: true })
       return json({ scope: 'ovrow', client, period, connected: true, data: summ(attr) }, 200, true)
     } catch (e) { return json({ scope: 'ovrow', client, period, error: String(e.message || e).slice(0, 160), data: null }, 200) }
   }

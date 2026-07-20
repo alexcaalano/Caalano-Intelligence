@@ -426,10 +426,13 @@ function useOvRows(rows, range, nonce = 0) {
     const one = (id, period) => {
       const pc = primaryCalOf(id)
       const q = `${rangeQuery(range)}&cal=${encodeURIComponent(pc.cals)}&stage=${encodeURIComponent(pc.stage)}&period=${period}`
-      return fetch(`/.netlify/functions/windsor?scope=ovrow&client=${id}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      const ctl = new AbortController()
+      const timer = setTimeout(() => ctl.abort(), 28000)
+      return fetch(`/.netlify/functions/windsor?scope=ovrow&client=${id}&${q}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
         .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
         .then((j) => (j && j.data ? j.data : null))
         .catch(() => null)
+        .finally(() => clearTimeout(timer))
     }
     // Current-period first (fills the columns), previous after (fills deltas).
     const queue = [...ghlIds.map((id) => [id, 'cur']), ...ghlIds.map((id) => [id, 'prev'])]
@@ -1109,28 +1112,30 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         {crmTot && <Sc label="Scheduled Appts" value={<>{fmtNumber(crmTot.booked)}{crmTot.cancelled ? <span className="c360-canc" title={`${crmTot.cancelled} later cancelled`}> ({crmTot.cancelled}c)</span> : null}</>} />}
         {crmTot && <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} />}
       </div>
-      {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
-        rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
-        title="Key events · Meta" style={{ marginTop: 14 }}
-        sub="Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · account level"
-        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend, so it stays account-level even when you filter a campaign above. Configure which stages and calendars count in Settings → Key events.</>}
-      />}
-      {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
-        <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : ' · whole account'}</p>
-        <ResponsiveContainer width="100%" height={250}>
-          <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
-            <CartesianGrid stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" interval="preserveStartEnd" />
-            <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
-            <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
-            <Tooltip formatter={(v, n) => (n === 'Leads' ? fmtNumber(v) : fmtCurrency(v, currency))} />
-            <Legend />
-            <Bar yAxisId="l" dataKey="leads" name="Leads" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={26} />
-            <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#4f7cff" strokeWidth={2} dot={false} />
-            <Line yAxisId="r" dataKey="cpl" name="CPL" stroke="#ec4899" strokeWidth={2} dot={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>}
+      <div className="meta-split">
+        {daily.length > 0 && <div className="card chart-card meta-split-col">
+          <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : ' · whole account'}</p>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" interval="preserveStartEnd" />
+              <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+              <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+              <Tooltip formatter={(v, n) => (n === 'Leads' ? fmtNumber(v) : fmtCurrency(v, currency))} />
+              <Legend />
+              <Bar yAxisId="l" dataKey="leads" name="Leads" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={26} />
+              <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#4f7cff" strokeWidth={2} dot={false} />
+              <Line yAxisId="r" dataKey="cpl" name="CPL" stroke="#ec4899" strokeWidth={2} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>}
+        {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
+          rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
+          title="Key events · Meta" style={{ marginTop: 0 }} className="meta-split-col"
+          sub="Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · account level"
+          caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend, so it stays account-level even when you filter a campaign above. Configure which stages and calendars count in Settings → Key events.</>}
+        />}
+      </div>
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="linkCtr" sort={campSort} on={onCampSort}>Link CTR</SortTh><SortTh k="hook" sort={campSort} on={onCampSort}>Hook</SortTh><SortTh k="leads" sort={campSort} on={onCampSort}>Leads</SortTh><SortTh k="cvr" sort={campSort} on={onCampSort}>CVR</SortTh><SortTh k="cpl" sort={campSort} on={onCampSort}>CPL</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} cols={o360cols} />}</tr></thead>
         <tbody>{sortRows(m.campaigns.filter((c) => !fCamp || fCamp.has(unorm(c.name))).map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCampaign(c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
@@ -1833,7 +1838,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
 // Used in Caalano360 and the Meta / Google screens so key events read the same
 // everywhere. A leading "Leads" row anchors the funnel so the first key event
 // gets a meaningful next-step conversion.
-function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style }) {
+function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style, className = '' }) {
   if (!rows || !rows.length) return null
   const money = (v) => fmtCurrency(v, currency)
   const anyCal = rows.some((r) => r.kind === 'calendar')
@@ -1843,7 +1848,7 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
   const full = hasLeads ? rows : [{ label: 'Leads', count: total || 0, kind: 'lead' }, ...rows]
   const max = Math.max(1, ...full.map((r) => r.count))
   return (
-    <div className="card chart-card" style={style}><h3>{title}</h3>{sub ? <p className="cap">{sub}</p> : null}
+    <div className={`card chart-card ${className}`} style={style}><h3>{title}</h3>{sub ? <p className="cap">{sub}</p> : null}
       <div className={`kef ${anyCal ? 'kef-show' : ''}`}>
         <div className="kef-row kef-head">
           <span className="kef-step">Step</span>
@@ -2762,14 +2767,14 @@ function useForms(clientId, range, nonce = 0) {
   }, [clientId, q, nonce])
   return state
 }
-function FormSegments({ segments, currency }) {
+function FormSegments({ segments, captured, currency }) {
   const money = (v) => fmtCurrency(v, currency)
-  if (!segments || !segments.length) return <div className="form-seg-none">No multiple-choice answers captured on this form to segment by.</div>
+  if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form — its submissions only carried contact details (name / email / phone).'}</div>
   return (
     <div className="form-seg">
       {segments.map((s) => (
         <div className="form-seg-q" key={s.question}>
-          <div className="form-seg-qh">{s.question}</div>
+          <div className="form-seg-qh">{s.question}<span className={`form-seg-kind ${s.kind || 'choice'}`}>{s.kind === 'written' ? 'written' : 'choice'}</span></div>
           <table className="form-seg-t">
             <thead><tr><th>Answer</th><th className="num">Leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th></tr></thead>
             <tbody>{s.answers.map((a) => (
@@ -2785,6 +2790,7 @@ function FormSegments({ segments, currency }) {
               </tr>
             ))}</tbody>
           </table>
+          {s.more > 0 && <div className="form-seg-more">+{s.more} more written answer{s.more === 1 ? '' : 's'}</div>}
         </div>
       ))}
     </div>
@@ -2838,7 +2844,7 @@ function FormsView({ clientId, currency, range, nonce }) {
                 <td className="num">{money(f.revenue)}</td>
                 <td className="num">{f.avgDeal != null ? money(f.avgDeal) : '-'}</td>
               </tr>
-              {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}><FormSegments segments={f.segments} currency={currency} /></td></tr>}
+              {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}><FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} /></td></tr>}
             </tbody>
           )
         })}

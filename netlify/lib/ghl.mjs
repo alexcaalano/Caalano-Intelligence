@@ -276,9 +276,14 @@ async function fetchAppointments(locTok, locationId, from, to) {
     map.set(contactId, e)
   }
   let events = 0
-  for (const cal of calendars) {
+  function mark(contactId, status, addedMs, startTimeMs) { markInto(byContact, contactId, status, addedMs, startTimeMs) }
+  // Fetch every calendar's events in parallel - sequential per-calendar calls
+  // were the dominant cost for multi-calendar clients (and pushed the overview
+  // rows past the function timeout). Each calendar's events still land in its
+  // own perCalendar bucket, so the per-calendar split is unchanged.
+  await Promise.all(calendars.map(async (cal) => {
     const calId = cal.id || cal._id || cal.calendarId
-    if (!calId) continue
+    if (!calId) return
     let rec = perCalendar.get(calId)
     if (!rec) { rec = { name: cal.name || cal.calendarName || 'Calendar', byContact: new Map() }; perCalendar.set(calId, rec) }
     try {
@@ -293,8 +298,7 @@ async function fetchAppointments(locTok, locationId, from, to) {
         markInto(rec.byContact, cid, st, added, start)
       }
     } catch { /* skip a calendar we cannot read; others still count */ }
-  }
-  function mark(contactId, status, addedMs, startTimeMs) { markInto(byContact, contactId, status, addedMs, startTimeMs) }
+  }))
   let bookedContacts = 0, shownContacts = 0, cancelledContacts = 0
   for (const e of byContact.values()) {
     // Net cancellation: they booked in-period and every one of those bookings
@@ -327,7 +331,13 @@ export async function buildForms(locationId, from, to) {
   const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
   const formName = {}
-  try { const j = await ghlGet(locTok, '/forms/', { locationId, limit: 100 }); for (const f of (j.forms || [])) formName[f.id] = f.name } catch { /* names optional */ }
+  const cfById = {} // custom-field id -> human label, so answer keys read as real questions
+  await Promise.all([
+    ghlGet(locTok, '/forms/', { locationId, limit: 100 }).then((j) => { for (const f of (j.forms || [])) formName[f.id] = f.name }).catch(() => {}),
+    ghlGet(locTok, `/locations/${locationId}/customFields`, {}).then((j) => { for (const f of (j.customFields || j.customField || [])) { if (f.id) cfById[f.id] = f.name; if (f.fieldKey) cfById[f.fieldKey] = f.name } }).catch(() => {}),
+  ])
+  // Turn a raw submission key into a readable question label.
+  const labelKey = (k) => cfById[k] || cfById[k.replace(/^contact\./, '')] || k.replace(/^contact\./, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   // All submissions in the window (paginated).
   const subs = []
   try {
@@ -364,8 +374,8 @@ export async function buildForms(locationId, from, to) {
     const cid = s.contactId; if (!cid || contactData.has(cid)) continue
     const answers = {}
     for (const [k, v] of Object.entries(o)) {
-      if (typeof v !== 'string' || !v.trim() || v.length > 40 || SYS_KEY.test(k)) continue
-      answers[k] = v.trim()
+      if (typeof v !== 'string' || !v.trim() || v.length > 200 || SYS_KEY.test(k)) continue
+      answers[labelKey(k)] = v.trim()
     }
     contactData.set(cid, { L, answers })
   }
@@ -393,13 +403,26 @@ export async function buildForms(locationId, from, to) {
   }
   const forms = [...agg.values()].sort((a, b) => b.leads - a.leads).map((e) => {
     const fu = formUtm.get(e.form) || { campaigns: new Set(), adsets: new Set(), creatives: new Set() }
-    // Keep only genuine multiple-choice questions: 2..12 distinct answers seen ≥ twice overall.
+    // Show EVERY question the form captured - multiple-choice AND written/free-text
+    // (Suburb, project notes, timeframe, …). Each question is tagged 'choice'
+    // (few repeating options) or 'written' (mostly unique answers) so the UI can
+    // label it. We only drop a question that is a single constant value given by
+    // every lead (a hidden/system field), and cap very long free-text lists.
+    const ROW_CAP = 60
     const segments = [...e.seg.entries()]
-      .map(([question, qm]) => ({ question, answers: [...qm.values()].sort((a, b) => b.leads - a.leads) }))
-      .filter((s) => s.answers.length >= 2 && s.answers.length <= 12 && s.answers.reduce((a, x) => a + x.leads, 0) >= 2)
-      .sort((a, b) => b.answers.reduce((s, x) => s + x.leads, 0) - a.answers.reduce((s, x) => s + x.leads, 0))
+      .map(([question, qm]) => {
+        const answers = [...qm.values()].sort((a, b) => b.leads - a.leads)
+        const total = answers.reduce((a, x) => a + x.leads, 0)
+        const kind = answers.length > 12 && answers.every((x) => x.leads <= 1) ? 'written' : 'choice'
+        const shown = answers.slice(0, ROW_CAP)
+        return { question, kind, total, distinct: answers.length, more: Math.max(0, answers.length - shown.length), answers: shown }
+      })
+      // drop a lone constant answer that every lead gave (system/hidden field)
+      .filter((s) => !(s.distinct === 1 && s.total >= e.leads && e.leads > 2))
+      .filter((s) => s.total >= 1)
+      .sort((a, b) => (a.kind === b.kind ? b.total - a.total : a.kind === 'choice' ? -1 : 1))
     const { seg, ...rest } = e
-    return { ...rest, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments }
+    return { ...rest, capturedQuestions: seg.size, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments }
   })
   return { connected: true, tz, submissions: subs.length, contacts: contactData.size, forms }
 }
@@ -581,7 +604,12 @@ export async function attributionCoverage(locationId, from, to) {
   return { opps: opps.length, attributed, meta: ch.meta, google: ch.google, other: ch.other }
 }
 
-export async function buildAttribution(locationId, from, to) {
+export async function buildAttribution(locationId, from, to, opts = {}) {
+  // Lite mode (agency overview rows): a shorter opportunity lookback + smaller
+  // cap and no lost-reason fetch, so the ~13 rows each stay well under the
+  // function timeout. Booked/shown still come from the (now parallel) real
+  // appointment feed, so the leaderboard's numbers match the client view.
+  const lite = !!opts.lite
   const locTok = await locationToken(locationId)
   // Wide opportunity lookback so a booking made in-period by a lead who first
   // came in earlier can still be credited to the creative that brought them in.
@@ -589,11 +617,11 @@ export async function buildAttribution(locationId, from, to) {
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
-  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - (lite ? 60 : 120) * DAY).toISOString().slice(0, 10)
   const [wideOpps, pipelines, reasons, appts] = await Promise.all([
-    allOpportunities(locTok, locationId, wideFrom, to, 1800),
+    allOpportunities(locTok, locationId, wideFrom, to, lite ? 900 : 1800),
     fetchPipelines(locTok, locationId),
-    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+    lite ? Promise.resolve([]) : ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), connected: false })),
   ])
   const idx = stageIndexFrom(pipelines)

@@ -373,9 +373,27 @@ export async function buildForms(locationId, from, to) {
     if (utm.utm_content) fu.creatives.add(String(utm.utm_content))
     const cid = s.contactId; if (!cid || contactData.has(cid)) continue
     const answers = {}
+    // Coerce an answer value to a display string. Meta Lead Form answers often
+    // arrive as arrays (multi-select) or numbers, and some are nested one level
+    // under a container object - website forms use plain top-level strings. All
+    // three should segment, so handle each shape instead of dropping non-strings.
+    const put = (k, v) => {
+      if (SYS_KEY.test(k)) return
+      let str = null
+      if (Array.isArray(v)) str = v.filter((x) => typeof x === 'string' || typeof x === 'number').map(String).join(', ')
+      else if (typeof v === 'number' && Number.isFinite(v)) str = String(v)
+      else if (typeof v === 'string') str = v.trim()
+      if (!str || str.length > 200) return
+      answers[labelKey(k)] = str
+    }
     for (const [k, v] of Object.entries(o)) {
-      if (typeof v !== 'string' || !v.trim() || v.length > 200 || SYS_KEY.test(k)) continue
-      answers[labelKey(k)] = v.trim()
+      // Descend one level into answer containers (customData/formData/…), but not
+      // into system envelopes (eventData carries UTMs/page/session, not answers).
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        if (/^(customData|formData|form_data|answers|fields|customFields|data)$/i.test(k)) for (const [k2, v2] of Object.entries(v)) put(k2, v2)
+        continue
+      }
+      put(k, v)
     }
     contactData.set(cid, { L, answers })
   }
@@ -453,12 +471,20 @@ export async function sampleForms(locationId, from, to) {
   } catch (e) { out.formsError = String(e.message || e).slice(0, 180) }
   const PII = /email|phone|first_?name|last_?name|full_?name|^name$|address|signature|^ip$/i
   const redact = (v) => (typeof v === 'string' && /@|\+?\d{7,}/.test(v) ? '***' : v)
+  // Describe a value's shape without leaking PII: type, and for objects/arrays
+  // their sub-keys / element types, so we can see exactly where Meta Lead Form
+  // answers live (top-level string vs array vs nested container).
+  const shapeOf = (v) => {
+    if (Array.isArray(v)) return `array[${v.length}]<${[...new Set(v.map((x) => (x && typeof x === 'object' ? 'object' : typeof x)))].join('|')}>`
+    if (v && typeof v === 'object') return `object{${Object.keys(v).slice(0, 25).join(',')}}`
+    return typeof v
+  }
   try {
-    const q = { locationId, limit: 12 }; if (from) q.startAt = from; if (to) q.endAt = to
+    const q = { locationId, limit: 40 }; if (from) q.startAt = from; if (to) q.endAt = to
     const j = await ghlGet(locTok, '/forms/submissions', q)
     const subs = j.submissions || []
     out.submissionsTotal = (j.meta && j.meta.total != null) ? j.meta.total : subs.length
-    out.sample = subs.slice(0, 8).map((s) => {
+    const describe = (s) => {
       const o = s.others || {}
       const answers = {}
       for (const [k, v] of Object.entries(o)) {
@@ -466,16 +492,23 @@ export async function sampleForms(locationId, from, to) {
         answers[cfById[k] || k] = redact(v)
       }
       const utm = (o.eventData && o.eventData.url_params) || null
+      const isFb = !!(o.facebookFormName || o['Facebook Form Name'] || o.fbFormName)
       return {
         formId: s.formId,
         formName: formName[s.formId] || null,
-        fbFormName: o['Facebook Form Name'] || o.facebook_form_name || o.fbFormName || null,
+        fbFormName: o.facebookFormName || o['Facebook Form Name'] || o.fbFormName || null,
+        kind: isFb ? 'facebook' : (formName[s.formId] ? 'website' : 'other'),
         source: o.source || (o.internalSource && o.internalSource.type) || null,
         utm: utm ? { source: utm.utm_source, medium: utm.utm_medium, campaign: utm.utm_campaign, content: utm.utm_content } : null,
+        // Full key -> shape map (PII-safe) so nested / array answer stores are visible.
+        othersShape: Object.fromEntries(Object.entries(o).map(([k, v]) => [k, shapeOf(v)])),
         answerKeys: Object.keys(answers).slice(0, 20),
         answers,
       }
-    })
+    }
+    const fb = subs.filter((s) => { const o = s.others || {}; return o.facebookFormName || o['Facebook Form Name'] || o.fbFormName })
+    // Prioritise showing Meta Lead Form submissions (the ones not segmenting).
+    out.sample = [...fb.slice(0, 5), ...subs.filter((s) => !fb.includes(s)).slice(0, 5)].map(describe)
   } catch (e) { out.submissionsError = String(e.message || e).slice(0, 200) }
   return out
 }

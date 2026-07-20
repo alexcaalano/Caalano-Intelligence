@@ -588,7 +588,11 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .table-wrap td.num, .table-wrap th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .form-kind { opacity: .85; margin-right: 3px; }
 .form-seg-row > td { background: var(--panel-2); padding: 0 !important; }
-.form-seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; padding: 12px 14px; }
+.form-seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px 22px; padding: 12px 14px; }
+/* min-width:0 lets a wide answer table shrink inside its grid track instead of
+   overflowing onto the next one (the cause of the overlapping columns); the
+   per-question scroller then handles any table still wider than its track. */
+.form-seg-q { min-width: 0; overflow-x: auto; }
 .form-seg-none { padding: 12px 14px; color: var(--faint); font-size: 12.5px; }
 .form-seg-qh { display: flex; align-items: center; gap: 7px; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; margin-bottom: 5px; }
 .form-seg-kind { font-size: 9px; letter-spacing: .02em; padding: 1px 5px; border-radius: 4px; font-weight: 700; }

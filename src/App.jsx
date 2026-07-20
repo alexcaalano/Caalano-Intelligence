@@ -3431,7 +3431,12 @@ export default function App() {
   if (err) return <div className="main"><div className="card">Failed to load data: {err}</div></div>
   if (!data) return <div className="main"><div className="card">Loading dashboard…</div></div>
 
-  const visibleClients = data.clients.filter((c) => enabled[c.id] !== false)
+  // snapshot.json clients don't carry the GHL location id, but config.json does.
+  // Merge it in so the overview knows which clients have CRM (Caalano Systems)
+  // and fires the ovrow requests - without this, r.c.ghl is undefined for every
+  // client and the CRM columns never load.
+  const ghlById = Object.fromEntries(((config && config.clients) || []).map((c) => [c.id, c.ghl]))
+  const visibleClients = data.clients.filter((c) => enabled[c.id] !== false).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
   const rows = computeRows(visibleClients, agency.data)
   const idx = picked ? data.clients.findIndex((c) => c.id === picked.id) : -1
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }

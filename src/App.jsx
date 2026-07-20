@@ -8,6 +8,13 @@ import {
   clientTotals, agencyTotals,
 } from './lib/format.js'
 
+// Format the injected build timestamp in Australian local time (dashboard is
+// AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
+function fmtBuildTime(iso) {
+  try {
+    return new Date(iso).toLocaleString('en-AU', { timeZone: 'Australia/Sydney', day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+  } catch { return iso || 'unknown' }
+}
 const AVATAR = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#8b5cf6']
 const acolor = (i) => AVATAR[i % AVATAR.length]
 const initials = (n) => n.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
@@ -533,11 +540,41 @@ function ResultsPop({ children, r, currency }) {
 const OV_FILTERS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid']]
 function AgencyComparison({ rows, currency, range, nonce, onPick }) {
   const [f, setF] = useState('all')
+  const [sort, setSort] = useState({ key: 'spend', dir: -1 })
   const ov = useOvRows(rows, range, nonce)
   const money = (v) => fmtCurrency(v, currency)
-  const sorted = [...rows].sort((a, b) => b.spend - a.spend)
   const chanKey = f === 'all' ? 'all' : f === 'paid' ? 'paid' : 'other'
   const paidView = f !== 'nonpaid' // ad spend/results only exist for paid
+  // Every column's sort value for a row, honouring the current filter (paid /
+  // non-paid) and channel. CRM columns are null until that client's row loads,
+  // so they sort last regardless of direction.
+  const metricsOf = (r) => {
+    const spendF = paidView ? r.spend : 0
+    const resF = paidView ? r.conversions : 0
+    const o = ov[r.id]; const cur = (o && o.status === 'ok' && o.cur) ? o.cur[chanKey] : null
+    return {
+      name: r.name, spend: spendF, results: resF, costResult: resF ? spendF / resF : null,
+      opps: cur ? cur.opps : null, booked: cur ? cur.booked : null,
+      costBooked: cur && cur.booked && spendF ? spendF / cur.booked : null,
+      showRate: cur && cur.booked ? cur.shown / cur.booked : null,
+      costShown: cur && cur.shown && spendF ? spendF / cur.shown : null,
+      bookingRate: cur && cur.opps ? cur.booked / cur.opps : null,
+      won: cur ? cur.won : null, revenue: cur ? cur.revenue : null,
+      avgDeal: cur && cur.won ? cur.revenue / cur.won : null,
+      costWon: cur && cur.won && spendF ? spendF / cur.won : null,
+      roas: cur && spendF ? cur.revenue / spendF : null,
+    }
+  }
+  const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
+  const sorted = [...rows].sort((a, b) => {
+    const av = metricsOf(a)[sort.key], bv = metricsOf(b)[sort.key]
+    if (sort.key === 'name') return String(av).localeCompare(String(bv)) * sort.dir
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    return (av - bv) * sort.dir
+  })
+  const OvTh = ({ k, children, cls }) => <th className={cls} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   const crmIds = rows.filter((r) => r.c.ghl).map((r) => r.id)
   const crmLoading = crmIds.filter((id) => !ov[id] || ov[id].status === 'loading').length
   const crmDone = crmIds.length - crmLoading
@@ -561,10 +598,10 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
       )}
       <div className="table-wrap"><table className="ov-cmp">
         <thead><tr>
-          <th className="ov-name">Client</th>
-          <th>Spend</th><th>Results</th><th>Cost / Result</th>
-          <th>Opps</th><th>Booked</th><th>Cost / Booked</th><th>Show Rate</th><th>Cost / Shown</th><th>Booking Rate</th>
-          <th>Won</th><th>Revenue</th><th>Avg Deal</th><th>Cost / Won</th><th>ROAS</th>
+          <OvTh k="name" cls="ov-name">Client</OvTh>
+          <OvTh k="spend">Spend</OvTh><OvTh k="results">Results</OvTh><OvTh k="costResult">Cost / Result</OvTh>
+          <OvTh k="opps">Opps</OvTh><OvTh k="booked">Booked</OvTh><OvTh k="costBooked">Cost / Booked</OvTh><OvTh k="showRate">Show Rate</OvTh><OvTh k="costShown">Cost / Shown</OvTh><OvTh k="bookingRate">Booking Rate</OvTh>
+          <OvTh k="won">Won</OvTh><OvTh k="revenue">Revenue</OvTh><OvTh k="avgDeal">Avg Deal</OvTh><OvTh k="costWon">Cost / Won</OvTh><OvTh k="roas">ROAS</OvTh>
         </tr></thead>
         <tbody>{sorted.map((r) => {
           const spendF = paidView ? r.spend : 0
@@ -3407,6 +3444,7 @@ export default function App() {
           <button className="settings-btn" onClick={() => { setShowSettings(true); setNavOpen(false) }}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
           <div className="foot-note">Live data via the Meta and Google API - Meta, Google, Caalano Systems.</div>
+          <div className="foot-build" title={`Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''}`}>Last deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
         </div>
       </aside>
 

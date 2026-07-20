@@ -97,7 +97,8 @@ body {
 .nav button:hover { background: var(--panel-2); color: var(--text); }
 .nav button.active { background: var(--elev); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-2); }
 .nav .ic { width: 18px; text-align: center; opacity: .9; }
-.side .foot-note { margin-top: auto; padding: 12px 10px; font-size: 10.5px; color: var(--faint); line-height: 1.5; }
+.side .foot-note { margin-top: auto; padding: 12px 10px 4px; font-size: 10.5px; color: var(--faint); line-height: 1.5; }
+.side .foot-build { padding: 0 10px 12px; font-size: 10px; color: var(--faint); opacity: .8; font-variant-numeric: tabular-nums; }
 
 /* Main */
 .main { padding: 26px clamp(16px, 3.2vw, 40px) 70px; min-width: 0; }

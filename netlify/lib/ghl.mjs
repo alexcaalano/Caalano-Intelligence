@@ -502,8 +502,17 @@ export async function buildAttribution(locationId, from, to) {
     if (!e) { e = { medium: new Map(), campaign: new Map(), content: new Map(), stages: new Map(), status: { won: 0, lost: 0, abandoned: 0, open: 0 } }; srcDetail.set(key, e) }
     return e
   }
+  // Opportunity source (GHL's own field, e.g. "CRM UI" for manually-added ones,
+  // "public api", a form name, etc.) so tracking health can exclude manual
+  // entries and show the true ad-vs-CRM gap.
+  const MANUAL_RE = /crm\s*ui|manual/i
+  const oppSourceCounts = new Map()
+  let manualLeads = 0
   let attributed = 0
   for (const o of opps) {
+    const osrc = String(o.source || '').trim() || '(not set)'
+    oppSourceCounts.set(osrc, (oppSourceCounts.get(osrc) || 0) + 1)
+    if (MANUAL_RE.test(osrc)) manualLeads++
     const u = utmOf(o)
     if (u.source || u.campaign) attributed++
     buckets[channelOf(u)].push(o)
@@ -654,8 +663,10 @@ export async function buildAttribution(locationId, from, to) {
   }
   if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown; chan[k].totals.shownStage = chanAct[k].shownStage; chan[k].totals.cancelled = chanAct[k].cancelled } }
 
+  const oppSources = [...oppSourceCounts.entries()].map(([name, count]) => ({ name, count, manual: MANUAL_RE.test(name) })).sort((a, b) => b.count - a.count)
   return {
     connected: true, opps: opps.length, attributed, tz,
+    manualLeads, oppSources,
     appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, shownStage: shownStageActions, cancelled: cancelledActions, byCalendar },
     bySource, byMedium: top(dim.medium, 300), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
     channels: chan,

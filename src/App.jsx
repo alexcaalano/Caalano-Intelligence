@@ -2604,6 +2604,13 @@ function TrackingHealth({ paid, crmLeads, attribData, channels, periodLabel }) {
   const chGoogle = channels ? (channels.google?.totals?.leads || 0) : 0
   const chOther = channels ? (channels.other?.totals?.leads || 0) : 0
   const totCh = chMeta + chGoogle + chOther || 1
+  // Manually-added (CRM UI) opportunities inflate the CRM count vs what the ads
+  // actually drove. Exclude them to get the true ad-vs-CRM gap.
+  const manual = attribData ? (attribData.manualLeads || 0) : 0
+  const crmExcl = Math.max(0, crmLeads - manual)
+  const trueVar = adLeads ? ((crmExcl - adLeads) / adLeads) * 100 : null
+  const varCls = (v) => v == null ? '' : Math.abs(v) <= 15 ? 'good' : Math.abs(v) <= 35 ? 'warn' : 'bad'
+  const sources = (attribData && attribData.oppSources) || []
   return (
     <div className="card th-card" style={{ marginTop: 12 }}>
       <div className="th-head">
@@ -2613,7 +2620,9 @@ function TrackingHealth({ paid, crmLeads, attribData, channels, periodLabel }) {
       <div className="th-grid">
         <div className="th-stat"><div className="th-l">Ad-reported leads</div><div className="th-v">{fmtNumber(adLeads)}</div><div className="th-sub">Meta {fmtNumber(p.metaLeads || 0)} · Google {fmtNumber(p.googleConv || 0)}</div></div>
         <div className="th-stat"><div className="th-l">CRM opportunities</div><div className="th-v">{fmtNumber(crmLeads)}</div><div className="th-sub">created in {periodLabel}</div></div>
-        <div className="th-stat"><div className="th-l">Variance</div><div className={`th-v ${variance == null ? '' : Math.abs(variance) <= 15 ? 'good' : Math.abs(variance) <= 35 ? 'warn' : 'bad'}`}>{variance == null ? '-' : `${variance > 0 ? '+' : ''}${variance.toFixed(0)}%`}</div><div className="th-sub">CRM vs ad-reported</div></div>
+        <div className="th-stat"><div className="th-l">Manual (CRM UI)</div><div className="th-v th-manual">{attribData ? fmtNumber(manual) : '-'}</div><div className="th-sub">added by hand · excluded below</div></div>
+        <div className="th-stat"><div className="th-l">CRM excl. manual</div><div className="th-v">{attribData ? fmtNumber(crmExcl) : '-'}</div><div className="th-sub">the true ad-driven CRM count</div></div>
+        <div className="th-stat"><div className="th-l">True variance</div><div className={`th-v ${attribData ? varCls(trueVar) : ''}`}>{!attribData || trueVar == null ? '-' : `${trueVar > 0 ? '+' : ''}${trueVar.toFixed(0)}%`}</div><div className="th-sub">ad vs CRM excl. manual{variance != null ? ` · raw ${variance > 0 ? '+' : ''}${variance.toFixed(0)}%` : ''}</div></div>
         <div className="th-stat"><div className="th-l">Tagged source split</div>
           {attribData ? <>
             <div className="th-bar"><span style={{ width: `${(chMeta / totCh) * 100}%`, background: '#4f7cff' }} /><span style={{ width: `${(chGoogle / totCh) * 100}%`, background: '#12b886' }} /><span style={{ width: `${(chOther / totCh) * 100}%`, background: 'var(--faint)' }} /></div>
@@ -2621,7 +2630,11 @@ function TrackingHealth({ paid, crmLeads, attribData, channels, periodLabel }) {
           </> : <div className="th-sub">Connect Caalano Systems for source tagging.</div>}
         </div>
       </div>
-      <p className="caveat">Ad-reported leads are what Meta/Google count; CRM opportunities are what actually landed in Caalano Systems. A large gap usually means duplicate/again-counted ad conversions or leads not reaching the CRM. Source-tag coverage tells you how much of the Caalano360 channel split you can trust - low coverage means many opportunities arrived without a UTM.</p>
+      {sources.length > 0 && <div className="th-sources">
+        <span className="th-sources-l">Opportunity sources</span>
+        {sources.slice(0, 10).map((s) => <span key={s.name} className={`th-src ${s.manual ? 'manual' : ''}`}>{s.name} <b>{fmtNumber(s.count)}</b>{s.manual ? ' ✋' : ''}</span>)}
+      </div>}
+      <p className="caveat">Ad-reported leads are what Meta/Google count; CRM opportunities are what landed in Caalano Systems. <b>Manual (CRM UI)</b> opportunities were added by hand in the CRM (not driven by ads), so <b>True variance</b> compares ad-reported leads to CRM <b>excluding</b> those — the real gap. A remaining gap usually means duplicate/again-counted ad conversions, leads not reaching the CRM, or missing UTMs (see source-tag coverage). ✋ = a manually-added source.</p>
     </div>
   )
 }

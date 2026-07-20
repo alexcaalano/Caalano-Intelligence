@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.14.3'
+const APP_VERSION = '3.15.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1482,7 +1482,10 @@ function EmptyDeep({ channel }) {
 /* ============ Client workspace ============ */
 function OverallTab({ client, currency, side }) {
   const tt = clientTotals(client); const d = tt[side]; const other = tt[side === 'cur' ? 'prev' : 'cur']
-  const m = client.meta, g = client.google
+  // Only baked-metrics objects render the channel cards; a UI-added client has
+  // the account id as a string here and no baked snapshot (its live tabs work).
+  const m = client.meta && typeof client.meta === 'object' ? client.meta : null
+  const g = client.google && typeof client.google === 'object' ? client.google : null
   const has = d.conversions > 0
   return (
     <>
@@ -3768,6 +3771,26 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
   )
 }
 
+// Catches render errors in a view so one bad client/component shows a message
+// with a way back instead of blanking the whole app to a white screen.
+class ErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null } }
+  static getDerivedStateFromError(err) { return { err } }
+  render() {
+    if (this.state.err) {
+      return (
+        <div className="card empty-deep" style={{ margin: 16 }}>
+          <div className="big">⚠️</div>
+          <b>Something went wrong loading this view.</b>
+          <p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{String((this.state.err && this.state.err.message) || this.state.err)}</p>
+          <button className="refresh-btn" style={{ marginTop: 12 }} onClick={() => { this.setState({ err: null }); this.props.onHome && this.props.onHome() }}>← Back to overview</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 /* ============ Shell ============ */
 export default function App() {
   const [data, setData] = useState(null)
@@ -3820,7 +3843,7 @@ export default function App() {
   const rows = computeRows(visibleClients, agency.data)
   // Config for the Settings page, with overrides applied + UI-added clients.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
-  const idx = picked ? data.clients.findIndex((c) => c.id === picked.id) : -1
+  const idx = picked ? Math.max(0, baseClients.findIndex((c) => c.id === picked.id)) : 0
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
 
   return (
@@ -3856,11 +3879,13 @@ export default function App() {
           {view !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
         </div>
-        {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
-        {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
-        {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
-        {view === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
-        {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} config={config} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
+        <ErrorBoundary key={view + '|' + (picked && picked.id || '')} onHome={() => { setPicked(null); setView('overview') }}>
+          {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
+          {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
+          {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
+          {view === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
+          {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
+        </ErrorBoundary>
       </main>
     </div>
   )

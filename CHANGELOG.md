@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.15.0 — 2026-07-20 · `<pending>`
+- Fix: opening a UI-added client (e.g. Dashing Ducks) from the Overview showed a
+  blank screen. Its meta/google are account-id strings (not the baked metrics
+  objects snapshot clients have), which crashed clientTotals/OverallTab - both
+  are now shape-safe. The client workspace also receives the merged config so
+  its Google / Cohorts / Forms tabs appear.
+- Added an error boundary around every view: a render error now shows a message
+  with a "Back to overview" button instead of blanking the whole app.
+
 ## v3.14.3 — 2026-07-20 · `887354c`
 - Setup-health strip uses real brand logos (Meta, Google Ads, and Caalano's own
   favicon for CRM) via each site's favicon; the config checks (key events,

@@ -23,17 +23,21 @@ export const pctChange = (cur, prev) => {
 
 // A client's combined (Meta + Google) totals for a given side ("cur" | "prev").
 export function clientTotals(client) {
-  const m = client.meta
-  const g = client.google
+  // meta/google are the baked metrics OBJECTS on snapshot clients, but only the
+  // account-id string on UI-added clients (which have no baked snapshot) - guard
+  // so a string never gets treated as metrics.
+  const m = client.meta && typeof client.meta === 'object' ? client.meta : null
+  const g = client.google && typeof client.google === 'object' ? client.google : null
+  const n = (v) => (typeof v === 'number' ? v : 0)
   const cur = { spend: 0, impressions: 0, clicks: 0, conversions: 0 }
   const prev = { spend: 0, impressions: 0, clicks: 0, conversions: 0 }
   if (m) {
-    cur.spend += m.spend; cur.impressions += m.impressions; cur.clicks += m.clicks; cur.conversions += m.leads
-    prev.spend += m.prev.spend; prev.impressions += m.prev.impressions; prev.clicks += m.prev.clicks; prev.conversions += m.prev.leads
+    cur.spend += n(m.spend); cur.impressions += n(m.impressions); cur.clicks += n(m.clicks); cur.conversions += n(m.leads)
+    if (m.prev) { prev.spend += n(m.prev.spend); prev.impressions += n(m.prev.impressions); prev.clicks += n(m.prev.clicks); prev.conversions += n(m.prev.leads) }
   }
   if (g) {
-    cur.spend += g.cost; cur.impressions += g.impressions; cur.clicks += g.clicks; cur.conversions += g.conversions
-    prev.spend += g.prev.cost; prev.impressions += g.prev.impressions; prev.clicks += g.prev.clicks; prev.conversions += g.prev.conversions
+    cur.spend += n(g.cost); cur.impressions += n(g.impressions); cur.clicks += n(g.clicks); cur.conversions += n(g.conversions)
+    if (g.prev) { prev.spend += n(g.prev.cost); prev.impressions += n(g.prev.impressions); prev.clicks += n(g.prev.clicks); prev.conversions += n(g.prev.conversions) }
   }
   cur.cpl = cur.conversions ? cur.spend / cur.conversions : 0
   prev.cpl = prev.conversions ? prev.spend / prev.conversions : 0

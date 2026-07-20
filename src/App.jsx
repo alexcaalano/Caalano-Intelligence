@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.30.0'
+const APP_VERSION = '3.31.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3305,23 +3305,55 @@ const normSub = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').
 // outlines). Data (postcode/suburb -> coords + outline paths) is lazy-loaded so
 // it stays out of the main bundle. Defaults to auto-zooming to fit the plotted
 // leads, so a Sydney-only client sees Sydney, not the whole country.
+// AU postcode -> state, by numeric range (no data needed) - used to infer a
+// client's state so ambiguous same-named suburbs resolve to the right one.
+function stateOfPostcode(p) {
+  const n = parseInt(p, 10); if (!isFinite(n)) return null
+  if ((n >= 1000 && n <= 2599) || (n >= 2619 && n <= 2899) || (n >= 2921 && n <= 2999)) return 'NSW'
+  if ((n >= 200 && n <= 299) || (n >= 2600 && n <= 2618) || (n >= 2900 && n <= 2920)) return 'ACT'
+  if ((n >= 3000 && n <= 3999) || (n >= 8000 && n <= 8999)) return 'VIC'
+  if ((n >= 4000 && n <= 4999) || (n >= 9000 && n <= 9999)) return 'QLD'
+  if (n >= 5000 && n <= 5999) return 'SA'
+  if (n >= 6000 && n <= 6999) return 'WA'
+  if (n >= 7000 && n <= 7999) return 'TAS'
+  if (n >= 800 && n <= 999) return 'NT'
+  return null
+}
+const LEAD_MAP_COLOR = [['volume', 'Volume'], ['book', 'Booked %'], ['win', 'Won %']]
 function LeadMap({ locs }) {
   const [db, setDb] = useState(undefined)
   const [zoom, setZoom] = useState('fit') // 'fit' (to leads) | 'all' (whole country)
+  const [colorBy, setColorBy] = useState('volume')
   useEffect(() => { let a = true; import('./data/aupostcodes.json').then((m) => { if (a) setDb(m.default || m) }).catch(() => { if (a) setDb(null) }); return () => { a = false } }, [])
   if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
   if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
+  // Infer the client's dominant state (weighted by leads) from unambiguous
+  // answers, so same-named suburbs in other states don't get mis-plotted.
+  const tally = {}
+  for (const l of locs) {
+    const v = String(l.value).trim(); let stt = null
+    if (/^\d{4}$/.test(v)) stt = stateOfPostcode(v)
+    else if (/^\d{3}$/.test(v)) stt = stateOfPostcode('0' + v)
+    else { const sv = db.sub[normSub(v)]; if (sv && typeof sv[0] === 'number') stt = sv[2] }
+    if (stt) tally[stt] = (tally[stt] || 0) + (l.leads || 1)
+  }
+  const clientState = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || null
   const coordOf = (value) => {
     const v = String(value).trim()
     if (/^\d{4}$/.test(v)) return db.pc[v] || null
     if (/^\d{3}$/.test(v)) return db.pc['0' + v] || null
-    const pc = db.sub[normSub(v)]
-    return pc ? db.pc[pc] : null
+    const sv = db.sub[normSub(v)]; if (!sv) return null
+    if (typeof sv[0] === 'number') return [sv[0], sv[1]] // unique suburb, suburb-level coords
+    const pick = sv.find((x) => x[2] === clientState) || sv[0] // ambiguous -> client's state
+    return [pick[0], pick[1]]
   }
   const pts = []; const unmatched = []
   for (const l of locs) { const c = coordOf(l.value); if (c) { const [x, y] = projAU(c[1], c[0]); pts.push({ ...l, x, y }) } else unmatched.push(l) }
   const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
   const matchedLeads = pts.reduce((s, p) => s + p.leads, 0)
+  const rateOf = (p) => (!p.leads ? 0 : colorBy === 'book' ? p.booked / p.leads : p.won / p.leads)
+  const maxRate = Math.max(0.0001, ...pts.map(rateOf))
+  const dotFill = (p) => (colorBy === 'volume' ? null : `hsl(${Math.round(Math.min(1, rateOf(p) / maxRate) * 130)} 65% 47%)`)
   // Viewbox: fit tightly to the plotted points (with padding, a minimum span so a
   // single suburb isn't over-zoomed, and an aspect ratio that fills the card),
   // or the whole country.
@@ -3344,16 +3376,20 @@ function LeadMap({ locs }) {
   return (
     <div className="lead-map-wrap">
       <div className="lead-map">
-        <div className="lead-map-tabs">
-          <button className={zoom === 'fit' ? 'on' : ''} onClick={() => setZoom('fit')} disabled={!pts.length}>Fit to leads</button>
-          <button className={zoom === 'all' ? 'on' : ''} onClick={() => setZoom('all')}>All Australia</button>
+        <div className="lead-map-bar">
+          <div className="lead-map-tabs">
+            <button className={zoom === 'fit' ? 'on' : ''} onClick={() => setZoom('fit')} disabled={!pts.length}>Fit to leads</button>
+            <button className={zoom === 'all' ? 'on' : ''} onClick={() => setZoom('all')}>All Australia</button>
+          </div>
+          <div className="lead-map-tabs"><span className="lead-map-lab">Colour</span>{LEAD_MAP_COLOR.map(([k, l]) => <button key={k} className={colorBy === k ? 'on' : ''} onClick={() => setColorBy(k)}>{l}</button>)}</div>
         </div>
         <svg viewBox={`${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${vb.h.toFixed(1)}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Map of leads across Australia">
           {(db.outline || []).map((d, i) => <path key={i} d={d} className="au-land" strokeWidth={sw} />)}
-          {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={dotR(p.leads)} className="au-dot" strokeWidth={sw}><title>{`${p.value} — ${p.leads} lead${p.leads === 1 ? '' : 's'}${p.won ? ` · ${p.won} won` : ''}`}</title></circle>)}
+          {pts.map((p, i) => { const f = dotFill(p); return <circle key={i} cx={p.x} cy={p.y} r={dotR(p.leads)} className="au-dot" strokeWidth={sw} style={f ? { fill: f, stroke: f, fillOpacity: 0.72 } : undefined}><title>{`${p.value} — ${p.leads} lead${p.leads === 1 ? '' : 's'} · ${p.booked || 0} booked (${p.leads ? Math.round((p.booked / p.leads) * 100) : 0}%) · ${p.won || 0} won (${p.leads ? Math.round((p.won / p.leads) * 100) : 0}%)`}</title></circle> })}
         </svg>
+        {colorBy !== 'volume' && <div className="lead-map-legend"><span className="cap">{colorBy === 'book' ? 'Booked %' : 'Won %'} (size = leads):</span><span className="lm-grad" /><span className="cap">low → high</span></div>}
       </div>
-      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
+      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''}{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
     </div>
   )
 }

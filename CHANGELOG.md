@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.31.0 — 2026-07-20 · `PENDING`
+- **Lead map — smarter & more useful:**
+  - **State disambiguation**: the client's dominant state is inferred from the
+    unambiguous answers (postcodes + single-state suburbs), so same-named suburbs
+    in other states (Richmond NSW vs VIC) resolve to the right one.
+  - **Suburb-level precision**: suburb answers now plot at the suburb's own
+    coordinates (not just the postcode centroid).
+  - **Outcome shading**: a Colour toggle (Volume / Booked % / Won %) colours each
+    dot red→green by its conversion rate while dot size stays lead volume — so
+    you see where leads come from *and* where they convert.
+
 ## v3.30.0 — 2026-07-20 · `PENDING`
 - **Lead map — detailed + auto-zoom.** Swapped the rough outline for a detailed
   Australia map with state borders, and the map now **auto-zooms to fit the

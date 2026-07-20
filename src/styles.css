@@ -379,7 +379,11 @@ tbody tr:hover { background: var(--panel-2); }
 .appt-cal-n { font-size: 10px; opacity: .8; font-variant-numeric: tabular-nums; }
 .lead-map-wrap { margin: 10px 0 4px; }
 .lead-map { max-width: 520px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
-.lead-map-tabs { display: inline-flex; gap: 4px; margin-bottom: 8px; }
+.lead-map-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.lead-map-lab { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); align-self: center; margin-right: 2px; }
+.lead-map-tabs { display: inline-flex; gap: 4px; align-items: center; }
+.lead-map-legend { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.lead-map-legend .lm-grad { flex: 0 0 120px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, hsl(0 65% 47%), hsl(65 65% 47%), hsl(130 65% 47%)); }
 .lead-map-tabs button { font-size: 11px; font-weight: 700; padding: 4px 10px; border: 1px solid var(--border-2); background: var(--panel); color: var(--muted); border-radius: 7px; cursor: pointer; }
 .lead-map-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 .lead-map-tabs button:disabled { opacity: .4; cursor: default; }

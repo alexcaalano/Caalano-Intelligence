@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.17.0 — 2026-07-20 · `<pending>`
+## v3.17.0 — 2026-07-20 · `32d40bb`
 - Forms edited in ONE place: Settings Forms tab is now just form names + pipeline
   link; the client Forms view shows pipeline/description read-only with a pencil
   that opens the same form-settings modal.

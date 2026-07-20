@@ -1,0 +1,78 @@
+# Caalano360 — Changelog
+
+Release history for the reporting dashboard. Each release is pinned to the exact
+git commit that produced it, so any version can be redeployed or reverted to.
+
+**How to revert to a release**
+- Inspect a release without changing anything: `git checkout v3.5.0`
+- Roll the live branch back to a release (redeploys it on Netlify):
+  `git checkout claude/reporting-dashboard-multi-platform-ov1wlv`
+  then `git revert --no-edit <bad-commit>..HEAD` (safe, keeps history)
+  or `git reset --hard v3.5.0 && git push --force-with-lease` (hard rollback).
+- Every release below is also a git tag, so `git checkout <tag>` works directly.
+- The live build's exact commit + time is always shown bottom-left in the app
+  ("Last deployed …"), and the current version is shown next to it.
+
+The version number also appears in the app sidebar. Newest first.
+
+---
+
+## v3.9.0 — 2026-07-20 · `<changelog>`
+- Added this changelog and surfaced the release number in the app sidebar.
+
+## v3.8.0 — 2026-07-20 · `c957e3c`
+- Key events: calendars now link **pipeline → stage** (not just stage name), so
+  multi-pipeline clients (e.g. FINR) can target the correct pipeline. Resolution
+  is pipeline-aware end to end (funnel, ordering, calendar merging, green
+  Caalano360 columns). Existing single-pipeline config is unaffected.
+
+## v3.7.0 — 2026-07-20 · `a20253b`
+- Forms: parse Meta Lead Form answers from the `customFields` array (budget,
+  pool type, timeframe…), so CDc_04/CDc_05 segment by their real answers.
+- Credit each contact to the form that brought them in (earliest submission,
+  including the Facebook submission timestamp).
+
+## v3.6.0 — 2026-07-20 · `cb373db`
+- Meta view: Daily trend flex-fills to match the Key Events card height.
+- Agency Overview hides inactive clients from account-health alerts.
+- Settings page defaults its filter to Active clients.
+
+## v3.5.0 — 2026-07-20 · `ce0cb49`
+- Settings moved to server-side persistence (Netlify Blobs) so key events, KPI
+  targets, campaign links and enabled clients survive cache clears and are
+  shared across the team — with one-time migration from browser storage.
+- Settings redesigned as a full page with active/inactive filter + search.
+- Seeded durable default key events for Pool Haus.
+
+## v3.4.0 — 2026-07-20 · `455bc22`
+- Fixed the Agency Overview CRM columns never loading (client `ghl` id was
+  missing from the snapshot, so no requests fired).
+- First pass at reading Meta lead-form array/nested answers; forms segment
+  overlap fixed with per-question horizontal scroll.
+
+## v3.3.0 — 2026-07-20 · `4f98d44`
+- Agency Overview reliability: prominent CRM loading banner, per-row error
+  markers, sortable columns, Spend/Results per-channel hover breakdowns,
+  cost-per-result delta colouring, and a deploy timestamp in the sidebar.
+
+## v3.2.0 — 2026-07-20 · `c710a78`
+- Forms: requested the forms/custom-fields/users/conversations GHL scopes, a
+  read-only forms probe, a per-client By-Form performance tab with answer-level
+  segmentation, and a "Performance by form" section on the Meta tab with
+  click-to-filter drill-in.
+
+## v3.1.0 — 2026-07-20 · `b3ad8e6`
+- Tracking health calls out manual (CRM UI) opportunities to show the true
+  ad-vs-CRM gap.
+- Agency Overview full comparison table (results → revenue) with vs-previous
+  deltas and All/Paid/Non-Paid filters.
+
+## v3.0.0 — 2026-07-19 · `43dadea`
+- Key events framework: green Caalano360 per-event column groups (calendar /
+  stage / won), booked-calendar funnel with cost per booked appointment, calendar
+  ↔ stage linking with the stage as fallback, readable funnel with next-step
+  conversion, and won keyed on the won status. The baseline "version 3.0".
+
+---
+
+_Older history predates formal release numbering; see `git log` for the full record._

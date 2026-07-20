@@ -875,14 +875,15 @@ export default async (req) => {
       out.paid = add(out.meta, out.google)
       return out
     }
+    // One buildAttribution per request (period=cur | prev) so a request never
+    // exceeds the function timeout - the frontend fires both and merges.
+    const period = url.searchParams.get('period') === 'prev' ? 'prev' : 'cur'
+    let fr = from, t = to
+    if (period === 'prev') { const pr = prevRange(from, to); if (!pr.from) return json({ scope: 'ovrow', client, period, data: null }); fr = pr.from; t = pr.to }
     try {
-      const pr = prevRange(from, to)
-      const [aCur, aPrev] = await Promise.all([
-        buildAttribution(cc.ghl, from, to),
-        pr.from ? buildAttribution(cc.ghl, pr.from, pr.to).catch(() => null) : Promise.resolve(null),
-      ])
-      return json({ scope: 'ovrow', client, connected: true, cur: summ(aCur), prev: aPrev ? summ(aPrev) : null }, 200, true)
-    } catch (e) { return json({ scope: 'ovrow', client, error: String(e.message || e).slice(0, 160) }, 200) }
+      const attr = await buildAttribution(cc.ghl, fr, t)
+      return json({ scope: 'ovrow', client, period, connected: true, data: summ(attr) }, 200, true)
+    } catch (e) { return json({ scope: 'ovrow', client, period, error: String(e.message || e).slice(0, 160), data: null }, 200) }
   }
 
   // Cohort maturation: leads by acquisition week through the funnel.

@@ -423,19 +423,30 @@ function useOvRows(rows, range, nonce = 0) {
   useEffect(() => {
     let alive = true
     setMap(Object.fromEntries(ghlIds.map((id) => [id, { status: 'loading' }])))
-    const queue = [...ghlIds]
+    const one = (id, period) => {
+      const pc = primaryCalOf(id)
+      const q = `${rangeQuery(range)}&cal=${encodeURIComponent(pc.cals)}&stage=${encodeURIComponent(pc.stage)}&period=${period}`
+      return fetch(`/.netlify/functions/windsor?scope=ovrow&client=${id}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+        .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+        .then((j) => (j && j.data ? j.data : null))
+        .catch(() => null)
+    }
+    // Current-period first (fills the columns), previous after (fills deltas).
+    const queue = [...ghlIds.map((id) => [id, 'cur']), ...ghlIds.map((id) => [id, 'prev'])]
     const runNext = () => {
       if (!alive) return
-      const id = queue.shift(); if (id == null) return
-      const pc = primaryCalOf(id)
-      const q = `${rangeQuery(range)}&cal=${encodeURIComponent(pc.cals)}&stage=${encodeURIComponent(pc.stage)}`
-      fetch(`/.netlify/functions/windsor?scope=ovrow&client=${id}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-        .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-        .then((j) => { if (alive) setMap((m) => ({ ...m, [id]: (j && j.cur) ? { status: 'ok', data: j } : { status: 'err' } })) })
-        .catch(() => { if (alive) setMap((m) => ({ ...m, [id]: { status: 'err' } })) })
-        .finally(() => { if (alive) runNext() })
+      const item = queue.shift(); if (!item) return
+      const [id, period] = item
+      one(id, period).then((data) => {
+        if (!alive) return
+        setMap((m) => {
+          const e = { ...(m[id] || { status: 'loading' }) }
+          if (period === 'cur') { e.cur = data; e.status = data ? 'ok' : 'err' } else e.prev = data
+          return { ...m, [id]: e }
+        })
+      }).finally(() => { if (alive) runNext() })
     }
-    for (let i = 0; i < Math.min(4, queue.length); i++) runNext() // ≤4 heavy GHL pulls at once
+    for (let i = 0; i < Math.min(6, queue.length); i++) runNext()
     return () => { alive = false }
   }, [depKey]) // eslint-disable-line
   return map
@@ -450,20 +461,70 @@ function MiniDelta({ cur, prev, goodWhenDown = false, neutral = false }) {
   const cls = neutral ? 'flat' : (goodWhenDown ? (up ? 'down' : 'up') : (up ? 'up' : 'down'))
   return <span className={`mini-delta ${cls}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct), 0)}</span>
 }
-// Results / Cost-per-result channel breakdown popup.
+// Fixed-position hover popup: escapes the .table-wrap overflow clip (the old
+// absolutely-positioned popup got cut off on the bottom rows / edge columns).
+// Positions itself against the trigger's viewport rect, flipping above when the
+// trigger sits low in the viewport.
+function HoverPop({ children, className = '', render }) {
+  const ref = React.useRef(null)
+  const [pos, setPos] = useState(null)
+  const show = () => {
+    const el = ref.current; if (!el) return
+    const b = el.getBoundingClientRect()
+    const below = b.bottom < window.innerHeight * 0.58
+    setPos({
+      x: Math.min(Math.max(b.left + b.width / 2, 130), window.innerWidth - 130),
+      below, y: below ? b.bottom + 6 : window.innerHeight - b.top + 6,
+    })
+  }
+  return (
+    <span className={`hp-anchor ${className}`} ref={ref} onMouseEnter={show} onMouseMove={pos ? undefined : show} onMouseLeave={() => setPos(null)}>
+      {children}
+      {pos && (
+        <span className="hp-fixed" style={{ left: pos.x, [pos.below ? 'top' : 'bottom']: pos.y }}>
+          {render()}
+        </span>
+      )}
+    </span>
+  )
+}
+// A signed % chip for the channel-breakdown popups (cur vs prev).
+function ChanDelta({ cur, prev, goodWhenDown = false }) {
+  if (cur == null || prev == null || !prev) return null
+  const pct = ((cur - prev) / Math.abs(prev)) * 100
+  if (!isFinite(pct)) return null
+  const up = pct >= 0
+  const cls = goodWhenDown ? (up ? 'down' : 'up') : (up ? 'up' : 'down')
+  return <span className={`hp-d ${cls}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct), 0)}</span>
+}
+// Spend channel-breakdown popup: per-channel spend + which channel is up/down.
+function SpendPop({ children, r, currency }) {
+  const money = (v) => fmtCurrency(v, currency)
+  return (
+    <HoverPop render={() => (
+      <span className="hp-body">
+        <span className="hp-t">Spend by channel</span>
+        {r.hasMeta && <span className="hp-r"><span className="ov-pd meta">Meta</span><span className="hp-val">{money(r.metaSpend)}<ChanDelta cur={r.metaSpend} prev={r.prevMetaSpend} goodWhenDown /></span></span>}
+        {r.hasGoogle && <span className="hp-r"><span className="ov-pd google">Google</span><span className="hp-val">{money(r.googleSpend)}<ChanDelta cur={r.googleSpend} prev={r.prevGoogleSpend} goodWhenDown /></span></span>}
+        <span className="hp-r hp-tot"><span>Total</span><span className="hp-val">{money(r.spend)}<ChanDelta cur={r.spend} prev={r.prevSpend} goodWhenDown /></span></span>
+      </span>
+    )}>{children}</HoverPop>
+  )
+}
+// Results / Cost-per-result channel breakdown popup (cost + which channel up/down).
 function ResultsPop({ children, r, currency }) {
   const money = (v) => fmtCurrency(v, currency)
   const mCpl = r.metaLeads ? r.metaSpend / r.metaLeads : null
   const gCpc = r.googleConv ? r.googleSpend / r.googleConv : null
   return (
-    <span className="ov-pop">{children}
-      <span className="ov-pop-body">
-        <span className="ov-pop-t">Result breakdown</span>
-        {r.hasMeta && <span className="ov-pop-r"><span className="ov-pd meta">Meta</span> {fmtNumber(r.metaLeads)} leads{mCpl != null ? ` · ${money(mCpl)}/lead` : ''}</span>}
-        {r.hasGoogle && <span className="ov-pop-r"><span className="ov-pd google">Google</span> {fmtNumber(r.googleConv)} conv.{gCpc != null ? ` · ${money(gCpc)}/conv` : ''}</span>}
-        <span className="ov-pop-r ov-pop-tot">Total {fmtNumber(r.conversions)} results{r.conversions ? ` · ${money(r.spend / r.conversions)}/result` : ''}</span>
+    <HoverPop render={() => (
+      <span className="hp-body">
+        <span className="hp-t">Results by channel · vs previous</span>
+        {r.hasMeta && <span className="hp-r"><span className="ov-pd meta">Meta</span><span className="hp-val">{fmtNumber(r.metaLeads)} leads{mCpl != null ? ` · ${money(mCpl)}/lead` : ''}<ChanDelta cur={r.metaLeads} prev={r.prevMetaLeads} /></span></span>}
+        {r.hasGoogle && <span className="hp-r"><span className="ov-pd google">Google</span><span className="hp-val">{fmtNumber(r.googleConv)} conv.{gCpc != null ? ` · ${money(gCpc)}/conv` : ''}<ChanDelta cur={r.googleConv} prev={r.prevGoogleConv} /></span></span>}
+        <span className="hp-r hp-tot"><span>Total</span><span className="hp-val">{fmtNumber(r.conversions)}{r.conversions ? ` · ${money(r.spend / r.conversions)}/result` : ''}<ChanDelta cur={r.conversions} prev={r.prevResults} /></span></span>
       </span>
-    </span>
+    )}>{children}</HoverPop>
   )
 }
 const OV_FILTERS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid']]
@@ -474,6 +535,8 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
   const sorted = [...rows].sort((a, b) => b.spend - a.spend)
   const chanKey = f === 'all' ? 'all' : f === 'paid' ? 'paid' : 'other'
   const paidView = f !== 'nonpaid' // ad spend/results only exist for paid
+  const crmIds = rows.filter((r) => r.c.ghl).map((r) => r.id)
+  const crmLoading = crmIds.filter((id) => !ov[id] || ov[id].status === 'loading').length
   const rate = (n, d) => (d ? (n / d) * 100 : null)
   const Cell = ({ v, cur, prev, gd, neutral, loading, dash }) => (
     <td className="ov-td">{loading ? <span className="ov-spin" /> : dash ? <span className="ov-dash">-</span> : <div className="ov-cell"><span className="ov-v">{v}</span><MiniDelta cur={cur} prev={prev} goodWhenDown={gd} neutral={neutral} /></div>}</td>
@@ -483,6 +546,7 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
       <div className="ov-cmp-head">
         <div className="chan-toggle ov-filter">{OV_FILTERS.map(([k, lbl]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{lbl}</button>)}</div>
         <span className="ov-cmp-note">vs previous {rangeLabel(range).toLowerCase()} · green = better, red = worse{f === 'nonpaid' ? ' · ad-cost columns N/A for non-paid' : ''}</span>
+        {crmLoading > 0 && <span className="ov-loading"><span className="ov-spin" /> Loading CRM data · {crmIds.length - crmLoading}/{crmIds.length} clients</span>}
       </div>
       <div className="table-wrap"><table className="ov-cmp">
         <thead><tr>
@@ -498,9 +562,9 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
           const pResF = paidView ? r.prevResults : 0
           const o = ov[r.id]
           const loading = !!r.c.ghl && (!o || o.status === 'loading')
-          const ok = o && o.status === 'ok' && o.data && o.data.cur
-          const cur = ok ? o.data.cur[chanKey] : null
-          const prev = ok && o.data.prev ? o.data.prev[chanKey] : null
+          const ok = o && o.status === 'ok' && o.cur
+          const cur = ok ? o.cur[chanKey] : null
+          const prev = ok && o.prev ? o.prev[chanKey] : null
           const noCrm = !r.c.ghl
           // GHL cell helper: dash when no CRM / errored, spinner while loading.
           const g = (v, curN, prevN, gd, neutral) => ({ v, cur: curN, prev: prevN, gd, neutral, loading, dash: noCrm || (!loading && !ok) })
@@ -515,7 +579,7 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
           return (
             <tr key={r.id} onClick={() => onPick(r.c)}>
               <td className="ov-name"><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div>{r.name}<small>{r.industry}</small></div></div></td>
-              <Cell v={paidView ? money(spendF) : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
+              <Cell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
               <Cell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
               <Cell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
               <Cell {...g(cur ? fmtNumber(cur.opps) : '-', cur?.opps, prev?.opps)} />
@@ -944,8 +1008,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
     .map((f) => {
       const cre = uSet(f.creatives)
       const ads = m.ads.filter((a) => cre.has(unorm(a.name)))
-      const adSpend = ads.reduce((s, a) => s + a.spend, 0), impr = ads.reduce((s, a) => s + a.impressions, 0), lc = ads.reduce((s, a) => s + a.linkClicks, 0)
-      return { ...f, adSpend, impr, cvr: lc ? (f.leads / lc) * 100 : null, cpl: f.leads ? adSpend / f.leads : null, cBooked: f.booked ? adSpend / f.booked : null, cWon: f.won ? adSpend / f.won : null, roas: adSpend ? f.revenue / adSpend : null }
+      const adSpend = ads.reduce((s, a) => s + a.spend, 0), impr = ads.reduce((s, a) => s + a.impressions, 0), lc = ads.reduce((s, a) => s + a.linkClicks, 0), metaLeads = ads.reduce((s, a) => s + a.leads, 0)
+      return { ...f, adSpend, impr, metaLeads, cvr: lc ? (metaLeads / lc) * 100 : null, cpl: f.leads ? adSpend / f.leads : null, cBooked: f.booked ? adSpend / f.booked : null, cWon: f.won ? adSpend / f.won : null, roas: adSpend ? f.revenue / adSpend : null }
     })
     .sort((a, b) => b.adSpend - a.adSpend)
   const t = formT

@@ -1209,6 +1209,67 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
   }
 }
 
+// --- Per-user (sales rep) performance --------------------------------------
+// Aggregates the opportunity cohort by assigned user: leads, per-stage reach
+// (for the key-events funnel), booked / shown (from the appointment feed joined
+// by contact), won / revenue / lost / open, average close time, and a per-
+// pipeline split. Used by the client's Users tab. Optionally scoped to one
+// pipeline. Ad-cost-per-outcome is added by the caller (spend isn't per-user).
+export async function buildUserPerformance(locationId, from, to, opts = {}) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const DAY = 86400000
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  const [wideOpps, pipelines, appts, userRows] = await Promise.all([
+    allOpportunities(locTok, locationId, wideFrom, to, 2000),
+    fetchPipelines(locTok, locationId),
+    fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map() })),
+    ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
+  const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
+  const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))
+  const nameOf = (id) => (id === 'unassigned' ? 'Unassigned' : (userName[id] || 'User ' + String(id).slice(-4)))
+  const opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  const cohort = opts.pipeline ? opps.filter((o) => o.pipelineId === opts.pipeline) : opps
+  const U = new Map()
+  const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, stages: new Map(), byPipe: new Map() }; U.set(uid, u) } return u }
+  for (const o of cohort) {
+    const uid = o.assignedTo || 'unassigned'
+    const u = getU(uid)
+    u.leads++
+    const st = String(o.status || '').toLowerCase(); const val = num(o.monetaryValue)
+    if (st === 'won') { u.won++; u.revenue += val; const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || ''); const c = Date.parse(o.createdAt); if (isFinite(w) && isFinite(c)) { const d = (w - c) / DAY; if (d >= 0 && d < 400) { u.closeSum += d; u.closeN++ } } }
+    else if (st === 'lost' || st === 'abandoned') u.lost++
+    else u.open++
+    // Cumulative stage reach: an opp at position P reached every stage with pos<=P;
+    // a won opp reached them all.
+    const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
+    if (pi) for (const s of pi.stages) { if (st === 'won' || (pos >= 0 && s.pos <= pos)) u.stages.set(s.name, (u.stages.get(s.name) || 0) + 1) }
+    const pid = o.pipelineId || 'none'; let bp = u.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, won: 0, revenue: 0 }; u.byPipe.set(pid, bp) } bp.leads++; if (st === 'won') { bp.won++; bp.revenue += val }
+    const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
+    if (f) { if (f.bookedInPeriod) u.booked++; if (f.shownByStatus) u.shown++; if (f.cancelledInPeriod) u.cancelled++ }
+  }
+  const users = [...U.values()].map((u) => ({
+    id: u.id, name: nameOf(u.id),
+    leads: u.leads, open: u.open, lost: u.lost, booked: u.booked, shown: u.shown, cancelled: u.cancelled, won: u.won, revenue: Math.round(u.revenue),
+    bookRate: u.leads ? Math.round((u.booked / u.leads) * 100) : null,
+    showRate: u.booked ? Math.round((u.shown / u.booked) * 100) : null,
+    winRate: u.leads ? Math.round((u.won / u.leads) * 100) : null,
+    avgDeal: u.won ? Math.round(u.revenue / u.won) : null,
+    avgCloseDays: u.closeN ? Math.round(u.closeSum / u.closeN) : null,
+    stages: Object.fromEntries(u.stages),
+    byPipeline: [...u.byPipe.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue) })).sort((a, b) => b.leads - a.leads),
+  })).sort((a, b) => b.leads - a.leads)
+  return {
+    connected: true, tz, users,
+    pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s) => s.name) })),
+  }
+}
+
 export async function buildAttribution(locationId, from, to, opts = {}) {
   // Lite mode (agency overview rows): a shorter opportunity lookback + smaller
   // cap and no lost-reason fetch, so the ~13 rows each stay well under the

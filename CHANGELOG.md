@@ -17,6 +17,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.35.0 — 2026-07-20 · `PENDING`
+- **New Users tab (replaces the client's CRM sub-tab).** A full sales-rep
+  performance interface for each account, grouping every opportunity by its
+  **assigned user**:
+  - **Scorecards** — reps with assigned leads, total leads, booked (+ shown),
+    won (+ win rate) and revenue (+ ad spend) for the range.
+  - **Won & revenue by rep** — horizontal bar chart ranking the top reps.
+  - **Sortable leaderboard** — Leads, Booked, Book %, Shown, Show %, Won,
+    Win %, Revenue, Avg deal, Avg close (days) and **Cost / Won**. Click any
+    column to sort; click a rep row to expand a **Leads → Booked → Shown → Won
+    funnel** (with step conversion %) plus a **by-pipeline** breakdown.
+  - **Key events reached, per rep** — a matrix of how many of each rep's leads
+    reached each configured key pipeline stage (cumulative), driven by the same
+    Settings → Key events configuration as the rest of Caalano360.
+  - Booked / Shown / Cancelled come from the appointment feed joined on each
+    rep's assigned contacts; Won / Revenue from won opportunities. **Cost / Won**
+    divides the account's total ad spend by a rep's won deals — a *blended*
+    efficiency measure (ad spend isn't caused by the rep), clearly labelled as
+    such. Includes an optional **pipeline selector** to scope the whole view.
+
 ## v3.34.0 — 2026-07-20 · `PENDING`
 - **Full Meta drill-down.** Every level is clickable and filters the levels below
   it *and* the Performance-by-form table: click a **campaign** or **ad set** to

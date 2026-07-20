@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
 function parseHours(url) {
@@ -884,6 +884,24 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'hours', client, connected: false })
     try { return json({ scope: 'hours', client, ...(await deriveBusinessHours(cc.ghl)) }, 200, true) }
     catch (e) { return json({ scope: 'hours', client, error: String(e.message || e).slice(0, 200) }, 200) }
+  }
+
+  // Per-user (sales rep) performance for the client's Users tab.
+  if (url.searchParams.get('scope') === 'users') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'users', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'users', client, connected: false })
+    const pipeline = url.searchParams.get('pipeline') || null
+    try {
+      const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+      const [perf, fb, gg] = await Promise.all([
+        buildUserPerformance(cc.ghl, from, to, { pipeline }),
+        cc.meta ? windsorFetch('facebook', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+        cc.google ? windsorFetch('google_ads', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
+      ])
+      const totalSpend = Math.round(fb.reduce((s, r) => s + num(r.spend), 0) + gg.reduce((s, r) => s + num(r.spend), 0))
+      return json({ scope: 'users', client, period: { from, to, preset }, totalSpend, ...perf }, 200, true)
+    } catch (e) { return json({ scope: 'users', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
   // Appointment insights: booking lead time, self vs staff booked, downstream

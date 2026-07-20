@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.34.0'
+const APP_VERSION = '3.35.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3963,12 +3963,128 @@ function TimingDebug({ clientId, range }) {
     </div>
   )
 }
+/* ============ Users (per-rep performance) ============ */
+function UsersView({ clientId, range, nonce, currency }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [pipe, setPipe] = useState('all')
+  const [sort, setSort] = useState({ key: 'won', dir: -1 })
+  const [open, setOpen] = useState(null) // expanded user id
+  const money = (v) => fmtCurrency(v, currency)
+  const pipeParam = pipe !== 'all' ? `&pipeline=${encodeURIComponent(pipe)}` : ''
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
+    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
+      .finally(() => clearTimeout(timer))
+    return () => { alive = false; ctl.abort() }
+  }, [clientId, rangeQuery(range), pipeParam, nonce])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading user performance…" /></div>
+  const d = st.data || {}
+  if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">👤</div><b>Couldn't load user performance.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
+  const users = d.users || []
+  const pipes = d.pipelines || []
+  const totalSpend = d.totalSpend || 0
+  const pipeSel = pipes.length > 1 && (
+    <label className="appt-f"><span>Pipeline</span><select value={pipe} onChange={(e) => { setPipe(e.target.value); setOpen(null) }}><option value="all">All pipelines</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+  )
+  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b></div></div>
+  // Configured stage key events -> matrix columns (stage reach per user).
+  const resolvedKe = mergeCalKeyEvents(normKeyEvents(keyEventsForPipe(loadKeyEvents(clientId), pipe === 'all' ? 'all' : pipe)))
+  const stageCols = [...new Set(resolvedKe.filter((e) => !WON_RE.test(e.label)).map((e) => (e.kind === 'calendar' ? e.stage : e.ref)).filter(Boolean))]
+  const withCost = users.map((u) => ({ ...u, costWon: u.won && totalSpend ? totalSpend / u.won : null, costBooked: u.booked && totalSpend ? totalSpend / u.booked : null }))
+  const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
+  const sorted = [...withCost].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return (av - bv) * sort.dir })
+  const tot = users.reduce((a, u) => ({ leads: a.leads + u.leads, booked: a.booked + u.booked, shown: a.shown + u.shown, won: a.won + u.won, revenue: a.revenue + u.revenue }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
+  const chartData = withCost.slice().sort((a, b) => b.won - a.won).slice(0, 12).map((u) => ({ name: u.name.length > 14 ? u.name.slice(0, 13) + '…' : u.name, Won: u.won, Revenue: u.revenue }))
+  const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
+  return (
+    <div className="timing-view">
+      <div className="appt-head">
+        <div><h3 style={{ margin: '0 0 2px' }}>Users — sales-rep performance</h3><p className="cap" style={{ margin: 0 }}>Opportunities grouped by their <b>assigned user</b>: full funnel, per-stage reach, win rate, revenue and time-to-close. Cost figures divide the account's ad spend by each rep's outcomes (a blended efficiency — spend isn't caused by the rep).</p></div>
+        {pipeSel}
+      </div>
+      <div className="timing-scards">
+        <div className="tm-sc hero"><span className="tm-lab">Reps</span><b>{fmtNumber(users.length)}</b><span className="tm-sub">with assigned leads</span></div>
+        <div className="tm-sc"><span className="tm-lab">Leads</span><b>{fmtNumber(tot.leads)}</b><span className="tm-sub">assigned in range</span></div>
+        <div className="tm-sc"><span className="tm-lab">Booked</span><b>{fmtNumber(tot.booked)}</b><span className="tm-sub">{fmtNumber(tot.shown)} shown</span></div>
+        <div className="tm-sc"><span className="tm-lab">Won</span><b>{fmtNumber(tot.won)}</b><span className="tm-sub">{tot.leads ? Math.round((tot.won / tot.leads) * 100) : 0}% win rate</span></div>
+        <div className="tm-sc"><span className="tm-lab">Revenue</span><b>{money(tot.revenue)}</b><span className="tm-sub">{totalSpend ? `${money(totalSpend)} ad spend` : ''}</span></div>
+      </div>
+
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Won &amp; revenue by rep</div>
+        <ResponsiveContainer width="100%" height={Math.max(160, chartData.length * 34 + 30)}>
+          <ComposedChart data={chartData} layout="vertical" margin={{ left: 10, right: 12, top: 6 }}>
+            <CartesianGrid stroke="var(--border)" horizontal={false} />
+            <XAxis type="number" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+            <YAxis type="category" dataKey="name" width={130} fontSize={11} stroke="var(--muted)" interval={0} />
+            <Tooltip formatter={(v, n) => [n === 'Revenue' ? money(v) : fmtNumber(v), n]} />
+            <Legend />
+            <Bar dataKey="Won" fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={16} />
+            <Bar dataKey="Revenue" fill="#4f7cff" radius={[0, 3, 3, 0]} maxBarSize={16} yAxisId="rev" hide />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
+        <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl">
+          <thead><tr><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th></tr></thead>
+          <tbody>{sorted.map((u) => {
+            const isOpen = open === u.id
+            return (
+              <React.Fragment key={u.id}>
+                <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setOpen(isOpen ? null : u.id)}>
+                  <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {u.name}</td>
+                  <td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{u.bookRate == null ? '-' : `${u.bookRate}%`}</td>
+                  <td>{fmtNumber(u.shown)}</td><td>{u.showRate == null ? '-' : `${u.showRate}%`}</td>
+                  <td>{fmtNumber(u.won)}</td><td>{u.winRate == null ? '-' : `${u.winRate}%`}</td>
+                  <td>{money(u.revenue)}</td><td>{u.avgDeal != null ? money(u.avgDeal) : '-'}</td><td>{u.avgCloseDays != null ? `${u.avgCloseDays}d` : '-'}</td>
+                  <td>{u.costWon != null ? money(u.costWon) : '-'}</td>
+                </tr>
+                {isOpen && <tr className="u-detail-row"><td colSpan={12}>
+                  <div className="u-detail">
+                    <div className="u-funnel">
+                      {[['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]].map(([lbl, n], i, arr) => {
+                        const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null
+                        return <div className="u-fn-row" key={lbl}><span className="u-fn-lab">{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span></div>
+                      })}
+                    </div>
+                    {u.byPipeline && u.byPipeline.length > 1 && <div className="u-pipes">
+                      <div className="cap" style={{ fontWeight: 700, marginBottom: 4 }}>By pipeline</div>
+                      <table className="mini-tbl"><thead><tr><th className="lft">Pipeline</th><th>Leads</th><th>Won</th><th>Revenue</th></tr></thead><tbody>{u.byPipeline.map((p) => <tr key={p.id}><td className="lft">{p.name}</td><td>{fmtNumber(p.leads)}</td><td>{fmtNumber(p.won)}</td><td>{money(p.revenue)}</td></tr>)}</tbody></table>
+                    </div>}
+                  </div>
+                </td></tr>}
+              </React.Fragment>
+            )
+          })}</tbody>
+        </table></div>
+        <p className="caveat" style={{ marginTop: 10 }}>Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended — it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</p>
+      </div>
+
+      {stageCols.length > 0 && <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Key events reached, per rep</div>
+        <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl">
+          <thead><tr><th className="lft">Rep</th><th>Leads</th>{stageCols.map((s) => <th key={s} title={s}>{s.length > 14 ? s.slice(0, 13) + '…' : s}</th>)}<th>Won</th></tr></thead>
+          <tbody>{sorted.map((u) => (
+            <tr key={u.id}><td className="lft">{u.name}</td><td>{fmtNumber(u.leads)}</td>{stageCols.map((s) => <td key={s}>{fmtNumber(u.stages[s] || 0)}</td>)}<td>{fmtNumber(u.won)}</td></tr>
+          ))}</tbody>
+        </table></div>
+        <p className="caveat" style={{ marginTop: 10 }}>How many of each rep's leads reached each configured key stage (cumulative — reaching a later stage counts the earlier ones). Configure the stages in Settings → the client → Key events.</p>
+      </div>}
+    </div>
+  )
+}
 function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
   useEffect(() => { setBaked(undefined); setCrmAvgClose(null); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
-  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'crm' : tab === 'overall' ? 'blend' : null
+  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'overall' ? 'blend' : null
   const live = useLiveDeep(client.id, channel, range, nonce)
   // Capture the CRM's average sales-cycle length whenever the blend loads, so the
   // maturity badge stays put as the user moves between tabs.
@@ -3982,7 +4098,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
   // ghl ids live in config.json), so resolve the config entry by id for tab
   // gating. Google tab keys off the config account id; Cohorts needs the CRM.
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
-  const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
+  const tabs = [{ id: 'overall', label: 'Caalano360' }]
+  if (cfg.ghl) tabs.push({ id: 'users', label: 'Users' })
+  tabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) tabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
   if (cfg.ghl) tabs.push({ id: 'forms', label: 'Forms' })
@@ -4008,13 +4126,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
       </div>
       <div style={{ marginTop: 16 }}>
         {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
-        {tab === 'crm' && (
-          live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano Systems CRM…" /></div>
-            : live.data && live.data.connected === false ? <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected yet.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>Authorise the agency connection at <code>/.netlify/functions/caalano-connect</code> to unlock live CRM + UTM attribution.</p></div>
-              : live.data && live.data.crm ? <CrmGhl crm={live.data.crm} currency={data.currency} clientId={client.id} />
-                : live.data && live.data.error ? <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load CRM for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{live.data.error}</p><p style={{ maxWidth: 460, margin: '8px auto 0' }}>If this is a token / access error, the agency app may not have access to this sub-account. Try the audit endpoint <code>?scope=ghlaudit</code>.</p></div>
-                  : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
-        )}
+        {tab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}

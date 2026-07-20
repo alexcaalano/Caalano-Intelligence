@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -827,6 +827,16 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'forms', client, connected: false, forms: [] })
     try { return json({ scope: 'forms', client, period: { from, to, preset }, ...(await buildForms(cc.ghl, from, to)) }, 200, true) }
     catch (e) { return json({ scope: 'forms', client, error: String(e.message || e).slice(0, 200), forms: [] }, 200) }
+  }
+
+  // Speed to Lead: time from lead-in to first manual (human) outbound message.
+  if (url.searchParams.get('scope') === 'speed') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'speed', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'speed', client, connected: false })
+    const sample = Math.min(Number(url.searchParams.get('sample')) || 60, 120)
+    try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample })) }, 200, true) }
+    catch (e) { return json({ scope: 'speed', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
   // Read-only probe of a client's forms / submissions / custom fields, to see

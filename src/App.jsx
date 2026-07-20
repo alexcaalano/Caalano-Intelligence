@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.19.0'
+const APP_VERSION = '3.20.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3230,7 +3230,7 @@ function FormsCharts({ forms }) {
     <div className="forms-charts">
       <div className="card chart-card"><h3>Lead share by form</h3>
         <ResponsiveContainer width="100%" height={230}>
-          <PieChart><Pie data={pie} dataKey="value" nameKey="name" innerRadius={46} outerRadius={82} paddingAngle={2}>{pie.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip formatter={(v) => fmtNumber(v) + ' leads'} /></PieChart>
+          <PieChart><Pie data={pie} dataKey="value" nameKey="name" cx="34%" innerRadius={46} outerRadius={82} paddingAngle={2}>{pie.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip formatter={(v) => fmtNumber(v) + ' leads'} /><Legend layout="vertical" align="right" verticalAlign="middle" iconType="circle" wrapperStyle={{ fontSize: 11, lineHeight: '16px' }} /></PieChart>
         </ResponsiveContainer>
       </div>
       <div className="card chart-card"><h3>Funnel by form</h3>
@@ -3328,6 +3328,70 @@ function FormsView({ clientId, currency, range, nonce }) {
   )
 }
 
+/* ============ Timing (Speed to Lead) ============ */
+function fmtDuration(min) {
+  if (min == null) return '-'
+  if (min < 1) return '<1 min'
+  if (min < 60) return `${Math.round(min)} min`
+  if (min < 1440) { const h = Math.floor(min / 60); const m = Math.round(min % 60); return m ? `${h}h ${m}m` : `${h}h` }
+  const d = Math.floor(min / 1440); const h = Math.round((min % 1440) / 60); return h ? `${d}d ${h}h` : `${d}d`
+}
+function TimingView({ clientId, range, nonce }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [showDbg, setShowDbg] = useState(false)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
+    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
+      .finally(() => clearTimeout(timer))
+    return () => { alive = false; ctl.abort() }
+  }, [clientId, rangeQuery(range), nonce])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Measuring speed to lead… (sampling recent leads' conversations)" /></div>
+  const d = st.data || {}
+  if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">⏱️</div><b>Couldn't measure speed to lead.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
+  if (!d.sampled) return <div className="card empty-deep"><div className="big">⏱️</div><b>No leads with conversations in this range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Speed to Lead samples recent leads and reads their conversation history. Widen the date range to include leads that were messaged.</p></div>
+  const maxB = Math.max(1, ...d.buckets.map((b) => b.count))
+  const fastCount = d.buckets.filter((b) => /5 min|5-15|15-60/.test(b.label)).reduce((a, b) => a + b.count, 0)
+  return (
+    <div className="timing-view">
+      <div className="card timing-intro">
+        <h3 style={{ margin: '0 0 4px' }}>Speed to Lead</h3>
+        <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message</b> sent to them. Automated workflow / campaign / bulk messages are excluded, so this reflects how fast a person actually reaches out. Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</p>
+      </div>
+      <div className="timing-scards">
+        <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
+        <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
+        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
+        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{d.measured}</b><span className="tm-sub">of {d.sampled} sampled</span></div>
+        <div className="tm-sc warn"><span className="tm-lab">Only automation</span><b>{d.onlyAuto}</b><span className="tm-sub">no human message yet</span></div>
+        <div className="tm-sc warn"><span className="tm-lab">No outreach</span><b>{d.noOutbound}</b><span className="tm-sub">no outbound at all</span></div>
+      </div>
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>How fast leads get a human reply</div>
+        <div className="timing-bars">
+          {d.buckets.map((b) => (
+            <div className="tm-bar-row" key={b.label}>
+              <span className="tm-bar-lab">{b.label}</span>
+              <span className="tm-bar-track"><span className="tm-bar-fill" style={{ width: `${(b.count / maxB) * 100}%` }} /></span>
+              <span className="tm-bar-val">{b.count}</span>
+            </div>
+          ))}
+        </div>
+        <p className="caveat" style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion — the first few minutes matter most.</p>
+      </div>
+      <div className="card">
+        <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How manual vs automated is decided ({(d.sourceBreakdown || []).length} message sources)</button>
+        {showDbg && <>
+          <p className="cap" style={{ marginTop: 8 }}>A message counts as <b>manual</b> when it's attributed to a user and its source isn't an automation (workflow, campaign, bulk, trigger, API). Below are the outbound message sources seen in the sample — use this to confirm the classification looks right for this client.</p>
+          <div className="table-wrap"><table className="mini-tbl"><thead><tr><th>Message source</th><th>Count</th></tr></thead><tbody>{(d.sourceBreakdown || []).map((s) => <tr key={s.source}><td>{s.source}</td><td>{s.count}</td></tr>)}{!(d.sourceBreakdown || []).length && <tr><td colSpan={2} className="cap">No outbound messages in the sample.</td></tr>}</tbody></table></div>
+        </>}
+      </div>
+    </div>
+  )
+}
 function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
@@ -3351,6 +3415,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
   if (cfg.google || client.google) tabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
   if (cfg.ghl) tabs.push({ id: 'forms', label: 'Forms' })
+  if (cfg.ghl) tabs.push({ id: 'timing', label: 'Timing' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
     if (live.status !== 'ok' || !live.data || !live.data[ch]) return false
@@ -3382,6 +3447,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
         {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
         {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {tab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
+        {tab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} />}
       </div>
     </>
   )

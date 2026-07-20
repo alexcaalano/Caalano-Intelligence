@@ -727,6 +727,117 @@ export async function attributionCoverage(locationId, from, to) {
   return { opps: opps.length, attributed, meta: ch.meta, google: ch.google, other: ch.other }
 }
 
+// --- Speed to Lead ---------------------------------------------------------
+// Time from a lead coming in (opportunity created) to the FIRST *manual* (human,
+// non-automated) outbound message to that contact. Automated sends (workflows /
+// campaigns / bulk) are excluded so this measures how fast a person actually
+// reaches out. Expensive (a conversations + messages call per contact), so it
+// samples the most recent N leads and runs with a small concurrency pool + a
+// wall-clock budget. Returns a distribution + median/avg + a source breakdown so
+// the manual-vs-automated classification can be sanity-checked.
+const AUTO_SRC_RE = /workflow|campaign|bulk|trigger|automat|api\b|integration|zapier|rule|sequence/i
+function classifyOutbound(m) {
+  const src = String(m.source || '').toLowerCase()
+  if (AUTO_SRC_RE.test(src)) return 'automated'
+  // A human send from the CRM UI carries the sending user's id; workflow/campaign
+  // sends generally don't. Treat a user-attributed, non-automated send as manual.
+  if (m.userId || m.user_id) return 'manual'
+  return src === 'app' || src === '' || src === 'ui' ? 'manual' : 'automated'
+}
+// Bounded-concurrency map (no external deps) - runs `fn` over items, `n` at once.
+async function mapPool(items, n, fn) {
+  const out = new Array(items.length); let i = 0
+  const workers = new Array(Math.min(n, items.length)).fill(0).map(async () => {
+    while (i < items.length) { const idx = i++; try { out[idx] = await fn(items[idx], idx) } catch { out[idx] = null } }
+  })
+  await Promise.all(workers)
+  return out
+}
+export async function buildSpeedToLead(locationId, from, to, opts = {}) {
+  const sample = Math.min(opts.sample || 60, 120)
+  const budgetMs = opts.budgetMs || 22000
+  const started = Date.now()
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  // Leads = opportunities created in-period (same lead definition as everywhere
+  // else in the dashboard). Newest first, one per contact, capped to the sample.
+  const opps = await allOpportunities(locTok, locationId, from, to, 1500)
+  const seen = new Set(); const leads = []
+  for (const o of opps) {
+    const cid = contactIdOf(o); if (!cid || seen.has(cid)) continue
+    const created = Date.parse(o.createdAt); if (!isFinite(created)) continue
+    if (fromMs != null && created < fromMs) continue
+    if (toMs != null && created > toMs) continue
+    seen.add(cid); leads.push({ cid, created, channel: channelOf(utmOf(o)) })
+  }
+  leads.sort((a, b) => b.created - a.created)
+  const pick = leads.slice(0, sample)
+  const srcCounts = {}
+  // First manual (and first any) outbound message timestamp for one contact.
+  const firstOutbound = async (lead) => {
+    if (Date.now() - started > budgetMs) return { ...lead, skipped: true }
+    const cs = await ghlGet(locTok, '/conversations/search', { locationId, contactId: lead.cid, limit: 10 }).catch(() => null)
+    const convs = (cs && (cs.conversations || cs.conversation)) || []
+    let manual = null, any = null
+    // Most recent few conversations only, to bound message calls per contact.
+    for (const cv of convs.slice(0, 3)) {
+      if (Date.now() - started > budgetMs) break
+      const convId = cv.id || cv._id; if (!convId) continue
+      const mj = await ghlGet(locTok, `/conversations/${convId}/messages`, { limit: 100 }).catch(() => null)
+      const msgs = (mj && mj.messages && (mj.messages.messages || mj.messages)) || (Array.isArray(mj) ? mj : [])
+      for (const m of msgs) {
+        if (String(m.direction || '').toLowerCase() !== 'outbound') continue
+        const ms = Date.parse(m.dateAdded || m.dateUpdated || m.createdAt); if (!isFinite(ms)) continue
+        if (ms < lead.created - 60000) continue // ignore sends before the lead existed (data noise)
+        const kind = classifyOutbound(m)
+        const sk = String(m.source || (m.userId ? 'user' : 'unknown')).toLowerCase(); srcCounts[sk] = (srcCounts[sk] || 0) + 1
+        if (any == null || ms < any) any = ms
+        if (kind === 'manual' && (manual == null || ms < manual)) manual = ms
+      }
+    }
+    return { ...lead, manual, any }
+  }
+  const results = (await mapPool(pick, 6, firstOutbound)).filter(Boolean)
+  // Buckets of manual response time (minutes). "No manual yet" = a lead we saw
+  // that has had no human outbound (may have had only automation).
+  const BUCKETS = [
+    { key: 'u5', label: 'Under 5 min', max: 5 },
+    { key: 'u15', label: '5-15 min', max: 15 },
+    { key: 'u60', label: '15-60 min', max: 60 },
+    { key: 'u240', label: '1-4 hrs', max: 240 },
+    { key: 'u1440', label: '4-24 hrs', max: 1440 },
+    { key: 'over', label: 'Over 24 hrs', max: Infinity },
+  ]
+  const bcount = Object.fromEntries(BUCKETS.map((b) => [b.key, 0]))
+  const mins = []
+  let measured = 0, onlyAuto = 0, noOutbound = 0, skipped = 0
+  for (const r of results) {
+    if (r.skipped) { skipped++; continue }
+    if (r.manual != null) {
+      const mm = (r.manual - r.created) / 60000; if (mm < 0) continue
+      measured++; mins.push(mm)
+      const b = BUCKETS.find((x) => mm < x.max) || BUCKETS[BUCKETS.length - 1]; bcount[b.key]++
+    } else if (r.any != null) onlyAuto++
+    else noOutbound++
+  }
+  mins.sort((a, b) => a - b)
+  const median = mins.length ? mins[Math.floor((mins.length - 1) / 2)] : null
+  const avg = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null
+  const within5 = mins.length ? mins.filter((m) => m < 5).length / mins.length : null
+  return {
+    connected: true, tz,
+    totalLeads: leads.length, sampled: pick.length - skipped, skipped,
+    measured, onlyAuto, noOutbound,
+    medianMin: median == null ? null : Math.round(median),
+    avgMin: avg == null ? null : Math.round(avg),
+    within5Pct: within5 == null ? null : Math.round(within5 * 100),
+    buckets: BUCKETS.map((b) => ({ label: b.label, count: bcount[b.key] })),
+    sourceBreakdown: Object.entries(srcCounts).map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count),
+  }
+}
+
 export async function buildAttribution(locationId, from, to, opts = {}) {
   // Lite mode (agency overview rows): a shorter opportunity lookback + smaller
   // cap and no lost-reason fetch, so the ~13 rows each stay well under the

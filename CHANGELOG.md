@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.20.0 — 2026-07-20 · `PENDING`
+- **Speed to Lead** — new **Timing** tab on each client (CRM-connected). Measures
+  the time from a lead coming in to the **first manual (human) message** sent to
+  them, excluding automated workflow / campaign / bulk sends, so it reflects how
+  fast a person actually reaches out. Shows median + average, % contacted within
+  5 minutes, a response-time distribution, and how many leads have had only
+  automation or no outreach at all. Samples the most recent leads' conversation
+  history (bounded, so it stays within the function timeout). Includes an
+  expandable "how manual vs automated is decided" panel listing the message
+  sources seen, so the classification can be sanity-checked per client.
+- Forms tab: left-anchored the "Lead share by form" chart (pie left, legend
+  right) and packed the chart row from the left so the Forms reporting reads
+  left-to-right like the Meta reporting.
+
 ## v3.19.0 — 2026-07-20 · `PENDING`
 - **Data maturity flag.** The CRM now calculates each client's average time to
   close a deal (lead-created → won) behind the scenes — never shown as a metric.

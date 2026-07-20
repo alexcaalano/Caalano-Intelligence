@@ -329,6 +329,8 @@ tbody tr:hover { background: var(--panel-2); }
 /* Data-maturity "still maturing" badge (amber pill) + Settings sales-cycle field */
 .maturity-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 999px; padding: 2px 8px; white-space: nowrap; cursor: help; vertical-align: middle; }
 .maturity-badge.sm { font-size: 10px; padding: 1px 6px; }
+.ov-maturity-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border)); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }
+.ov-maturity-banner .ov-crm-sub { flex-basis: 100%; font-size: 11.5px; color: var(--muted); }
 .ov-name-row { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .set-cycle { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .set-cycle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; margin-top: 6px; }
@@ -369,6 +371,14 @@ tbody tr:hover { background: var(--panel-2); }
 .appt-head h3 { font-size: 16px; }
 .appt-tbl th.lft, .appt-tbl td.lft { text-align: left; }
 .appt-tbl td, .appt-tbl th { white-space: nowrap; }
+.appt-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.appt-f { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.appt-f select { text-transform: none; letter-spacing: 0; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; max-width: 240px; }
+.appt-cals { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: -4px 0 4px; }
+.appt-cal { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.appt-cal.on { color: #fff; background: var(--brand); border-color: var(--brand); }
+.appt-cal.reset { color: var(--muted); background: transparent; }
+.appt-cal-n { font-size: 10px; opacity: .8; font-variant-numeric: tabular-nums; }
 .tm-hours { margin-top: 10px; font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 8px; padding: 8px 11px; line-height: 1.5; }
 .tm-hours.on { color: var(--text); border: 1px solid color-mix(in srgb, var(--pos) 30%, var(--border)); }
 .set-hours-en { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin: 4px 0 10px; cursor: pointer; }

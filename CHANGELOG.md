@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.26.0 — 2026-07-20 · `PENDING`
+- **Appointments tab — big upgrade:**
+  - **Pipeline selector** (per-pipeline booking analysis).
+  - Channel filter now includes **Paid** and **Non-Paid** alongside All / Meta /
+    Google.
+  - **Calendar scope**: defaults to the pipeline's **first booking stage**
+    calendar(s) (from your key-events config) and names which calendars it's
+    based on; click the calendar chips to include others.
+  - **Performance by user** table + a **User filter** to scope the whole tab to
+    one person (flags bookings where the appointment user differs from the
+    opportunity owner).
+  - **Momentum / time-to-close**: average days from booking to won per lead-time
+    bucket — does booking sooner close faster?
+  - Kept the **Occurred** column.
+- **Data-maturity notification on Agency Overview**: a banner lists the clients
+  whose sales cycle is longer than the selected range (so their Won / Revenue /
+  ROAS understate results), in addition to the per-row and client-header badges.
+
 ## v3.25.0 — 2026-07-20 · `PENDING`
 - **Speed to Lead → outcomes by response speed:** a new table on the Timing tab
   shows, for each response-time bucket (under 5 min … over 24 hrs), the leads'

@@ -865,7 +865,10 @@ export default async (req) => {
     if (!cc || !cc.ghl) return json({ scope: 'appts', client, ghl: false })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'appts', client, connected: false })
     const dbg = url.searchParams.get('debug') === '1'
-    try { return json({ scope: 'appts', client, period: { from, to, preset }, ...(await buildAppointmentInsights(cc.ghl, from, to, { debug: dbg })) }, 200, !dbg) }
+    const pipeline = url.searchParams.get('pipeline') || null
+    const calIds = (url.searchParams.get('cals') || '').split(',').filter(Boolean)
+    const user = url.searchParams.get('user') || null
+    try { return json({ scope: 'appts', client, period: { from, to, preset }, ...(await buildAppointmentInsights(cc.ghl, from, to, { debug: dbg, pipeline, calIds, user })) }, 200, !dbg) }
     catch (e) { return json({ scope: 'appts', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

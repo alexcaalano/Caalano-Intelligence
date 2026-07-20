@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.25.0'
+const APP_VERSION = '3.26.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -635,6 +635,9 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
   const crmDone = crmIds.length - crmLoading
   const crmErrors = crmIds.filter((id) => ov[id] && ov[id].status === 'err').length
   const rate = (n, d) => (d ? (n / d) * 100 : null)
+  // Clients whose typical sales cycle is longer than the selected range (+20%
+  // buffer), so their Won / Revenue / ROAS understate the true result here.
+  const maturing = rows.map((r) => { const o = ov[r.id]; const a = o && o.status === 'ok' && o.cur ? o.cur.avgCloseDays : null; const cd = a ? closeDaysFor(r.id, a) : null; const m = cd && rangeMaturity(cd.days, range); return m && m.maturing ? r.name : null }).filter(Boolean)
   const Cell = ({ v, cur, prev, gd, neutral, loading, dash }) => (
     <td className="ov-td">{loading ? <span className="ov-spin" /> : dash ? <span className="ov-dash">-</span> : <div className="ov-cell"><span className="ov-v">{v}</span><MiniDelta cur={cur} prev={prev} goodWhenDown={gd} neutral={neutral} /></div>}</td>
   )
@@ -649,6 +652,13 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
           {crmLoading > 0
             ? <><span className="ov-spin" /><b>Loading CRM metrics…</b> {crmDone} of {crmIds.length} clients ready<span className="ov-crm-sub">The Opps → ROAS columns pull live from Caalano Systems — first load can take up to ~60s.</span></>
             : <><span className="ov-warn-dot">!</span><b>{crmErrors} client{crmErrors === 1 ? '' : 's'} couldn't load CRM data.</b><span className="ov-crm-sub">Hover the ⚠ on a row for the reason, or hit Refresh to retry.</span></>}
+        </div>
+      )}
+      {maturing.length > 0 && (
+        <div className="ov-maturity-banner">
+          <span className="maturity-badge">⏳ Still maturing</span>
+          <b>{maturing.length} client{maturing.length === 1 ? '' : 's'}' data isn't fully mature for {rangeLabel(range).toLowerCase()}.</b>
+          <span className="ov-crm-sub">Their typical sales cycle is longer than this range (+20% buffer), so Won / Revenue / ROAS understate the true result. Widen the range for these: {maturing.slice(0, 8).join(', ')}{maturing.length > 8 ? ` +${maturing.length - 8} more` : ''}.</span>
         </div>
       )}
       <div className="table-wrap"><table className="ov-cmp">
@@ -3441,42 +3451,82 @@ function FormsView({ clientId, currency, range, nonce }) {
 
 /* ============ Appointments (timing + who booked) ============ */
 function fmtDays(n) { if (n == null) return '-'; if (n === 0) return 'Same day'; return `${n} day${n === 1 ? '' : 's'}` }
-const APPT_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google']]
+const APPT_CHANS = [['all', 'All'], ['paid', 'Paid'], ['other', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']]
+// Default calendars for the Appointments tab = the pipeline's first booking-stage
+// calendar(s), taken from the configured key events (first calendar event + any
+// linked to the same stage). Empty = no key events, so fall back to all.
+function defaultApptCals(clientId, pipe) {
+  const merged = mergeCalKeyEvents(normKeyEvents(keyEventsForPipe(loadKeyEvents(clientId), pipe)))
+  const firstCal = merged.find((e) => e.kind === 'calendar')
+  if (firstCal) return { calIds: (firstCal.refs || [firstCal.ref]).filter(Boolean), stage: firstCal.stage || firstCal.label }
+  return { calIds: [], stage: null }
+}
 function AppointmentsView({ clientId, range, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [chan, setChan] = useState('all')
+  const [pipe, setPipe] = useState('all')
+  const [cals, setCals] = useState(null) // null = use default for pipe; array = explicit
+  const [userSel, setUserSel] = useState('all')
   const [showDbg, setShowDbg] = useState(false)
+  useSettingsSync()
+  const dflt = useMemo(() => defaultApptCals(clientId, pipe), [clientId, pipe])
+  const effCals = cals !== null ? cals : dflt.calIds
+  const calParam = effCals.length ? `&cals=${effCals.map(encodeURIComponent).join(',')}` : ''
+  const pipeParam = pipe !== 'all' ? `&pipeline=${encodeURIComponent(pipe)}` : ''
+  const userParam = userSel !== 'all' ? `&user=${encodeURIComponent(userSel)}` : ''
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
-    fetch(`/.netlify/functions/windsor?scope=appts&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
+    fetch(`/.netlify/functions/windsor?scope=appts&client=${clientId}&${rangeQuery(range)}${pipeParam}${calParam}${userParam}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
       .finally(() => clearTimeout(timer))
     return () => { alive = false; ctl.abort() }
-  }, [clientId, rangeQuery(range), nonce])
+  }, [clientId, rangeQuery(range), pipeParam, calParam, userParam, nonce])
   if (st.status === 'loading') return <div className="card"><Spinner label="Analysing appointments (booking timing & outcomes)…" /></div>
   const dd = st.data || {}
   if (st.status === 'err' || dd.connected === false) return <div className="card empty-deep"><div className="big">📅</div><b>Couldn't load appointments.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{dd.error || 'Caalano Systems not connected.'}</p></div>
-  const toggle = <div className="chan-toggle">{APPT_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
+  const pipes = dd.allPipelines || []
+  const calList = dd.calendars || []
+  const users = dd.users || []
+  const calNameById = Object.fromEntries(calList.map((c) => [c.id, c.name]))
+  const usedNames = (effCals.length ? effCals : calList.map((c) => c.id)).map((id) => calNameById[id]).filter(Boolean)
+  const chanToggle = <div className="chan-toggle">{APPT_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
+  const selectors = (
+    <div className="appt-filters">
+      {pipes.length > 1 && <label className="appt-f"><span>Pipeline</span><select value={pipe} onChange={(e) => { setPipe(e.target.value); setCals(null) }}><option value="all">All pipelines</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+      {users.length > 1 && <label className="appt-f"><span>User</span><select value={userSel} onChange={(e) => setUserSel(e.target.value)}><option value="all">All users</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.count})</option>)}</select></label>}
+      {chanToggle}
+    </div>
+  )
   const C = (dd.channels && dd.channels[chan]) || null
-  if (!C || !C.booked) return (<div className="timing-view"><div className="appt-head">{toggle}</div><div className="card empty-deep"><div className="big">📅</div><b>No appointments booked in this range{chan !== 'all' ? ' for this channel' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Appointments are counted on the day they were booked. Widen the range or switch channel.</p></div></div>)
-  const maxB = Math.max(1, ...C.buckets.map((b) => b.booked))
+  const calChips = calList.length > 0 && (
+    <div className="appt-cals">
+      <span className="cap">Calendars {dflt.stage && cals === null ? <>· defaulted to first booking stage <b>{dflt.stage}</b></> : null}:</span>
+      {calList.map((c) => { const on = effCals.length ? effCals.includes(c.id) : true; return (
+        <button key={c.id} className={`appt-cal ${on ? 'on' : ''}`} onClick={() => { const base = effCals.length ? effCals : calList.map((x) => x.id); const nx = on ? base.filter((x) => x !== c.id) : [...base, c.id]; setCals(nx) }}>{c.name} <span className="appt-cal-n">{c.count}</span></button>
+      ) })}
+      {cals !== null && <button className="appt-cal reset" onClick={() => setCals(null)}>↺ default</button>}
+    </div>
+  )
+  if (!C || !C.booked) return (<div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Appointments</h3></div>{selectors}</div>{calChips}<div className="card empty-deep"><div className="big">📅</div><b>No appointments booked in this range{chan !== 'all' ? ' for this filter' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Appointments are counted on the day they were booked. Widen the range or change the filters.</p></div></div>)
   const bd = C.byBookedBy
   return (
     <div className="timing-view">
-      <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments — booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show &amp; win rates. Bookings counted on the day they were booked; show rate is over appointments that have already happened.</p></div>{toggle}</div>
+      <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments — booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show / win rates and time-to-close. Bookings are counted on the day they were booked{usedNames.length ? ` · based on: ${usedNames.slice(0, 4).join(', ')}${usedNames.length > 4 ? ` +${usedNames.length - 4}` : ''}` : ''}.</p></div>{selectors}</div>
+      {calChips}
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">{C.cancelled ? `${C.cancelled} later cancelled` : 'appointments'}</span></div>
         <div className="tm-sc"><span className="tm-lab">Avg booked ahead</span><b>{fmtDays(C.avgLeadDays)}</b><span className="tm-sub">median {fmtDays(C.medianLeadDays)}</span></div>
         <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">of {C.occurred} occurred</span></div>
         <div className="tm-sc"><span className="tm-lab">Win rate</span><b>{C.winRate == null ? '-' : `${C.winRate}%`}</b><span className="tm-sub">won ÷ booked</span></div>
+        <div className="tm-sc"><span className="tm-lab">Avg time to close</span><b>{fmtDays(C.avgCloseDays)}</b><span className="tm-sub">booked → won</span></div>
         <div className="tm-sc"><span className="tm-lab">Self-booked</span><b>{C.selfPct == null ? '-' : `${C.selfPct}%`}</b><span className="tm-sub">{C.self} self · {C.staff} staff</span></div>
       </div>
 
       <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Booking lead time — volume &amp; downstream rates</div>
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Booking lead time — volume, downstream rates &amp; momentum</div>
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={C.buckets} margin={{ left: -8, right: 8, top: 8 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -3491,7 +3541,7 @@ function AppointmentsView({ clientId, range, nonce }) {
           </ComposedChart>
         </ResponsiveContainer>
         <div className="table-wrap" style={{ marginTop: 10 }}><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Booked ahead</th><th>Booked</th><th>Occurred</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th></tr></thead>
+          <thead><tr><th className="lft">Booked ahead</th><th>Booked</th><th>Occurred</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th><th>Time to close</th></tr></thead>
           <tbody>{C.buckets.map((b) => (
             <tr key={b.label}>
               <td className="lft">{b.label}</td>
@@ -3501,10 +3551,11 @@ function AppointmentsView({ clientId, range, nonce }) {
               <td>{b.showRate == null ? '-' : `${b.showRate}%`}</td>
               <td>{fmtNumber(b.won)}</td>
               <td>{b.winRate == null ? '-' : `${b.winRate}%`}</td>
+              <td>{fmtDays(b.avgCloseDays)}</td>
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Show rate is calculated only over appointments that have already happened, so far-out bookings that haven't occurred yet don't drag it down. Win = the booked contact's opportunity is won (per booking).</p>
+        <p className="caveat" style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Time to close</b> = average days from booking to won (a momentum read: do sooner bookings close faster / more?). Small samples make single rows noisy — read the trend.</p>
       </div>
 
       <div className="card">
@@ -3526,6 +3577,25 @@ function AppointmentsView({ clientId, range, nonce }) {
         </table></div>
         <p className="caveat" style={{ marginTop: 10 }}>Self-booked = the lead booked the call themselves (no staff user on the calendar event); staff-booked = a team member set it. Comparing show/win rates tells you whether pushing self-booking links helps or hurts.</p>
       </div>
+
+      {(C.byUser || []).length > 1 && <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Performance by user{dd.userMismatch ? <span className="cap" style={{ fontWeight: 400 }}> · {dd.userMismatch} bookings where the appointment user differs from the opportunity owner</span> : null}</div>
+        <div className="table-wrap"><table className="mini-tbl appt-tbl">
+          <thead><tr><th className="lft">User</th><th>Booked</th><th>Occurred</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th></tr></thead>
+          <tbody>{C.byUser.map((u) => (
+            <tr key={u.name}>
+              <td className="lft">{u.name}</td>
+              <td>{fmtNumber(u.booked)}</td>
+              <td>{fmtNumber(u.occurred)}</td>
+              <td>{fmtNumber(u.shown)}</td>
+              <td>{u.showRate == null ? '-' : `${u.showRate}%`}</td>
+              <td>{fmtNumber(u.won)}</td>
+              <td>{u.winRate == null ? '-' : `${u.winRate}%`}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <p className="caveat" style={{ marginTop: 10 }}>"User" is the person the appointment is assigned to on the calendar. Use the User filter above to scope the whole tab to one person.</p>
+      </div>}
 
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How self vs staff is decided ({(dd.bookedBySources || []).length} booking sources)</button>

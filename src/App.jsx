@@ -429,9 +429,9 @@ function useOvRows(rows, range, nonce = 0) {
       const ctl = new AbortController()
       const timer = setTimeout(() => ctl.abort(), 28000)
       return fetch(`/.netlify/functions/windsor?scope=ovrow&client=${id}&${q}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
-        .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-        .then((j) => (j && j.data ? j.data : null))
-        .catch(() => null)
+        .then((x) => (x.ok ? x.json() : Promise.reject(new Error(`server ${x.status}`))))
+        .then((j) => ({ data: j && j.data ? j.data : null, error: j && j.error ? String(j.error) : (j && j.connected === false ? 'Caalano Systems not connected' : (j && !j.data ? 'no data returned' : null)) }))
+        .catch((e) => ({ data: null, error: e && e.name === 'AbortError' ? 'timed out (>28s)' : String((e && e.message) || e) }))
         .finally(() => clearTimeout(timer))
     }
     // Current-period first (fills the columns), previous after (fills deltas).
@@ -440,11 +440,11 @@ function useOvRows(rows, range, nonce = 0) {
       if (!alive) return
       const item = queue.shift(); if (!item) return
       const [id, period] = item
-      one(id, period).then((data) => {
+      one(id, period).then((res) => {
         if (!alive) return
         setMap((m) => {
           const e = { ...(m[id] || { status: 'loading' }) }
-          if (period === 'cur') { e.cur = data; e.status = data ? 'ok' : 'err' } else e.prev = data
+          if (period === 'cur') { e.cur = res.data; e.status = res.data ? 'ok' : 'err'; e.err = res.data ? null : res.error } else e.prev = res.data
           return { ...m, [id]: e }
         })
       }).finally(() => { if (alive) runNext() })
@@ -540,6 +540,8 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
   const paidView = f !== 'nonpaid' // ad spend/results only exist for paid
   const crmIds = rows.filter((r) => r.c.ghl).map((r) => r.id)
   const crmLoading = crmIds.filter((id) => !ov[id] || ov[id].status === 'loading').length
+  const crmDone = crmIds.length - crmLoading
+  const crmErrors = crmIds.filter((id) => ov[id] && ov[id].status === 'err').length
   const rate = (n, d) => (d ? (n / d) * 100 : null)
   const Cell = ({ v, cur, prev, gd, neutral, loading, dash }) => (
     <td className="ov-td">{loading ? <span className="ov-spin" /> : dash ? <span className="ov-dash">-</span> : <div className="ov-cell"><span className="ov-v">{v}</span><MiniDelta cur={cur} prev={prev} goodWhenDown={gd} neutral={neutral} /></div>}</td>
@@ -549,8 +551,14 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
       <div className="ov-cmp-head">
         <div className="chan-toggle ov-filter">{OV_FILTERS.map(([k, lbl]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{lbl}</button>)}</div>
         <span className="ov-cmp-note">vs previous {rangeLabel(range).toLowerCase()} · green = better, red = worse{f === 'nonpaid' ? ' · ad-cost columns N/A for non-paid' : ''}</span>
-        {crmLoading > 0 && <span className="ov-loading"><span className="ov-spin" /> Loading CRM data · {crmIds.length - crmLoading}/{crmIds.length} clients</span>}
       </div>
+      {crmIds.length > 0 && (crmLoading > 0 || crmErrors > 0) && (
+        <div className={`ov-crm-banner ${crmLoading > 0 ? 'loading' : 'done'}`}>
+          {crmLoading > 0
+            ? <><span className="ov-spin" /><b>Loading CRM metrics…</b> {crmDone} of {crmIds.length} clients ready<span className="ov-crm-sub">The Opps → ROAS columns pull live from Caalano Systems — first load can take up to ~60s.</span></>
+            : <><span className="ov-warn-dot">!</span><b>{crmErrors} client{crmErrors === 1 ? '' : 's'} couldn't load CRM data.</b><span className="ov-crm-sub">Hover the ⚠ on a row for the reason, or hit Refresh to retry.</span></>}
+        </div>
+      )}
       <div className="table-wrap"><table className="ov-cmp">
         <thead><tr>
           <th className="ov-name">Client</th>
@@ -569,6 +577,7 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
           const cur = ok ? o.cur[chanKey] : null
           const prev = ok && o.prev ? o.prev[chanKey] : null
           const noCrm = !r.c.ghl
+          const errored = !noCrm && !loading && !ok
           // GHL cell helper: dash when no CRM / errored, spinner while loading.
           const g = (v, curN, prevN, gd, neutral) => ({ v, cur: curN, prev: prevN, gd, neutral, loading, dash: noCrm || (!loading && !ok) })
           const cBooked = cur && cur.booked && spendF ? spendF / cur.booked : null
@@ -585,7 +594,9 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
               <Cell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
               <Cell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
               <Cell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
-              <Cell {...g(cur ? fmtNumber(cur.opps) : '-', cur?.opps, prev?.opps)} />
+              {errored
+                ? <td className="ov-td"><span className="ov-rowerr" title={`Couldn't load CRM data: ${o?.err || 'failed'}`}>⚠</span></td>
+                : <Cell {...g(cur ? fmtNumber(cur.opps) : '-', cur?.opps, prev?.opps)} />}
               <Cell {...g(cur ? fmtNumber(cur.booked) : '-', cur?.booked, prev?.booked)} />
               <Cell {...g(cBooked != null ? money(cBooked) : '-', cBooked, pcBooked, true)} />
               <Cell {...g(cur && cur.booked ? fmtPct(rate(cur.shown, cur.booked), 0) : '-', rate(cur?.shown, cur?.booked), rate(prev?.shown, prev?.booked))} />
@@ -728,7 +739,7 @@ function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, c
   )
 }
 function WeeklyTab({ rows, currency, nonce }) {
-  const clients = rows
+  const clients = [...rows].sort((a, b) => a.name.localeCompare(b.name))
   const [cid, setCid] = useState(clients[0]?.id || null)
   const [weeks, setWeeks] = useState(6)
   const wk = useWeekly(cid, weeks, nonce)

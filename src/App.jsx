@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.13.0'
+const APP_VERSION = '3.14.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3090,7 +3090,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
 // Campaign → pipeline linker, per client. Fetches the client's campaigns +
 // pipelines on expand and writes overrides to the shared localStorage map that
 // Caalano360 reads for spend attribution.
-function KpiEditor({ clientId, embedded }) {
+function KpiEditor({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
   const [pid, setPid] = useState('') // '' = client-level; a pipeline id = per-pipeline
@@ -3099,7 +3099,7 @@ function KpiEditor({ clientId, embedded }) {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
     const r = presetRange('last_30d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
@@ -3266,7 +3266,7 @@ function AttributionDiagnostics({ attribData, camps, currency }) {
 // Per-client tracking diagnostics for Settings. Lazily fetches the blend +
 // attribution feeds on expand (one client at a time), then renders tracking
 // health and attribution diagnostics.
-function ClientTrackingDiagnostics({ clientId, currency, embedded }) {
+function ClientTrackingDiagnostics({ clientId, currency, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null, attr: null })
   useEffect(() => {
@@ -3274,8 +3274,8 @@ function ClientTrackingDiagnostics({ clientId, currency, embedded }) {
     setSt({ status: 'loading', blend: null, attr: null })
     const r = presetRange('last_30d')
     Promise.all([
-      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${rangeQuery(r)}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
     ]).then(([b, a]) => setSt({ status: 'ok', blend: (b && b.blend) || null, attr: (a && a.attribution) || null }))
       .catch(() => setSt({ status: 'err', blend: null, attr: null }))
   }, [open, st.status, clientId])
@@ -3293,7 +3293,7 @@ function ClientTrackingDiagnostics({ clientId, currency, embedded }) {
   )
 }
 
-function KeyEventsEditor({ clientId, embedded }) {
+function KeyEventsEditor({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [sel, setSel] = useState(() => loadKeyEvents(clientId))
   const [st, setSt] = useState({ status: 'idle', blend: null })
@@ -3302,7 +3302,7 @@ function KeyEventsEditor({ clientId, embedded }) {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
     const r = presetRange('last_30d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
@@ -3310,7 +3310,7 @@ function KeyEventsEditor({ clientId, embedded }) {
   useEffect(() => {
     if (!open || cals.status !== 'idle') return
     setCals({ status: 'loading', list: [] })
-    fetch(`/.netlify/functions/windsor?scope=calendars&client=${clientId}`)
+    fetch(`/.netlify/functions/windsor?scope=calendars&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setCals({ status: 'ok', list: j.calendars || [] }))
       .catch(() => setCals({ status: 'err', list: [] }))
@@ -3381,7 +3381,7 @@ function KeyEventsEditor({ clientId, embedded }) {
     </div>
   )
 }
-function CampaignLinker({ clientId, embedded }) {
+function CampaignLinker({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
   const [manual, setManual] = useState(() => loadCampMap(clientId))
@@ -3389,7 +3389,7 @@ function CampaignLinker({ clientId, embedded }) {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
     const r = presetRange('last_30d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
@@ -3598,6 +3598,37 @@ function AccountTag({ label, id, name }) {
   if (!id) return <span className="idtag">{label} <b>-</b></span>
   return <span className="idtag has" title={String(id)}>{label} <b>{name || id}</b>{name ? <code className="idtag-id">{id}</code> : null}</span>
 }
+// Per-client setup health for the compact status strip on each Settings card.
+// ok (green ✓) / warn (amber !) / bad (red ✗).
+function clientHealth(c) {
+  const keRaw = SETTINGS.keyevents[c.id]
+  const keConfigured = !!(keRaw && keRaw.length)
+  const ke = loadKeyEvents(c.id)
+  const hasCal = ke.some((e) => e && typeof e === 'object' && e.cal)
+  const kpiRaw = SETTINGS.kpis[c.id] || {}
+  const kpiSet = Object.keys(kpiRaw).some((k) => k !== 'byPipeline' && kpiRaw[k] != null && kpiRaw[k] !== '') || (kpiRaw.byPipeline && Object.keys(kpiRaw.byPipeline).length > 0)
+  return [
+    { ic: 'f', label: 'Meta Ads account', state: c.meta ? 'ok' : 'bad' },
+    { ic: 'G', label: 'Google Ads account', state: c.google ? 'ok' : 'bad' },
+    { ic: '◆', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
+    { ic: '★', label: 'Key events configured', state: keConfigured ? 'ok' : (SEED_KEYEVENTS[c.id] ? 'warn' : (c.ghl ? 'warn' : 'bad')) },
+    { ic: '📅', label: 'Booked calendars linked', state: hasCal ? 'ok' : (c.ghl ? 'warn' : 'bad') },
+    { ic: '◎', label: 'KPI targets set', state: kpiSet ? 'ok' : 'warn' },
+    { ic: '✚', label: 'Tracking diagnostics ready', state: (c.ghl && (c.meta || c.google)) ? 'ok' : (c.ghl ? 'warn' : 'bad') },
+  ]
+}
+const STATE_MARK = { ok: '✓', warn: '!', bad: '✗' }
+function HealthStrip({ c }) {
+  return (
+    <div className="set-health">
+      {clientHealth(c).map((h) => (
+        <span key={h.label} className={`sth ${h.state}`} title={`${h.label}: ${h.state === 'ok' ? 'done' : h.state === 'warn' ? 'needs attention' : 'not connected'}`}>
+          <span className="sth-ic">{h.ic}</span><span className="sth-mk">{STATE_MARK[h.state]}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
 function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
   const [filter, setFilter] = useState('active')
@@ -3633,6 +3664,11 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
         <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>
         <span className="set-saved">✓ Saved to server · shared across your team</span>
       </div>
+      <div className="set-legend">
+        <span>Setup health:</span>
+        <span className="lg"><b>f</b> Meta</span><span className="lg"><b>G</b> Google</span><span className="lg"><b>◆</b> CRM</span><span className="lg"><b>★</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>◎</b> KPIs</span><span className="lg"><b>✚</b> Diagnostics</span>
+        <span className="lg-sep">·</span><span className="sth ok"><span className="sth-mk">✓</span></span>done<span className="sth warn"><span className="sth-mk">!</span></span>attention<span className="sth bad"><span className="sth-mk">✗</span></span>missing
+      </div>
       {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
       <div className="set-grid">
         {list.map((c) => {
@@ -3644,6 +3680,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
                 <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
                 <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
               </div>
+              <HealthStrip c={c} />
               <div className="ids">
                 <AccountTag label="Meta" id={c.meta} name={nm('meta', c.meta) || c.metaName} />
                 <AccountTag label="Google" id={c.google} name={nm('google', c.google) || c.googleName} />
@@ -3681,6 +3718,9 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
     })
     setSavedDetails(true); setTimeout(() => setSavedDetails(false), 1500)
   }
+  // Cache-buster tied to the linked accounts, so relinking a client bypasses
+  // the 10-min CDN cache on the blend/attribution/calendar responses.
+  const sig = normId(c.ghl) + '-' + normId(c.meta) + '-' + normId(c.google)
   const tabs = [['summary', 'Summary']]
   if (c.ghl) tabs.push(['keyevents', 'Key events'])
   if (canLink) tabs.push(['links', 'Campaign links'])
@@ -3714,10 +3754,10 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
             <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button>
             {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
           </div>}
-          {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded /></div>}
-          {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded /></div>}
-          {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded /></div>}
-          {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded /></div>}
+          {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>
       </div>
     </div>

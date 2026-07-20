@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.14.0 — 2026-07-20 · `<pending>`
+- Settings cards show a compact **setup-health strip** — Meta / Google / CRM /
+  Key events / Calendars / KPIs / Diagnostics as green ✓ · amber ! · red ✗
+  icons, with a legend, so you can see each client's status at a glance.
+- Relinking a client now **busts the CDN cache** on its blend/attribution/
+  calendar responses (via an account-signature cache-buster), so a fixed link
+  (or a newly app-installed CRM location) pulls fresh pipelines/stages
+  immediately instead of serving the stale empty response for ~10 minutes.
+
 ## v3.13.0 — 2026-07-20 · `1864b5a`
 - Client config modal redesigned with **horizontal tabs** (Summary · Key events ·
   Campaign links · KPI targets · Diagnostics) — content opens full-width under

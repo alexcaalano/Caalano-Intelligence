@@ -351,7 +351,14 @@ export async function buildForms(locationId, from, to) {
   // earliest submission), not whichever the API happened to return first. GHL
   // returns submissions newest-first, so without this a Meta lead who later
   // booked via the calendar form was miscredited to the calendar form.
-  const subMs = (s) => { const t = Date.parse(s.createdAt || s.dateAdded || s.submittedAt || s.date || ''); return Number.isFinite(t) ? t : Infinity }
+  const subMs = (s) => {
+    const o = s.others || {}
+    const raw = s.createdAt || s.dateAdded || s.submittedAt || s.date
+      || (o.facebookLeadSubmissionDetails && o.facebookLeadSubmissionDetails.created_time)
+      || (o.eventData && o.eventData.timestamp)
+    const t = typeof raw === 'number' ? raw : Date.parse(raw || '')
+    return Number.isFinite(t) ? t : Infinity
+  }
   subs.sort((a, b) => subMs(a) - subMs(b))
   const labelOf = (s) => {
     const o = s.others || {}
@@ -393,10 +400,21 @@ export async function buildForms(locationId, from, to) {
       answers[labelKey(k)] = str
     }
     for (const [k, v] of Object.entries(o)) {
+      // Meta Lead Form answers live in a `customFields` ARRAY of {id/key, value}
+      // objects (budget, pool type, timeframe…) - website forms use plain
+      // top-level string keys. Parse each element by its custom-field id.
+      if (Array.isArray(v)) {
+        if (/^(customFields|custom_fields|customData|fields)$/i.test(k)) {
+          for (const el of v) {
+            if (el && typeof el === 'object') put(el.id || el.key || el.fieldKey || el.name, el.value !== undefined ? el.value : (el.field_value !== undefined ? el.field_value : el.fieldValue))
+          }
+        } else put(k, v) // array of primitives (a multi-select)
+        continue
+      }
       // Descend one level into answer containers (customData/formData/…), but not
       // into system envelopes (eventData carries UTMs/page/session, not answers).
-      if (v && typeof v === 'object' && !Array.isArray(v)) {
-        if (/^(customData|formData|form_data|answers|fields|customFields|data)$/i.test(k)) for (const [k2, v2] of Object.entries(v)) put(k2, v2)
+      if (v && typeof v === 'object') {
+        if (/^(customData|formData|form_data|answers|fields|data)$/i.test(k)) for (const [k2, v2] of Object.entries(v)) put(k2, v2)
         continue
       }
       put(k, v)

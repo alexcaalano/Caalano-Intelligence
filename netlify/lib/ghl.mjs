@@ -735,14 +735,16 @@ export async function attributionCoverage(locationId, from, to) {
 // samples the most recent N leads and runs with a small concurrency pool + a
 // wall-clock budget. Returns a distribution + median/avg + a source breakdown so
 // the manual-vs-automated classification can be sanity-checked.
-const AUTO_SRC_RE = /workflow|campaign|bulk|trigger|automat|api\b|integration|zapier|rule|sequence/i
+const AUTO_SRC_RE = /workflow|campaign|bulk|trigger|automat|api\b|integration|zapier|rule|sequence|reply|auto/i
+function msgUserId(m) { return m.userId || m.user_id || (m.meta && m.meta.userId) || null }
 function classifyOutbound(m) {
   const src = String(m.source || '').toLowerCase()
   if (AUTO_SRC_RE.test(src)) return 'automated'
-  // A human send from the CRM UI carries the sending user's id; workflow/campaign
-  // sends generally don't. Treat a user-attributed, non-automated send as manual.
-  if (m.userId || m.user_id) return 'manual'
-  return src === 'app' || src === '' || src === 'ui' ? 'manual' : 'automated'
+  // Manual requires a human user attribution. A send with no userId - even one
+  // tagged source "app" - is treated as automated, because an instant auto-reply
+  // / integration send carries no user. (This was the Finr false-"under 5 min":
+  // app-sourced auto-sends with no userId were counted as human replies.)
+  return msgUserId(m) ? 'manual' : 'automated'
 }
 // Bounded-concurrency map (no external deps) - runs `fn` over items, `n` at once.
 async function mapPool(items, n, fn) {
@@ -770,17 +772,25 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     const created = Date.parse(o.createdAt); if (!isFinite(created)) continue
     if (fromMs != null && created < fromMs) continue
     if (toMs != null && created > toMs) continue
-    seen.add(cid); leads.push({ cid, created, channel: channelOf(utmOf(o)) })
+    // True lead-in = when the CONTACT entered the CRM (dateAdded), which can be
+    // earlier than the opportunity being created (a workflow / user often makes
+    // the opp later). Anchoring on the opp made responses look instant. Use the
+    // earliest known of the two.
+    const cAdded = Date.parse(o.contact && (o.contact.dateAdded || o.contact.createdAt))
+    const leadIn = isFinite(cAdded) ? Math.min(cAdded, created) : created
+    seen.add(cid); leads.push({ cid, created, leadIn, channel: channelOf(utmOf(o)) })
   }
-  leads.sort((a, b) => b.created - a.created)
+  leads.sort((a, b) => b.leadIn - a.leadIn)
   const pick = leads.slice(0, sample)
-  const srcCounts = {}
+  const srcCounts = {} // key: "<source> · user|no-user" -> { count, kind }
+  const debugRows = []
   // First manual (and first any) outbound message timestamp for one contact.
   const firstOutbound = async (lead) => {
     if (Date.now() - started > budgetMs) return { ...lead, skipped: true }
     const cs = await ghlGet(locTok, '/conversations/search', { locationId, contactId: lead.cid, limit: 10 }).catch(() => null)
     const convs = (cs && (cs.conversations || cs.conversation)) || []
     let manual = null, any = null
+    const outs = [] // for debug: every outbound seen for this lead
     // Most recent few conversations only, to bound message calls per contact.
     for (const cv of convs.slice(0, 3)) {
       if (Date.now() - started > budgetMs) break
@@ -790,12 +800,25 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
       for (const m of msgs) {
         if (String(m.direction || '').toLowerCase() !== 'outbound') continue
         const ms = Date.parse(m.dateAdded || m.dateUpdated || m.createdAt); if (!isFinite(ms)) continue
-        if (ms < lead.created - 60000) continue // ignore sends before the lead existed (data noise)
+        if (ms < lead.leadIn - 60000) continue // ignore sends before the lead came in
         const kind = classifyOutbound(m)
-        const sk = String(m.source || (m.userId ? 'user' : 'unknown')).toLowerCase(); srcCounts[sk] = (srcCounts[sk] || 0) + 1
+        const hasUser = !!msgUserId(m)
+        const sk = `${String(m.source || 'none').toLowerCase()} · ${hasUser ? 'user' : 'no-user'}`
+        if (!srcCounts[sk]) srcCounts[sk] = { count: 0, kind }
+        srcCounts[sk].count++
+        outs.push({ ms, kind, source: String(m.source || 'none'), hasUser, type: m.messageType || m.type || null })
         if (any == null || ms < any) any = ms
         if (kind === 'manual' && (manual == null || ms < manual)) manual = ms
       }
+    }
+    if (opts.debug && debugRows.length < 20) {
+      outs.sort((a, b) => a.ms - b.ms)
+      debugRows.push({
+        createdAt: new Date(lead.created).toISOString(),
+        leadIn: new Date(lead.leadIn).toISOString(),
+        firstManualMin: manual != null ? Math.round((manual - lead.leadIn) / 60000) : null,
+        msgs: outs.slice(0, 5).map((o) => ({ source: o.source, hasUser: o.hasUser, kind: o.kind, type: o.type, minAfterLeadIn: Math.round((o.ms - lead.leadIn) / 60000) })),
+      })
     }
     return { ...lead, manual, any }
   }
@@ -816,7 +839,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   for (const r of results) {
     if (r.skipped) { skipped++; continue }
     if (r.manual != null) {
-      const mm = (r.manual - r.created) / 60000; if (mm < 0) continue
+      const mm = (r.manual - r.leadIn) / 60000; if (mm < 0) continue
       measured++; mins.push(mm)
       const b = BUCKETS.find((x) => mm < x.max) || BUCKETS[BUCKETS.length - 1]; bcount[b.key]++
     } else if (r.any != null) onlyAuto++
@@ -834,7 +857,8 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     avgMin: avg == null ? null : Math.round(avg),
     within5Pct: within5 == null ? null : Math.round(within5 * 100),
     buckets: BUCKETS.map((b) => ({ label: b.label, count: bcount[b.key] })),
-    sourceBreakdown: Object.entries(srcCounts).map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count),
+    sourceBreakdown: Object.entries(srcCounts).map(([source, v]) => ({ source, count: v.count, kind: v.kind })).sort((a, b) => b.count - a.count),
+    ...(opts.debug ? { debug: debugRows } : {}),
   }
 }
 

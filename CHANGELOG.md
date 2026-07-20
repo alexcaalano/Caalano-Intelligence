@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.21.0 — 2026-07-20 · `PENDING`
+- **Speed to Lead accuracy fix** (the Finr "everything under 5 min" problem):
+  - Anchor the clock on when the **contact entered the CRM** (`dateAdded`), not
+    when the opportunity was created — the opp is often made later by a workflow
+    or user, which made human replies look instant.
+  - A message now counts as **manual only if it carries a user attribution**. An
+    instant, user-less "app"-sourced send (an auto-reply / integration) is
+    treated as automated, so it no longer inflates the under-5-min bucket.
+  - The classification panel now shows **how each message source was classified**
+    (manual vs automated) and splits by whether it had a user, plus a new
+    **"Load message-level detail"** button that shows, for a sample of leads, the
+    actual first outbound messages (source · user · classification · minutes
+    after lead-in) so the logic can be verified against reality.
+- Forms table: form-name column left-aligned to match the Meta "Performance by
+  form" table; reverted the broken lead-share pie to the centered donut.
+
 ## v3.20.0 — 2026-07-20 · `PENDING`
 - **Speed to Lead** — new **Timing** tab on each client (CRM-connected). Measures
   the time from a lead coming in to the **first manual (human) message** sent to

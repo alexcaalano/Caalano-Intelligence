@@ -835,7 +835,8 @@ export default async (req) => {
     if (!cc || !cc.ghl) return json({ scope: 'speed', client, ghl: false })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'speed', client, connected: false })
     const sample = Math.min(Number(url.searchParams.get('sample')) || 60, 120)
-    try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample })) }, 200, true) }
+    const dbg = url.searchParams.get('debug') === '1'
+    try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample, debug: dbg })) }, 200, !dbg) }
     catch (e) { return json({ scope: 'speed', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

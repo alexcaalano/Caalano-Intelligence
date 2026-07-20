@@ -359,6 +359,12 @@ tbody tr:hover { background: var(--panel-2); }
 .mini-tbl th, .mini-tbl td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .mini-tbl th { color: var(--muted); font-weight: 600; }
 .mini-tbl td:last-child, .mini-tbl th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.tm-kind { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; padding: 1px 6px; border-radius: 5px; }
+.tm-kind.manual { color: var(--pos); background: color-mix(in srgb, var(--pos) 15%, transparent); }
+.tm-kind.automated { color: var(--muted); background: var(--panel-2); }
+.tm-dbg td { vertical-align: top; }
+.tm-dbg td:last-child { text-align: left; white-space: normal; }
+.tm-dbg-msg { display: inline-block; margin: 0 10px 4px 0; font-size: 11px; color: var(--muted); }
 .set-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--panel); transition: border-color .15s; }
 .set-card.open { grid-column: 1 / -1; border-color: var(--border-2); }
 .set-card.is-off { opacity: .58; }

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.20.0'
+const APP_VERSION = '3.21.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3385,10 +3385,41 @@ function TimingView({ clientId, range, nonce }) {
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How manual vs automated is decided ({(d.sourceBreakdown || []).length} message sources)</button>
         {showDbg && <>
-          <p className="cap" style={{ marginTop: 8 }}>A message counts as <b>manual</b> when it's attributed to a user and its source isn't an automation (workflow, campaign, bulk, trigger, API). Below are the outbound message sources seen in the sample — use this to confirm the classification looks right for this client.</p>
-          <div className="table-wrap"><table className="mini-tbl"><thead><tr><th>Message source</th><th>Count</th></tr></thead><tbody>{(d.sourceBreakdown || []).map((s) => <tr key={s.source}><td>{s.source}</td><td>{s.count}</td></tr>)}{!(d.sourceBreakdown || []).length && <tr><td colSpan={2} className="cap">No outbound messages in the sample.</td></tr>}</tbody></table></div>
+          <p className="cap" style={{ marginTop: 8 }}>A message counts as <b>manual</b> only when it's <b>attributed to a user</b> and its source isn't an automation (workflow, campaign, bulk, trigger, API, auto-reply). A send with no user — even one tagged source “app” — is treated as automated. Below is every outbound message source seen in the sample and how it was classified — use this to confirm it looks right for this client.</p>
+          <div className="table-wrap"><table className="mini-tbl"><thead><tr><th>Message source · user attribution</th><th>Classified as</th><th>Count</th></tr></thead><tbody>{(d.sourceBreakdown || []).map((s) => <tr key={s.source}><td>{s.source}</td><td><span className={`tm-kind ${s.kind}`}>{s.kind || '-'}</span></td><td>{s.count}</td></tr>)}{!(d.sourceBreakdown || []).length && <tr><td colSpan={3} className="cap">No outbound messages in the sample.</td></tr>}</tbody></table></div>
+          <TimingDebug clientId={clientId} range={range} />
         </>}
       </div>
+    </div>
+  )
+}
+// On-demand message-level detail: for a handful of leads, the actual first
+// outbound messages (source / user / timing) so the classification and the
+// lead-in anchor can be validated against reality.
+function TimingDebug({ clientId, range }) {
+  const [st, setSt] = useState({ status: 'idle', rows: null })
+  const load = () => {
+    setSt({ status: 'loading', rows: null })
+    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}&sample=20&debug=1`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => setSt({ status: 'ok', rows: j.debug || [] }))
+      .catch(() => setSt({ status: 'err', rows: null }))
+  }
+  return (
+    <div style={{ marginTop: 12 }}>
+      {st.status === 'idle' && <button className="set-relink" onClick={load}>Load message-level detail (sample of leads)</button>}
+      {st.status === 'loading' && <Spinner label="Reading a sample of leads' first messages…" />}
+      {st.status === 'err' && <p className="cap">Couldn't load the detail — try again.</p>}
+      {st.status === 'ok' && (!st.rows.length
+        ? <p className="cap">No message detail available for the sample.</p>
+        : <div className="table-wrap"><table className="mini-tbl tm-dbg"><thead><tr><th>Lead in</th><th>Opp created</th><th>First manual</th><th>First outbound messages (source · user · classify · min after lead-in)</th></tr></thead><tbody>{st.rows.map((r, i) => (
+          <tr key={i}>
+            <td>{new Date(r.leadIn).toLocaleString()}</td>
+            <td>{Math.round((Date.parse(r.createdAt) - Date.parse(r.leadIn)) / 60000)}m later</td>
+            <td>{r.firstManualMin == null ? '—' : fmtDuration(r.firstManualMin)}</td>
+            <td>{r.msgs.length ? r.msgs.map((m, j) => <span key={j} className="tm-dbg-msg"><b>{m.source}</b> · {m.hasUser ? 'user' : 'no-user'} · <span className={`tm-kind ${m.kind}`}>{m.kind}</span> · {m.minAfterLeadIn}m</span>) : <span className="cap">no outbound</span>}</td>
+          </tr>
+        ))}</tbody></table></div>)}
     </div>
   )
 }

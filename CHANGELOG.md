@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.29.0 — 2026-07-20 · `PENDING`
+- **Lead map** on the Forms location breakdown: postcode / suburb answers are now
+  plotted on a map of Australia (dot size = lead volume), with a ranked list
+  underneath and any unmatched answers listed. Self-contained — a bundled AU
+  postcode/suburb → coordinate dataset (3,171 postcodes, 16,196 suburbs), lazy-
+  loaded only when the section is opened, so it stays out of the main bundle. No
+  external map tiles or dependencies.
+
 ## v3.28.0 — 2026-07-20 · `PENDING`
 - **Speed to Lead — whole-dataset scan:** a "Scan the whole date range" button
   processes every lead in the range (not just a sample), chunked across polled

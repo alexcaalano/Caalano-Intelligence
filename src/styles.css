@@ -379,6 +379,11 @@ tbody tr:hover { background: var(--panel-2); }
 .appt-cal.on { color: #fff; background: var(--brand); border-color: var(--brand); }
 .appt-cal.reset { color: var(--muted); background: transparent; }
 .appt-cal-n { font-size: 10px; opacity: .8; font-variant-numeric: tabular-nums; }
+.lead-map-wrap { margin: 10px 0 4px; }
+.lead-map { max-width: 520px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+.lead-map .au-land { fill: color-mix(in srgb, var(--brand) 8%, var(--panel)); stroke: var(--border-2); stroke-width: 1.5; }
+.lead-map .au-dot { fill: var(--brand); fill-opacity: .45; stroke: var(--brand); stroke-width: 1; }
+.lead-map-cap { margin-top: 6px; }
 .appt-when { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 860px) { .appt-when { grid-template-columns: 1fr; } }
 .tm-scan { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }

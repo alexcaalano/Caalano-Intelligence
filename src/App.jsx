@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.28.0'
+const APP_VERSION = '3.29.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3304,9 +3304,52 @@ function FormsSettingsTab({ clientId }) {
     </>
   )
 }
-// Where the leads on a form are located (postcode / suburb answers), ranked.
-// Collapsed by default — it's a "where is demand coming from" drill-down, not a
-// headline, so it only opens when asked for.
+// --- Australia map projection (equirectangular, cos-corrected on longitude) ---
+const AU_BOUNDS = { lngMin: 112.9, lngMax: 153.7, latMin: -43.7, latMax: -10.5 }
+const AU_K = 0.891
+const AU_SCALE = 1000 / ((AU_BOUNDS.lngMax - AU_BOUNDS.lngMin) * AU_K)
+const AU_VH = (AU_BOUNDS.latMax - AU_BOUNDS.latMin) * AU_SCALE
+const projAU = (lng, lat) => [(lng - AU_BOUNDS.lngMin) * AU_K * AU_SCALE, (AU_BOUNDS.latMax - lat) * AU_SCALE]
+// Simplified coastline (clockwise) — rough but recognisable; dots use the same
+// projection so they land in the right place regardless of outline precision.
+const AU_MAINLAND = [[142.5, -10.7], [145.8, -16.9], [149.2, -21.1], [153.0, -25.9], [153.6, -28.2], [153.5, -31.4], [151.2, -33.9], [150.0, -37.5], [147.0, -38.8], [144.9, -38.5], [141.6, -38.4], [140.0, -37.5], [138.5, -35.0], [137.5, -35.6], [136.0, -35.0], [135.2, -34.6], [134.0, -33.0], [132.0, -31.9], [129.0, -31.7], [126.0, -32.3], [123.5, -34.0], [121.0, -33.9], [118.0, -35.1], [115.7, -34.4], [115.0, -33.6], [114.9, -30.0], [113.5, -26.0], [114.0, -21.9], [117.2, -20.7], [121.0, -19.6], [123.6, -17.5], [126.0, -14.5], [129.0, -14.8], [130.6, -12.4], [132.6, -11.5], [135.5, -12.0], [136.9, -12.2], [135.9, -14.9], [137.0, -16.4], [139.5, -17.7], [140.9, -17.7], [141.6, -15.0], [141.5, -12.5]]
+const AU_TAS = [[146.0, -41.2], [148.3, -41.0], [148.3, -42.5], [146.9, -43.6], [145.5, -42.9], [145.2, -41.5]]
+const auPath = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + projAU(p[0], p[1]).map((n) => n.toFixed(1)).join(' ')).join(' ') + ' Z'
+const normSub = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+// Plots the form's location answers on a map of Australia. Postcode/suburb data
+// is lazy-loaded (only when the map opens) so it stays out of the main bundle.
+function LeadMap({ locs }) {
+  const [db, setDb] = useState(undefined)
+  useEffect(() => { let a = true; import('./data/aupostcodes.json').then((m) => { if (a) setDb(m.default || m) }).catch(() => { if (a) setDb(null) }); return () => { a = false } }, [])
+  if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
+  if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
+  const coordOf = (value) => {
+    const v = String(value).trim()
+    if (/^\d{4}$/.test(v)) return db.pc[v] || null
+    if (/^\d{3}$/.test(v)) return db.pc['0' + v] || null
+    const pc = db.sub[normSub(v)]
+    return pc ? db.pc[pc] : null
+  }
+  const pts = []; const unmatched = []
+  for (const l of locs) { const c = coordOf(l.value); if (c) pts.push({ ...l, lat: c[0], lng: c[1] }); else unmatched.push(l) }
+  const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
+  const matchedLeads = pts.reduce((s, p) => s + p.leads, 0)
+  return (
+    <div className="lead-map-wrap">
+      <div className="lead-map">
+        <svg viewBox={`0 0 1000 ${Math.round(AU_VH)}`} width="100%" role="img" aria-label="Map of leads across Australia">
+          <path d={auPath(AU_MAINLAND)} className="au-land" />
+          <path d={auPath(AU_TAS)} className="au-land" />
+          {pts.map((p, i) => { const [x, y] = projAU(p.lng, p.lat); const r = 4 + Math.sqrt(p.leads / maxLeads) * 20; return <circle key={i} cx={x} cy={y} r={r} className="au-dot"><title>{`${p.value} — ${p.leads} lead${p.leads === 1 ? '' : 's'}${p.won ? ` · ${p.won} won` : ''}`}</title></circle> })}
+        </svg>
+      </div>
+      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
+    </div>
+  )
+}
+// Where the leads on a form are located (postcode / suburb answers), ranked +
+// mapped. Collapsed by default — it's a "where is demand coming from" drill-down,
+// not a headline, so it only opens when asked for.
 function FormLocations({ form }) {
   const [open, setOpen] = useState(false)
   const locs = groupAnswers(form.locations || []) // merges suburb spellings; postcodes stay separate
@@ -3316,6 +3359,7 @@ function FormLocations({ form }) {
     <div className="fm-locs">
       <button className="linker-toggle" onClick={() => setOpen((v) => !v)}>{open ? '▾' : '▸'} 📍 Where leads are located <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {locs.length} distinct postcode / suburb answers</span></button>
       {open && <>
+        <LeadMap locs={locs} />
         <div className="fm-loc-list" style={{ marginTop: 8 }}>
           {locs.slice(0, 40).map((l) => (
             <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.won} won`}>

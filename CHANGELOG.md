@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.14.1 — 2026-07-20 · `<pending>`
+## v3.14.1 — 2026-07-20 · `eeed5c1`
 - Settings cards simplified: just the client name + the setup-health icons
   (account IDs moved off the preview into the Edit modal). Icons switched to
   emoji that render everywhere, shading removed — each is a logo with a green ✓

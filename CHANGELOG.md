@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.17.0 — 2026-07-20 · `<pending>`
+- Forms edited in ONE place: Settings Forms tab is now just form names + pipeline
+  link; the client Forms view shows pipeline/description read-only with a pencil
+  that opens the same form-settings modal.
+- Forms view visuals: lead-share donut, funnel-by-form and conversion-rate bar
+  charts, plus the full table.
+- Answer grouping: similar text answers merge (case / spacing / punctuation +
+  AU state abbreviations like NSW = New South Wales); hover shows what each group
+  combines. Numeric answers (postcodes, budgets) are never merged.
+
 ## v3.16.0 — 2026-07-20 · `0093412`
 - Forms: link each form to a pipeline and add free-text notes (e.g. "testing
   higher qualification") — editable in Settings (new Forms tab) and on the

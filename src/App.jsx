@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.16.0'
+const APP_VERSION = '3.17.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2961,6 +2961,29 @@ function useForms(clientId, range, nonce = 0) {
   }, [clientId, q, nonce])
   return state
 }
+// Merge answers that mean the same thing - case / spacing / punctuation and
+// common AU state abbreviations (NSW = nsw = New South Wales). Values containing
+// a digit (postcodes, budgets) are never merged. Each group keeps its members
+// for a hover tooltip so groupings can be reviewed.
+const AU_STATES = { nsw: 'New South Wales', vic: 'Victoria', qld: 'Queensland', wa: 'Western Australia', sa: 'South Australia', tas: 'Tasmania', act: 'Australian Capital Territory', nt: 'Northern Territory', 'new south wales': 'New South Wales', victoria: 'Victoria', queensland: 'Queensland', 'western australia': 'Western Australia', 'south australia': 'South Australia', tasmania: 'Tasmania', 'northern territory': 'Northern Territory' }
+function answerKeyOf(v) {
+  const s = String(v).trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+  return AU_STATES[s] ? 'state:' + AU_STATES[s] : s
+}
+function groupAnswers(answers) {
+  const groups = new Map()
+  for (const a of answers) {
+    const v = String(a.value)
+    const key = /\d/.test(v) ? 'num:' + v : answerKeyOf(v) // never merge numeric (postcode/budget)
+    let g = groups.get(key)
+    if (!g) { g = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, members: [], _max: -1 }; groups.set(key, g) }
+    g.leads += a.leads || 0; g.booked += a.booked || 0; g.shown += a.shown || 0; g.won += a.won || 0; g.revenue += a.revenue || 0
+    g.members.push({ value: v, leads: a.leads || 0 })
+    const canon = key.startsWith('state:') ? key.slice(6) : v
+    if (a.leads > g._max) { g._max = a.leads; g.value = canon }
+  }
+  return [...groups.values()].map(({ _max, ...g }) => ({ ...g, merged: g.members.length > 1 })).sort((a, b) => b.leads - a.leads)
+}
 function FormSegments({ segments, captured, currency }) {
   const money = (v) => fmtCurrency(v, currency)
   if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form — its submissions only carried contact details (name / email / phone).'}</div>
@@ -2971,9 +2994,9 @@ function FormSegments({ segments, captured, currency }) {
           <div className="form-seg-qh">{s.question}<span className={`form-seg-kind ${s.kind || 'choice'}`}>{s.kind === 'written' ? 'written' : 'choice'}</span></div>
           <table className="form-seg-t">
             <thead><tr><th>Answer</th><th className="num">Leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th></tr></thead>
-            <tbody>{s.answers.map((a) => (
+            <tbody>{groupAnswers(s.answers).map((a) => (
               <tr key={a.value}>
-                <td title={a.value}>{a.value}</td>
+                <td title={a.merged ? `Combines: ${a.members.sort((x, y) => y.leads - x.leads).map((m) => `${m.value} (${m.leads})`).join(', ')}` : a.value}>{a.value}{a.merged ? <span className="ans-merged" title={`Combines ${a.members.length} spellings`}> ⓘ{a.members.length}</span> : null}</td>
                 <td className="num">{fmtNumber(a.leads)}</td>
                 <td className="num">{fmtNumber(a.booked)}</td>
                 <td className="num">{a.leads ? fmtPct((a.booked / a.leads) * 100, 0) : '-'}</td>
@@ -2990,15 +3013,12 @@ function FormSegments({ segments, captured, currency }) {
     </div>
   )
 }
-// Editable per-form metadata + auto-description, shown in the Forms view and
-// Settings. Notes + pipeline persist server-side (formmeta).
-function FormMetaPanel({ clientId, form, pipes }) {
-  const cur = loadFormMeta(clientId)[form.form] || {}
-  const [notes, setNotes] = useState(cur.notes || '')
-  const [pipe, setPipe] = useState(cur.pipeline || '')
-  const [saved, setSaved] = useState(false)
+// Read-only form metadata + auto-description shown in the Forms view; a pencil
+// opens the shared FormSettingsModal so editing happens in exactly one place.
+function FormMetaPanel({ clientId, form, pipes, onEdit }) {
+  const meta = loadFormMeta(clientId)[form.form] || {}
+  const pipeName = meta.pipeline ? (pipes.find((p) => p.id === meta.pipeline) || {}).name : null
   const questions = form.questions || []
-  const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 1200) }
   return (
     <div className="fm-panel">
       <div className="fm-desc">
@@ -3007,23 +3027,73 @@ function FormMetaPanel({ clientId, form, pipes }) {
           ? <span className="fm-qs">{questions.map((q, i) => <span className="fm-q" key={q + i}>{q}</span>)}</span>
           : <span className="cap">Contact details only — no qualification questions captured.</span>}
       </div>
-      <div className="fm-edit">
-        {pipes.length > 0 && <label className="fm-field"><span className="fm-lab">Pipeline</span>
-          <select value={pipe} onChange={(e) => { setPipe(e.target.value); saveFormMeta(clientId, form.form, { pipeline: e.target.value || null }); flash() }}>
-            <option value="">— not set —</option>
-            {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>}
-        <label className="fm-field fm-notes"><span className="fm-lab">Notes {saved ? <em>· saved</em> : ''}</span>
-          <textarea value={notes} placeholder="e.g. Testing higher qualification to lift show rate…" onChange={(e) => setNotes(e.target.value)} onBlur={() => { saveFormMeta(clientId, form.form, { notes: notes.trim() || null }); flash() }} />
-        </label>
+      <div className="fm-meta-read">
+        <div><span className="fm-lab">Pipeline</span><span className="fm-val">{pipeName || <span className="cap">not set</span>}</span></div>
+        <div><span className="fm-lab">Notes</span><span className="fm-val">{meta.notes || <span className="cap">none</span>}</span></div>
+        <button className="fm-edit-btn" onClick={() => onEdit(form)} title="Edit this form's pipeline & notes">✎ Edit</button>
       </div>
     </div>
   )
 }
+// The single place a form's pipeline + notes are edited (opened from the Forms
+// view pencil and from Settings).
+function FormSettingsModal({ clientId, form, pipes, onClose }) {
+  const cur = loadFormMeta(clientId)[form.form] || {}
+  const [notes, setNotes] = useState(cur.notes || '')
+  const [pipe, setPipe] = useState(cur.pipeline || '')
+  const questions = form.questions || []
+  const save = () => { saveFormMeta(clientId, form.form, { pipeline: pipe || null, notes: notes.trim() || null }); onClose() }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head"><div><h3>{form.kind === 'facebook' ? '📱 ' : form.kind === 'website' ? '🌐 ' : ''}{form.form}</h3><span className="cap">Form settings</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-body">
+          <div className="fm-desc" style={{ marginBottom: 16 }}>
+            <span className="fm-lab">What this form asks</span>
+            {questions.length ? <span className="fm-qs">{questions.map((q, i) => <span className="fm-q" key={q + i}>{q}</span>)}</span> : <span className="cap">Contact details only — no qualification questions captured.</span>}
+          </div>
+          {pipes.length > 0 && <div className="set-field" style={{ marginBottom: 14 }}><span className="fm-lab">Pipeline</span><select value={pipe} onChange={(e) => setPipe(e.target.value)}><option value="">— not set —</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}
+          <div className="set-field"><span className="fm-lab">Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Testing higher qualification to lift show rate…" style={{ minHeight: 72, resize: 'vertical', width: '100%' }} /></div>
+          <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}><button className="set-details-save" onClick={save}>Save</button></div>
+        </div>
+      </div>
+    </div>
+  )
+}
+// Lightweight Settings tab: form names + pipeline link (no performance table).
+function FormsSettingsTab({ clientId }) {
+  const st = useForms(clientId, presetRange('last_30d'), 0)
+  const [editForm, setEditForm] = useState(null)
+  useSettingsSync()
+  if (st.status === 'loading') return <Spinner label="Loading forms…" />
+  const d = st.data
+  if (!d || d.error || d.connected === false) return <p className="cap">Couldn’t load this client’s forms.</p>
+  const forms = d.forms || []
+  const pipes = d.pipelines || []
+  const fmeta = loadFormMeta(clientId)
+  if (!forms.length) return <p className="cap">No form submissions in the last 30 days.</p>
+  return (
+    <>
+      <div className="fmset-list">
+        {forms.map((f) => { const m = fmeta[f.form] || {}; const pn = m.pipeline ? (pipes.find((p) => p.id === m.pipeline) || {}).name : null
+          return (
+            <div className="fmset-row" key={f.form}>
+              <span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span>
+              <span className="fmset-nm" title={f.form}>{f.form}</span>
+              {pn ? <span className="form-pipe-chip">{pn}</span> : <span className="cap">no pipeline</span>}
+              {m.notes ? <span className="form-note-chip" title={m.notes}>📝</span> : null}
+              <button className="set-relink" onClick={() => setEditForm(f)}>✎ Edit</button>
+            </div>
+          )
+        })}
+      </div>
+      {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
+    </>
+  )
+}
 // Where the leads on a form are located (postcode / suburb answers), ranked.
 function FormLocations({ form }) {
-  const locs = form.locations || []
+  const locs = groupAnswers(form.locations || []) // merges suburb spellings; postcodes stay separate
   if (!locs.length) return null
   const max = Math.max(1, ...locs.map((l) => l.leads))
   return (
@@ -3031,8 +3101,8 @@ function FormLocations({ form }) {
       <div className="fm-lab">Location of leads <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {locs.length} distinct · postcode / suburb answers</span></div>
       <div className="fm-loc-list">
         {locs.slice(0, 40).map((l) => (
-          <div className="fm-loc" key={l.value} title={`${l.leads} leads · ${l.won} won`}>
-            <span className="fm-loc-nm">{l.value}</span>
+          <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.won} won`}>
+            <span className="fm-loc-nm">{l.value}{l.merged ? ` ⓘ${l.members.length}` : ''}</span>
             <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
             <span className="fm-loc-n">{l.leads}{l.won ? ` · ${l.won}w` : ''}</span>
           </div>
@@ -3053,11 +3123,44 @@ function FormPipeFilter({ pipes, value, onChange }) {
     </div>
   )
 }
+const FORM_COLORS = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#8b5cf6', '#0e8f6a', '#f97316']
+// Visual summary of form performance: lead share (donut), funnel counts and
+// conversion rates by form (bars). Top forms by leads.
+function FormsCharts({ forms }) {
+  const top = [...forms].sort((a, b) => b.leads - a.leads).slice(0, 8).filter((f) => f.leads > 0)
+  if (!top.length) return null
+  const shortName = (s) => (s.length > 16 ? s.slice(0, 15) + '…' : s)
+  const pie = top.map((f, i) => ({ name: f.form, value: f.leads, color: FORM_COLORS[i % FORM_COLORS.length] }))
+  const funnel = top.map((f) => ({ name: shortName(f.form), Leads: f.leads, Booked: f.booked, Shown: f.shown, Won: f.won }))
+  const rates = top.map((f) => ({ name: shortName(f.form), 'Book %': f.leads ? Math.round((f.booked / f.leads) * 100) : 0, 'Show %': f.booked ? Math.round((f.shown / f.booked) * 100) : 0, 'Win %': f.leads ? Math.round((f.won / f.leads) * 100) : 0 }))
+  const xa = <XAxis dataKey="name" fontSize={9} stroke="var(--muted)" interval={0} angle={-18} textAnchor="end" height={54} />
+  return (
+    <div className="forms-charts">
+      <div className="card chart-card"><h3>Lead share by form</h3>
+        <ResponsiveContainer width="100%" height={230}>
+          <PieChart><Pie data={pie} dataKey="value" nameKey="name" innerRadius={46} outerRadius={82} paddingAngle={2}>{pie.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip formatter={(v) => fmtNumber(v) + ' leads'} /></PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="card chart-card"><h3>Funnel by form</h3>
+        <ResponsiveContainer width="100%" height={230}>
+          <BarChart data={funnel} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip /><Legend /><Bar dataKey="Leads" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Booked" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Shown" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Won" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={20} /></BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="card chart-card"><h3>Conversion rates by form</h3>
+        <ResponsiveContainer width="100%" height={230}>
+          <BarChart data={rates} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} /><Tooltip formatter={(v) => v + '%'} /><Legend /><Bar dataKey="Book %" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Show %" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Win %" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={20} /></BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
 function FormsView({ clientId, currency, range, nonce }) {
   const st = useForms(clientId, range, nonce)
   const [pipeFilter, setPipeFilter] = useState('all')
   const [sort, setSort] = useState({ key: 'leads', dir: -1 })
   const [open, setOpen] = useState(() => new Set())
+  const [editForm, setEditForm] = useState(null)
+  useSettingsSync()
   const toggle = (f) => setOpen((prev) => { const n = new Set(prev); n.has(f) ? n.delete(f) : n.add(f); return n })
   const money = (v) => fmtCurrency(v, currency)
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading form performance…" /></div>
@@ -3094,8 +3197,9 @@ function FormsView({ clientId, currency, range, nonce }) {
         <Sc label="Won" value={fmtNumber(tot.won)} />
         <Sc label="Revenue" value={money(tot.revenue)} />
       </div>
-      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· leads → booked → shown → won by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></div>
       <FormPipeFilter pipes={pipes} value={pipeFilter} onChange={setPipeFilter} />
+      <FormsCharts forms={forms} />
+      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· leads → booked → shown → won by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></div>
       <div className="table-wrap"><table>
         <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
         {sorted.map((f) => {
@@ -3118,7 +3222,7 @@ function FormsView({ clientId, currency, range, nonce }) {
                 <td className="num">{f.avgDeal != null ? money(f.avgDeal) : '-'}</td>
               </tr>
               {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}>
-                <FormMetaPanel clientId={clientId} form={f} pipes={pipes} />
+                <FormMetaPanel clientId={clientId} form={f} pipes={pipes} onEdit={setEditForm} />
                 <FormLocations form={f} />
                 <FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} />
               </td></tr>}
@@ -3126,7 +3230,8 @@ function FormsView({ clientId, currency, range, nonce }) {
           )
         })}
       </table></div>
-      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. Booked / Shown come from the date-of-action appointment feed; Won / Revenue from won opportunities. <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher Book / Show / Win %. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers actually book, show and win.</p>
+      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. Booked / Shown come from the date-of-action appointment feed; Won / Revenue from won opportunities. <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher Book / Show / Win %. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers actually book, show and win. Similar text answers (e.g. NSW / nsw / New South Wales) are merged — hover an answer to see what it combines.</p>
+      {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
     </>
   )
 }
@@ -3860,7 +3965,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Click a form to see the questions it asks, set its pipeline and add notes (e.g. "testing higher qualification"). These show on the client's Forms tab too.</p><FormsView clientId={c.id} currency={currency} range={presetRange('last_30d')} nonce={0} /></div>}
+          {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
           {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>
       </div>

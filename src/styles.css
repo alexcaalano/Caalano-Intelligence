@@ -379,8 +379,13 @@ tbody tr:hover { background: var(--panel-2); }
 .appt-cal-n { font-size: 10px; opacity: .8; font-variant-numeric: tabular-nums; }
 .lead-map-wrap { margin: 10px 0 4px; }
 .lead-map { max-width: 520px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
-.lead-map .au-land { fill: color-mix(in srgb, var(--brand) 8%, var(--panel)); stroke: var(--border-2); stroke-width: 1.5; }
-.lead-map .au-dot { fill: var(--brand); fill-opacity: .45; stroke: var(--brand); stroke-width: 1; }
+.lead-map-tabs { display: inline-flex; gap: 4px; margin-bottom: 8px; }
+.lead-map-tabs button { font-size: 11px; font-weight: 700; padding: 4px 10px; border: 1px solid var(--border-2); background: var(--panel); color: var(--muted); border-radius: 7px; cursor: pointer; }
+.lead-map-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.lead-map-tabs button:disabled { opacity: .4; cursor: default; }
+.lead-map svg { display: block; }
+.lead-map .au-land { fill: color-mix(in srgb, var(--brand) 8%, var(--panel)); stroke: var(--border-2); }
+.lead-map .au-dot { fill: var(--brand); fill-opacity: .45; stroke: var(--brand); }
 .lead-map-cap { margin-top: 6px; }
 .appt-when { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 860px) { .appt-when { grid-template-columns: 1fr; } }

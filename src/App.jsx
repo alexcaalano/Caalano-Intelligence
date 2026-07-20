@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.29.1'
+const APP_VERSION = '3.30.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3300,16 +3300,14 @@ const AU_K = 0.891
 const AU_SCALE = 1000 / ((AU_BOUNDS.lngMax - AU_BOUNDS.lngMin) * AU_K)
 const AU_VH = (AU_BOUNDS.latMax - AU_BOUNDS.latMin) * AU_SCALE
 const projAU = (lng, lat) => [(lng - AU_BOUNDS.lngMin) * AU_K * AU_SCALE, (AU_BOUNDS.latMax - lat) * AU_SCALE]
-// Simplified coastline (clockwise) — rough but recognisable; dots use the same
-// projection so they land in the right place regardless of outline precision.
-const AU_MAINLAND = [[142.5, -10.7], [145.8, -16.9], [149.2, -21.1], [153.0, -25.9], [153.6, -28.2], [153.5, -31.4], [151.2, -33.9], [150.0, -37.5], [147.0, -38.8], [144.9, -38.5], [141.6, -38.4], [140.0, -37.5], [138.5, -35.0], [137.5, -35.6], [136.0, -35.0], [135.2, -34.6], [134.0, -33.0], [132.0, -31.9], [129.0, -31.7], [126.0, -32.3], [123.5, -34.0], [121.0, -33.9], [118.0, -35.1], [115.7, -34.4], [115.0, -33.6], [114.9, -30.0], [113.5, -26.0], [114.0, -21.9], [117.2, -20.7], [121.0, -19.6], [123.6, -17.5], [126.0, -14.5], [129.0, -14.8], [130.6, -12.4], [132.6, -11.5], [135.5, -12.0], [136.9, -12.2], [135.9, -14.9], [137.0, -16.4], [139.5, -17.7], [140.9, -17.7], [141.6, -15.0], [141.5, -12.5]]
-const AU_TAS = [[146.0, -41.2], [148.3, -41.0], [148.3, -42.5], [146.9, -43.6], [145.5, -42.9], [145.2, -41.5]]
-const auPath = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + projAU(p[0], p[1]).map((n) => n.toFixed(1)).join(' ')).join(' ') + ' Z'
 const normSub = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
-// Plots the form's location answers on a map of Australia. Postcode/suburb data
-// is lazy-loaded (only when the map opens) so it stays out of the main bundle.
+// Plots the form's location answers on a detailed map of Australia (state
+// outlines). Data (postcode/suburb -> coords + outline paths) is lazy-loaded so
+// it stays out of the main bundle. Defaults to auto-zooming to fit the plotted
+// leads, so a Sydney-only client sees Sydney, not the whole country.
 function LeadMap({ locs }) {
   const [db, setDb] = useState(undefined)
+  const [zoom, setZoom] = useState('fit') // 'fit' (to leads) | 'all' (whole country)
   useEffect(() => { let a = true; import('./data/aupostcodes.json').then((m) => { if (a) setDb(m.default || m) }).catch(() => { if (a) setDb(null) }); return () => { a = false } }, [])
   if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
   if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
@@ -3321,16 +3319,38 @@ function LeadMap({ locs }) {
     return pc ? db.pc[pc] : null
   }
   const pts = []; const unmatched = []
-  for (const l of locs) { const c = coordOf(l.value); if (c) pts.push({ ...l, lat: c[0], lng: c[1] }); else unmatched.push(l) }
+  for (const l of locs) { const c = coordOf(l.value); if (c) { const [x, y] = projAU(c[1], c[0]); pts.push({ ...l, x, y }) } else unmatched.push(l) }
   const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
   const matchedLeads = pts.reduce((s, p) => s + p.leads, 0)
+  // Viewbox: fit tightly to the plotted points (with padding, a minimum span so a
+  // single suburb isn't over-zoomed, and an aspect ratio that fills the card),
+  // or the whole country.
+  let vb
+  if (zoom === 'fit' && pts.length) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+    let w = maxX - minX, h = maxY - minY
+    const padX = Math.max(w * 0.35, 16), padY = Math.max(h * 0.35, 16)
+    minX -= padX; maxX += padX; minY -= padY; maxY += padY; w = maxX - minX; h = maxY - minY
+    const FLOOR = 60 // ~2° minimum, so one point still shows context
+    if (w < FLOOR) { const c = (minX + maxX) / 2; minX = c - FLOOR / 2; maxX = c + FLOOR / 2; w = FLOOR }
+    if (h < FLOOR) { const c = (minY + maxY) / 2; minY = c - FLOOR / 2; maxY = c + FLOOR / 2; h = FLOOR }
+    const T = 1.3
+    if (w / h < T) { const nw = h * T, d = (nw - w) / 2; minX -= d; maxX += d; w = nw } else { const nh = w / T, d = (nh - h) / 2; minY -= d; maxY += d; h = nh }
+    vb = { x: minX, y: minY, w, h }
+  } else vb = { x: 0, y: 0, w: 1000, h: AU_VH }
+  const sw = Math.max(0.35, vb.w * 0.0022)
+  const dotR = (leads) => vb.w * (0.013 + Math.sqrt(leads / maxLeads) * 0.021)
   return (
     <div className="lead-map-wrap">
       <div className="lead-map">
-        <svg viewBox={`0 0 1000 ${Math.round(AU_VH)}`} width="100%" role="img" aria-label="Map of leads across Australia">
-          <path d={auPath(AU_MAINLAND)} className="au-land" />
-          <path d={auPath(AU_TAS)} className="au-land" />
-          {pts.map((p, i) => { const [x, y] = projAU(p.lng, p.lat); const r = 4 + Math.sqrt(p.leads / maxLeads) * 20; return <circle key={i} cx={x} cy={y} r={r} className="au-dot"><title>{`${p.value} — ${p.leads} lead${p.leads === 1 ? '' : 's'}${p.won ? ` · ${p.won} won` : ''}`}</title></circle> })}
+        <div className="lead-map-tabs">
+          <button className={zoom === 'fit' ? 'on' : ''} onClick={() => setZoom('fit')} disabled={!pts.length}>Fit to leads</button>
+          <button className={zoom === 'all' ? 'on' : ''} onClick={() => setZoom('all')}>All Australia</button>
+        </div>
+        <svg viewBox={`${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${vb.h.toFixed(1)}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Map of leads across Australia">
+          {(db.outline || []).map((d, i) => <path key={i} d={d} className="au-land" strokeWidth={sw} />)}
+          {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={dotR(p.leads)} className="au-dot" strokeWidth={sw}><title>{`${p.value} — ${p.leads} lead${p.leads === 1 ? '' : 's'}${p.won ? ` · ${p.won} won` : ''}`}</title></circle>)}
         </svg>
       </div>
       <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>

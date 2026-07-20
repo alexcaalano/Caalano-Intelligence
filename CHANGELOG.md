@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.30.0 — 2026-07-20 · `PENDING`
+- **Lead map — detailed + auto-zoom.** Swapped the rough outline for a detailed
+  Australia map with state borders, and the map now **auto-zooms to fit the
+  plotted leads** — a Sydney-only client (e.g. Pool Haus) sees Sydney at full
+  size, not the whole country. Dot and line sizes scale with the zoom; a
+  "Fit to leads / All Australia" toggle switches between the fitted view and the
+  national view. A single location still shows ~2° of context so it isn't
+  over-zoomed.
+
 ## v3.29.1 — 2026-07-20 · `PENDING`
 - Removed the Agency Overview "Still maturing" summary banner — the per-row badge
   next to each client name already covers it.

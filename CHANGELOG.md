@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.14.2 — 2026-07-20 · `<pending>`
+## v3.14.2 — 2026-07-20 · `cc1fca1`
 - Setup-health strip spans the full card width (equal cells, same width as the
   Edit button) and each icon now carries a short text label under it, so the
   status is legible even if an emoji doesn't render. Swapped to widely-supported

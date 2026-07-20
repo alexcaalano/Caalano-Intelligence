@@ -17,7 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.9.0 — 2026-07-20 · `<changelog>`
+## v3.10.0 — 2026-07-20 · `<pending>`
+- AI insights (Weekly Traffic Light briefings) now persist server-side like
+  every other setting, so a briefing one person generates is shared across the
+  team and devices. Theme stays per-device (a local UI preference).
+
+## v3.9.0 — 2026-07-20 · `b3b1e28`
 - Added this changelog and surfaced the release number in the app sidebar.
 
 ## v3.8.0 — 2026-07-20 · `c957e3c`

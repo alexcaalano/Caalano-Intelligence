@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.9.0'
+const APP_VERSION = '3.10.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -730,10 +730,13 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
 }
 
 /* ============ Weekly Traffic Light ============ */
-// AI insights persist per client (localStorage) until regenerated.
+// AI insights (Weekly Traffic Light briefings) persist per client on the SERVER
+// like every other setting - see the SETTINGS store below - so a briefing one
+// person generates is shared across the team and devices. (Read/written via the
+// shared SETTINGS cache; the functions live here for locality with the tab.)
 const AI_KEY = 'caalano_ai_insights'
-function loadInsights(clientId) { try { return (JSON.parse(localStorage.getItem(AI_KEY) || '{}')[clientId]) || null } catch { return null } }
-function saveInsights(clientId, v) { try { const all = JSON.parse(localStorage.getItem(AI_KEY) || '{}'); all[clientId] = v; localStorage.setItem(AI_KEY, JSON.stringify(all)) } catch {} }
+function loadInsights(clientId) { return (SETTINGS.insights && SETTINGS.insights[clientId]) || null }
+function saveInsights(clientId, v) { SETTINGS.insights = { ...(SETTINGS.insights || {}), [clientId]: v }; writeLS(AI_KEY, SETTINGS.insights); saveSettingsRemote({ insights: { [clientId]: v } }); bumpSettings() }
 // Minimal markdown renderer (bold, headings, bullets) for the AI briefing.
 function MdText({ text }) {
   const bold = (s) => s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => (p.startsWith('**') && p.endsWith('**') ? <strong key={i}>{p.slice(2, -2)}</strong> : p))
@@ -798,7 +801,9 @@ function WeeklyTab({ rows, currency, nonce }) {
   const [ai, setAi] = useState(() => (cid ? loadInsights(cid) : null))
   const [aiLoading, setAiLoading] = useState(false)
   const [aiErr, setAiErr] = useState(null)
-  useEffect(() => { setAi(cid ? loadInsights(cid) : null); setAiErr(null) }, [cid])
+  // Re-read once server settings hydrate (SETTINGS.loaded) so a briefing saved
+  // on another device/browser shows up here too.
+  useEffect(() => { setAi(cid ? loadInsights(cid) : null); setAiErr(null) }, [cid, SETTINGS.loaded])
   const genInsights = async () => {
     if (!wk.data || !wk.data.weeks || aiLoading) return
     setAiLoading(true); setAiErr(null)
@@ -1779,7 +1784,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1795,13 +1800,13 @@ async function hydrateSettings() {
     const r = await fetch('/.netlify/functions/settings')
     const j = await r.json().catch(() => null)
     const d = j && j.ok && j.data ? j.data : null
-    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled'].some((s) => d[s] && Object.keys(d[s]).length)
+    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true

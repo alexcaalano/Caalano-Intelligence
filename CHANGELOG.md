@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.23.0 — 2026-07-20 · `PENDING`
+- **Settings → Forms tab redesigned** to match the rest of Settings: each form is
+  a clean row with a reviewed tick, an inline pipeline dropdown and a notes
+  pencil.
+- **Auto-assign pipeline to forms:** single-pipeline clients default every form
+  to that pipeline; multi-pipeline clients get a name-match **suggestion** (shown
+  as a "suggested" chip, never overwriting a saved link). An "Auto-assign N
+  suggested" button fills the unset ones in one click.
+- **Forms health icon** on each Settings client card (📝) — green once forms have
+  been reviewed. Saving a form counts as reviewed even if intentionally left with
+  no pipeline.
+- **Removed** the contact self-booking **tag audit** from Settings (superseded by
+  the appointments-API approach for booked-by-user vs booked-by-contact).
+
 ## v3.22.0 — 2026-07-20 · `PENDING`
 - **Pipeline filter on Meta Ads & Google Ads.** A "Pipeline" dropdown (shown for
   multi-pipeline clients) re-scopes every Caalano360 green column, the key-event

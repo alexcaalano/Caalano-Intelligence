@@ -313,7 +313,7 @@ tbody tr:hover { background: var(--panel-2); }
 .set-saved { margin-left: auto; font-size: 11.5px; color: var(--pos); font-weight: 600; }
 .set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; align-items: start; }
 /* Per-client setup-health strip: full-width equal cells, logo + label + mark. */
-.set-health { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 14px; }
+.set-health { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin-top: 14px; }
 .sth { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: help; padding: 7px 2px; border: 1px solid var(--border); border-radius: 9px; }
 .sth-ic { font-size: 16px; line-height: 1; height: 16px; display: inline-flex; align-items: center; }
 .sth-ic img { width: 16px; height: 16px; object-fit: contain; border-radius: 3px; }
@@ -777,6 +777,14 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .fmset-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; }
 .fmset-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .fmset-row .set-relink { padding: 6px 11px; }
+.fmset-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.fmset-row2 { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.fmset-row2.is-done { border-color: color-mix(in srgb, var(--pos) 40%, var(--border)); }
+.fmset-chk { width: 18px; height: 18px; flex-shrink: 0; display: inline-grid; place-items: center; border-radius: 50%; font-size: 11px; font-weight: 800; color: var(--faint); border: 1px solid var(--border-2); }
+.fmset-chk.on { color: #fff; background: var(--pos); border-color: var(--pos); }
+.fmset-row2 .fmset-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.fmset-sel { background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12px; font-weight: 600; cursor: pointer; max-width: 230px; }
+.fmset-sug { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); border-radius: 5px; padding: 2px 6px; }
 /* Form answers: one question at a time */
 .fseg { padding: 12px 14px; }
 .fseg-sel { margin-bottom: 12px; }

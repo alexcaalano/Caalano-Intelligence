@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.22.0'
+const APP_VERSION = '3.23.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1935,14 +1935,37 @@ function useDiscoverNames() {
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
 
-// Per-form metadata (pipeline link + free-text notes), keyed by client then form
-// label. Shown in Settings and the Forms view.
+// Per-form metadata (pipeline link + free-text notes + reviewed flag), keyed by
+// client then form label. Shown in Settings and the Forms view.
 function loadFormMeta(clientId) { return (SETTINGS.formmeta && SETTINGS.formmeta[clientId]) || {} }
 function saveFormMeta(clientId, formLabel, meta) {
   const cur = (SETTINGS.formmeta && SETTINGS.formmeta[clientId]) || {}
   const next = { ...cur, [formLabel]: { ...(cur[formLabel] || {}), ...meta } }
   SETTINGS.formmeta = { ...(SETTINGS.formmeta || {}), [clientId]: next }
   writeLS(FORMMETA_KEY, SETTINGS.formmeta); saveSettingsRemote({ formmeta: { [clientId]: next } }); bumpSettings()
+}
+// How many of a client's forms have been reviewed (saved, even if left blank),
+// for the Settings card health icon. Only counts real per-form entries.
+function formsDoneCount(clientId) { const fm = SETTINGS.formmeta && SETTINGS.formmeta[clientId]; return fm ? Object.values(fm).filter((v) => v && typeof v === 'object' && v.done).length : 0 }
+// Suggest a pipeline for a form: the only pipeline for single-pipeline clients,
+// else the best name-token overlap between the form label and a pipeline name
+// (incl. a bracketed [TAG] abbreviation). '' when nothing matches.
+function suggestPipeline(formName, pipes) {
+  if (!pipes || !pipes.length) return ''
+  if (pipes.length === 1) return pipes[0].id
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const fWords = norm(formName).split(' ').filter((w) => w.length > 2)
+  const fSet = new Set(fWords); const fJoined = ' ' + fWords.join(' ') + ' '
+  let best = '', bestScore = 0
+  for (const p of pipes) {
+    const tag = (String(p.name).match(/\[([a-z0-9]+)\]/i) || [])[1]
+    const pWords = norm(p.name).split(' ').filter((w) => w.length > 2)
+    let score = 0
+    for (const w of pWords) if (fSet.has(w)) score++
+    if (tag && fJoined.includes(' ' + tag.toLowerCase() + ' ')) score += 2
+    if (score > bestScore) { bestScore = score; best = p.id }
+  }
+  return bestScore > 0 ? best : ''
 }
 
 /* Per-client KPI targets - { metaCpl, googleCostConv, stages: { [stageName]:
@@ -3184,7 +3207,7 @@ function FormSettingsModal({ clientId, form, pipes, onClose }) {
   const [notes, setNotes] = useState(cur.notes || '')
   const [pipe, setPipe] = useState(cur.pipeline || '')
   const questions = form.questions || []
-  const save = () => { saveFormMeta(clientId, form.form, { pipeline: pipe || null, notes: notes.trim() || null }); onClose() }
+  const save = () => { saveFormMeta(clientId, form.form, { pipeline: pipe || null, notes: notes.trim() || null, done: true }); onClose() }
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
@@ -3202,10 +3225,16 @@ function FormSettingsModal({ clientId, form, pipes, onClose }) {
     </div>
   )
 }
-// Lightweight Settings tab: form names + pipeline link (no performance table).
+// Settings Forms tab: each form's pipeline link + reviewed state. Single-pipeline
+// clients auto-suggest that pipeline; multi-pipeline clients auto-suggest by name
+// match. Suggestions never overwrite a saved link - they're just the default in
+// the dropdown until confirmed. Saving (even with no pipeline) marks a form
+// reviewed, which drives the card's Forms health icon.
 function FormsSettingsTab({ clientId }) {
   const st = useForms(clientId, presetRange('last_30d'), 0)
   const [editForm, setEditForm] = useState(null)
+  const [, force] = useState(0)
+  const bump = () => force((n) => n + 1)
   useSettingsSync()
   if (st.status === 'loading') return <Spinner label="Loading forms…" />
   const d = st.data
@@ -3214,22 +3243,42 @@ function FormsSettingsTab({ clientId }) {
   const pipes = d.pipelines || []
   const fmeta = loadFormMeta(clientId)
   if (!forms.length) return <p className="cap">No form submissions in the last 30 days.</p>
+  const savedPipe = (f) => { const m = fmeta[f.form]; return m && m.pipeline != null ? m.pipeline : null }
+  const effPipe = (f) => { const s = savedPipe(f); return s != null ? s : suggestPipeline(f.form, pipes) }
+  const setPipe = (f, v) => { saveFormMeta(clientId, f.form, { pipeline: v || null, done: true }); bump() }
+  const unsuggested = forms.filter((f) => savedPipe(f) == null && suggestPipeline(f.form, pipes))
+  const autoAssign = () => { for (const f of unsuggested) saveFormMeta(clientId, f.form, { pipeline: suggestPipeline(f.form, pipes), done: true }); bump() }
+  const done = forms.filter((f) => fmeta[f.form] && fmeta[f.form].done).length
   return (
     <>
+      <div className="fmset-head">
+        <span className="cap">{done} of {forms.length} form{forms.length === 1 ? '' : 's'} reviewed{pipes.length <= 1 ? ' · single pipeline' : ''}</span>
+        {unsuggested.length > 0 && <button className="set-relink" onClick={autoAssign}>Auto-assign {unsuggested.length} suggested</button>}
+      </div>
       <div className="fmset-list">
-        {forms.map((f) => { const m = fmeta[f.form] || {}; const pn = m.pipeline ? (pipes.find((p) => p.id === m.pipeline) || {}).name : null
+        {forms.map((f) => {
+          const m = fmeta[f.form] || {}
+          const isDone = !!m.done
+          const eff = effPipe(f)
+          const suggested = savedPipe(f) == null && !!eff
           return (
-            <div className="fmset-row" key={f.form}>
+            <div className={`fmset-row2 ${isDone ? 'is-done' : ''}`} key={f.form}>
+              <span className={`fmset-chk ${isDone ? 'on' : ''}`} title={isDone ? 'Reviewed' : 'Not reviewed yet'}>{isDone ? '✓' : '○'}</span>
               <span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span>
               <span className="fmset-nm" title={f.form}>{f.form}</span>
-              {pn ? <span className="form-pipe-chip">{pn}</span> : <span className="cap">no pipeline</span>}
-              {m.notes ? <span className="form-note-chip" title={m.notes}>📝</span> : null}
-              <button className="set-relink" onClick={() => setEditForm(f)}>✎ Edit</button>
+              {suggested && <span className="fmset-sug" title="Auto-suggested from the naming — pick to confirm">suggested</span>}
+              {pipes.length > 0 && (
+                <select className="fmset-sel" value={eff || ''} onChange={(e) => setPipe(f, e.target.value)}>
+                  <option value="">— no pipeline —</option>
+                  {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              )}
+              <button className="fm-edit-btn" onClick={() => setEditForm(f)} title="Notes & details">{m.notes ? '📝' : '✎'}</button>
             </div>
           )
         })}
       </div>
-      {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
+      {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => { setEditForm(null); bump() }} />}
     </>
   )
 }
@@ -4061,6 +4110,7 @@ function clientHealth(c) {
     { img: CRM_LOGO, short: 'CRM', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
     { ic: '🎯', short: 'Events', label: 'Key events configured', state: keConfigured ? 'ok' : (SEED_KEYEVENTS[c.id] ? 'warn' : (c.ghl ? 'warn' : 'bad')) },
     { ic: '📅', short: 'Cals', label: 'Booked calendars linked', state: hasCal ? 'ok' : (c.ghl ? 'warn' : 'bad') },
+    { ic: '📝', short: 'Forms', label: `Forms reviewed (${formsDoneCount(c.id)} linked)`, state: c.ghl ? (formsDoneCount(c.id) > 0 ? 'ok' : 'warn') : 'bad' },
     { ic: '📊', short: 'KPIs', label: 'KPI targets set', state: kpiSet ? 'ok' : 'warn' },
     { ic: '📡', short: 'Diag', label: 'Tracking diagnostics ready', state: (c.ghl && (c.meta || c.google)) ? 'ok' : (c.ghl ? 'warn' : 'bad') },
   ]
@@ -4124,10 +4174,9 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
       </div>
       <div className="set-legend">
         <span>Setup:</span>
-        <span className="lg"><img src={FAVICON('meta.com')} alt="" width="14" height="14" /> Meta</span><span className="lg"><img src={FAVICON('ads.google.com')} alt="" width="14" height="14" /> Google</span><span className="lg"><img src={CRM_LOGO} alt="" width="14" height="14" /> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
+        <span className="lg"><img src={FAVICON('meta.com')} alt="" width="14" height="14" /> Meta</span><span className="lg"><img src={FAVICON('ads.google.com')} alt="" width="14" height="14" /> Google</span><span className="lg"><img src={CRM_LOGO} alt="" width="14" height="14" /> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📝</b> Forms</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
         <span className="lg-sep">·</span><span className="lg"><span className="sth-mk ok">✓</span> done</span><span className="lg"><span className="sth-mk warn">●</span> attention</span><span className="lg"><span className="sth-mk bad">✗</span> missing</span>
       </div>
-      {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
       <div className="set-grid">
         {list.map((c) => {
           const on = isOn(c)

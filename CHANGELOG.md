@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.12.0 — 2026-07-20 · `<pending>`
+## v3.12.0 — 2026-07-20 · `f57ec01`
 - Settings client management: account **names** now show next to every Meta /
   Google / Caalano Systems id (resolved from discovery) so mis-links are obvious.
 - Client card is now a single **Edit** (pencil) button; the config modal has an

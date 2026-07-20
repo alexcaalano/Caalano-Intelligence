@@ -10,9 +10,19 @@ import { exchangeCode, isConnected, loadTokens } from '../lib/ghl.mjs'
 // that works at agency level (to mint sub-account tokens); opportunities +
 // contacts cover CRM + attribution; calendars + calendars/events let us count
 // real booked calls against a creative even when the pipeline stage was never
-// advanced. Keep the GoHighLevel app scope set matched to this list so the
-// token and app scopes agree and location-token minting works.
-const SCOPES = ['contacts.readonly', 'opportunities.readonly', 'locations.readonly', 'calendars.readonly', 'calendars/events.readonly']
+// advanced. forms + surveys give form/survey submission analytics (which form /
+// friction level converts); locations/customFields labels the answers; users
+// gives real sales-rep names for per-rep performance; conversations/message
+// unlocks speed-to-lead and engagement. Keep the GoHighLevel app scope set
+// matched to this list so the token and app scopes agree and every scope
+// requested here is actually enabled on the marketplace app (an un-enabled
+// scope makes the whole re-authorisation fail).
+const SCOPES = [
+  'contacts.readonly', 'opportunities.readonly', 'locations.readonly',
+  'calendars.readonly', 'calendars/events.readonly',
+  'forms.readonly', 'locations/customFields.readonly', 'users.readonly',
+  'conversations/message.readonly',
+]
 const AUTH = 'https://marketplace.gohighlevel.com/oauth/chooselocation'
 
 const page = (title, body) => new Response(

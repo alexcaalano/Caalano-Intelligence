@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, sampleForms, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -813,6 +813,16 @@ export default async (req) => {
     if (!cc || !cc.ghl) return json({ error: `client ${client} has no Caalano Systems location` }, 404)
     try { return json({ scope: 'chandebug', client, ...(await sampleChannels(cc.ghl, from, to)) }, 200) }
     catch (e) { return json({ error: String(e.message || e).slice(0, 200) }, 200) }
+  }
+
+  // Read-only probe of a client's forms / submissions / custom fields, to see
+  // how Meta Lead Forms are structured before building the By-Form view.
+  if (url.searchParams.get('scope') === 'formsprobe') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'formsprobe', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'formsprobe', client, connected: false })
+    try { return json({ scope: 'formsprobe', client, ...(await sampleForms(cc.ghl, from, to)) }, 200) }
+    catch (e) { return json({ scope: 'formsprobe', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
   // Calendar list for one client, for the Settings booking-funnel-step editor.

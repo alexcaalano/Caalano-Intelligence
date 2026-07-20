@@ -315,6 +315,59 @@ export async function listCalendars(locationId) {
   return cals.map((c) => ({ id: c.id || c._id || c.calendarId, name: c.name || c.calendarName || 'Calendar' })).filter((c) => c.id)
 }
 
+// Read-only probe for the Forms feature: the location's forms (id -> name), a
+// few recent submissions with PII redacted, and the custom-field definitions -
+// so we can see how Meta Lead Forms vs GHL funnel forms are actually structured
+// (form name on the submission vs a "Facebook Form Name" custom field) before
+// building the full By-Form performance view.
+export async function sampleForms(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const out = { locationId }
+  const cfById = {}
+  try {
+    const j = await ghlGet(locTok, `/locations/${locationId}/customFields`, {})
+    const fields = j.customFields || j.customField || []
+    out.customFields = fields.slice(0, 80).map((f) => ({ id: f.id, name: f.name, key: f.fieldKey, dataType: f.dataType }))
+    for (const f of fields) cfById[f.id] = f.name
+    out.formNameFields = fields.filter((f) => /form.?name/i.test(`${f.name || ''} ${f.fieldKey || ''}`)).map((f) => ({ id: f.id, name: f.name, key: f.fieldKey }))
+  } catch (e) { out.customFieldsError = String(e.message || e).slice(0, 180) }
+  const formName = {}
+  try {
+    const j = await ghlGet(locTok, '/forms/', { locationId, limit: 100 })
+    const forms = j.forms || []
+    out.formsCount = forms.length
+    out.forms = forms.slice(0, 60).map((f) => ({ id: f.id, name: f.name }))
+    for (const f of forms) formName[f.id] = f.name
+  } catch (e) { out.formsError = String(e.message || e).slice(0, 180) }
+  const PII = /email|phone|first_?name|last_?name|full_?name|^name$|address|signature|^ip$/i
+  const redact = (v) => (typeof v === 'string' && /@|\+?\d{7,}/.test(v) ? '***' : v)
+  try {
+    const q = { locationId, limit: 12 }; if (from) q.startAt = from; if (to) q.endAt = to
+    const j = await ghlGet(locTok, '/forms/submissions', q)
+    const subs = j.submissions || []
+    out.submissionsTotal = (j.meta && j.meta.total != null) ? j.meta.total : subs.length
+    out.sample = subs.slice(0, 8).map((s) => {
+      const o = s.others || {}
+      const answers = {}
+      for (const [k, v] of Object.entries(o)) {
+        if (PII.test(k) || v == null || typeof v === 'object') continue
+        answers[cfById[k] || k] = redact(v)
+      }
+      const utm = (o.eventData && o.eventData.url_params) || null
+      return {
+        formId: s.formId,
+        formName: formName[s.formId] || null,
+        fbFormName: o['Facebook Form Name'] || o.facebook_form_name || o.fbFormName || null,
+        source: o.source || (o.internalSource && o.internalSource.type) || null,
+        utm: utm ? { source: utm.utm_source, medium: utm.utm_medium, campaign: utm.utm_campaign, content: utm.utm_content } : null,
+        answerKeys: Object.keys(answers).slice(0, 20),
+        answers,
+      }
+    })
+  } catch (e) { out.submissionsError = String(e.message || e).slice(0, 200) }
+  return out
+}
+
 // Full CRM-style rollup over an arbitrary opportunity subset (one channel, or
 // all). Mirrors buildCrm's shape so the frontend can render tiles, the ordered
 // pipeline funnel, stage pass-through and lost reasons for any channel filter.

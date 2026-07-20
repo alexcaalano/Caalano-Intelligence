@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.13.0 — 2026-07-20 · `<pending>`
+- Client config modal redesigned with **horizontal tabs** (Summary · Key events ·
+  Campaign links · KPI targets · Diagnostics) — content opens full-width under
+  the tab instead of stacking.
+- **Summary** tab: edit name / description-industry and see + edit linked
+  accounts (Meta / Google / Caalano Systems) in one place.
+- KPI targets are now **per pipeline** for multi-pipeline clients: pick a
+  pipeline, then set every target (channel costs, weekly targets, per-stage
+  lead goals) for it. Single-pipeline clients are unchanged.
+
 ## v3.12.0 — 2026-07-20 · `f57ec01`
 - Settings client management: account **names** now show next to every Meta /
   Google / Caalano Systems id (resolved from discovery) so mis-links are obvious.

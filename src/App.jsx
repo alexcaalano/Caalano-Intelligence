@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.12.0'
+const APP_VERSION = '3.13.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1850,9 +1850,24 @@ function useDiscoverNames() {
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
 
-/* Per-client KPI targets - { metaCpl, googleCostConv, stages: { [stageName]: leadsTarget } } */
-function loadKpis(clientId) { return SETTINGS.kpis[clientId] || {} }
-function saveKpis(clientId, k) { SETTINGS.kpis = { ...SETTINGS.kpis, [clientId]: k }; writeLS(KPI_KEY, SETTINGS.kpis); saveSettingsRemote({ kpis: { [clientId]: k } }); bumpSettings() }
+/* Per-client KPI targets - { metaCpl, googleCostConv, stages: { [stageName]:
+   leadsTarget }, ... }. Multi-pipeline clients keep a full target set per
+   pipeline under byPipeline[pipelineId]; loadKpis(id, pid) reads that pipeline's
+   set. Without a pid it returns the client-level set, falling back to the first
+   pipeline's targets so account-level scorecards still show a target. */
+function loadKpis(clientId, pipelineId) {
+  const all = SETTINGS.kpis[clientId] || {}
+  if (pipelineId) return (all.byPipeline && all.byPipeline[pipelineId]) || {}
+  const { byPipeline, ...client } = all
+  if (Object.keys(client).length) return client
+  if (byPipeline) { const first = Object.values(byPipeline).find((v) => v && Object.keys(v).length); if (first) return first }
+  return {}
+}
+function saveKpis(clientId, k, pipelineId) {
+  const cur = SETTINGS.kpis[clientId] || {}
+  const next = pipelineId ? { ...cur, byPipeline: { ...(cur.byPipeline || {}), [pipelineId]: k } } : { ...k, ...(cur.byPipeline ? { byPipeline: cur.byPipeline } : {}) }
+  SETTINGS.kpis = { ...SETTINGS.kpis, [clientId]: next }; writeLS(KPI_KEY, SETTINGS.kpis); saveSettingsRemote({ kpis: { [clientId]: next } }); bumpSettings()
+}
 // colour helper: is `actual` hitting `target`? goodWhenUnder for cost metrics.
 function kpiClass(actual, target, goodWhenUnder) { if (target == null || target === '' || !actual) return ''; const hit = goodWhenUnder ? actual <= target : actual >= target; return hit ? 'good' : 'bad' }
 
@@ -3075,10 +3090,11 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
 // Campaign → pipeline linker, per client. Fetches the client's campaigns +
 // pipelines on expand and writes overrides to the shared localStorage map that
 // Caalano360 reads for spend attribution.
-function KpiEditor({ clientId }) {
-  const [open, setOpen] = useState(false)
-  const [k, setK] = useState(() => loadKpis(clientId))
+function KpiEditor({ clientId, embedded }) {
+  const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
+  const [pid, setPid] = useState('') // '' = client-level; a pipeline id = per-pipeline
+  const [k, setK] = useState(() => loadKpis(clientId))
   useEffect(() => {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
@@ -3088,35 +3104,49 @@ function KpiEditor({ clientId }) {
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
   }, [open, st.status, clientId])
-  const set = (patch) => setK((p) => { const nx = { ...p, ...patch }; saveKpis(clientId, nx); return nx })
-  const setStage = (name, val) => setK((p) => { const stages = { ...(p.stages || {}) }; if (val === '') delete stages[name]; else stages[name] = Number(val); const nx = { ...p, stages }; saveKpis(clientId, nx); return nx })
   const pipes = (st.blend && st.blend.pipelines) || []
-  const stageNames = [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))]
+  const multi = pipes.length > 1
+  // Multi-pipeline clients set every target per pipeline; default to the first.
+  useEffect(() => { if (multi && !pid) setPid(pipes[0].id) }, [multi]) // eslint-disable-line
+  useEffect(() => { setK(loadKpis(clientId, pid || undefined)) }, [pid, clientId])
+  const set = (patch) => setK((p) => { const nx = { ...p, ...patch }; saveKpis(clientId, nx, pid || undefined); return nx })
+  const setStage = (name, val) => setK((p) => { const stages = { ...(p.stages || {}) }; if (val === '') delete stages[name]; else stages[name] = Number(val); const nx = { ...p, stages }; saveKpis(clientId, nx, pid || undefined); return nx })
+  const selPipe = pipes.find((p) => p.id === pid)
+  const stageNames = multi ? ((selPipe && selPipe.stages) || []).map((s) => s.name) : [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))]
   const numOr = (v) => (v == null || v === '' ? '' : v)
+  const body = (
+    <div className={embedded ? '' : 'linker-body'}>
+      {multi && <div className="kpi-pipe-sel">
+        <label>Pipeline</label>
+        <select value={pid} onChange={(e) => setPid(e.target.value)}>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <span className="cap">Targets are set per pipeline for this client.</span>
+      </div>}
+      <div className="kpi-inputs">
+        <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+        <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+        <label>Avg client LTV<input type="number" min="0" value={numOr(k.clientLtv)} onChange={(e) => set({ clientLtv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ lifetime value" /></label>
+      </div>
+      <div className="cap" style={{ marginTop: 2 }}>LTV powers the Caalano360 unit-economics header (LTV:CAC, profit per client). Leave blank to use average deal value.</div>
+      <div className="cap" style={{ marginTop: 8, fontWeight: 700 }}>Weekly Traffic Light targets</div>
+      <div className="kpi-inputs">
+        <label>Weekly spend<input type="number" min="0" value={numOr(k.wkSpend)} onChange={(e) => set({ wkSpend: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ / week" /></label>
+        <label>All-leads CPL<input type="number" min="0" value={numOr(k.cpl)} onChange={(e) => set({ cpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+        <label>Cost / booked appt<input type="number" min="0" value={numOr(k.cpba)} onChange={(e) => set({ cpba: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+        <label>Cost / won (CPA)<input type="number" min="0" value={numOr(k.cpa)} onChange={(e) => set({ cpa: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+        <label>Booking rate %<input type="number" min="0" value={numOr(k.bookingRate)} onChange={(e) => set({ bookingRate: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="% target" /></label>
+      </div>
+      {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
+        : stageNames.length ? <>
+          <div className="cap" style={{ marginTop: 8, fontWeight: 700 }}>Target leads at each pipeline stage{multi && selPipe ? ` · ${selPipe.name}` : ''}</div>
+          <div className="kpi-stages">{stageNames.map((n) => <label className="kpi-stage" key={n}><span title={n}>{n}</span><input type="number" min="0" value={numOr(k.stages && k.stages[n])} onChange={(e) => setStage(n, e.target.value)} placeholder="-" /></label>)}</div>
+        </> : st.status === 'ok' ? <p className="cap">No Caalano Systems pipeline stages found.</p> : null}
+    </div>
+  )
+  if (embedded) return body
   return (
     <div className="linker">
       <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} KPI targets</button>
-      {open && <div className="linker-body">
-        <div className="kpi-inputs">
-          <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Avg client LTV<input type="number" min="0" value={numOr(k.clientLtv)} onChange={(e) => set({ clientLtv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ lifetime value" /></label>
-        </div>
-        <div className="cap" style={{ marginTop: 2 }}>LTV powers the Caalano360 unit-economics header (LTV:CAC, profit per client). Leave blank to use average deal value.</div>
-        <div className="cap" style={{ marginTop: 4 }}>Weekly Traffic Light targets</div>
-        <div className="kpi-inputs">
-          <label>Weekly spend<input type="number" min="0" value={numOr(k.wkSpend)} onChange={(e) => set({ wkSpend: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ / week" /></label>
-          <label>All-leads CPL<input type="number" min="0" value={numOr(k.cpl)} onChange={(e) => set({ cpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Cost / booked appt<input type="number" min="0" value={numOr(k.cpba)} onChange={(e) => set({ cpba: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Cost / won (CPA)<input type="number" min="0" value={numOr(k.cpa)} onChange={(e) => set({ cpa: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-          <label>Booking rate %<input type="number" min="0" value={numOr(k.bookingRate)} onChange={(e) => set({ bookingRate: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="% target" /></label>
-        </div>
-        {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
-          : stageNames.length ? <>
-            <div className="cap" style={{ marginTop: 4 }}>Target leads at each pipeline stage</div>
-            {stageNames.map((n) => <label className="kpi-stage" key={n}><span title={n}>{n}</span><input type="number" min="0" value={numOr(k.stages && k.stages[n])} onChange={(e) => setStage(n, e.target.value)} placeholder="-" /></label>)}
-          </> : st.status === 'ok' ? <p className="cap">No Caalano Systems pipeline stages found.</p> : null}
-      </div>}
+      {open && body}
     </div>
   )
 }
@@ -3236,8 +3266,8 @@ function AttributionDiagnostics({ attribData, camps, currency }) {
 // Per-client tracking diagnostics for Settings. Lazily fetches the blend +
 // attribution feeds on expand (one client at a time), then renders tracking
 // health and attribution diagnostics.
-function ClientTrackingDiagnostics({ clientId, currency }) {
-  const [open, setOpen] = useState(false)
+function ClientTrackingDiagnostics({ clientId, currency, embedded }) {
+  const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null, attr: null })
   useEffect(() => {
     if (!open || st.status !== 'idle') return
@@ -3252,7 +3282,7 @@ function ClientTrackingDiagnostics({ clientId, currency }) {
   const periodLabel = rangeLabel(presetRange('last_30d'))
   return (
     <div className="cd-wrap">
-      <button className="cd-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Tracking health &amp; attribution diagnostics <span className="cd-sub">last 30 days</span></button>
+      {!embedded && <button className="cd-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Tracking health &amp; attribution diagnostics <span className="cd-sub">last 30 days</span></button>}
       {open && (st.status === 'loading' ? <Spinner label="Loading tracking diagnostics…" />
         : st.status === 'err' ? <p className="cap" style={{ color: 'var(--neg)' }}>Could not load diagnostics for this client.</p>
           : st.status === 'ok' && st.blend ? <>
@@ -3263,8 +3293,8 @@ function ClientTrackingDiagnostics({ clientId, currency }) {
   )
 }
 
-function KeyEventsEditor({ clientId }) {
-  const [open, setOpen] = useState(false)
+function KeyEventsEditor({ clientId, embedded }) {
+  const [open, setOpen] = useState(!!embedded)
   const [sel, setSel] = useState(() => loadKeyEvents(clientId))
   const [st, setSt] = useState({ status: 'idle', blend: null })
   const [cals, setCals] = useState({ status: 'idle', list: [] })
@@ -3306,8 +3336,8 @@ function KeyEventsEditor({ clientId }) {
   const allStages = (() => { const m = new Map(); for (const p of withStages) for (const s of (p.stages || [])) if (!m.has(s.name)) m.set(s.name, s.pos == null ? 999 : s.pos); return [...m.entries()].sort((a, b) => a[1] - b[1]).map(([n]) => n) })()
   return (
     <div className="linker">
-      <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>
-      {open && <div className="linker-body">
+      {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>}
+      {open && <div className={embedded ? '' : 'linker-body'}>
         <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. <b>Link each calendar to the pipeline stage it represents</b> - the calendar and stage then count as one event (the stage is a fallback for leads that reached it without a tracked booking), and it sits in the right funnel order. You don't need to also add that stage on its own. If several calendars mean the same step, link them to the same stage and they combine. Leave empty for the default leads → booked → shown → won.</p>
         <div className="kev-group">
           <div className="kev-pipe">📅 Booked calendars <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· tick the ones that matter, then link each to its pipeline stage</span></div>
@@ -3351,8 +3381,8 @@ function KeyEventsEditor({ clientId }) {
     </div>
   )
 }
-function CampaignLinker({ clientId }) {
-  const [open, setOpen] = useState(false)
+function CampaignLinker({ clientId, embedded }) {
+  const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
   const [manual, setManual] = useState(() => loadCampMap(clientId))
   useEffect(() => {
@@ -3370,8 +3400,8 @@ function CampaignLinker({ clientId }) {
   const camps = (b && b.campaigns) || []
   return (
     <div className="linker">
-      <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Link campaigns to pipelines</button>
-      {open && <div className="linker-body">
+      {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Link campaigns to pipelines</button>}
+      {open && <div className={embedded ? '' : 'linker-body'}>
         {st.status === 'loading' ? <Spinner label="Loading campaigns…" />
           : st.status === 'err' ? <p className="cap">Couldn't load - this client may have no ad accounts or Caalano Systems mapped.</p>
             : !camps.length ? <p className="cap">No campaigns found in the last 30 days.</p>
@@ -3632,9 +3662,9 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
     </div>
   )
 }
-// Per-client configuration in a modal (instead of expanding inline) so the grid
-// doesn't reflow when you open one. "Open Client View" jumps to the workspace;
-// custom (UI-added) clients get a Relink option to fix a mis-linked account.
+// Per-client configuration in a modal with horizontal tabs (like the client
+// view). Summary edits name / industry / linked accounts; the other tabs open
+// each editor full-width underneath. "Open Client View" jumps to the workspace.
 function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
@@ -3644,7 +3674,6 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
   const dirty = name.trim() !== (c.name || '') || industry !== (c.industry || '')
   const saveDetails = () => {
     if (!name.trim()) return
-    // Preserve the account links + names when overriding name / industry.
     saveCustomClient(c.id, {
       name: name.trim(), industry: industry.trim() || null,
       meta: c.meta || null, google: c.google || null, ghl: c.ghl || null,
@@ -3652,6 +3681,12 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
     })
     setSavedDetails(true); setTimeout(() => setSavedDetails(false), 1500)
   }
+  const tabs = [['summary', 'Summary']]
+  if (c.ghl) tabs.push(['keyevents', 'Key events'])
+  if (canLink) tabs.push(['links', 'Campaign links'])
+  if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
+  if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics'])
+  const [tab, setTab] = useState('summary')
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
@@ -3662,25 +3697,27 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
             <button className="icon-btn" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="m-body">
-          <div className="set-details">
-            <div className="set-field"><label>Client name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
-            <div className="set-field"><label>Description / Industry</label><input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Pool builder (trades, high-ticket)" /></div>
-            <button className="set-details-save" disabled={!dirty || !name.trim()} onClick={saveDetails}>{savedDetails ? '✓ Saved' : 'Save details'}</button>
-          </div>
-          <div className="set-conn">
-            <div className="ids">
-              <AccountTag label="Meta" id={c.meta} name={nm('meta', c.meta) || c.metaName} />
-              <AccountTag label="Google" id={c.google} name={nm('google', c.google) || c.googleName} />
-              <AccountTag label="Caalano Systems" id={c.ghl} name={nm('ghl', c.ghl) || c.ghlName} />
+        <div className="set-tabs">{tabs.map(([k, lbl]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{lbl}</button>)}</div>
+        <div className="m-body set-tabbody">
+          {tab === 'summary' && <div className="set-summary">
+            <div className="set-details">
+              <div className="set-field"><label>Client name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="set-field"><label>Description / Industry</label><input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Pool builder (trades, high-ticket)" /></div>
+              <button className="set-details-save" disabled={!dirty || !name.trim()} onClick={saveDetails}>{savedDetails ? '✓ Saved' : 'Save details'}</button>
             </div>
-            <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Relink accounts</button>
-          </div>
-          {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
-          {c.ghl && <KeyEventsEditor clientId={c.id} />}
-          {canLink && <CampaignLinker clientId={c.id} />}
-          {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}
-          {c.ghl && (c.meta || c.google) && <ClientTrackingDiagnostics clientId={c.id} currency={currency} />}
+            <div className="set-sec-t">Linked accounts</div>
+            <div className="set-linked">
+              <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd meta">Meta</span></span><span className="set-linked-v">{c.meta ? <><b>{nm('meta', c.meta) || c.metaName || 'Linked'}</b> <code>{c.meta}</code></> : <span className="cap">Not linked</span>}</span></div>
+              <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd google">Google</span></span><span className="set-linked-v">{c.google ? <><b>{nm('google', c.google) || c.googleName || 'Linked'}</b> <code>{c.google}</code></> : <span className="cap">Not linked</span>}</span></div>
+              <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd" style={{ background: '#12b886' }}>CRM</span></span><span className="set-linked-v">{c.ghl ? <><b>{nm('ghl', c.ghl) || c.ghlName || 'Linked'}</b> <code>{c.ghl}</code></> : <span className="cap">Not linked</span>}</span></div>
+            </div>
+            <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button>
+            {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
+          </div>}
+          {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded /></div>}
+          {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded /></div>}
+          {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded /></div>}
+          {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded /></div>}
         </div>
       </div>
     </div>

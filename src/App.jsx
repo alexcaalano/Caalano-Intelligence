@@ -24,92 +24,133 @@ const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) { const k = unorm(e.name); if (k && !m.has(k)) m.set(k, e) } return m }
 // Caalano360 outcome columns (UTM-matched CRM results next to each ad row).
 // Green Caalano360 columns. Trailing 'r' marks a narrow rate (%) column.
-// Legacy fixed green columns - used when a client has no key events configured,
-// so existing views are unchanged. ty drives cell rendering + column width.
-const LEGACY_O360_COLS = [
-  { key: 'booked', label: 'Booked', ty: 'count', src: 'booked' },
-  { key: 'cBook', label: 'C/Book', ty: 'cost', src: 'booked', noun: 'booked' },
-  { key: 'shown', label: 'Shown', ty: 'count', src: 'shown' },
-  { key: 'cShow', label: 'C/Show', ty: 'cost', src: 'shown', noun: 'shown' },
-  { key: 'won', label: 'Won', ty: 'count', src: 'won' },
-  { key: 'cWon', label: 'C/Won', ty: 'cost', src: 'won', noun: 'won' },
-  { key: 'wonVal', label: 'Won val', ty: 'money', src: 'revenue' },
-  { key: 'roas', label: 'ROAS', ty: 'roas' },
-  { key: 'bookRate', label: 'Book %', ty: 'rate', num: 'booked', den: 'leads' },
-  { key: 'showRate', label: 'Show %', ty: 'rate', num: 'shown', den: 'booked' },
-  { key: 'winRate', label: 'Win %', ty: 'rate', num: 'won', den: 'leads' },
-]
-// Build the green Caalano360 columns for a client. With key events configured
-// (Settings: pipeline stages and/or booked calendars) the block becomes one
-// cost-per column per key event, then Cost/Won, Won value and ROAS for revenue
-// context. With none configured it falls back to the legacy fixed set.
-function buildO360Cols(keyEvents, stagePos) {
+// The green Caalano360 block is a set of column GROUPS. With no key events it
+// falls back to one "Caalano360" group with the legacy Booked/Shown/Won columns.
+// With key events, each event becomes a banner-headed group: a calendar event
+// gets Booked / Book % / Cost / Shown / Show %, a stage (or won) event gets
+// Reached / Conv % / Cost. A descriptor is { grouped, groups:[{label,kind,span}],
+// cols:[{key,sub,ty,metric,...ctx}] }. `metric` drives the numbers, `ty` the cell
+// format + width. Calendar cols carry `refs` (calendar ids), `stage` (linked
+// stage fallback) and `names` (id->name for the hover breakdown).
+const LEGACY_DESC = {
+  grouped: false,
+  groups: [{ label: 'Caalano360', kind: 'brand', span: 11 }],
+  cols: [
+    { key: 'booked', sub: 'Booked', ty: 'count', metric: 'cnt', src: 'booked', mk: 'canc', gfirst: true },
+    { key: 'cBook', sub: 'C/Book', ty: 'cost', metric: 'cost', src: 'booked', noun: 'booked' },
+    { key: 'shown', sub: 'Shown', ty: 'count', metric: 'cnt', src: 'shown', mk: 'infer' },
+    { key: 'cShow', sub: 'C/Show', ty: 'cost', metric: 'cost', src: 'shown', noun: 'shown' },
+    { key: 'won', sub: 'Won', ty: 'count', metric: 'cnt', src: 'won' },
+    { key: 'cWon', sub: 'C/Won', ty: 'cost', metric: 'cost', src: 'won', noun: 'won' },
+    { key: 'wonVal', sub: 'Won val', ty: 'money', metric: 'money', src: 'revenue' },
+    { key: 'roas', sub: 'ROAS', ty: 'roas', metric: 'roas' },
+    { key: 'bookRate', sub: 'Book %', ty: 'rate', metric: 'rate', num: 'booked', den: 'leads', title: 'Booked ÷ leads' },
+    { key: 'showRate', sub: 'Show %', ty: 'rate', metric: 'rate', num: 'shown', den: 'booked', title: 'Shown ÷ booked' },
+    { key: 'winRate', sub: 'Win %', ty: 'rate', metric: 'rate', num: 'won', den: 'leads', title: 'Won ÷ leads' },
+  ],
+}
+function buildO360Cols(keyEvents, stagePos, calNames) {
   const ke = resolveKeyEvents(keyEvents, stagePos)
-  if (!ke.length) return LEGACY_O360_COLS
-  const short = (s) => (s && s.length > 15 ? s.slice(0, 14) + '…' : s)
-  const cols = ke.map((k, i) => ({ key: 'ke' + i, label: (k.kind === 'calendar' ? '📅 ' : '') + short(k.label), full: k.label, ty: 'kecost', kind: k.kind, ref: k.ref, refs: k.refs, stage: k.stage }))
-  cols.push({ key: 'cWon', label: 'C/Won', ty: 'cost', src: 'won' })
-  cols.push({ key: 'wonVal', label: 'Won val', ty: 'money', src: 'revenue' })
-  cols.push({ key: 'roas', label: 'ROAS', ty: 'roas' })
-  return cols
+  if (!ke.length) return LEGACY_DESC
+  const groups = [], cols = []
+  ke.forEach((k, i) => {
+    if (k.kind === 'calendar') {
+      groups.push({ label: '📅 ' + k.label, kind: 'calendar', span: 5 })
+      const ctx = { g: i, refs: k.refs || [k.ref], stage: k.stage, names: calNames, event: k.label }
+      cols.push({ key: `e${i}b`, sub: 'Booked', ty: 'count', metric: 'calBooked', gfirst: true, title: `Bookings for ${k.label}`, ...ctx })
+      cols.push({ key: `e${i}br`, sub: 'Book Rate', ty: 'rate', metric: 'calBookRate', title: 'Booked ÷ leads', ...ctx })
+      cols.push({ key: `e${i}cb`, sub: 'Cost / Booked', ty: 'cost', metric: 'calCost', title: `Spend ÷ ${k.label} bookings`, ...ctx })
+      cols.push({ key: `e${i}s`, sub: 'Shown', ty: 'count', metric: 'calShown', title: `Showed for ${k.label}`, ...ctx })
+      cols.push({ key: `e${i}sr`, sub: 'Show Rate', ty: 'rate', metric: 'calShowRate', title: 'Shown ÷ booked', ...ctx })
+    } else if (/won|sold|closed.?win/i.test(k.label)) {
+      // Won event: revenue-truth group from the won opportunity status/value -
+      // Won, Win Rate, Cost/Won, Won Val, Avg Deal, ROAS.
+      groups.push({ label: k.label, kind: 'won', span: 6 })
+      const ctx = { g: i, ref: k.ref, event: k.label }
+      cols.push({ key: `e${i}w`, sub: 'Won', ty: 'count', metric: 'wonCount', gfirst: true, title: `Deals won${''}`, ...ctx })
+      cols.push({ key: `e${i}wr`, sub: 'Win Rate', ty: 'rate', metric: 'wonRate', title: 'Won ÷ leads', ...ctx })
+      cols.push({ key: `e${i}wc`, sub: 'Cost / Won', ty: 'cost', metric: 'wonCost', title: 'Spend ÷ won', ...ctx })
+      cols.push({ key: `e${i}wv`, sub: 'Won Val', ty: 'money', metric: 'wonVal', title: 'Revenue from won deals', ...ctx })
+      cols.push({ key: `e${i}wa`, sub: 'Avg Deal', ty: 'money', metric: 'wonAvg', title: 'Revenue ÷ won deals', ...ctx })
+      cols.push({ key: `e${i}wro`, sub: 'ROAS', ty: 'roas', metric: 'roas', title: 'Revenue ÷ spend', ...ctx })
+    } else {
+      groups.push({ label: k.label, kind: 'stage', span: 3 })
+      const ctx = { g: i, ref: k.ref, event: k.label }
+      cols.push({ key: `e${i}r`, sub: 'Reached', ty: 'count', metric: 'stageReached', gfirst: true, title: `Reached ${k.label}`, ...ctx })
+      cols.push({ key: `e${i}rr`, sub: 'Conv %', ty: 'rate', metric: 'stageRate', title: `Reached ÷ leads`, ...ctx })
+      cols.push({ key: `e${i}c`, sub: 'Cost / Reach', ty: 'cost', metric: 'stageCost', title: `Spend ÷ ${k.label}`, ...ctx })
+    }
+  })
+  return { grouped: true, groups, cols }
 }
 // Flatten an outcome `o` into numeric fields (for sorting) keyed by column key,
-// plus parallel `<key>N` raw counts for hover. Rates use the row's own lead
-// count where relevant. Works for both the legacy and key-event column sets.
-function o360Fields(o, spend, leads, cols) {
-  const C = cols || LEGACY_O360_COLS
+// plus breakdown objects at `<key>B` (per-calendar counts + stage fallback) for
+// the hover tooltip. Calendar metrics share one aggregate per group.
+function o360Fields(o, spend, leads, desc) {
+  const D = desc || LEGACY_DESC; const C = D.cols
   if (!o) { const f = { _has360: false }; for (const c of C) f[c.key] = null; return f }
   const L = leads || 0
   const f = { _has360: true, booked: o.booked || 0, cancelled: o.cancelled || 0, shown: o.shown || 0, shownStage: o.shownStage || 0, won: o.won || 0, revenue: o.revenue || 0 }
+  const agg = {}
+  const calSum = (refs, mapName) => { let t = 0; const per = {}; const m = o[mapName]; if (m) for (const r of refs) { const n = m[r] || 0; if (n) { t += n; per[r] = n } } return { t, per } }
   for (const c of C) {
-    if (c.ty === 'kecost') {
-      let n = 0
-      if (c.kind === 'calendar') {
-        let cal = 0; if (o.cals) for (const r of (c.refs || [c.ref])) cal += o.cals[r] || 0
-        // Linked stage as a fallback (leads that reached the stage but have no
-        // calendar booking), same approximation as the funnel.
+    const m = c.metric
+    if (m && m.slice(0, 3) === 'cal') {
+      let g = agg[c.g]
+      if (!g) {
+        const b = calSum(c.refs, 'cals'), sh = calSum(c.refs, 'calsShown')
         const stageN = c.stage && o.stages ? (o.stages[c.stage] || 0) : 0
-        const fromStage = Math.max(0, stageN - cal)
-        n = cal + fromStage; f[c.key + 'C'] = cal; f[c.key + 'P'] = fromStage
-      } else { n = (o.stages && o.stages[c.ref]) || 0 }
-      f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n
-    } else if (c.ty === 'count') { f[c.key] = o[c.src] || 0 }
-    else if (c.ty === 'cost') { const n = o[c.src] || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
-    else if (c.ty === 'money') { f[c.key] = o[c.src] || 0 }
-    else if (c.ty === 'roas') { f[c.key] = spend ? (o.revenue || 0) / spend : null }
-    else if (c.ty === 'rate') { const den = c.den === 'leads' ? L : (o[c.den] || 0); f[c.key] = den ? ((o[c.num] || 0) / den) * 100 : null }
+        const fromStage = Math.max(0, stageN - b.t)
+        g = agg[c.g] = { booked: b.t + fromStage, fromCal: b.t, fromStage, bookedPer: b.per, shown: sh.t, shownPer: sh.per }
+      }
+      if (m === 'calBooked') { f[c.key] = g.booked; f[c.key + 'B'] = { per: g.bookedPer, fromStage: g.fromStage } }
+      else if (m === 'calBookRate') { f[c.key] = L ? (g.booked / L) * 100 : null }
+      else if (m === 'calCost') { f[c.key] = g.booked && spend ? spend / g.booked : null; f[c.key + 'N'] = g.booked }
+      else if (m === 'calShown') { f[c.key] = g.shown; f[c.key + 'B'] = { per: g.shownPer } }
+      else if (m === 'calShowRate') { f[c.key] = g.booked ? (g.shown / g.booked) * 100 : null }
+    } else if (m === 'stageReached') { f[c.key] = (o.stages && o.stages[c.ref]) || 0 }
+    else if (m === 'stageRate') { const n = (o.stages && o.stages[c.ref]) || 0; f[c.key] = L ? (n / L) * 100 : null }
+    else if (m === 'stageCost') { const n = (o.stages && o.stages[c.ref]) || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
+    else if (m === 'wonCount') { f[c.key] = o.won || 0; f[c.key + 'B'] = { noVal: o.wonNoVal || null } }
+    else if (m === 'wonRate') { f[c.key] = L ? ((o.won || 0) / L) * 100 : null }
+    else if (m === 'wonCost') { const n = o.won || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
+    else if (m === 'wonVal') { f[c.key] = o.revenue || 0 }
+    else if (m === 'wonAvg') { f[c.key] = o.won ? (o.revenue || 0) / o.won : null }
+    else if (m === 'cnt') { f[c.key] = o[c.src] || 0 }
+    else if (m === 'cost') { const n = o[c.src] || 0; f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
+    else if (m === 'money') { f[c.key] = o[c.src] || 0 }
+    else if (m === 'roas') { f[c.key] = spend ? (o.revenue || 0) / spend : null }
+    else if (m === 'rate') { const den = c.den === 'leads' ? L : (o[c.den] || 0); f[c.key] = den ? ((o[c.num] || 0) / den) * 100 : null }
   }
   return f
 }
-// A little "Caalano360" banner spanning the green columns, above the header row.
+// Banner row: one green banner per column group (event name), spanning its cols.
 function C360GrpRow({ left, cols }) {
-  const C = cols || LEGACY_O360_COLS
-  return <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={left} aria-hidden="true" /><th className="c360-grp" colSpan={C.length}>Caalano360</th></tr>
+  const D = cols || LEGACY_DESC
+  return <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={left} aria-hidden="true" />{D.groups.map((g, i) => <th key={i} className={`c360-grp${i > 0 ? ' c360-grp-sep' : ''}`} colSpan={g.span} title={g.label}>{g.label}</th>)}</tr>
 }
 function O360Head({ sort, on, cols }) {
-  const C = cols || LEGACY_O360_COLS
-  return <>{C.map((c, i) => {
-    const cn = `c360-col${i === 0 ? ' c360-first' : ''}`
-    const title = c.full ? `Cost per ${c.full}${c.kind === 'calendar' ? ' (booked into this calendar)' : ' (reached this stage)'}` : undefined
+  const D = cols || LEGACY_DESC
+  return <>{D.cols.map((c, i) => {
+    const cn = `c360-col${i === 0 ? ' c360-first' : ''}${c.gfirst && i > 0 ? ' c360-gfirst' : ''}`
     return sort
-      ? <SortTh key={c.key} k={c.key} sort={sort} on={on} className={cn} title={title}>{c.label}</SortTh>
-      : <th key={c.key} className={cn} title={title}>{c.label}</th>
+      ? <SortTh key={c.key} k={c.key} sort={sort} on={on} className={cn} title={c.title}>{c.sub}</SortTh>
+      : <th key={c.key} className={cn} title={c.title}>{c.sub}</th>
   })}</>
 }
 // Fixed column widths so the Caalano360 green block lands in the same place in
-// every table. The name (first) col gets an EXPLICIT width - not auto - because
-// with table-layout:fixed an auto col collapses to 0 once the fixed columns
-// exceed the viewport, hiding the names. nameW = 190 + (9 - left)*CGM keeps the
-// green block at a constant x across tables with different left-column counts.
+// every table. The name (first) col gets an EXPLICIT width so it can't collapse
+// under table-layout:fixed. nameW keeps the green block at a constant x.
 const CGM = 96
+function o360ColClass(c) { return c.ty === 'rate' ? 'cg-gr' : c.ty === 'count' ? 'cg-gc' : 'cg-g' }
 function O360ColGroup({ left, green = true, cols }) {
-  const C = cols || LEGACY_O360_COLS
+  const D = cols || LEGACY_DESC
   const nameW = Math.max(150, 190 + (9 - left) * CGM)
   return (
     <colgroup>
       <col style={{ width: nameW }} />
       {Array.from({ length: Math.max(0, left - 1) }, (_, i) => <col key={i} className="cg-m" />)}
-      {green && C.map((c) => <col key={c.key} className={c.ty === 'rate' ? 'cg-gr' : c.ty === 'kecost' ? 'cg-ke' : 'cg-g'} />)}
+      {green && D.cols.map((c) => <col key={c.key} className={o360ColClass(c)} />)}
     </colgroup>
   )
 }
@@ -133,29 +174,42 @@ function sortRows(rows, s) {
 function SortTh({ k, sort, on, children, className }) {
   return <th className={`sort-th${className ? ' ' + className : ''}`} onClick={() => on(k)}>{children}<span className="sort-ar">{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</span></th>
 }
-// Renders the green Caalano360 cells for a row, driven by the column set. Cost
-// columns show the cost-per and carry the raw count on hover; key-event columns
-// do the same for a booked calendar or a reached pipeline stage.
+// Breakdown tooltip for a calendar Booked / Shown number: which calendars it
+// came from (by name) plus the pipeline-stage fallback portion.
+function keBreakTip(label, total, B, names) {
+  const parts = []
+  if (B && B.per) for (const id in B.per) parts.push(`${(names && names.get && names.get(id)) || 'Calendar'}: ${fmtNumber(B.per[id])}`)
+  if (B && B.fromStage) parts.push(`Pipeline stage (fallback): ${fmtNumber(B.fromStage)}`)
+  return `${label} ${fmtNumber(total || 0)}${parts.length ? ' — ' + parts.join(' · ') : ''}`
+}
+// Renders the green Caalano360 cells for a row, driven by the column descriptor.
 function o360Cells(r, currency, cols) {
-  const C = cols || LEGACY_O360_COLS
-  if (!r || !r._has360) return <>{C.map((c, i) => <td key={c.key} className={`c360-col dim${i === 0 ? ' c360-first' : ''}`}>-</td>)}</>
+  const D = cols || LEGACY_DESC; const C = D.cols
+  if (!r || !r._has360) return <>{C.map((c, i) => <td key={c.key} className={`c360-col dim${i === 0 ? ' c360-first' : ''}${c.gfirst && i > 0 ? ' c360-gfirst' : ''}`}>-</td>)}</>
   const money = (v) => fmtCurrency(v, currency)
   return <>{C.map((c, i) => {
-    const cn = `c360-col${i === 0 ? ' c360-first' : ''}`
-    const v = r[c.key]
-    if (c.ty === 'kecost') {
-      const n = r[c.key + 'N'] || 0
-      const fromStage = r[c.key + 'P'] || 0, fromCal = r[c.key + 'C'] || 0
-      const tip = c.kind === 'calendar'
-        ? (fromStage
-          ? `${fmtNumber(n)} reached ${c.full} · ${fmtNumber(fromCal)} via calendar booking · ${fmtNumber(fromStage)} via pipeline-stage fallback`
-          : `${fmtNumber(n)} booked into ${c.full}`)
-        : `${fmtNumber(n)} reached ${c.full}`
-      return <td key={c.key} className={cn} title={tip}>{v != null ? money(v) : '-'}{fromStage ? <span className="c360-infer" title={tip}> ({fmtNumber(fromStage)}p)</span> : null}</td>
+    const cn = `c360-col${i === 0 ? ' c360-first' : ''}${c.gfirst && i > 0 ? ' c360-gfirst' : ''}`
+    const v = r[c.key]; const m = c.metric
+    // Calendar Booked: number + (Np) fallback marker + full hover breakdown.
+    if (m === 'calBooked') {
+      const B = r[c.key + 'B'] || {}
+      const tip = keBreakTip('Booked', v, B, c.names)
+      return <td key={c.key} className={cn} title={tip}>{fmtNumber(v || 0)}{B.fromStage ? <span className="c360-infer" title={tip}> ({fmtNumber(B.fromStage)}p)</span> : null}</td>
     }
+    if (m === 'calShown') {
+      const B = r[c.key + 'B'] || {}
+      return <td key={c.key} className={cn} title={keBreakTip('Shown', v, B, c.names)}>{fmtNumber(v || 0)}</td>
+    }
+    // Won count: flag deals marked won with no value so the team can fix them.
+    if (m === 'wonCount') {
+      const B = r[c.key + 'B'] || {}; const nv = (B.noVal && B.noVal.length) || 0
+      const tip = nv ? `${fmtNumber(v || 0)} won · ${nv} with NO deal value: ${B.noVal.slice(0, 12).join(', ')}${B.noVal.length > 12 ? '…' : ''}` : `${fmtNumber(v || 0)} won`
+      return <td key={c.key} className={cn} title={tip}>{fmtNumber(v || 0)}{nv ? <span className="c360-warn" title={tip}> ({nv}⚠)</span> : null}</td>
+    }
+    if (m === 'stageReached') return <td key={c.key} className={cn} title={`${fmtNumber(v || 0)} reached ${c.event}`}>{fmtNumber(v || 0)}</td>
     if (c.ty === 'cost') {
       const n = r[c.key + 'N'] || 0
-      const tip = n ? `${fmtNumber(n)} ${c.noun || c.src}${c.key === 'cBook' && r.cancelled ? ` · ${r.cancelled} later cancelled` : ''}${c.key === 'cShow' && r.shownStage ? ` · ${r.shownStage} via pipeline stage` : ''}` : undefined
+      const tip = n ? `${fmtNumber(n)} ${c.noun || 'events'}${c.key === 'cBook' && r.cancelled ? ` · ${r.cancelled} later cancelled` : ''}${c.key === 'cShow' && r.shownStage ? ` · ${r.shownStage} via pipeline stage` : ''}` : undefined
       return <td key={c.key} className={cn} title={tip}>{v != null ? money(v) : '-'}</td>
     }
     if (c.ty === 'money') return <td key={c.key} className={cn}>{v != null ? money(v) : '-'}</td>
@@ -165,7 +219,7 @@ function o360Cells(r, currency, cols) {
       if (c.key === 'shown') return <td key={c.key} className={cn}>{fmtNumber(v || 0)}{r.shownStage ? <span className="c360-infer" title={`${r.shownStage} from pipeline stage`}> ({r.shownStage}p)</span> : null}</td>
       return <td key={c.key} className={cn}>{fmtNumber(v || 0)}</td>
     }
-    if (c.ty === 'rate') { const tip = c.key === 'bookRate' ? 'Booked ÷ leads' : c.key === 'showRate' ? 'Shown ÷ booked' : 'Won ÷ leads'; return <td key={c.key} className={cn} title={tip}>{v != null ? fmtPct(v, 1) : '-'}</td> }
+    if (c.ty === 'rate') return <td key={c.key} className={cn} title={c.title}>{v != null ? fmtPct(v, 1) : '-'}</td>
     return <td key={c.key} className={cn}>-</td>
   })}</>
 }
@@ -699,7 +753,8 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   // configured, else the legacy Booked/Shown/Won block. Ordered by where each
   // event sits in the pipeline (calendars via their linked stage).
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
-  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos)
+  const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
+  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos, calNames)
   const oCamp = mkOutcomeMap(A && A.byCampaign)
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
   // not utm_term - so match ad-set rows against byMedium.
@@ -929,7 +984,8 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const A = attr && attr.data && attr.data.attribution
   const has360 = !!A
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
-  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos)
+  const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
+  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos, calNames)
   const oCampG = mkOutcomeMap(A && A.byCampaign)
   const oAgG = mkOutcomeMap(A && A.byTerm)
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })

@@ -526,6 +526,15 @@ export async function buildAttribution(locationId, from, to) {
         bumpKey(ent(dim.term, u.term), 'stages', s.name)
       }
     }
+    // Data-quality flag: a deal marked Won with no monetary value distorts
+    // revenue / ROAS. Record the name so the UI can surface who to fix.
+    if (String(o.status || '').toLowerCase() === 'won' && !num(o.monetaryValue)) {
+      const nm = o.name || (o.contact && (o.contact.name || `${o.contact.firstName || ''} ${o.contact.lastName || ''}`.trim())) || o.contactName || 'Unnamed'
+      for (const [map, key] of [[dim.campaign, u.campaign], [dim.medium, u.medium], [dim.content, u.content], [dim.term, u.term]]) {
+        const e = ent(map, key); if (!e.wonNoVal) e.wonNoVal = []
+        if (e.wonNoVal.length < 20 && nm) e.wonNoVal.push(nm)
+      }
+    }
     // per-source cohort detail
     const det = sd(u.source)
     const st = String(o.status || '').toLowerCase()
@@ -607,7 +616,14 @@ export async function buildAttribution(locationId, from, to) {
           bumpKey(ent(dim.content, u.content), 'cals', calId)
           bumpKey(ent(dim.term, u.term), 'cals', calId)
         }
-        if (f.shownByStatus) { cal.shown++; cal.ch[ch].shown++ }
+        if (f.shownByStatus) {
+          cal.shown++; cal.ch[ch].shown++
+          // Per-entity shown-on-this-calendar for the green key-event columns.
+          bumpKey(ent(dim.campaign, u.campaign), 'calsShown', calId)
+          bumpKey(ent(dim.medium, u.medium), 'calsShown', calId)
+          bumpKey(ent(dim.content, u.content), 'calsShown', calId)
+          bumpKey(ent(dim.term, u.term), 'calsShown', calId)
+        }
         if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
       }
       if (cal.booked || cal.shown || cal.cancelled) byCalendar.push(cal)

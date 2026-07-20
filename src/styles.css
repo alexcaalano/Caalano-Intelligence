@@ -432,7 +432,13 @@ table.o360-tbl { table-layout: fixed; }
 .o360-tbl col.cg-gr { width: 78px; }
 /* Key-event cost columns are wider so the stage / calendar name is legible. */
 .o360-tbl col.cg-ke { width: 122px; }
+/* Count columns (Booked / Shown / Reached / Won) are a touch narrower. */
+.o360-tbl col.cg-gc { width: 86px; }
 th.c360-col { color: #12b886; font-size: 10.5px; }
+/* Group separator: a vertical line at the first column of each key-event group. */
+.c360-gfirst { border-left: 1px solid rgba(18,184,134,.35); }
+/* Won-with-no-value data-quality warning marker. */
+.c360-warn { color: #f0435b; font-size: 10px; font-weight: 700; cursor: help; }
 /* Green key-event / group headers wrap to a few lines instead of clipping, so
    the full stage / calendar name shows; hover still gives the complete title. */
 .o360-tbl th.c360-col { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; vertical-align: bottom; }

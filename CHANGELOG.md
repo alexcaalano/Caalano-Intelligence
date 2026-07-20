@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.15.0 — 2026-07-20 · `<pending>`
+## v3.15.0 — 2026-07-20 · `7b56181`
 - Fix: opening a UI-added client (e.g. Dashing Ducks) from the Overview showed a
   blank screen. Its meta/google are account-id strings (not the baked metrics
   objects snapshot clients have), which crashed clientTotals/OverallTab - both

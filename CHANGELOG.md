@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.16.0 — 2026-07-20 · `<pending>`
+## v3.16.0 — 2026-07-20 · `0093412`
 - Forms: link each form to a pipeline and add free-text notes (e.g. "testing
   higher qualification") — editable in Settings (new Forms tab) and on the
   client's Forms tab; a pipeline chip + notes marker show on the form row.

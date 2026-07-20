@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.13.0 — 2026-07-20 · `<pending>`
+## v3.13.0 — 2026-07-20 · `1864b5a`
 - Client config modal redesigned with **horizontal tabs** (Summary · Key events ·
   Campaign links · KPI targets · Diagnostics) — content opens full-width under
   the tab instead of stacking.

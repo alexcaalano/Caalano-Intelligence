@@ -695,6 +695,28 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .form-seg-kind.choice { color: #6d5efc; background: rgba(109,94,252,.14); }
 .form-seg-kind.written { color: #0e8f6a; background: rgba(18,184,134,.14); }
 .form-seg-more { font-size: 11px; color: var(--faint); padding: 4px 6px 0; }
+/* Form metadata (description / pipeline / notes) + location breakdown */
+.form-pipe-chip { display: inline-block; margin-left: 8px; font-size: 10px; font-weight: 700; color: var(--brand); background: rgba(109,94,252,.14); border-radius: 5px; padding: 1px 7px; vertical-align: middle; }
+.form-note-chip { margin-left: 6px; font-size: 11px; cursor: help; }
+.form-pipe-filter { margin: 0 0 10px; }
+.fm-panel { display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 14px; background: var(--panel-2); border-radius: 10px; margin-bottom: 12px; }
+.fm-lab { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; margin-bottom: 5px; }
+.fm-lab em { color: var(--pos); font-style: normal; }
+.fm-desc { flex: 1 1 260px; min-width: 0; }
+.fm-qs { display: flex; flex-wrap: wrap; gap: 5px; }
+.fm-q { font-size: 11.5px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; color: var(--muted); }
+.fm-edit { display: flex; gap: 14px; flex: 2 1 320px; flex-wrap: wrap; }
+.fm-field { display: block; }
+.fm-field select { background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 12.5px; }
+.fm-notes { flex: 1 1 220px; }
+.fm-notes textarea { width: 100%; min-height: 46px; resize: vertical; background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 12.5px; font-family: inherit; }
+.fm-locs { padding: 10px 14px 4px; }
+.fm-loc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 18px; margin-top: 6px; }
+.fm-loc { display: grid; grid-template-columns: 74px 1fr 46px; align-items: center; gap: 8px; font-size: 12px; }
+.fm-loc-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fm-loc-bar { height: 7px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.fm-loc-bar span { display: block; height: 100%; background: var(--brand); border-radius: 4px; }
+.fm-loc-n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 /* Meta view: Daily trend (left) + Key events (right), 50/50 */
 .meta-split { display: flex; gap: 14px; margin-top: 14px; align-items: stretch; }
 .meta-split-col { flex: 1 1 0; min-width: 0; margin-top: 0 !important; }

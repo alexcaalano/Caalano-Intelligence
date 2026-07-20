@@ -7,7 +7,7 @@ import { getStore } from '@netlify/blobs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
-const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'insights', 'clients']
+const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'insights', 'clients', 'formmeta']
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 })

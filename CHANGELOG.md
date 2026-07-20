@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.16.0 — 2026-07-20 · `<pending>`
+- Forms: link each form to a pipeline and add free-text notes (e.g. "testing
+  higher qualification") — editable in Settings (new Forms tab) and on the
+  client's Forms tab; a pipeline chip + notes marker show on the form row.
+- Auto-description: expanding a form lists the questions it asks, to identify it.
+- Pipeline filter on the Forms view (multi-pipeline clients) recategorises the
+  table by where each form's leads landed.
+- Location breakdown: postcode / suburb answers ranked by lead count (+won),
+  the data behind a future map view.
+- Use Caalano's actual logo for the CRM setup-health icon.
+
 ## v3.15.0 — 2026-07-20 · `7b56181`
 - Fix: opening a UI-added client (e.g. Dashing Ducks) from the Overview showed a
   blank screen. Its meta/google are account-id strings (not the baked metrics

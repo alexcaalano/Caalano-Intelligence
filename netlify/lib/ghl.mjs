@@ -458,28 +458,43 @@ export async function buildForms(locationId, from, to) {
       }
       put(k, v)
     }
-    contactData.set(cid, { L, answers })
+    // Postcode is denied for segmentation (PII-ish) but wanted for the location
+    // breakdown, so capture it separately from the submission.
+    const pc = String(o.postalCode || o.postal_code || o.postal || (o.customFields && '') || '').trim()
+    contactData.set(cid, { L, answers, pc })
   }
-  const [wideOpps, appts] = await Promise.all([
+  const [wideOpps, appts, pipelines] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 1800),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), connected: false })),
+    fetchPipelines(locTok, locationId).catch(() => []),
   ])
+  const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const oppByContact = new Map()
   for (const o of wideOpps) { const cid = contactIdOf(o); if (cid && !oppByContact.has(cid)) oppByContact.set(cid, o) }
+  // A question that captures where the lead is (postcode/suburb/area) - used for
+  // the location breakdown.
+  const LOC_RE = /(location|suburb|postcode|postal|\barea\b|region|\btown\b|\bcity\b|where.*(build|project|located))/i
   const agg = new Map()
-  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map() } ; agg.set(L.label, e) } return e }
+  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map() } ; agg.set(L.label, e) } return e }
   const bump = (o, booked, shown, won, rev) => { o.leads++; if (booked) o.booked++; if (shown) o.shown++; if (won) { o.won++; o.revenue += rev } }
-  for (const [cid, { L, answers }] of contactData) {
+  const bumpLoc = (m, value, booked, won) => { if (!value) return; let a = m.get(value); if (!a) { a = { value, leads: 0, booked: 0, won: 0 }; m.set(value, a) } a.leads++; if (booked) a.booked++; if (won) a.won++ }
+  for (const [cid, { L, answers, pc }] of contactData) {
     const e = ent(L)
     const f = apptByContact.get(cid); const booked = !!(f && f.bookedInPeriod); const shown = !!(f && f.shownByStatus)
     const o = oppByContact.get(cid); const won = !!(o && String(o.status || '').toLowerCase() === 'won'); const rev = won ? num(o.monetaryValue) : 0
     bump(e, booked, shown, won, rev)
+    // Per-pipeline split, so a multi-pipeline client can categorise a form.
+    const pid = o && o.pipelineId
+    if (pid) { let bp = e.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; e.byPipe.set(pid, bp) } bump(bp, booked, shown, won, rev) }
+    // Location breakdown: postcode + any location-style answer.
+    if (pc && /^[0-9A-Za-z\- ]{3,10}$/.test(pc)) bumpLoc(e.loc, pc, booked, won)
     // Answer-level segmentation: per question, per answer value.
     for (const [q, v] of Object.entries(answers)) {
       let qm = e.seg.get(q); if (!qm) { qm = new Map(); e.seg.set(q, qm) }
       let av = qm.get(v); if (!av) { av = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; qm.set(v, av) }
       bump(av, booked, shown, won, rev)
+      if (LOC_RE.test(q)) bumpLoc(e.loc, v, booked, won)
     }
   }
   const forms = [...agg.values()].sort((a, b) => b.leads - a.leads).map((e) => {
@@ -502,10 +517,15 @@ export async function buildForms(locationId, from, to) {
       .filter((s) => !(s.distinct === 1 && s.total >= e.leads && e.leads > 2))
       .filter((s) => s.total >= 1)
       .sort((a, b) => (a.kind === b.kind ? b.total - a.total : a.kind === 'choice' ? -1 : 1))
-    const { seg, ...rest } = e
-    return { ...rest, capturedQuestions: seg.size, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments }
+    // Auto-description: the questions this form asks (for identifying it).
+    const questions = [...e.seg.keys()]
+    // Per-pipeline performance (multi-pipeline clients) + location distribution.
+    const byPipeline = [...e.byPipe.values()].sort((a, b) => b.leads - a.leads)
+    const locations = [...e.loc.values()].sort((a, b) => b.leads - a.leads).slice(0, 200)
+    const { seg, byPipe, loc, ...rest } = e
+    return { ...rest, capturedQuestions: seg.size, questions, byPipeline, locations, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments }
   })
-  return { connected: true, tz, submissions: subs.length, contacts: contactData.size, forms }
+  return { connected: true, tz, submissions: subs.length, contacts: contactData.size, pipelines: pipelines.map((p) => ({ id: p.id, name: p.name })), forms }
 }
 
 // Read-only probe for the Forms feature: the location's forms (id -> name), a

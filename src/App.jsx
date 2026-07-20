@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.15.0'
+const APP_VERSION = '3.16.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1780,6 +1780,7 @@ const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
 const ENABLED_KEY = 'caalano_enabled'
 const CLIENTS_KEY = 'caalano_clients' // UI-added clients { id: { name, meta, google, ghl } }
+const FORMMETA_KEY = 'caalano_formmeta' // { clientId: { formLabel: { pipeline, notes } } }
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1788,7 +1789,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1804,13 +1805,13 @@ async function hydrateSettings() {
     const r = await fetch('/.netlify/functions/settings')
     const j = await r.json().catch(() => null)
     const d = j && j.ok && j.data ? j.data : null
-    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients'].some((s) => d[s] && Object.keys(d[s]).length)
+    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -1852,6 +1853,16 @@ function useDiscoverNames() {
 
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
+
+// Per-form metadata (pipeline link + free-text notes), keyed by client then form
+// label. Shown in Settings and the Forms view.
+function loadFormMeta(clientId) { return (SETTINGS.formmeta && SETTINGS.formmeta[clientId]) || {} }
+function saveFormMeta(clientId, formLabel, meta) {
+  const cur = (SETTINGS.formmeta && SETTINGS.formmeta[clientId]) || {}
+  const next = { ...cur, [formLabel]: { ...(cur[formLabel] || {}), ...meta } }
+  SETTINGS.formmeta = { ...(SETTINGS.formmeta || {}), [clientId]: next }
+  writeLS(FORMMETA_KEY, SETTINGS.formmeta); saveSettingsRemote({ formmeta: { [clientId]: next } }); bumpSettings()
+}
 
 /* Per-client KPI targets - { metaCpl, googleCostConv, stages: { [stageName]:
    leadsTarget }, ... }. Multi-pipeline clients keep a full target set per
@@ -2979,8 +2990,72 @@ function FormSegments({ segments, captured, currency }) {
     </div>
   )
 }
+// Editable per-form metadata + auto-description, shown in the Forms view and
+// Settings. Notes + pipeline persist server-side (formmeta).
+function FormMetaPanel({ clientId, form, pipes }) {
+  const cur = loadFormMeta(clientId)[form.form] || {}
+  const [notes, setNotes] = useState(cur.notes || '')
+  const [pipe, setPipe] = useState(cur.pipeline || '')
+  const [saved, setSaved] = useState(false)
+  const questions = form.questions || []
+  const flash = () => { setSaved(true); setTimeout(() => setSaved(false), 1200) }
+  return (
+    <div className="fm-panel">
+      <div className="fm-desc">
+        <span className="fm-lab">What this form asks</span>
+        {questions.length
+          ? <span className="fm-qs">{questions.map((q, i) => <span className="fm-q" key={q + i}>{q}</span>)}</span>
+          : <span className="cap">Contact details only — no qualification questions captured.</span>}
+      </div>
+      <div className="fm-edit">
+        {pipes.length > 0 && <label className="fm-field"><span className="fm-lab">Pipeline</span>
+          <select value={pipe} onChange={(e) => { setPipe(e.target.value); saveFormMeta(clientId, form.form, { pipeline: e.target.value || null }); flash() }}>
+            <option value="">— not set —</option>
+            {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>}
+        <label className="fm-field fm-notes"><span className="fm-lab">Notes {saved ? <em>· saved</em> : ''}</span>
+          <textarea value={notes} placeholder="e.g. Testing higher qualification to lift show rate…" onChange={(e) => setNotes(e.target.value)} onBlur={() => { saveFormMeta(clientId, form.form, { notes: notes.trim() || null }); flash() }} />
+        </label>
+      </div>
+    </div>
+  )
+}
+// Where the leads on a form are located (postcode / suburb answers), ranked.
+function FormLocations({ form }) {
+  const locs = form.locations || []
+  if (!locs.length) return null
+  const max = Math.max(1, ...locs.map((l) => l.leads))
+  return (
+    <div className="fm-locs">
+      <div className="fm-lab">Location of leads <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {locs.length} distinct · postcode / suburb answers</span></div>
+      <div className="fm-loc-list">
+        {locs.slice(0, 40).map((l) => (
+          <div className="fm-loc" key={l.value} title={`${l.leads} leads · ${l.won} won`}>
+            <span className="fm-loc-nm">{l.value}</span>
+            <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
+            <span className="fm-loc-n">{l.leads}{l.won ? ` · ${l.won}w` : ''}</span>
+          </div>
+        ))}
+      </div>
+      {locs.length > 40 && <div className="cap">+{locs.length - 40} more</div>}
+    </div>
+  )
+}
+// Pipeline filter for the Forms view (categorise by where each form's leads
+// landed, for multi-pipeline clients).
+function FormPipeFilter({ pipes, value, onChange }) {
+  if (!pipes || pipes.length < 2) return null
+  return (
+    <div className="chan-toggle form-pipe-filter">
+      <button className={value === 'all' ? 'on' : ''} onClick={() => onChange('all')}>All pipelines</button>
+      {pipes.map((p) => <button key={p.id} className={value === p.id ? 'on' : ''} onClick={() => onChange(p.id)}>{p.name}</button>)}
+    </div>
+  )
+}
 function FormsView({ clientId, currency, range, nonce }) {
   const st = useForms(clientId, range, nonce)
+  const [pipeFilter, setPipeFilter] = useState('all')
   const [sort, setSort] = useState({ key: 'leads', dir: -1 })
   const [open, setOpen] = useState(() => new Set())
   const toggle = (f) => setOpen((prev) => { const n = new Set(prev); n.has(f) ? n.delete(f) : n.add(f); return n })
@@ -2990,8 +3065,20 @@ function FormsView({ clientId, currency, range, nonce }) {
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load forms.</b></div>
   if (d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected.</b></div>
   if (d.error) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load forms.</b><p style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, maxWidth: 520, margin: '8px auto 0' }}>{d.error}</p><p style={{ maxWidth: 460, margin: '8px auto 0' }}>If this is a scope error, re-authorise Caalano Systems so the token carries <code>forms.readonly</code>.</p></div>
-  const forms = d.forms || []
-  if (!forms.length) return <div className="card empty-deep"><div className="big">📝</div><b>No form submissions in this range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Once leads fill out a form this fills in. Meta Lead Forms and website forms both appear here.</p></div>
+  const allForms = d.forms || []
+  if (!allForms.length) return <div className="card empty-deep"><div className="big">📝</div><b>No form submissions in this range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Once leads fill out a form this fills in. Meta Lead Forms and website forms both appear here.</p></div>
+  const pipes = d.pipelines || []
+  const fmeta = loadFormMeta(clientId)
+  // Pipeline filter: 'all', a pipeline id (categorise by where leads went), or
+  // 'link:<id>' to show only forms manually linked to that pipeline in Settings.
+  const projected = allForms.map((f) => {
+    if (pipeFilter === 'all') return f
+    if (pipeFilter.startsWith('link:')) { const pid = pipeFilter.slice(5); return (fmeta[f.form] && fmeta[f.form].pipeline === pid) ? f : null }
+    const bp = (f.byPipeline || []).find((p) => p.id === pipeFilter)
+    return bp ? { ...f, leads: bp.leads, booked: bp.booked, shown: bp.shown, won: bp.won, revenue: bp.revenue } : null
+  }).filter(Boolean)
+  const forms = projected
+  if (!forms.length) return (<><div className="lvl-title">Form performance</div><FormPipeFilter pipes={pipes} value={pipeFilter} onChange={setPipeFilter} /><div className="card empty-deep"><div className="big">🗂️</div><b>No forms in this pipeline for the range.</b></div></>)
   const rows = forms.map((f) => ({ ...f, bookRate: f.leads ? (f.booked / f.leads) * 100 : null, showRate: f.booked ? (f.shown / f.booked) * 100 : null, winRate: f.leads ? (f.won / f.leads) * 100 : null, avgDeal: f.won ? f.revenue / f.won : null }))
   const sorted = [...rows].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; return (av - bv) * sort.dir })
   const tot = rows.reduce((a, f) => ({ leads: a.leads + f.leads, booked: a.booked + f.booked, shown: a.shown + f.shown, won: a.won + f.won, revenue: a.revenue + f.revenue }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
@@ -3007,16 +3094,19 @@ function FormsView({ clientId, currency, range, nonce }) {
         <Sc label="Won" value={fmtNumber(tot.won)} />
         <Sc label="Revenue" value={money(tot.revenue)} />
       </div>
-      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· leads → booked → shown → won by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a header to sort</span></div>
+      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· leads → booked → shown → won by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></div>
+      <FormPipeFilter pipes={pipes} value={pipeFilter} onChange={setPipeFilter} />
       <div className="table-wrap"><table>
         <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
         {sorted.map((f) => {
-          const isOpen = open.has(f.form); const hasSeg = (f.segments || []).length > 0
+          const isOpen = open.has(f.form)
+          const fm = fmeta[f.form] || {}
+          const pipeName = fm.pipeline ? (pipes.find((p) => p.id === fm.pipeline) || {}).name : null
           return (
             <tbody key={f.form}>
               <tr onClick={() => toggle(f.form)} style={{ cursor: 'pointer' }} className={isOpen ? 'row-sel' : ''}>
-                <td className="num" style={{ color: 'var(--faint)' }}>{hasSeg ? (isOpen ? '▾' : '▸') : ''}</td>
-                <td title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}</td>
+                <td className="num" style={{ color: 'var(--faint)' }}>{isOpen ? '▾' : '▸'}</td>
+                <td title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}{pipeName ? <span className="form-pipe-chip">{pipeName}</span> : null}{fm.notes ? <span className="form-note-chip" title={fm.notes}>📝</span> : null}</td>
                 <td className="num">{fmtNumber(f.leads)}</td>
                 <td className="num">{fmtNumber(f.booked)}</td>
                 <td className="num">{f.bookRate != null ? fmtPct(f.bookRate, 0) : '-'}</td>
@@ -3027,7 +3117,11 @@ function FormsView({ clientId, currency, range, nonce }) {
                 <td className="num">{money(f.revenue)}</td>
                 <td className="num">{f.avgDeal != null ? money(f.avgDeal) : '-'}</td>
               </tr>
-              {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}><FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} /></td></tr>}
+              {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}>
+                <FormMetaPanel clientId={clientId} form={f} pipes={pipes} />
+                <FormLocations form={f} />
+                <FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} />
+              </td></tr>}
             </tbody>
           )
         })}
@@ -3613,7 +3707,7 @@ function clientHealth(c) {
   return [
     { img: FAVICON('meta.com'), short: 'Meta', label: 'Meta Ads account', state: c.meta ? 'ok' : 'bad' },
     { img: FAVICON('ads.google.com'), short: 'Google', label: 'Google Ads account', state: c.google ? 'ok' : 'bad' },
-    { img: FAVICON('caalanodigital.com.au'), short: 'CRM', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
+    { img: CRM_LOGO, short: 'CRM', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
     { ic: '🎯', short: 'Events', label: 'Key events configured', state: keConfigured ? 'ok' : (SEED_KEYEVENTS[c.id] ? 'warn' : (c.ghl ? 'warn' : 'bad')) },
     { ic: '📅', short: 'Cals', label: 'Booked calendars linked', state: hasCal ? 'ok' : (c.ghl ? 'warn' : 'bad') },
     { ic: '📊', short: 'KPIs', label: 'KPI targets set', state: kpiSet ? 'ok' : 'warn' },
@@ -3623,6 +3717,7 @@ function clientHealth(c) {
 // Real brand logos via each site's favicon (Google's favicon service is a
 // reliable source that works for any domain).
 const FAVICON = (domain) => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`
+const CRM_LOGO = 'https://assets.cdn.filesafe.space/4iJNxErzfROlH5M5akcm/media/694b2a2bd573507fc6f55bd6.png'
 const STATE_TXT = { ok: 'connected / done', warn: 'needs attention', bad: 'not connected' }
 function HealthIcon({ h }) {
   if (!h.img) return <span className="sth-ic">{h.ic}</span>
@@ -3678,7 +3773,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
       </div>
       <div className="set-legend">
         <span>Setup:</span>
-        <span className="lg"><img src={FAVICON('meta.com')} alt="" width="14" height="14" /> Meta</span><span className="lg"><img src={FAVICON('ads.google.com')} alt="" width="14" height="14" /> Google</span><span className="lg"><img src={FAVICON('caalanodigital.com.au')} alt="" width="14" height="14" /> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
+        <span className="lg"><img src={FAVICON('meta.com')} alt="" width="14" height="14" /> Meta</span><span className="lg"><img src={FAVICON('ads.google.com')} alt="" width="14" height="14" /> Google</span><span className="lg"><img src={CRM_LOGO} alt="" width="14" height="14" /> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
         <span className="lg-sep">·</span><span className="lg"><span className="sth-mk ok">✓</span> done</span><span className="lg"><span className="sth-mk warn">●</span> attention</span><span className="lg"><span className="sth-mk bad">✗</span> missing</span>
       </div>
       {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
@@ -3732,6 +3827,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
   if (c.ghl) tabs.push(['keyevents', 'Key events'])
   if (canLink) tabs.push(['links', 'Campaign links'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
+  if (c.ghl) tabs.push(['forms', 'Forms'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics'])
   const [tab, setTab] = useState('summary')
   return (
@@ -3764,6 +3860,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Click a form to see the questions it asks, set its pipeline and add notes (e.g. "testing higher qualification"). These show on the client's Forms tab too.</p><FormsView clientId={c.id} currency={currency} range={presetRange('last_30d')} nonce={0} /></div>}
           {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>
       </div>

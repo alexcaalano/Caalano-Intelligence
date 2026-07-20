@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.31.0'
+const APP_VERSION = '3.31.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3613,7 +3613,7 @@ function AppointmentsView({ clientId, range, nonce }) {
       {calChips}
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">appointments</span></div>
-        <div className="tm-sc"><span className="tm-lab">Time to book</span><b>{fmtDays(C.avgTimeToBookDays)}</b><span className="tm-sub">lead in → booked</span></div>
+        <div className="tm-sc"><span className="tm-lab">Time to book</span><b>{fmtDays(C.medianTimeToBookDays)}</b><span className="tm-sub">median · avg {fmtDays(C.avgTimeToBookDays)} · lead → booked</span></div>
         <div className="tm-sc"><span className="tm-lab">Avg booked ahead</span><b>{fmtDays(C.avgLeadDays)}</b><span className="tm-sub">median {fmtDays(C.medianLeadDays)}</span></div>
         <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">of {C.occurred} occurred</span></div>
         <div className="tm-sc"><span className="tm-lab">Win rate</span><b>{C.winRate == null ? '-' : `${C.winRate}%`}</b><span className="tm-sub">won ÷ booked</span></div>

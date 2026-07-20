@@ -17,6 +17,10 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.31.1 — 2026-07-20 · `PENDING`
+- Appointments "Time to book" now shows the **median** (robust to outliers) as
+  the headline with the **average** alongside it.
+
 ## v3.31.0 — 2026-07-20 · `PENDING`
 - **Lead map — smarter & more useful:**
   - **State disambiguation**: the client's dominant state is inferred from the

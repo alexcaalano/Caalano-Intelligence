@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.14.2 — 2026-07-20 · `<pending>`
+- Setup-health strip spans the full card width (equal cells, same width as the
+  Edit button) and each icon now carries a short text label under it, so the
+  status is legible even if an emoji doesn't render. Swapped to widely-supported
+  emoji (📇 CRM, 📡 Diagnostics).
+
 ## v3.14.1 — 2026-07-20 · `eeed5c1`
 - Settings cards simplified: just the client name + the setup-health icons
   (account IDs moved off the preview into the Edit modal). Icons switched to

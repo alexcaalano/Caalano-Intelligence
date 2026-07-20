@@ -314,7 +314,9 @@ tbody tr:hover { background: var(--panel-2); }
 /* Per-client setup-health strip: full-width equal cells, logo + label + mark. */
 .set-health { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 14px; }
 .sth { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: help; padding: 7px 2px; border: 1px solid var(--border); border-radius: 9px; }
-.sth-ic { font-size: 16px; line-height: 1; }
+.sth-ic { font-size: 16px; line-height: 1; height: 16px; display: inline-flex; align-items: center; }
+.sth-ic img { width: 16px; height: 16px; object-fit: contain; border-radius: 3px; }
+.set-legend .lg img { width: 14px; height: 14px; vertical-align: middle; border-radius: 3px; }
 .sth-lb { font-size: 9px; text-transform: uppercase; letter-spacing: .02em; color: var(--faint); font-weight: 700; }
 .sth-mk { font-size: 12px; font-weight: 800; line-height: 1; }
 .sth-mk.ok { color: var(--pos); } .sth-mk.bad { color: var(--neg); } .sth-mk.warn { color: var(--warn); }

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.14.2'
+const APP_VERSION = '3.14.3'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3608,22 +3608,29 @@ function clientHealth(c) {
   const kpiRaw = SETTINGS.kpis[c.id] || {}
   const kpiSet = Object.keys(kpiRaw).some((k) => k !== 'byPipeline' && kpiRaw[k] != null && kpiRaw[k] !== '') || (kpiRaw.byPipeline && Object.keys(kpiRaw.byPipeline).length > 0)
   return [
-    { ic: '📘', short: 'Meta', label: 'Meta Ads account', state: c.meta ? 'ok' : 'bad' },
-    { ic: '🔍', short: 'Google', label: 'Google Ads account', state: c.google ? 'ok' : 'bad' },
-    { ic: '📇', short: 'CRM', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
+    { img: FAVICON('meta.com'), short: 'Meta', label: 'Meta Ads account', state: c.meta ? 'ok' : 'bad' },
+    { img: FAVICON('ads.google.com'), short: 'Google', label: 'Google Ads account', state: c.google ? 'ok' : 'bad' },
+    { img: FAVICON('caalanodigital.com.au'), short: 'CRM', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
     { ic: '🎯', short: 'Events', label: 'Key events configured', state: keConfigured ? 'ok' : (SEED_KEYEVENTS[c.id] ? 'warn' : (c.ghl ? 'warn' : 'bad')) },
     { ic: '📅', short: 'Cals', label: 'Booked calendars linked', state: hasCal ? 'ok' : (c.ghl ? 'warn' : 'bad') },
     { ic: '📊', short: 'KPIs', label: 'KPI targets set', state: kpiSet ? 'ok' : 'warn' },
     { ic: '📡', short: 'Diag', label: 'Tracking diagnostics ready', state: (c.ghl && (c.meta || c.google)) ? 'ok' : (c.ghl ? 'warn' : 'bad') },
   ]
 }
+// Real brand logos via each site's favicon (Google's favicon service is a
+// reliable source that works for any domain).
+const FAVICON = (domain) => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`
 const STATE_TXT = { ok: 'connected / done', warn: 'needs attention', bad: 'not connected' }
+function HealthIcon({ h }) {
+  if (!h.img) return <span className="sth-ic">{h.ic}</span>
+  return <span className="sth-ic"><img src={h.img} alt="" width="16" height="16" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} /></span>
+}
 function HealthStrip({ c }) {
   return (
     <div className="set-health">
       {clientHealth(c).map((h) => (
         <span key={h.label} className="sth" title={`${h.label} — ${STATE_TXT[h.state]}`}>
-          <span className="sth-ic">{h.ic}</span>
+          <HealthIcon h={h} />
           <span className="sth-lb">{h.short}</span>
           <span className={`sth-mk ${h.state}`}>{h.state === 'ok' ? '✓' : h.state === 'bad' ? '✗' : '●'}</span>
         </span>
@@ -3668,7 +3675,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
       </div>
       <div className="set-legend">
         <span>Setup:</span>
-        <span className="lg"><b>📘</b> Meta</span><span className="lg"><b>🔍</b> Google</span><span className="lg"><b>📇</b> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
+        <span className="lg"><img src={FAVICON('meta.com')} alt="" width="14" height="14" /> Meta</span><span className="lg"><img src={FAVICON('ads.google.com')} alt="" width="14" height="14" /> Google</span><span className="lg"><img src={FAVICON('caalanodigital.com.au')} alt="" width="14" height="14" /> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
         <span className="lg-sep">·</span><span className="lg"><span className="sth-mk ok">✓</span> done</span><span className="lg"><span className="sth-mk warn">●</span> attention</span><span className="lg"><span className="sth-mk bad">✗</span> missing</span>
       </div>
       {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}

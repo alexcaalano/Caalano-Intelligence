@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.14.3 — 2026-07-20 · `<pending>`
+- Setup-health strip uses real brand logos (Meta, Google Ads, and Caalano's own
+  favicon for CRM) via each site's favicon; the config checks (key events,
+  calendars, KPIs, diagnostics) keep simple icons. Falls back to the text label
+  if a logo can't load.
+
 ## v3.14.2 — 2026-07-20 · `cc1fca1`
 - Setup-health strip spans the full card width (equal cells, same width as the
   Edit button) and each icon now carries a short text label under it, so the

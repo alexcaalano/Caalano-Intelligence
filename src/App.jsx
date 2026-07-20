@@ -1753,14 +1753,64 @@ function UtmSection({ attr, currency, paid }) {
 }
 
 /* ============ Caalano360 - blended paid + CRM ============ */
+// Settings (key events, KPI targets, campaign->pipeline links, enabled clients)
+// persist SERVER-SIDE via /.netlify/functions/settings so they survive cache
+// clears, work on every device and are shared across the team. A localStorage
+// copy is kept as an instant/offline cache and for one-time migration of any
+// config a browser still holds. Reads are synchronous from the in-memory
+// SETTINGS cache (seeded from localStorage, then hydrated from the server).
 const CMAP_KEY = 'caalano_campmap'
-function loadCampMap(clientId) { try { return (JSON.parse(localStorage.getItem(CMAP_KEY) || '{}')[clientId]) || {} } catch { return {} } }
-function saveCampMap(clientId, map) { try { const all = JSON.parse(localStorage.getItem(CMAP_KEY) || '{}'); all[clientId] = map; localStorage.setItem(CMAP_KEY, JSON.stringify(all)) } catch {} }
+const KPI_KEY = 'caalano_kpis'
+const KEV_KEY = 'caalano_keyevents'
+const ENABLED_KEY = 'caalano_enabled'
+// Durable default key events for clients whose config predates server storage,
+// so their Meta/Google funnel + grouped Caalano360 columns render out of the
+// box. Bare strings = pipeline stage names; calendars are linked in Settings.
+const SEED_KEYEVENTS = {
+  'pool-haus': ['New Lead', 'Pool Specialist Booked Call', 'Pool Specialist Call - Shown', 'Site Visit Booked', 'Site Visit Completed', 'Quote/Proposal Sent', 'Client Won'],
+}
+const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
+const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), loaded: false }
+const settingsSubs = new Set()
+const bumpSettings = () => { for (const fn of settingsSubs) fn() }
+function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
+// Fire-and-forget partial save (localStorage is the instant cache; UI never
+// waits on the network).
+function saveSettingsRemote(patch) {
+  try { fetch('/.netlify/functions/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }).catch(() => {}) } catch {}
+}
+let _hydrated = false
+async function hydrateSettings() {
+  if (_hydrated) return; _hydrated = true
+  try {
+    const r = await fetch('/.netlify/functions/settings')
+    const j = await r.json().catch(() => null)
+    const d = j && j.ok && j.data ? j.data : null
+    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled'].some((s) => d[s] && Object.keys(d[s]).length)
+    if (serverEmpty) {
+      // First run: migrate whatever this browser holds up to the server.
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled })
+    } else {
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled)
+    }
+  } catch { /* offline: keep the localStorage cache */ }
+  SETTINGS.loaded = true
+  bumpSettings()
+}
+// Re-render the subscribing component when settings hydrate / change.
+function useSettingsSync() {
+  const [, force] = React.useReducer((x) => x + 1, 0)
+  useEffect(() => onSettings(force), [])
+}
+
+function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
+function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
 
 /* Per-client KPI targets - { metaCpl, googleCostConv, stages: { [stageName]: leadsTarget } } */
-const KPI_KEY = 'caalano_kpis'
-function loadKpis(clientId) { try { return (JSON.parse(localStorage.getItem(KPI_KEY) || '{}')[clientId]) || {} } catch { return {} } }
-function saveKpis(clientId, k) { try { const all = JSON.parse(localStorage.getItem(KPI_KEY) || '{}'); all[clientId] = k; localStorage.setItem(KPI_KEY, JSON.stringify(all)) } catch {} }
+function loadKpis(clientId) { return SETTINGS.kpis[clientId] || {} }
+function saveKpis(clientId, k) { SETTINGS.kpis = { ...SETTINGS.kpis, [clientId]: k }; writeLS(KPI_KEY, SETTINGS.kpis); saveSettingsRemote({ kpis: { [clientId]: k } }); bumpSettings() }
 // colour helper: is `actual` hitting `target`? goodWhenUnder for cost metrics.
 function kpiClass(actual, target, goodWhenUnder) { if (target == null || target === '' || !actual) return ''; const hit = goodWhenUnder ? actual <= target : actual >= target; return hit ? 'good' : 'bad' }
 
@@ -1768,10 +1818,9 @@ function kpiClass(actual, target, goodWhenUnder) { if (target == null || target 
    and booked calendars ({ cal, label, stage? }) where `stage` links the calendar
    to the pipeline stage it represents so it sits in the right funnel order. They
    drive the Caalano360 / Meta / Google cost-per-event funnel and green columns.
-   Empty = default leads→booked→shown→won. */
-const KEV_KEY = 'caalano_keyevents'
-function loadKeyEvents(clientId) { try { return (JSON.parse(localStorage.getItem(KEV_KEY) || '{}')[clientId]) || [] } catch { return [] } }
-function saveKeyEvents(clientId, arr) { try { const all = JSON.parse(localStorage.getItem(KEV_KEY) || '{}'); all[clientId] = arr; localStorage.setItem(KEV_KEY, JSON.stringify(all)) } catch {} }
+   Unset = seeded defaults where known, else leads→booked→shown→won. */
+function loadKeyEvents(clientId) { const v = SETTINGS.keyevents[clientId]; if (v !== undefined) return v; return SEED_KEYEVENTS[clientId] || [] }
+function saveKeyEvents(clientId, arr) { SETTINGS.keyevents = { ...SETTINGS.keyevents, [clientId]: arr }; writeLS(KEV_KEY, SETTINGS.keyevents); saveSettingsRemote({ keyevents: { [clientId]: arr } }); bumpSettings() }
 // reached-per-stage across a set of pipelines: cumulative from the last stage
 // (an opp at a stage passed through every earlier stage), summed by stage name.
 function reachedByStage(pipelines) {
@@ -3362,45 +3411,72 @@ function TimezoneBadge({ clientId, hasMeta }) {
   )
 }
 
-function Settings({ config, enabled, setEnabled, onClose, currency }) {
-  if (!config) return null
+const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
+function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
+  const [filter, setFilter] = useState('all')
+  const [q, setQ] = useState('')
+  const [openId, setOpenId] = useState(null) // which client's editors are expanded
+  if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
   const w = config.availableAccounts?.windsor || {}
+  const isOn = (c) => enabled[c.id] !== false
+  const activeCount = config.clients.filter(isOn).length
+  const term = q.trim().toLowerCase()
+  const list = config.clients.filter((c) => {
+    if (filter === 'active' && !isOn(c)) return false
+    if (filter === 'inactive' && isOn(c)) return false
+    if (term && !(`${c.name} ${c.industry || ''}`.toLowerCase().includes(term))) return false
+    return true
+  })
   return (
-    <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><h3>Settings</h3><button className="icon-btn" onClick={onClose}>✕</button></div>
-        <div className="m-body">
-          <div className="set-stats">
-            <div className="set-stat"><div className="v">{config.clients.length}</div><div className="l">Clients</div></div>
-            <div className="set-stat"><div className="v">{w.facebook ?? '-'}</div><div className="l">Meta accounts</div></div>
-            <div className="set-stat"><div className="v">{w.google_ads ?? '-'}</div><div className="l">Google accounts</div></div>
-            <div className="set-stat"><div className="v">{w.gohighlevel ?? '-'}</div><div className="l">Caalano Systems</div></div>
-          </div>
-          <div className="set-note">Toggle clients on or off, see their mapped accounts, and link each ad campaign to a Caalano Systems pipeline so paid spend attributes correctly in Caalano360. Changes persist in this browser.</div>
-          {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
-          {config.clients.map((c) => {
-            const on = enabled[c.id] !== false
-            const canLink = (c.meta || c.google) && c.ghl
-            return (
-              <div className={`set-client ${on ? '' : 'is-off'}`} key={c.id}>
-                <div className="row1">
-                  <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
-                  <div className={`toggle ${on ? 'on' : ''}`} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
-                </div>
-                <div className="ids">
-                  <span className="idtag">Meta <b>{c.meta || '-'}</b></span>
-                  <span className="idtag">Google <b>{c.google || '-'}</b></span>
-                  <span className="idtag">Caalano Systems <b>{c.ghl || '-'}</b></span>
-                </div>
-                {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
-                {canLink && <CampaignLinker clientId={c.id} />}
-                {c.ghl && <KeyEventsEditor clientId={c.id} />}
-                {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}
-                {c.ghl && (c.meta || c.google) && <ClientTrackingDiagnostics clientId={c.id} currency={currency} />}
+    <div className="settings-page">
+      <div className="set-stats">
+        <div className="set-stat"><div className="v">{config.clients.length}</div><div className="l">Clients</div></div>
+        <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>
+        <div className="set-stat"><div className="v">{config.clients.length - activeCount}</div><div className="l">Inactive</div></div>
+        <div className="set-stat"><div className="v">{w.facebook ?? '-'}</div><div className="l">Meta accounts</div></div>
+        <div className="set-stat"><div className="v">{w.google_ads ?? '-'}</div><div className="l">Google accounts</div></div>
+        <div className="set-stat"><div className="v">{w.gohighlevel ?? '-'}</div><div className="l">Caalano Systems</div></div>
+      </div>
+      <div className="set-toolbar">
+        <div className="chan-toggle">{SET_FILTERS.map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${config.clients.length - activeCount}` : ''}</button>)}</div>
+        <input className="set-search" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <span className="set-saved">✓ Saved to server · shared across your team</span>
+      </div>
+      {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
+      <div className="set-grid">
+        {list.map((c) => {
+          const on = isOn(c)
+          const canLink = (c.meta || c.google) && c.ghl
+          const expanded = openId === c.id
+          return (
+            <div className={`set-card ${on ? '' : 'is-off'} ${expanded ? 'open' : ''}`} key={c.id}>
+              <div className="set-card-head">
+                <span className="avatar" style={{ background: acolor(config.clients.indexOf(c)) }}>{initials(c.name)}</span>
+                <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
+                <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
               </div>
-            )
-          })}
-        </div>
+              <div className="ids">
+                <span className={`idtag ${c.meta ? 'has' : ''}`}>Meta <b>{c.meta || '-'}</b></span>
+                <span className={`idtag ${c.google ? 'has' : ''}`}>Google <b>{c.google || '-'}</b></span>
+                <span className={`idtag ${c.ghl ? 'has' : ''}`}>Caalano Systems <b>{c.ghl ? '✓' : '-'}</b></span>
+              </div>
+              <div className="set-card-actions">
+                <button className="set-expand" onClick={() => setOpenId(expanded ? null : c.id)}>{expanded ? '▾ Hide configuration' : '▸ Key events, KPIs & links'}</button>
+                <button className="set-open" onClick={() => onPick(c)} title="Open this client's workspace">Open ↗</button>
+              </div>
+              {expanded && (
+                <div className="set-card-body">
+                  {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
+                  {c.ghl && <KeyEventsEditor clientId={c.id} />}
+                  {canLink && <CampaignLinker clientId={c.id} />}
+                  {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}
+                  {c.ghl && (c.meta || c.google) && <ClientTrackingDiagnostics clientId={c.id} currency={currency} />}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
       </div>
     </div>
   )
@@ -3414,16 +3490,22 @@ export default function App() {
   const [view, setView] = useState('overview')
   const [picked, setPicked] = useState(null)
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'dark' } catch { return 'dark' } })
-  const [showSettings, setShowSettings] = useState(false)
   const [range, setRange] = useState(() => presetRange('last_30d'))
-  const [enabled, setEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('caalano_enabled') || '{}') } catch { return {} } })
   const [refreshKey, setRefreshKey] = useState(0)
   const [navOpen, setNavOpen] = useState(false)
   const agency = useAgencyLive(range, refreshKey)
+  // Server-backed settings: re-render on hydrate/change; enabled is a derived
+  // write-through value so client on/off persists to the server like the rest.
+  useSettingsSync()
+  const enabled = SETTINGS.enabled
+  const setEnabled = (updater) => {
+    const next = typeof updater === 'function' ? updater(SETTINGS.enabled) : updater
+    SETTINGS.enabled = next; writeLS(ENABLED_KEY, next); saveSettingsRemote({ enabled: next }); bumpSettings()
+  }
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); try { localStorage.setItem('caalano_theme', theme) } catch {} }, [theme])
-  useEffect(() => { try { localStorage.setItem('caalano_enabled', JSON.stringify(enabled)) } catch {} }, [enabled])
   useEffect(() => {
+    hydrateSettings()
     fetch('data/snapshot.json').then((r) => { if (!r.ok) throw new Error('snapshot not found'); return r.json() }).then(setData).catch((e) => setErr(e.message))
     fetch('data/config.json').then((r) => r.ok ? r.json() : null).then(setConfig).catch(() => {})
   }, [])
@@ -3452,7 +3534,7 @@ export default function App() {
           <button className={view === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
         </nav>
         <div style={{ marginTop: 'auto' }}>
-          <button className="settings-btn" onClick={() => { setShowSettings(true); setNavOpen(false) }}><span className="ic">⚙</span>Settings</button>
+          <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
           <div className="foot-note">Live data via the Meta and Google API - Meta, Google, Caalano Systems.</div>
           <div className="foot-build" title={`Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''}`}>Last deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
@@ -3467,20 +3549,19 @@ export default function App() {
         </div>
         <div className="head">
           <div>
-            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Daily Performance' : view === 'weekly' ? 'Weekly Traffic Light' : 'Clients'}</h2>
-            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : view === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : view === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Daily Performance' : view === 'weekly' ? 'Weekly Traffic Light' : view === 'settings' ? 'Settings' : 'Clients'}</h2>
+            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : view === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : view === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : view === 'settings' ? 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />
+          {view !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
         </div>
         {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
+        {view === 'settings' && <SettingsPage config={config} enabled={enabled} setEnabled={setEnabled} currency={data.currency} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} config={config} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
       </main>
-
-      {showSettings && <Settings config={config} enabled={enabled} setEnabled={setEnabled} onClose={() => setShowSettings(false)} currency={data.currency} />}
     </div>
   )
 }

@@ -312,13 +312,19 @@ function computeRows(snapClients, live) {
     const clicks = (meta?.clicks || 0) + (google?.clicks || 0)
     const conversions = (meta?.leads || 0) + (google?.conversions || 0)
     const revenue = (lm && lm.crm && lm.crm.revenue) || 0
-    return { c, i, id: c.id, name: c.name, industry: c.industry, track: c.trackingStatus, spend, impressions, clicks, conversions, revenue, cpl: conversions ? spend / conversions : 0, ctr: impressions ? (clicks / impressions) * 100 : 0, roas: spend ? revenue / spend : 0, metaSpend: meta?.spend || 0, googleSpend: google?.cost || 0, hasMeta: !!c.meta, hasGoogle: !!c.google }
+    // Current per-channel ad metrics + previous-period totals for the agency
+    // comparison table's deltas and the Results channel-breakdown hover.
+    const metaLeads = meta?.leads || 0, googleConv = google?.conversions || 0
+    const mp = (lm && lm.metaPrev) || null, gp = (lm && lm.googlePrev) || null
+    const prevMetaSpend = mp?.spend || 0, prevGoogleSpend = gp?.cost || 0
+    const prevMetaLeads = mp?.leads || 0, prevGoogleConv = gp?.conversions || 0
+    const prevSpend = prevMetaSpend + prevGoogleSpend, prevResults = prevMetaLeads + prevGoogleConv
+    return { c, i, id: c.id, name: c.name, industry: c.industry, track: c.trackingStatus, spend, impressions, clicks, conversions, revenue, cpl: conversions ? spend / conversions : 0, ctr: impressions ? (clicks / impressions) * 100 : 0, roas: spend ? revenue / spend : 0, metaSpend: meta?.spend || 0, googleSpend: google?.cost || 0, metaLeads, googleConv, prevSpend, prevResults, prevMetaSpend, prevGoogleSpend, prevMetaLeads, prevGoogleConv, hasMeta: !!c.meta, hasGoogle: !!c.google }
   })
 }
 
 /* ============ Overview ============ */
 function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onPick }) {
-  const coverage = useCoverage(range, nonce)
   const rowById = Object.fromEntries(rows.map((r) => [r.id, r]))
   const nameOf = (id) => rowById[id]?.name || id
   const AlertCol = ({ title, color, list }) => (
@@ -360,8 +366,8 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onP
           <AlertCol title="Google" color="#12b886" list={alerts.google || []} />
         </div>
       </>}
-      <div className="section-title">Client leaderboard <span className="sub">· click a row to open the client workspace</span></div>
-      <ClientTable rows={rows} currency={currency} coverage={coverage} onPick={onPick} />
+      <div className="section-title">Client leaderboard <span className="sub">· results, funnel &amp; revenue per client vs the previous period · click a row to open the client</span></div>
+      <AgencyComparison rows={rows} currency={currency} range={range} nonce={nonce} onPick={onPick} />
     </>
   )
 }
@@ -393,6 +399,141 @@ function ClientTable({ rows, currency, coverage, onPick }) {
         )
       })}</tbody>
     </table></div>
+  )
+}
+
+/* ============ Agency comparison table ============ */
+// The client's primary booked calendar (first calendar key event, funnel order)
+// + its linked pipeline stage, for the overview's Booked Calls column.
+function primaryCalOf(clientId) {
+  try {
+    const ke = mergeCalKeyEvents(normKeyEvents(loadKeyEvents(clientId)))
+    const cal = ke.find((k) => k.kind === 'calendar')
+    if (!cal) return { cals: '', stage: '' }
+    return { cals: (cal.refs || [cal.ref]).filter(Boolean).join(','), stage: cal.stage || '' }
+  } catch { return { cals: '', stage: '' } }
+}
+// Lazy-fetch the GHL metrics (opps/booked/shown/won/revenue per channel, cur +
+// prev) for each CRM client, one request each, so the fast Windsor columns
+// render immediately and these fill in with spinners.
+function useOvRows(rows, range, nonce = 0) {
+  const [map, setMap] = useState({})
+  const ghlIds = rows.filter((r) => r.c.ghl).map((r) => r.id)
+  const depKey = ghlIds.join(',') + '|' + rangeQuery(range) + '|' + nonce
+  useEffect(() => {
+    let alive = true
+    setMap(Object.fromEntries(ghlIds.map((id) => [id, { status: 'loading' }])))
+    const queue = [...ghlIds]
+    const runNext = () => {
+      if (!alive) return
+      const id = queue.shift(); if (id == null) return
+      const pc = primaryCalOf(id)
+      const q = `${rangeQuery(range)}&cal=${encodeURIComponent(pc.cals)}&stage=${encodeURIComponent(pc.stage)}`
+      fetch(`/.netlify/functions/windsor?scope=ovrow&client=${id}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+        .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+        .then((j) => { if (alive) setMap((m) => ({ ...m, [id]: (j && j.cur) ? { status: 'ok', data: j } : { status: 'err' } })) })
+        .catch(() => { if (alive) setMap((m) => ({ ...m, [id]: { status: 'err' } })) })
+        .finally(() => { if (alive) runNext() })
+    }
+    for (let i = 0; i < Math.min(4, queue.length); i++) runNext() // ≤4 heavy GHL pulls at once
+    return () => { alive = false }
+  }, [depKey]) // eslint-disable-line
+  return map
+}
+// Compact green/red % change vs the prior period.
+function MiniDelta({ cur, prev, goodWhenDown = false, neutral = false }) {
+  if (cur == null || prev == null) return null
+  if (!prev) return cur ? <span className="mini-delta up" title="no prior-period value">▲ new</span> : null
+  const pct = ((cur - prev) / Math.abs(prev)) * 100
+  if (!isFinite(pct)) return null
+  const up = pct >= 0
+  const cls = neutral ? 'flat' : (goodWhenDown ? (up ? 'down' : 'up') : (up ? 'up' : 'down'))
+  return <span className={`mini-delta ${cls}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct), 0)}</span>
+}
+// Results / Cost-per-result channel breakdown popup.
+function ResultsPop({ children, r, currency }) {
+  const money = (v) => fmtCurrency(v, currency)
+  const mCpl = r.metaLeads ? r.metaSpend / r.metaLeads : null
+  const gCpc = r.googleConv ? r.googleSpend / r.googleConv : null
+  return (
+    <span className="ov-pop">{children}
+      <span className="ov-pop-body">
+        <span className="ov-pop-t">Result breakdown</span>
+        {r.hasMeta && <span className="ov-pop-r"><span className="ov-pd meta">Meta</span> {fmtNumber(r.metaLeads)} leads{mCpl != null ? ` · ${money(mCpl)}/lead` : ''}</span>}
+        {r.hasGoogle && <span className="ov-pop-r"><span className="ov-pd google">Google</span> {fmtNumber(r.googleConv)} conv.{gCpc != null ? ` · ${money(gCpc)}/conv` : ''}</span>}
+        <span className="ov-pop-r ov-pop-tot">Total {fmtNumber(r.conversions)} results{r.conversions ? ` · ${money(r.spend / r.conversions)}/result` : ''}</span>
+      </span>
+    </span>
+  )
+}
+const OV_FILTERS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid']]
+function AgencyComparison({ rows, currency, range, nonce, onPick }) {
+  const [f, setF] = useState('all')
+  const ov = useOvRows(rows, range, nonce)
+  const money = (v) => fmtCurrency(v, currency)
+  const sorted = [...rows].sort((a, b) => b.spend - a.spend)
+  const chanKey = f === 'all' ? 'all' : f === 'paid' ? 'paid' : 'other'
+  const paidView = f !== 'nonpaid' // ad spend/results only exist for paid
+  const rate = (n, d) => (d ? (n / d) * 100 : null)
+  const Cell = ({ v, cur, prev, gd, neutral, loading, dash }) => (
+    <td className="ov-td">{loading ? <span className="ov-spin" /> : dash ? <span className="ov-dash">-</span> : <div className="ov-cell"><span className="ov-v">{v}</span><MiniDelta cur={cur} prev={prev} goodWhenDown={gd} neutral={neutral} /></div>}</td>
+  )
+  return (
+    <>
+      <div className="ov-cmp-head">
+        <div className="chan-toggle ov-filter">{OV_FILTERS.map(([k, lbl]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{lbl}</button>)}</div>
+        <span className="ov-cmp-note">vs previous {rangeLabel(range).toLowerCase()} · green = better, red = worse{f === 'nonpaid' ? ' · ad-cost columns N/A for non-paid' : ''}</span>
+      </div>
+      <div className="table-wrap"><table className="ov-cmp">
+        <thead><tr>
+          <th className="ov-name">Client</th>
+          <th>Spend</th><th>Results</th><th>Cost / Result</th>
+          <th>Opps</th><th>Booked</th><th>Cost / Booked</th><th>Show Rate</th><th>Cost / Shown</th><th>Booking Rate</th>
+          <th>Won</th><th>Revenue</th><th>Avg Deal</th><th>Cost / Won</th><th>ROAS</th>
+        </tr></thead>
+        <tbody>{sorted.map((r) => {
+          const spendF = paidView ? r.spend : 0
+          const pSpendF = paidView ? r.prevSpend : 0
+          const resF = paidView ? r.conversions : 0
+          const pResF = paidView ? r.prevResults : 0
+          const o = ov[r.id]
+          const loading = !!r.c.ghl && (!o || o.status === 'loading')
+          const ok = o && o.status === 'ok' && o.data && o.data.cur
+          const cur = ok ? o.data.cur[chanKey] : null
+          const prev = ok && o.data.prev ? o.data.prev[chanKey] : null
+          const noCrm = !r.c.ghl
+          // GHL cell helper: dash when no CRM / errored, spinner while loading.
+          const g = (v, curN, prevN, gd, neutral) => ({ v, cur: curN, prev: prevN, gd, neutral, loading, dash: noCrm || (!loading && !ok) })
+          const cBooked = cur && cur.booked && spendF ? spendF / cur.booked : null
+          const pcBooked = prev && prev.booked && pSpendF ? pSpendF / prev.booked : null
+          const cShown = cur && cur.shown && spendF ? spendF / cur.shown : null
+          const pcShown = prev && prev.shown && pSpendF ? pSpendF / prev.shown : null
+          const cWon = cur && cur.won && spendF ? spendF / cur.won : null
+          const pcWon = prev && prev.won && pSpendF ? pSpendF / prev.won : null
+          const roas = cur && spendF ? cur.revenue / spendF : null
+          const pRoas = prev && pSpendF ? prev.revenue / pSpendF : null
+          return (
+            <tr key={r.id} onClick={() => onPick(r.c)}>
+              <td className="ov-name"><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div>{r.name}<small>{r.industry}</small></div></div></td>
+              <Cell v={paidView ? money(spendF) : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
+              <Cell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
+              <Cell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
+              <Cell {...g(cur ? fmtNumber(cur.opps) : '-', cur?.opps, prev?.opps)} />
+              <Cell {...g(cur ? fmtNumber(cur.booked) : '-', cur?.booked, prev?.booked)} />
+              <Cell {...g(cBooked != null ? money(cBooked) : '-', cBooked, pcBooked, true)} />
+              <Cell {...g(cur && cur.booked ? fmtPct(rate(cur.shown, cur.booked), 0) : '-', rate(cur?.shown, cur?.booked), rate(prev?.shown, prev?.booked))} />
+              <Cell {...g(cShown != null ? money(cShown) : '-', cShown, pcShown, true)} />
+              <Cell {...g(cur && cur.opps ? fmtPct(rate(cur.booked, cur.opps), 0) : '-', rate(cur?.booked, cur?.opps), rate(prev?.booked, prev?.opps))} />
+              <Cell {...g(cur ? fmtNumber(cur.won) : '-', cur?.won, prev?.won)} />
+              <Cell {...g(cur ? money(cur.revenue) : '-', cur?.revenue, prev?.revenue)} />
+              <Cell {...g(cur && cur.won ? money(cur.revenue / cur.won) : '-', cur && cur.won ? cur.revenue / cur.won : null, prev && prev.won ? prev.revenue / prev.won : null)} />
+              <Cell {...g(cWon != null ? money(cWon) : '-', cWon, pcWon, true)} />
+              <Cell {...g(roas != null ? `${roas.toFixed(2)}×` : '-', roas, pRoas)} />
+            </tr>
+          )
+        })}</tbody>
+      </table></div>
+    </>
   )
 }
 

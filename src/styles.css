@@ -584,6 +584,32 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .pfunnel.pf5 .pf-row { grid-template-columns: 170px 1fr 62px 62px 88px; gap: 10px; }
 .ke-cal { opacity: .95; }
 .attr-diag { margin: 0 0 12px; padding: 9px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #f0435b; background: rgba(240,67,91,.1); border: 1px solid rgba(240,67,91,.35); }
+/* Agency comparison table */
+.ov-cmp-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.ov-filter button { font-size: 12px; }
+.ov-cmp-note { font-size: 11.5px; color: var(--faint); }
+table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+.ov-cmp th { text-align: right; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.ov-cmp th.ov-name { text-align: left; }
+.ov-cmp td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: right; vertical-align: middle; }
+.ov-cmp tbody tr { cursor: pointer; }
+.ov-cmp tbody tr:hover { background: var(--panel-2); }
+.ov-cmp .ov-name { text-align: left; position: sticky; left: 0; background: var(--panel); z-index: 2; }
+.ov-cmp tbody tr:hover .ov-name { background: var(--panel-2); }
+.ov-cell { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.ov-v { font-weight: 650; font-variant-numeric: tabular-nums; }
+.ov-dash { color: var(--faint); }
+.mini-delta { font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mini-delta.up { color: var(--pos); } .mini-delta.down { color: var(--neg); } .mini-delta.flat { color: var(--faint); }
+.ov-spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border-2); border-top-color: var(--brand); border-radius: 50%; animation: spin .7s linear infinite; }
+.ov-pop { position: relative; cursor: help; border-bottom: 1px dotted var(--border-2); }
+.ov-pop-body { display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; flex-direction: column; gap: 3px; min-width: 210px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); text-align: left; white-space: nowrap; font-weight: 500; }
+.ov-pop:hover .ov-pop-body { display: flex; }
+.ov-pop-t { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+.ov-pop-r { font-size: 12px; color: var(--muted); }
+.ov-pop-tot { margin-top: 3px; padding-top: 5px; border-top: 1px solid var(--border); color: var(--text); font-weight: 650; }
+.ov-pd { display: inline-block; min-width: 44px; text-align: center; font-size: 10px; font-weight: 700; color: #fff; border-radius: 5px; padding: 1px 5px; margin-right: 4px; }
+.ov-pd.meta { background: #4f7cff; } .ov-pd.google { background: #12b886; }
 /* Readable Key Events funnel: full step name (wraps), reached bar, %leads,
    next-step conversion, show%, cost per event. */
 .kef { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }

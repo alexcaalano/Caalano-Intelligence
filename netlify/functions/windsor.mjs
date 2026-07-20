@@ -211,6 +211,18 @@ function rollupGoogle(cg, kw, st, dy, days) {
 }
 // Agency roll-up: pull all Meta + Google accounts in two calls, map each back
 // to its client, and return per-client paid metrics for the whole roster.
+// Cumulative "reached this stage or beyond" for one channel rollup (from
+// buildAttribution's channels[ch].pipelines), summed across pipelines.
+function reachedInChannel(chanObj, stageName) {
+  if (!chanObj || !chanObj.pipelines) return 0
+  let total = 0
+  for (const p of chanObj.pipelines) {
+    const sts = (p.stages || []).slice().sort((a, b) => a.pos - b.pos)
+    const i = sts.findIndex((s) => s.name === stageName); if (i < 0) continue
+    for (let j = i; j < sts.length; j++) total += sts[j].count || 0
+  }
+  return total
+}
 async function buildOverview(from, to, preset, key) {
   const metaRev = {}, googleRev = {}, ghlRev = {}
   for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[norm(c.meta)] = id; if (c.google) googleRev[norm(c.google)] = id; if (c.ghl) ghlRev[norm(c.ghl)] = id }
@@ -219,12 +231,17 @@ async function buildOverview(from, to, preset, key) {
   const dstr = (d) => d.toISOString().slice(0, 10)
   const yest = new Date(today); yest.setUTCDate(yest.getUTCDate() - 1)
   const base0 = new Date(today); base0.setUTCDate(base0.getUTCDate() - 8)
-  const [fb, gg, opps, fbD, ggD] = await Promise.all([
+  // Previous equal-length period for the agency comparison table (fast Windsor
+  // ad metrics only; the GHL columns fetch their own prev per client lazily).
+  const pr = prevRange(from, to)
+  const [fb, gg, opps, fbD, ggD, pFb, pGg] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key),
     windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key).catch(() => []),
     windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
+    pr.from ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
+    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
   ])
   const clients = {}
   const ensure = (id) => (clients[id] = clients[id] || {})
@@ -237,6 +254,16 @@ async function buildOverview(from, to, preset, key) {
     const id = googleRev[norm(r.account_id)]; if (!id) continue
     const e = ensure(id); e.google = e.google || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
     e.google.cost += num(r.spend); e.google.impressions += num(r.impressions); e.google.clicks += num(r.clicks); e.google.conversions += num(r.conversions)
+  }
+  for (const r of pFb) {
+    const id = metaRev[norm(r.account_id)]; if (!id) continue
+    const e = ensure(id); e.metaPrev = e.metaPrev || { spend: 0, leads: 0 }
+    e.metaPrev.spend += num(r.spend); e.metaPrev.leads += fbLeads(r)
+  }
+  for (const r of pGg) {
+    const id = googleRev[norm(r.account_id)]; if (!id) continue
+    const e = ensure(id); e.googlePrev = e.googlePrev || { cost: 0, conversions: 0 }
+    e.googlePrev.cost += num(r.spend); e.googlePrev.conversions += num(r.conversions)
   }
   for (const r of opps) {
     const id = ghlRev[norm(r.account_id)]; if (!id) continue
@@ -795,6 +822,47 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'calendars', client, connected: false, calendars: [] })
     try { return json({ scope: 'calendars', client, connected: true, calendars: await listCalendars(cc.ghl) }, 200, true) }
     catch (e) { return json({ scope: 'calendars', client, error: String(e.message || e).slice(0, 160), calendars: [] }, 200) }
+  }
+
+  // Lean per-client GHL metrics for the Agency Overview comparison table:
+  // opportunities / booked / shown / won / revenue split by channel (all / paid
+  // (meta+google) / meta / google / other), for the current and previous period.
+  // booked / shown use the primary key-event calendar (cal=) + its linked stage
+  // (stage=) when given, else the whole-channel booked/shown. Lazy-loaded per
+  // client from the frontend so the fast Windsor columns render first.
+  if (url.searchParams.get('scope') === 'ovrow') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'ovrow', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'ovrow', client, connected: false })
+    const cals = (url.searchParams.get('cal') || '').split(',').filter(Boolean)
+    const stage = url.searchParams.get('stage')
+    const summ = (attr) => {
+      const chans = attr.channels || {}
+      const byCal = (attr.appointments && attr.appointments.byCalendar) || []
+      const calRecs = cals.length ? byCal.filter((c) => cals.includes(c.id)) : null
+      const out = {}
+      for (const ch of ['all', 'meta', 'google', 'other']) {
+        const tt = (chans[ch] && chans[ch].totals) || { leads: 0, won: 0, revenue: 0, booked: 0, shown: 0 }
+        let booked, shown
+        if (calRecs && calRecs.length) {
+          booked = 0; shown = 0
+          for (const cr of calRecs) { const src = ch === 'all' ? cr : ((cr.ch && cr.ch[ch]) || {}); booked += src.booked || 0; shown += src.shown || 0 }
+          if (stage) booked += Math.max(0, reachedInChannel(chans[ch], stage) - booked)
+        } else { booked = tt.booked || 0; shown = tt.shown || 0 }
+        out[ch] = { opps: tt.leads || 0, won: tt.won || 0, revenue: tt.revenue || 0, booked, shown }
+      }
+      const add = (a, b) => ({ opps: a.opps + b.opps, won: a.won + b.won, revenue: a.revenue + b.revenue, booked: a.booked + b.booked, shown: a.shown + b.shown })
+      out.paid = add(out.meta, out.google)
+      return out
+    }
+    try {
+      const pr = prevRange(from, to)
+      const [aCur, aPrev] = await Promise.all([
+        buildAttribution(cc.ghl, from, to),
+        pr.from ? buildAttribution(cc.ghl, pr.from, pr.to).catch(() => null) : Promise.resolve(null),
+      ])
+      return json({ scope: 'ovrow', client, connected: true, cur: summ(aCur), prev: aPrev ? summ(aPrev) : null }, 200, true)
+    } catch (e) { return json({ scope: 'ovrow', client, error: String(e.message || e).slice(0, 160) }, 200) }
   }
 
   // Cohort maturation: leads by acquisition week through the funnel.

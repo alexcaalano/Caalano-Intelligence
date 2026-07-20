@@ -226,6 +226,19 @@ function o360Cells(r, currency, cols) {
     return <td key={c.key} className={cn}>-</td>
   })}</>
 }
+// Explains WHY the green Caalano360 columns are hidden when attribution didn't
+// resolve, so a missing green block is never silent.
+function AttrDiag({ attr }) {
+  if (!attr || attr.status === 'loading') return null
+  const d = attr.data
+  if (d && d.attribution) return null // green is present
+  let msg
+  if (attr.status === 'err') msg = 'the attribution request failed (network / HTTP error). Try Refresh.'
+  else if (d && d.connected === false) msg = 'Caalano Systems isn’t connected — re-authorise at /.netlify/functions/caalano-connect to restore them.'
+  else if (d && d.error) msg = `attribution error — ${String(d.error).slice(0, 200)}`
+  else msg = 'no attribution data was returned for this client / period.'
+  return <div className="attr-diag">Caalano360 columns hidden: {msg}</div>
+}
 const PHASE_COLOR = { contact: '#4f7cff', 'appt-set': '#6d5efc', 'at-risk': '#f0435b', held: '#12b886', proposal: '#f5a524', onboarding: '#0ea5e9' }
 
 function Delta({ cur, prev, goodWhenDown = false }) {
@@ -845,6 +858,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const meTotal = Math.max(1, meCh ? meCh.totals.leads : 0)
   return (
     <>
+      <AttrDiag attr={attr} />
       {sel && <div className="filt-bar">Filtered to <b>{sel}</b><button className="filt-clear" onClick={() => setSel(null)}>clear ✕</button></div>}
       <div className="scorecard">
         <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown />
@@ -1031,6 +1045,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const gTotal = Math.max(1, gCh ? gCh.totals.leads : 0)
   return (
     <>
+      <AttrDiag attr={attr} />
       <div className="scorecard">
         <Sc label="Cost" value={fmtCurrency(t.cost, currency)} cur={t.cost} prev={D((x) => x.cost)} goodWhenDown />
         <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />

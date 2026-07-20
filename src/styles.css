@@ -583,6 +583,7 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .pfunnel.pf4 .pf-row { grid-template-columns: 140px 1fr 58px 66px; gap: 10px; }
 .pfunnel.pf5 .pf-row { grid-template-columns: 170px 1fr 62px 62px 88px; gap: 10px; }
 .ke-cal { opacity: .95; }
+.attr-diag { margin: 0 0 12px; padding: 9px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #f0435b; background: rgba(240,67,91,.1); border: 1px solid rgba(240,67,91,.35); }
 /* Readable Key Events funnel: full step name (wraps), reached bar, %leads,
    next-step conversion, show%, cost per event. */
 .kef { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }

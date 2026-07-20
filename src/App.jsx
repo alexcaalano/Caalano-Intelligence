@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.31.1'
+const APP_VERSION = '3.32.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2094,8 +2094,19 @@ function mergeCalKeyEvents(list) {
       byStage.set(gk, merged); out.push(merged)
     } else out.push({ kind: 'calendar', refs: [e.ref], label: e.label, stage: null, pipeline: null })
   }
-  for (const e of out) if (e.kind === 'calendar' && e.refs.length > 1) e.label = e.stage // read as the stage step
-  return out
+  // A calendar linked to a pipeline stage IS that funnel step, so label it as the
+  // stage and drop any standalone stage key-event for the same stage - otherwise
+  // the stage shows twice (once as the calendar, once as the stage). The kept
+  // calendar event already combines calendar bookings + pipeline-stage reach,
+  // split as "via calendar" / "via pipeline" in the number + tooltip.
+  for (const e of out) if (e.kind === 'calendar' && e.stage) e.label = e.stage
+  const coveredName = new Set(), coveredPipe = new Set()
+  for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(e.stage); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + e.stage) }
+  return out.filter((e) => {
+    if (e.kind !== 'stage') return true
+    // Pipeline-scoped events dedupe exactly; bare stage strings dedupe by name.
+    return e.pipeline ? !coveredPipe.has(e.pipeline + '::' + e.ref) : !coveredName.has(e.ref)
+  })
 }
 // Normalise -> merge same-stage calendars -> order by funnel position.
 function resolveKeyEvents(keyEvents, stagePos) {

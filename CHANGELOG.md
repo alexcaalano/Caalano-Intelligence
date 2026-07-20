@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.32.0 — 2026-07-20 · `PENDING`
+- **No more double-ups between calendars and pipeline stages** in the Caalano360
+  green columns and the Key Events funnel. When a calendar is linked to a
+  pipeline stage (e.g. Pool Haus's Pool Specialist call), the two now show as a
+  **single event labelled by the pipeline stage**, and the count reached is split
+  into **how many came from calendar bookings vs from the pipeline stage** (shown
+  in the number's marker + hover, and in the funnel bar's "+Np" / tooltip). The
+  standalone duplicate stage row/column is dropped everywhere it appears.
+
 ## v3.31.1 — 2026-07-20 · `PENDING`
 - Appointments "Time to book" now shows the **median** (robust to outliers) as
   the headline with the **average** alongside it.

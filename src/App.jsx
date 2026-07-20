@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.29.0'
+const APP_VERSION = '3.29.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -635,9 +635,6 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
   const crmDone = crmIds.length - crmLoading
   const crmErrors = crmIds.filter((id) => ov[id] && ov[id].status === 'err').length
   const rate = (n, d) => (d ? (n / d) * 100 : null)
-  // Clients whose typical sales cycle is longer than the selected range (+20%
-  // buffer), so their Won / Revenue / ROAS understate the true result here.
-  const maturing = rows.map((r) => { const o = ov[r.id]; const a = o && o.status === 'ok' && o.cur ? o.cur.avgCloseDays : null; const cd = a ? closeDaysFor(r.id, a) : null; const m = cd && rangeMaturity(cd.days, range); return m && m.maturing ? r.name : null }).filter(Boolean)
   const Cell = ({ v, cur, prev, gd, neutral, loading, dash }) => (
     <td className="ov-td">{loading ? <span className="ov-spin" /> : dash ? <span className="ov-dash">-</span> : <div className="ov-cell"><span className="ov-v">{v}</span><MiniDelta cur={cur} prev={prev} goodWhenDown={gd} neutral={neutral} /></div>}</td>
   )
@@ -652,13 +649,6 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
           {crmLoading > 0
             ? <><span className="ov-spin" /><b>Loading CRM metrics…</b> {crmDone} of {crmIds.length} clients ready<span className="ov-crm-sub">The Opps → ROAS columns pull live from Caalano Systems — first load can take up to ~60s.</span></>
             : <><span className="ov-warn-dot">!</span><b>{crmErrors} client{crmErrors === 1 ? '' : 's'} couldn't load CRM data.</b><span className="ov-crm-sub">Hover the ⚠ on a row for the reason, or hit Refresh to retry.</span></>}
-        </div>
-      )}
-      {maturing.length > 0 && (
-        <div className="ov-maturity-banner">
-          <span className="maturity-badge">⏳ Still maturing</span>
-          <b>{maturing.length} client{maturing.length === 1 ? '' : 's'}' data isn't fully mature for {rangeLabel(range).toLowerCase()}.</b>
-          <span className="ov-crm-sub">Their typical sales cycle is longer than this range (+20% buffer), so Won / Revenue / ROAS understate the true result. Widen the range for these: {maturing.slice(0, 8).join(', ')}{maturing.length > 8 ? ` +${maturing.length - 8} more` : ''}.</span>
         </div>
       )}
       <div className="table-wrap"><table className="ov-cmp">

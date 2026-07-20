@@ -17,6 +17,10 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.29.1 — 2026-07-20 · `PENDING`
+- Removed the Agency Overview "Still maturing" summary banner — the per-row badge
+  next to each client name already covers it.
+
 ## v3.29.0 — 2026-07-20 · `PENDING`
 - **Lead map** on the Forms location breakdown: postcode / suburb answers are now
   plotted on a map of Australia (dot size = lead volume), with a ranked list

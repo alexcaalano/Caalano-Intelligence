@@ -898,6 +898,8 @@ export default async (req) => {
       }
       const add = (a, b) => ({ opps: a.opps + b.opps, won: a.won + b.won, revenue: a.revenue + b.revenue, booked: a.booked + b.booked, shown: a.shown + b.shown })
       out.paid = add(out.meta, out.google)
+      out.avgCloseDays = attr.avgCloseDays == null ? null : attr.avgCloseDays
+      out.avgCloseSample = attr.avgCloseSample || 0
       return out
     }
     // One buildAttribution per request (period=cur | prev) so a request never

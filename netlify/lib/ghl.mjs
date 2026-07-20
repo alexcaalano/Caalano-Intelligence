@@ -691,9 +691,15 @@ export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
   const capped = opps.length >= CAP
   const mk = () => ({ won: 0, revenue: 0 })
   const total = mk(), byPipeline = {}, byUser = {}, ch = { meta: mk(), google: mk(), other: mk() }
+  let cycSum = 0, cycN = 0 // average create->won time, for data-maturity only
   for (const o of opps) {
     if (String(o.status || '').toLowerCase() !== 'won') continue
     const sc = Date.parse(o.lastStatusChangeAt); if (!sc) continue
+    // Sales-cycle length across every won deal in the lookback window (not just
+    // those won in-period), so the average is stable. Used only to judge data
+    // maturity, never shown as a KPI.
+    const cr = Date.parse(o.createdAt)
+    if (isFinite(cr)) { const d = (sc - cr) / 86400000; if (d >= 0 && d < 400) { cycSum += d; cycN++ } }
     if (!((fromMs == null || sc >= fromMs) && (toMs == null || sc <= toMs))) continue
     const val = num(o.monetaryValue)
     total.won++; total.revenue += val
@@ -706,6 +712,7 @@ export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
   return {
     total: fin(total), byPipeline: finMap(byPipeline), byUser: finMap(byUser),
     channels: { all: fin(total), meta: fin(ch.meta), google: fin(ch.google), other: fin(ch.other) },
+    avgCloseDays: cycN ? Math.round(cycSum / cycN) : null, avgCloseSample: cycN,
     capped,
   }
 }
@@ -957,8 +964,23 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown; chan[k].totals.shownStage = chanAct[k].shownStage; chan[k].totals.cancelled = chanAct[k].cancelled } }
 
   const oppSources = [...oppSourceCounts.entries()].map(([name, count]) => ({ name, count, manual: MANUAL_RE.test(name) })).sort((a, b) => b.count - a.count)
+  // Average sales-cycle length: how long a won deal takes from creation to won.
+  // Used only to judge data maturity (never shown as a KPI). Measured across the
+  // wide opp set (not just this range) so the average is stable; deltas outside
+  // 0..400 days are ignored as data errors / re-opened deals.
+  let cycSum = 0, cycN = 0
+  for (const o of wideOpps) {
+    if (String(o.status || '').toLowerCase() !== 'won') continue
+    const c = Date.parse(o.createdAt)
+    const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || o.dateUpdated || '')
+    if (!isFinite(c) || !isFinite(w)) continue
+    const d = (w - c) / 86400000
+    if (d >= 0 && d < 400) { cycSum += d; cycN++ }
+  }
+  const avgCloseDays = cycN ? Math.round(cycSum / cycN) : null
   return {
     connected: true, opps: opps.length, attributed, tz,
+    avgCloseDays, avgCloseSample: cycN,
     manualLeads, oppSources,
     appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, shownStage: shownStageActions, cancelled: cancelledActions, byCalendar },
     bySource, byMedium: top(dim.medium, 300), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),

@@ -305,8 +305,8 @@ tbody tr:hover { background: var(--panel-2); }
 .toggle.on .knob { left: 19px; }
 .set-note { font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 10px; padding: 12px 14px; line-height: 1.5; margin-bottom: 16px; }
 .set-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
-/* Full-page Settings */
-.settings-page { max-width: 1400px; }
+/* Full-page Settings — use the full available width (dynamic to screen size). */
+.settings-page { max-width: none; }
 .set-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
 .set-search { flex: 1 1 220px; max-width: 320px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 12px; color: var(--text); font-size: 13px; }
 .set-saved { margin-left: auto; font-size: 11.5px; color: var(--pos); font-weight: 600; }
@@ -325,6 +325,18 @@ tbody tr:hover { background: var(--panel-2); }
 .set-legend .lg b { font-size: 14px; }
 .set-legend .lg-sep { opacity: .4; }
 .set-legend .sth-mk { font-size: 13px; }
+/* Data-maturity "still maturing" badge (amber pill) + Settings sales-cycle field */
+.maturity-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 999px; padding: 2px 8px; white-space: nowrap; cursor: help; vertical-align: middle; }
+.maturity-badge.sm { font-size: 10px; padding: 1px 6px; }
+.ov-name-row { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.set-cycle { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.set-cycle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; margin-top: 6px; }
+.set-cycle-stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.set-cycle-stat b { font-size: 15px; }
+.set-cycle-in { position: relative; }
+.set-cycle-in input { width: 100%; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 12px; color: var(--text); font-size: 14px; }
+.set-saved-tick { position: absolute; right: 10px; bottom: 10px; color: var(--pos); font-weight: 800; }
+.set-cycle-warn { margin-top: 10px; color: var(--warn); }
 .set-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--panel); transition: border-color .15s; }
 .set-card.open { grid-column: 1 / -1; border-color: var(--border-2); }
 .set-card.is-off { opacity: .58; }

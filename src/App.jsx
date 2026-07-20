@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.18.1'
+const APP_VERSION = '3.19.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -477,6 +477,37 @@ function MiniDelta({ cur, prev, goodWhenDown = false, neutral = false }) {
   const cls = neutral ? 'flat' : (goodWhenDown ? (up ? 'down' : 'up') : (up ? 'up' : 'down'))
   return <span className={`mini-delta ${cls}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct), 0)}</span>
 }
+// --- Data maturity ---------------------------------------------------------
+// A date range shorter than a typical sales cycle can't contain fully-closed
+// deals yet, so Won / Revenue / ROAS read artificially low. avgCloseDays is the
+// CRM's average create->won time (never shown as a KPI); with a 20% buffer we
+// flag any range shorter than that as "still maturing". A manual override (set
+// in Settings) wins over the CRM figure when present.
+function rangeDaysOf(range) { const a = Date.parse(range.from), b = Date.parse(range.to); return (isFinite(a) && isFinite(b)) ? Math.round((b - a) / 86400000) + 1 : null }
+function loadCloseOverride(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; const v = o && o.closeDays; return (v == null || v === '') ? null : Number(v) }
+function saveCloseOverride(clientId, days) {
+  const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
+  const next = { ...cur, closeDays: (days == null || days === '') ? null : Number(days) }
+  SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
+  writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
+}
+// Resolve the sales-cycle length for a client: manual override first, else CRM.
+function closeDaysFor(clientId, crmAvg) { const ov = loadCloseOverride(clientId); return ov != null && ov > 0 ? { days: ov, manual: true } : (crmAvg != null && crmAvg > 0 ? { days: crmAvg, manual: false } : null) }
+function rangeMaturity(closeDays, range) {
+  if (closeDays == null || !(closeDays > 0)) return null
+  const matureDays = Math.round(closeDays * 1.2)
+  const rDays = rangeDaysOf(range); if (rDays == null) return null
+  return { maturing: rDays < matureDays, closeDays, matureDays, rangeDays: rDays, shortfall: Math.max(0, matureDays - rDays) }
+}
+// Amber "still maturing" chip. Renders nothing when the range is long enough.
+function MaturityBadge({ clientId, crmAvg, range, sample, size }) {
+  const cd = closeDaysFor(clientId, crmAvg)
+  const m = cd && rangeMaturity(cd.days, range)
+  if (!m || !m.maturing) return null
+  const src = cd.manual ? 'set manually in Settings' : `the CRM average of ~${cd.days} days${sample ? ` across ${sample} won deals` : ''}`
+  const tip = `Still maturing — this view covers ${m.rangeDays} days, but a typical deal takes about ${cd.days} days to close (${src}). With a 20% buffer that's ~${m.matureDays} days, so leads in this window haven't had time to convert yet. Won / Revenue / ROAS here understate the real result. Widen the range${m.shortfall ? `, or wait ~${m.shortfall} more day${m.shortfall === 1 ? '' : 's'},` : ''} for a mature picture.`
+  return <span className={`maturity-badge${size === 'sm' ? ' sm' : ''}`} title={tip}>⏳ Still maturing</span>
+}
 // Fixed-position hover popup: escapes the .table-wrap overflow clip (the old
 // absolutely-positioned popup got cut off on the bottom rows / edge columns).
 // Positions itself against the trigger's viewport rect, flipping above when the
@@ -639,7 +670,7 @@ function AgencyComparison({ rows, currency, range, nonce, onPick }) {
           const pRoas = prev && pSpendF ? prev.revenue / pSpendF : null
           return (
             <tr key={r.id} onClick={() => onPick(r.c)}>
-              <td className="ov-name"><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div>{r.name}<small>{r.industry}</small></div></div></td>
+              <td className="ov-name"><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div><span className="ov-name-row">{r.name}<MaturityBadge clientId={r.id} crmAvg={ok ? o.cur.avgCloseDays : null} sample={ok ? o.cur.avgCloseSample : 0} range={range} size="sm" /></span><small>{r.industry}</small></div></div></td>
               <Cell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
               <Cell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
               <Cell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
@@ -3300,9 +3331,16 @@ function FormsView({ clientId, currency, range, nonce }) {
 function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
-  useEffect(() => { setBaked(undefined); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
+  const [crmAvgClose, setCrmAvgClose] = useState(null)
+  useEffect(() => { setBaked(undefined); setCrmAvgClose(null); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
   const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'crm' ? 'crm' : tab === 'overall' ? 'blend' : null
   const live = useLiveDeep(client.id, channel, range, nonce)
+  // Capture the CRM's average sales-cycle length whenever the blend loads, so the
+  // maturity badge stays put as the user moves between tabs.
+  useEffect(() => {
+    const wc = live && live.status === 'ok' && live.data && live.data.blend && live.data.blend.wonClosed
+    if (wc && wc.avgCloseDays != null) setCrmAvgClose(wc.avgCloseDays)
+  }, [live])
   const attr = useAttribution(client.id, range, nonce)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   // The snapshot client carries metrics, not the account config (meta/google/
@@ -3327,7 +3365,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
         <button className="back" onClick={onBack}>← All clients</button>
         <div className="cw-top">
           <span className="avatar" style={{ background: acolor(index) }}>{initials(client.name)}</span>
-          <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span></h2><div className="meta">{client.industry}</div></div>
+          <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span> <MaturityBadge clientId={client.id} crmAvg={crmAvgClose} range={range} /></h2><div className="meta">{client.industry}</div></div>
         </div>
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
@@ -3970,6 +4008,38 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
 // Per-client configuration in a modal with horizontal tabs (like the client
 // view). Summary edits name / industry / linked accounts; the other tabs open
 // each editor full-width underneath. "Open Client View" jumps to the workspace.
+// Sales-cycle / data-maturity control. Shows the CRM's calculated average time
+// to close a deal and lets you override it. Everything downstream (the "Still
+// maturing" badges) adds a 20% buffer on top of whichever value applies.
+function SalesCycleField({ clientId }) {
+  const [crm, setCrm] = useState(undefined) // undefined = loading, null = none
+  const [ov, setOv] = useState(() => { const v = loadCloseOverride(clientId); return v == null ? '' : String(v) })
+  const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    let alive = true; setCrm(undefined)
+    const r = presetRange('last_90d')
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setCrm(j && j.blend && j.blend.wonClosed && j.blend.wonClosed.avgCloseDays != null ? j.blend.wonClosed.avgCloseDays : null) })
+      .catch(() => { if (alive) setCrm(null) })
+    return () => { alive = false }
+  }, [clientId])
+  const eff = ov !== '' && Number(ov) > 0 ? Number(ov) : (crm || null)
+  const buffered = eff ? Math.round(eff * 1.2) : null
+  const save = (val) => { setOv(val); saveCloseOverride(clientId, val === '' ? null : Number(val)); setSaved(true); setTimeout(() => setSaved(false), 1200) }
+  return (
+    <div className="set-cycle">
+      <div className="set-sec-t">Data maturity — average time to close</div>
+      <p className="cap" style={{ marginTop: 0 }}>Calculated automatically by the CRM from your won deals (average days from lead created to won). A <b>20% buffer</b> is added, and any date range shorter than that shows a <b>“Still maturing”</b> flag — a reminder that recent leads haven’t had time to convert yet, so Won / Revenue / ROAS understate the true result. This is never shown on the dashboards as a metric.</p>
+      <div className="set-cycle-grid">
+        <div className="set-cycle-stat"><span className="cap">CRM average</span><b>{crm === undefined ? '…' : crm == null ? 'No won deals yet' : `${crm} days`}</b></div>
+        <div className="set-cycle-stat"><span className="cap">With 20% buffer</span><b>{buffered ? `${buffered} days` : '—'}</b></div>
+        <div className="set-field set-cycle-in"><label>Manual override (days)</label><input type="number" min="0" value={ov} onChange={(e) => save(e.target.value)} placeholder={crm != null ? `${crm} (CRM)` : 'e.g. 40'} />{saved && <span className="set-saved-tick">✓</span>}</div>
+      </div>
+      <p className="cap set-cycle-warn">⚠ Leave blank to use the CRM figure. Only override if you know the true sales cycle (e.g. the CRM history is too short) — the 20% buffer is still applied on top of whatever you enter.</p>
+    </div>
+  )
+}
 function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
@@ -4022,6 +4092,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
             </div>
             <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button>
             {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
+            {c.ghl && <SalesCycleField clientId={c.id} />}
           </div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}

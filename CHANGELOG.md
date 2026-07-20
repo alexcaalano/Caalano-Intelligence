@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.19.0 — 2026-07-20 · `PENDING`
+- **Data maturity flag.** The CRM now calculates each client's average time to
+  close a deal (lead-created → won) behind the scenes — never shown as a metric.
+  Any date range shorter than that cycle **plus a 20% buffer** gets an amber
+  "⏳ Still maturing" badge (Agency Overview per client + the client workspace
+  header, on every tab), because recent leads haven't had time to convert so
+  Won / Revenue / ROAS understate the real result. Hover the badge for the exact
+  cycle length, buffer and how many more days to wait.
+- **Manual override** in Settings → client → Summary: see the CRM's calculated
+  average (and the +20% buffered figure) and override it if the CRM history is
+  too short. A warning explains the 20% buffer is always applied on top.
+- Settings page now uses the **full screen width** (more client cards per row on
+  wide monitors) instead of being capped, so nothing is squished.
+
 ## v3.18.1 — 2026-07-20 · `32bc08b`
 - Answer grouping now also merges dates written any way (21st August 2026 ·
   21/8/26 · 21/08/2026 · 2026-08-21 · Aug 21 2026) into one day, shown tidily

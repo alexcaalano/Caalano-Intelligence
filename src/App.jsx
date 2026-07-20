@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.18.0'
+const APP_VERSION = '3.18.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2970,16 +2970,47 @@ function answerKeyOf(v) {
   const s = String(v).trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
   return AU_STATES[s] ? 'state:' + AU_STATES[s] : s
 }
+// Recognise a date written any common way (21st August 2026 · 21/8/26 ·
+// 21/08/2026 · 2026-08-21 · Aug 21 2026) and canonicalise it, so all spellings
+// of the same day merge. AU day-first order is assumed. Returns null if it isn't
+// a full date (so postcodes / budgets / free numbers are left alone).
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 }
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function parseFormDate(raw) {
+  let s = String(raw).trim().toLowerCase()
+  if (s.length < 5 || s.length > 30) return null
+  s = s.replace(/(\d)(st|nd|rd|th)\b/g, '$1').replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
+  let day, month, year
+  let m = s.match(/^(\d{1,4})[/\-.](\d{1,2})[/\-.](\d{1,4})$/)
+  if (m) {
+    const a = +m[1], b = +m[2], c = +m[3]
+    if (a > 31) { year = a; month = b; day = c }            // 2026-08-21
+    else { day = a; month = b; year = c; if (month > 12 && day <= 12) { const t = day; day = month; month = t } } // DD/MM (AU), swap if it was MM/DD
+  } else {
+    m = s.match(/^(\d{1,2}) ([a-z]{3,9}) (\d{2,4})$/)         // 21 august 2026
+    if (m && MONTHS[m[2].slice(0, 3)]) { day = +m[1]; month = MONTHS[m[2].slice(0, 3)]; year = +m[3] }
+    else {
+      m = s.match(/^([a-z]{3,9}) (\d{1,2}) (\d{2,4})$/)       // august 21 2026
+      if (m && MONTHS[m[1].slice(0, 3)]) { month = MONTHS[m[1].slice(0, 3)]; day = +m[2]; year = +m[3] }
+      else return null
+    }
+  }
+  if (!day || !month || !year) return null
+  if (year < 100) year += 2000
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 2000 || year > 2100) return null
+  return { iso: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, display: `${day} ${MONTH_ABBR[month - 1]} ${year}` }
+}
 function groupAnswers(answers) {
   const groups = new Map()
   for (const a of answers) {
     const v = String(a.value)
-    const key = /\d/.test(v) ? 'num:' + v : answerKeyOf(v) // never merge numeric (postcode/budget)
+    const dt = parseFormDate(v)
+    const key = dt ? 'date:' + dt.iso : (/\d/.test(v) ? 'num:' + v : answerKeyOf(v)) // dates merge; other numeric (postcode/budget) never
     let g = groups.get(key)
     if (!g) { g = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, members: [], _max: -1 }; groups.set(key, g) }
     g.leads += a.leads || 0; g.booked += a.booked || 0; g.shown += a.shown || 0; g.won += a.won || 0; g.revenue += a.revenue || 0
     g.members.push({ value: v, leads: a.leads || 0 })
-    const canon = key.startsWith('state:') ? key.slice(6) : v
+    const canon = dt ? dt.display : (key.startsWith('state:') ? key.slice(6) : v)
     if (a.leads > g._max) { g._max = a.leads; g.value = canon }
   }
   return [...groups.values()].map(({ _max, ...g }) => ({ ...g, merged: g.members.length > 1 })).sort((a, b) => b.leads - a.leads)

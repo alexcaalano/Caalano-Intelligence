@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.18.1 — 2026-07-20 · `<pending>`
+- Answer grouping now also merges dates written any way (21st August 2026 ·
+  21/8/26 · 21/08/2026 · 2026-08-21 · Aug 21 2026) into one day, shown tidily
+  (e.g. "21 Aug 2026"); hover shows the raw spellings combined. Postcodes,
+  budgets and other free numbers are still never merged.
+
 ## v3.18.0 — 2026-07-20 · `37961c6`
 - Form answer breakdown is now one question at a time: pick a question/field from
   the selector and see just that question's answers as a horizontal bar chart

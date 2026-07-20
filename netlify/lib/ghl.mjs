@@ -345,9 +345,30 @@ export async function buildForms(locationId, from, to) {
     if (nm) return { label: nm, kind: 'website' }
     return { label: s.formId || 'Unknown form', kind: 'other' }
   }
-  // First form each contact submitted in the window (their entry point).
-  const contactForm = new Map()
-  for (const s of subs) { const cid = s.contactId; if (cid && !contactForm.has(cid)) contactForm.set(cid, labelOf(s)) }
+  // First form each contact submitted in the window (their entry point), plus
+  // the ad campaigns / ad sets / creatives that drove each form (from the
+  // submission UTMs: utm_campaign = campaign, utm_medium = ad set, utm_content =
+  // creative) so the Meta tab can attribute spend and drill in by form.
+  // System / free-text / PII answer keys we never segment on.
+  const SYS_KEY = /^(formId|location_?id|sessionId|submissionId|timezone|calendar|selected_|source$|^type$|productType|facebookLead|facebookForm|postal_?code|message|additional|comment|first_?name|last_?name|full_?name|^name$|email|phone|signature|^ip$|contact_?id|funnel|page|utm|fbclid|gclid|why do you|how did you hear|organization)/i
+  const contactData = new Map() // cid -> { L, answers: {question: value} }
+  const formUtm = new Map()
+  for (const s of subs) {
+    const L = labelOf(s)
+    const o = s.others || {}
+    const utm = (o.eventData && o.eventData.url_params) || {}
+    let fu = formUtm.get(L.label); if (!fu) { fu = { campaigns: new Set(), adsets: new Set(), creatives: new Set() }; formUtm.set(L.label, fu) }
+    if (utm.utm_campaign) fu.campaigns.add(String(utm.utm_campaign))
+    if (utm.utm_medium) fu.adsets.add(String(utm.utm_medium))
+    if (utm.utm_content) fu.creatives.add(String(utm.utm_content))
+    const cid = s.contactId; if (!cid || contactData.has(cid)) continue
+    const answers = {}
+    for (const [k, v] of Object.entries(o)) {
+      if (typeof v !== 'string' || !v.trim() || v.length > 40 || SYS_KEY.test(k)) continue
+      answers[k] = v.trim()
+    }
+    contactData.set(cid, { L, answers })
+  }
   const [wideOpps, appts] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 1800),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), connected: false })),
@@ -356,17 +377,31 @@ export async function buildForms(locationId, from, to) {
   const oppByContact = new Map()
   for (const o of wideOpps) { const cid = contactIdOf(o); if (cid && !oppByContact.has(cid)) oppByContact.set(cid, o) }
   const agg = new Map()
-  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; agg.set(L.label, e) } return e }
-  for (const [cid, L] of contactForm) {
+  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map() } ; agg.set(L.label, e) } return e }
+  const bump = (o, booked, shown, won, rev) => { o.leads++; if (booked) o.booked++; if (shown) o.shown++; if (won) { o.won++; o.revenue += rev } }
+  for (const [cid, { L, answers }] of contactData) {
     const e = ent(L)
-    e.leads++
-    const f = apptByContact.get(cid)
-    if (f) { if (f.bookedInPeriod) e.booked++; if (f.shownByStatus) e.shown++ }
-    const o = oppByContact.get(cid)
-    if (o && String(o.status || '').toLowerCase() === 'won') { e.won++; e.revenue += num(o.monetaryValue) }
+    const f = apptByContact.get(cid); const booked = !!(f && f.bookedInPeriod); const shown = !!(f && f.shownByStatus)
+    const o = oppByContact.get(cid); const won = !!(o && String(o.status || '').toLowerCase() === 'won'); const rev = won ? num(o.monetaryValue) : 0
+    bump(e, booked, shown, won, rev)
+    // Answer-level segmentation: per question, per answer value.
+    for (const [q, v] of Object.entries(answers)) {
+      let qm = e.seg.get(q); if (!qm) { qm = new Map(); e.seg.set(q, qm) }
+      let av = qm.get(v); if (!av) { av = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; qm.set(v, av) }
+      bump(av, booked, shown, won, rev)
+    }
   }
-  const forms = [...agg.values()].sort((a, b) => b.leads - a.leads)
-  return { connected: true, tz, submissions: subs.length, contacts: contactForm.size, forms }
+  const forms = [...agg.values()].sort((a, b) => b.leads - a.leads).map((e) => {
+    const fu = formUtm.get(e.form) || { campaigns: new Set(), adsets: new Set(), creatives: new Set() }
+    // Keep only genuine multiple-choice questions: 2..12 distinct answers seen ≥ twice overall.
+    const segments = [...e.seg.entries()]
+      .map(([question, qm]) => ({ question, answers: [...qm.values()].sort((a, b) => b.leads - a.leads) }))
+      .filter((s) => s.answers.length >= 2 && s.answers.length <= 12 && s.answers.reduce((a, x) => a + x.leads, 0) >= 2)
+      .sort((a, b) => b.answers.reduce((s, x) => s + x.leads, 0) - a.answers.reduce((s, x) => s + x.leads, 0))
+    const { seg, ...rest } = e
+    return { ...rest, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments }
+  })
+  return { connected: true, tz, submissions: subs.length, contacts: contactData.size, forms }
 }
 
 // Read-only probe for the Forms feature: the location's forms (id -> name), a

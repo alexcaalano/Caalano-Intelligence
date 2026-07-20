@@ -586,6 +586,15 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .attr-diag { margin: 0 0 12px; padding: 9px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #f0435b; background: rgba(240,67,91,.1); border: 1px solid rgba(240,67,91,.35); }
 .table-wrap td.num, .table-wrap th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .form-kind { opacity: .85; margin-right: 3px; }
+.form-seg-row > td { background: var(--panel-2); padding: 0 !important; }
+.form-seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; padding: 12px 14px; }
+.form-seg-none { padding: 12px 14px; color: var(--faint); font-size: 12.5px; }
+.form-seg-qh { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; margin-bottom: 5px; }
+.form-seg-t { width: 100%; border-collapse: collapse; font-size: 12px; }
+.form-seg-t th { text-align: right; font-size: 9.5px; text-transform: uppercase; letter-spacing: .02em; color: var(--faint); font-weight: 700; padding: 3px 6px; border-bottom: 1px solid var(--border); }
+.form-seg-t th:first-child { text-align: left; }
+.form-seg-t td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.form-seg-t td:first-child { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Agency comparison table */
 .ov-cmp-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
 .ov-filter button { font-size: 12px; }

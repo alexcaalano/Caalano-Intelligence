@@ -2646,9 +2646,39 @@ function useForms(clientId, range, nonce = 0) {
   }, [clientId, q, nonce])
   return state
 }
+function FormSegments({ segments, currency }) {
+  const money = (v) => fmtCurrency(v, currency)
+  if (!segments || !segments.length) return <div className="form-seg-none">No multiple-choice answers captured on this form to segment by.</div>
+  return (
+    <div className="form-seg">
+      {segments.map((s) => (
+        <div className="form-seg-q" key={s.question}>
+          <div className="form-seg-qh">{s.question}</div>
+          <table className="form-seg-t">
+            <thead><tr><th>Answer</th><th className="num">Leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th></tr></thead>
+            <tbody>{s.answers.map((a) => (
+              <tr key={a.value}>
+                <td title={a.value}>{a.value}</td>
+                <td className="num">{fmtNumber(a.leads)}</td>
+                <td className="num">{fmtNumber(a.booked)}</td>
+                <td className="num">{a.leads ? fmtPct((a.booked / a.leads) * 100, 0) : '-'}</td>
+                <td className="num">{fmtNumber(a.shown)}</td>
+                <td className="num">{fmtNumber(a.won)}</td>
+                <td className="num">{a.leads ? fmtPct((a.won / a.leads) * 100, 0) : '-'}</td>
+                <td className="num">{money(a.revenue)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  )
+}
 function FormsView({ clientId, currency, range, nonce }) {
   const st = useForms(clientId, range, nonce)
   const [sort, setSort] = useState({ key: 'leads', dir: -1 })
+  const [open, setOpen] = useState(() => new Set())
+  const toggle = (f) => setOpen((prev) => { const n = new Set(prev); n.has(f) ? n.delete(f) : n.add(f); return n })
   const money = (v) => fmtCurrency(v, currency)
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading form performance…" /></div>
   const d = st.data
@@ -2674,23 +2704,30 @@ function FormsView({ clientId, currency, range, nonce }) {
       </div>
       <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· leads → booked → shown → won by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a header to sort</span></div>
       <div className="table-wrap"><table>
-        <thead><tr><Th k="form" l>Form</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
-        <tbody>{sorted.map((f) => (
-          <tr key={f.form}>
-            <td title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}</td>
-            <td className="num">{fmtNumber(f.leads)}</td>
-            <td className="num">{fmtNumber(f.booked)}</td>
-            <td className="num">{f.bookRate != null ? fmtPct(f.bookRate, 0) : '-'}</td>
-            <td className="num">{fmtNumber(f.shown)}</td>
-            <td className="num">{f.showRate != null ? fmtPct(f.showRate, 0) : '-'}</td>
-            <td className="num">{fmtNumber(f.won)}</td>
-            <td className="num">{f.winRate != null ? fmtPct(f.winRate, 0) : '-'}</td>
-            <td className="num">{money(f.revenue)}</td>
-            <td className="num">{f.avgDeal != null ? money(f.avgDeal) : '-'}</td>
-          </tr>
-        ))}</tbody>
+        <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
+        {sorted.map((f) => {
+          const isOpen = open.has(f.form); const hasSeg = (f.segments || []).length > 0
+          return (
+            <tbody key={f.form}>
+              <tr onClick={() => toggle(f.form)} style={{ cursor: 'pointer' }} className={isOpen ? 'row-sel' : ''}>
+                <td className="num" style={{ color: 'var(--faint)' }}>{hasSeg ? (isOpen ? '▾' : '▸') : ''}</td>
+                <td title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}</td>
+                <td className="num">{fmtNumber(f.leads)}</td>
+                <td className="num">{fmtNumber(f.booked)}</td>
+                <td className="num">{f.bookRate != null ? fmtPct(f.bookRate, 0) : '-'}</td>
+                <td className="num">{fmtNumber(f.shown)}</td>
+                <td className="num">{f.showRate != null ? fmtPct(f.showRate, 0) : '-'}</td>
+                <td className="num">{fmtNumber(f.won)}</td>
+                <td className="num">{f.winRate != null ? fmtPct(f.winRate, 0) : '-'}</td>
+                <td className="num">{money(f.revenue)}</td>
+                <td className="num">{f.avgDeal != null ? money(f.avgDeal) : '-'}</td>
+              </tr>
+              {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}><FormSegments segments={f.segments} currency={currency} /></td></tr>}
+            </tbody>
+          )
+        })}
       </table></div>
-      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. Booked / Shown come from the date-of-action appointment feed; Won / Revenue from won opportunities. <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher Book / Show / Win % — that's the trade-off to read here.</p>
+      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. Booked / Shown come from the date-of-action appointment feed; Won / Revenue from won opportunities. <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher Book / Show / Win %. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers actually book, show and win.</p>
     </>
   )
 }

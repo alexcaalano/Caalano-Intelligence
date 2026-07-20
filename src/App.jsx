@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.32.0'
+const APP_VERSION = '3.32.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2080,14 +2080,19 @@ function orderKeyEvents(list, stagePos) {
 // [stage]". Every calendar event ends up with a `refs` array of its calendar
 // ids; a merged group is relabelled to its stage name. Unlinked calendars stay
 // on their own.
+const nzStage = (s) => String(s || '').trim().toLowerCase()
 function mergeCalKeyEvents(list) {
+  // Stage names present as their own key-event, so a calendar named exactly like
+  // a stage (but not formally linked) still merges into it.
+  const stageNames = new Set(list.filter((e) => e.kind === 'stage').map((e) => nzStage(e.ref)))
+  const norm = list.map((e) => (e.kind === 'calendar' && !e.stage && stageNames.has(nzStage(e.label)) ? { ...e, stage: e.label } : e))
   const out = []; const byStage = new Map()
-  for (const e of list) {
+  for (const e of norm) {
     if (e.kind !== 'calendar') { out.push(e); continue }
     if (e.stage) {
       // Merge calendars linked to the SAME pipeline stage (pipeline-scoped, so a
       // same-named stage in a different pipeline stays separate).
-      const gk = (e.pipeline || '') + '::' + e.stage
+      const gk = (e.pipeline || '') + '::' + nzStage(e.stage)
       const g = byStage.get(gk)
       if (g) { g.refs.push(e.ref); continue }
       const merged = { kind: 'calendar', refs: [e.ref], label: e.label, stage: e.stage, pipeline: e.pipeline || null }
@@ -2101,11 +2106,14 @@ function mergeCalKeyEvents(list) {
   // split as "via calendar" / "via pipeline" in the number + tooltip.
   for (const e of out) if (e.kind === 'calendar' && e.stage) e.label = e.stage
   const coveredName = new Set(), coveredPipe = new Set()
-  for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(e.stage); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + e.stage) }
+  for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(nzStage(e.stage)); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + nzStage(e.stage)) }
   return out.filter((e) => {
     if (e.kind !== 'stage') return true
-    // Pipeline-scoped events dedupe exactly; bare stage strings dedupe by name.
-    return e.pipeline ? !coveredPipe.has(e.pipeline + '::' + e.ref) : !coveredName.has(e.ref)
+    // Pipeline-scoped events dedupe on their pipeline; bare stage strings by name
+    // (normalised for case / whitespace). A pipelined stage also dedupes by name
+    // so a bare-named linked calendar still removes it.
+    if (e.pipeline && coveredPipe.has(e.pipeline + '::' + nzStage(e.ref))) return false
+    return !coveredName.has(nzStage(e.ref))
   })
 }
 // Normalise -> merge same-stage calendars -> order by funnel position.

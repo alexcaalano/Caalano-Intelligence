@@ -2632,6 +2632,69 @@ function CohortView({ clientId, currency, nonce }) {
   )
 }
 
+/* ============ Forms performance ============ */
+function useForms(clientId, range, nonce = 0) {
+  const [state, setState] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=forms&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return state
+}
+function FormsView({ clientId, currency, range, nonce }) {
+  const st = useForms(clientId, range, nonce)
+  const [sort, setSort] = useState({ key: 'leads', dir: -1 })
+  const money = (v) => fmtCurrency(v, currency)
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading form performance…" /></div>
+  const d = st.data
+  if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load forms.</b></div>
+  if (d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected.</b></div>
+  if (d.error) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load forms.</b><p style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, maxWidth: 520, margin: '8px auto 0' }}>{d.error}</p><p style={{ maxWidth: 460, margin: '8px auto 0' }}>If this is a scope error, re-authorise Caalano Systems so the token carries <code>forms.readonly</code>.</p></div>
+  const forms = d.forms || []
+  if (!forms.length) return <div className="card empty-deep"><div className="big">📝</div><b>No form submissions in this range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Once leads fill out a form this fills in. Meta Lead Forms and website forms both appear here.</p></div>
+  const rows = forms.map((f) => ({ ...f, bookRate: f.leads ? (f.booked / f.leads) * 100 : null, showRate: f.booked ? (f.shown / f.booked) * 100 : null, winRate: f.leads ? (f.won / f.leads) * 100 : null, avgDeal: f.won ? f.revenue / f.won : null }))
+  const sorted = [...rows].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; return (av - bv) * sort.dir })
+  const tot = rows.reduce((a, f) => ({ leads: a.leads + f.leads, booked: a.booked + f.booked, shown: a.shown + f.shown, won: a.won + f.won, revenue: a.revenue + f.revenue }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
+  const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
+  const Th = ({ k, children, l }) => <th className={l ? '' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
+  return (
+    <>
+      <div className="scorecard">
+        <Sc label="Forms" value={fmtNumber(forms.length)} />
+        <Sc label="Leads" value={fmtNumber(tot.leads)} />
+        <Sc label="Booked" value={fmtNumber(tot.booked)} />
+        <Sc label="Shown" value={fmtNumber(tot.shown)} />
+        <Sc label="Won" value={fmtNumber(tot.won)} />
+        <Sc label="Revenue" value={money(tot.revenue)} />
+      </div>
+      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· leads → booked → shown → won by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a header to sort</span></div>
+      <div className="table-wrap"><table>
+        <thead><tr><Th k="form" l>Form</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
+        <tbody>{sorted.map((f) => (
+          <tr key={f.form}>
+            <td title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}</td>
+            <td className="num">{fmtNumber(f.leads)}</td>
+            <td className="num">{fmtNumber(f.booked)}</td>
+            <td className="num">{f.bookRate != null ? fmtPct(f.bookRate, 0) : '-'}</td>
+            <td className="num">{fmtNumber(f.shown)}</td>
+            <td className="num">{f.showRate != null ? fmtPct(f.showRate, 0) : '-'}</td>
+            <td className="num">{fmtNumber(f.won)}</td>
+            <td className="num">{f.winRate != null ? fmtPct(f.winRate, 0) : '-'}</td>
+            <td className="num">{money(f.revenue)}</td>
+            <td className="num">{f.avgDeal != null ? money(f.avgDeal) : '-'}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. Booked / Shown come from the date-of-action appointment feed; Won / Revenue from won opportunities. <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher Book / Show / Win % — that's the trade-off to read here.</p>
+    </>
+  )
+}
+
 function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
@@ -2647,6 +2710,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
   const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'crm', label: 'CRM' }, { id: 'meta', label: 'Meta Ads' }]
   if (cfg.google || client.google) tabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
+  if (cfg.ghl) tabs.push({ id: 'forms', label: 'Forms' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
     if (live.status !== 'ok' || !live.data || !live.data[ch]) return false
@@ -2677,6 +2741,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
         {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
         {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
         {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
+        {tab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
       </div>
     </>
   )

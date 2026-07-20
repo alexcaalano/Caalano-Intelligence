@@ -315,6 +315,60 @@ export async function listCalendars(locationId) {
   return cals.map((c) => ({ id: c.id || c._id || c.calendarId, name: c.name || c.calendarName || 'Calendar' })).filter((c) => c.id)
 }
 
+// Per-form performance: group leads by the form they filled out (Meta Lead
+// Forms by their real facebookFormName, GHL/website forms by name) and tie each
+// contact to its opportunity outcome, so friction / qualification levels can be
+// compared (fewer but higher-converting leads vs more but lower-quality).
+export async function buildForms(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const DAY = 86400000
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  const formName = {}
+  try { const j = await ghlGet(locTok, '/forms/', { locationId, limit: 100 }); for (const f of (j.forms || [])) formName[f.id] = f.name } catch { /* names optional */ }
+  // All submissions in the window (paginated).
+  const subs = []
+  try {
+    for (let page = 1; page <= 10; page++) {
+      const j = await ghlGet(locTok, '/forms/submissions', { locationId, limit: 100, page, startAt: from, endAt: to })
+      const arr = j.submissions || []; subs.push(...arr)
+      if (arr.length < 100) break
+    }
+  } catch (e) { return { connected: true, error: String(e.message || e).slice(0, 160), forms: [] } }
+  const labelOf = (s) => {
+    const o = s.others || {}
+    const fb = o.facebookFormName || o['Facebook Form Name'] || o.fbFormName
+    if (fb) return { label: String(fb).trim(), kind: 'facebook' }
+    const nm = formName[s.formId]
+    if (nm) return { label: nm, kind: 'website' }
+    return { label: s.formId || 'Unknown form', kind: 'other' }
+  }
+  // First form each contact submitted in the window (their entry point).
+  const contactForm = new Map()
+  for (const s of subs) { const cid = s.contactId; if (cid && !contactForm.has(cid)) contactForm.set(cid, labelOf(s)) }
+  const [wideOpps, appts] = await Promise.all([
+    allOpportunities(locTok, locationId, wideFrom, to, 1800),
+    fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), connected: false })),
+  ])
+  const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
+  const oppByContact = new Map()
+  for (const o of wideOpps) { const cid = contactIdOf(o); if (cid && !oppByContact.has(cid)) oppByContact.set(cid, o) }
+  const agg = new Map()
+  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; agg.set(L.label, e) } return e }
+  for (const [cid, L] of contactForm) {
+    const e = ent(L)
+    e.leads++
+    const f = apptByContact.get(cid)
+    if (f) { if (f.bookedInPeriod) e.booked++; if (f.shownByStatus) e.shown++ }
+    const o = oppByContact.get(cid)
+    if (o && String(o.status || '').toLowerCase() === 'won') { e.won++; e.revenue += num(o.monetaryValue) }
+  }
+  const forms = [...agg.values()].sort((a, b) => b.leads - a.leads)
+  return { connected: true, tz, submissions: subs.length, contacts: contactForm.size, forms }
+}
+
 // Read-only probe for the Forms feature: the location's forms (id -> name), a
 // few recent submissions with PII redacted, and the custom-field definitions -
 // so we can see how Meta Lead Forms vs GHL funnel forms are actually structured

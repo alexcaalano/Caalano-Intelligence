@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.11.0 — 2026-07-20 · `<pending>`
+## v3.11.0 — 2026-07-20 · `1934ad9`
 - Settings: **Add client** explorer — discover Caalano Systems (GHL) locations
   via the API plus the Meta / Google ad accounts Windsor can see, link one of
   each, and the new client is saved to the shared store and merged into the

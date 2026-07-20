@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.14.0 — 2026-07-20 · `<pending>`
+## v3.14.0 — 2026-07-20 · `de9349a`
 - Settings cards show a compact **setup-health strip** — Meta / Google / CRM /
   Key events / Calendars / KPIs / Diagnostics as green ✓ · amber ! · red ✗
   icons, with a legend, so you can see each client's status at a glance.

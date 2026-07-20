@@ -347,6 +347,12 @@ export async function buildForms(locationId, from, to) {
       if (arr.length < 100) break
     }
   } catch (e) { return { connected: true, error: String(e.message || e).slice(0, 160), forms: [] } }
+  // Credit each contact to the form that BROUGHT THEM IN (their chronologically
+  // earliest submission), not whichever the API happened to return first. GHL
+  // returns submissions newest-first, so without this a Meta lead who later
+  // booked via the calendar form was miscredited to the calendar form.
+  const subMs = (s) => { const t = Date.parse(s.createdAt || s.dateAdded || s.submittedAt || s.date || ''); return Number.isFinite(t) ? t : Infinity }
+  subs.sort((a, b) => subMs(a) - subMs(b))
   const labelOf = (s) => {
     const o = s.others || {}
     const fb = o.facebookFormName || o['Facebook Form Name'] || o.fbFormName

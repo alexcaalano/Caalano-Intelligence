@@ -369,8 +369,9 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onP
       {alerts && (alerts.meta || alerts.google) && <>
         <div className="section-title">Account health <span className="sub">· $0 spend yesterday with an active prior week - likely paused / failed payment</span></div>
         <div className="grid alerts-2">
-          <AlertCol title="Meta" color="#4f7cff" list={alerts.meta || []} />
-          <AlertCol title="Google" color="#12b886" list={alerts.google || []} />
+          {/* Only surface alerts for active clients - inactive ones are hidden everywhere. */}
+          <AlertCol title="Meta" color="#4f7cff" list={(alerts.meta || []).filter((a) => rowById[a.id])} />
+          <AlertCol title="Google" color="#12b886" list={(alerts.google || []).filter((a) => rowById[a.id])} />
         </div>
       </>}
       <div className="section-title">Client leaderboard <span className="sub">· results, funnel &amp; revenue per client vs the previous period · click a row to open the client</span></div>
@@ -1169,7 +1170,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
           <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : ' · whole account'}</p>
-          <ResponsiveContainer width="100%" height={250}>
+          <div className="meta-chart-fill">
+          <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
               <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" interval="preserveStartEnd" />
@@ -1182,6 +1184,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
               <Line yAxisId="r" dataKey="cpl" name="CPL" stroke="#ec4899" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
+          </div>
         </div>}
         {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
           rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
@@ -3413,7 +3416,7 @@ function TimezoneBadge({ clientId, hasMeta }) {
 
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
 function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
-  const [filter, setFilter] = useState('all')
+  const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
   const [openId, setOpenId] = useState(null) // which client's editors are expanded
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>

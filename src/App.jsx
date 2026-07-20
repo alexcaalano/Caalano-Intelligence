@@ -32,6 +32,9 @@ const mkOutcomeMap = (arr) => { const m = new Map(); for (const e of arr || []) 
 // cols:[{key,sub,ty,metric,...ctx}] }. `metric` drives the numbers, `ty` the cell
 // format + width. Calendar cols carry `refs` (calendar ids), `stage` (linked
 // stage fallback) and `names` (id->name for the hover breakdown).
+// A key event whose name reads like the closed-won step counts on the won
+// STATUS (and its revenue), not the pipeline stage reached.
+const WON_RE = /won|sold|closed.?win/i
 const LEGACY_DESC = {
   grouped: false,
   groups: [{ label: 'Caalano360', kind: 'brand', span: 11 }],
@@ -62,9 +65,9 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
       cols.push({ key: `e${i}cb`, sub: 'Cost / Booked', ty: 'cost', metric: 'calCost', title: `Spend ÷ ${k.label} bookings`, ...ctx })
       cols.push({ key: `e${i}s`, sub: 'Shown', ty: 'count', metric: 'calShown', title: `Showed for ${k.label}`, ...ctx })
       cols.push({ key: `e${i}sr`, sub: 'Show Rate', ty: 'rate', metric: 'calShowRate', title: 'Shown ÷ booked', ...ctx })
-    } else if (/won|sold|closed.?win/i.test(k.label)) {
-      // Won event: revenue-truth group from the won opportunity status/value -
-      // Won, Win Rate, Cost/Won, Won Val, Avg Deal, ROAS.
+    } else if (WON_RE.test(k.label)) {
+      // Won event: revenue-truth group from the won opportunity STATUS/value
+      // (not the pipeline stage) - Won, Win Rate, Cost/Won, Won Val, Avg Deal, ROAS.
       groups.push({ label: k.label, kind: 'won', span: 6 })
       const ctx = { g: i, ref: k.ref, event: k.label }
       cols.push({ key: `e${i}w`, sub: 'Won', ty: 'count', metric: 'wonCount', gfirst: true, title: `Deals won${''}`, ...ctx })
@@ -833,7 +836,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   const meCh = A && A.channels && A.channels.meta
   const meRows = (() => {
     const rmap = reachedByStage(meCh ? (meCh.pipelines || []) : [])
-    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'meta'), stagePos)
+    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'meta'), stagePos, meCh ? meCh.totals.won : 0)
     if (cfg.length) return cfg
     if (!meCh) return []
     const tt = meCh.totals
@@ -1019,7 +1022,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const gCh = A && A.channels && A.channels.google
   const gRows = (() => {
     const rmap = reachedByStage(gCh ? (gCh.pipelines || []) : [])
-    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'google'))
+    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'google'), stagePos, gCh ? gCh.totals.won : 0)
     if (cfg.length) return cfg
     if (!gCh) return []
     const tt = gCh.totals
@@ -1529,7 +1532,7 @@ function calCountMap(attribData, chan) {
 // events read their reached count from rmap; calendar events read booked/shown
 // from calMap. Returns [] when nothing configured resolves (caller shows a
 // default funnel).
-function keyEventRows(keyEvents, rmap, calMap, stagePos) {
+function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
   const rows = []
   for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
@@ -1541,6 +1544,10 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos) {
       const fromStage = Math.max(0, stageReached - cal)
       if (!any && !fromStage) continue
       rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, shown, cancelled, kind: 'calendar' })
+    } else if (WON_RE.test(k.label)) {
+      // Won event counts on the won STATUS (not the pipeline stage).
+      const n = wonTotal != null ? wonTotal : (rmap && rmap.m.has(k.ref) ? rmap.m.get(k.ref) || 0 : 0)
+      rows.push({ label: k.label, count: n, kind: 'won' })
     } else {
       if (!rmap || !rmap.m.has(k.ref)) continue
       rows.push({ label: k.label, count: rmap.m.get(k.ref) || 0, kind: 'stage' })
@@ -1787,7 +1794,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const scopePipes = pid !== 'all' ? pipesSrc.filter((x) => x.id === pid) : pipesSrc
   const rmap = reachedByStage(scopePipes)
   const keCalMap = calCountMap(attribData, chan)
-  const keConfigured = keyEventRows(keyEvents, rmap, keCalMap, stagePosMap(scopePipes))
+  const keConfigured = keyEventRows(keyEvents, rmap, keCalMap, stagePosMap(scopePipes), c.won)
   const keTotal = Math.max(1, c.leads || rmap.total)
   const keRows = keConfigured.length
     ? keConfigured

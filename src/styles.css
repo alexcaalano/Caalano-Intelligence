@@ -369,6 +369,19 @@ tbody tr:hover { background: var(--panel-2); }
 .appt-head h3 { font-size: 16px; }
 .appt-tbl th.lft, .appt-tbl td.lft { text-align: left; }
 .appt-tbl td, .appt-tbl th { white-space: nowrap; }
+.tm-hours { margin-top: 10px; font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 8px; padding: 8px 11px; line-height: 1.5; }
+.tm-hours.on { color: var(--text); border: 1px solid color-mix(in srgb, var(--pos) 30%, var(--border)); }
+.set-hours-en { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin: 4px 0 10px; cursor: pointer; }
+.set-hours { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.set-hours.off { opacity: .5; }
+.set-hours-days { display: inline-flex; gap: 4px; }
+.set-hours-days button { width: 38px; padding: 6px 0; font-size: 11px; font-weight: 700; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--muted); border-radius: 7px; cursor: pointer; }
+.set-hours-days button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.set-hours-days button:disabled { cursor: default; }
+.set-hours-times { display: inline-flex; gap: 12px; }
+.set-hours-times label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.set-hours-times input { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; color: var(--text); font-size: 13px; }
+.set-hours-detect { margin-top: 10px; font-size: 12px; color: var(--muted); }
 /* Pipeline filter (Meta / Google) */
 .pipe-filter-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
 .pipe-filter { display: inline-flex; align-items: center; gap: 8px; }

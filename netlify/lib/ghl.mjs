@@ -755,17 +755,66 @@ async function mapPool(items, n, fn) {
   await Promise.all(workers)
   return out
 }
+function nextDateStr(dateStr) { const d = new Date(dateStr + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10) }
+// Minutes of business time between two instants, given working hours (a set of
+// weekdays + open/close minute-of-day) in the location timezone. Without hours
+// it's just wall-clock. Used so a lead that arrives at 11pm and gets a reply at
+// 9am isn't scored as a 10-hour response - it's ~0 working minutes.
+function businessMinutesBetween(aMs, bMs, hours, tz) {
+  if (!(bMs > aMs)) return 0
+  if (!hours) return (bMs - aMs) / 60000
+  let total = 0, guard = 0, dateStr = zonedDateStr(aMs, tz)
+  while (guard++ < 120) {
+    const dayMid = zonedStartMs(dateStr, tz)
+    if (dayMid > bMs) break
+    const dow = new Date(dayMid + tzOffsetMs(tz, dayMid)).getUTCDay()
+    if (hours.days.includes(dow)) {
+      const s = Math.max(dayMid + hours.startMin * 60000, aMs)
+      const e = Math.min(dayMid + hours.endMin * 60000, bMs)
+      if (e > s) total += (e - s) / 60000
+    }
+    dateStr = nextDateStr(dateStr)
+  }
+  return total
+}
+// Auto-detect a location's working hours from its calendars' openHours (union of
+// open weekdays + earliest open / latest close). Falls back to Mon-Fri 9-5.
+export async function deriveBusinessHours(locationId) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  let cals = []
+  try { const j = await ghlGet(locTok, '/calendars/', { locationId }); cals = j.calendars || j.calendar || [] } catch { /* default below */ }
+  const days = new Set(); let minOpen = Infinity, maxClose = -Infinity
+  for (const c of cals) {
+    const oh = c.openHours || c.availability || c.availabilities || []
+    for (const slot of (Array.isArray(oh) ? oh : [])) {
+      for (const d of (slot.daysOfWeek || slot.days || [])) days.add(Number(d))
+      for (const h of (slot.hours || slot.slots || [])) {
+        const o = (h.openHour ?? h.startHour ?? 0) * 60 + (h.openMinute ?? h.startMinute ?? 0)
+        const cl = (h.closeHour ?? h.endHour ?? 0) * 60 + (h.closeMinute ?? h.endMinute ?? 0)
+        if (cl > o) { if (o < minOpen) minOpen = o; if (cl > maxClose) maxClose = cl }
+      }
+    }
+  }
+  const detected = days.size > 0 && isFinite(minOpen) && isFinite(maxClose)
+  return { tz, detected, calendars: cals.length, days: detected ? [...days].sort((a, b) => a - b) : [1, 2, 3, 4, 5], startMin: detected ? minOpen : 540, endMin: detected ? maxClose : 1020 }
+}
 export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   const sample = Math.min(opts.sample || 60, 120)
   const budgetMs = opts.budgetMs || 22000
+  const hours = opts.hours || null // { days:[0-6], startMin, endMin } or null (raw)
   const started = Date.now()
   const locTok = await locationToken(locationId)
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
-  // Leads = opportunities created in-period (same lead definition as everywhere
-  // else in the dashboard). Newest first, one per contact, capped to the sample.
-  const opps = await allOpportunities(locTok, locationId, from, to, 1500)
+  // Leads = opportunities created in-period; appointments join for downstream
+  // booked/shown per speed bucket.
+  const [opps, appts] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to, 1500),
+    fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map() })),
+  ])
+  const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const seen = new Set(); const leads = []
   for (const o of opps) {
     const cid = contactIdOf(o); if (!cid || seen.has(cid)) continue
@@ -778,7 +827,8 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     // earliest known of the two.
     const cAdded = Date.parse(o.contact && (o.contact.dateAdded || o.contact.createdAt))
     const leadIn = isFinite(cAdded) ? Math.min(cAdded, created) : created
-    seen.add(cid); leads.push({ cid, created, leadIn, channel: channelOf(utmOf(o)) })
+    const f = apptByContact.get(cid)
+    seen.add(cid); leads.push({ cid, created, leadIn, channel: channelOf(utmOf(o)), won: String(o.status || '').toLowerCase() === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus) })
   }
   leads.sort((a, b) => b.leadIn - a.leadIn)
   const pick = leads.slice(0, sample)
@@ -833,15 +883,18 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     { key: 'u1440', label: '4-24 hrs', max: 1440 },
     { key: 'over', label: 'Over 24 hrs', max: Infinity },
   ]
-  const bcount = Object.fromEntries(BUCKETS.map((b) => [b.key, 0]))
+  const bagg = Object.fromEntries(BUCKETS.map((b) => [b.key, { count: 0, booked: 0, shown: 0, won: 0 }]))
   const mins = []
   let measured = 0, onlyAuto = 0, noOutbound = 0, skipped = 0
   for (const r of results) {
     if (r.skipped) { skipped++; continue }
     if (r.manual != null) {
-      const mm = (r.manual - r.leadIn) / 60000; if (mm < 0) continue
+      // Response time honouring working hours (when configured), so after-hours
+      // gaps don't count against the team.
+      const mm = businessMinutesBetween(r.leadIn, r.manual, hours, tz); if (mm < 0) continue
       measured++; mins.push(mm)
-      const b = BUCKETS.find((x) => mm < x.max) || BUCKETS[BUCKETS.length - 1]; bcount[b.key]++
+      const b = BUCKETS.find((x) => mm < x.max) || BUCKETS[BUCKETS.length - 1]
+      const g = bagg[b.key]; g.count++; if (r.booked) g.booked++; if (r.shown) g.shown++; if (r.won) g.won++
     } else if (r.any != null) onlyAuto++
     else noOutbound++
   }
@@ -849,6 +902,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   const median = mins.length ? mins[Math.floor((mins.length - 1) / 2)] : null
   const avg = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null
   const within5 = mins.length ? mins.filter((m) => m < 5).length / mins.length : null
+  const pct = (n, d) => (d ? Math.round((n / d) * 100) : null)
   return {
     connected: true, tz,
     totalLeads: leads.length, sampled: pick.length - skipped, skipped,
@@ -856,7 +910,8 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     medianMin: median == null ? null : Math.round(median),
     avgMin: avg == null ? null : Math.round(avg),
     within5Pct: within5 == null ? null : Math.round(within5 * 100),
-    buckets: BUCKETS.map((b) => ({ label: b.label, count: bcount[b.key] })),
+    hours: hours ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin } : null,
+    buckets: BUCKETS.map((b) => { const g = bagg[b.key]; return { label: b.label, count: g.count, booked: g.booked, shown: g.shown, won: g.won, bookRate: pct(g.booked, g.count), showRate: pct(g.shown, g.booked), winRate: pct(g.won, g.count) } }),
     sourceBreakdown: Object.entries(srcCounts).map(([source, v]) => ({ source, count: v.count, kind: v.kind })).sort((a, b) => b.count - a.count),
     ...(opts.debug ? { debug: debugRows } : {}),
   }

@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, buildAppointmentInsights, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, buildAppointmentInsights, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -836,8 +836,26 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'speed', client, connected: false })
     const sample = Math.min(Number(url.searchParams.get('sample')) || 60, 120)
     const dbg = url.searchParams.get('debug') === '1'
-    try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample, debug: dbg })) }, 200, !dbg) }
+    // Optional working-hours adjustment: bhDays=1,2,3,4,5 & bhStart/bhEnd in
+    // minutes-of-day. When present, response time counts only business minutes.
+    let hours = null
+    const bhStart = url.searchParams.get('bhStart'), bhEnd = url.searchParams.get('bhEnd'), bhDays = url.searchParams.get('bhDays')
+    if (bhStart != null && bhEnd != null && bhDays) {
+      const days = bhDays.split(',').map(Number).filter((n) => n >= 0 && n <= 6)
+      if (days.length) hours = { days, startMin: Number(bhStart), endMin: Number(bhEnd) }
+    }
+    try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample, debug: dbg, hours })) }, 200, !dbg) }
     catch (e) { return json({ scope: 'speed', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
+  // Auto-detected working hours (from the client's calendars) for the Settings
+  // active-hours editor to prefill.
+  if (url.searchParams.get('scope') === 'hours') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'hours', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'hours', client, connected: false })
+    try { return json({ scope: 'hours', client, ...(await deriveBusinessHours(cc.ghl)) }, 200, true) }
+    catch (e) { return json({ scope: 'hours', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
   // Appointment insights: booking lead time, self vs staff booked, downstream

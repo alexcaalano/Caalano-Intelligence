@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.25.0 — 2026-07-20 · `PENDING`
+- **Speed to Lead → outcomes by response speed:** a new table on the Timing tab
+  shows, for each response-time bucket (under 5 min … over 24 hrs), the leads'
+  downstream **Book % / Show % / Win %** — so you can see whether replying faster
+  actually converts better.
+- **Working hours for Speed to Lead:** set the team's days + open/close time in
+  Settings → client → Summary (auto-detected from the client's calendars, with a
+  "Use detected" button). When on, response time counts only **business minutes**
+  — a lead at 11pm answered at 9am is a fast response, not a 10-hour one. The
+  Timing tab shows which hours are applied.
+
 ## v3.24.0 — 2026-07-20 · `PENDING`
 - **New Appointments tab** (CRM-connected clients) — booking timing & outcomes:
   - **Booking lead time**: how far in advance calls are booked (same-day → 30+

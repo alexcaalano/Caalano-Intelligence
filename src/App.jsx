@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.24.0'
+const APP_VERSION = '3.25.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -493,6 +493,18 @@ function saveCloseOverride(clientId, days) {
 }
 // Resolve the sales-cycle length for a client: manual override first, else CRM.
 function closeDaysFor(clientId, crmAvg) { const ov = loadCloseOverride(clientId); return ov != null && ov > 0 ? { days: ov, manual: true } : (crmAvg != null && crmAvg > 0 ? { days: crmAvg, manual: false } : null) }
+// Working hours per client (for Speed to Lead). { days:[0-6], startMin, endMin }.
+function loadHours(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; const h = o && o.hours; return (h && Array.isArray(h.days) && h.days.length && h.startMin != null && h.endMin != null) ? h : null }
+function saveHours(clientId, hours) {
+  const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
+  const next = { ...cur, hours: hours || null }
+  SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
+  writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
+}
+const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+function fmtHours(h) { if (!h) return null; const cons = h.days.length > 1 && h.days.every((d, i) => i === 0 || d === h.days[i - 1] + 1); const ds = cons ? `${DOW_LABELS[h.days[0]]}–${DOW_LABELS[h.days[h.days.length - 1]]}` : h.days.map((d) => DOW_LABELS[d]).join(', '); return `${ds} · ${hhmm(h.startMin)}–${hhmm(h.endMin)}` }
+const hoursQuery = (h) => (h ? `&bhDays=${h.days.join(',')}&bhStart=${h.startMin}&bhEnd=${h.endMin}` : '')
 function rangeMaturity(closeDays, range) {
   if (closeDays == null || !(closeDays > 0)) return null
   const matureDays = Math.round(closeDays * 1.2)
@@ -3536,16 +3548,19 @@ function fmtDuration(min) {
 function TimingView({ clientId, range, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [showDbg, setShowDbg] = useState(false)
+  useSettingsSync()
+  const hrs = loadHours(clientId)
+  const hq = hoursQuery(hrs)
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
-    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
+    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}${hq}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
       .finally(() => clearTimeout(timer))
     return () => { alive = false; ctl.abort() }
-  }, [clientId, rangeQuery(range), nonce])
+  }, [clientId, rangeQuery(range), hq, nonce])
   if (st.status === 'loading') return <div className="card"><Spinner label="Measuring speed to lead… (sampling recent leads' conversations)" /></div>
   const d = st.data || {}
   if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">⏱️</div><b>Couldn't measure speed to lead.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
@@ -3557,6 +3572,9 @@ function TimingView({ clientId, range, nonce }) {
       <div className="card timing-intro">
         <h3 style={{ margin: '0 0 4px' }}>Speed to Lead</h3>
         <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message</b> sent to them. Automated workflow / campaign / bulk messages are excluded, so this reflects how fast a person actually reaches out. Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</p>
+        {d.hours
+          ? <div className="tm-hours on">🕘 Measured within working hours · <b>{fmtHours(d.hours)}</b> — after-hours gaps don't count against response time. Change in Settings → client → Summary.</div>
+          : <div className="tm-hours">🕘 Measuring raw round-the-clock time. Set the team's <b>working hours</b> in Settings → client → Summary so overnight leads aren't counted as slow responses.</div>}
       </div>
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
@@ -3578,6 +3596,25 @@ function TimingView({ clientId, range, nonce }) {
           ))}
         </div>
         <p className="caveat" style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion — the first few minutes matter most.</p>
+      </div>
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Does responding faster convert better? — outcomes by response speed</div>
+        <div className="table-wrap"><table className="mini-tbl appt-tbl">
+          <thead><tr><th className="lft">Response time</th><th>Leads</th><th>Booked</th><th>Book %</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th></tr></thead>
+          <tbody>{d.buckets.map((b) => (
+            <tr key={b.label}>
+              <td className="lft">{b.label}</td>
+              <td>{fmtNumber(b.count)}</td>
+              <td>{fmtNumber(b.booked)}</td>
+              <td>{b.bookRate == null ? '-' : `${b.bookRate}%`}</td>
+              <td>{fmtNumber(b.shown)}</td>
+              <td>{b.showRate == null ? '-' : `${b.showRate}%`}</td>
+              <td>{fmtNumber(b.won)}</td>
+              <td>{b.winRate == null ? '-' : `${b.winRate}%`}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <p className="caveat" style={{ marginTop: 10 }}>Each row is the measured leads whose first human reply fell in that window. Book % = booked ÷ leads, Show % = shown ÷ booked, Win % = won ÷ leads. If the top rows convert best, faster response is paying off. Small samples make single rows noisy — read the trend, not one cell.</p>
       </div>
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How manual vs automated is decided ({(d.sourceBreakdown || []).length} message sources)</button>
@@ -4336,6 +4373,50 @@ function SalesCycleField({ clientId }) {
     </div>
   )
 }
+// Working-hours editor. Auto-detects from the client's calendars, and lets you
+// override the days + open/close time. Drives the Speed to Lead measurement so
+// after-hours gaps aren't counted as slow responses.
+function ActiveHoursField({ clientId }) {
+  const saved = loadHours(clientId)
+  const [enabled, setEnabled] = useState(() => !!saved)
+  const [days, setDays] = useState(() => (saved ? saved.days : [1, 2, 3, 4, 5]))
+  const [start, setStart] = useState(() => (saved ? hhmm(saved.startMin) : '09:00'))
+  const [end, setEnd] = useState(() => (saved ? hhmm(saved.endMin) : '17:00'))
+  const [detected, setDetected] = useState(undefined)
+  const [tick, setTick] = useState(false)
+  useEffect(() => {
+    let a = true; setDetected(undefined)
+    fetch(`/.netlify/functions/windsor?scope=hours&client=${clientId}`).then((r) => (r.ok ? r.json() : null)).then((j) => { if (a) setDetected(j && j.days ? j : null) }).catch(() => { if (a) setDetected(null) })
+    return () => { a = false }
+  }, [clientId])
+  const toMin = (s) => { const [h, m] = String(s).split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+  const flash = () => { setTick(true); setTimeout(() => setTick(false), 1200) }
+  const persist = (en, d, s, e) => { saveHours(clientId, en ? { days: d, startMin: toMin(s), endMin: toMin(e) } : null); flash() }
+  const toggleDay = (i) => { const nd = days.includes(i) ? days.filter((x) => x !== i) : [...days, i].sort((a, b) => a - b); setDays(nd); if (enabled) persist(true, nd, start, end) }
+  const onStart = (v) => { setStart(v); if (enabled) persist(true, days, v, end) }
+  const onEnd = (v) => { setEnd(v); if (enabled) persist(true, days, start, v) }
+  const onEnable = (v) => { setEnabled(v); persist(v, days, start, end) }
+  const useDetected = () => { if (!detected) return; const s = hhmm(detected.startMin), e = hhmm(detected.endMin); setDays(detected.days); setStart(s); setEnd(e); setEnabled(true); persist(true, detected.days, s, e) }
+  return (
+    <div className="set-cycle">
+      <div className="set-sec-t">Working hours <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· for Speed to Lead</span>{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</div>
+      <p className="cap" style={{ marginTop: 0 }}>When on, Speed to Lead counts only <b>business minutes</b> — a lead that arrives at 11pm and gets a reply at 9am is a fast response, not a 10-hour one.</p>
+      <label className="set-hours-en"><input type="checkbox" checked={enabled} onChange={(e) => onEnable(e.target.checked)} /> Measure Speed to Lead within working hours</label>
+      <div className={`set-hours ${enabled ? '' : 'off'}`}>
+        <div className="set-hours-days">{DOW_LABELS.map((lbl, i) => <button key={i} className={days.includes(i) ? 'on' : ''} onClick={() => toggleDay(i)} disabled={!enabled}>{lbl}</button>)}</div>
+        <div className="set-hours-times">
+          <label>Open <input type="time" value={start} onChange={(e) => onStart(e.target.value)} disabled={!enabled} /></label>
+          <label>Close <input type="time" value={end} onChange={(e) => onEnd(e.target.value)} disabled={!enabled} /></label>
+        </div>
+      </div>
+      <div className="set-hours-detect">
+        {detected === undefined ? <span className="cap">Detecting hours from calendars…</span>
+          : detected && detected.detected ? <>Detected from {detected.calendars} calendar{detected.calendars === 1 ? '' : 's'}: <b>{fmtHours({ days: detected.days, startMin: detected.startMin, endMin: detected.endMin })}</b> <button className="set-relink" style={{ padding: '4px 10px', marginLeft: 6 }} onClick={useDetected}>Use detected</button></>
+          : <span className="cap">Couldn't auto-detect hours from calendars — set them manually above.</span>}
+      </div>
+    </div>
+  )
+}
 function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
@@ -4389,6 +4470,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
             <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button>
             {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
             {c.ghl && <SalesCycleField clientId={c.id} />}
+            {c.ghl && <ActiveHoursField clientId={c.id} />}
           </div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}

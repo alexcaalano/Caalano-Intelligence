@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.18.0 — 2026-07-20 · `<pending>`
+- Form answer breakdown is now one question at a time: pick a question/field from
+  the selector and see just that question's answers as a horizontal bar chart
+  (Leads / Booked / Won) + a table with % of leads — instead of every question
+  stacked on one screen.
+
 ## v3.17.0 — 2026-07-20 · `32d40bb`
 - Forms edited in ONE place: Settings Forms tab is now just form names + pipeline
   link; the client Forms view shows pipeline/description read-only with a pencil

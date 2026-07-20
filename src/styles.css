@@ -730,6 +730,20 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .fmset-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; }
 .fmset-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .fmset-row .set-relink { padding: 6px 11px; }
+/* Form answers: one question at a time */
+.fseg { padding: 12px 14px; }
+.fseg-sel { margin-bottom: 12px; }
+.fseg-qlist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.fseg-qbtn { display: inline-flex; align-items: center; gap: 7px; max-width: 300px; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 7px 11px; cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.fseg-qbtn:hover { border-color: var(--border-2); color: var(--text); }
+.fseg-qbtn.on { border-color: var(--brand); background: rgba(109,94,252,.12); color: var(--text); font-weight: 600; }
+.fseg-qtxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fseg-body { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+.fseg-head { font-size: 14px; font-weight: 700; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.fseg-total { font-size: 11.5px; color: var(--faint); font-weight: 500; }
+.fseg-chart { margin: 4px 0 12px; }
+.fseg-tbl { width: 100%; }
+.fseg-tbl td:first-child, .fseg-tbl th:first-child { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Meta view: Daily trend (left) + Key events (right), 50/50 */
 .meta-split { display: flex; gap: 14px; margin-top: 14px; align-items: stretch; }
 .meta-split-col { flex: 1 1 0; min-width: 0; margin-top: 0 !important; }

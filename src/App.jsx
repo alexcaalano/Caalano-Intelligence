@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.17.0'
+const APP_VERSION = '3.18.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2984,32 +2984,62 @@ function groupAnswers(answers) {
   }
   return [...groups.values()].map(({ _max, ...g }) => ({ ...g, merged: g.members.length > 1 })).sort((a, b) => b.leads - a.leads)
 }
+// One question at a time: pick a question from the selector, then see that
+// question's answer breakdown as a bar chart + table (answers grouped).
 function FormSegments({ segments, captured, currency }) {
   const money = (v) => fmtCurrency(v, currency)
+  const [sel, setSel] = useState(0)
   if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form — its submissions only carried contact details (name / email / phone).'}</div>
+  const s = segments[Math.min(sel, segments.length - 1)]
+  const grouped = groupAnswers(s.answers)
+  const chart = grouped.slice(0, 12).map((a) => ({ name: a.value.length > 22 ? a.value.slice(0, 21) + '…' : a.value, leads: a.leads, booked: a.booked, won: a.won }))
+  const totalLeads = grouped.reduce((t, a) => t + a.leads, 0)
   return (
-    <div className="form-seg">
-      {segments.map((s) => (
-        <div className="form-seg-q" key={s.question}>
-          <div className="form-seg-qh">{s.question}<span className={`form-seg-kind ${s.kind || 'choice'}`}>{s.kind === 'written' ? 'written' : 'choice'}</span></div>
-          <table className="form-seg-t">
-            <thead><tr><th>Answer</th><th className="num">Leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th></tr></thead>
-            <tbody>{groupAnswers(s.answers).map((a) => (
-              <tr key={a.value}>
-                <td title={a.merged ? `Combines: ${a.members.sort((x, y) => y.leads - x.leads).map((m) => `${m.value} (${m.leads})`).join(', ')}` : a.value}>{a.value}{a.merged ? <span className="ans-merged" title={`Combines ${a.members.length} spellings`}> ⓘ{a.members.length}</span> : null}</td>
-                <td className="num">{fmtNumber(a.leads)}</td>
-                <td className="num">{fmtNumber(a.booked)}</td>
-                <td className="num">{a.leads ? fmtPct((a.booked / a.leads) * 100, 0) : '-'}</td>
-                <td className="num">{fmtNumber(a.shown)}</td>
-                <td className="num">{fmtNumber(a.won)}</td>
-                <td className="num">{a.leads ? fmtPct((a.won / a.leads) * 100, 0) : '-'}</td>
-                <td className="num">{money(a.revenue)}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-          {s.more > 0 && <div className="form-seg-more">+{s.more} more written answer{s.more === 1 ? '' : 's'}</div>}
+    <div className="fseg">
+      <div className="fseg-sel">
+        <div className="fm-lab">Question / field <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· pick one to see its answers</span></div>
+        <div className="fseg-qlist">
+          {segments.map((q, i) => (
+            <button key={q.question} className={`fseg-qbtn ${i === sel ? 'on' : ''}`} onClick={() => setSel(i)} title={q.question}>
+              <span className="fseg-qtxt">{q.question}</span>
+              <span className={`form-seg-kind ${q.kind || 'choice'}`}>{q.kind === 'written' ? 'written' : 'choice'}</span>
+            </button>
+          ))}
         </div>
-      ))}
+      </div>
+      <div className="fseg-body">
+        <div className="fseg-head">{s.question}<span className="fseg-total">{fmtNumber(totalLeads)} leads · {grouped.length} distinct answer{grouped.length === 1 ? '' : 's'}</span></div>
+        {chart.length > 1 && <div className="fseg-chart">
+          <ResponsiveContainer width="100%" height={Math.max(120, chart.length * 30 + 20)}>
+            <BarChart data={chart} layout="vertical" margin={{ left: 8, right: 20, top: 4, bottom: 4 }}>
+              <CartesianGrid stroke="var(--border)" horizontal={false} />
+              <XAxis type="number" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+              <YAxis type="category" dataKey="name" width={150} fontSize={11} stroke="var(--muted)" interval={0} />
+              <Tooltip formatter={(v, n) => [fmtNumber(v), n]} />
+              <Bar dataKey="leads" name="Leads" fill="#4f7cff" radius={[0, 3, 3, 0]} maxBarSize={18} />
+              <Bar dataKey="booked" name="Booked" fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={18} />
+              <Bar dataKey="won" name="Won" fill="#f5a524" radius={[0, 3, 3, 0]} maxBarSize={18} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>}
+        <table className="form-seg-t fseg-tbl">
+          <thead><tr><th>Answer</th><th className="num">Leads</th><th className="num">% of leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th></tr></thead>
+          <tbody>{grouped.map((a) => (
+            <tr key={a.value}>
+              <td title={a.merged ? `Combines: ${a.members.sort((x, y) => y.leads - x.leads).map((m) => `${m.value} (${m.leads})`).join(', ')}` : a.value}>{a.value}{a.merged ? <span className="ans-merged" title={`Combines ${a.members.length} spellings`}> ⓘ{a.members.length}</span> : null}</td>
+              <td className="num">{fmtNumber(a.leads)}</td>
+              <td className="num">{totalLeads ? fmtPct((a.leads / totalLeads) * 100, 0) : '-'}</td>
+              <td className="num">{fmtNumber(a.booked)}</td>
+              <td className="num">{a.leads ? fmtPct((a.booked / a.leads) * 100, 0) : '-'}</td>
+              <td className="num">{fmtNumber(a.shown)}</td>
+              <td className="num">{fmtNumber(a.won)}</td>
+              <td className="num">{a.leads ? fmtPct((a.won / a.leads) * 100, 0) : '-'}</td>
+              <td className="num">{money(a.revenue)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+        {s.more > 0 && <div className="form-seg-more">+{s.more} more written answer{s.more === 1 ? '' : 's'}</div>}
+      </div>
     </div>
   )
 }

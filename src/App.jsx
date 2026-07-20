@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.11.0'
+const APP_VERSION = '3.12.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1821,8 +1821,31 @@ function useSettingsSync() {
 
 // UI-added clients (Settings -> Add client), persisted server-side and merged
 // into the dashboard's client list.
-function customClientList() { return Object.entries(SETTINGS.clients || {}).map(([id, v]) => ({ id, name: v.name || id, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, custom: true })) }
+function customClientList() { return Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && (v.meta || v.google || v.ghl)).map(([id, v]) => ({ id, name: v.name || id, industry: v.industry || null, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, metaName: v.metaName || null, googleName: v.googleName || null, ghlName: v.ghlName || null, custom: true })) }
 function saveCustomClient(id, mapping) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: mapping }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: mapping } }); bumpSettings() }
+function removeCustomClient(id) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: null }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: null } }); bumpSettings() }
+// Shared account-discovery fetch (GHL locations + Windsor Meta/Google accounts),
+// cached for the session so the Settings name lookups and the Add/Edit explorer
+// reuse one call.
+let _discoverPromise = null
+function fetchDiscover() {
+  if (!_discoverPromise) {
+    const to = new Date().toISOString().slice(0, 10)
+    const from = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+    _discoverPromise = fetch(`/.netlify/functions/windsor?scope=discover&from=${from}&to=${to}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+  }
+  return _discoverPromise
+}
+// id -> account name maps (normalised ids) for showing names next to IDs.
+const normId = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
+function useDiscoverNames() {
+  const [d, setD] = useState(null)
+  useEffect(() => { let alive = true; fetchDiscover().then((j) => { if (alive) setD(j) }).catch(() => {}); return () => { alive = false } }, [])
+  return useMemo(() => {
+    const mk = (arr) => Object.fromEntries((arr || []).map((x) => [normId(x.id), x.name]))
+    return d ? { meta: mk(d.meta), google: mk(d.google), ghl: mk(d.ghl) } : null
+  }, [d])
+}
 
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
@@ -3465,38 +3488,47 @@ function TimezoneBadge({ clientId, hasMeta }) {
 // GHL API + Meta / Google ad accounts Windsor can see) and assemble a new
 // client by linking one of each. Saved to the shared settings store and merged
 // into the registry, so the new client goes live without a code change.
-function AddClientModal({ existing, onClose }) {
+function AddClientModal({ existing, editClient, onClose }) {
+  const isEdit = !!editClient
   const [st, setSt] = useState({ status: 'loading', data: null })
-  const [name, setName] = useState('')
-  const [ghl, setGhl] = useState(''); const [meta, setMeta] = useState(''); const [google, setGoogle] = useState('')
+  const [name, setName] = useState(editClient ? editClient.name : '')
+  const [ghl, setGhl] = useState(editClient ? (editClient.ghl || '') : '')
+  const [meta, setMeta] = useState(editClient ? (editClient.meta || '') : '')
+  const [google, setGoogle] = useState(editClient ? (editClient.google || '') : '')
+  const [nameEdited, setNameEdited] = useState(isEdit)
   const [saved, setSaved] = useState(false)
   useEffect(() => {
-    const to = new Date().toISOString().slice(0, 10)
-    const from = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
     let alive = true
-    fetch(`/.netlify/functions/windsor?scope=discover&from=${from}&to=${to}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: 'ok', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    fetchDiscover().then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
   }, [])
   const d = st.data || {}
+  const nameOf = (arr, id) => { const it = (arr || []).find((x) => normId(x.id) === normId(id)); return it ? it.name : null }
   const slug = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
-  const uniqueId = (base) => { let id = base, n = 2; const taken = new Set((existing || []).map((c) => c.id)); while (taken.has(id)) id = `${base}-${n++}`; return id }
+  const uniqueId = (base) => { let id = base, n = 2; const taken = new Set((existing || []).filter((c) => !isEdit || c.id !== editClient.id).map((c) => c.id)); while (taken.has(id)) id = `${base}-${n++}`; return id }
   const canSave = name.trim() && (meta || google || ghl)
   const save = () => {
     if (!canSave) return
-    saveCustomClient(uniqueId(slug(name)), { name: name.trim(), meta: meta || null, google: google || null, ghl: ghl || null })
-    setSaved(true); setTimeout(onClose, 1000)
+    const mapping = {
+      name: name.trim(),
+      meta: meta || null, google: google || null, ghl: ghl || null,
+      metaName: nameOf(d.meta, meta), googleName: nameOf(d.google, google), ghlName: nameOf(d.ghl, ghl),
+    }
+    saveCustomClient(isEdit ? editClient.id : uniqueId(slug(name)), mapping)
+    setSaved(true); setTimeout(onClose, 900)
   }
+  const remove = () => { if (isEdit && confirm(`Remove ${editClient.name} from the dashboard? This only removes the mapping; no CRM/ad data is touched.`)) { removeCustomClient(editClient.id); onClose() } }
+  // Picking a Caalano Systems location sets the client name from that location
+  // (unless the user has typed their own).
+  const pickGhl = (id) => { setGhl(id); const nm = nameOf(d.ghl, id); if (nm && !nameEdited) setName(nm) }
   const Col = ({ title, items, sel, onSel, empty }) => (
     <div className="addcl-col">
       <div className="addcl-col-h">{title} <span className="addcl-count">{items ? items.length : 0}</span></div>
       <div className="addcl-list">
         {!items || !items.length ? <div className="cap" style={{ padding: 8 }}>{empty}</div> : items.map((it) => (
-          <button key={it.id} className={`addcl-item ${sel === it.id ? 'on' : ''}`} onClick={() => onSel(sel === it.id ? '' : it.id)} title={it.id}>
+          <button key={it.id} className={`addcl-item ${normId(sel) === normId(it.id) ? 'on' : ''}`} onClick={() => onSel(normId(sel) === normId(it.id) ? '' : it.id)} title={it.id}>
             <span className="addcl-nm">{it.name}</span>
-            <span className="addcl-meta">{it.mapped ? <span className="addcl-mapped">in use</span> : <span className="addcl-free">available</span>} · <code>{String(it.id).slice(0, 10)}</code></span>
+            <span className="addcl-meta">{it.mapped ? <span className="addcl-mapped">in use</span> : <span className="addcl-free">available</span>} · <code>{String(it.id).slice(0, 14)}</code></span>
           </button>
         ))}
       </div>
@@ -3505,37 +3537,45 @@ function AddClientModal({ existing, onClose }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>Add a client</h3><span className="cap">Link a Caalano Systems account to its Meta &amp; Google ad accounts</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-head"><div><h3>{isEdit ? `Edit ${editClient.name}` : 'Add a client'}</h3><span className="cap">Link a Caalano Systems account to its Meta &amp; Google ad accounts</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Exploring available accounts…" />
             : st.status === 'err' ? <div className="cap">Couldn’t load available accounts — try again.</div>
               : <>
                 <div className="addcl-name">
-                  <label>Client name</label>
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Pool Haus" />
+                  <label>Client name <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· auto-fills from the Caalano Systems location</span></label>
+                  <input value={name} onChange={(e) => { setName(e.target.value); setNameEdited(true) }} placeholder="pick a Caalano Systems account below" />
                 </div>
                 <div className="addcl-cols">
-                  <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={(id) => { setGhl(id); const l = (d.ghl || []).find((x) => x.id === id); if (l && !name) setName(l.name) }} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
+                  <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={pickGhl} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
                   <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={setMeta} empty="No Meta accounts in Windsor." />
                   <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={setGoogle} empty="No Google accounts in Windsor." />
                 </div>
                 <div className="addcl-foot">
-                  <span className="cap">{ghl || meta || google ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account.'}</span>
-                  <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Added' : 'Add client'}</button>
+                  {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{ghl || meta || google ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account.'}</span>}
+                  <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
-                <p className="caveat" style={{ marginTop: 10 }}>Saved to the shared settings store and merged into the dashboard immediately. Meta / Google accounts come from Windsor (last 90 days of activity); Caalano Systems locations from the GoHighLevel agency connection. You can fine-tune key events, KPIs and campaign links after adding.</p>
+                <p className="caveat" style={{ marginTop: 10 }}>Saved to the shared settings store and merged into the dashboard immediately. Meta / Google accounts come from Windsor (last 90 days of activity); Caalano Systems locations from the GoHighLevel agency connection.</p>
               </>}
         </div>
       </div>
     </div>
   )
 }
+// An account chip that shows the account NAME (resolved from discovery) with the
+// raw id underneath, so mis-links are obvious at a glance.
+function AccountTag({ label, id, name }) {
+  if (!id) return <span className="idtag">{label} <b>-</b></span>
+  return <span className="idtag has" title={String(id)}>{label} <b>{name || id}</b>{name ? <code className="idtag-id">{id}</code> : null}</span>
+}
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
 function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState(null) // client being configured (modal)
-  const [adding, setAdding] = useState(false)   // add-client explorer modal
+  const [adding, setAdding] = useState(false)   // add/edit-client explorer modal (true = new, client = edit)
+  const names = useDiscoverNames()
+  const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
   const w = config.availableAccounts?.windsor || {}
   const isOn = (c) => enabled[c.id] !== false
@@ -3575,40 +3615,66 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
                 <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
               </div>
               <div className="ids">
-                <span className={`idtag ${c.meta ? 'has' : ''}`}>Meta <b>{c.meta || '-'}</b></span>
-                <span className={`idtag ${c.google ? 'has' : ''}`}>Google <b>{c.google || '-'}</b></span>
-                <span className={`idtag ${c.ghl ? 'has' : ''}`}>Caalano Systems <b>{c.ghl ? '✓' : '-'}</b></span>
+                <AccountTag label="Meta" id={c.meta} name={nm('meta', c.meta) || c.metaName} />
+                <AccountTag label="Google" id={c.google} name={nm('google', c.google) || c.googleName} />
+                <AccountTag label="Caalano Systems" id={c.ghl} name={nm('ghl', c.ghl) || c.ghlName} />
               </div>
               <div className="set-card-actions">
-                <button className="set-expand" onClick={() => setEditing(c)}>⚙ Configure</button>
-                <button className="set-open" onClick={() => onPick(c)} title="Open this client's workspace">Open ↗</button>
+                <button className="set-expand" onClick={() => setEditing(c)}>✎ Edit</button>
               </div>
             </div>
           )
         })}
         {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
       </div>
-      {editing && <SettingsEditModal client={editing} currency={currency} onClose={() => setEditing(null)} />}
-      {adding && <AddClientModal existing={config.clients} onClose={() => setAdding(false)} />}
+      {editing && <SettingsEditModal client={editing} names={names} currency={currency} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
+      {adding && <AddClientModal existing={config.clients} editClient={typeof adding === 'object' ? adding : null} onClose={() => setAdding(false)} />}
     </div>
   )
 }
 // Per-client configuration in a modal (instead of expanding inline) so the grid
-// doesn't reflow when you open one.
-function SettingsEditModal({ client: c, currency, onClose }) {
+// doesn't reflow when you open one. "Open Client View" jumps to the workspace;
+// custom (UI-added) clients get a Relink option to fix a mis-linked account.
+function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
+  const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
+  const [name, setName] = useState(c.name || '')
+  const [industry, setIndustry] = useState(c.industry || '')
+  const [savedDetails, setSavedDetails] = useState(false)
+  const dirty = name.trim() !== (c.name || '') || industry !== (c.industry || '')
+  const saveDetails = () => {
+    if (!name.trim()) return
+    // Preserve the account links + names when overriding name / industry.
+    saveCustomClient(c.id, {
+      name: name.trim(), industry: industry.trim() || null,
+      meta: c.meta || null, google: c.google || null, ghl: c.ghl || null,
+      metaName: nm('meta', c.meta) || c.metaName || null, googleName: nm('google', c.google) || c.googleName || null, ghlName: nm('ghl', c.ghl) || c.ghlName || null,
+    })
+    setSavedDetails(true); setTimeout(() => setSavedDetails(false), 1500)
+  }
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
         <div className="m-head">
-          <div className="set-modal-title"><span className="avatar sm" style={{ background: acolor(0) }}>{initials(c.name)}</span><div><h3>{c.name}</h3><span className="cap">{c.industry || 'Configuration'}</span></div></div>
-          <button className="icon-btn" onClick={onClose}>✕</button>
+          <div className="set-modal-title"><span className="avatar sm" style={{ background: acolor(0) }}>{initials(name || c.name)}</span><div><h3>{name || c.name}</h3><span className="cap">{industry || (c.custom ? 'Added client' : 'Configuration')}</span></div></div>
+          <div className="set-modal-actions">
+            <button className="set-open" onClick={onOpen} title="Open this client's performance workspace">Open Client View ↗</button>
+            <button className="icon-btn" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div className="m-body">
-          <div className="ids" style={{ marginBottom: 14 }}>
-            <span className={`idtag ${c.meta ? 'has' : ''}`}>Meta <b>{c.meta || '-'}</b></span>
-            <span className={`idtag ${c.google ? 'has' : ''}`}>Google <b>{c.google || '-'}</b></span>
-            <span className={`idtag ${c.ghl ? 'has' : ''}`}>Caalano Systems <b>{c.ghl ? '✓' : '-'}</b></span>
+          <div className="set-details">
+            <div className="set-field"><label>Client name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
+            <div className="set-field"><label>Description / Industry</label><input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Pool builder (trades, high-ticket)" /></div>
+            <button className="set-details-save" disabled={!dirty || !name.trim()} onClick={saveDetails}>{savedDetails ? '✓ Saved' : 'Save details'}</button>
+          </div>
+          <div className="set-conn">
+            <div className="ids">
+              <AccountTag label="Meta" id={c.meta} name={nm('meta', c.meta) || c.metaName} />
+              <AccountTag label="Google" id={c.google} name={nm('google', c.google) || c.googleName} />
+              <AccountTag label="Caalano Systems" id={c.ghl} name={nm('ghl', c.ghl) || c.ghlName} />
+            </div>
+            <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Relink accounts</button>
           </div>
           {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
           {c.ghl && <KeyEventsEditor clientId={c.id} />}
@@ -3657,13 +3723,22 @@ export default function App() {
   // and fires the ovrow requests - without this, r.c.ghl is undefined for every
   // client and the CRM columns never load.
   const ghlById = Object.fromEntries(((config && config.clients) || []).map((c) => [c.id, c.ghl]))
-  // Base clients (snapshot) + any UI-added ones not already present.
+  // Apply any per-client override (UI-added clients, or name/industry/relink
+  // edits) on top of a base client, matched by id. Account ids/names and
+  // name/industry are taken from the override when present.
+  const overrides = SETTINGS.clients || {}
+  const applyOv = (c) => {
+    const o = overrides[c.id]; if (!o) return c
+    const g = (k, fb) => (o[k] !== undefined && o[k] !== null && o[k] !== '' ? o[k] : fb)
+    return { ...c, name: g('name', c.name), industry: (o.industry !== undefined && o.industry !== '') ? o.industry : c.industry, meta: o.meta !== undefined ? o.meta : c.meta, google: o.google !== undefined ? o.google : c.google, ghl: o.ghl !== undefined ? o.ghl : c.ghl, metaName: o.metaName || c.metaName, googleName: o.googleName || c.googleName, ghlName: o.ghlName || c.ghlName, custom: true }
+  }
   const custom = customClientList()
-  const baseClients = [...data.clients, ...custom.filter((cu) => !data.clients.some((c) => c.id === cu.id))]
+  const extras = custom.filter((cu) => !data.clients.some((c) => c.id === cu.id))
+  const baseClients = [...data.clients.map(applyOv), ...extras]
   const visibleClients = baseClients.filter((c) => enabled[c.id] !== false).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
   const rows = computeRows(visibleClients, agency.data)
-  // Config for the Settings page, with UI-added clients merged in.
-  const cfgMerged = config ? { ...config, clients: [...(config.clients || []), ...custom.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
+  // Config for the Settings page, with overrides applied + UI-added clients.
+  const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
   const idx = picked ? data.clients.findIndex((c) => c.id === picked.id) : -1
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
 

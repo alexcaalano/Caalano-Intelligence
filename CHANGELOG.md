@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.12.0 — 2026-07-20 · `<pending>`
+- Settings client management: account **names** now show next to every Meta /
+  Google / Caalano Systems id (resolved from discovery) so mis-links are obvious.
+- Client card is now a single **Edit** (pencil) button; the config modal has an
+  **Open Client View** button top-right.
+- Config modal: edit the client **name** and **description / industry**, and
+  **Relink accounts** (fix a mis-linked CRM/Meta/Google) or **Remove** the
+  client. Add-client auto-fills the name from the chosen Caalano Systems location.
+
 ## v3.11.0 — 2026-07-20 · `1934ad9`
 - Settings: **Add client** explorer — discover Caalano Systems (GHL) locations
   via the API plus the Meta / Google ad accounts Windsor can see, link one of

@@ -23,10 +23,13 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, 
 export default async () => {
   const token = process.env.BACKUP_GH_TOKEN
   const repo = process.env.BACKUP_GH_REPO
-  const branch = process.env.BACKUP_GH_BRANCH || 'main'
   if (!token || !repo) return json({ ok: false, skipped: true, reason: 'Set BACKUP_GH_TOKEN and BACKUP_GH_REPO env vars to enable settings backups.' })
   const auth = () => ({ Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'content-type': 'application/json', 'User-Agent': 'caalano360-backup' })
   try {
+    // Target branch: BACKUP_GH_BRANCH if set, else the repo's actual default
+    // branch (this repo's default is the working branch, not "main").
+    let branch = process.env.BACKUP_GH_BRANCH
+    if (!branch) { const rr = await fetch(`${GH}/repos/${repo}`, { headers: auth() }); branch = rr.ok ? (await rr.json()).default_branch : 'main' }
     const data = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).catch(() => null)
     const body = JSON.stringify(data || {}, null, 2)
     const content = Buffer.from(body, 'utf8').toString('base64')

@@ -3230,7 +3230,7 @@ function FormsCharts({ forms }) {
     <div className="forms-charts">
       <div className="card chart-card"><h3>Lead share by form</h3>
         <ResponsiveContainer width="100%" height={230}>
-          <PieChart><Pie data={pie} dataKey="value" nameKey="name" cx="34%" innerRadius={46} outerRadius={82} paddingAngle={2}>{pie.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip formatter={(v) => fmtNumber(v) + ' leads'} /><Legend layout="vertical" align="right" verticalAlign="middle" iconType="circle" wrapperStyle={{ fontSize: 11, lineHeight: '16px' }} /></PieChart>
+          <PieChart><Pie data={pie} dataKey="value" nameKey="name" innerRadius={46} outerRadius={82} paddingAngle={2}>{pie.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip formatter={(v) => fmtNumber(v) + ' leads'} /></PieChart>
         </ResponsiveContainer>
       </div>
       <div className="card chart-card"><h3>Funnel by form</h3>
@@ -3278,7 +3278,7 @@ function FormsView({ clientId, currency, range, nonce }) {
   const sorted = [...rows].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; return (av - bv) * sort.dir })
   const tot = rows.reduce((a, f) => ({ leads: a.leads + f.leads, booked: a.booked + f.booked, shown: a.shown + f.shown, won: a.won + f.won, revenue: a.revenue + f.revenue }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
-  const Th = ({ k, children, l }) => <th className={l ? '' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
+  const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
     <>
       <div className="scorecard">
@@ -3302,7 +3302,7 @@ function FormsView({ clientId, currency, range, nonce }) {
             <tbody key={f.form}>
               <tr onClick={() => toggle(f.form)} style={{ cursor: 'pointer' }} className={isOpen ? 'row-sel' : ''}>
                 <td className="num" style={{ color: 'var(--faint)' }}>{isOpen ? '▾' : '▸'}</td>
-                <td title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}{pipeName ? <span className="form-pipe-chip">{pipeName}</span> : null}{fm.notes ? <span className="form-note-chip" title={fm.notes}>📝</span> : null}</td>
+                <td className="lft" title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}{pipeName ? <span className="form-pipe-chip">{pipeName}</span> : null}{fm.notes ? <span className="form-note-chip" title={fm.notes}>📝</span> : null}</td>
                 <td className="num">{fmtNumber(f.leads)}</td>
                 <td className="num">{fmtNumber(f.booked)}</td>
                 <td className="num">{f.bookRate != null ? fmtPct(f.bookRate, 0) : '-'}</td>

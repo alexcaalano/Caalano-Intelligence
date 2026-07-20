@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.35.0'
+const APP_VERSION = '3.36.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4693,11 +4693,13 @@ function HealthStrip({ c }) {
   )
 }
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
-function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
+function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEnabled, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState(null) // client being configured (modal)
   const [adding, setAdding] = useState(false)   // add/edit-client explorer modal (true = new, client = edit)
+  const [section, setSection] = useState('clients')
+  const isAdmin = authEnabled && authUser && authUser.role === 'admin'
   const names = useDiscoverNames()
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
@@ -4713,6 +4715,22 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
   }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   return (
     <div className="settings-page">
+      {authEnabled && (
+        <div className="set-sections">
+          <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>
+          {isAdmin && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
+          <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>
+        </div>
+      )}
+      {authEnabled && section === 'team' && isAdmin && <UsersAdmin authUser={authUser} authEnabled={authEnabled} />}
+      {authEnabled && section === 'account' && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Your account</h3>
+          <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${authUser.role === 'admin' ? 'Admin' : 'Viewer'}` : ''}. Change your password below.</p>
+          <ChangePasswordCard />
+        </div>
+      )}
+      {(!authEnabled || section === 'clients') && (<>
       <div className="set-stats">
         <div className="set-stat"><div className="v">{config.clients.length}</div><div className="l">Clients</div></div>
         <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>
@@ -4751,6 +4769,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
         })}
         {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
       </div>
+      </>)}
       {editing && <SettingsEditModal client={editing} names={names} currency={currency} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
       {adding && <AddClientModal existing={config.clients} editClient={typeof adding === 'object' ? adding : null} onClose={() => setAdding(false)} />}
     </div>
@@ -4921,8 +4940,221 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* ============ Auth ============ */
+function authApi(action, opts = {}) {
+  return fetch(`/.netlify/functions/auth?action=${action}`, { headers: { 'content-type': 'application/json' }, ...opts })
+    .then((r) => r.json().catch(() => ({ ok: false, error: 'server ' + r.status })))
+    .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
+}
+function AuthShell({ children }) {
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div></div>
+        {children}
+      </div>
+    </div>
+  )
+}
+function LoginForm({ onSignedIn }) {
+  const [email, setEmail] = useState('')
+  const [pw, setPw] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const submit = async (e) => {
+    e.preventDefault(); setBusy(true); setErr('')
+    const r = await authApi('login', { method: 'POST', body: JSON.stringify({ email, password: pw }) })
+    setBusy(false)
+    if (r.ok) onSignedIn(r.user); else setErr(r.error || 'Sign-in failed.')
+  }
+  return (
+    <AuthShell>
+      <form onSubmit={submit} className="auth-form">
+        <h2>Sign in</h2>
+        <label>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus autoComplete="username" required /></label>
+        <label>Password<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" required /></label>
+        {err && <div className="auth-err">{err}</div>}
+        <button className="auth-btn" disabled={busy || !email || !pw}>{busy ? 'Signing in…' : 'Sign in'}</button>
+      </form>
+    </AuthShell>
+  )
+}
+function SetupAdmin({ onSignedIn }) {
+  const [f, setF] = useState({ name: '', email: '', pw: '', pw2: '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+  const submit = async (e) => {
+    e.preventDefault(); setErr('')
+    if (f.pw !== f.pw2) return setErr('Passwords don’t match.')
+    if (f.pw.length < 8) return setErr('Password must be at least 8 characters.')
+    setBusy(true)
+    const r = await authApi('bootstrap', { method: 'POST', body: JSON.stringify({ name: f.name, email: f.email, password: f.pw }) })
+    setBusy(false)
+    if (r.ok) onSignedIn(r.user); else setErr(r.error || 'Setup failed.')
+  }
+  return (
+    <AuthShell>
+      <form onSubmit={submit} className="auth-form">
+        <h2>Create your admin account</h2>
+        <p className="auth-sub">This is the first account for Caalano360. You’ll invite the rest of your team once you’re in.</p>
+        <label>Your name<input value={f.name} onChange={set('name')} autoFocus required /></label>
+        <label>Email<input type="email" value={f.email} onChange={set('email')} autoComplete="username" required /></label>
+        <label>Password<input type="password" value={f.pw} onChange={set('pw')} autoComplete="new-password" required /></label>
+        <label>Confirm password<input type="password" value={f.pw2} onChange={set('pw2')} autoComplete="new-password" required /></label>
+        {err && <div className="auth-err">{err}</div>}
+        <button className="auth-btn" disabled={busy}>{busy ? 'Creating…' : 'Create admin account'}</button>
+      </form>
+    </AuthShell>
+  )
+}
+function AcceptInvite({ token, onSignedIn }) {
+  const [info, setInfo] = useState({ status: 'loading' })
+  const [f, setF] = useState({ name: '', pw: '', pw2: '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    authApi('invite-info&token=' + encodeURIComponent(token)).then((r) => {
+      if (r && r.valid) { setInfo({ status: 'ok', ...r }); setF((s) => ({ ...s, name: r.name || '' })) }
+      else setInfo({ status: 'bad', expired: r && r.expired })
+    })
+  }, [token])
+  const submit = async (e) => {
+    e.preventDefault(); setErr('')
+    if (f.pw !== f.pw2) return setErr('Passwords don’t match.')
+    if (f.pw.length < 8) return setErr('Password must be at least 8 characters.')
+    setBusy(true)
+    const r = await authApi('accept', { method: 'POST', body: JSON.stringify({ token, password: f.pw, name: f.name }) })
+    setBusy(false)
+    if (r.ok) onSignedIn(r.user); else setErr(r.error || 'Could not accept the invite.')
+  }
+  if (info.status === 'loading') return <AuthShell><div className="auth-form"><Spinner label="Checking your invite…" /></div></AuthShell>
+  if (info.status === 'bad') return (
+    <AuthShell><div className="auth-form">
+      <h2>Invite unavailable</h2>
+      <p className="auth-sub">{info.expired ? 'This invite has expired. Ask an admin to send you a fresh one.' : 'This invite link is invalid or has already been used.'}</p>
+      <a className="auth-btn" href="/" style={{ textAlign: 'center', textDecoration: 'none' }}>Go to sign in</a>
+    </div></AuthShell>
+  )
+  return (
+    <AuthShell>
+      <form onSubmit={submit} className="auth-form">
+        <h2>Set your password</h2>
+        <p className="auth-sub">You’ve been invited to Caalano360 as <b>{info.email}</b> ({info.role === 'admin' ? 'Admin' : 'Viewer'}). Pick a password to finish.</p>
+        <label>Your name<input value={f.name} onChange={(e) => setF((s) => ({ ...s, name: e.target.value }))} autoFocus required /></label>
+        <label>Password<input type="password" value={f.pw} onChange={(e) => setF((s) => ({ ...s, pw: e.target.value }))} autoComplete="new-password" required /></label>
+        <label>Confirm password<input type="password" value={f.pw2} onChange={(e) => setF((s) => ({ ...s, pw2: e.target.value }))} autoComplete="new-password" required /></label>
+        {err && <div className="auth-err">{err}</div>}
+        <button className="auth-btn" disabled={busy}>{busy ? 'Saving…' : 'Set password & sign in'}</button>
+      </form>
+    </AuthShell>
+  )
+}
+// Team & access manager, shown inside Settings for admins.
+function UsersAdmin({ authUser, authEnabled }) {
+  const [state, setState] = useState({ status: 'loading', users: [] })
+  const [inv, setInv] = useState({ name: '', email: '', role: 'viewer' })
+  const [invBusy, setInvBusy] = useState(false)
+  const [invErr, setInvErr] = useState('')
+  const [link, setLink] = useState(null) // { email, url }
+  const [copied, setCopied] = useState('')
+  const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
+  useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
+  const copy = (text, key) => { navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(''), 1600) }).catch(() => {}) }
+  const invite = async (e) => {
+    e.preventDefault(); setInvErr(''); setLink(null)
+    if (!inv.email) return
+    setInvBusy(true)
+    const r = await authApi('invite', { method: 'POST', body: JSON.stringify(inv) })
+    setInvBusy(false)
+    if (r.ok) { setLink({ email: inv.email, url: r.inviteUrl }); setInv({ name: '', email: '', role: 'viewer' }); load() }
+    else setInvErr(r.error || 'Could not create the invite.')
+  }
+  const resend = async (u) => {
+    const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: u.email, name: u.name, role: u.role }) })
+    if (r.ok) { setLink({ email: u.email, url: r.inviteUrl }); load() }
+  }
+  const changeRole = async (u, role) => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, role }) }); load() }
+  const toggleStatus = async (u) => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, status: u.status === 'disabled' ? 'active' : 'disabled' }) }); load() }
+  const remove = async (u) => { if (!window.confirm(`Remove ${u.name || u.email}? They’ll lose access immediately.`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
+
+  if (state.status === 'off') return (
+    <div className="card set-users-off">
+      <h3 style={{ marginTop: 0 }}>Team &amp; access</h3>
+      <p>The multi-user login system is <b>not enabled yet</b>. The site is currently protected by the single shared password.</p>
+      <p>To switch on individual accounts, add an <code>AUTH_SECRET</code> environment variable in Netlify (any long random string — this signs everyone’s login sessions). Once it’s set and redeployed, reload this page and you’ll be asked to create the first admin account, then you can invite your team here.</p>
+      <p className="cap">Tip: keep the old <code>SITE_PASSWORD</code> set during the switch — it keeps working as a fallback so you can’t get locked out. Remove it once everyone has their own login.</p>
+    </div>
+  )
+  const badge = (u) => u.status === 'invited' ? <span className="u-badge inv">Invited</span> : u.status === 'disabled' ? <span className="u-badge dis">Disabled</span> : <span className="u-badge act">Active</span>
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>Team &amp; access</h3>
+      <p className="cap" style={{ marginTop: -4 }}>Invite teammates and control who can see and manage Caalano360. <b>Admins</b> manage users and everything else; <b>Viewers</b> see all dashboards but can’t change users or settings.</p>
+
+      <form className="u-invite" onSubmit={invite}>
+        <input placeholder="Name (optional)" value={inv.name} onChange={(e) => setInv((s) => ({ ...s, name: e.target.value }))} />
+        <input type="email" placeholder="their@email.com" value={inv.email} onChange={(e) => setInv((s) => ({ ...s, email: e.target.value }))} required />
+        <select value={inv.role} onChange={(e) => setInv((s) => ({ ...s, role: e.target.value }))}><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
+        <button className="btn-primary" disabled={invBusy || !inv.email}>{invBusy ? 'Inviting…' : 'Create invite'}</button>
+      </form>
+      {invErr && <div className="auth-err" style={{ marginTop: 8 }}>{invErr}</div>}
+      {link && (
+        <div className="u-link">
+          <div><b>Invite link for {link.email}</b> — send it to them; it works once and expires in 7 days.</div>
+          <div className="u-link-row"><code>{link.url}</code><button className="btn-ghost" onClick={() => copy(link.url, 'new')}>{copied === 'new' ? 'Copied ✓' : 'Copy link'}</button></div>
+        </div>
+      )}
+
+      <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
+        <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Status</th><th className="lft">Last sign-in</th><th className="lft">Actions</th></tr></thead>
+        <tbody>{state.status === 'loading' ? <tr><td colSpan={6}><Spinner label="Loading team…" /></td></tr> : state.users.map((u) => {
+          const self = u.email === (authUser && authUser.email)
+          return (
+            <tr key={u.email}>
+              <td className="lft">{u.name || <span className="cap">—</span>}{self && <span className="u-you">you</span>}</td>
+              <td className="lft">{u.email}</td>
+              <td className="lft"><select className="u-role" value={u.role} disabled={self} onChange={(e) => changeRole(u, e.target.value)}><option value="viewer">Viewer</option><option value="admin">Admin</option></select></td>
+              <td className="lft">{badge(u)}</td>
+              <td className="lft">{u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : <span className="cap">never</span>}</td>
+              <td className="lft"><div className="u-actions">
+                {u.status === 'invited' && <button className="btn-ghost sm" onClick={() => resend(u)}>Copy invite</button>}
+                {!self && u.status !== 'invited' && <button className="btn-ghost sm" onClick={() => toggleStatus(u)}>{u.status === 'disabled' ? 'Enable' : 'Disable'}</button>}
+                {!self && <button className="btn-ghost sm danger" onClick={() => remove(u)}>Remove</button>}
+              </div></td>
+            </tr>
+          )
+        })}</tbody>
+      </table></div>
+    </div>
+  )
+}
+function ChangePasswordCard() {
+  const [f, setF] = useState({ current: '', next: '', next2: '' })
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const submit = async (e) => {
+    e.preventDefault(); setMsg(null)
+    if (f.next !== f.next2) return setMsg({ ok: false, t: 'New passwords don’t match.' })
+    setBusy(true)
+    const r = await authApi('change-password', { method: 'POST', body: JSON.stringify({ current: f.current, next: f.next }) })
+    setBusy(false)
+    if (r.ok) { setMsg({ ok: true, t: 'Password updated.' }); setF({ current: '', next: '', next2: '' }) }
+    else setMsg({ ok: false, t: r.error || 'Could not update password.' })
+  }
+  return (
+    <form className="u-invite" onSubmit={submit} style={{ marginTop: 4 }}>
+      <input type="password" placeholder="Current password" value={f.current} onChange={(e) => setF((s) => ({ ...s, current: e.target.value }))} autoComplete="current-password" required />
+      <input type="password" placeholder="New password" value={f.next} onChange={(e) => setF((s) => ({ ...s, next: e.target.value }))} autoComplete="new-password" required />
+      <input type="password" placeholder="Confirm new" value={f.next2} onChange={(e) => setF((s) => ({ ...s, next2: e.target.value }))} autoComplete="new-password" required />
+      <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Change password'}</button>
+      {msg && <span className={msg.ok ? 'u-ok' : 'auth-err'} style={{ alignSelf: 'center' }}>{msg.t}</span>}
+    </form>
+  )
+}
+
 /* ============ Shell ============ */
-export default function App() {
+function Dashboard({ authUser, authEnabled, onLogout }) {
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
   const [err, setErr] = useState(null)
@@ -4989,6 +5221,7 @@ export default function App() {
         <div style={{ marginTop: 'auto' }}>
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
+          {authUser && <div className="side-user"><div className="side-user-who"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{authUser.role === 'admin' ? 'Admin' : 'Viewer'}</span></div></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           <div className="foot-note">Live data via the Meta and Google API - Meta, Google, Caalano Systems.</div>
           <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}><b>v{APP_VERSION}</b> · deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
         </div>
@@ -5013,10 +5246,35 @@ export default function App() {
           {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
-          {view === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
+          {view === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
         </ErrorBoundary>
       </main>
     </div>
   )
+}
+
+// Auth gate. Decides between the login/setup/accept screens and the dashboard.
+// When the login system is disabled (AUTH_SECRET unset) it renders the dashboard
+// straight through, preserving the app's previous single-password behaviour.
+export default function App() {
+  const [auth, setAuth] = useState({ status: 'loading' })
+  const inviteToken = (() => { try { return new URLSearchParams(window.location.search).get('invite') } catch { return null } })()
+  const check = () => authApi('me').then((r) => {
+    if (!r || r.ok === false && r.enabled === false) setAuth({ status: 'ready', enabled: false, user: null })
+    else if (r.enabled === false) setAuth({ status: 'ready', enabled: false, user: null })
+    else setAuth({ status: 'ready', enabled: true, user: r.user || null, needsSetup: !!r.needsSetup })
+  }).catch(() => setAuth({ status: 'ready', enabled: false, user: null }))
+  useEffect(() => { check() }, [])
+  const clearInvite = () => { try { window.history.replaceState({}, '', window.location.pathname) } catch {} }
+  const onSignedIn = (user) => { clearInvite(); setAuth({ status: 'ready', enabled: true, user, needsSetup: false }) }
+  const onLogout = () => { authApi('logout', { method: 'POST' }).finally(() => setAuth({ status: 'ready', enabled: true, user: null, needsSetup: false })) }
+
+  if (auth.status === 'loading') return <div className="auth-screen"><div className="auth-card"><Spinner label="Loading…" /></div></div>
+  // Accept-invite deep link takes priority (a signed-out invitee, or a new
+  // person on a shared machine, should always land on the invite flow).
+  if (auth.enabled && inviteToken && !auth.user) return <AcceptInvite token={inviteToken} onSignedIn={onSignedIn} />
+  if (auth.enabled && auth.needsSetup) return <SetupAdmin onSignedIn={onSignedIn} />
+  if (auth.enabled && !auth.user) return <LoginForm onSignedIn={onSignedIn} />
+  return <Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} />
 }

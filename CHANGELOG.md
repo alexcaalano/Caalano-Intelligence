@@ -17,6 +17,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.36.0 — 2026-07-20 · `PENDING`
+- **Proper login screen + multi-user accounts (replaces the shared password).**
+  A real email + password sign-in, individual accounts, and team invites — with
+  a zero-lockout rollout.
+  - **Login / setup / invite screens.** A branded sign-in page (no more browser
+    popup); on first run it asks you to create the first **admin** account; an
+    **accept-invite** page (opened via a link) lets invitees set their own
+    password. Sessions are signed, httpOnly cookies (14-day), so nobody's
+    password is ever stored in the clear (PBKDF2-hashed).
+  - **Settings → Team & access** (admins). Invite teammates as **Admin** (full
+    control) or **Viewer** (sees dashboards, can't manage users/settings),
+    change roles, disable or remove people, and **copy a one-time invite link**
+    to send however you like. Invites expire in 7 days. **Settings → Your
+    account** lets anyone change their own password.
+  - **Invites work with no email setup** — you copy the secure link and send it.
+    (Auto-emailing the link can be layered on later without changing the flow.)
+  - **Safe, opt-in rollout.** The whole system stays dormant until an
+    `AUTH_SECRET` environment variable is set in Netlify; until then the site
+    behaves exactly as before. Once enabled, the old shared `SITE_PASSWORD`
+    keeps working as a break-glass fallback so you can't lock yourself out —
+    remove it once everyone has their own login. The edge gate now also keeps
+    the baked client data (`/data`) private to signed-in users.
+
 ## v3.35.0 — 2026-07-20 · `PENDING`
 - **New Users tab (replaces the client's CRM sub-tab).** A full sales-rep
   performance interface for each account, grouping every opportunity by its

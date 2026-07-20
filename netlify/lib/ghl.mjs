@@ -862,6 +862,115 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   }
 }
 
+// --- Appointment insights (timing + who booked) ----------------------------
+// Per-booking analysis for the Appointments tab: booking lead time (booked ->
+// appointment date), who booked it (self vs staff), and the downstream show /
+// win outcome, split by paid channel. A booking is one (contact x calendar)
+// booked in-period; show rate is over bookings whose appointment has ALREADY
+// happened (future-dated ones can't have shown yet), so far-out bookings aren't
+// unfairly penalised. "Self-booked" = the calendar event carries no user id (the
+// contact booked it themselves); "staff-booked" = a user created it.
+const LEADTIME_BUCKETS = [
+  { key: 'same', label: 'Same day', max: 1 },
+  { key: 'd1_3', label: '1-3 days', max: 4 },
+  { key: 'd4_7', label: '4-7 days', max: 8 },
+  { key: 'd8_14', label: '8-14 days', max: 15 },
+  { key: 'd15_30', label: '15-30 days', max: 31 },
+  { key: 'd30', label: '30+ days', max: Infinity },
+]
+function apptBookedBy(ev) {
+  const cb = ev.createdBy || {}
+  const uid = cb.userId || cb.user_id || ev.userId || null
+  return uid ? 'staff' : 'self'
+}
+export async function buildAppointmentInsights(locationId, from, to, opts = {}) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const DAY = 86400000
+  const now = Date.now()
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const wideFrom = new Date((fromMs != null ? fromMs : now) - 180 * DAY).toISOString().slice(0, 10)
+  const [oppRows, calRes] = await Promise.all([
+    allOpportunities(locTok, locationId, wideFrom, to, 1800),
+    ghlGet(locTok, '/calendars/', { locationId }).then((j) => j.calendars || j.calendar || []).catch(() => []),
+  ])
+  const oppByContact = new Map()
+  for (const o of oppRows) { const cid = contactIdOf(o); if (cid && !oppByContact.has(cid)) oppByContact.set(cid, o) }
+  const startMs = (fromMs != null ? fromMs : now - 400 * DAY) - 7 * DAY
+  const endMs = (toMs != null ? toMs : now) + 365 * DAY
+  const recs = new Map() // contact|cal -> primary booking record
+  const srcCounts = {}
+  const debugRows = []
+  await Promise.all(calRes.map(async (cal) => {
+    const calId = cal.id || cal._id || cal.calendarId; if (!calId) return
+    let j; try { j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs }) } catch { return }
+    for (const ev of (j.events || [])) {
+      const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
+      if (!cid) continue
+      const added = Date.parse(ev.dateAdded), start = Date.parse(ev.startTime)
+      if (!isFinite(added) || !isFinite(start)) continue
+      if (fromMs != null && added < fromMs) continue
+      if (toMs != null && added > toMs) continue // booked in-period (by creation day)
+      const st = String(ev.appointmentStatus || ev.appoinmentStatus || ev.status || '').toLowerCase()
+      if (/invalid/.test(st)) continue
+      const cancelled = /cancel/.test(st)
+      const bookedBy = apptBookedBy(ev)
+      const cb = ev.createdBy || {}
+      const sk = `${String(cb.source || ev.source || 'unknown').toLowerCase()} · ${bookedBy}`
+      srcCounts[sk] = (srcCounts[sk] || 0) + 1
+      const lead = Math.max(0, (start - added) / DAY)
+      const key = cid + '|' + calId
+      const cur = recs.get(key)
+      // Prefer a live (non-cancelled) booking; otherwise keep the latest-added one.
+      if (!cur || (cur.cancelled && !cancelled) || (cur.cancelled === cancelled && added > cur.added)) {
+        recs.set(key, { cid, added, start, lead, cancelled, shown: st === 'showed', bookedBy })
+      }
+    }
+  }))
+  const CH = () => ({ booked: 0, occurred: 0, shown: 0, won: 0, cancelled: 0, self: 0, staff: 0, leadSum: 0, leads: [], buckets: LEADTIME_BUCKETS.map((b) => ({ key: b.key, label: b.label, booked: 0, occurred: 0, shown: 0, won: 0 })), byBookedBy: { self: { booked: 0, occurred: 0, shown: 0, won: 0, leadSum: 0 }, staff: { booked: 0, occurred: 0, shown: 0, won: 0, leadSum: 0 } } })
+  const chans = { all: CH(), meta: CH(), google: CH(), other: CH() }
+  for (const r of recs.values()) {
+    const o = oppByContact.get(r.cid)
+    const ch = o ? channelOf(utmOf(o)) : 'other'
+    const won = !!(o && String(o.status || '').toLowerCase() === 'won')
+    const occurred = r.start <= now
+    const bk = LEADTIME_BUCKETS.findIndex((b) => r.lead < b.max)
+    const apply = (C) => {
+      C.booked++; C.leadSum += r.lead; C.leads.push(r.lead)
+      if (r.bookedBy === 'self') C.self++; else C.staff++
+      if (r.cancelled) C.cancelled++
+      if (occurred) { C.occurred++; if (r.shown) C.shown++ }
+      if (won) C.won++
+      const b = C.buckets[bk]; if (b) { b.booked++; if (occurred) { b.occurred++; if (r.shown) b.shown++ } if (won) b.won++ }
+      const bb = C.byBookedBy[r.bookedBy]; bb.booked++; bb.leadSum += r.lead; if (occurred) { bb.occurred++; if (r.shown) bb.shown++ } if (won) bb.won++
+    }
+    apply(chans.all); apply(chans[ch] || chans.other)
+    if (opts.debug && debugRows.length < 25) debugRows.push({ leadDays: Math.round(r.lead), bookedBy: r.bookedBy, occurred, shown: r.shown, cancelled: r.cancelled, won, channel: ch })
+  }
+  const finalize = (C) => {
+    const leads = C.leads.slice().sort((a, b) => a - b)
+    const median = leads.length ? leads[Math.floor((leads.length - 1) / 2)] : null
+    const bb = (x) => ({ booked: x.booked, occurred: x.occurred, shown: x.shown, won: x.won, showRate: x.occurred ? Math.round((x.shown / x.occurred) * 100) : null, winRate: x.booked ? Math.round((x.won / x.booked) * 100) : null, avgLeadDays: x.booked ? Math.round(x.leadSum / x.booked) : null })
+    return {
+      booked: C.booked, occurred: C.occurred, shown: C.shown, won: C.won, cancelled: C.cancelled,
+      self: C.self, staff: C.staff, selfPct: C.booked ? Math.round((C.self / C.booked) * 100) : null,
+      avgLeadDays: C.booked ? Math.round(C.leadSum / C.booked) : null,
+      medianLeadDays: median == null ? null : Math.round(median),
+      showRate: C.occurred ? Math.round((C.shown / C.occurred) * 100) : null,
+      winRate: C.booked ? Math.round((C.won / C.booked) * 100) : null,
+      buckets: C.buckets.map((b) => ({ label: b.label, booked: b.booked, occurred: b.occurred, shown: b.shown, won: b.won, showRate: b.occurred ? Math.round((b.shown / b.occurred) * 100) : null, winRate: b.booked ? Math.round((b.won / b.booked) * 100) : null })),
+      byBookedBy: { self: bb(C.byBookedBy.self), staff: bb(C.byBookedBy.staff) },
+    }
+  }
+  return {
+    connected: true, tz,
+    channels: { all: finalize(chans.all), meta: finalize(chans.meta), google: finalize(chans.google), other: finalize(chans.other) },
+    bookedBySources: Object.entries(srcCounts).map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count),
+    ...(opts.debug ? { debug: debugRows } : {}),
+  }
+}
+
 export async function buildAttribution(locationId, from, to, opts = {}) {
   // Lite mode (agency overview rows): a shorter opportunity lookback + smaller
   // cap and no lost-reason fetch, so the ~13 rows each stay well under the

@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.24.0 — 2026-07-20 · `PENDING`
+- **New Appointments tab** (CRM-connected clients) — booking timing & outcomes:
+  - **Booking lead time**: how far in advance calls are booked (same-day → 30+
+    days), as a bar chart with **show-rate and win-rate lines overlaid**, plus a
+    full table — so you can see whether far-out bookings show/convert worse.
+  - **Self-booked vs staff-booked**: derived from the appointments API (staff =
+    the event carries a user id; self = the contact booked it), compared on
+    volume, avg lead time, show rate and win rate.
+  - **Channel split** — All / Meta / Google toggle across everything.
+  - Show rate is computed only over appointments that have already happened, so
+    future-dated bookings don't unfairly drag it down.
+  - A "how self vs staff is decided" validation panel lists the booking sources
+    seen, so the classification can be sanity-checked per client.
+
 ## v3.23.0 — 2026-07-20 · `PENDING`
 - **Settings → Forms tab redesigned** to match the rest of Settings: each form is
   a clean row with a reviewed tick, an inline pipeline dropdown and a notes

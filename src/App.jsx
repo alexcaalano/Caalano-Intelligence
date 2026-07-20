@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.23.0'
+const APP_VERSION = '3.24.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3427,6 +3427,104 @@ function FormsView({ clientId, currency, range, nonce }) {
   )
 }
 
+/* ============ Appointments (timing + who booked) ============ */
+function fmtDays(n) { if (n == null) return '-'; if (n === 0) return 'Same day'; return `${n} day${n === 1 ? '' : 's'}` }
+const APPT_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google']]
+function AppointmentsView({ clientId, range, nonce }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [chan, setChan] = useState('all')
+  const [showDbg, setShowDbg] = useState(false)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
+    fetch(`/.netlify/functions/windsor?scope=appts&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
+      .finally(() => clearTimeout(timer))
+    return () => { alive = false; ctl.abort() }
+  }, [clientId, rangeQuery(range), nonce])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Analysing appointments (booking timing & outcomes)…" /></div>
+  const dd = st.data || {}
+  if (st.status === 'err' || dd.connected === false) return <div className="card empty-deep"><div className="big">📅</div><b>Couldn't load appointments.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{dd.error || 'Caalano Systems not connected.'}</p></div>
+  const toggle = <div className="chan-toggle">{APPT_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
+  const C = (dd.channels && dd.channels[chan]) || null
+  if (!C || !C.booked) return (<div className="timing-view"><div className="appt-head">{toggle}</div><div className="card empty-deep"><div className="big">📅</div><b>No appointments booked in this range{chan !== 'all' ? ' for this channel' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Appointments are counted on the day they were booked. Widen the range or switch channel.</p></div></div>)
+  const maxB = Math.max(1, ...C.buckets.map((b) => b.booked))
+  const bd = C.byBookedBy
+  return (
+    <div className="timing-view">
+      <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments — booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show &amp; win rates. Bookings counted on the day they were booked; show rate is over appointments that have already happened.</p></div>{toggle}</div>
+      <div className="timing-scards">
+        <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">{C.cancelled ? `${C.cancelled} later cancelled` : 'appointments'}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Avg booked ahead</span><b>{fmtDays(C.avgLeadDays)}</b><span className="tm-sub">median {fmtDays(C.medianLeadDays)}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">of {C.occurred} occurred</span></div>
+        <div className="tm-sc"><span className="tm-lab">Win rate</span><b>{C.winRate == null ? '-' : `${C.winRate}%`}</b><span className="tm-sub">won ÷ booked</span></div>
+        <div className="tm-sc"><span className="tm-lab">Self-booked</span><b>{C.selfPct == null ? '-' : `${C.selfPct}%`}</b><span className="tm-sub">{C.self} self · {C.staff} staff</span></div>
+      </div>
+
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Booking lead time — volume &amp; downstream rates</div>
+        <ResponsiveContainer width="100%" height={280}>
+          <ComposedChart data={C.buckets} margin={{ left: -8, right: 8, top: 8 }}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="label" fontSize={11} stroke="var(--muted)" />
+            <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+            <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} domain={[0, 100]} />
+            <Tooltip formatter={(v, n) => [/(Show|Win)/.test(n) ? `${v}%` : fmtNumber(v), n]} />
+            <Legend />
+            <Bar yAxisId="l" dataKey="booked" name="Booked" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={40} />
+            <Line yAxisId="r" dataKey="showRate" name="Show %" stroke="#12b886" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+            <Line yAxisId="r" dataKey="winRate" name="Win %" stroke="#f5a524" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+          </ComposedChart>
+        </ResponsiveContainer>
+        <div className="table-wrap" style={{ marginTop: 10 }}><table className="mini-tbl appt-tbl">
+          <thead><tr><th className="lft">Booked ahead</th><th>Booked</th><th>Occurred</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th></tr></thead>
+          <tbody>{C.buckets.map((b) => (
+            <tr key={b.label}>
+              <td className="lft">{b.label}</td>
+              <td>{fmtNumber(b.booked)}</td>
+              <td>{fmtNumber(b.occurred)}</td>
+              <td>{fmtNumber(b.shown)}</td>
+              <td>{b.showRate == null ? '-' : `${b.showRate}%`}</td>
+              <td>{fmtNumber(b.won)}</td>
+              <td>{b.winRate == null ? '-' : `${b.winRate}%`}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <p className="caveat" style={{ marginTop: 10 }}>Show rate is calculated only over appointments that have already happened, so far-out bookings that haven't occurred yet don't drag it down. Win = the booked contact's opportunity is won (per booking).</p>
+      </div>
+
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Self-booked vs staff-booked</div>
+        <div className="table-wrap"><table className="mini-tbl appt-tbl">
+          <thead><tr><th className="lft">Booked by</th><th>Booked</th><th>Avg ahead</th><th>Occurred</th><th>Show %</th><th>Win %</th></tr></thead>
+          <tbody>
+            {[['self', 'Self-booked (contact)'], ['staff', 'Staff-booked (user)']].map(([k, lbl]) => { const x = bd[k]; return (
+              <tr key={k}>
+                <td className="lft">{lbl}</td>
+                <td>{fmtNumber(x.booked)}</td>
+                <td>{fmtDays(x.avgLeadDays)}</td>
+                <td>{fmtNumber(x.occurred)}</td>
+                <td>{x.showRate == null ? '-' : `${x.showRate}%`}</td>
+                <td>{x.winRate == null ? '-' : `${x.winRate}%`}</td>
+              </tr>
+            ) })}
+          </tbody>
+        </table></div>
+        <p className="caveat" style={{ marginTop: 10 }}>Self-booked = the lead booked the call themselves (no staff user on the calendar event); staff-booked = a team member set it. Comparing show/win rates tells you whether pushing self-booking links helps or hurts.</p>
+      </div>
+
+      <div className="card">
+        <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How self vs staff is decided ({(dd.bookedBySources || []).length} booking sources)</button>
+        {showDbg && <>
+          <p className="cap" style={{ marginTop: 8 }}>A booking is <b>staff-booked</b> when the calendar event carries a user id, else <b>self-booked</b>. Below are the event sources seen — use this to confirm the split looks right for this client.</p>
+          <div className="table-wrap"><table className="mini-tbl"><thead><tr><th>Event source · classification</th><th>Count</th></tr></thead><tbody>{(dd.bookedBySources || []).map((s) => <tr key={s.source}><td>{s.source}</td><td>{s.count}</td></tr>)}{!(dd.bookedBySources || []).length && <tr><td colSpan={2} className="cap">No booking sources in the sample.</td></tr>}</tbody></table></div>
+        </>}
+      </div>
+    </div>
+  )
+}
 /* ============ Timing (Speed to Lead) ============ */
 function fmtDuration(min) {
   if (min == null) return '-'
@@ -3545,6 +3643,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
   if (cfg.google || client.google) tabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
   if (cfg.ghl) tabs.push({ id: 'forms', label: 'Forms' })
+  if (cfg.ghl) tabs.push({ id: 'appts', label: 'Appointments' })
   if (cfg.ghl) tabs.push({ id: 'timing', label: 'Timing' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
@@ -3577,6 +3676,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
         {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {tab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
+        {tab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {tab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} />}
       </div>
     </>

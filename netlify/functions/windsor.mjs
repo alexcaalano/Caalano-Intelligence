@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, buildAppointmentInsights, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -838,6 +838,17 @@ export default async (req) => {
     const dbg = url.searchParams.get('debug') === '1'
     try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample, debug: dbg })) }, 200, !dbg) }
     catch (e) { return json({ scope: 'speed', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
+  // Appointment insights: booking lead time, self vs staff booked, downstream
+  // show / win outcomes, split by channel.
+  if (url.searchParams.get('scope') === 'appts') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'appts', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'appts', client, connected: false })
+    const dbg = url.searchParams.get('debug') === '1'
+    try { return json({ scope: 'appts', client, period: { from, to, preset }, ...(await buildAppointmentInsights(cc.ghl, from, to, { debug: dbg })) }, 200, !dbg) }
+    catch (e) { return json({ scope: 'appts', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
   // Read-only probe of a client's forms / submissions / custom fields, to see

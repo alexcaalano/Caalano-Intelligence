@@ -365,6 +365,10 @@ tbody tr:hover { background: var(--panel-2); }
 .tm-dbg td { vertical-align: top; }
 .tm-dbg td:last-child { text-align: left; white-space: normal; }
 .tm-dbg-msg { display: inline-block; margin: 0 10px 4px 0; font-size: 11px; color: var(--muted); }
+.appt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.appt-head h3 { font-size: 16px; }
+.appt-tbl th.lft, .appt-tbl td.lft { text-align: left; }
+.appt-tbl td, .appt-tbl th { white-space: nowrap; }
 /* Pipeline filter (Meta / Google) */
 .pipe-filter-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
 .pipe-filter { display: inline-flex; align-items: center; gap: 8px; }

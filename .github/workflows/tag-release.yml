@@ -1,0 +1,39 @@
+# Automatically create a git tag (restore point) whenever APP_VERSION changes.
+# This gives every release in CHANGELOG.md a real tag you can check out or revert
+# to, without having to push tags by hand.
+name: Tag release on version bump
+
+on:
+  push:
+    branches:
+      - claude/reporting-dashboard-multi-platform-ov1wlv
+      - main
+    paths:
+      - src/App.jsx
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read APP_VERSION
+        id: v
+        run: |
+          VER=$(grep -oE "APP_VERSION = '[0-9]+\.[0-9]+\.[0-9]+'" src/App.jsx | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+      - name: Create tag if it doesn't exist
+        if: steps.v.outputs.version != ''
+        run: |
+          TAG="v${{ steps.v.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — nothing to do."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created and pushed $TAG"
+          fi

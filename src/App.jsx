@@ -524,15 +524,21 @@ function SpendPop({ children, r, currency }) {
 // Results / Cost-per-result channel breakdown popup (cost + which channel up/down).
 function ResultsPop({ children, r, currency }) {
   const money = (v) => fmtCurrency(v, currency)
+  // Two deltas per channel: volume (more results = green) and cost per result
+  // (cheaper = green), so a falling CPL / cost-per-result reads as a win.
   const mCpl = r.metaLeads ? r.metaSpend / r.metaLeads : null
+  const pmCpl = r.prevMetaLeads ? r.prevMetaSpend / r.prevMetaLeads : null
   const gCpc = r.googleConv ? r.googleSpend / r.googleConv : null
+  const pgCpc = r.prevGoogleConv ? r.prevGoogleSpend / r.prevGoogleConv : null
+  const tCpr = r.conversions ? r.spend / r.conversions : null
+  const ptCpr = r.prevResults ? r.prevSpend / r.prevResults : null
   return (
     <HoverPop render={() => (
       <span className="hp-body">
-        <span className="hp-t">Results by channel · vs previous</span>
-        {r.hasMeta && <span className="hp-r"><span className="ov-pd meta">Meta</span><span className="hp-val">{fmtNumber(r.metaLeads)} leads{mCpl != null ? ` · ${money(mCpl)}/lead` : ''}<ChanDelta cur={r.metaLeads} prev={r.prevMetaLeads} /></span></span>}
-        {r.hasGoogle && <span className="hp-r"><span className="ov-pd google">Google</span><span className="hp-val">{fmtNumber(r.googleConv)} conv.{gCpc != null ? ` · ${money(gCpc)}/conv` : ''}<ChanDelta cur={r.googleConv} prev={r.prevGoogleConv} /></span></span>}
-        <span className="hp-r hp-tot"><span>Total</span><span className="hp-val">{fmtNumber(r.conversions)}{r.conversions ? ` · ${money(r.spend / r.conversions)}/result` : ''}<ChanDelta cur={r.conversions} prev={r.prevResults} /></span></span>
+        <span className="hp-t">Results by channel · vs previous · cheaper cost = green</span>
+        {r.hasMeta && <span className="hp-r"><span className="ov-pd meta">Meta</span><span className="hp-val">{fmtNumber(r.metaLeads)} leads<ChanDelta cur={r.metaLeads} prev={r.prevMetaLeads} />{mCpl != null ? <> · {money(mCpl)}/lead<ChanDelta cur={mCpl} prev={pmCpl} goodWhenDown /></> : null}</span></span>}
+        {r.hasGoogle && <span className="hp-r"><span className="ov-pd google">Google</span><span className="hp-val">{fmtNumber(r.googleConv)} conv.<ChanDelta cur={r.googleConv} prev={r.prevGoogleConv} />{gCpc != null ? <> · {money(gCpc)}/conv<ChanDelta cur={gCpc} prev={pgCpc} goodWhenDown /></> : null}</span></span>}
+        <span className="hp-r hp-tot"><span>Total</span><span className="hp-val">{fmtNumber(r.conversions)}<ChanDelta cur={r.conversions} prev={r.prevResults} />{tCpr != null ? <> · {money(tCpr)}/result<ChanDelta cur={tCpr} prev={ptCpr} goodWhenDown /></> : null}</span></span>
       </span>
     )}>{children}</HoverPop>
   )

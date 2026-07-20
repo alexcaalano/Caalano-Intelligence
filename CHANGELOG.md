@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.27.0 — 2026-07-20 · `PENDING`
+- **Appointments tab — more insights:** cancellation % and reschedule % (overall
+  and by lead-time bucket, to see if far-out bookings cancel more), a
+  **time-to-book** metric (lead in → booked), and a **"when the call is
+  scheduled"** card with show rate by **day of week** and by **time of day**.
+- **Settings** clients are now sorted **alphabetically** by default.
+
 ## v3.26.0 — 2026-07-20 · `PENDING`
 - **Appointments tab — big upgrade:**
   - **Pipeline selector** (per-pipeline booking analysis).

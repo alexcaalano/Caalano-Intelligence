@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.26.0'
+const APP_VERSION = '3.27.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3517,11 +3517,13 @@ function AppointmentsView({ clientId, range, nonce }) {
       <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments — booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show / win rates and time-to-close. Bookings are counted on the day they were booked{usedNames.length ? ` · based on: ${usedNames.slice(0, 4).join(', ')}${usedNames.length > 4 ? ` +${usedNames.length - 4}` : ''}` : ''}.</p></div>{selectors}</div>
       {calChips}
       <div className="timing-scards">
-        <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">{C.cancelled ? `${C.cancelled} later cancelled` : 'appointments'}</span></div>
+        <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">appointments</span></div>
+        <div className="tm-sc"><span className="tm-lab">Time to book</span><b>{fmtDays(C.avgTimeToBookDays)}</b><span className="tm-sub">lead in → booked</span></div>
         <div className="tm-sc"><span className="tm-lab">Avg booked ahead</span><b>{fmtDays(C.avgLeadDays)}</b><span className="tm-sub">median {fmtDays(C.medianLeadDays)}</span></div>
         <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">of {C.occurred} occurred</span></div>
         <div className="tm-sc"><span className="tm-lab">Win rate</span><b>{C.winRate == null ? '-' : `${C.winRate}%`}</b><span className="tm-sub">won ÷ booked</span></div>
         <div className="tm-sc"><span className="tm-lab">Avg time to close</span><b>{fmtDays(C.avgCloseDays)}</b><span className="tm-sub">booked → won</span></div>
+        <div className="tm-sc warn"><span className="tm-lab">Cancelled</span><b>{C.cancelRate == null ? '-' : `${C.cancelRate}%`}</b><span className="tm-sub">{C.cancelled} · resched {C.rescheduleRate == null ? '-' : `${C.rescheduleRate}%`}</span></div>
         <div className="tm-sc"><span className="tm-lab">Self-booked</span><b>{C.selfPct == null ? '-' : `${C.selfPct}%`}</b><span className="tm-sub">{C.self} self · {C.staff} staff</span></div>
       </div>
 
@@ -3541,21 +3543,56 @@ function AppointmentsView({ clientId, range, nonce }) {
           </ComposedChart>
         </ResponsiveContainer>
         <div className="table-wrap" style={{ marginTop: 10 }}><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Booked ahead</th><th>Booked</th><th>Occurred</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th><th>Time to close</th></tr></thead>
+          <thead><tr><th className="lft">Booked ahead</th><th>Booked</th><th>Occurred</th><th>Show %</th><th>Cancel %</th><th>Won</th><th>Win %</th><th>Time to close</th></tr></thead>
           <tbody>{C.buckets.map((b) => (
             <tr key={b.label}>
               <td className="lft">{b.label}</td>
               <td>{fmtNumber(b.booked)}</td>
               <td>{fmtNumber(b.occurred)}</td>
-              <td>{fmtNumber(b.shown)}</td>
               <td>{b.showRate == null ? '-' : `${b.showRate}%`}</td>
+              <td>{b.cancelRate == null ? '-' : `${b.cancelRate}%`}</td>
               <td>{fmtNumber(b.won)}</td>
               <td>{b.winRate == null ? '-' : `${b.winRate}%`}</td>
               <td>{fmtDays(b.avgCloseDays)}</td>
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Time to close</b> = average days from booking to won (a momentum read: do sooner bookings close faster / more?). Small samples make single rows noisy — read the trend.</p>
+        <p className="caveat" style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy — read the trend.</p>
+      </div>
+
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>When the call is scheduled — show rate by day &amp; time</div>
+        <div className="appt-when">
+          <div className="appt-when-col">
+            <div className="cap" style={{ marginBottom: 4 }}>By day of week</div>
+            <ResponsiveContainer width="100%" height={190}>
+              <ComposedChart data={C.byDow} margin={{ left: -10, right: 6, top: 6 }}>
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="label" fontSize={10} stroke="var(--muted)" />
+                <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+                <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} domain={[0, 100]} />
+                <Tooltip formatter={(v, n) => [/Show/.test(n) ? `${v}%` : fmtNumber(v), n]} />
+                <Bar yAxisId="l" dataKey="occurred" name="Occurred" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={26} />
+                <Line yAxisId="r" dataKey="showRate" name="Show %" stroke="#12b886" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="appt-when-col">
+            <div className="cap" style={{ marginBottom: 4 }}>By time of day</div>
+            <ResponsiveContainer width="100%" height={190}>
+              <ComposedChart data={C.byTimeOfDay} margin={{ left: -10, right: 6, top: 6 }}>
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="label" fontSize={9} stroke="var(--muted)" interval={0} angle={-12} textAnchor="end" height={40} />
+                <YAxis yAxisId="l" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+                <YAxis yAxisId="r" orientation="right" fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} domain={[0, 100]} />
+                <Tooltip formatter={(v, n) => [/Show/.test(n) ? `${v}%` : fmtNumber(v), n]} />
+                <Bar yAxisId="l" dataKey="occurred" name="Occurred" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={30} />
+                <Line yAxisId="r" dataKey="showRate" name="Show %" stroke="#12b886" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <p className="caveat" style={{ marginTop: 8 }}>Bars = appointments that have occurred; line = show rate. Times are in the client's timezone ({dd.tz || '—'}). Use this to spot the days / times leads actually turn up.</p>
       </div>
 
       <div className="card">
@@ -4362,7 +4399,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
     if (filter === 'inactive' && isOn(c)) return false
     if (term && !(`${c.name} ${c.industry || ''}`.toLowerCase().includes(term))) return false
     return true
-  })
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   return (
     <div className="settings-page">
       <div className="set-stats">

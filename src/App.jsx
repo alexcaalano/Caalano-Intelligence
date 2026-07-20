@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.32.1'
+const APP_VERSION = '3.33.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -168,6 +168,33 @@ function O360ColGroup({ left, green = true, cols }) {
       {green && D.cols.map((c) => <col key={c.key} className={o360ColClass(c)} />)}
     </colgroup>
   )
+}
+// Synchronise horizontal scroll across every .table-wrap inside a view, so
+// scrolling one table (e.g. to reach the Caalano360 green columns) scrolls them
+// all to the same offset - and they stay column-aligned. A MutationObserver
+// re-attaches as tables are added/removed (drill-ins, pagination).
+function useSyncedTableScroll(ref) {
+  useEffect(() => {
+    const root = ref.current; if (!root) return
+    let wraps = []; let syncing = false
+    const onScroll = (e) => {
+      if (syncing) return
+      syncing = true
+      const sl = e.currentTarget.scrollLeft
+      for (const o of wraps) if (o !== e.currentTarget && o.scrollLeft !== sl) o.scrollLeft = sl
+      requestAnimationFrame(() => { syncing = false })
+    }
+    const attach = () => {
+      const next = [...root.querySelectorAll('.table-wrap')]
+      for (const w of wraps) if (!next.includes(w)) w.removeEventListener('scroll', onScroll)
+      for (const w of next) if (!wraps.includes(w)) w.addEventListener('scroll', onScroll, { passive: true })
+      wraps = next
+    }
+    attach()
+    const mo = new MutationObserver(attach)
+    mo.observe(root, { childList: true, subtree: true })
+    return () => { mo.disconnect(); for (const w of wraps) w.removeEventListener('scroll', onScroll) }
+  }, [])
 }
 /* Sortable tables - click a header to sort; click again to flip direction. */
 function useSort(key0, dir0 = -1) {
@@ -1081,6 +1108,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [creSort, onCreSort] = useSort('spend')
   const [crePage, setCrePage] = useState(0)
   const [preview, setPreview] = useState(null) // { src, x, y } - hover thumbnail preview
+  const scrollRootRef = React.useRef(null)
+  useSyncedTableScroll(scrollRootRef)
   const showPrev = (src) => (e) => src && setPreview({ src, x: e.clientX, y: e.clientY })
   const movePrev = (e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))
   const hidePrev = () => setPreview(null)
@@ -1207,7 +1236,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   })()
   const meTotal = Math.max(1, meCh ? meCh.totals.leads : 0)
   return (
-    <>
+    <div ref={scrollRootRef}>
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Caalano360 green columns, key events &amp; funnel are scoped to this pipeline · ad spend is unchanged</span>}</div>}
       {sel && <div className="filt-bar">Filtered to <b>{sel}</b><button className="filt-clear" onClick={() => setSel(null)}>clear ✕</button></div>}
@@ -1360,7 +1389,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
       })()}
       <p className="caveat">Creative thumbnails from the Meta and Google API (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by the API; ↗ opens the Instagram post where available.</p>
       {preview && <img className="cre-preview" src={preview.src} alt="" style={{ left: Math.min(preview.x + 18, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 268), top: Math.min(Math.max(12, preview.y - 120), (typeof window !== 'undefined' ? window.innerHeight : 800) - 300) }} onError={() => setPreview(null)} />}
-    </>
+    </div>
   )
 }
 
@@ -1380,6 +1409,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [aSort, onASort] = useSort('cost')
   const [kSort, onKSort] = useSort('cost')
   const [sSort, onSSort] = useSort('cost')
+  const scrollRootRef = React.useRef(null)
+  useSyncedTableScroll(scrollRootRef)
   if (!deep?.google) return <EmptyDeep channel="Google Ads" />
   const g = deep.google
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
@@ -1429,7 +1460,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   })()
   const gTotal = Math.max(1, gCh ? gCh.totals.leads : 0)
   return (
-    <>
+    <div ref={scrollRootRef}>
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Caalano360 green columns, key events &amp; funnel are scoped to this pipeline · ad spend is unchanged</span>}</div>}
       <div className="scorecard">
@@ -1528,7 +1559,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           )
         })()}
       </>}
-    </>
+    </div>
   )
 }
 

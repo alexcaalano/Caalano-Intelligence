@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, sampleForms, buildForms, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -727,6 +727,10 @@ export default async (req) => {
   const json = (obj, status = 200, cache = false) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? 'public, max-age=600' : 'no-store' } })
 
   if (!key) return json({ error: 'WINDSOR_API_KEY not set' }, 500)
+  // Merge any UI-added clients (Settings -> Add client) into the registry so
+  // they're recognised across every scope. Mutates the shared object; a removed
+  // client clears on the next cold start.
+  try { Object.assign(CLIENTS, await customClients()) } catch { /* non-fatal */ }
 
   // Agency-wide Caalano Systems access/scope audit across every mapped client.
   if (url.searchParams.get('scope') === 'ghlaudit') {
@@ -842,6 +846,27 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'calendars', client, connected: false, calendars: [] })
     try { return json({ scope: 'calendars', client, connected: true, calendars: await listCalendars(cc.ghl) }, 200, true) }
     catch (e) { return json({ scope: 'calendars', client, error: String(e.message || e).slice(0, 160), calendars: [] }, 200) }
+  }
+
+  // Account explorer for adding a new client: every Caalano Systems (GHL) sub-
+  // account under the agency, plus the distinct Meta / Google ad accounts Windsor
+  // can see. Each is flagged `mapped` when it already belongs to a client, so the
+  // UI can surface what's still available to connect.
+  if (url.searchParams.get('scope') === 'discover') {
+    const usedGhl = new Set(), usedMeta = new Set(), usedGoogle = new Set()
+    for (const c of Object.values(CLIENTS)) { if (c.ghl) usedGhl.add(norm(c.ghl)); if (c.meta) usedMeta.add(norm(c.meta)); if (c.google) usedGoogle.add(norm(c.google)) }
+    const nameById = (rows) => { const m = new Map(); for (const r of (rows || [])) { const id = r.account_id; if (id == null) continue; const k = String(id); if (!m.has(k) || (!m.get(k) && r.account_name)) m.set(k, r.account_name || '') } return m }
+    const [locs, fbRows, ggRows] = await Promise.all([
+      (isConnected().then((ok) => (ok ? listLocations() : [])).catch((e) => ({ error: String(e.message || e).slice(0, 160) }))),
+      windsorFetch('facebook', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch(() => []),
+      windsorFetch('google_ads', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch(() => []),
+    ])
+    const ghlErr = locs && locs.error ? locs.error : null
+    const ghl = Array.isArray(locs) ? locs.map((l) => ({ id: l.id, name: l.name, mapped: usedGhl.has(norm(l.id)) })) : []
+    const metaMap = nameById(fbRows), googleMap = nameById(ggRows)
+    const meta = [...metaMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedMeta.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    const google = [...googleMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGoogle.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    return json({ scope: 'discover', ghl, meta, google, ghlErr, connected: await isConnected().catch(() => false) }, 200)
   }
 
   // Lean per-client GHL metrics for the Agency Overview comparison table:

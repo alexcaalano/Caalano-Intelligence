@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.10.0'
+const APP_VERSION = '3.11.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1776,6 +1776,7 @@ const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
 const ENABLED_KEY = 'caalano_enabled'
+const CLIENTS_KEY = 'caalano_clients' // UI-added clients { id: { name, meta, google, ghl } }
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1784,7 +1785,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1800,13 +1801,13 @@ async function hydrateSettings() {
     const r = await fetch('/.netlify/functions/settings')
     const j = await r.json().catch(() => null)
     const d = j && j.ok && j.data ? j.data : null
-    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights'].some((s) => d[s] && Object.keys(d[s]).length)
+    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -1817,6 +1818,11 @@ function useSettingsSync() {
   const [, force] = React.useReducer((x) => x + 1, 0)
   useEffect(() => onSettings(force), [])
 }
+
+// UI-added clients (Settings -> Add client), persisted server-side and merged
+// into the dashboard's client list.
+function customClientList() { return Object.entries(SETTINGS.clients || {}).map(([id, v]) => ({ id, name: v.name || id, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, custom: true })) }
+function saveCustomClient(id, mapping) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: mapping }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: mapping } }); bumpSettings() }
 
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
@@ -3455,11 +3461,81 @@ function TimezoneBadge({ clientId, hasMeta }) {
   )
 }
 
+// Explore the accounts available to connect (Caalano Systems locations via the
+// GHL API + Meta / Google ad accounts Windsor can see) and assemble a new
+// client by linking one of each. Saved to the shared settings store and merged
+// into the registry, so the new client goes live without a code change.
+function AddClientModal({ existing, onClose }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [name, setName] = useState('')
+  const [ghl, setGhl] = useState(''); const [meta, setMeta] = useState(''); const [google, setGoogle] = useState('')
+  const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    const to = new Date().toISOString().slice(0, 10)
+    const from = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+    let alive = true
+    fetch(`/.netlify/functions/windsor?scope=discover&from=${from}&to=${to}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [])
+  const d = st.data || {}
+  const slug = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
+  const uniqueId = (base) => { let id = base, n = 2; const taken = new Set((existing || []).map((c) => c.id)); while (taken.has(id)) id = `${base}-${n++}`; return id }
+  const canSave = name.trim() && (meta || google || ghl)
+  const save = () => {
+    if (!canSave) return
+    saveCustomClient(uniqueId(slug(name)), { name: name.trim(), meta: meta || null, google: google || null, ghl: ghl || null })
+    setSaved(true); setTimeout(onClose, 1000)
+  }
+  const Col = ({ title, items, sel, onSel, empty }) => (
+    <div className="addcl-col">
+      <div className="addcl-col-h">{title} <span className="addcl-count">{items ? items.length : 0}</span></div>
+      <div className="addcl-list">
+        {!items || !items.length ? <div className="cap" style={{ padding: 8 }}>{empty}</div> : items.map((it) => (
+          <button key={it.id} className={`addcl-item ${sel === it.id ? 'on' : ''}`} onClick={() => onSel(sel === it.id ? '' : it.id)} title={it.id}>
+            <span className="addcl-nm">{it.name}</span>
+            <span className="addcl-meta">{it.mapped ? <span className="addcl-mapped">in use</span> : <span className="addcl-free">available</span>} · <code>{String(it.id).slice(0, 10)}</code></span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head"><div><h3>Add a client</h3><span className="cap">Link a Caalano Systems account to its Meta &amp; Google ad accounts</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-body">
+          {st.status === 'loading' ? <Spinner label="Exploring available accounts…" />
+            : st.status === 'err' ? <div className="cap">Couldn’t load available accounts — try again.</div>
+              : <>
+                <div className="addcl-name">
+                  <label>Client name</label>
+                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Pool Haus" />
+                </div>
+                <div className="addcl-cols">
+                  <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={(id) => { setGhl(id); const l = (d.ghl || []).find((x) => x.id === id); if (l && !name) setName(l.name) }} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
+                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={setMeta} empty="No Meta accounts in Windsor." />
+                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={setGoogle} empty="No Google accounts in Windsor." />
+                </div>
+                <div className="addcl-foot">
+                  <span className="cap">{ghl || meta || google ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account.'}</span>
+                  <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Added' : 'Add client'}</button>
+                </div>
+                <p className="caveat" style={{ marginTop: 10 }}>Saved to the shared settings store and merged into the dashboard immediately. Meta / Google accounts come from Windsor (last 90 days of activity); Caalano Systems locations from the GoHighLevel agency connection. You can fine-tune key events, KPIs and campaign links after adding.</p>
+              </>}
+        </div>
+      </div>
+    </div>
+  )
+}
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
 function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
-  const [openId, setOpenId] = useState(null) // which client's editors are expanded
+  const [editing, setEditing] = useState(null) // client being configured (modal)
+  const [adding, setAdding] = useState(false)   // add-client explorer modal
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
   const w = config.availableAccounts?.windsor || {}
   const isOn = (c) => enabled[c.id] !== false
@@ -3484,16 +3560,15 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
       <div className="set-toolbar">
         <div className="chan-toggle">{SET_FILTERS.map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${config.clients.length - activeCount}` : ''}</button>)}</div>
         <input className="set-search" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>
         <span className="set-saved">✓ Saved to server · shared across your team</span>
       </div>
       {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
       <div className="set-grid">
         {list.map((c) => {
           const on = isOn(c)
-          const canLink = (c.meta || c.google) && c.ghl
-          const expanded = openId === c.id
           return (
-            <div className={`set-card ${on ? '' : 'is-off'} ${expanded ? 'open' : ''}`} key={c.id}>
+            <div className={`set-card ${on ? '' : 'is-off'}`} key={c.id}>
               <div className="set-card-head">
                 <span className="avatar" style={{ background: acolor(config.clients.indexOf(c)) }}>{initials(c.name)}</span>
                 <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
@@ -3505,22 +3580,42 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
                 <span className={`idtag ${c.ghl ? 'has' : ''}`}>Caalano Systems <b>{c.ghl ? '✓' : '-'}</b></span>
               </div>
               <div className="set-card-actions">
-                <button className="set-expand" onClick={() => setOpenId(expanded ? null : c.id)}>{expanded ? '▾ Hide configuration' : '▸ Key events, KPIs & links'}</button>
+                <button className="set-expand" onClick={() => setEditing(c)}>⚙ Configure</button>
                 <button className="set-open" onClick={() => onPick(c)} title="Open this client's workspace">Open ↗</button>
               </div>
-              {expanded && (
-                <div className="set-card-body">
-                  {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
-                  {c.ghl && <KeyEventsEditor clientId={c.id} />}
-                  {canLink && <CampaignLinker clientId={c.id} />}
-                  {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}
-                  {c.ghl && (c.meta || c.google) && <ClientTrackingDiagnostics clientId={c.id} currency={currency} />}
-                </div>
-              )}
             </div>
           )
         })}
         {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
+      </div>
+      {editing && <SettingsEditModal client={editing} currency={currency} onClose={() => setEditing(null)} />}
+      {adding && <AddClientModal existing={config.clients} onClose={() => setAdding(false)} />}
+    </div>
+  )
+}
+// Per-client configuration in a modal (instead of expanding inline) so the grid
+// doesn't reflow when you open one.
+function SettingsEditModal({ client: c, currency, onClose }) {
+  const canLink = (c.meta || c.google) && c.ghl
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head">
+          <div className="set-modal-title"><span className="avatar sm" style={{ background: acolor(0) }}>{initials(c.name)}</span><div><h3>{c.name}</h3><span className="cap">{c.industry || 'Configuration'}</span></div></div>
+          <button className="icon-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="m-body">
+          <div className="ids" style={{ marginBottom: 14 }}>
+            <span className={`idtag ${c.meta ? 'has' : ''}`}>Meta <b>{c.meta || '-'}</b></span>
+            <span className={`idtag ${c.google ? 'has' : ''}`}>Google <b>{c.google || '-'}</b></span>
+            <span className={`idtag ${c.ghl ? 'has' : ''}`}>Caalano Systems <b>{c.ghl ? '✓' : '-'}</b></span>
+          </div>
+          {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
+          {c.ghl && <KeyEventsEditor clientId={c.id} />}
+          {canLink && <CampaignLinker clientId={c.id} />}
+          {(c.meta || c.google || c.ghl) && <KpiEditor clientId={c.id} />}
+          {c.ghl && (c.meta || c.google) && <ClientTrackingDiagnostics clientId={c.id} currency={currency} />}
+        </div>
       </div>
     </div>
   )
@@ -3562,8 +3657,13 @@ export default function App() {
   // and fires the ovrow requests - without this, r.c.ghl is undefined for every
   // client and the CRM columns never load.
   const ghlById = Object.fromEntries(((config && config.clients) || []).map((c) => [c.id, c.ghl]))
-  const visibleClients = data.clients.filter((c) => enabled[c.id] !== false).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
+  // Base clients (snapshot) + any UI-added ones not already present.
+  const custom = customClientList()
+  const baseClients = [...data.clients, ...custom.filter((cu) => !data.clients.some((c) => c.id === cu.id))]
+  const visibleClients = baseClients.filter((c) => enabled[c.id] !== false).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
   const rows = computeRows(visibleClients, agency.data)
+  // Config for the Settings page, with UI-added clients merged in.
+  const cfgMerged = config ? { ...config, clients: [...(config.clients || []), ...custom.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
   const idx = picked ? data.clients.findIndex((c) => c.id === picked.id) : -1
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
 
@@ -3603,7 +3703,7 @@ export default function App() {
         {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
         {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
-        {view === 'settings' && <SettingsPage config={config} enabled={enabled} setEnabled={setEnabled} currency={data.currency} onPick={(c) => { setPicked(c); setView('clients') }} />}
+        {view === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
         {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} config={config} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
       </main>
     </div>

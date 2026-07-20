@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.11.0 — 2026-07-20 · `<pending>`
+- Settings: **Add client** explorer — discover Caalano Systems (GHL) locations
+  via the API plus the Meta / Google ad accounts Windsor can see, link one of
+  each, and the new client is saved to the shared store and merged into the
+  registry (goes live without a code change).
+- Per-client configuration now opens in a **modal** instead of expanding inline
+  (no more grid reflow); the **Open** button goes straight to the client page.
+
 ## v3.10.0 — 2026-07-20 · `c9040aa`
 - AI insights (Weekly Traffic Light briefings) now persist server-side like
   every other setting, so a briefing one person generates is shared across the

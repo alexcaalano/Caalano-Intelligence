@@ -311,6 +311,45 @@ async function fetchAppointments(locTok, locationId, from, to) {
   return { byContact, perCalendar, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
 }
 
+// Custom clients added at runtime via Settings -> Add client, stored in the
+// shared settings blob's `clients` section: { id: { name, meta, google, ghl } }.
+// The dashboard function merges these into its base registry so a client added
+// in the UI is recognised across every data scope without a code change.
+export async function customClients() {
+  try {
+    const all = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+    const c = all && all.clients
+    if (!c || typeof c !== 'object') return {}
+    const out = {}
+    for (const [id, v] of Object.entries(c)) {
+      if (!id || !v || typeof v !== 'object') continue
+      if (!v.meta && !v.google && !v.ghl) continue
+      out[id] = { name: v.name || id, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null }
+    }
+    return out
+  } catch { return {} }
+}
+// All Caalano Systems (GoHighLevel) sub-accounts under the agency, for the
+// "add client" explorer: id + name so a new client can be mapped to its CRM.
+export async function listLocations() {
+  const t = await agencyToken()
+  if (!t.companyId) throw new Error('No agency companyId on the stored token - re-authorise as the Agency (Company).')
+  const out = []
+  for (let skip = 0; skip < 2000 && out.length < 1000; skip += 100) {
+    const url = new URL(API + '/locations/search')
+    url.searchParams.set('companyId', t.companyId)
+    url.searchParams.set('limit', '100')
+    url.searchParams.set('skip', String(skip))
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${t.access_token}`, Version: VER, Accept: 'application/json' } })
+    const txt = await r.text()
+    if (!r.ok) throw new Error(`ghl locations ${r.status}: ${txt.slice(0, 200)}`)
+    let j; try { j = JSON.parse(txt) } catch { break }
+    const locs = j.locations || j.location || []
+    for (const l of locs) { const id = l.id || l._id; if (id) out.push({ id, name: l.name || l.businessName || id }) }
+    if (locs.length < 100) break
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}
 // Lightweight calendar list for the Settings funnel-step editor: id + name only.
 export async function listCalendars(locationId) {
   const locTok = await locationToken(locationId)

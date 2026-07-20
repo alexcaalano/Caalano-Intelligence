@@ -17,6 +17,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.34.0 — 2026-07-20 · `PENDING`
+- **Full Meta drill-down.** Every level is clickable and filters the levels below
+  it *and* the Performance-by-form table: click a **campaign** or **ad set** to
+  filter the tables below plus the forms they drove; ad sets are now clickable;
+  click a **creative** to see a lineage chip (**campaign · ad set · form**) and
+  filter the forms table to the form it drove; click a **form** to filter the
+  campaigns/ad sets/creatives (as before). A unified **drill-in bar** shows every
+  active filter with individual clears + "Clear all", and the Performance-by-form
+  headers are now **sortable**.
+
+## v3.33.0 — 2026-07-20 · `PENDING`
+- **Synced horizontal scroll**: scrolling any table in the Meta / Google view
+  scrolls them all to the same offset, so the Caalano360 green columns stay
+  aligned across the campaigns / ad sets / creatives tables instead of each
+  scrolling on its own.
+
+## v3.32.1 — 2026-07-20 · `PENDING`
+- Hardened the calendar/pipeline-stage key-event de-duplication (case/whitespace
+  normalisation + name-match fallback) so double-ups can't slip through.
+
 ## v3.32.0 — 2026-07-20 · `PENDING`
 - **No more double-ups between calendars and pipeline stages** in the Caalano360
   green columns and the Key Events funnel. When a calendar is linked to a

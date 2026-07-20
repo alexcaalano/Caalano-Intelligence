@@ -563,6 +563,14 @@ tr.coh-maturing > td:first-child { box-shadow: inset 3px 0 0 rgba(245,165,36,.6)
 .filt-bar b { color: var(--text); font-weight: 700; }
 .filt-clear { margin-left: auto; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 7px; padding: 4px 10px; font-size: 11.5px; font-weight: 650; cursor: pointer; }
 .filt-clear:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
+.drill-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px 12px; background: rgba(109,94,252,.1); border: 1px solid var(--border-2); border-radius: 10px; }
+.drill-lab { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.drill-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--border-2); border-radius: 999px; padding: 4px 6px 4px 11px; }
+.drill-chip b { color: var(--text); font-weight: 700; }
+.drill-chip button { border: 0; background: var(--panel-2); color: var(--muted); width: 18px; height: 18px; border-radius: 50%; cursor: pointer; font-size: 11px; line-height: 1; display: inline-grid; place-items: center; }
+.drill-chip button:hover { background: var(--neg); color: #fff; }
+.drill-clear { margin-left: auto; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 7px; padding: 4px 11px; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+.drill-clear:hover { background: var(--brand); color: #fff; border-color: var(--brand); }
 
 /* Timezone alignment badge (Settings, per client) */
 .tz-badge { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 2px; font-size: 12px; }

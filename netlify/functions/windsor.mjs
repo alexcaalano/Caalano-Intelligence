@@ -969,8 +969,9 @@ export default async (req) => {
     if (!c.ghl) return json({ error: `no Caalano Systems account for ${client}` }, 404)
     if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
     try {
+      const pipeline = url.searchParams.get('pipeline') || null
       const fn = url.searchParams.get('debug') ? sampleAttribution : buildAttribution
-      const attribution = await fn(c.ghl, from, to)
+      const attribution = await fn(c.ghl, from, to, pipeline ? { pipeline } : {})
       return json({ client, channel, period: { from, to, preset }, attribution }, 200, !url.searchParams.get('debug'))
     } catch (e) { return json({ connected: true, error: String(e.message || e) }, 502) }
   }

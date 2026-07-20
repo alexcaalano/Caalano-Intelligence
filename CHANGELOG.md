@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.22.0 — 2026-07-20 · `PENDING`
+- **Pipeline filter on Meta Ads & Google Ads.** A "Pipeline" dropdown (shown for
+  multi-pipeline clients) re-scopes every Caalano360 green column, the key-event
+  funnel and calendar bookings to a single pipeline — so a client whose key
+  events differ per pipeline (e.g. FINR) now reads accurately instead of blending
+  them. Done accurately on the backend: the attribution is recomputed with the
+  opportunity set filtered to that pipeline, so bookings, stage reach, won and
+  revenue are all that pipeline's alone. Key events are filtered to the pipeline
+  too (calendars linked to the same stage already merge into one event). Ad rows
+  (spend/impressions) stay fully visible — only the CRM outcomes scope — and all
+  drill-downs (campaign → ad set → creative / keyword) keep working.
+
 ## v3.21.0 — 2026-07-20 · `PENDING`
 - **Speed to Lead accuracy fix** (the Finr "everything under 5 min" problem):
   - Anchor the clock on when the **contact entered the CRM** (`dateAdded`), not

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.21.0'
+const APP_VERSION = '3.22.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1053,7 +1053,13 @@ const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(
 const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg; return r <= 0.85 ? 'rgba(23,178,106,.28)' : r <= 1.15 ? 'rgba(245,165,36,.28)' : 'rgba(240,67,91,.28)' }
 
 function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
-  const kpis = loadKpis(clientId)
+  const [pipe, setPipe] = useState('all')
+  const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr)
+  const pipeLoading = pipe !== 'all' && (!pipeAttr || pipeAttr.status === 'loading')
+  // Full pipeline list for the picker comes from the account-wide attribution
+  // (always present, even while a scoped fetch is loading).
+  const allPipes = (attr && attr.data && attr.data.attribution && attr.data.attribution.allPipelines) || []
+  const kpis = loadKpis(clientId, pipe !== 'all' ? pipe : undefined)
   const [sel, setSel] = useState(null)
   const [selForm, setSelForm] = useState(null) // filter the tables to one CRM form's ads
   const formsSt = useForms(clientId, range, nonce)
@@ -1069,14 +1075,15 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   useEffect(() => { setCrePage(0) }, [sel])
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
   const m = deep.meta
-  const A = attr && attr.data && attr.data.attribution
+  const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
+  const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
   // Green Caalano360 columns: the client's key events (cost per each) when
   // configured, else the legacy Booked/Shown/Won block. Ordered by where each
   // event sits in the pipeline (calendars via their linked stage).
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
-  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos, calNames)
+  const o360cols = buildO360Cols(keList, stagePos, calNames)
   const oCamp = mkOutcomeMap(A && A.byCampaign)
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
   // not utm_term - so match ad-set rows against byMedium.
@@ -1180,7 +1187,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const meCh = A && A.channels && A.channels.meta
   const meRows = (() => {
     const rmap = reachedByStage(meCh ? (meCh.pipelines || []) : [])
-    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'meta'), stagePos, meCh ? meCh.totals.won : 0)
+    const cfg = keyEventRows(keList, rmap, calCountMap(A, 'meta'), stagePos, meCh ? meCh.totals.won : 0)
     if (cfg.length) return cfg
     if (!meCh) return []
     const tt = meCh.totals
@@ -1190,6 +1197,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   return (
     <>
       <AttrDiag attr={attr} />
+      {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Caalano360 green columns, key events &amp; funnel are scoped to this pipeline · ad spend is unchanged</span>}</div>}
       {sel && <div className="filt-bar">Filtered to <b>{sel}</b><button className="filt-clear" onClick={() => setSel(null)}>clear ✕</button></div>}
       {selForm && <div className="filt-bar">Filtered to form <b>📝 {selForm}</b> · showing only the ads that drove it<button className="filt-clear" onClick={() => setSelForm(null)}>clear ✕</button></div>}
       <div className="scorecard">
@@ -1348,8 +1356,12 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
 const qsClass = (n) => n === '' || n == null ? 'q-unk' : n >= 7 ? 'q-above' : n >= 4 ? 'q-avg' : 'q-low'
 const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
 const mtColor = (t) => MT_COLOR[t] || '#8b5cf6'
-function GoogleDeep({ deep, currency, attr, clientId }) {
-  const kpis = loadKpis(clientId)
+function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
+  const [pipe, setPipe] = useState('all')
+  const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr)
+  const pipeLoading = pipe !== 'all' && (!pipeAttr || pipeAttr.status === 'loading')
+  const allPipes = (attr && attr.data && attr.data.attribution && attr.data.attribution.allPipelines) || []
+  const kpis = loadKpis(clientId, pipe !== 'all' ? pipe : undefined)
   const [sel, setSel] = useState({ campaign: null, adGroup: null })
   const [day, setDay] = useState(null)
   const [cSort, onCSort] = useSort('cost')
@@ -1358,11 +1370,12 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const [sSort, onSSort] = useSort('cost')
   if (!deep?.google) return <EmptyDeep channel="Google Ads" />
   const g = deep.google
-  const A = attr && attr.data && attr.data.attribution
+  const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
+  const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
-  const o360cols = buildO360Cols(loadKeyEvents(clientId), stagePos, calNames)
+  const o360cols = buildO360Cols(keList, stagePos, calNames)
   const oCampG = mkOutcomeMap(A && A.byCampaign)
   const oAgG = mkOutcomeMap(A && A.byTerm)
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
@@ -1396,7 +1409,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   const gCh = A && A.channels && A.channels.google
   const gRows = (() => {
     const rmap = reachedByStage(gCh ? (gCh.pipelines || []) : [])
-    const cfg = keyEventRows(loadKeyEvents(clientId), rmap, calCountMap(A, 'google'), stagePos, gCh ? gCh.totals.won : 0)
+    const cfg = keyEventRows(keList, rmap, calCountMap(A, 'google'), stagePos, gCh ? gCh.totals.won : 0)
     if (cfg.length) return cfg
     if (!gCh) return []
     const tt = gCh.totals
@@ -1406,6 +1419,7 @@ function GoogleDeep({ deep, currency, attr, clientId }) {
   return (
     <>
       <AttrDiag attr={attr} />
+      {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Caalano360 green columns, key events &amp; funnel are scoped to this pipeline · ad spend is unchanged</span>}</div>}
       <div className="scorecard">
         <Sc label="Cost" value={fmtCurrency(t.cost, currency)} cur={t.cost} prev={D((x) => x.cost)} goodWhenDown />
         <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
@@ -1691,6 +1705,42 @@ function useAttribution(clientId, range, nonce = 0) {
     return () => { alive = false }
   }, [clientId, q, nonce])
   return state
+}
+// Pipeline-scoped attribution: when a specific pipeline is picked, refetch the
+// attribution filtered to it (so every green column / funnel is that pipeline's
+// alone); when 'all', reuse the already-loaded account-wide attribution.
+function usePipelineAttr(clientId, range, nonce, pipe, fallback) {
+  const [state, setState] = useState(null)
+  const q = rangeQuery(range)
+  const active = !!pipe && pipe !== 'all'
+  useEffect(() => {
+    if (!active) { setState(null); return }
+    let alive = true; setState({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}&pipeline=${encodeURIComponent(pipe)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
+      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce, pipe]) // eslint-disable-line
+  return active ? state : fallback
+}
+// The pipeline a key event belongs to (null = unscoped / applies to every pipeline).
+function pipeOfKeyEvent(e) { if (typeof e === 'string') return null; if (e && (e.cal || e.stage)) return e.pipeline || null; return null }
+// Filter a client's key-event list to one pipeline (keeping unscoped events like Won).
+function keyEventsForPipe(list, pipe) { if (!pipe || pipe === 'all') return list; return (list || []).filter((e) => { const p = pipeOfKeyEvent(e); return p == null || p === pipe }) }
+// A reusable pipeline picker (All + each pipeline) for the Meta / Google views.
+function PipelineFilter({ pipelines, value, onChange, loading }) {
+  if (!pipelines || pipelines.length < 2) return null
+  return (
+    <div className="pipe-filter">
+      <span className="pipe-filter-lab">Pipeline</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="all">All pipelines</option>
+        {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      {loading && <span className="ov-spin" style={{ marginLeft: 6 }} />}
+    </div>
+  )
 }
 // classify a UTM source string into a paid channel (mirror of the backend)
 const chanOfSource = (name) => { const s = String(name || '').toLowerCase(); if (/(facebook|instagram|\bfb\b|\bmeta\b|\big\b|fbclid|fb_|ig_)/.test(s)) return 'meta'; if (/(google|adwords|youtube|\bgdn\b|gclid|goog)/.test(s)) return 'google'; return 'other' }
@@ -3475,7 +3525,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
                   : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
         )}
         {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
-        {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
+        {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {tab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {tab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} />}

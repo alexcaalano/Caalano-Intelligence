@@ -876,12 +876,18 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - (lite ? 60 : 120) * DAY).toISOString().slice(0, 10)
-  const [wideOpps, pipelines, reasons, appts] = await Promise.all([
+  const [wideOppsAll, pipelines, reasons, appts] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, lite ? 900 : 1800),
     fetchPipelines(locTok, locationId),
     lite ? Promise.resolve([]) : ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), connected: false })),
   ])
+  // Optional pipeline scope: filter the opportunity set to a single pipeline so
+  // every per-entity outcome, funnel and calendar attribution downstream is that
+  // pipeline's alone. The appointment feed joins on the (now scoped) contact set,
+  // so calendar bookings scope too. `pipelines` (all of them) is kept intact so
+  // the UI can still offer the full pipeline picker.
+  const wideOpps = opts.pipeline ? wideOppsAll.filter((o) => o.pipelineId === opts.pipeline) : wideOppsAll
   const idx = stageIndexFrom(pipelines)
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   // Lead cohort = opportunities created within [from,to]. Leads / won / revenue
@@ -1116,6 +1122,8 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   return {
     connected: true, opps: opps.length, attributed, tz,
     avgCloseDays, avgCloseSample: cycN,
+    allPipelines: pipelines.map((p) => ({ id: p.id, name: p.name })),
+    pipeline: opts.pipeline || null,
     manualLeads, oppSources,
     appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, shownStage: shownStageActions, cancelled: cancelledActions, byCalendar },
     bySource, byMedium: top(dim.medium, 300), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),

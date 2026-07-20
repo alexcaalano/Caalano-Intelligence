@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.14.1 — 2026-07-20 · `<pending>`
+- Settings cards simplified: just the client name + the setup-health icons
+  (account IDs moved off the preview into the Edit modal). Icons switched to
+  emoji that render everywhere, shading removed — each is a logo with a green ✓
+  / red ✗ / amber ● underneath, and a hover tooltip explaining what it is.
+
 ## v3.14.0 — 2026-07-20 · `de9349a`
 - Settings cards show a compact **setup-health strip** — Meta / Google / CRM /
   Key events / Calendars / KPIs / Diagnostics as green ✓ · amber ! · red ✗

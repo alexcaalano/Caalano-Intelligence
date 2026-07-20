@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.14.0'
+const APP_VERSION = '3.14.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3608,22 +3608,23 @@ function clientHealth(c) {
   const kpiRaw = SETTINGS.kpis[c.id] || {}
   const kpiSet = Object.keys(kpiRaw).some((k) => k !== 'byPipeline' && kpiRaw[k] != null && kpiRaw[k] !== '') || (kpiRaw.byPipeline && Object.keys(kpiRaw.byPipeline).length > 0)
   return [
-    { ic: 'f', label: 'Meta Ads account', state: c.meta ? 'ok' : 'bad' },
-    { ic: 'G', label: 'Google Ads account', state: c.google ? 'ok' : 'bad' },
-    { ic: '◆', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
-    { ic: '★', label: 'Key events configured', state: keConfigured ? 'ok' : (SEED_KEYEVENTS[c.id] ? 'warn' : (c.ghl ? 'warn' : 'bad')) },
+    { ic: '📘', label: 'Meta Ads account', state: c.meta ? 'ok' : 'bad' },
+    { ic: '🔍', label: 'Google Ads account', state: c.google ? 'ok' : 'bad' },
+    { ic: '🗂️', label: 'Caalano Systems (CRM)', state: c.ghl ? 'ok' : 'bad' },
+    { ic: '🎯', label: 'Key events configured', state: keConfigured ? 'ok' : (SEED_KEYEVENTS[c.id] ? 'warn' : (c.ghl ? 'warn' : 'bad')) },
     { ic: '📅', label: 'Booked calendars linked', state: hasCal ? 'ok' : (c.ghl ? 'warn' : 'bad') },
-    { ic: '◎', label: 'KPI targets set', state: kpiSet ? 'ok' : 'warn' },
-    { ic: '✚', label: 'Tracking diagnostics ready', state: (c.ghl && (c.meta || c.google)) ? 'ok' : (c.ghl ? 'warn' : 'bad') },
+    { ic: '📊', label: 'KPI targets set', state: kpiSet ? 'ok' : 'warn' },
+    { ic: '🩺', label: 'Tracking diagnostics ready', state: (c.ghl && (c.meta || c.google)) ? 'ok' : (c.ghl ? 'warn' : 'bad') },
   ]
 }
-const STATE_MARK = { ok: '✓', warn: '!', bad: '✗' }
+const STATE_TXT = { ok: 'connected / done', warn: 'needs attention', bad: 'not connected' }
 function HealthStrip({ c }) {
   return (
     <div className="set-health">
       {clientHealth(c).map((h) => (
-        <span key={h.label} className={`sth ${h.state}`} title={`${h.label}: ${h.state === 'ok' ? 'done' : h.state === 'warn' ? 'needs attention' : 'not connected'}`}>
-          <span className="sth-ic">{h.ic}</span><span className="sth-mk">{STATE_MARK[h.state]}</span>
+        <span key={h.label} className="sth" title={`${h.label} — ${STATE_TXT[h.state]}`}>
+          <span className="sth-ic">{h.ic}</span>
+          <span className={`sth-mk ${h.state}`}>{h.state === 'ok' ? '✓' : h.state === 'bad' ? '✗' : '●'}</span>
         </span>
       ))}
     </div>
@@ -3665,9 +3666,9 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
         <span className="set-saved">✓ Saved to server · shared across your team</span>
       </div>
       <div className="set-legend">
-        <span>Setup health:</span>
-        <span className="lg"><b>f</b> Meta</span><span className="lg"><b>G</b> Google</span><span className="lg"><b>◆</b> CRM</span><span className="lg"><b>★</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>◎</b> KPIs</span><span className="lg"><b>✚</b> Diagnostics</span>
-        <span className="lg-sep">·</span><span className="sth ok"><span className="sth-mk">✓</span></span>done<span className="sth warn"><span className="sth-mk">!</span></span>attention<span className="sth bad"><span className="sth-mk">✗</span></span>missing
+        <span>Setup:</span>
+        <span className="lg"><b>📘</b> Meta</span><span className="lg"><b>🔍</b> Google</span><span className="lg"><b>🗂️</b> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>🩺</b> Diagnostics</span>
+        <span className="lg-sep">·</span><span className="lg"><span className="sth-mk ok">✓</span> done</span><span className="lg"><span className="sth-mk warn">●</span> attention</span><span className="lg"><span className="sth-mk bad">✗</span> missing</span>
       </div>
       {config.clients.some((c) => c.ghl) && <TagAudit clients={config.clients.filter((c) => c.ghl)} />}
       <div className="set-grid">
@@ -3681,11 +3682,6 @@ function SettingsPage({ config, enabled, setEnabled, currency, onPick }) {
                 <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
               </div>
               <HealthStrip c={c} />
-              <div className="ids">
-                <AccountTag label="Meta" id={c.meta} name={nm('meta', c.meta) || c.metaName} />
-                <AccountTag label="Google" id={c.google} name={nm('google', c.google) || c.googleName} />
-                <AccountTag label="Caalano Systems" id={c.ghl} name={nm('ghl', c.ghl) || c.ghlName} />
-              </div>
               <div className="set-card-actions">
                 <button className="set-expand" onClick={() => setEditing(c)}>✎ Edit</button>
               </div>

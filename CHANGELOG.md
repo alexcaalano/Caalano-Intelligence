@@ -17,7 +17,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.18.1 — 2026-07-20 · `<pending>`
+## v3.18.1 — 2026-07-20 · `32bc08b`
 - Answer grouping now also merges dates written any way (21st August 2026 ·
   21/8/26 · 21/08/2026 · 2026-08-21 · Aug 21 2026) into one day, shown tidily
   (e.g. "21 Aug 2026"); hover shows the raw spellings combined. Postcodes,

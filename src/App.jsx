@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.27.0'
+const APP_VERSION = '3.28.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3305,23 +3305,28 @@ function FormsSettingsTab({ clientId }) {
   )
 }
 // Where the leads on a form are located (postcode / suburb answers), ranked.
+// Collapsed by default — it's a "where is demand coming from" drill-down, not a
+// headline, so it only opens when asked for.
 function FormLocations({ form }) {
+  const [open, setOpen] = useState(false)
   const locs = groupAnswers(form.locations || []) // merges suburb spellings; postcodes stay separate
   if (!locs.length) return null
   const max = Math.max(1, ...locs.map((l) => l.leads))
   return (
     <div className="fm-locs">
-      <div className="fm-lab">Location of leads <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {locs.length} distinct · postcode / suburb answers</span></div>
-      <div className="fm-loc-list">
-        {locs.slice(0, 40).map((l) => (
-          <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.won} won`}>
-            <span className="fm-loc-nm">{l.value}{l.merged ? ` ⓘ${l.members.length}` : ''}</span>
-            <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
-            <span className="fm-loc-n">{l.leads}{l.won ? ` · ${l.won}w` : ''}</span>
-          </div>
-        ))}
-      </div>
-      {locs.length > 40 && <div className="cap">+{locs.length - 40} more</div>}
+      <button className="linker-toggle" onClick={() => setOpen((v) => !v)}>{open ? '▾' : '▸'} 📍 Where leads are located <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {locs.length} distinct postcode / suburb answers</span></button>
+      {open && <>
+        <div className="fm-loc-list" style={{ marginTop: 8 }}>
+          {locs.slice(0, 40).map((l) => (
+            <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.won} won`}>
+              <span className="fm-loc-nm">{l.value}{l.merged ? ` ⓘ${l.members.length}` : ''}</span>
+              <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
+              <span className="fm-loc-n">{l.leads}{l.won ? ` · ${l.won}w` : ''}</span>
+            </div>
+          ))}
+        </div>
+        {locs.length > 40 && <div className="cap">+{locs.length - 40} more</div>}
+      </>}
     </div>
   )
 }
@@ -3654,7 +3659,9 @@ function fmtDuration(min) {
 }
 function TimingView({ clientId, range, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
+  const [scan, setScan] = useState(null) // { status, processed, total, data }
   const [showDbg, setShowDbg] = useState(false)
+  const scanRef = React.useRef({ alive: false })
   useSettingsSync()
   const hrs = loadHours(clientId)
   const hq = hoursQuery(hrs)
@@ -3668,17 +3675,41 @@ function TimingView({ clientId, range, nonce }) {
       .finally(() => clearTimeout(timer))
     return () => { alive = false; ctl.abort() }
   }, [clientId, rangeQuery(range), hq, nonce])
-  if (st.status === 'loading') return <div className="card"><Spinner label="Measuring speed to lead… (sampling recent leads' conversations)" /></div>
-  const d = st.data || {}
-  if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">⏱️</div><b>Couldn't measure speed to lead.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
-  if (!d.sampled) return <div className="card empty-deep"><div className="big">⏱️</div><b>No leads with conversations in this range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Speed to Lead samples recent leads and reads their conversation history. Widen the date range to include leads that were messaged.</p></div>
+  // Reset any running scan when the client / range / hours change.
+  useEffect(() => { scanRef.current.alive = false; setScan(null); return () => { scanRef.current.alive = false } }, [clientId, rangeQuery(range), hq])
+  const runScan = () => {
+    scanRef.current.alive = true; setScan({ status: 'running', processed: 0, total: 0, data: null })
+    const poll = (reset) => {
+      if (!scanRef.current.alive) return
+      fetch(`/.netlify/functions/windsor?scope=speedscan&client=${clientId}&${rangeQuery(range)}${hq}${reset ? '&reset=1' : ''}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+        .then((j) => { if (!scanRef.current.alive) return; setScan({ status: j.status, processed: j.processed, total: j.total, data: j }); if (j.status === 'running') setTimeout(() => poll(false), 1200) })
+        .catch(() => { if (scanRef.current.alive) setScan((s) => ({ ...(s || {}), status: 'err' })) })
+    }
+    poll(true)
+  }
+  const stopScan = () => { scanRef.current.alive = false; setScan(null) }
+  const scanning = scan && scan.status === 'running'
+  const d = (scan && scan.data) || st.data || {}
+  if (st.status === 'loading' && !scan) return <div className="card"><Spinner label="Measuring speed to lead… (sampling recent leads' conversations)" /></div>
+  if (!scan && (st.status === 'err' || d.connected === false)) return <div className="card empty-deep"><div className="big">⏱️</div><b>Couldn't measure speed to lead.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
+  if (!d.sampled && !scanning) return <div className="card empty-deep"><div className="big">⏱️</div><b>No leads with conversations in this range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Speed to Lead samples recent leads and reads their conversation history. Widen the date range to include leads that were messaged.</p></div>
   const maxB = Math.max(1, ...d.buckets.map((b) => b.count))
   const fastCount = d.buckets.filter((b) => /5 min|5-15|15-60/.test(b.label)).reduce((a, b) => a + b.count, 0)
   return (
     <div className="timing-view">
       <div className="card timing-intro">
         <h3 style={{ margin: '0 0 4px' }}>Speed to Lead</h3>
-        <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message</b> sent to them. Automated workflow / campaign / bulk messages are excluded, so this reflects how fast a person actually reaches out. Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</p>
+        <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message</b> sent to them. Automated workflow / campaign / bulk messages are excluded, so this reflects how fast a person actually reaches out. {d.full ? <>Covers the <b>whole date range</b> — {fmtNumber(d.totalLeads)} leads.</> : <>Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</>}</p>
+        <div className="tm-scan">
+          {!scan && <button className="set-relink" onClick={runScan}>⟳ Scan the whole date range (not just a sample)</button>}
+          {scan && <>
+            <span className={scan.status === 'done' ? 'tm-scan-done' : ''}>{scan.status === 'done' ? `✓ Full scan complete · ${fmtNumber(scan.total)} leads` : scan.status === 'err' ? '⚠ Scan failed — try again' : `Scanning conversations… ${fmtNumber(scan.processed)} / ${fmtNumber(scan.total)} leads`}</span>
+            {scanning && <span className="ov-spin" />}
+            <button className="set-relink" onClick={stopScan}>{scan.status === 'running' ? 'Stop' : 'Back to sample'}</button>
+          </>}
+        </div>
+        {d.viaAppt > 0 && <div className="tm-hours">📌 <b>{fmtNumber(d.viaAppt)} of {fmtNumber(d.measured)}</b> measured leads had <b>no manual message</b>, so their <b>first staff-booked appointment</b> was used as the speed signal instead (automated / self-bookings don't count). Useful for clients who work leads by phone/booking rather than messaging.</div>}
         {d.hours
           ? <div className="tm-hours on">🕘 Measured within working hours · <b>{fmtHours(d.hours)}</b> — after-hours gaps don't count against response time. Change in Settings → client → Summary.</div>
           : <div className="tm-hours">🕘 Measuring raw round-the-clock time. Set the team's <b>working hours</b> in Settings → client → Summary so overnight leads aren't counted as slow responses.</div>}

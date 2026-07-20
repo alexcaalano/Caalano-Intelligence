@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.28.0 — 2026-07-20 · `PENDING`
+- **Speed to Lead — whole-dataset scan:** a "Scan the whole date range" button
+  processes every lead in the range (not just a sample), chunked across polled
+  requests with a live progress counter, so you can get the complete figure.
+- **Speed to Lead — no-messaging fallback:** for clients who don't use the
+  messaging channel (e.g. Pool Haus), when a lead has no manual message the
+  **first staff-booked appointment** is used as the speed signal instead
+  (automated / self-bookings don't count). The tab calls out how many leads used
+  this fallback.
+- **Forms location breakdown** is now **collapsed by default** behind a "📍 Where
+  leads are located" toggle instead of sitting expanded at the top.
+
 ## v3.27.0 — 2026-07-20 · `PENDING`
 - **Appointments tab — more insights:** cancellation % and reschedule % (overall
   and by lead-time bucket, to see if far-out bookings cancel more), a

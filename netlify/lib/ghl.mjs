@@ -296,6 +296,12 @@ async function fetchAppointments(locTok, locationId, from, to) {
         const added = Date.parse(ev.dateAdded), start = Date.parse(ev.startTime)
         mark(cid, st, added, start)
         markInto(rec.byContact, cid, st, added, start)
+        // Earliest STAFF-booked (a user created it) live appointment per contact -
+        // used as the manual-contact fallback for Speed to Lead when a client has
+        // no messaging channel (the booking is a genuine manual action).
+        if (cid && apptBookedBy(ev) === 'staff' && isFinite(added) && !/invalid|cancel/.test(String(st || '').toLowerCase())) {
+          const e = byContact.get(cid); if (e && (!e.staffBookedMs || added < e.staffBookedMs)) e.staffBookedMs = added
+        }
       }
     } catch { /* skip a calendar we cannot read; others still count */ }
   }))
@@ -828,7 +834,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     const cAdded = Date.parse(o.contact && (o.contact.dateAdded || o.contact.createdAt))
     const leadIn = isFinite(cAdded) ? Math.min(cAdded, created) : created
     const f = apptByContact.get(cid)
-    seen.add(cid); leads.push({ cid, created, leadIn, channel: channelOf(utmOf(o)), won: String(o.status || '').toLowerCase() === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus) })
+    seen.add(cid); leads.push({ cid, created, leadIn, channel: channelOf(utmOf(o)), won: String(o.status || '').toLowerCase() === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus), staffBookedMs: (f && f.staffBookedMs) || null })
   }
   leads.sort((a, b) => b.leadIn - a.leadIn)
   const pick = leads.slice(0, sample)
@@ -861,16 +867,22 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
         if (kind === 'manual' && (manual == null || ms < manual)) manual = ms
       }
     }
+    // Fallback for clients with no messaging: if there's no manual MESSAGE, use
+    // the first STAFF-booked appointment (a manual action) as the speed signal.
+    // Automated/self-booked bookings (no user) don't qualify.
+    let via = manual != null ? 'message' : null
+    if (manual == null && lead.staffBookedMs != null && lead.staffBookedMs >= lead.leadIn - 60000) { manual = lead.staffBookedMs; via = 'appt' }
     if (opts.debug && debugRows.length < 20) {
       outs.sort((a, b) => a.ms - b.ms)
       debugRows.push({
         createdAt: new Date(lead.created).toISOString(),
         leadIn: new Date(lead.leadIn).toISOString(),
+        via,
         firstManualMin: manual != null ? Math.round((manual - lead.leadIn) / 60000) : null,
         msgs: outs.slice(0, 5).map((o) => ({ source: o.source, hasUser: o.hasUser, kind: o.kind, type: o.type, minAfterLeadIn: Math.round((o.ms - lead.leadIn) / 60000) })),
       })
     }
-    return { ...lead, manual, any }
+    return { ...lead, manual, any, via }
   }
   const results = (await mapPool(pick, 6, firstOutbound)).filter(Boolean)
   // Buckets of manual response time (minutes). "No manual yet" = a lead we saw
@@ -885,14 +897,14 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   ]
   const bagg = Object.fromEntries(BUCKETS.map((b) => [b.key, { count: 0, booked: 0, shown: 0, won: 0 }]))
   const mins = []
-  let measured = 0, onlyAuto = 0, noOutbound = 0, skipped = 0
+  let measured = 0, onlyAuto = 0, noOutbound = 0, skipped = 0, viaAppt = 0
   for (const r of results) {
     if (r.skipped) { skipped++; continue }
     if (r.manual != null) {
       // Response time honouring working hours (when configured), so after-hours
       // gaps don't count against the team.
       const mm = businessMinutesBetween(r.leadIn, r.manual, hours, tz); if (mm < 0) continue
-      measured++; mins.push(mm)
+      measured++; mins.push(mm); if (r.via === 'appt') viaAppt++
       const b = BUCKETS.find((x) => mm < x.max) || BUCKETS[BUCKETS.length - 1]
       const g = bagg[b.key]; g.count++; if (r.booked) g.booked++; if (r.shown) g.shown++; if (r.won) g.won++
     } else if (r.any != null) onlyAuto++
@@ -906,7 +918,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   return {
     connected: true, tz,
     totalLeads: leads.length, sampled: pick.length - skipped, skipped,
-    measured, onlyAuto, noOutbound,
+    measured, onlyAuto, noOutbound, viaAppt, viaMessage: measured - viaAppt,
     medianMin: median == null ? null : Math.round(median),
     avgMin: avg == null ? null : Math.round(avg),
     within5Pct: within5 == null ? null : Math.round(within5 * 100),
@@ -914,6 +926,116 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     buckets: BUCKETS.map((b) => { const g = bagg[b.key]; return { label: b.label, count: g.count, booked: g.booked, shown: g.shown, won: g.won, bookRate: pct(g.booked, g.count), showRate: pct(g.shown, g.booked), winRate: pct(g.won, g.count) } }),
     sourceBreakdown: Object.entries(srcCounts).map(([source, v]) => ({ source, count: v.count, kind: v.kind })).sort((a, b) => b.count - a.count),
     ...(opts.debug ? { debug: debugRows } : {}),
+  }
+}
+
+// --- Speed to Lead: whole-dataset scan (chunked across polled requests) -----
+// The sampled version reads a bounded number of leads' conversations in one
+// call. To cover the WHOLE date range without hitting the function timeout, the
+// scan builds the full lead list once, then processes it in chunks across many
+// polled requests, accumulating into a blob (managed by the windsor function).
+const SPEED_BUCKETS = [
+  { key: 'u5', label: 'Under 5 min', max: 5 }, { key: 'u15', label: '5-15 min', max: 15 },
+  { key: 'u60', label: '15-60 min', max: 60 }, { key: 'u240', label: '1-4 hrs', max: 240 },
+  { key: 'u1440', label: '4-24 hrs', max: 1440 }, { key: 'over', label: 'Over 24 hrs', max: Infinity },
+]
+async function scanFirstOutbound(locTok, locationId, lead, deadline, srcCounts) {
+  if (Date.now() > deadline) return { skipped: true }
+  const cs = await ghlGet(locTok, '/conversations/search', { locationId, contactId: lead.cid, limit: 10 }).catch(() => null)
+  const convs = (cs && (cs.conversations || cs.conversation)) || []
+  let manual = null, any = null
+  for (const cv of convs.slice(0, 3)) {
+    if (Date.now() > deadline) break
+    const convId = cv.id || cv._id; if (!convId) continue
+    const mj = await ghlGet(locTok, `/conversations/${convId}/messages`, { limit: 100 }).catch(() => null)
+    const msgs = (mj && mj.messages && (mj.messages.messages || mj.messages)) || (Array.isArray(mj) ? mj : [])
+    for (const m of msgs) {
+      if (String(m.direction || '').toLowerCase() !== 'outbound') continue
+      const ms = Date.parse(m.dateAdded || m.dateUpdated || m.createdAt); if (!isFinite(ms)) continue
+      if (ms < lead.leadIn - 60000) continue
+      const kind = classifyOutbound(m); const hasUser = !!msgUserId(m)
+      const sk = `${String(m.source || 'none').toLowerCase()} · ${hasUser ? 'user' : 'no-user'}`
+      if (!srcCounts[sk]) srcCounts[sk] = { count: 0, kind }
+      srcCounts[sk].count++
+      if (any == null || ms < any) any = ms
+      if (kind === 'manual' && (manual == null || ms < manual)) manual = ms
+    }
+  }
+  let via = manual != null ? 'message' : null
+  if (manual == null && lead.staffBookedMs != null && lead.staffBookedMs >= lead.leadIn - 60000) { manual = lead.staffBookedMs; via = 'appt' }
+  return { manual, any, via }
+}
+// Build the full ordered lead list for a range (no conversation reads yet).
+export async function speedLeadList(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const [opps, appts] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to, 3000),
+    fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map() })),
+  ])
+  const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
+  const seen = new Set(); const leads = []
+  for (const o of opps) {
+    const cid = contactIdOf(o); if (!cid || seen.has(cid)) continue
+    const created = Date.parse(o.createdAt); if (!isFinite(created)) continue
+    if (fromMs != null && created < fromMs) continue
+    if (toMs != null && created > toMs) continue
+    const cAdded = Date.parse(o.contact && (o.contact.dateAdded || o.contact.createdAt))
+    const leadIn = isFinite(cAdded) ? Math.min(cAdded, created) : created
+    const f = apptByContact.get(cid)
+    seen.add(cid); leads.push({ cid, leadIn, channel: channelOf(utmOf(o)), won: String(o.status || '').toLowerCase() === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus), staffBookedMs: (f && f.staffBookedMs) || null })
+  }
+  leads.sort((a, b) => b.leadIn - a.leadIn)
+  return { tz, leads }
+}
+// Process leads[startIdx..] into `agg` for up to budgetMs; returns the new index.
+export async function speedScanChunk(locationId, leads, startIdx, budgetMs, agg) {
+  const locTok = await locationToken(locationId)
+  const deadline = Date.now() + budgetMs
+  let idx = startIdx
+  while (idx < leads.length && Date.now() < deadline) {
+    const batch = leads.slice(idx, idx + 6)
+    const res = await Promise.all(batch.map((l) => scanFirstOutbound(locTok, locationId, l, deadline, agg.srcCounts).catch(() => ({ skipped: true }))))
+    let stop = false
+    for (let k = 0; k < batch.length; k++) {
+      const r = res[k]; if (r.skipped) { stop = true; break }
+      const l = batch[k]
+      if (r.manual != null) agg.manualRaw.push({ leadIn: l.leadIn, manual: r.manual, via: r.via, booked: l.booked, shown: l.shown, won: l.won })
+      else if (r.any != null) agg.onlyAuto++
+      else agg.noOutbound++
+      idx++
+    }
+    if (stop) break
+  }
+  return idx
+}
+// Turn accumulated scan state into the same shape the sampled endpoint returns.
+export function finalizeSpeed(agg, total, processed, hours, tz) {
+  const bagg = Object.fromEntries(SPEED_BUCKETS.map((b) => [b.key, { count: 0, booked: 0, shown: 0, won: 0 }]))
+  const mins = []; let measured = 0, viaAppt = 0
+  for (const r of agg.manualRaw) {
+    const mm = businessMinutesBetween(r.leadIn, r.manual, hours, tz); if (mm < 0) continue
+    measured++; mins.push(mm); if (r.via === 'appt') viaAppt++
+    const b = SPEED_BUCKETS.find((x) => mm < x.max) || SPEED_BUCKETS[SPEED_BUCKETS.length - 1]
+    const g = bagg[b.key]; g.count++; if (r.booked) g.booked++; if (r.shown) g.shown++; if (r.won) g.won++
+  }
+  mins.sort((a, b) => a - b)
+  const median = mins.length ? mins[Math.floor((mins.length - 1) / 2)] : null
+  const avg = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null
+  const within5 = mins.length ? mins.filter((m) => m < 5).length / mins.length : null
+  const pct = (n, d) => (d ? Math.round((n / d) * 100) : null)
+  return {
+    connected: true, tz, full: true,
+    totalLeads: total, sampled: processed, measured, onlyAuto: agg.onlyAuto, noOutbound: agg.noOutbound,
+    viaAppt, viaMessage: measured - viaAppt,
+    medianMin: median == null ? null : Math.round(median),
+    avgMin: avg == null ? null : Math.round(avg),
+    within5Pct: within5 == null ? null : Math.round(within5 * 100),
+    hours: hours ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin } : null,
+    buckets: SPEED_BUCKETS.map((b) => { const g = bagg[b.key]; return { label: b.label, count: g.count, booked: g.booked, shown: g.shown, won: g.won, bookRate: pct(g.booked, g.count), showRate: pct(g.shown, g.booked), winRate: pct(g.won, g.count) } }),
+    sourceBreakdown: Object.entries(agg.srcCounts).map(([source, v]) => ({ source, count: v.count, kind: v.kind })).sort((a, b) => b.count - a.count),
   }
 }
 

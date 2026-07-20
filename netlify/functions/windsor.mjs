@@ -9,7 +9,15 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, buildAppointmentInsights, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { getStore } from '@netlify/blobs'
+// Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
+function parseHours(url) {
+  const bhStart = url.searchParams.get('bhStart'), bhEnd = url.searchParams.get('bhEnd'), bhDays = url.searchParams.get('bhDays')
+  if (bhStart == null || bhEnd == null || !bhDays) return null
+  const days = bhDays.split(',').map(Number).filter((n) => n >= 0 && n <= 6)
+  return days.length ? { days, startMin: Number(bhStart), endMin: Number(bhEnd) } : null
+}
 
 const CLIENTS = {
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
@@ -836,16 +844,36 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'speed', client, connected: false })
     const sample = Math.min(Number(url.searchParams.get('sample')) || 60, 120)
     const dbg = url.searchParams.get('debug') === '1'
-    // Optional working-hours adjustment: bhDays=1,2,3,4,5 & bhStart/bhEnd in
-    // minutes-of-day. When present, response time counts only business minutes.
-    let hours = null
-    const bhStart = url.searchParams.get('bhStart'), bhEnd = url.searchParams.get('bhEnd'), bhDays = url.searchParams.get('bhDays')
-    if (bhStart != null && bhEnd != null && bhDays) {
-      const days = bhDays.split(',').map(Number).filter((n) => n >= 0 && n <= 6)
-      if (days.length) hours = { days, startMin: Number(bhStart), endMin: Number(bhEnd) }
-    }
+    const hours = parseHours(url) // working-hours adjustment (business minutes only)
     try { return json({ scope: 'speed', client, period: { from, to, preset }, ...(await buildSpeedToLead(cc.ghl, from, to, { sample, debug: dbg, hours })) }, 200, !dbg) }
     catch (e) { return json({ scope: 'speed', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
+  // Speed to Lead — WHOLE dataset, processed in chunks across polled requests and
+  // accumulated in a blob. The frontend calls with reset=1 to start, then polls
+  // (reset absent) until status === 'done'.
+  if (url.searchParams.get('scope') === 'speedscan') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'speedscan', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'speedscan', client, connected: false })
+    const hours = parseHours(url)
+    const reset = url.searchParams.get('reset') === '1'
+    const store = getStore({ name: 'caalano-speedscan', consistency: 'strong' })
+    const key = `${client}|${from || ''}|${to || ''}`
+    try {
+      let state = reset ? null : await store.get(key, { type: 'json' }).catch(() => null)
+      if (!state) {
+        const { tz, leads } = await speedLeadList(cc.ghl, from, to)
+        state = { tz, leads, idx: 0, total: leads.length, status: leads.length ? 'running' : 'done', agg: { manualRaw: [], onlyAuto: 0, noOutbound: 0, srcCounts: {} } }
+      }
+      if (state.status !== 'done') {
+        state.idx = await speedScanChunk(cc.ghl, state.leads, state.idx, 18000, state.agg)
+        if (state.idx >= state.total) state.status = 'done'
+        await store.setJSON(key, state)
+      }
+      const out = finalizeSpeed(state.agg, state.total, state.idx, hours, state.tz)
+      return json({ scope: 'speedscan', client, period: { from, to, preset }, status: state.status, processed: state.idx, total: state.total, ...out }, 200)
+    } catch (e) { return json({ scope: 'speedscan', client, status: 'err', error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
   // Auto-detected working hours (from the client's calendars) for the Settings

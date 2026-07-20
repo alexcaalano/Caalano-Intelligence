@@ -889,9 +889,11 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
 const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg; return r <= 0.85 ? 'rgba(23,178,106,.28)' : r <= 1.15 ? 'rgba(245,165,36,.28)' : 'rgba(240,67,91,.28)' }
 
-function MetaDeep({ deep, currency, attr, clientId }) {
+function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const kpis = loadKpis(clientId)
   const [sel, setSel] = useState(null)
+  const [selForm, setSelForm] = useState(null) // filter the tables to one CRM form's ads
+  const formsSt = useForms(clientId, range, nonce)
   const [day, setDay] = useState(null)
   const [campSort, onCampSort] = useSort('spend')
   const [adsetSort, onAdsetSort] = useSort('spend')
@@ -923,9 +925,34 @@ function MetaDeep({ deep, currency, attr, clientId }) {
   // When a campaign is filtered, the top scorecard + Caalano360 tiles recompute
   // for that campaign; otherwise they show the whole account.
   const selCamp = sel ? (m.campaigns.find((c) => c.name === sel) || null) : null
-  const t = selCamp
-    ? { spend: selCamp.spend, impressions: selCamp.impressions, clicks: selCamp.clicks, linkClicks: selCamp.linkClicks, leads: selCamp.leads, reach: selCamp.reach || 0 }
-    : acct
+  // Form filter: match a CRM form's ad UTMs (campaign / ad set / creative names)
+  // to the Meta rows so clicking a form drills the whole tab into its ads.
+  const uSet = (arr) => new Set((arr || []).map(unorm))
+  const forms = (formsSt.status === 'ok' && formsSt.data && formsSt.data.forms) || []
+  const selFormRow = selForm ? forms.find((f) => f.form === selForm) : null
+  const fCre = selFormRow ? uSet(selFormRow.creatives) : null
+  const fAdset = selFormRow ? uSet(selFormRow.adsets) : null
+  const fCamp = selFormRow ? uSet(selFormRow.campaigns) : null
+  const formAds = fCre ? m.ads.filter((a) => fCre.has(unorm(a.name))) : null
+  const formT = formAds ? formAds.reduce((s, a) => ({ spend: s.spend + a.spend, impressions: s.impressions + a.impressions, clicks: s.clicks + a.clicks, linkClicks: s.linkClicks + a.linkClicks, leads: s.leads + a.leads, reach: 0 }), { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, reach: 0 }) : null
+  const pickCampaign = (name) => { setSelForm(null); setSel(sel === name ? null : name) }
+  const pickForm = (name) => { setSel(null); setSelForm(selForm === name ? null : name) }
+  // Per-form ad performance: match each form's creatives to Meta ad spend, then
+  // pair it with the form's CRM funnel (leads → booked → won).
+  const formPerf = forms
+    .filter((f) => f.kind === 'facebook' || (f.creatives && f.creatives.length))
+    .map((f) => {
+      const cre = uSet(f.creatives)
+      const ads = m.ads.filter((a) => cre.has(unorm(a.name)))
+      const adSpend = ads.reduce((s, a) => s + a.spend, 0), impr = ads.reduce((s, a) => s + a.impressions, 0), lc = ads.reduce((s, a) => s + a.linkClicks, 0)
+      return { ...f, adSpend, impr, cvr: lc ? (f.leads / lc) * 100 : null, cpl: f.leads ? adSpend / f.leads : null, cBooked: f.booked ? adSpend / f.booked : null, cWon: f.won ? adSpend / f.won : null, roas: adSpend ? f.revenue / adSpend : null }
+    })
+    .sort((a, b) => b.adSpend - a.adSpend)
+  const t = formT
+    ? formT
+    : selCamp
+      ? { spend: selCamp.spend, impressions: selCamp.impressions, clicks: selCamp.clicks, linkClicks: selCamp.linkClicks, leads: selCamp.leads, reach: selCamp.reach || 0 }
+      : acct
   // Caalano360 outcomes: the selected campaign's UTM-matched row, or every
   // campaign summed (each opp lands in exactly one utm_campaign bucket).
   const selOc = selCamp ? oCamp.get(unorm(sel)) : null
@@ -957,8 +984,8 @@ function MetaDeep({ deep, currency, attr, clientId }) {
     return [...dm.values()].sort((a, b) => a.date.localeCompare(b.date))
   })() : (m.daily || [])
   const daily = dailySrc.map((d) => ({ ...d, label: dayLabel(d.date), cpl: d.leads ? d.spend / d.leads : 0, cpm: d.impressions ? d.spend / d.impressions * 1000 : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpc: d.clicks ? d.spend / d.clicks : 0 }))
-  const adsets = sel ? m.adsets.filter((a) => a.campaign === sel) : m.adsets
-  const adsFull = sel ? m.ads.filter((a) => a.campaign === sel) : m.ads
+  const adsets = (sel ? m.adsets.filter((a) => a.campaign === sel) : m.adsets).filter((a) => !fAdset || fAdset.has(unorm(a.name)))
+  const adsFull = (sel ? m.ads.filter((a) => a.campaign === sel) : m.ads).filter((a) => !fCre || fCre.has(unorm(a.name)))
   const CRE_PAGE = 15
   const creTotalPages = Math.max(1, Math.ceil(adsFull.length / CRE_PAGE))
   const crePageC = Math.min(crePage, creTotalPages - 1)
@@ -1001,6 +1028,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
     <>
       <AttrDiag attr={attr} />
       {sel && <div className="filt-bar">Filtered to <b>{sel}</b><button className="filt-clear" onClick={() => setSel(null)}>clear ✕</button></div>}
+      {selForm && <div className="filt-bar">Filtered to form <b>📝 {selForm}</b> · showing only the ads that drove it<button className="filt-clear" onClick={() => setSelForm(null)}>clear ✕</button></div>}
       <div className="scorecard">
         <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown />
         <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
@@ -1041,7 +1069,7 @@ function MetaDeep({ deep, currency, attr, clientId }) {
       </div>}
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="linkCtr" sort={campSort} on={onCampSort}>Link CTR</SortTh><SortTh k="hook" sort={campSort} on={onCampSort}>Hook</SortTh><SortTh k="leads" sort={campSort} on={onCampSort}>Leads</SortTh><SortTh k="cvr" sort={campSort} on={onCampSort}>CVR</SortTh><SortTh k="cpl" sort={campSort} on={onCampSort}>CPL</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} cols={o360cols} />}</tr></thead>
-        <tbody>{sortRows(m.campaigns.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setSel(sel === c.name ? null : c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+        <tbody>{sortRows(m.campaigns.filter((c) => !fCamp || fCamp.has(unorm(c.name))).map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCampaign(c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={adsetSort} on={onAdsetSort}>Ad set</SortTh><SortTh k="spend" sort={adsetSort} on={onAdsetSort}>Spend</SortTh><SortTh k="impressions" sort={adsetSort} on={onAdsetSort}>Impr.</SortTh><SortTh k="linkCtr" sort={adsetSort} on={onAdsetSort}>Link CTR</SortTh><SortTh k="hook" sort={adsetSort} on={onAdsetSort}>Hook</SortTh><SortTh k="leads" sort={adsetSort} on={onAdsetSort}>Leads</SortTh><SortTh k="cvr" sort={adsetSort} on={onAdsetSort}>CVR</SortTh><SortTh k="cpl" sort={adsetSort} on={onAdsetSort}>CPL</SortTh>{has360 && <O360Head sort={adsetSort} on={onAdsetSort} cols={o360cols} />}</tr></thead>
         <tbody>{sortRows(adsets.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, cvr: rate(c.leads, c.linkClicks), cpl: c.leads ? c.spend / c.leads : null, ...o360Fields(oAdset.get(unorm(c.name)), c.spend, c.leads, o360cols) })), adsetSort).map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td>{fmtNumber(c.leads)}</td><td className={c.leads ? gb(c.cvr, avgCvr) : ''}>{c.leads ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpl != null ? (c.cpl <= cpl ? 'good' : 'bad') : ''}>{c.cpl != null ? fmtCurrency(c.cpl, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
@@ -1049,6 +1077,30 @@ function MetaDeep({ deep, currency, attr, clientId }) {
         <div className="lvl-title">Performance by format <span className="sub">· image vs video</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Hook</th><th>Leads</th><th>CVR</th><th>CPL</th>{has360 && <O360Head cols={o360cols} />}</tr></thead>
           <tbody>{formats.map((f) => (<tr key={f.type}><td>{f.type}</td><td>{fmtNumber(f.count)}</td><td>{fmtCurrency(f.spend, currency)}</td><td>{fmtNumber(f.impressions)}</td><td>{fmtPct(rate(f.linkClicks, f.impressions), 2)}</td><td>{f.type === 'Video' ? fmtPct(rate(f.videoViews, f.impressions), 1) : '-'}</td><td>{fmtNumber(f.leads)}</td><td>{f.leads ? fmtPct(rate(f.leads, f.linkClicks), 1) : '-'}</td><td>{f.leads ? fmtCurrency(f.spend / f.leads, currency) : '-'}</td>{has360 && o360Cells(f, currency, o360cols)}</tr>))}</tbody></table></div>
+      </>}
+      {formPerf.length > 0 && <>
+        <div className="lvl-title">Performance by form <span className="sub">· {formPerf.length} form{formPerf.length === 1 ? '' : 's'} · ad spend joined to CRM outcomes · click a form to drill the tab into its ads</span></div>
+        <div className="table-wrap"><table>
+          <thead><tr><th>Form</th><th className="num">Spend</th><th className="num">Impr.</th><th className="num">Leads</th><th className="num">CVR</th><th className="num">CPL</th><th className="num">Booked</th><th className="num">Cost / Book</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Cost / Won</th><th className="num">Revenue</th><th className="num">ROAS</th></tr></thead>
+          <tbody>{formPerf.map((f) => (
+            <tr key={f.form} className={selForm === f.form ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickForm(f.form)}>
+              <td title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}</td>
+              <td className="num">{fmtCurrency(f.adSpend, currency)}</td>
+              <td className="num">{fmtNumber(f.impr)}</td>
+              <td className="num">{fmtNumber(f.leads)}</td>
+              <td className="num">{f.cvr != null ? fmtPct(f.cvr, 1) : '-'}</td>
+              <td className="num">{f.cpl != null ? fmtCurrency(f.cpl, currency) : '-'}</td>
+              <td className="num">{fmtNumber(f.booked)}</td>
+              <td className="num">{f.cBooked != null ? fmtCurrency(f.cBooked, currency) : '-'}</td>
+              <td className="num">{fmtNumber(f.shown)}</td>
+              <td className="num">{fmtNumber(f.won)}</td>
+              <td className="num">{f.cWon != null ? fmtCurrency(f.cWon, currency) : '-'}</td>
+              <td className="num">{fmtCurrency(f.revenue, currency)}</td>
+              <td className="num">{f.roas != null ? `${f.roas.toFixed(2)}×` : '-'}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <p className="caveat">Spend / Impr. / CVR come from the Meta ads whose creative matches this form's submissions (utm_content); Leads / Booked / Shown / Won / Revenue are the CRM outcomes for leads that came through the form. CPL = spend ÷ CRM leads. Click a form to filter the campaigns, ad sets and creatives above to just the ads that drove it.</p>
       </>}
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr>
@@ -2775,7 +2827,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
                 : live.data && live.data.error ? <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load CRM for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{live.data.error}</p><p style={{ maxWidth: 460, margin: '8px auto 0' }}>If this is a token / access error, the agency app may not have access to this sub-account. Try the audit endpoint <code>?scope=ghlaudit</code>.</p></div>
                   : <div className="card empty-deep"><div className="big">🗂️</div><b>No Caalano Systems data for this client in range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client may not have a Caalano Systems sub-account mapped, or has no opportunities in the selected period.</p></div>
         )}
-        {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
+        {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} /></>)}
         {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {tab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}

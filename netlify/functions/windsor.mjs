@@ -747,19 +747,23 @@ export default async (req) => {
   // which keeps full access. Client-scoped requests must name an allowed
   // account; agency-wide requests are off-limits to client (viewer) accounts.
   const AUTH_SECRET = process.env.AUTH_SECRET
-  if (AUTH_SECRET) {
-    const me = await currentUser(req, AUTH_SECRET).catch(() => null)
-    if (me) {
-      if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
-      if (!client && me.role === 'viewer') return json({ error: 'No access to agency-wide data.' }, 403)
-    }
+  const me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET).catch(() => null) : null
+  if (me) {
+    if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
+    if (!client && me.role === 'viewer') return json({ error: 'No access to agency-wide data.' }, 403)
   }
+  // Restricted staff (a User limited to specific accounts) only ever see their
+  // own accounts inside agency-wide aggregates — enforced server-side so the
+  // raw response can't leak other clients. null = no restriction (admin / staff
+  // with all-accounts / the trusted Basic-Auth path).
+  const restrictTo = me && me.role === 'user' && me.allClients === false ? new Set(me.clients || []) : null
+  const pickAllowed = (obj) => restrictTo ? Object.fromEntries(Object.entries(obj || {}).filter(([id]) => restrictTo.has(id))) : (obj || {})
 
   // Agency-wide Caalano Systems access/scope audit across every mapped client.
   if (url.searchParams.get('scope') === 'ghlaudit') {
     if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
     try {
-      const entries = Object.entries(CLIENTS).filter(([, cc]) => cc.ghl)
+      const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && (!restrictTo || restrictTo.has(id)))
       const audit = await Promise.all(entries.map(async ([id, cc]) => ({ client: id, location: cc.ghl, ...(await auditLocation(cc.ghl)) })))
       return json({ audit }, 200)
     } catch (e) { return json({ error: String(e.message || e) }, 502) }
@@ -806,23 +810,29 @@ export default async (req) => {
 
   // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.
   if (url.searchParams.get('scope') === 'agency') {
-    try { const ov = await buildOverview(from, to, preset, key); return json({ scope: 'agency', period: { from, to, preset }, ...ov }, 200, true) }
-    catch (e) { return json({ error: String(e.message || e) }, 502) }
+    try {
+      const ov = await buildOverview(from, to, preset, key)
+      if (restrictTo) {
+        ov.clients = pickAllowed(ov.clients)
+        if (ov.alerts) { ov.alerts.meta = (ov.alerts.meta || []).filter((a) => restrictTo.has(a.id)); ov.alerts.google = (ov.alerts.google || []).filter((a) => restrictTo.has(a.id)) }
+      }
+      return json({ scope: 'agency', period: { from, to, preset }, ...ov }, 200, !restrictTo)
+    } catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 
   // Rolling-window performance trends across all clients (own date logic).
   if (url.searchParams.get('scope') === 'trends') {
-    try { const tr = await buildTrends(key); return json({ scope: 'trends', ...tr }, 200, true) }
+    try { const tr = await buildTrends(key); if (restrictTo) tr.clients = pickAllowed(tr.clients); return json({ scope: 'trends', ...tr }, 200, !restrictTo) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 
   // Agency-wide UTM source-tag coverage per client (lazy-loaded for the leaderboard).
   if (url.searchParams.get('scope') === 'coverage') {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'coverage', connected: false, coverage: {} })
-    const entries = Object.entries(CLIENTS).filter(([, cc]) => cc.ghl)
+    const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && (!restrictTo || restrictTo.has(id)))
     const out = {}
     await Promise.all(entries.map(async ([id, cc]) => { try { out[id] = await attributionCoverage(cc.ghl, from, to) } catch { out[id] = null } }))
-    return json({ scope: 'coverage', connected: true, coverage: out }, 200, true)
+    return json({ scope: 'coverage', connected: true, coverage: out }, 200, !restrictTo)
   }
 
   // Weekly (Mon–Sun) traffic-light board for one client.

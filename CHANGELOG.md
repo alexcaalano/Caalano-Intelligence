@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.36.1 — 2026-07-21 · `PENDING`
+- **Team & access is now discoverable before you switch logins on.** Settings
+  always shows the **Clients / Team & access** sub-tabs. Open **Team & access**
+  and — until the login system is enabled — it explains exactly how to turn it
+  on (add the `AUTH_SECRET` env var in Netlify), so the setup steps live in the
+  app instead of only in chat.
+
 ## v3.36.0 — 2026-07-20 · `PENDING`
 - **Proper login screen + multi-user accounts (replaces the shared password).**
   A real email + password sign-in, individual accounts, and team invites — with

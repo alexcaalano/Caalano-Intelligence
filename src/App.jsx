@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.36.0'
+const APP_VERSION = '3.36.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4715,14 +4715,12 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
   }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   return (
     <div className="settings-page">
-      {authEnabled && (
-        <div className="set-sections">
-          <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>
-          {isAdmin && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
-          <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>
-        </div>
-      )}
-      {authEnabled && section === 'team' && isAdmin && <UsersAdmin authUser={authUser} authEnabled={authEnabled} />}
+      <div className="set-sections">
+        <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>
+        {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
+        {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
+      </div>
+      {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} />}
       {authEnabled && section === 'account' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Your account</h3>
@@ -4730,7 +4728,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
           <ChangePasswordCard />
         </div>
       )}
-      {(!authEnabled || section === 'clients') && (<>
+      {section === 'clients' && (<>
       <div className="set-stats">
         <div className="set-stat"><div className="v">{config.clients.length}</div><div className="l">Clients</div></div>
         <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>

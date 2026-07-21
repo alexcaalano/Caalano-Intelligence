@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.38.0'
+const APP_VERSION = '3.39.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1990,7 +1990,10 @@ function fetchDiscover(force) {
   if (force) _discoverPromise = null
   if (!_discoverPromise) {
     const to = new Date().toISOString().slice(0, 10)
-    const from = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+    // Wide (1-year) window so any account with activity in the last year is
+    // surfaced, not just very recent spenders. A brand-new account with no spend
+    // yet still won't appear until Windsor has data for it.
+    const from = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
     const bust = force ? `&_r=${Date.now()}` : ''
     _discoverPromise = fetch(`/.netlify/functions/windsor?scope=discover&from=${from}&to=${to}${bust}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
   }
@@ -5175,33 +5178,87 @@ function PendingRow({ u, clients, onApprove, onReject }) {
     </div>
   )
 }
+// Invite / edit-access modal. When `user` is null it's an invite; otherwise it
+// edits that user. The role dropdown reveals the matching allocation controls
+// (Viewer → clients + tabs, User → accounts) via AllocationEditor.
+function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
+  const isInvite = !user
+  const self = !isInvite && authUser && user.email === authUser.email
+  const [name, setName] = useState(isInvite ? '' : (user.name || ''))
+  const [email, setEmail] = useState(isInvite ? '' : user.email)
+  const [draft, setDraft] = useState(isInvite
+    ? { role: 'viewer', clients: [], allClients: true, tabs: null }
+    : { role: user.role, clients: user.clients || [], allClients: user.allClients !== false, tabs: user.tabs })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [link, setLink] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const copy = (t) => { navigator.clipboard.writeText(t).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1600) }).catch(() => {}) }
+  const submit = async () => {
+    setErr('')
+    if (isInvite && !email) return setErr('Enter an email address.')
+    if (draft.role === 'viewer' && !(draft.clients || []).length) return setErr('Pick at least one client for a Viewer.')
+    setBusy(true)
+    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs }
+    if (isInvite) {
+      const r = await authApi('invite', { method: 'POST', body: JSON.stringify({ name, email, ...payload }) })
+      setBusy(false)
+      if (r.ok) { setLink(r.inviteUrl); onChanged() } else setErr(r.error || 'Could not create the invite.')
+    } else {
+      const r = await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: user.email, name, ...payload }) })
+      setBusy(false)
+      if (r.ok) { onChanged(); onClose() } else setErr(r.error || 'Could not save changes.')
+    }
+  }
+  const resend = async () => { const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: user.email, name: user.name, role: user.role, clients: user.clients, allClients: user.allClients, tabs: user.tabs }) }); if (r.ok) setLink(r.inviteUrl) }
+  const toggleStatus = async () => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: user.email, status: user.status === 'disabled' ? 'active' : 'disabled' }) }); onChanged(); onClose() }
+  const remove = async () => { if (!window.confirm(`Remove ${user.name || user.email}? They’ll lose access immediately.`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: user.email }) }); onChanged(); onClose() }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal u-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head"><div><h3>{isInvite ? 'Invite a person' : `Edit access — ${user.name || user.email}`}</h3><span className="cap">{isInvite ? 'Set their role and exactly what they can see' : user.email}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-body">
+          {self && <div className="auth-err" style={{ marginBottom: 12 }}>This is your own account — you can’t change your own role or access.</div>}
+          <fieldset className="u-modal-fs" disabled={self}>
+            {isInvite ? (
+              <div className="u-invite" style={{ marginBottom: 12 }}>
+                <input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+                <input type="email" placeholder="their@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+            ) : (
+              <label className="alloc-role" style={{ marginBottom: 10, maxWidth: 320 }}>Name<input className="u-modal-name" value={name} onChange={(e) => setName(e.target.value)} /></label>
+            )}
+            <AllocationEditor value={draft} clients={clients} onChange={setDraft} />
+          </fieldset>
+          {err && <div className="auth-err" style={{ marginTop: 12 }}>{err}</div>}
+          {link && (
+            <div className="u-link" style={{ marginTop: 12 }}>
+              <div><b>Invite link{isInvite ? ` for ${email}` : ''}</b> — send it to them; it works once and expires in 7 days.</div>
+              <div className="u-link-row"><code>{link}</code><button className="btn-ghost" onClick={() => copy(link)}>{copied ? 'Copied ✓' : 'Copy link'}</button></div>
+            </div>
+          )}
+          <div className="u-modal-foot">
+            <div className="u-modal-foot-l">
+              {!isInvite && user.status === 'invited' && <button className="btn-ghost sm" onClick={resend}>Copy invite link</button>}
+              {!isInvite && !self && user.status !== 'invited' && <button className="btn-ghost sm" onClick={toggleStatus}>{user.status === 'disabled' ? 'Enable account' : 'Disable account'}</button>}
+              {!isInvite && !self && <button className="btn-ghost sm danger" onClick={remove}>Remove</button>}
+            </div>
+            <div className="u-modal-foot-r">
+              <button className="btn-ghost" onClick={onClose}>{link ? 'Done' : 'Cancel'}</button>
+              {!(link && isInvite) && <button className="btn-primary" onClick={submit} disabled={busy || self}>{busy ? 'Saving…' : isInvite ? 'Create invite' : 'Save access'}</button>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 function UsersAdmin({ authUser, authEnabled, clients }) {
   const [state, setState] = useState({ status: 'loading', users: [] })
-  const emptyInv = { name: '', email: '', role: 'viewer', clients: [], allClients: true, tabs: null }
-  const [inv, setInv] = useState(emptyInv)
-  const [invBusy, setInvBusy] = useState(false)
-  const [invErr, setInvErr] = useState('')
-  const [link, setLink] = useState(null) // { email, url }
-  const [copied, setCopied] = useState('')
-  const [editing, setEditing] = useState(null) // { email, draft }
+  const [modal, setModal] = useState(null) // { user } to edit, { invite: true } to invite
   const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
   useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
-  const copy = (text, key) => { navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(''), 1600) }).catch(() => {}) }
-  const invite = async (e) => {
-    e.preventDefault(); setInvErr(''); setLink(null)
-    if (!inv.email) return
-    if (inv.role === 'viewer' && !(inv.clients || []).length) return setInvErr('Pick at least one client for a Viewer.')
-    setInvBusy(true)
-    const r = await authApi('invite', { method: 'POST', body: JSON.stringify(inv) })
-    setInvBusy(false)
-    if (r.ok) { setLink({ email: inv.email, url: r.inviteUrl }); setInv(emptyInv); load() }
-    else setInvErr(r.error || 'Could not create the invite.')
-  }
-  const resend = async (u) => { const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: u.email, name: u.name, role: u.role, clients: u.clients, allClients: u.allClients, tabs: u.tabs }) }); if (r.ok) { setLink({ email: u.email, url: r.inviteUrl }); load() } }
-  const toggleStatus = async (u) => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, status: u.status === 'disabled' ? 'active' : 'disabled' }) }); load() }
-  const remove = async (u) => { if (!window.confirm(`Remove ${u.name || u.email}? They’ll lose access immediately.`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); if (editing && editing.email === u.email) setEditing(null); load() }
-  const startEdit = (u) => setEditing(editing && editing.email === u.email ? null : { email: u.email, draft: { role: u.role, clients: u.clients || [], allClients: u.allClients !== false, tabs: u.tabs } })
-  const saveEdit = async () => { const d = editing.draft; if (d.role === 'viewer' && !(d.clients || []).length) return; await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: editing.email, role: d.role, clients: d.clients, allClients: d.allClients, tabs: d.tabs }) }); setEditing(null); load() }
+  const rejectPending = async (u) => { if (!window.confirm(`Reject ${u.name || u.email}’s request?`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
   const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs }) }); if (r.ok) load() }
 
   if (state.status === 'off') return (
@@ -5224,61 +5281,34 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
         <div className="card u-approvals">
           <h3 style={{ marginTop: 0 }}>Pending approvals <span className="u-badge pend">{pending.length}</span></h3>
           <p className="cap" style={{ marginTop: -4 }}>People who requested access. Set their role and what they can see, then approve — nothing is granted until you do.</p>
-          {pending.map((u) => <PendingRow key={u.email} u={u} clients={clients} onApprove={approve} onReject={remove} />)}
+          {pending.map((u) => <PendingRow key={u.email} u={u} clients={clients} onApprove={approve} onReject={rejectPending} />)}
         </div>
       )}
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Team &amp; access</h3>
-        <p className="cap" style={{ marginTop: -4 }}>Invite people and control what they can see. <b>Admin</b> = full control · <b>User</b> = agency staff (chosen accounts, no settings/invites) · <b>Viewer</b> = client (only their clients &amp; tabs).</p>
-
-        <form className="u-invite-block" onSubmit={invite}>
-          <div className="u-invite">
-            <input placeholder="Name (optional)" value={inv.name} onChange={(e) => setInv((s) => ({ ...s, name: e.target.value }))} />
-            <input type="email" placeholder="their@email.com" value={inv.email} onChange={(e) => setInv((s) => ({ ...s, email: e.target.value }))} required />
-          </div>
-          <AllocationEditor value={inv} clients={clients} onChange={(v) => setInv((s) => ({ ...s, ...v }))} />
-          <div><button className="btn-primary" disabled={invBusy || !inv.email}>{invBusy ? 'Inviting…' : 'Create invite'}</button></div>
-        </form>
-        {invErr && <div className="auth-err" style={{ marginTop: 8 }}>{invErr}</div>}
-        {link && (
-          <div className="u-link">
-            <div><b>Invite link for {link.email}</b> — send it to them; it works once and expires in 7 days.</div>
-            <div className="u-link-row"><code>{link.url}</code><button className="btn-ghost" onClick={() => copy(link.url, 'new')}>{copied === 'new' ? 'Copied ✓' : 'Copy link'}</button></div>
-          </div>
-        )}
+        <div className="u-head-row">
+          <div><h3 style={{ margin: 0 }}>Team &amp; access</h3><p className="cap" style={{ margin: '4px 0 0' }}><b>Admin</b> = full control · <b>User</b> = agency staff (chosen accounts, no settings) · <b>Viewer</b> = client (only their clients &amp; tabs).</p></div>
+          <button className="btn-primary" onClick={() => setModal({ invite: true })}>+ Invite person</button>
+        </div>
 
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
-          <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Access</th><th className="lft">Status</th><th className="lft">Actions</th></tr></thead>
+          <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Access</th><th className="lft">Status</th><th className="lft"></th></tr></thead>
           <tbody>{state.status === 'loading' ? <tr><td colSpan={6}><Spinner label="Loading team…" /></td></tr> : team.map((u) => {
             const self = u.email === (authUser && authUser.email)
-            const isEd = editing && editing.email === u.email
             return (
-              <React.Fragment key={u.email}>
-                <tr className={isEd ? 'row-sel' : ''}>
-                  <td className="lft">{u.name || <span className="cap">—</span>}{self && <span className="u-you">you</span>}</td>
-                  <td className="lft">{u.email}</td>
-                  <td className="lft">{ROLE_LABEL[u.role] || u.role}</td>
-                  <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
-                  <td className="lft">{badge(u)}</td>
-                  <td className="lft"><div className="u-actions">
-                    <button className="btn-ghost sm" onClick={() => startEdit(u)}>{isEd ? 'Close' : 'Edit access'}</button>
-                    {u.status === 'invited' && <button className="btn-ghost sm" onClick={() => resend(u)}>Copy invite</button>}
-                    {!self && u.status !== 'invited' && <button className="btn-ghost sm" onClick={() => toggleStatus(u)}>{u.status === 'disabled' ? 'Enable' : 'Disable'}</button>}
-                    {!self && <button className="btn-ghost sm danger" onClick={() => remove(u)}>Remove</button>}
-                  </div></td>
-                </tr>
-                {isEd && <tr className="u-detail-row"><td colSpan={6}>
-                  <div className="u-detail">
-                    <AllocationEditor value={editing.draft} clients={clients} onChange={(v) => setEditing((e) => ({ ...e, draft: v }))} />
-                    <div className="u-actions" style={{ marginTop: 10 }}><button className="btn-primary" onClick={saveEdit} disabled={self}>Save access</button><button className="btn-ghost" onClick={() => setEditing(null)}>Cancel</button>{self && <span className="cap" style={{ alignSelf: 'center' }}>You can’t change your own role/access.</span>}</div>
-                  </div>
-                </td></tr>}
-              </React.Fragment>
+              <tr key={u.email}>
+                <td className="lft">{u.name || <span className="cap">—</span>}{self && <span className="u-you">you</span>}</td>
+                <td className="lft">{u.email}</td>
+                <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
+                <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
+                <td className="lft">{badge(u)}</td>
+                <td className="lft"><button className="btn-ghost sm" onClick={() => setModal({ user: u })}>Edit access</button></td>
+              </tr>
             )
           })}</tbody>
         </table></div>
       </div>
+      {modal && <UserAccessModal user={modal.user || null} clients={clients} authUser={authUser} onClose={() => setModal(null)} onChanged={load} />}
     </div>
   )
 }

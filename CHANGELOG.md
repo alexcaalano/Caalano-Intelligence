@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.39.0 — 2026-07-21 · `PENDING`
+- **Team & access — edit users in a popup.** The team list is now a clean table
+  (Name · Email · Role · Access · Status) with a single **Edit access** button
+  per person and a **+ Invite person** button. Both open a **modal** with a role
+  dropdown (Admin / User / Viewer) that reveals the matching controls: choose
+  **Viewer** and the assigned-clients list + tab permissions appear; choose
+  **User** and the account allow-list (with an “all accounts” toggle) appears.
+  The modal also holds enable/disable, resend-invite and remove. Same modal is
+  used for inviting.
+- **Wider ad-account discovery.** The Add-client account explorer now looks back
+  **12 months** (was 90 days) so more Meta/Google accounts surface, and the
+  **⟳ Refresh accounts** button re-queries live. Note: accounts are read from
+  **Windsor** — one that isn’t connected there yet (or has no spend history)
+  won’t appear until Windsor has data for it.
+
 ## v3.38.0 — 2026-07-21 · `PENDING`
 - **Add a client with just one account + refresh available accounts.**
   - The Add-client explorer now makes clear you only need **one** linked account

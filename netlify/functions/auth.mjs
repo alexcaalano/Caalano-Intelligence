@@ -5,7 +5,7 @@
 import {
   bootstrapAdmin, authenticate, createInvite, inviteInfo, acceptInvite,
   listUsers, updateUser, deleteUser, changePassword, currentUser, countUsers,
-  signSession, sessionCookie, clearCookie, COOKIE,
+  signupRequest, approveUser, signSession, sessionCookie, clearCookie, COOKIE,
 } from '../lib/auth.mjs'
 
 const SESSION_MS = 14 * 86400 * 1000
@@ -55,6 +55,11 @@ export default async (req) => {
       if (r.error) return json({ ok: false, error: r.error }, 400)
       return json({ ok: true, user: r.user }, 200, sessionCookie(await mint(r.user)))
     }
+    if (action === 'signup' && req.method === 'POST') {
+      const r = await signupRequest(body)
+      if (r.error) return json({ ok: false, error: r.error }, 400)
+      return json({ ok: true, pending: true })
+    }
 
     // ---- authenticated actions (any signed-in user) ----
     const me = await currentUser(req, S)
@@ -70,19 +75,23 @@ export default async (req) => {
 
     if (action === 'users') return json({ ok: true, users: await listUsers(), me })
     if (action === 'invite' && req.method === 'POST') {
-      const r = await createInvite({ email: body.email, name: body.name, role: body.role, invitedBy: me.email })
+      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, invitedBy: me.email })
       if (r.error) return json({ ok: false, error: r.error }, 400)
       const link = `${url.origin}/?invite=${encodeURIComponent(r.token)}`
       return json({ ok: true, user: r.user, token: r.token, inviteUrl: link, expires: r.expires })
     }
     if (action === 'resend-invite' && req.method === 'POST') {
-      const r = await createInvite({ email: body.email, name: body.name, role: body.role, invitedBy: me.email })
+      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, invitedBy: me.email })
       if (r.error) return json({ ok: false, error: r.error }, 400)
       const link = `${url.origin}/?invite=${encodeURIComponent(r.token)}`
       return json({ ok: true, user: r.user, inviteUrl: link, expires: r.expires })
     }
+    if (action === 'approve' && req.method === 'POST') {
+      const r = await approveUser(body.email, { role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me.email)
+      return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
+    }
     if (action === 'update-user' && req.method === 'POST') {
-      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name }, me.email)
+      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me.email)
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
     }
     if (action === 'delete-user' && req.method === 'POST') {

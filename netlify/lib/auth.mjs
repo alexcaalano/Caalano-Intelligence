@@ -95,10 +95,33 @@ export function randomToken(bytes = 24) {
   return b64urlFromBytes(crypto.getRandomValues(new Uint8Array(bytes)))
 }
 
+// ---- roles & permissions ----
+// admin  — full control (all clients, all tabs, settings, users)
+// user   — agency staff; dashboards for allowed accounts, no settings/invites
+// viewer — client; only assigned clients + only allowed sub-tabs
+export const ROLES = ['admin', 'user', 'viewer']
+const normRole = (r) => (ROLES.includes(r) ? r : 'viewer')
+export const ALL_TABS = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'appts', 'timing']
+
+// Can this user open a given client account?
+export function canSeeClient(user, clientId) {
+  if (!user) return false
+  if (user.role === 'admin') return true
+  if (user.role === 'user') return user.allClients !== false || (user.clients || []).includes(clientId)
+  return (user.clients || []).includes(clientId) // viewer: explicit allocation only
+}
+// Which of the offered sub-tabs may this user see? (admins/users: all.)
+export function allowedTabs(user, offered) {
+  if (!user || user.role !== 'viewer' || !Array.isArray(user.tabs)) return offered
+  return offered.filter((t) => user.tabs.includes(t))
+}
+
 // ---- user store ----
 const publicUser = (u) => u && ({
-  email: u.email, name: u.name || '', role: u.role || 'viewer', status: u.status || 'active',
+  email: u.email, name: u.name || '', role: normRole(u.role), status: u.status || 'active',
   createdAt: u.createdAt || null, invitedBy: u.invitedBy || null, lastLogin: u.lastLogin || null,
+  clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
+  tabs: Array.isArray(u.tabs) ? u.tabs : null, requestedAt: u.requestedAt || null, note: u.note || '',
 })
 export { publicUser }
 
@@ -130,7 +153,50 @@ export async function bootstrapAdmin({ email, name, password }) {
   const u = await saveUser({
     email: normEmail(email), name: String(name || '').trim(), role: 'admin', status: 'active',
     passwordHash: hash, passwordSalt: salt, createdAt: new Date().toISOString(), invitedBy: null, lastLogin: null,
+    clients: [], allClients: true, tabs: null,
   })
+  return { user: publicUser(u) }
+}
+
+// Sanitise incoming allocation fields to a clean, stored shape.
+function normAlloc(patch = {}) {
+  const out = {}
+  if (patch.role && ROLES.includes(patch.role)) out.role = patch.role
+  if (Array.isArray(patch.clients)) out.clients = [...new Set(patch.clients.map(String))]
+  if (typeof patch.allClients === 'boolean') out.allClients = patch.allClients
+  if (patch.tabs === null) out.tabs = null
+  else if (Array.isArray(patch.tabs)) out.tabs = patch.tabs.filter((t) => ALL_TABS.includes(t))
+  return out
+}
+
+// A client requests access. Creates a PENDING account (with their chosen
+// password) that grants nothing until an admin approves + allocates it.
+export async function signupRequest({ email, name, password, note }) {
+  if (!isEmail(email)) return { error: 'Please enter a valid email.' }
+  if (!password || String(password).length < 8) return { error: 'Password must be at least 8 characters.' }
+  const em = normEmail(email)
+  const existing = await getUser(em)
+  if (existing && (existing.status === 'active' || existing.status === 'invited')) return { error: 'An account for that email already exists. Try signing in.' }
+  const { hash, salt } = await hashPassword(password)
+  await saveUser({
+    email: em, name: String(name || '').trim(), role: 'viewer', status: 'pending',
+    passwordHash: hash, passwordSalt: salt, createdAt: existing ? existing.createdAt : new Date().toISOString(),
+    invitedBy: null, lastLogin: null, clients: [], allClients: false, tabs: null,
+    requestedAt: new Date().toISOString(), note: String(note || '').trim().slice(0, 300),
+  })
+  return { ok: true }
+}
+
+// Admin approves a pending signup, setting role + allocations and activating it.
+export async function approveUser(email, patch, actorEmail) {
+  const u = await getUser(email)
+  if (!u) return { error: 'No such request.' }
+  Object.assign(u, normAlloc(patch))
+  if (!u.role) u.role = 'viewer'
+  u.status = 'active'
+  u.approvedBy = actorEmail || null
+  u.requestedAt = u.requestedAt || null
+  await saveUser(u)
   return { user: publicUser(u) }
 }
 
@@ -145,7 +211,7 @@ export async function authenticate(email, password) {
 }
 
 // Admin creates an invite. Returns the token + the pending user record.
-export async function createInvite({ email, name, role, invitedBy }) {
+export async function createInvite({ email, name, role, clients, allClients, tabs, invitedBy }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
   const em = normEmail(email)
   const existing = await getUser(em)
@@ -153,13 +219,16 @@ export async function createInvite({ email, name, role, invitedBy }) {
   const token = randomToken()
   const now = new Date().toISOString()
   const expires = Date.now() + 7 * 86400 * 1000
-  await saveUser({
-    email: em, name: String(name || '').trim(), role: role === 'admin' ? 'admin' : 'viewer',
+  const alloc = normAlloc({ role, clients, allClients, tabs })
+  const u = {
+    email: em, name: String(name || '').trim(), role: normRole(role),
     status: 'invited', passwordHash: null, passwordSalt: null, createdAt: existing ? existing.createdAt : now,
     invitedBy: invitedBy || null, lastLogin: null, inviteToken: token, inviteExpires: expires,
-  })
+    clients: [], allClients: role === 'admin' || role === 'user', tabs: null, ...alloc,
+  }
+  await saveUser(u)
   await store().setJSON(iKey(token), { email: em, expires })
-  return { token, expires, user: publicUser({ email: em, name, role, status: 'invited', createdAt: now, invitedBy }) }
+  return { token, expires, user: publicUser(u) }
 }
 
 export async function inviteInfo(token) {
@@ -190,10 +259,15 @@ export async function updateUser(email, patch, actorEmail) {
   const u = await getUser(email)
   if (!u) return { error: 'No such user.' }
   const em = normEmail(email)
-  if (patch.role && (patch.role === 'admin' || patch.role === 'viewer')) u.role = patch.role
+  const self = em === normEmail(actorEmail)
+  if (patch.role && ROLES.includes(patch.role)) {
+    if (self && patch.role !== 'admin') return { error: 'You can’t change your own role.' }
+    u.role = patch.role
+  }
+  Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs }))
   if (patch.status && (patch.status === 'active' || patch.status === 'disabled')) {
-    if (em === normEmail(actorEmail) && patch.status === 'disabled') return { error: 'You can’t disable your own account.' }
-    if (u.status !== 'invited') u.status = patch.status
+    if (self && patch.status === 'disabled') return { error: 'You can’t disable your own account.' }
+    if (u.status !== 'invited' && u.status !== 'pending') u.status = patch.status
   }
   if (typeof patch.name === 'string') u.name = patch.name.trim()
   await saveUser(u)

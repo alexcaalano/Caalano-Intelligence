@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.36.1'
+const APP_VERSION = '3.37.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4079,12 +4079,22 @@ function UsersView({ clientId, range, nonce, currency }) {
     </div>
   )
 }
-function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) {
+function ClientWorkspace({ client, index, data, config, range, nonce, onBack, authUser }) {
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
   useEffect(() => { setBaked(undefined); setCrmAvgClose(null); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
-  const channel = tab === 'meta' ? 'meta' : tab === 'google' ? 'google' : tab === 'overall' ? 'blend' : null
+  // Build this client's tab set, then narrow it to what the viewer is allowed to
+  // see (admins/users: everything). curTab keeps a hidden tab from being active.
+  const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
+  const allTabs = [{ id: 'overall', label: 'Caalano360' }]
+  if (cfg.ghl) allTabs.push({ id: 'users', label: 'Users' })
+  allTabs.push({ id: 'meta', label: 'Meta Ads' })
+  if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
+  const tabs = allowedTabsFE(authUser, allTabs)
+  const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
+  const channel = curTab === 'meta' ? 'meta' : curTab === 'google' ? 'google' : curTab === 'overall' ? 'blend' : null
   const live = useLiveDeep(client.id, channel, range, nonce)
   // Capture the CRM's average sales-cycle length whenever the blend loads, so the
   // maturity badge stays put as the user moves between tabs.
@@ -4094,18 +4104,6 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
   }, [live])
   const attr = useAttribution(client.id, range, nonce)
   const tk = TRACK[client.trackingStatus] || TRACK.full
-  // The snapshot client carries metrics, not the account config (meta/google/
-  // ghl ids live in config.json), so resolve the config entry by id for tab
-  // gating. Google tab keys off the config account id; Cohorts needs the CRM.
-  const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
-  const tabs = [{ id: 'overall', label: 'Caalano360' }]
-  if (cfg.ghl) tabs.push({ id: 'users', label: 'Users' })
-  tabs.push({ id: 'meta', label: 'Meta Ads' })
-  if (cfg.google || client.google) tabs.push({ id: 'google', label: 'Google Ads' })
-  if (cfg.ghl) tabs.push({ id: 'cohorts', label: 'Cohorts' })
-  if (cfg.ghl) tabs.push({ id: 'forms', label: 'Forms' })
-  if (cfg.ghl) tabs.push({ id: 'appts', label: 'Appointments' })
-  if (cfg.ghl) tabs.push({ id: 'timing', label: 'Timing' })
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
     if (live.status !== 'ok' || !live.data || !live.data[ch]) return false
@@ -4117,22 +4115,22 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack }) 
   return (
     <>
       <div className="cw-head">
-        <button className="back" onClick={onBack}>← All clients</button>
+        {onBack && <button className="back" onClick={onBack}>← All clients</button>}
         <div className="cw-top">
           <span className="avatar" style={{ background: acolor(index) }}>{initials(client.name)}</span>
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span> <MaturityBadge clientId={client.id} crmAvg={crmAvgClose} range={range} /></h2><div className="meta">{client.industry}</div></div>
         </div>
-        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
+        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {tab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
-        {tab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
-        {tab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
-        {tab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
-        {tab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
-        {tab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
-        {tab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
-        {tab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} />}
+        {curTab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
+        {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
+        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+        {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+        {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
+        {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
+        {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
+        {curTab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} />}
       </div>
     </>
   )
@@ -4698,8 +4696,9 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState(null) // client being configured (modal)
   const [adding, setAdding] = useState(false)   // add/edit-client explorer modal (true = new, client = edit)
-  const [section, setSection] = useState('clients')
-  const isAdmin = authEnabled && authUser && authUser.role === 'admin'
+  const role = authEnabled && authUser ? authUser.role : 'admin' // legacy/basic = full admin
+  const isAdmin = role === 'admin'
+  const [section, setSection] = useState(isAdmin ? 'clients' : 'account')
   const names = useDiscoverNames()
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
@@ -4716,19 +4715,19 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
   return (
     <div className="settings-page">
       <div className="set-sections">
-        <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>
+        {isAdmin && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
       </div>
-      {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} />}
+      {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name }))} />}
       {authEnabled && section === 'account' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Your account</h3>
-          <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${authUser.role === 'admin' ? 'Admin' : 'Viewer'}` : ''}. Change your password below.</p>
+          <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${ROLE_LABEL[authUser.role] || authUser.role}` : ''}. Change your password below.</p>
           <ChangePasswordCard />
         </div>
       )}
-      {section === 'clients' && (<>
+      {isAdmin && section === 'clients' && (<>
       <div className="set-stats">
         <div className="set-stat"><div className="v">{config.clients.length}</div><div className="l">Clients</div></div>
         <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>
@@ -4954,17 +4953,33 @@ function AuthShell({ children }) {
     </div>
   )
 }
+// Frontend mirror of the server permission helpers (UI gating only — the API
+// enforces the same rules server-side). A null user = legacy/basic-auth = full.
+function canSeeClientFE(user, id) {
+  if (!user) return true
+  if (user.role === 'admin') return true
+  if (user.role === 'user') return user.allClients !== false || (user.clients || []).includes(id)
+  return (user.clients || []).includes(id)
+}
+function allowedTabsFE(user, offered) {
+  if (!user || user.role !== 'viewer' || !Array.isArray(user.tabs)) return offered
+  const keep = offered.filter((t) => user.tabs.includes(t.id))
+  return keep.length ? keep : offered.slice(0, 1)
+}
+const ROLE_LABEL = { admin: 'Admin', user: 'User', viewer: 'Viewer' }
 function LoginForm({ onSignedIn }) {
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [signup, setSignup] = useState(false)
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setErr('')
     const r = await authApi('login', { method: 'POST', body: JSON.stringify({ email, password: pw }) })
     setBusy(false)
     if (r.ok) onSignedIn(r.user); else setErr(r.error || 'Sign-in failed.')
   }
+  if (signup) return <SignupForm onBack={() => setSignup(false)} />
   return (
     <AuthShell>
       <form onSubmit={submit} className="auth-form">
@@ -4973,6 +4988,46 @@ function LoginForm({ onSignedIn }) {
         <label>Password<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" required /></label>
         {err && <div className="auth-err">{err}</div>}
         <button className="auth-btn" disabled={busy || !email || !pw}>{busy ? 'Signing in…' : 'Sign in'}</button>
+        <button type="button" className="auth-link" onClick={() => setSignup(true)}>Are you a client? Request access →</button>
+      </form>
+    </AuthShell>
+  )
+}
+function SignupForm({ onBack }) {
+  const [f, setF] = useState({ name: '', email: '', pw: '', pw2: '', note: '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [done, setDone] = useState(false)
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }))
+  const submit = async (e) => {
+    e.preventDefault(); setErr('')
+    if (f.pw !== f.pw2) return setErr('Passwords don’t match.')
+    if (f.pw.length < 8) return setErr('Password must be at least 8 characters.')
+    setBusy(true)
+    const r = await authApi('signup', { method: 'POST', body: JSON.stringify({ name: f.name, email: f.email, password: f.pw, note: f.note }) })
+    setBusy(false)
+    if (r.ok) setDone(true); else setErr(r.error || 'Could not send your request.')
+  }
+  if (done) return (
+    <AuthShell><div className="auth-form">
+      <h2>Request sent ✓</h2>
+      <p className="auth-sub">Thanks — your access request is with the Caalano team. Once it’s approved you’ll be able to sign in with the email and password you just chose. We’ll be in touch.</p>
+      <button className="auth-btn" onClick={onBack}>Back to sign in</button>
+    </div></AuthShell>
+  )
+  return (
+    <AuthShell>
+      <form onSubmit={submit} className="auth-form">
+        <h2>Request client access</h2>
+        <p className="auth-sub">Create your login. A Caalano admin approves each request before it’s activated, so your account stays private until then.</p>
+        <label>Your name<input value={f.name} onChange={set('name')} autoFocus required /></label>
+        <label>Email<input type="email" value={f.email} onChange={set('email')} autoComplete="username" required /></label>
+        <label>Which business are you with? <span className="auth-opt">(optional)</span><input value={f.note} onChange={set('note')} placeholder="Helps us match you to your account" /></label>
+        <label>Password<input type="password" value={f.pw} onChange={set('pw')} autoComplete="new-password" required /></label>
+        <label>Confirm password<input type="password" value={f.pw2} onChange={set('pw2')} autoComplete="new-password" required /></label>
+        {err && <div className="auth-err">{err}</div>}
+        <button className="auth-btn" disabled={busy}>{busy ? 'Sending…' : 'Request access'}</button>
+        <button type="button" className="auth-link" onClick={onBack}>← Back to sign in</button>
       </form>
     </AuthShell>
   )
@@ -5049,32 +5104,93 @@ function AcceptInvite({ token, onSignedIn }) {
   )
 }
 // Team & access manager, shown inside Settings for admins.
-function UsersAdmin({ authUser, authEnabled }) {
+const TAB_OPTIONS = [
+  { id: 'overall', label: 'Caalano360' }, { id: 'users', label: 'Users' }, { id: 'meta', label: 'Meta Ads' },
+  { id: 'google', label: 'Google Ads' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' },
+  { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' },
+]
+function ClientPicker({ clients, selected, onToggle }) {
+  if (!clients || !clients.length) return <div className="cap">No clients available.</div>
+  return <div className="alloc-chips">{clients.map((c) => <button type="button" key={c.id} className={`chip ${selected.includes(c.id) ? 'on' : ''}`} onClick={() => onToggle(c.id)}>{c.name}</button>)}</div>
+}
+// Role + client/tab allocation control, reused by invite, approve and edit.
+function AllocationEditor({ value, clients, onChange }) {
+  const v = value
+  const toggleClient = (id) => { const s = new Set(v.clients || []); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, clients: [...s] }) }
+  const toggleTab = (id) => { const cur = v.tabs == null ? TAB_OPTIONS.map((t) => t.id) : v.tabs; const s = new Set(cur); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, tabs: [...s] }) }
+  return (
+    <div className="alloc">
+      <label className="alloc-role">Role
+        <select value={v.role} onChange={(e) => onChange({ ...v, role: e.target.value })}>
+          <option value="admin">Admin — full control</option>
+          <option value="user">User — agency staff</option>
+          <option value="viewer">Viewer — client</option>
+        </select>
+      </label>
+      {v.role === 'admin' && <p className="alloc-note">Full access to every client, every tab and all settings.</p>}
+      {v.role === 'user' && (<>
+        <label className="alloc-check"><input type="checkbox" checked={v.allClients !== false} onChange={(e) => onChange({ ...v, allClients: e.target.checked })} /> Can see all client accounts</label>
+        {v.allClients === false && (<><div className="alloc-lab">Allowed accounts</div><ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} /></>)}
+        <p className="alloc-note">Agency staff — sees dashboards for the accounts above, but can’t manage users or settings.</p>
+      </>)}
+      {v.role === 'viewer' && (<>
+        <div className="alloc-lab">Which clients can they see?</div>
+        <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
+        <div className="alloc-lab">Which tabs can they see?</div>
+        <div className="alloc-chips">{TAB_OPTIONS.map((t) => { const on = v.tabs == null || v.tabs.includes(t.id); return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}`} onClick={() => toggleTab(t.id)}>{t.label}</button> })}</div>
+        <p className="alloc-note">Client access — only the ticked clients and tabs, and no agency-wide views.</p>
+      </>)}
+    </div>
+  )
+}
+function PendingRow({ u, clients, onApprove, onReject }) {
+  const [draft, setDraft] = useState({ role: 'viewer', clients: [], allClients: true, tabs: null })
+  const [busy, setBusy] = useState(false)
+  return (
+    <div className="u-pending">
+      <div className="u-pending-head">
+        <div className="u-pending-who">
+          <b>{u.name || u.email}</b> <span className="cap">{u.email}</span>
+          {u.note ? <div className="u-note">“{u.note}”</div> : null}
+          <div className="cap">Requested {u.requestedAt ? new Date(u.requestedAt).toLocaleDateString() : 'recently'}</div>
+        </div>
+        <div className="u-actions">
+          <button className="btn-primary" disabled={busy || (draft.role !== 'admin' && draft.role !== 'user' && !(draft.clients || []).length)} onClick={async () => { setBusy(true); await onApprove(u, draft); setBusy(false) }}>{busy ? 'Approving…' : 'Approve'}</button>
+          <button className="btn-ghost danger" onClick={() => onReject(u)}>Reject</button>
+        </div>
+      </div>
+      <AllocationEditor value={draft} clients={clients} onChange={setDraft} />
+    </div>
+  )
+}
+function UsersAdmin({ authUser, authEnabled, clients }) {
   const [state, setState] = useState({ status: 'loading', users: [] })
-  const [inv, setInv] = useState({ name: '', email: '', role: 'viewer' })
+  const emptyInv = { name: '', email: '', role: 'viewer', clients: [], allClients: true, tabs: null }
+  const [inv, setInv] = useState(emptyInv)
   const [invBusy, setInvBusy] = useState(false)
   const [invErr, setInvErr] = useState('')
   const [link, setLink] = useState(null) // { email, url }
   const [copied, setCopied] = useState('')
+  const [editing, setEditing] = useState(null) // { email, draft }
   const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
   useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
   const copy = (text, key) => { navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(''), 1600) }).catch(() => {}) }
   const invite = async (e) => {
     e.preventDefault(); setInvErr(''); setLink(null)
     if (!inv.email) return
+    if (inv.role === 'viewer' && !(inv.clients || []).length) return setInvErr('Pick at least one client for a Viewer.')
     setInvBusy(true)
     const r = await authApi('invite', { method: 'POST', body: JSON.stringify(inv) })
     setInvBusy(false)
-    if (r.ok) { setLink({ email: inv.email, url: r.inviteUrl }); setInv({ name: '', email: '', role: 'viewer' }); load() }
+    if (r.ok) { setLink({ email: inv.email, url: r.inviteUrl }); setInv(emptyInv); load() }
     else setInvErr(r.error || 'Could not create the invite.')
   }
-  const resend = async (u) => {
-    const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: u.email, name: u.name, role: u.role }) })
-    if (r.ok) { setLink({ email: u.email, url: r.inviteUrl }); load() }
-  }
-  const changeRole = async (u, role) => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, role }) }); load() }
+  const resend = async (u) => { const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: u.email, name: u.name, role: u.role, clients: u.clients, allClients: u.allClients, tabs: u.tabs }) }); if (r.ok) { setLink({ email: u.email, url: r.inviteUrl }); load() } }
   const toggleStatus = async (u) => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: u.email, status: u.status === 'disabled' ? 'active' : 'disabled' }) }); load() }
-  const remove = async (u) => { if (!window.confirm(`Remove ${u.name || u.email}? They’ll lose access immediately.`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
+  const remove = async (u) => { if (!window.confirm(`Remove ${u.name || u.email}? They’ll lose access immediately.`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); if (editing && editing.email === u.email) setEditing(null); load() }
+  const startEdit = (u) => setEditing(editing && editing.email === u.email ? null : { email: u.email, draft: { role: u.role, clients: u.clients || [], allClients: u.allClients !== false, tabs: u.tabs } })
+  const saveEdit = async () => { const d = editing.draft; if (d.role === 'viewer' && !(d.clients || []).length) return; await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: editing.email, role: d.role, clients: d.clients, allClients: d.allClients, tabs: d.tabs }) }); setEditing(null); load() }
+  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs }) }); if (r.ok) load() }
 
   if (state.status === 'off') return (
     <div className="card set-users-off">
@@ -5084,46 +5200,73 @@ function UsersAdmin({ authUser, authEnabled }) {
       <p className="cap">Tip: keep the old <code>SITE_PASSWORD</code> set during the switch — it keeps working as a fallback so you can’t get locked out. Remove it once everyone has their own login.</p>
     </div>
   )
-  const badge = (u) => u.status === 'invited' ? <span className="u-badge inv">Invited</span> : u.status === 'disabled' ? <span className="u-badge dis">Disabled</span> : <span className="u-badge act">Active</span>
+  const badge = (u) => u.status === 'invited' ? <span className="u-badge inv">Invited</span> : u.status === 'disabled' ? <span className="u-badge dis">Disabled</span> : u.status === 'pending' ? <span className="u-badge pend">Pending</span> : <span className="u-badge act">Active</span>
+  const accessSummary = (u) => u.role === 'admin' ? 'All clients · all tabs'
+    : u.role === 'user' ? (u.allClients !== false ? 'All accounts' : `${(u.clients || []).length} account${(u.clients || []).length === 1 ? '' : 's'}`)
+    : `${(u.clients || []).length} client${(u.clients || []).length === 1 ? '' : 's'}${Array.isArray(u.tabs) ? ` · ${u.tabs.length} tab${u.tabs.length === 1 ? '' : 's'}` : ' · all tabs'}`
+  const pending = state.users.filter((u) => u.status === 'pending')
+  const team = state.users.filter((u) => u.status !== 'pending')
   return (
-    <div className="card">
-      <h3 style={{ marginTop: 0 }}>Team &amp; access</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Invite teammates and control who can see and manage Caalano360. <b>Admins</b> manage users and everything else; <b>Viewers</b> see all dashboards but can’t change users or settings.</p>
-
-      <form className="u-invite" onSubmit={invite}>
-        <input placeholder="Name (optional)" value={inv.name} onChange={(e) => setInv((s) => ({ ...s, name: e.target.value }))} />
-        <input type="email" placeholder="their@email.com" value={inv.email} onChange={(e) => setInv((s) => ({ ...s, email: e.target.value }))} required />
-        <select value={inv.role} onChange={(e) => setInv((s) => ({ ...s, role: e.target.value }))}><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
-        <button className="btn-primary" disabled={invBusy || !inv.email}>{invBusy ? 'Inviting…' : 'Create invite'}</button>
-      </form>
-      {invErr && <div className="auth-err" style={{ marginTop: 8 }}>{invErr}</div>}
-      {link && (
-        <div className="u-link">
-          <div><b>Invite link for {link.email}</b> — send it to them; it works once and expires in 7 days.</div>
-          <div className="u-link-row"><code>{link.url}</code><button className="btn-ghost" onClick={() => copy(link.url, 'new')}>{copied === 'new' ? 'Copied ✓' : 'Copy link'}</button></div>
+    <div className="u-wrap">
+      {pending.length > 0 && (
+        <div className="card u-approvals">
+          <h3 style={{ marginTop: 0 }}>Pending approvals <span className="u-badge pend">{pending.length}</span></h3>
+          <p className="cap" style={{ marginTop: -4 }}>People who requested access. Set their role and what they can see, then approve — nothing is granted until you do.</p>
+          {pending.map((u) => <PendingRow key={u.email} u={u} clients={clients} onApprove={approve} onReject={remove} />)}
         </div>
       )}
 
-      <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
-        <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Status</th><th className="lft">Last sign-in</th><th className="lft">Actions</th></tr></thead>
-        <tbody>{state.status === 'loading' ? <tr><td colSpan={6}><Spinner label="Loading team…" /></td></tr> : state.users.map((u) => {
-          const self = u.email === (authUser && authUser.email)
-          return (
-            <tr key={u.email}>
-              <td className="lft">{u.name || <span className="cap">—</span>}{self && <span className="u-you">you</span>}</td>
-              <td className="lft">{u.email}</td>
-              <td className="lft"><select className="u-role" value={u.role} disabled={self} onChange={(e) => changeRole(u, e.target.value)}><option value="viewer">Viewer</option><option value="admin">Admin</option></select></td>
-              <td className="lft">{badge(u)}</td>
-              <td className="lft">{u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : <span className="cap">never</span>}</td>
-              <td className="lft"><div className="u-actions">
-                {u.status === 'invited' && <button className="btn-ghost sm" onClick={() => resend(u)}>Copy invite</button>}
-                {!self && u.status !== 'invited' && <button className="btn-ghost sm" onClick={() => toggleStatus(u)}>{u.status === 'disabled' ? 'Enable' : 'Disable'}</button>}
-                {!self && <button className="btn-ghost sm danger" onClick={() => remove(u)}>Remove</button>}
-              </div></td>
-            </tr>
-          )
-        })}</tbody>
-      </table></div>
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Team &amp; access</h3>
+        <p className="cap" style={{ marginTop: -4 }}>Invite people and control what they can see. <b>Admin</b> = full control · <b>User</b> = agency staff (chosen accounts, no settings/invites) · <b>Viewer</b> = client (only their clients &amp; tabs).</p>
+
+        <form className="u-invite-block" onSubmit={invite}>
+          <div className="u-invite">
+            <input placeholder="Name (optional)" value={inv.name} onChange={(e) => setInv((s) => ({ ...s, name: e.target.value }))} />
+            <input type="email" placeholder="their@email.com" value={inv.email} onChange={(e) => setInv((s) => ({ ...s, email: e.target.value }))} required />
+          </div>
+          <AllocationEditor value={inv} clients={clients} onChange={(v) => setInv((s) => ({ ...s, ...v }))} />
+          <div><button className="btn-primary" disabled={invBusy || !inv.email}>{invBusy ? 'Inviting…' : 'Create invite'}</button></div>
+        </form>
+        {invErr && <div className="auth-err" style={{ marginTop: 8 }}>{invErr}</div>}
+        {link && (
+          <div className="u-link">
+            <div><b>Invite link for {link.email}</b> — send it to them; it works once and expires in 7 days.</div>
+            <div className="u-link-row"><code>{link.url}</code><button className="btn-ghost" onClick={() => copy(link.url, 'new')}>{copied === 'new' ? 'Copied ✓' : 'Copy link'}</button></div>
+          </div>
+        )}
+
+        <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
+          <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Access</th><th className="lft">Status</th><th className="lft">Actions</th></tr></thead>
+          <tbody>{state.status === 'loading' ? <tr><td colSpan={6}><Spinner label="Loading team…" /></td></tr> : team.map((u) => {
+            const self = u.email === (authUser && authUser.email)
+            const isEd = editing && editing.email === u.email
+            return (
+              <React.Fragment key={u.email}>
+                <tr className={isEd ? 'row-sel' : ''}>
+                  <td className="lft">{u.name || <span className="cap">—</span>}{self && <span className="u-you">you</span>}</td>
+                  <td className="lft">{u.email}</td>
+                  <td className="lft">{ROLE_LABEL[u.role] || u.role}</td>
+                  <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
+                  <td className="lft">{badge(u)}</td>
+                  <td className="lft"><div className="u-actions">
+                    <button className="btn-ghost sm" onClick={() => startEdit(u)}>{isEd ? 'Close' : 'Edit access'}</button>
+                    {u.status === 'invited' && <button className="btn-ghost sm" onClick={() => resend(u)}>Copy invite</button>}
+                    {!self && u.status !== 'invited' && <button className="btn-ghost sm" onClick={() => toggleStatus(u)}>{u.status === 'disabled' ? 'Enable' : 'Disable'}</button>}
+                    {!self && <button className="btn-ghost sm danger" onClick={() => remove(u)}>Remove</button>}
+                  </div></td>
+                </tr>
+                {isEd && <tr className="u-detail-row"><td colSpan={6}>
+                  <div className="u-detail">
+                    <AllocationEditor value={editing.draft} clients={clients} onChange={(v) => setEditing((e) => ({ ...e, draft: v }))} />
+                    <div className="u-actions" style={{ marginTop: 10 }}><button className="btn-primary" onClick={saveEdit} disabled={self}>Save access</button><button className="btn-ghost" onClick={() => setEditing(null)}>Cancel</button>{self && <span className="cap" style={{ alignSelf: 'center' }}>You can’t change your own role/access.</span>}</div>
+                  </div>
+                </td></tr>}
+              </React.Fragment>
+            )
+          })}</tbody>
+        </table></div>
+      </div>
     </div>
   )
 }
@@ -5199,12 +5342,22 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const custom = customClientList()
   const extras = custom.filter((cu) => !data.clients.some((c) => c.id === cu.id))
   const baseClients = [...data.clients.map(applyOv), ...extras]
-  const visibleClients = baseClients.filter((c) => enabled[c.id] !== false).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
+  const visibleClients = baseClients.filter((c) => enabled[c.id] !== false && canSeeClientFE(authUser, c.id)).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
   const rows = computeRows(visibleClients, agency.data)
   // Config for the Settings page, with overrides applied + UI-added clients.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
-  const idx = picked ? Math.max(0, baseClients.findIndex((c) => c.id === picked.id)) : 0
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
+  const openClient = (c) => { setPicked(c); setView('clients'); setNavOpen(false) }
+  // Access role gates the whole shell. Viewers (clients) never reach agency-wide
+  // views — they land straight in their assigned client(s).
+  const role = authEnabled && authUser ? authUser.role : 'admin'
+  const isViewer = role === 'viewer'
+  const myClients = visibleClients
+  const curView = isViewer ? (view === 'settings' ? 'settings' : 'clients') : view
+  const curPicked = curView === 'clients'
+    ? ((picked && baseClients.some((c) => c.id === picked.id) && canSeeClientFE(authUser, picked.id)) ? picked : (isViewer ? myClients[0] : picked))
+    : picked
+  const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0
 
   return (
     <div className="shell">
@@ -5212,14 +5365,20 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
       <aside className={`side ${navOpen ? 'open' : ''}`}>
         <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div><button className="side-close" onClick={() => setNavOpen(false)} aria-label="Close menu">✕</button></div>
         <nav className="nav">
-          <button className={view === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
-          <button className={view === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
-          <button className={view === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
+          {!isViewer && <>
+            <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
+            <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
+            <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
+          </>}
+          {isViewer && <>
+            <div className="nav-lab">My reports</div>
+            {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic">▸</span>{c.name}</button>) : <div className="nav-empty">No reports assigned yet — your admin will set these up.</div>}
+          </>}
         </nav>
         <div style={{ marginTop: 'auto' }}>
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
-          {authUser && <div className="side-user"><div className="side-user-who"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{authUser.role === 'admin' ? 'Admin' : 'Viewer'}</span></div></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
+          {authUser && <div className="side-user"><div className="side-user-who"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           <div className="foot-note">Live data via the Meta and Google API - Meta, Google, Caalano Systems.</div>
           <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}><b>v{APP_VERSION}</b> · deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
         </div>
@@ -5233,19 +5392,20 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{view === 'overview' ? 'Agency Overview' : view === 'trends' ? 'Daily Performance' : view === 'weekly' ? 'Weekly Traffic Light' : view === 'settings' ? 'Settings' : 'Clients'}</h2>
-            <p>{view === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : view === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : view === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : view === 'settings' ? 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          {view !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {curView !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
         </div>
-        <ErrorBoundary key={view + '|' + (picked && picked.id || '')} onHome={() => { setPicked(null); setView('overview') }}>
-          {view === 'overview' && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
-          {view === 'trends' && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
-          {view === 'weekly' && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
-          {view === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
-          {view === 'clients' && picked && <ClientWorkspace client={picked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} onBack={() => { setPicked(null); setView('overview') }} />}
+        <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => { setPicked(null); setView(isViewer ? 'clients' : 'overview') }}>
+          {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
+          {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
+          {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
+          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
+          {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
+          {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}
         </ErrorBoundary>
       </main>
     </div>

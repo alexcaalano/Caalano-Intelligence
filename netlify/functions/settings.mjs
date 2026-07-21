@@ -4,6 +4,7 @@
 // localStorage-only storage. One JSON blob, four sections; POST merges a partial
 // update per section (last-write-wins per client), GET returns the whole blob.
 import { getStore } from '@netlify/blobs'
+import { currentUser } from '../lib/auth.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
@@ -19,6 +20,13 @@ export default async (req) => {
       return json({ ok: true, data: data || {} })
     }
     if (req.method === 'POST') {
+      // When multi-user login is enabled, only admins may change shared settings.
+      // A null caller = Basic-Auth break-glass path, which keeps full access.
+      const secret = process.env.AUTH_SECRET
+      if (secret) {
+        const me = await currentUser(req, secret).catch(() => null)
+        if (me && me.role !== 'admin') return json({ ok: false, error: 'Admins only.' }, 403)
+      }
       const body = await req.json().catch(() => ({}))
       const cur = (await store().get(KEY, { type: 'json' }).catch(() => null)) || {}
       const next = { ...cur }

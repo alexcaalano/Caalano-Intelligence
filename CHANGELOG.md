@@ -17,6 +17,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.37.0 — 2026-07-21 · `PENDING`
+- **Three-tier roles + client self-signup with admin approval.** The access
+  model now has three roles, enforced both in the UI and on the server:
+  - **Admin** — full control (all clients, all tabs, settings, users).
+  - **User** (agency staff) — dashboards for their **allowed accounts** (all by
+    default, or a chosen subset); **can’t** invite/approve users or edit
+    settings. Agency Overview/Daily/Weekly scope to their allowed accounts.
+  - **Viewer** (client) — sees **only assigned clients**, and within each only
+    the **sub-tabs you allow** (e.g. Meta only). No agency-wide views — a client
+    lands straight in their own report, navigating between their clients from a
+    “My reports” list.
+  - **Team & access** gains an **allocation editor** (role + client picker + tab
+    picker + “all accounts” toggle for staff) used when inviting, approving, or
+    editing anyone, plus an **Edit access** row on every user.
+  - **Client self-signup + approval gate.** The login screen has a **“Request
+    client access”** link → the client picks a password → a **Pending** request
+    is created that grants nothing. Admins see a **Pending approvals** section in
+    Team & access; approving sets the role + client/tab allocation and activates
+    the account. Reject removes it. No one gets in without an admin.
+  - **Server-enforced, not just hidden.** The data API rejects any client a
+    caller isn’t allocated (client accounts are fully isolated), and Settings
+    writes are admin-only. The Basic-Auth break-glass path keeps full access.
+
 ## v3.36.1 — 2026-07-21 · `PENDING`
 - **Team & access is now discoverable before you switch logins on.** Settings
   always shows the **Clients / Team & access** sub-tabs. Open **Team & access**

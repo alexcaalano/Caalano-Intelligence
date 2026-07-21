@@ -11,6 +11,7 @@
 
 import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
+import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
 function parseHours(url) {
   const bhStart = url.searchParams.get('bhStart'), bhEnd = url.searchParams.get('bhEnd'), bhDays = url.searchParams.get('bhDays')
@@ -739,6 +740,20 @@ export default async (req) => {
   // they're recognised across every scope. Mutates the shared object; a removed
   // client clears on the next cold start.
   try { Object.assign(CLIENTS, await customClients()) } catch { /* non-fatal */ }
+
+  // Access control — only active when the multi-user login system is enabled
+  // (AUTH_SECRET set). A signed-in caller is checked against their client
+  // allocation; a null caller means the trusted Basic-Auth break-glass path,
+  // which keeps full access. Client-scoped requests must name an allowed
+  // account; agency-wide requests are off-limits to client (viewer) accounts.
+  const AUTH_SECRET = process.env.AUTH_SECRET
+  if (AUTH_SECRET) {
+    const me = await currentUser(req, AUTH_SECRET).catch(() => null)
+    if (me) {
+      if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
+      if (!client && me.role === 'viewer') return json({ error: 'No access to agency-wide data.' }, 403)
+    }
+  }
 
   // Agency-wide Caalano Systems access/scope audit across every mapped client.
   if (url.searchParams.get('scope') === 'ghlaudit') {

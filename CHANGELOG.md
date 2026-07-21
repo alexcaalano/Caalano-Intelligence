@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.38.0 — 2026-07-21 · `PENDING`
+- **Add a client with just one account + refresh available accounts.**
+  - The Add-client explorer now makes clear you only need **one** linked account
+    — a **Meta-only** (or Google-only, or CRM-only) client is fine. The client
+    **name auto-fills from whichever account you pick first** (previously only the
+    Caalano Systems location filled it, so Meta-only clients were left with a
+    blank name and a disabled button). Clearer footer guidance on what’s needed.
+  - New **⟳ Refresh accounts** button in the Add/Edit-client window re-queries the
+    Meta / Google / Caalano Systems connections so a newly connected ad account
+    shows up without reloading the app.
+- **Staff account restrictions now enforced in agency-wide aggregates** (from the
+  role work): a User limited to specific accounts only sees those accounts in the
+  agency overview, trends and coverage — filtered server-side.
+
 ## v3.37.0 — 2026-07-21 · `PENDING`
 - **Three-tier roles + client self-signup with admin approval.** The access
   model now has three roles, enforced both in the UI and on the server:

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.37.0'
+const APP_VERSION = '3.38.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1984,11 +1984,15 @@ function removeCustomClient(id) { SETTINGS.clients = { ...(SETTINGS.clients || {
 // cached for the session so the Settings name lookups and the Add/Edit explorer
 // reuse one call.
 let _discoverPromise = null
-function fetchDiscover() {
+// force=true re-queries the Meta/Google/GHL account list (used by the Settings
+// "Refresh accounts" button after a new ad account is connected).
+function fetchDiscover(force) {
+  if (force) _discoverPromise = null
   if (!_discoverPromise) {
     const to = new Date().toISOString().slice(0, 10)
     const from = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
-    _discoverPromise = fetch(`/.netlify/functions/windsor?scope=discover&from=${from}&to=${to}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+    const bust = force ? `&_r=${Date.now()}` : ''
+    _discoverPromise = fetch(`/.netlify/functions/windsor?scope=discover&from=${from}&to=${to}${bust}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
   }
   return _discoverPromise
 }
@@ -4577,11 +4581,16 @@ function AddClientModal({ existing, editClient, onClose }) {
   const [google, setGoogle] = useState(editClient ? (editClient.google || '') : '')
   const [nameEdited, setNameEdited] = useState(isEdit)
   const [saved, setSaved] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   useEffect(() => {
     let alive = true
     fetchDiscover().then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
   }, [])
+  const refreshAccounts = () => {
+    setRefreshing(true)
+    fetchDiscover(true).then((j) => setSt({ status: 'ok', data: j })).catch(() => setSt({ status: 'err', data: null })).finally(() => setRefreshing(false))
+  }
   const d = st.data || {}
   const nameOf = (arr, id) => { const it = (arr || []).find((x) => normId(x.id) === normId(id)); return it ? it.name : null }
   const slug = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
@@ -4598,9 +4607,12 @@ function AddClientModal({ existing, editClient, onClose }) {
     setSaved(true); setTimeout(onClose, 900)
   }
   const remove = () => { if (isEdit && confirm(`Remove ${editClient.name} from the dashboard? This only removes the mapping; no CRM/ad data is touched.`)) { removeCustomClient(editClient.id); onClose() } }
-  // Picking a Caalano Systems location sets the client name from that location
-  // (unless the user has typed their own).
-  const pickGhl = (id) => { setGhl(id); const nm = nameOf(d.ghl, id); if (nm && !nameEdited) setName(nm) }
+  // Picking any account fills the client name from that account (unless the user
+  // typed their own) — so a Meta-only or Google-only client still gets a name.
+  const fillName = (nm) => { if (nm && !nameEdited) setName(nm) }
+  const pickGhl = (id) => { setGhl(id); fillName(nameOf(d.ghl, id)) }
+  const pickMeta = (id) => { setMeta(id); fillName(nameOf(d.meta, id)) }
+  const pickGoogle = (id) => { setGoogle(id); fillName(nameOf(d.google, id)) }
   const Col = ({ title, items, sel, onSel, empty }) => (
     <div className="addcl-col">
       <div className="addcl-col-h">{title} <span className="addcl-count">{items ? items.length : 0}</span></div>
@@ -4617,25 +4629,25 @@ function AddClientModal({ existing, editClient, onClose }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>{isEdit ? `Edit ${editClient.name}` : 'Add a client'}</h3><span className="cap">Link a Caalano Systems account to its Meta &amp; Google ad accounts</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-head"><div><h3>{isEdit ? `Edit ${editClient.name}` : 'Add a client'}</h3><span className="cap">Link any mix of Caalano Systems, Meta &amp; Google — you only need one</span></div><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><button className="btn-ghost sm" onClick={refreshAccounts} disabled={refreshing} title="Re-check the Meta / Google / Caalano Systems connections for newly added accounts">{refreshing ? 'Refreshing…' : '⟳ Refresh accounts'}</button><button className="icon-btn" onClick={onClose}>✕</button></div></div>
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Exploring available accounts…" />
-            : st.status === 'err' ? <div className="cap">Couldn’t load available accounts — try again.</div>
+            : st.status === 'err' ? <div className="cap">Couldn’t load available accounts — <button className="btn-ghost sm" onClick={refreshAccounts}>try again</button>.</div>
               : <>
                 <div className="addcl-name">
-                  <label>Client name <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· auto-fills from the Caalano Systems location</span></label>
-                  <input value={name} onChange={(e) => { setName(e.target.value); setNameEdited(true) }} placeholder="pick a Caalano Systems account below" />
+                  <label>Client name <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· auto-fills from the first account you pick — edit freely</span></label>
+                  <input value={name} onChange={(e) => { setName(e.target.value); setNameEdited(true) }} placeholder="Type a name, or pick an account below" />
                 </div>
                 <div className="addcl-cols">
                   <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={pickGhl} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
-                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={setMeta} empty="No Meta accounts in Windsor." />
-                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={setGoogle} empty="No Google accounts in Windsor." />
+                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty="No Meta accounts found — try Refresh accounts." />
+                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty="No Google accounts found — try Refresh accounts." />
                 </div>
                 <div className="addcl-foot">
-                  {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{ghl || meta || google ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account.'}</span>}
+                  {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
                   <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
-                <p className="caveat" style={{ marginTop: 10 }}>Saved to the shared settings store and merged into the dashboard immediately. Meta / Google accounts come from Windsor (last 90 days of activity); Caalano Systems locations from the GoHighLevel agency connection.</p>
+                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked — a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (accounts with activity in the last 90 days); Caalano Systems locations from the GoHighLevel agency connection. New account not showing? Hit <b>Refresh accounts</b>.</p>
               </>}
         </div>
       </div>

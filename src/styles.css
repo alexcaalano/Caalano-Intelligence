@@ -414,9 +414,10 @@ tr.u-detail-row > td { background: var(--panel-2); padding: 0; border-bottom: 1p
 .u-vc.won b { color: var(--pos); }
 .u-vc.lost b { color: var(--neg); }
 .u-funnel { display: flex; flex-direction: column; gap: 7px; }
-.u-fn-head { display: grid; grid-template-columns: 130px 1fr 42px; gap: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
-.u-fn-head span:nth-child(3) { text-align: right; }
-.u-fn-row { display: grid; grid-template-columns: 130px 1fr 42px; align-items: center; gap: 10px; }
+.u-fn-head { display: grid; grid-template-columns: 130px 1fr 44px 44px; gap: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
+.u-fn-head span:nth-child(3), .u-fn-head span:nth-child(4) { text-align: right; }
+.u-fn-row { display: grid; grid-template-columns: 130px 1fr 44px 44px; align-items: center; gap: 10px; }
+.u-fn-tot { font-size: 11px; font-weight: 700; color: var(--brand); text-align: right; font-variant-numeric: tabular-nums; }
 .u-lost .mini-tbl td:not(.lft), .u-lost .mini-tbl th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
 /* Open pipeline by stage (clickable) + open-deals drill-down */
 .u-open-panel { margin-top: 4px; }

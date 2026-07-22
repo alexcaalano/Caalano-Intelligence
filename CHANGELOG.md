@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.44.1 — 2026-07-21 · `PENDING`
+- **Users funnel: add total conversion % next to step %.** Each stage in the
+  per-rep funnel now shows both **step** (conversion from the previous stage)
+  and **total** (conversion from all leads), so you can read stage-to-stage
+  drop-off and overall lead→stage rate at a glance.
+
 ## v3.44.0 — 2026-07-21 · `PENDING`
 - **Users tab: complete open-pipeline view + per-stage deal drill-down.**
   - The per-rep expansion now has an **Open pipeline by stage** panel listing

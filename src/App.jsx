@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.44.0'
+const APP_VERSION = '3.44.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4090,10 +4090,10 @@ function UsersView({ clientId, range, nonce, currency }) {
                         <div className="u-vc lost"><span>Lost</span><b>{money(u.lostValue || 0)}</b><i>{fmtNumber(u.lost)} deals</i></div>
                       </div>
                       <div className="u-funnel">
-                        <div className="u-fn-head"><span /><span>reached</span><span>step</span></div>
+                        <div className="u-fn-head"><span /><span>reached</span><span title="Conversion from the previous stage">step</span><span title="Conversion from all leads">total</span></div>
                         {(stageCols.length ? [['Leads', u.leads], ...stageCols.map((s) => [s, (u.stages && u.stages[s]) || 0]), ['Won', u.won]] : [['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]]).map(([lbl, n], i, arr) => {
                           const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null
-                          return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span></div>
+                          return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate" title="vs previous stage">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span><span className="u-fn-tot" title="vs all leads">{u.leads ? `${Math.round((n / u.leads) * 100)}%` : ''}</span></div>
                         })}
                       </div>
                       {u.openDeals && u.openDeals.length > 0 && (() => {

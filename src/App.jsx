@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.52.0'
+const APP_VERSION = '3.53.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3780,7 +3780,7 @@ const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : 'lead')
 const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_AMBER : LM_RED)
 // Interactive Leaflet map (OpenStreetMap tiles) — real base map with suburb
 // names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
-function LeadMap({ locs }) {
+function LeadMap({ locs, tall }) {
   const [db, setDb] = useState(undefined)
   const [filter, setFilter] = useState('all') // all | lead | booked | won
   const [ready, setReady] = useState(false)
@@ -3865,7 +3865,7 @@ function LeadMap({ locs }) {
           <div className="lead-map-tabs"><span className="lead-map-lab">Show</span>{FILTERS.map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
           <div className="lm-legend2"><span><i style={{ background: LM_RED }} />Leads</span><span><i style={{ background: LM_AMBER }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span></div>
         </div>
-        <div ref={elRef} className="lead-map-leaflet" />
+        <div ref={elRef} className={`lead-map-leaflet${tall ? ' lead-map-tall' : ''}`} />
       </div>
       <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the breakdown{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
     </div>
@@ -3899,6 +3899,56 @@ function FormLocations({ form }) {
         {locs.length > 40 && <div className="cap">+{locs.length - 40} more</div>}
       </>}
     </div>
+  )
+}
+// Location tab — a full-width map of where every lead is located, aggregated
+// across all of the client's forms, coloured by outcome (red lead / amber
+// booked / green won). Reuses the forms feed (which already carries per-answer
+// location + outcomes) so it needs no new backend call.
+function LocationView({ clientId, range, nonce, currency }) {
+  const st = useForms(clientId, range, nonce)
+  const db = useAuDb()
+  const money = (v) => fmtCurrency(v, currency)
+  const locs = useMemo(() => {
+    const forms = (st.data && st.data.forms) || []
+    const all = forms.flatMap((f) => f.locations || [])
+    if (!all.length) return []
+    return mergeLocations(groupAnswers(all), db)
+  }, [st.data, db])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading lead locations…" /></div>
+  const d = st.data
+  if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load location data.</b></div>
+  if (d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected.</b></div>
+  if (!locs.length) return (
+    <><div className="lvl-title">Lead locations</div>
+      <div className="card empty-deep"><div className="big">📍</div><b>No location data on leads in this range.</b>
+        <p style={{ maxWidth: 480, margin: '8px auto 0' }}>This map fills in whenever leads submit a suburb, postcode or address on a form (Meta Lead Forms and website forms both count). None of the forms in this period captured a location field.</p></div>
+    </>
+  )
+  const tot = locs.reduce((a, l) => ({ leads: a.leads + (l.leads || 0), booked: a.booked + (l.booked || 0), won: a.won + (l.won || 0) }), { leads: 0, booked: 0, won: 0 })
+  const max = Math.max(1, ...locs.map((l) => l.leads))
+  return (
+    <>
+      <div className="lvl-title">Lead locations <span className="sub">· where leads come from, who booked, who won · {rangeLabel(range)}</span></div>
+      <div className="scorecard">
+        <Sc label="Locations" value={fmtNumber(locs.length)} />
+        <Sc label="Leads mapped" value={fmtNumber(tot.leads)} />
+        <Sc label="Booked" value={fmtNumber(tot.booked)} />
+        <Sc label="Won" value={fmtNumber(tot.won)} />
+      </div>
+      <LeadMap locs={locs} tall />
+      <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>Every location <span className="sub">· ranked by leads</span></div>
+      <div className="fm-loc-list" style={{ marginTop: 8 }}>
+        {locs.slice(0, 120).map((l) => (
+          <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.booked || 0} booked · ${l.won || 0} won`}>
+            <span className="fm-loc-nm">{l.value}{l.merged ? ` ⓘ${l.members.length}` : ''}</span>
+            <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
+            <span className="fm-loc-n">{l.leads}{l.booked ? ` · ${l.booked}b` : ''}{l.won ? ` · ${l.won}w` : ''}</span>
+          </div>
+        ))}
+      </div>
+      {locs.length > 120 && <div className="cap">+{locs.length - 120} more</div>}
+    </>
   )
 }
 // Pipeline filter for the Forms view (categorise by where each form's leads
@@ -4568,7 +4618,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
   if (cfg.ghl) allTabs.push({ id: 'users', label: 'Users' })
   allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
   const channel = curTab === 'meta' ? 'meta' : curTab === 'google' ? 'google' : curTab === 'overall' ? 'blend' : null
@@ -4606,6 +4656,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
         {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
+        {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} />}
       </div>
@@ -5651,7 +5702,7 @@ function AcceptInvite({ token, onSignedIn }) {
 const TAB_OPTIONS = [
   { id: 'overall', label: 'Caalano360' }, { id: 'users', label: 'Users' }, { id: 'meta', label: 'Meta Ads' },
   { id: 'google', label: 'Google Ads' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' },
-  { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' },
+  { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>

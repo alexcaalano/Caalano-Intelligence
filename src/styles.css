@@ -1480,3 +1480,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .bn-worst .bn-fill { background: #d64545; }
 .bn-worst .bn-lab, .bn-worst .bn-conv { color: #d64545; font-weight: 700; }
 @media (max-width: 640px) { .bn-row { grid-template-columns: 64px 1fr 48px 40px; gap: 7px; } }
+
+/* Full-height map for the dedicated Location tab */
+.lead-map-tall { height: 70vh; min-height: 520px; }
+@media (max-width: 640px) { .lead-map-tall { height: 62vh; min-height: 420px; } }

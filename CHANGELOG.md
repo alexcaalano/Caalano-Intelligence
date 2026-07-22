@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.53.0 — 2026-07-22 · `PENDING`
+- **New Location tab.** A dedicated, full-height interactive map (same Leaflet /
+  OpenStreetMap base as the Forms map, with suburb names and zoom/pan) showing
+  where every lead is located, aggregated across all of the client's forms.
+  Markers are coloured by outcome — **red = lead, amber = booked, green = won** —
+  and sized by lead volume; a Show filter isolates Leads / Booked / Won. Above
+  the map: scorecards (locations, leads mapped, booked, won) and a ranked list
+  of every location with its lead/booked/won counts. Reuses the existing forms
+  feed (which already carries per-answer location + outcomes), so no new backend
+  call. Shows a clear empty state when no form in the period captured a location
+  field. Available to viewers via the per-tab allocation control.
+
 ## v3.52.0 — 2026-07-22 · `PENDING`
 - **Revenue bottleneck analysis** added to the Caalano 360 executive tab: the
   whole-account funnel (Leads → Qualified → Booked → Shown → Won) with the step

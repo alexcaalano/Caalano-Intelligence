@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.44.0 — 2026-07-21 · `PENDING`
+- **Users tab: complete open-pipeline view + per-stage deal drill-down.**
+  - The per-rep expansion now has an **Open pipeline by stage** panel listing
+    **every** stage that has live deals (not just key events), reconciling to the
+    rep's total open count/value — so all the "still in play" deals are
+    accounted for, wherever their card sits.
+  - **Click any stage** to open a popup of the **individual live deals** —
+    opportunity name, contact (with email/phone), value, and **days in stage**
+    (amber at 30+ days = likely stalled), highest value first. This is the "what's
+    still live per person, and can I still capture it" view.
+  - The conversion funnel is now purely reached-%; the open/live numbers live in
+    the dedicated panel to avoid the earlier confusion where only key-event
+    stages showed open counts.
+
 ## v3.43.0 — 2026-07-21 · `PENDING`
 - **Users tab: pipeline value, open deals per stage, and lost reasons per rep.**
   Expanding a rep now shows:

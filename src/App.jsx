@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.43.0'
+const APP_VERSION = '3.44.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3996,6 +3996,7 @@ function UsersView({ clientId, range, nonce, currency }) {
   const [chan, setChan] = useState('all')
   const [sort, setSort] = useState({ key: 'won', dir: -1 })
   const [open, setOpen] = useState(null) // expanded user id
+  const [drill, setDrill] = useState(null) // { name, stage, deals } for the open-deals modal
   const money = (v) => fmtCurrency(v, currency)
   const pipeParam = pipe !== 'all' ? `&pipeline=${encodeURIComponent(pipe)}` : ''
   const chanParam = chan !== 'all' ? `&channel=${chan}` : ''
@@ -4089,14 +4090,22 @@ function UsersView({ clientId, range, nonce, currency }) {
                         <div className="u-vc lost"><span>Lost</span><b>{money(u.lostValue || 0)}</b><i>{fmtNumber(u.lost)} deals</i></div>
                       </div>
                       <div className="u-funnel">
-                        <div className="u-fn-head"><span /><span>reached</span><span>step</span><span>open now</span></div>
+                        <div className="u-fn-head"><span /><span>reached</span><span>step</span></div>
                         {(stageCols.length ? [['Leads', u.leads], ...stageCols.map((s) => [s, (u.stages && u.stages[s]) || 0]), ['Won', u.won]] : [['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]]).map(([lbl, n], i, arr) => {
                           const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null
-                          const so = u.stageOpen && u.stageOpen[lbl]
-                          return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span><span className="u-fn-open">{so && so.open ? <><b>{fmtNumber(so.open)}</b>{so.value ? ` · ${money(so.value)}` : ''}</> : ''}</span></div>
+                          return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span></div>
                         })}
                       </div>
-                      <p className="caveat" style={{ marginTop: 8 }}>“Open now” = deals sitting at that stage right now, still in play (not won/lost) — with their value. Reached is cumulative (a later stage counts the earlier ones).</p>
+                      {u.openDeals && u.openDeals.length > 0 && (() => {
+                        const byStage = {}
+                        for (const dl of u.openDeals) { const g = byStage[dl.stage] || { open: 0, value: 0, deals: [] }; g.open++; g.value += dl.value; g.deals.push(dl); byStage[dl.stage] = g }
+                        const rows = Object.entries(byStage).sort((a, b) => ((stageRank[a[0]] != null ? stageRank[a[0]] : 9999) - (stageRank[b[0]] != null ? stageRank[b[0]] : 9999)))
+                        return <div className="u-open-panel">
+                          <div className="cap" style={{ fontWeight: 700, margin: '2px 0 5px' }}>Open pipeline by stage <span style={{ fontWeight: 400 }}>· {fmtNumber(u.open)} live · {money(u.openValue || 0)} · click a stage to see the deals</span></div>
+                          <div className="u-open-rows">{rows.map(([stage, g]) => <button key={stage} className="u-open-row" onClick={() => setDrill({ name: u.name, stage, deals: g.deals })}><span className="u-open-st" title={stage}>{stage}</span><span className="u-open-n"><b>{fmtNumber(g.open)}</b> open</span><span className="u-open-v">{money(g.value)}</span><span className="u-open-go">→</span></button>)}</div>
+                        </div>
+                      })()}
+                      <p className="caveat" style={{ marginTop: 8 }}>Reached is cumulative (a later stage counts the earlier ones). Open pipeline = deals sitting at each stage right now, still in play (not won/lost) — click a stage to drill into the individual live deals.</p>
                     </div>
                     <div className="u-detail-side">
                       {u.lostReasons && u.lostReasons.length > 0 && <div className="u-lost">
@@ -4126,6 +4135,25 @@ function UsersView({ clientId, range, nonce, currency }) {
           ))}</tbody>
         </table></div>
         <p className="caveat" style={{ marginTop: 10 }}>How many of each rep's leads reached each configured key stage (cumulative — reaching a later stage counts the earlier ones). Configure the stages in Settings → the client → Key events.</p>
+      </div>}
+      {drill && <div className="modal-bg" onClick={() => setDrill(null)}>
+        <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760 }}>
+          <div className="m-head"><div><h3 style={{ margin: 0 }}>Open deals — {drill.stage}</h3><span className="cap">{drill.name} · {fmtNumber(drill.deals.length)} live · {money(drill.deals.reduce((s, d) => s + d.value, 0))}</span></div><button className="icon-btn" onClick={() => setDrill(null)}>✕</button></div>
+          <div className="m-body">
+            <div className="table-wrap"><table className="mini-tbl u-drill-tbl">
+              <thead><tr><th className="lft">Opportunity</th><th className="lft">Contact</th><th>Value</th><th>Days in stage</th></tr></thead>
+              <tbody>{drill.deals.slice().sort((a, b) => b.value - a.value).map((d, i) => (
+                <tr key={d.id || i}>
+                  <td className="lft">{d.name}{drill.deals.some((x) => x.pipeline !== d.pipeline) ? <span className="cap"> · {d.pipeline}</span> : null}</td>
+                  <td className="lft">{d.contact}{d.email || d.phone ? <div className="cap">{[d.email, d.phone].filter(Boolean).join(' · ')}</div> : null}</td>
+                  <td>{d.value ? money(d.value) : '-'}</td>
+                  <td className={d.ageDays != null && d.ageDays > 30 ? 'u-stale' : ''}>{d.ageDays != null ? `${fmtNumber(d.ageDays)}d` : '-'}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+            <p className="caveat">Live opportunities currently sitting at this stage (not won/lost), highest value first. <b>Days in stage</b> = time since the deal last moved (amber = 30+ days, likely stalled). Detailed notes live in Caalano Systems.</p>
+          </div>
+        </div>
       </div>}
     </div>
   )

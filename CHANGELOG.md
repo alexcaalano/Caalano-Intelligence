@@ -17,6 +17,10 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.54.1 — 2026-07-22 · `PENDING`
+- **Location map colours retuned:** Leads = yellow, Booked = blue, Won = green,
+  Lost = red (legend and markers updated to match).
+
 ## v3.54.0 — 2026-07-22 · `PENDING`
 - **Location map — new colour scheme with Lost.** Open leads are now **blue**
   (was red) and **lost** leads are **red**, alongside amber = booked and green =

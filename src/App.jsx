@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.54.0'
+const APP_VERSION = '3.54.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3773,12 +3773,12 @@ function mergeLocations(locs, db) {
   })
   return [...merged, ...kept].sort((a, b) => b.leads - a.leads)
 }
-// Outcome colours: blue = open lead, amber = booked (not yet won), green = won,
+// Outcome colours: yellow = open lead, blue = booked (not yet won), green = won,
 // red = lost. A location's marker takes its furthest milestone reached (won >
 // booked > lost > open lead).
 const LM_BLUE = '#3b82f6', LM_RED = '#f0435b', LM_AMBER = '#f5a524', LM_GREEN = '#17b26a'
 const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : p.lost ? 'lost' : 'lead')
-const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_AMBER : o === 'lost' ? LM_RED : LM_BLUE)
+const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_BLUE : o === 'lost' ? LM_RED : LM_AMBER)
 // Interactive Leaflet map (OpenStreetMap tiles) — real base map with suburb
 // names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
 function LeadMap({ locs, tall }) {
@@ -3864,7 +3864,7 @@ function LeadMap({ locs, tall }) {
       <div className="lead-map">
         <div className="lead-map-bar">
           <div className="lead-map-tabs"><span className="lead-map-lab">Show</span>{FILTERS.map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
-          <div className="lm-legend2"><span><i style={{ background: LM_BLUE }} />Leads</span><span><i style={{ background: LM_AMBER }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span><span><i style={{ background: LM_RED }} />Lost</span></div>
+          <div className="lm-legend2"><span><i style={{ background: LM_AMBER }} />Leads</span><span><i style={{ background: LM_BLUE }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span><span><i style={{ background: LM_RED }} />Lost</span></div>
         </div>
         <div ref={elRef} className={`lead-map-leaflet${tall ? ' lead-map-tall' : ''}`} />
       </div>

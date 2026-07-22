@@ -1519,3 +1519,5 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .cc-ai-reason { color: var(--muted); }
 .cc-ai-note { color: var(--faint); }
 .cc-strategy { margin: 4px 0 12px; }
+.cc-auto { font-size: 9px; font-weight: 700; color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); padding: 1px 5px; border-radius: 4px; text-transform: uppercase; letter-spacing: .03em; }
+.cc-headline { padding: 2px 0; }

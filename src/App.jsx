@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.56.0'
+const APP_VERSION = '3.57.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6031,7 +6031,9 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const rows = all.map((c) => {
     const t = tags[c.id] || {}
     const crm = c.crm || {}
-    return { ...c, t, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || '', cta: t.cta || '', copy: t.copy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
+    // Auto-detected CTA / copy / destination flow in as defaults; a saved tag
+    // overrides. So the grid, filters and rollups work before any manual tagging.
+    return { ...c, t, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
   })
   const filtered = rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
   const sorted = [...filtered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
@@ -6172,11 +6174,12 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
             <label>Awareness<select value={c.aware} onChange={(e) => save({ aware: e.target.value })}><option value="">—</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select></label>
             <label>Persona<TagCombo value={c.persona} onChange={(v) => save({ persona: v })} options={personaOpts} listId={`cc-persona-${clientId}`} placeholder="e.g. First-home buyer" /></label>
             <label>Angle<TagCombo value={c.angle} onChange={(v) => save({ angle: v })} options={angleOpts} listId={`cc-angle-${clientId}`} placeholder="e.g. Save on tax" /></label>
-            <label>Destination<TagCombo value={c.dest} onChange={(v) => save({ dest: v })} options={destOpts} listId={`cc-dest-${clientId}`} placeholder="Where traffic lands" /></label>
-            <label>CTA button<input className="cc-in" value={c.cta} onChange={(e) => save({ cta: e.target.value })} placeholder="e.g. Book Now" /></label>
+            <label>Destination {c.autoDest && !c.t.dest ? <span className="cc-auto">auto</span> : null}<TagCombo value={c.dest} onChange={(v) => save({ dest: v })} options={destOpts} listId={`cc-dest-${clientId}`} placeholder="Where traffic lands" /></label>
+            <label>CTA button {c.autoCta && !c.t.cta ? <span className="cc-auto">auto</span> : null}<input className="cc-in" value={c.cta} onChange={(e) => save({ cta: e.target.value })} placeholder="e.g. Book Now" /></label>
           </div>
+          {c.headline && <div className="cap cc-headline"><b>Headline:</b> {c.headline}</div>}
           <div className="cc-fields2">
-            <label>Ad copy<textarea rows={2} value={c.copy} onChange={(e) => save({ copy: e.target.value })} placeholder="Paste the primary text of the ad…" /></label>
+            <label>Ad copy {c.autoCopy && !c.t.copy ? <span className="cc-auto">auto</span> : null}<textarea rows={2} value={c.copy} onChange={(e) => save({ copy: e.target.value })} placeholder="Paste the primary text of the ad…" /></label>
             <label>Notes<textarea rows={2} value={c.notes} onChange={(e) => save({ notes: e.target.value })} placeholder="What’s the concept / why it works…" /></label>
           </div>
         </div>
@@ -6270,7 +6273,6 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
           {authUser && <div className="side-user"><div className="side-user-who"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
-          <div className="foot-note">Live data via the Meta and Google API - Meta, Google, Caalano Systems.</div>
           <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}><b>v{APP_VERSION}</b> · deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
         </div>
       </aside>

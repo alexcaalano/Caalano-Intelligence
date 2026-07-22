@@ -1042,6 +1042,18 @@ async function buildHealth(c, from, to, preset, key, weights) {
   }
 }
 
+// Creative Cockpit auto-fill helpers: prettify Meta's CTA enum, and best-effort
+// classify the destination from the ad's link (user can override in the UI).
+function prettyCta(v) { return v ? titleCase(String(v).replace(/_/g, ' ')) : '' }
+function classifyDest(link, objType) {
+  const l = String(link || '').toLowerCase()
+  if (!l) return String(objType || '').toUpperCase().includes('LEAD') ? 'Meta lead form' : ''
+  if (/leadconnector|gohighlevel|msgsndr/.test(l)) return 'Caalano Systems landing'
+  if (/calendly|\/book|schedul|appointment|\/calendar|acuity|tidycal/.test(l)) return 'Schedule page'
+  if (/facebook\.com\/.*lead|fb\.me\b|\/instant.?form|leadgen/.test(l)) return 'Meta lead form'
+  return 'Landing page'
+}
+
 function rollupGhl(rows) {
   let open = 0, won = 0, lost = 0, wonValue = 0, openValue = 0
   const lostR = new Map(), src = new Map(), wonMonth = new Map(), stage = new Map()
@@ -1418,10 +1430,16 @@ export default async (req) => {
     if (!cc || !cc.meta) return json({ scope: 'creatives', client, meta: false, creatives: [] })
     try {
       const fallback = await readMetaPrimary(client)
-      const [meta, perf] = await Promise.all([
+      const filt2 = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+      const [meta, perf, creRows] = await Promise.all([
         buildMeta(cc.meta, from, to, preset, key, fallback),
         (cc.ghl && (await isConnected().catch(() => false))) ? buildCreativePerf(cc.ghl, from, to).catch(() => ({ byContent: {} })) : Promise.resolve({ byContent: {} }),
+        // Confirmed Windsor creative fields → auto-fill CTA / copy / destination.
+        windsorFetch('facebook', ['account_id', 'ad_name', 'call_to_action_type', 'body', 'title', 'link_url', 'website_destination_url', 'ad_preview_shareable_link', 'creative_id', 'object_type'], from, to, preset, key).then(filt2).catch(() => []),
       ])
+      // First non-empty value per ad name (an ad can span rows/placements).
+      const creBy = new Map()
+      for (const r of creRows) { const n = r.ad_name; if (!n) continue; const e = creBy.get(n) || {}; for (const k of ['call_to_action_type', 'body', 'title', 'link_url', 'website_destination_url', 'ad_preview_shareable_link', 'creative_id', 'object_type']) if (!e[k] && r[k]) e[k] = r[k]; creBy.set(n, e) }
       const byContent = perf.byContent || {}
       // Join Meta ad name ↔ utm_content by a loose normalised key (lower-case,
       // alphanumerics only) so minor punctuation/case differences still match.
@@ -1430,11 +1448,15 @@ export default async (req) => {
       const usedKeys = new Set()
       const creatives = (meta.ads || []).map((a) => {
         const key2 = nk(a.name); const crm = perfByKey[key2] || null; if (crm) usedKeys.add(key2)
+        const ex = creBy.get(a.name) || {}
+        const link = ex.link_url || ex.website_destination_url || null
         return {
-          id: a.name, name: a.name, campaign: a.campaign, adset: a.adset,
-          format: a.type, quality: a.quality, thumb: a.thumb, igUrl: a.igUrl,
+          id: a.name, name: a.name, campaign: a.campaign, adset: a.adset, creativeId: ex.creative_id || null,
+          format: a.type, quality: a.quality, thumb: a.thumb,
+          igUrl: ex.ad_preview_shareable_link || a.igUrl, previewUrl: ex.ad_preview_shareable_link || null,
           spend: Math.round(a.spend), impressions: a.impressions, clicks: a.clicks, leads: a.leads,
           results: a.results, resultType: a.resultType, costPerResult: a.costPerResult,
+          autoCta: prettyCta(ex.call_to_action_type), autoCopy: ex.body || '', headline: ex.title || '', link, autoDest: classifyDest(link, ex.object_type),
           crm: crm ? { ...crm, costPerQualified: crm.qualified ? Math.round(a.spend / crm.qualified) : null, costPerBooked: crm.booked ? Math.round(a.spend / crm.booked) : null, costPerWon: crm.won ? Math.round(a.spend / crm.won) : null } : null,
         }
       })

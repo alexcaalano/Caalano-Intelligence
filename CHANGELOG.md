@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.57.0 — 2026-07-22 · `PENDING`
+- **Creative Cockpit auto-fill (Windsor fields confirmed).** Verified the Meta
+  connector's creative fields and wired auto-detection: **CTA button**
+  (`call_to_action_type`), **ad copy** (`body`), **headline** (`title`) and
+  **destination** (classified from `link_url` → Meta lead form / Schedule page /
+  Caalano Systems landing / Landing page). These pre-fill each creative (marked
+  "auto"); a manual edit overrides. The ad-preview link now uses Meta's
+  shareable preview URL. So the grid, filters and "what's working" rollups work
+  before any manual tagging.
+- Removed the sidebar footer line ("Live data via the Meta and Google API …").
+- Note: Windsor's Meta feed exposes **no direct video-file URL**, so automated
+  video transcription still needs a Meta Graph API path (via `creative_id`) or
+  Instagram media URL plus a speech-to-text provider — tracked as a follow-up.
+
 ## v3.56.0 — 2026-07-22 · `PENDING`
 - **Creative Cockpit — AI layer.** Two AI helpers (existing Anthropic
   integration, server-side key):

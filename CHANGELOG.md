@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.45.0 — 2026-07-21 · `PENDING`
+- **New Super Admin role (owner tier).** Above Admin, with exclusive powers:
+  - **Manages Admins** — only a Super Admin can create, promote, demote or remove
+    Admins (and other Super Admins). Admins can still manage Users & Viewers.
+    A **Super Admin can't be removed, demoted or disabled by an Admin**, and the
+    **last Super Admin can never be removed** (no lockout).
+  - **Owns client accounts** — only a Super Admin can **add, remove or relink**
+    client accounts (connect Meta/Google/Caalano Systems). Admins keep everything
+    else: per-client key events, KPIs, conversions, forms, **and diagnostics**.
+  - Enforced server-side (auth + settings APIs), not just hidden in the UI. The
+    role dropdown only offers Admin/Super-Admin to a Super Admin; unmanageable
+    rows show a 🔒 lock.
+  - **Your account is auto-promoted:** the founding admin (first account created)
+    becomes Super Admin automatically on next load — nothing for you to do.
+
 ## v3.44.1 — 2026-07-21 · `PENDING`
 - **Users funnel: add total conversion % next to step %.** Each stage in the
   per-rep funnel now shows both **step** (conversion from the previous stage)

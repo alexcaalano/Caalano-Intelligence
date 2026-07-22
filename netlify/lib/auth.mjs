@@ -96,17 +96,31 @@ export function randomToken(bytes = 24) {
 }
 
 // ---- roles & permissions ----
-// admin  — full control (all clients, all tabs, settings, users)
-// user   — agency staff; dashboards for allowed accounts, no settings/invites
-// viewer — client; only assigned clients + only allowed sub-tabs
-export const ROLES = ['admin', 'user', 'viewer']
+// superadmin — everything admin has PLUS: manage admins, add/remove/relink
+//              client accounts, system panel. Can only be managed by a superadmin.
+// admin      — full day-to-day control (all clients, all tabs, settings, manage
+//              users/viewers, diagnostics) but NOT the superadmin-only areas.
+// user       — agency staff; dashboards for allowed accounts, no settings/invites
+// viewer     — client; only assigned clients + only allowed sub-tabs
+export const ROLES = ['superadmin', 'admin', 'user', 'viewer']
 const normRole = (r) => (ROLES.includes(r) ? r : 'viewer')
 export const ALL_TABS = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'appts', 'timing']
+const RANK = { superadmin: 3, admin: 2, user: 1, viewer: 0 }
+export const rankOf = (r) => (RANK[r] != null ? RANK[r] : 0)
+export const isAdminish = (r) => r === 'admin' || r === 'superadmin'
+// Can an actor with actorRole administer a target with targetRole? Admins can
+// manage users/viewers only; managing (or granting) admin/superadmin needs a
+// superadmin.
+export function canManageRole(actorRole, targetRole) {
+  if (actorRole === 'superadmin') return true
+  if (actorRole === 'admin') return rankOf(targetRole) < RANK.admin
+  return false
+}
 
 // Can this user open a given client account?
 export function canSeeClient(user, clientId) {
   if (!user) return false
-  if (user.role === 'admin') return true
+  if (isAdminish(user.role)) return true
   if (user.role === 'user') return user.allClients !== false || (user.clients || []).includes(clientId)
   return (user.clients || []).includes(clientId) // viewer: explicit allocation only
 }
@@ -142,16 +156,27 @@ export async function countUsers() {
   return (blobs || []).length
 }
 async function saveUser(u) { await store().setJSON(uKey(u.email), u); return u }
+// How many ACTIVE users hold a given role (for the last-superadmin guard).
+async function countActiveRole(role) { return (await listUsers()).filter((u) => u.role === role && u.status === 'active').length }
+// One-time migration: if no superadmin exists yet, promote the earliest-created
+// active admin (the account that bootstrapped the system) to superadmin.
+export async function ensureSuperadmin() {
+  const us = await listUsers()
+  if (us.some((u) => u.role === 'superadmin')) return
+  const admins = us.filter((u) => u.role === 'admin' && u.status === 'active').sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+  if (admins.length) { const u = await getUser(admins[0].email); if (u) { u.role = 'superadmin'; await saveUser(u) } }
+}
 
 // ---- operations ----
-// Create the very first admin. Only succeeds when no users exist yet.
+// Create the very first account — a SUPER ADMIN (the owner). Only succeeds when
+// no users exist yet.
 export async function bootstrapAdmin({ email, name, password }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
   if (!password || String(password).length < 8) return { error: 'Password must be at least 8 characters.' }
   if (await countUsers() > 0) return { error: 'Setup already complete — sign in instead.' }
   const { hash, salt } = await hashPassword(password)
   const u = await saveUser({
-    email: normEmail(email), name: String(name || '').trim(), role: 'admin', status: 'active',
+    email: normEmail(email), name: String(name || '').trim(), role: 'superadmin', status: 'active',
     passwordHash: hash, passwordSalt: salt, createdAt: new Date().toISOString(), invitedBy: null, lastLogin: null,
     clients: [], allClients: true, tabs: null,
   })
@@ -188,13 +213,15 @@ export async function signupRequest({ email, name, password, note }) {
 }
 
 // Admin approves a pending signup, setting role + allocations and activating it.
-export async function approveUser(email, patch, actorEmail) {
+export async function approveUser(email, patch, actor) {
   const u = await getUser(email)
   if (!u) return { error: 'No such request.' }
+  const actorRole = (actor && actor.role) || 'admin'
+  if (patch.role && !canManageRole(actorRole, patch.role)) return { error: 'Only a Super Admin can grant Admin access.' }
   Object.assign(u, normAlloc(patch))
   if (!u.role) u.role = 'viewer'
   u.status = 'active'
-  u.approvedBy = actorEmail || null
+  u.approvedBy = (actor && actor.email) || null
   u.requestedAt = u.requestedAt || null
   await saveUser(u)
   return { user: publicUser(u) }
@@ -211,8 +238,10 @@ export async function authenticate(email, password) {
 }
 
 // Admin creates an invite. Returns the token + the pending user record.
-export async function createInvite({ email, name, role, clients, allClients, tabs, invitedBy }) {
+export async function createInvite({ email, name, role, clients, allClients, tabs, invitedBy, actor }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
+  const actorRole = (actor && actor.role) || 'admin'
+  if (role && !canManageRole(actorRole, role)) return { error: 'Only a Super Admin can invite an Admin.' }
   const em = normEmail(email)
   const existing = await getUser(em)
   if (existing && existing.status === 'active') return { error: 'That person already has an active account.' }
@@ -223,8 +252,8 @@ export async function createInvite({ email, name, role, clients, allClients, tab
   const u = {
     email: em, name: String(name || '').trim(), role: normRole(role),
     status: 'invited', passwordHash: null, passwordSalt: null, createdAt: existing ? existing.createdAt : now,
-    invitedBy: invitedBy || null, lastLogin: null, inviteToken: token, inviteExpires: expires,
-    clients: [], allClients: role === 'admin' || role === 'user', tabs: null, ...alloc,
+    invitedBy: (actor && actor.email) || invitedBy || null, lastLogin: null, inviteToken: token, inviteExpires: expires,
+    clients: [], allClients: isAdminish(role) || role === 'user', tabs: null, ...alloc,
   }
   await saveUser(u)
   await store().setJSON(iKey(token), { email: em, expires })
@@ -255,18 +284,24 @@ export async function acceptInvite({ token, password, name }) {
   return { user: publicUser(u) }
 }
 
-export async function updateUser(email, patch, actorEmail) {
+export async function updateUser(email, patch, actor) {
   const u = await getUser(email)
   if (!u) return { error: 'No such user.' }
   const em = normEmail(email)
-  const self = em === normEmail(actorEmail)
+  const actorRole = (actor && actor.role) || 'admin'
+  const self = em === normEmail((actor && actor.email) || '')
+  // An admin can't touch an admin or super admin — only a super admin can.
+  if (!canManageRole(actorRole, u.role)) return { error: u.role === 'superadmin' ? 'Only a Super Admin can manage a Super Admin.' : 'Only a Super Admin can manage an Admin.' }
   if (patch.role && ROLES.includes(patch.role)) {
-    if (self && patch.role !== 'admin') return { error: 'You can’t change your own role.' }
+    if (!canManageRole(actorRole, patch.role)) return { error: 'Only a Super Admin can grant Admin / Super Admin access.' }
+    if (self && patch.role !== u.role) return { error: 'You can’t change your own role.' }
+    if (u.role === 'superadmin' && patch.role !== 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t remove the last Super Admin.' }
     u.role = patch.role
   }
   Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs }))
   if (patch.status && (patch.status === 'active' || patch.status === 'disabled')) {
     if (self && patch.status === 'disabled') return { error: 'You can’t disable your own account.' }
+    if (patch.status === 'disabled' && u.role === 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t disable the last Super Admin.' }
     if (u.status !== 'invited' && u.status !== 'pending') u.status = patch.status
   }
   if (typeof patch.name === 'string') u.name = patch.name.trim()
@@ -274,10 +309,13 @@ export async function updateUser(email, patch, actorEmail) {
   return { user: publicUser(u) }
 }
 
-export async function deleteUser(email, actorEmail) {
+export async function deleteUser(email, actor) {
   const em = normEmail(email)
-  if (em === normEmail(actorEmail)) return { error: 'You can’t remove your own account.' }
+  if (em === normEmail((actor && actor.email) || '')) return { error: 'You can’t remove your own account.' }
   const u = await getUser(em)
+  const actorRole = (actor && actor.role) || 'admin'
+  if (u && !canManageRole(actorRole, u.role)) return { error: u.role === 'superadmin' ? 'Only a Super Admin can remove a Super Admin.' : 'Only a Super Admin can remove an Admin.' }
+  if (u && u.role === 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t remove the last Super Admin.' }
   if (u && u.inviteToken) await store().delete(iKey(u.inviteToken)).catch(() => {})
   await store().delete(uKey(em)).catch(() => {})
   return { ok: true }

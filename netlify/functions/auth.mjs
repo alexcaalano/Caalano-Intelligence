@@ -5,7 +5,7 @@
 import {
   bootstrapAdmin, authenticate, createInvite, inviteInfo, acceptInvite,
   listUsers, updateUser, deleteUser, changePassword, currentUser, countUsers,
-  signupRequest, approveUser, signSession, sessionCookie, clearCookie, COOKIE,
+  signupRequest, approveUser, ensureSuperadmin, isAdminish, signSession, sessionCookie, clearCookie, COOKIE,
 } from '../lib/auth.mjs'
 
 const SESSION_MS = 14 * 86400 * 1000
@@ -30,6 +30,7 @@ export default async (req) => {
 
     // ---- public, unauthenticated actions ----
     if (action === 'me') {
+      await ensureSuperadmin().catch(() => {}) // one-time: promote the founding admin
       const user = await currentUser(req, S)
       const needsSetup = (await countUsers()) === 0
       return json({ ok: true, enabled: true, user: user || null, needsSetup })
@@ -70,32 +71,32 @@ export default async (req) => {
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true })
     }
 
-    // ---- admin-only actions ----
-    if (me.role !== 'admin') return json({ ok: false, error: 'Admins only.' }, 403)
+    // ---- admin + super-admin actions ----
+    if (!isAdminish(me.role)) return json({ ok: false, error: 'Admins only.' }, 403)
 
     if (action === 'users') return json({ ok: true, users: await listUsers(), me })
     if (action === 'invite' && req.method === 'POST') {
-      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, invitedBy: me.email })
+      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, actor: me })
       if (r.error) return json({ ok: false, error: r.error }, 400)
       const link = `${url.origin}/?invite=${encodeURIComponent(r.token)}`
       return json({ ok: true, user: r.user, token: r.token, inviteUrl: link, expires: r.expires })
     }
     if (action === 'resend-invite' && req.method === 'POST') {
-      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, invitedBy: me.email })
+      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, actor: me })
       if (r.error) return json({ ok: false, error: r.error }, 400)
       const link = `${url.origin}/?invite=${encodeURIComponent(r.token)}`
       return json({ ok: true, user: r.user, inviteUrl: link, expires: r.expires })
     }
     if (action === 'approve' && req.method === 'POST') {
-      const r = await approveUser(body.email, { role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me.email)
+      const r = await approveUser(body.email, { role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me)
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
     }
     if (action === 'update-user' && req.method === 'POST') {
-      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me.email)
+      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me)
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
     }
     if (action === 'delete-user' && req.method === 'POST') {
-      const r = await deleteUser(body.email, me.email)
+      const r = await deleteUser(body.email, me)
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true })
     }
 

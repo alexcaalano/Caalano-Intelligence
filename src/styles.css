@@ -1332,6 +1332,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .u-modal-foot-l, .u-modal-foot-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .u-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .u-role-tag { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .02em; }
+.u-role-tag.r-superadmin { color: #fff; background: var(--brand); }
 .u-role-tag.r-admin { color: var(--brand); background: color-mix(in srgb, var(--brand) 15%, transparent); }
 .u-role-tag.r-user { color: #0b9; background: color-mix(in srgb, #0b9 15%, transparent); }
 .u-role-tag.r-viewer { color: var(--muted); background: var(--panel-2); }

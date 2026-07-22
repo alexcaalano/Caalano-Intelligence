@@ -20,14 +20,16 @@ export default async (req) => {
       return json({ ok: true, data: data || {} })
     }
     if (req.method === 'POST') {
-      // When multi-user login is enabled, only admins may change shared settings.
-      // A null caller = Basic-Auth break-glass path, which keeps full access.
+      // When multi-user login is enabled, only admins may change shared settings,
+      // and the `clients` section (adding / removing / relinking client accounts)
+      // is Super-Admin-only. A null caller = Basic-Auth break-glass = full access.
       const secret = process.env.AUTH_SECRET
+      const body = await req.json().catch(() => ({}))
       if (secret) {
         const me = await currentUser(req, secret).catch(() => null)
-        if (me && me.role !== 'admin') return json({ ok: false, error: 'Admins only.' }, 403)
+        if (me && me.role !== 'admin' && me.role !== 'superadmin') return json({ ok: false, error: 'Admins only.' }, 403)
+        if (me && me.role !== 'superadmin' && body && body.clients) return json({ ok: false, error: 'Only a Super Admin can add, remove or relink client accounts.' }, 403)
       }
-      const body = await req.json().catch(() => ({}))
       const cur = (await store().get(KEY, { type: 'json' }).catch(() => null)) || {}
       const next = { ...cur }
       for (const s of SECTIONS) {

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.44.1'
+const APP_VERSION = '3.45.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4784,7 +4784,8 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
   const [editing, setEditing] = useState(null) // client being configured (modal)
   const [adding, setAdding] = useState(false)   // add/edit-client explorer modal (true = new, client = edit)
   const role = authEnabled && authUser ? authUser.role : 'admin' // legacy/basic = full admin
-  const isAdmin = role === 'admin'
+  const isAdmin = isAdminishFE(role)
+  const isSuper = !authEnabled || role === 'superadmin' // legacy/basic = super
   const [section, setSection] = useState(isAdmin ? 'clients' : 'account')
   const names = useDiscoverNames()
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
@@ -4826,7 +4827,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
       <div className="set-toolbar">
         <div className="chan-toggle">{SET_FILTERS.map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${config.clients.length - activeCount}` : ''}</button>)}</div>
         <input className="set-search" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>
+        {isSuper && <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>}
         <span className="set-saved">✓ Saved to server · shared across your team</span>
       </div>
       <div className="set-legend">
@@ -4854,7 +4855,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
         {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
       </div>
       </>)}
-      {editing && <SettingsEditModal client={editing} names={names} currency={currency} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
+      {editing && <SettingsEditModal client={editing} names={names} currency={currency} canManageAccounts={isSuper} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
       {adding && <AddClientModal existing={config.clients} editClient={typeof adding === 'object' ? adding : null} onClose={() => setAdding(false)} />}
     </div>
   )
@@ -4989,7 +4990,7 @@ function MetaConversionsEditor({ clientId, currency }) {
     </div>
   )
 }
-function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onRelink }) {
+function SettingsEditModal({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   const [name, setName] = useState(c.name || '')
@@ -5040,7 +5041,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
               <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd google">Google</span></span><span className="set-linked-v">{c.google ? <><b>{nm('google', c.google) || c.googleName || 'Linked'}</b> <code>{c.google}</code></> : <span className="cap">Not linked</span>}</span></div>
               <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd" style={{ background: '#12b886' }}>CRM</span></span><span className="set-linked-v">{c.ghl ? <><b>{nm('ghl', c.ghl) || c.ghlName || 'Linked'}</b> <code>{c.ghl}</code></> : <span className="cap">Not linked</span>}</span></div>
             </div>
-            <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button>
+            {canManageAccounts ? <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button> : <p className="cap" style={{ margin: '4px 0 0' }}>🔒 Only a Super Admin can change or remove the linked accounts.</p>}
             {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
             {c.ghl && <SalesCycleField clientId={c.id} />}
             {c.ghl && <ActiveHoursField clientId={c.id} />}
@@ -5095,9 +5096,14 @@ function AuthShell({ children }) {
 }
 // Frontend mirror of the server permission helpers (UI gating only — the API
 // enforces the same rules server-side). A null user = legacy/basic-auth = full.
+const isAdminishFE = (r) => r === 'admin' || r === 'superadmin'
+const RANK_FE = { superadmin: 3, admin: 2, user: 1, viewer: 0 }
+const rankOfFE = (r) => (RANK_FE[r] != null ? RANK_FE[r] : 0)
+// Can an actor with this role manage a target of that role? (mirrors the server)
+const canManageRoleFE = (actorRole, targetRole) => actorRole === 'superadmin' ? true : (actorRole === 'admin' ? rankOfFE(targetRole) < RANK_FE.admin : false)
 function canSeeClientFE(user, id) {
   if (!user) return true
-  if (user.role === 'admin') return true
+  if (isAdminishFE(user.role)) return true
   if (user.role === 'user') return user.allClients !== false || (user.clients || []).includes(id)
   return (user.clients || []).includes(id)
 }
@@ -5106,7 +5112,7 @@ function allowedTabsFE(user, offered) {
   const keep = offered.filter((t) => user.tabs.includes(t.id))
   return keep.length ? keep : offered.slice(0, 1)
 }
-const ROLE_LABEL = { admin: 'Admin', user: 'User', viewer: 'Viewer' }
+const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Admin', user: 'User', viewer: 'Viewer' }
 function LoginForm({ onSignedIn }) {
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
@@ -5254,20 +5260,25 @@ function ClientPicker({ clients, selected, onToggle }) {
   return <div className="alloc-chips">{clients.map((c) => <button type="button" key={c.id} className={`chip ${selected.includes(c.id) ? 'on' : ''}`} onClick={() => onToggle(c.id)}>{c.name}</button>)}</div>
 }
 // Role + client/tab allocation control, reused by invite, approve and edit.
-function AllocationEditor({ value, clients, onChange }) {
+function AllocationEditor({ value, clients, onChange, actorRole }) {
   const v = value
   const toggleClient = (id) => { const s = new Set(v.clients || []); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, clients: [...s] }) }
   const toggleTab = (id) => { const cur = v.tabs == null ? TAB_OPTIONS.map((t) => t.id) : v.tabs; const s = new Set(cur); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, tabs: [...s] }) }
+  const isSuper = actorRole === 'superadmin'
+  // Only a Super Admin can grant Admin / Super Admin. Keep the current value as a
+  // (disabled) option so an existing role still shows even if you can't set it.
+  const opts = [['user', 'User — agency staff'], ['viewer', 'Viewer — client']]
+  if (isSuper) opts.unshift(['superadmin', 'Super Admin — owner control'], ['admin', 'Admin — full control'])
+  else if (isAdminishFE(v.role)) opts.unshift([v.role, ROLE_LABEL[v.role] + ' — (only a Super Admin can change this)'])
   return (
     <div className="alloc">
       <label className="alloc-role">Role
-        <select value={v.role} onChange={(e) => onChange({ ...v, role: e.target.value })}>
-          <option value="admin">Admin — full control</option>
-          <option value="user">User — agency staff</option>
-          <option value="viewer">Viewer — client</option>
+        <select value={v.role} onChange={(e) => onChange({ ...v, role: e.target.value })} disabled={!isSuper && isAdminishFE(v.role)}>
+          {opts.map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
         </select>
       </label>
-      {v.role === 'admin' && <p className="alloc-note">Full access to every client, every tab and all settings.</p>}
+      {v.role === 'superadmin' && <p className="alloc-note">Owner-level: everything an Admin can do, plus manage Admins, add/remove client accounts and the system panel.</p>}
+      {v.role === 'admin' && <p className="alloc-note">Full access to every client, every tab and all settings (not the Super-Admin-only areas).</p>}
       {v.role === 'user' && (<>
         <label className="alloc-check"><input type="checkbox" checked={v.allClients !== false} onChange={(e) => onChange({ ...v, allClients: e.target.checked })} /> Can see all client accounts</label>
         {v.allClients === false && (<><div className="alloc-lab">Allowed accounts</div><ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} /></>)}
@@ -5283,7 +5294,7 @@ function AllocationEditor({ value, clients, onChange }) {
     </div>
   )
 }
-function PendingRow({ u, clients, onApprove, onReject }) {
+function PendingRow({ u, clients, onApprove, onReject, actorRole }) {
   const [draft, setDraft] = useState({ role: 'viewer', clients: [], allClients: true, tabs: null })
   const [busy, setBusy] = useState(false)
   return (
@@ -5299,7 +5310,7 @@ function PendingRow({ u, clients, onApprove, onReject }) {
           <button className="btn-ghost danger" onClick={() => onReject(u)}>Reject</button>
         </div>
       </div>
-      <AllocationEditor value={draft} clients={clients} onChange={setDraft} />
+      <AllocationEditor value={draft} clients={clients} onChange={setDraft} actorRole={actorRole} />
     </div>
   )
 }
@@ -5353,7 +5364,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
             ) : (
               <label className="alloc-role" style={{ marginBottom: 10, maxWidth: 320 }}>Name<input className="u-modal-name" value={name} onChange={(e) => setName(e.target.value)} /></label>
             )}
-            <AllocationEditor value={draft} clients={clients} onChange={setDraft} />
+            <AllocationEditor value={draft} clients={clients} onChange={setDraft} actorRole={authUser && authUser.role} />
           </fieldset>
           {err && <div className="auth-err" style={{ marginTop: 12 }}>{err}</div>}
           {link && (
@@ -5394,8 +5405,9 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
       <p className="cap">Tip: keep the old <code>SITE_PASSWORD</code> set during the switch — it keeps working as a fallback so you can’t get locked out. Remove it once everyone has their own login.</p>
     </div>
   )
+  const actorRole = (authUser && authUser.role) || 'admin'
   const badge = (u) => u.status === 'invited' ? <span className="u-badge inv">Invited</span> : u.status === 'disabled' ? <span className="u-badge dis">Disabled</span> : u.status === 'pending' ? <span className="u-badge pend">Pending</span> : <span className="u-badge act">Active</span>
-  const accessSummary = (u) => u.role === 'admin' ? 'All clients · all tabs'
+  const accessSummary = (u) => isAdminishFE(u.role) ? 'All clients · all tabs'
     : u.role === 'user' ? (u.allClients !== false ? 'All accounts' : `${(u.clients || []).length} account${(u.clients || []).length === 1 ? '' : 's'}`)
     : `${(u.clients || []).length} client${(u.clients || []).length === 1 ? '' : 's'}${Array.isArray(u.tabs) ? ` · ${u.tabs.length} tab${u.tabs.length === 1 ? '' : 's'}` : ' · all tabs'}`
   const pending = state.users.filter((u) => u.status === 'pending')
@@ -5406,13 +5418,13 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
         <div className="card u-approvals">
           <h3 style={{ marginTop: 0 }}>Pending approvals <span className="u-badge pend">{pending.length}</span></h3>
           <p className="cap" style={{ marginTop: -4 }}>People who requested access. Set their role and what they can see, then approve — nothing is granted until you do.</p>
-          {pending.map((u) => <PendingRow key={u.email} u={u} clients={clients} onApprove={approve} onReject={rejectPending} />)}
+          {pending.map((u) => <PendingRow key={u.email} u={u} clients={clients} onApprove={approve} onReject={rejectPending} actorRole={actorRole} />)}
         </div>
       )}
 
       <div className="card">
         <div className="u-head-row">
-          <div><h3 style={{ margin: 0 }}>Team &amp; access</h3><p className="cap" style={{ margin: '4px 0 0' }}><b>Admin</b> = full control · <b>User</b> = agency staff (chosen accounts, no settings) · <b>Viewer</b> = client (only their clients &amp; tabs).</p></div>
+          <div><h3 style={{ margin: 0 }}>Team &amp; access</h3><p className="cap" style={{ margin: '4px 0 0' }}><b>Super Admin</b> = owner (manages admins &amp; accounts) · <b>Admin</b> = full control · <b>User</b> = agency staff · <b>Viewer</b> = client. {actorRole !== 'superadmin' && <span>You can manage Users &amp; Viewers; only a Super Admin can manage Admins.</span>}</p></div>
           <button className="btn-primary" onClick={() => setModal({ invite: true })}>+ Invite person</button>
         </div>
 
@@ -5427,7 +5439,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
                 <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
                 <td className="lft">{badge(u)}</td>
-                <td className="lft"><button className="btn-ghost sm" onClick={() => setModal({ user: u })}>Edit access</button></td>
+                <td className="lft">{canManageRoleFE(actorRole, u.role) ? <button className="btn-ghost sm" onClick={() => setModal({ user: u })}>Edit access</button> : <span className="cap" title="Only a Super Admin can manage an Admin">🔒 locked</span>}</td>
               </tr>
             )
           })}</tbody>

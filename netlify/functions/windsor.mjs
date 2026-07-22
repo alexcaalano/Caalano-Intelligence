@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, fetchOppNotes, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1058,6 +1058,17 @@ export default async (req) => {
       const totalSpend = spendByChannel[channel] != null ? spendByChannel[channel] : metaSpend + googleSpend
       return json({ scope: 'users', client, period: { from, to, preset }, channel, totalSpend, metaSpend, googleSpend, ...perf }, 200, true)
     } catch (e) { return json({ scope: 'users', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
+  // Notes on a specific deal's contact, for the Users open-deal drill-down.
+  if (url.searchParams.get('scope') === 'oppnotes') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'oppnotes', notes: [] })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'oppnotes', connected: false, notes: [] })
+    const contactId = url.searchParams.get('contact') || null
+    if (!contactId) return json({ scope: 'oppnotes', notes: [] })
+    try { return json({ scope: 'oppnotes', client, ...(await fetchOppNotes(cc.ghl, { contactId })) }, 200) }
+    catch (e) { return json({ scope: 'oppnotes', client, error: String(e.message || e).slice(0, 200), notes: [] }, 200) }
   }
 
   // Appointment insights: booking lead time, self vs staff booked, downstream

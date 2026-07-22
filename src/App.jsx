@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.46.0'
+const APP_VERSION = '3.47.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4016,6 +4016,33 @@ function TimingDebug({ clientId, range }) {
   )
 }
 /* ============ Users (per-rep performance) ============ */
+// One live-deal row in the open-deals drill-down; expands to fetch the contact's
+// CRM notes on demand (the "why is this stuck?" context).
+function OpenDealRow({ d, clientId, money, showPipe }) {
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const load = () => {
+    setLoading(true)
+    const q = new URLSearchParams({ scope: 'oppnotes', client: clientId })
+    if (d.contactId) q.set('contact', d.contactId)
+    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false))
+  }
+  const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && d.contactId) load() }
+  return (
+    <React.Fragment>
+      <tr className={open ? 'row-sel' : ''} style={{ cursor: d.contactId ? 'pointer' : 'default' }} onClick={d.contactId ? toggle : undefined}>
+        <td className="lft">{d.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {d.name}{showPipe ? <span className="cap"> · {d.pipeline}</span> : null}</td>
+        <td className="lft">{d.contact}{d.email || d.phone ? <div className="cap">{[d.email, d.phone].filter(Boolean).join(' · ')}</div> : null}</td>
+        <td>{d.value ? money(d.value) : '-'}</td>
+        <td className={d.ageDays != null && d.ageDays > 30 ? 'u-stale' : ''}>{d.ageDays != null ? `${fmtNumber(d.ageDays)}d` : '-'}</td>
+      </tr>
+      {open && <tr className="u-notes-row"><td colSpan={4}>
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
+      </td></tr>}
+    </React.Fragment>
+  )
+}
 function UsersView({ clientId, range, nonce, currency }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [pipe, setPipe] = useState('all')
@@ -4168,16 +4195,9 @@ function UsersView({ clientId, range, nonce, currency }) {
           <div className="m-body">
             <div className="table-wrap"><table className="mini-tbl u-drill-tbl">
               <thead><tr><th className="lft">Opportunity</th><th className="lft">Contact</th><th>Value</th><th>Days in stage</th></tr></thead>
-              <tbody>{drill.deals.slice().sort((a, b) => b.value - a.value).map((d, i) => (
-                <tr key={d.id || i}>
-                  <td className="lft">{d.name}{drill.deals.some((x) => x.pipeline !== d.pipeline) ? <span className="cap"> · {d.pipeline}</span> : null}</td>
-                  <td className="lft">{d.contact}{d.email || d.phone ? <div className="cap">{[d.email, d.phone].filter(Boolean).join(' · ')}</div> : null}</td>
-                  <td>{d.value ? money(d.value) : '-'}</td>
-                  <td className={d.ageDays != null && d.ageDays > 30 ? 'u-stale' : ''}>{d.ageDays != null ? `${fmtNumber(d.ageDays)}d` : '-'}</td>
-                </tr>
-              ))}</tbody>
+              <tbody>{(() => { const showPipe = drill.deals.some((x) => x.pipeline !== drill.deals[0].pipeline); return drill.deals.slice().sort((a, b) => b.value - a.value).map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe={showPipe} />) })()}</tbody>
             </table></div>
-            <p className="caveat">Live opportunities currently sitting at this stage (not won/lost), highest value first. <b>Days in stage</b> = time since the deal last moved (amber = 30+ days, likely stalled). Detailed notes live in Caalano Systems.</p>
+            <p className="caveat">Live opportunities currently sitting at this stage (not won/lost), highest value first. <b>Days in stage</b> = time since the deal last moved (amber = 30+ days, likely stalled). <b>Click a deal to read its Caalano Systems notes</b> — the context on why it may be stuck.</p>
           </div>
         </div>
       </div>}

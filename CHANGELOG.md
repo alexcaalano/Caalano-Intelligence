@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.47.0 — 2026-07-21 · `PENDING`
+- **Deal notes in the open-deals drill-down.** In the Users tab, click a stage →
+  click any live deal to **expand its Caalano Systems notes** (fetched on demand
+  from the contact), newest first with author + date. So when a deal is stuck at
+  a stage, you can read the CRM context on *why* right there. Deals with no
+  contact link aren't expandable; deals with no notes say so.
+
 ## v3.46.0 — 2026-07-21 · `PENDING`
 - **Lead location map is now a real interactive map.** Replaced the hand-drawn
   Australia outline with a proper **OpenStreetMap** slippy map (Leaflet): pan and

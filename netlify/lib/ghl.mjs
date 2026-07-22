@@ -1267,7 +1267,7 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
     if (isOpen && stg) {
       const so = u.stageOpen.get(stg.name) || { open: 0, value: 0 }; so.open++; so.value += val; u.stageOpen.set(stg.name, so)
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
-      u.openList.push({ id: o.id || o._id || null, name: o.name || o.title || '(unnamed opportunity)', contact: contactNameOf(o), value: Math.round(val), stage: stg.name, stagePos: stg.pos, pipeline: pipeName[o.pipelineId] || 'Pipeline', ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null, email: (o.contact && o.contact.email) || null, phone: (o.contact && o.contact.phone) || null })
+      u.openList.push({ id: o.id || o._id || null, contactId: contactIdOf(o), name: o.name || o.title || '(unnamed opportunity)', contact: contactNameOf(o), value: Math.round(val), stage: stg.name, stagePos: stg.pos, pipeline: pipeName[o.pipelineId] || 'Pipeline', ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null, email: (o.contact && o.contact.email) || null, phone: (o.contact && o.contact.phone) || null })
     }
     const pid = o.pipelineId || 'none'; let bp = u.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, won: 0, revenue: 0 }; u.byPipe.set(pid, bp) } bp.leads++; if (st === 'won') { bp.won++; bp.revenue += val }
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
@@ -1292,6 +1292,22 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
     connected: true, tz, users,
     pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s) => s.name) })),
   }
+}
+
+// Notes on a deal's contact (Caalano Systems), newest first — the on-demand
+// "why is this stuck?" context for the Users open-deal drill-down.
+export async function fetchOppNotes(locationId, { contactId }) {
+  if (!contactId) return { notes: [] }
+  const locTok = await locationToken(locationId)
+  const [cn, un] = await Promise.all([
+    ghlGet(locTok, `/contacts/${contactId}/notes`, {}).then((j) => j.notes || []).catch(() => []),
+    ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
+  ])
+  const uName = {}; for (const u of un) uName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null
+  const notes = (cn || []).map((n) => ({ body: String(n.body || n.note || '').trim(), createdAt: n.dateAdded || n.createdAt || n.updatedAt || null, author: uName[n.userId] || null }))
+    .filter((n) => n.body)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+  return { notes }
 }
 
 export async function buildAttribution(locationId, from, to, opts = {}) {

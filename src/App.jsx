@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.53.0'
+const APP_VERSION = '3.54.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3522,8 +3522,8 @@ function groupAnswers(answers) {
     const dt = parseFormDate(v)
     const key = dt ? 'date:' + dt.iso : (/\d/.test(v) ? 'num:' + v : answerKeyOf(v)) // dates merge; other numeric (postcode/budget) never
     let g = groups.get(key)
-    if (!g) { g = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, members: [], _max: -1 }; groups.set(key, g) }
-    g.leads += a.leads || 0; g.booked += a.booked || 0; g.shown += a.shown || 0; g.won += a.won || 0; g.revenue += a.revenue || 0
+    if (!g) { g = { value: v, leads: 0, booked: 0, shown: 0, won: 0, lost: 0, revenue: 0, members: [], _max: -1 }; groups.set(key, g) }
+    g.leads += a.leads || 0; g.booked += a.booked || 0; g.shown += a.shown || 0; g.won += a.won || 0; g.lost += a.lost || 0; g.revenue += a.revenue || 0
     g.members.push({ value: v, leads: a.leads || 0 })
     const canon = dt ? dt.display : (key.startsWith('state:') ? key.slice(6) : v)
     if (a.leads > g._max) { g._max = a.leads; g.value = canon }
@@ -3759,8 +3759,8 @@ function mergeLocations(locs, db) {
     if (!c) { kept.push(l); continue }
     const key = c[0].toFixed(3) + ',' + c[1].toFixed(3)
     let g = groups.get(key)
-    if (!g) { g = { lat: c[0], lng: c[1], leads: 0, booked: 0, shown: 0, won: 0, members: [] }; groups.set(key, g) }
-    g.leads += l.leads || 0; g.booked += l.booked || 0; g.shown += l.shown || 0; g.won += l.won || 0
+    if (!g) { g = { lat: c[0], lng: c[1], leads: 0, booked: 0, shown: 0, won: 0, lost: 0, members: [] }; groups.set(key, g) }
+    g.leads += l.leads || 0; g.booked += l.booked || 0; g.shown += l.shown || 0; g.won += l.won || 0; g.lost += l.lost || 0
     if (l.members) g.members.push(...l.members); else g.members.push({ value: l.value, leads: l.leads || 0 })
   }
   const merged = [...groups.values()].map((g) => {
@@ -3769,15 +3769,16 @@ function mergeLocations(locs, db) {
     const names = [...new Set(vals.filter((v) => !isPostcodeVal(v)))]
     const label = names.length && pcs.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''} (${pcs.join('/')})`
       : names.length ? names.join(' / ') : pcs.join(' / ')
-    return { value: label, leads: g.leads, booked: g.booked, shown: g.shown, won: g.won, lat: g.lat, lng: g.lng, merged: g.members.length > 1, members: g.members }
+    return { value: label, leads: g.leads, booked: g.booked, shown: g.shown, won: g.won, lost: g.lost, lat: g.lat, lng: g.lng, merged: g.members.length > 1, members: g.members }
   })
   return [...merged, ...kept].sort((a, b) => b.leads - a.leads)
 }
-// Outcome colours: red = leads (unconverted), amber = booked (not yet won),
-// green = won. A location's marker takes its furthest outcome.
-const LM_RED = '#f0435b', LM_AMBER = '#f5a524', LM_GREEN = '#17b26a'
-const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : 'lead')
-const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_AMBER : LM_RED)
+// Outcome colours: blue = open lead, amber = booked (not yet won), green = won,
+// red = lost. A location's marker takes its furthest milestone reached (won >
+// booked > lost > open lead).
+const LM_BLUE = '#3b82f6', LM_RED = '#f0435b', LM_AMBER = '#f5a524', LM_GREEN = '#17b26a'
+const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : p.lost ? 'lost' : 'lead')
+const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_AMBER : o === 'lost' ? LM_RED : LM_BLUE)
 // Interactive Leaflet map (OpenStreetMap tiles) — real base map with suburb
 // names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
 function LeadMap({ locs, tall }) {
@@ -3840,15 +3841,15 @@ function LeadMap({ locs, tall }) {
     const L = LRef.current, map = mapRef.current, layer = layerRef.current
     if (!L || !map || !layer) return
     layer.clearLayers()
-    const shown = pts.filter((p) => filter === 'all' ? true : filter === 'lead' ? true : filter === 'booked' ? p.booked > 0 : p.won > 0)
+    const shown = pts.filter((p) => filter === 'all' ? true : filter === 'lead' ? true : filter === 'booked' ? p.booked > 0 : filter === 'won' ? p.won > 0 : p.lost > 0)
     const latlngs = []
     for (const p of shown) {
       const o = filter === 'all' ? outcomeOf(p) : filter
       const col = outcomeColor(o)
       const r = 5 + Math.sqrt(p.leads / maxLeads) * 20
       const m = L.circleMarker([p.lat, p.lng], { radius: r, color: col, weight: 1.5, fillColor: col, fillOpacity: 0.55 })
-      m.bindPopup(`<b>${p.value}</b><br/>${p.leads} lead${p.leads === 1 ? '' : 's'} · ${p.booked || 0} booked · ${p.won || 0} won`)
-      m.bindTooltip(`${p.value}: ${p.leads}L / ${p.booked || 0}B / ${p.won || 0}W`)
+      m.bindPopup(`<b>${p.value}</b><br/>${p.leads} lead${p.leads === 1 ? '' : 's'} · ${p.booked || 0} booked · ${p.won || 0} won · ${p.lost || 0} lost`)
+      m.bindTooltip(`${p.value}: ${p.leads}L / ${p.booked || 0}B / ${p.won || 0}W / ${p.lost || 0}Lost`)
       m.addTo(layer); latlngs.push([p.lat, p.lng])
     }
     if (latlngs.length) { try { map.fitBounds(latlngs, { padding: [34, 34], maxZoom: 13 }) } catch { /* single point */ } }
@@ -3857,13 +3858,13 @@ function LeadMap({ locs, tall }) {
   if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
   if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
   const matchedLeads = pts.reduce((s, p) => s + p.leads, 0)
-  const FILTERS = [['all', 'All'], ['lead', 'Leads'], ['booked', 'Booked'], ['won', 'Won']]
+  const FILTERS = [['all', 'All'], ['lead', 'Leads'], ['booked', 'Booked'], ['won', 'Won'], ['lost', 'Lost']]
   return (
     <div className="lead-map-wrap">
       <div className="lead-map">
         <div className="lead-map-bar">
           <div className="lead-map-tabs"><span className="lead-map-lab">Show</span>{FILTERS.map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
-          <div className="lm-legend2"><span><i style={{ background: LM_RED }} />Leads</span><span><i style={{ background: LM_AMBER }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span></div>
+          <div className="lm-legend2"><span><i style={{ background: LM_BLUE }} />Leads</span><span><i style={{ background: LM_AMBER }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span><span><i style={{ background: LM_RED }} />Lost</span></div>
         </div>
         <div ref={elRef} className={`lead-map-leaflet${tall ? ' lead-map-tall' : ''}`} />
       </div>
@@ -3925,7 +3926,7 @@ function LocationView({ clientId, range, nonce, currency }) {
         <p style={{ maxWidth: 480, margin: '8px auto 0' }}>This map fills in whenever leads submit a suburb, postcode or address on a form (Meta Lead Forms and website forms both count). None of the forms in this period captured a location field.</p></div>
     </>
   )
-  const tot = locs.reduce((a, l) => ({ leads: a.leads + (l.leads || 0), booked: a.booked + (l.booked || 0), won: a.won + (l.won || 0) }), { leads: 0, booked: 0, won: 0 })
+  const tot = locs.reduce((a, l) => ({ leads: a.leads + (l.leads || 0), booked: a.booked + (l.booked || 0), won: a.won + (l.won || 0), lost: a.lost + (l.lost || 0) }), { leads: 0, booked: 0, won: 0, lost: 0 })
   const max = Math.max(1, ...locs.map((l) => l.leads))
   return (
     <>
@@ -3935,15 +3936,16 @@ function LocationView({ clientId, range, nonce, currency }) {
         <Sc label="Leads mapped" value={fmtNumber(tot.leads)} />
         <Sc label="Booked" value={fmtNumber(tot.booked)} />
         <Sc label="Won" value={fmtNumber(tot.won)} />
+        <Sc label="Lost" value={fmtNumber(tot.lost)} />
       </div>
       <LeadMap locs={locs} tall />
       <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>Every location <span className="sub">· ranked by leads</span></div>
       <div className="fm-loc-list" style={{ marginTop: 8 }}>
         {locs.slice(0, 120).map((l) => (
-          <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.booked || 0} booked · ${l.won || 0} won`}>
+          <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.booked || 0} booked · ${l.won || 0} won · ${l.lost || 0} lost`}>
             <span className="fm-loc-nm">{l.value}{l.merged ? ` ⓘ${l.members.length}` : ''}</span>
             <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
-            <span className="fm-loc-n">{l.leads}{l.booked ? ` · ${l.booked}b` : ''}{l.won ? ` · ${l.won}w` : ''}</span>
+            <span className="fm-loc-n">{l.leads}{l.booked ? ` · ${l.booked}b` : ''}{l.won ? ` · ${l.won}w` : ''}{l.lost ? ` · ${l.lost}L` : ''}</span>
           </div>
         ))}
       </div>

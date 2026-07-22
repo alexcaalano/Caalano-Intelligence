@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.54.0 — 2026-07-22 · `PENDING`
+- **Location map — new colour scheme with Lost.** Open leads are now **blue**
+  (was red) and **lost** leads are **red**, alongside amber = booked and green =
+  won. Added a **Lost** filter to the map's Show toggle and a Lost count to the
+  legend, location scorecards, popups and the ranked list. Lost is now tracked
+  per location in the forms feed (backend). Marker colour = furthest milestone
+  reached (won > booked > lost > open lead). Applies to both the Location tab
+  and the per-form location map.
+
 ## v3.53.0 — 2026-07-22 · `PENDING`
 - **New Location tab.** A dedicated, full-height interactive map (same Leaflet /
   OpenStreetMap base as the Forms map, with suburb names and zoom/pan) showing

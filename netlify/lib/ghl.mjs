@@ -1222,14 +1222,20 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
-  const [wideOpps, pipelines, appts, userRows] = await Promise.all([
+  const [wideOpps, pipelines, appts, userRows, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 2000),
     fetchPipelines(locTok, locationId),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map() })),
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
   ])
   const idx = stageIndexFrom(pipelines)
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const lostReasonOf = (o) => {
+    const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null
+    return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified'
+  }
   const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))
   const nameOf = (id) => (id === 'unassigned' ? 'Unassigned' : (userName[id] || 'User ' + String(id).slice(-4)))
@@ -1239,19 +1245,23 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const chan = opts.channel && opts.channel !== 'all' ? opts.channel : null
   if (chan) cohort = cohort.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
   const U = new Map()
-  const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, stages: new Map(), byPipe: new Map() }; U.set(uid, u) } return u }
+  const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, totalValue: 0, openValue: 0, lostValue: 0, stages: new Map(), stageOpen: new Map(), reasons: new Map(), byPipe: new Map() }; U.set(uid, u) } return u }
   for (const o of cohort) {
     const uid = o.assignedTo || 'unassigned'
     const u = getU(uid)
     u.leads++
     const st = String(o.status || '').toLowerCase(); const val = num(o.monetaryValue)
+    const isOpen = st !== 'won' && st !== 'lost' && st !== 'abandoned'
+    u.totalValue += val
     if (st === 'won') { u.won++; u.revenue += val; const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || ''); const c = Date.parse(o.createdAt); if (isFinite(w) && isFinite(c)) { const d = (w - c) / DAY; if (d >= 0 && d < 400) { u.closeSum += d; u.closeN++ } } }
-    else if (st === 'lost' || st === 'abandoned') u.lost++
-    else u.open++
+    else if (st === 'lost' || st === 'abandoned') { u.lost++; u.lostValue += val; const rn = lostReasonOf(o); const rr = u.reasons.get(rn) || { count: 0, value: 0 }; rr.count++; rr.value += val; u.reasons.set(rn, rr) }
+    else { u.open++; u.openValue += val }
     // Cumulative stage reach: an opp at position P reached every stage with pos<=P;
     // a won opp reached them all.
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
     if (pi) for (const s of pi.stages) { if (st === 'won' || (pos >= 0 && s.pos <= pos)) u.stages.set(s.name, (u.stages.get(s.name) || 0) + 1) }
+    // Deals sitting OPEN at their current stage right now (live, still capturable).
+    if (isOpen && stg) { const so = u.stageOpen.get(stg.name) || { open: 0, value: 0 }; so.open++; so.value += val; u.stageOpen.set(stg.name, so) }
     const pid = o.pipelineId || 'none'; let bp = u.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, won: 0, revenue: 0 }; u.byPipe.set(pid, bp) } bp.leads++; if (st === 'won') { bp.won++; bp.revenue += val }
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
     if (f) { if (f.bookedInPeriod) u.booked++; if (f.shownByStatus) u.shown++; if (f.cancelledInPeriod) u.cancelled++ }
@@ -1264,7 +1274,10 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
     winRate: u.leads ? Math.round((u.won / u.leads) * 100) : null,
     avgDeal: u.won ? Math.round(u.revenue / u.won) : null,
     avgCloseDays: u.closeN ? Math.round(u.closeSum / u.closeN) : null,
+    pipelineValue: Math.round(u.totalValue), openValue: Math.round(u.openValue), lostValue: Math.round(u.lostValue), wonValue: Math.round(u.revenue),
     stages: Object.fromEntries(u.stages),
+    stageOpen: Object.fromEntries([...u.stageOpen.entries()].map(([k, v]) => [k, { open: v.open, value: Math.round(v.value) }])),
+    lostReasons: [...u.reasons.entries()].map(([reason, v]) => ({ reason, count: v.count, value: Math.round(v.value) })).sort((a, b) => b.count - a.count),
     byPipeline: [...u.byPipe.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue) })).sort((a, b) => b.leads - a.leads),
   })).sort((a, b) => b.leads - a.leads)
   return {

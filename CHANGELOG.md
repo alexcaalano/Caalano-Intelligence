@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.43.0 — 2026-07-21 · `PENDING`
+- **Users tab: pipeline value, open deals per stage, and lost reasons per rep.**
+  Expanding a rep now shows:
+  - **Value cards** — Total pipeline · **Open (live)** · Won · **Lost** value,
+    each with its deal count.
+  - **“Open now” on every funnel stage** — how many deals are sitting at that
+    stage right now (still in play, not won/lost) **and their value**. So for
+    Pool Haus you can see, of the 11 that reached *Quote/Proposal Sent*, how many
+    are still open and what they're worth — the live pipeline that can still be
+    captured.
+  - **Lost reasons per rep** — a table of each rep's lost deals by reason, with
+    count and value (pulled from the CRM's lost-reason list).
+- **Fixes leaderboard column alignment** — numeric headers and values now
+  right-align together (the `mini-tbl` base rule was left-aligning the data).
+
 ## v3.42.1 — 2026-07-21 · `PENDING`
 - **Users key-event funnel now follows pipeline order.** The per-rep funnel (and
   the key-events matrix) sort stages by their real pipeline position instead of

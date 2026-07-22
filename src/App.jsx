@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.42.1'
+const APP_VERSION = '3.43.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4081,16 +4081,33 @@ function UsersView({ clientId, range, nonce, currency }) {
                 </tr>
                 {isOpen && <tr className="u-detail-row"><td colSpan={12}>
                   <div className="u-detail">
-                    <div className="u-funnel">
-                      {(stageCols.length ? [['Leads', u.leads], ...stageCols.map((s) => [s, (u.stages && u.stages[s]) || 0]), ['Won', u.won]] : [['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]]).map(([lbl, n], i, arr) => {
-                        const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null
-                        return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span></div>
-                      })}
+                    <div className="u-detail-main">
+                      <div className="u-val-cards">
+                        <div className="u-vc"><span>Total pipeline</span><b>{money(u.pipelineValue || 0)}</b><i>{fmtNumber(u.leads)} deals</i></div>
+                        <div className="u-vc open"><span>Open (live)</span><b>{money(u.openValue || 0)}</b><i>{fmtNumber(u.open)} deals still in play</i></div>
+                        <div className="u-vc won"><span>Won</span><b>{money(u.wonValue != null ? u.wonValue : u.revenue)}</b><i>{fmtNumber(u.won)} deals</i></div>
+                        <div className="u-vc lost"><span>Lost</span><b>{money(u.lostValue || 0)}</b><i>{fmtNumber(u.lost)} deals</i></div>
+                      </div>
+                      <div className="u-funnel">
+                        <div className="u-fn-head"><span /><span>reached</span><span>step</span><span>open now</span></div>
+                        {(stageCols.length ? [['Leads', u.leads], ...stageCols.map((s) => [s, (u.stages && u.stages[s]) || 0]), ['Won', u.won]] : [['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]]).map(([lbl, n], i, arr) => {
+                          const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null
+                          const so = u.stageOpen && u.stageOpen[lbl]
+                          return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span><span className="u-fn-open">{so && so.open ? <><b>{fmtNumber(so.open)}</b>{so.value ? ` · ${money(so.value)}` : ''}</> : ''}</span></div>
+                        })}
+                      </div>
+                      <p className="caveat" style={{ marginTop: 8 }}>“Open now” = deals sitting at that stage right now, still in play (not won/lost) — with their value. Reached is cumulative (a later stage counts the earlier ones).</p>
                     </div>
-                    {u.byPipeline && u.byPipeline.length > 1 && <div className="u-pipes">
-                      <div className="cap" style={{ fontWeight: 700, marginBottom: 4 }}>By pipeline</div>
-                      <table className="mini-tbl"><thead><tr><th className="lft">Pipeline</th><th>Leads</th><th>Won</th><th>Revenue</th></tr></thead><tbody>{u.byPipeline.map((p) => <tr key={p.id}><td className="lft">{p.name}</td><td>{fmtNumber(p.leads)}</td><td>{fmtNumber(p.won)}</td><td>{money(p.revenue)}</td></tr>)}</tbody></table>
-                    </div>}
+                    <div className="u-detail-side">
+                      {u.lostReasons && u.lostReasons.length > 0 && <div className="u-lost">
+                        <div className="cap" style={{ fontWeight: 700, marginBottom: 4 }}>Lost reasons</div>
+                        <table className="mini-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th></tr></thead><tbody>{u.lostReasons.map((r) => <tr key={r.reason}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '-'}</td></tr>)}</tbody></table>
+                      </div>}
+                      {u.byPipeline && u.byPipeline.length > 1 && <div className="u-pipes">
+                        <div className="cap" style={{ fontWeight: 700, marginBottom: 4 }}>By pipeline</div>
+                        <table className="mini-tbl"><thead><tr><th className="lft">Pipeline</th><th>Leads</th><th>Won</th><th>Revenue</th></tr></thead><tbody>{u.byPipeline.map((p) => <tr key={p.id}><td className="lft">{p.name}</td><td>{fmtNumber(p.leads)}</td><td>{fmtNumber(p.won)}</td><td>{money(p.revenue)}</td></tr>)}</tbody></table>
+                      </div>}
+                    </div>
                   </div>
                 </td></tr>}
               </React.Fragment>

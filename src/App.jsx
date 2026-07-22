@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.42.0'
+const APP_VERSION = '3.42.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4022,9 +4022,14 @@ function UsersView({ clientId, range, nonce, currency }) {
     <div className="chan-toggle">{[['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => { setChan(k); setOpen(null) }}>{lbl}</button>)}</div>
   )
   if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b></div></div>
-  // Configured stage key events -> matrix columns (stage reach per user).
+  // Configured stage key events -> matrix columns (stage reach per user), sorted
+  // by their real pipeline position so the funnel reads top-to-bottom (and the
+  // cumulative step % make sense) instead of following config order.
+  const stageRank = {}
+  { let base = 0; for (const p of pipes) { (p.stages || []).forEach((s, i) => { if (stageRank[s] == null) stageRank[s] = base + i }); base += (p.stages || []).length } }
   const resolvedKe = mergeCalKeyEvents(normKeyEvents(keyEventsForPipe(loadKeyEvents(clientId), pipe === 'all' ? 'all' : pipe)))
   const stageCols = [...new Set(resolvedKe.filter((e) => !WON_RE.test(e.label)).map((e) => (e.kind === 'calendar' ? e.stage : e.ref)).filter(Boolean))]
+    .sort((a, b) => (stageRank[a] != null ? stageRank[a] : 9999) - (stageRank[b] != null ? stageRank[b] : 9999))
   const withCost = users.map((u) => ({ ...u, costWon: u.won && totalSpend ? totalSpend / u.won : null, costBooked: u.booked && totalSpend ? totalSpend / u.booked : null }))
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const sorted = [...withCost].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return (av - bv) * sort.dir })

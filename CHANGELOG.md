@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.42.1 — 2026-07-21 · `PENDING`
+- **Users key-event funnel now follows pipeline order.** The per-rep funnel (and
+  the key-events matrix) sort stages by their real pipeline position instead of
+  config order, so the cumulative funnel reads top-to-bottom and the step
+  conversion % make sense (no more out-of-order stages / >100% steps).
+
 ## v3.42.0 — 2026-07-21 · `PENDING`
 - **Users tab: per-rep key-event funnel + channel filter.**
   - Expanding a rep now shows their funnel across **all of the account's

@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1407,6 +1407,62 @@ export default async (req) => {
         .filter((a) => a.count > 0).sort((a, b) => b.count - a.count)
       return json({ scope: 'metaactions', client, window: { from: f90, to: t0 }, spend: Math.round(spend), actions }, 200, true)
     } catch (e) { return json({ scope: 'metaactions', client, error: String(e.message || e).slice(0, 200), actions: [] }, 200) }
+  }
+
+  // Creative Cockpit — every Meta creative with its performance and (where the
+  // client has a CRM) the real funnel behind each ad, joined by first-touch
+  // utm_content. Auto-detected fields: format, thumbnail, Instagram permalink.
+  // Categorisation tags live client-side (settings), keyed by the creative id.
+  if (url.searchParams.get('scope') === 'creatives') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'creatives', client, meta: false, creatives: [] })
+    try {
+      const fallback = await readMetaPrimary(client)
+      const [meta, perf] = await Promise.all([
+        buildMeta(cc.meta, from, to, preset, key, fallback),
+        (cc.ghl && (await isConnected().catch(() => false))) ? buildCreativePerf(cc.ghl, from, to).catch(() => ({ byContent: {} })) : Promise.resolve({ byContent: {} }),
+      ])
+      const byContent = perf.byContent || {}
+      // Join Meta ad name ↔ utm_content by a loose normalised key (lower-case,
+      // alphanumerics only) so minor punctuation/case differences still match.
+      const nk = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const perfByKey = {}; for (const [k, v] of Object.entries(byContent)) perfByKey[nk(k)] = v
+      const usedKeys = new Set()
+      const creatives = (meta.ads || []).map((a) => {
+        const key2 = nk(a.name); const crm = perfByKey[key2] || null; if (crm) usedKeys.add(key2)
+        return {
+          id: a.name, name: a.name, campaign: a.campaign, adset: a.adset,
+          format: a.type, quality: a.quality, thumb: a.thumb, igUrl: a.igUrl,
+          spend: Math.round(a.spend), impressions: a.impressions, clicks: a.clicks, leads: a.leads,
+          results: a.results, resultType: a.resultType, costPerResult: a.costPerResult,
+          crm: crm ? { ...crm, costPerQualified: crm.qualified ? Math.round(a.spend / crm.qualified) : null, costPerBooked: crm.booked ? Math.round(a.spend / crm.booked) : null, costPerWon: crm.won ? Math.round(a.spend / crm.won) : null } : null,
+        }
+      })
+      // CRM outcomes whose utm_content matched no live ad (paused/old creatives).
+      const unmatched = Object.entries(byContent).filter(([k]) => !usedKeys.has(nk(k))).map(([content, v]) => ({ content, ...v })).sort((a, b) => b.leads - a.leads).slice(0, 50)
+      return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, unmatched }, 200, true)
+    } catch (e) { return json({ scope: 'creatives', client, error: String(e.message || e).slice(0, 200), creatives: [] }, 200) }
+  }
+
+  // Field probe for the Creative Cockpit: which creative-level fields Windsor's
+  // Meta feed exposes (call-to-action, ad copy, destination link, video asset) —
+  // used to confirm what can be auto-filled and whether a video URL is available
+  // for transcription. Reports recognised + populated counts, like the Google
+  // probe. Staff only; never cached.
+  if (url.searchParams.get('scope') === 'creativefields') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'creativefields', client, meta: false })
+    const cand = ['ad_name', 'title', 'body', 'call_to_action_type', 'link', 'link_url', 'object_type', 'object_story_id', 'creative_id', 'video_id', 'video_url', 'creative_video_url', 'source_url', 'image_url', 'thumbnail_url', 'instagram_permalink_url', 'permalink_url', 'effective_object_story_id']
+    const out = {}
+    for (const f of cand) {
+      try {
+        const rows = (await windsorFetch('facebook', ['account_id', 'ad_name', f], from, to, preset, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+        const populated = rows.filter((r) => r[f] !== null && r[f] !== undefined && r[f] !== '').length
+        out[f] = { recognised: true, populated, sample: (rows.find((r) => r[f]) || {})[f] || null }
+      } catch (e) { out[f] = { recognised: false, error: String(e.message || e).slice(0, 80) } }
+    }
+    return json({ scope: 'creativefields', client, fields: out }, 200)
   }
 
   // Lean per-client GHL metrics for the Agency Overview comparison table:

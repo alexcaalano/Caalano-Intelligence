@@ -1484,3 +1484,34 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 /* Full-height map for the dedicated Location tab */
 .lead-map-tall { height: 70vh; min-height: 520px; }
 @media (max-width: 640px) { .lead-map-tall { height: 62vh; min-height: 420px; } }
+
+/* ============ Creative Cockpit ============ */
+.cockpit-clientbar { margin-bottom: 14px; overflow-x: auto; }
+.cc-work { margin: 4px 0 12px; }
+.cc-work-h { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 720; margin-bottom: 10px; flex-wrap: wrap; }
+.cc-work-h .sub { font-weight: 500; color: var(--muted); }
+.cc-dim { margin-left: 2px; }
+.cc-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 10px; }
+.cc-filters select, .cc-search { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 6px 9px; font-size: 12.5px; }
+.cc-search { min-width: 190px; flex: 1 1 190px; max-width: 280px; }
+.cc-tbl td, .cc-tbl th { vertical-align: middle; }
+.cc-thumb { width: 40px; height: 40px; border-radius: 7px; object-fit: cover; vertical-align: middle; margin: 0 8px; background: var(--panel-2); border: 1px solid var(--border); }
+.cc-thumb-none { display: inline-block; }
+.cc-nm { font-weight: 600; }
+.cc-fmt { font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
+.cc-fmt.vid { background: color-mix(in srgb, #8b5cf6 16%, transparent); color: #a78bfa; }
+.cc-fmt.img { background: color-mix(in srgb, #10b981 15%, transparent); color: #34d399; }
+.cc-chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--brand) 13%, transparent); color: var(--brand); }
+.cc-none { color: var(--faint); }
+.cc-edit-row > td { background: var(--panel-2); padding: 0 !important; }
+.cc-edit { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.cc-edit-perf { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--muted); }
+.cc-edit-perf b { color: var(--text); font-weight: 700; }
+.cc-view { margin-left: auto; color: var(--brand); font-weight: 650; font-size: 12.5px; }
+.cc-fields { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.cc-fields2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cc-fields label, .cc-fields2 label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.cc-fields select, .cc-in, .cc-fields2 textarea { background: var(--panel); border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 7px 9px; font-size: 12.5px; font-weight: 400; text-transform: none; letter-spacing: 0; font-family: inherit; }
+.cc-fields2 textarea { resize: vertical; }
+@media (max-width: 900px) { .cc-fields { grid-template-columns: 1fr 1fr; } .cc-fields2 { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .cc-fields { grid-template-columns: 1fr; } }

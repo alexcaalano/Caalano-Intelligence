@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.54.1'
+const APP_VERSION = '3.55.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1944,6 +1944,8 @@ const ENABLED_KEY = 'caalano_enabled'
 const CLIENTS_KEY = 'caalano_clients' // UI-added clients { id: { name, meta, google, ghl } }
 const FORMMETA_KEY = 'caalano_formmeta' // { clientId: { formLabel: { pipeline, notes } } }
 const METACONV_KEY = 'caalano_metaconv' // { clientId: { primary: fieldId, secondary: [fieldId] } }
+const CREATIVEMETA_KEY = 'caalano_creativemeta' // { clientId: { creativeId: { aware, persona, angle, format, dest, cta, copy, notes } } }
+const CREATIVETAX_KEY = 'caalano_creativetax'   // { clientId: { persona: [...], angle: [...], dest: [...] } } — reusable dropdown values
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1952,7 +1954,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1971,10 +1973,10 @@ async function hydrateSettings() {
     const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -1985,6 +1987,31 @@ function useSettingsSync() {
   const [, force] = React.useReducer((x) => x + 1, 0)
   useEffect(() => onSettings(force), [])
 }
+
+// --- Creative Cockpit storage: per-creative tags + reusable dropdown values ---
+function loadCreativeMeta(clientId) { return (SETTINGS.creativemeta && SETTINGS.creativemeta[clientId]) || {} }
+// Merge a patch onto one creative's tags. Any free-typed persona / angle /
+// destination value is also added to the client's reusable list so it appears
+// in the dropdown next time.
+function saveCreativeMeta(clientId, creativeId, patch) {
+  const cur = loadCreativeMeta(clientId)
+  const next = { ...cur, [creativeId]: { ...(cur[creativeId] || {}), ...patch } }
+  SETTINGS.creativemeta = { ...(SETTINGS.creativemeta || {}), [clientId]: next }
+  writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta)
+  const remote = { creativemeta: { [clientId]: next } }
+  // Grow the reusable taxonomy lists from any new persona/angle/dest value.
+  const taxFields = { persona: patch.persona, angle: patch.angle, dest: patch.dest }
+  let taxNext = null
+  for (const [field, val] of Object.entries(taxFields)) {
+    if (val == null || val === '') continue
+    const curTax = (SETTINGS.creativetax && SETTINGS.creativetax[clientId]) || {}
+    const list = new Set(curTax[field] || [])
+    if (!list.has(val)) { list.add(val); taxNext = { ...(taxNext || curTax), [field]: [...list] } }
+  }
+  if (taxNext) { SETTINGS.creativetax = { ...(SETTINGS.creativetax || {}), [clientId]: taxNext }; writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); remote.creativetax = { [clientId]: taxNext } }
+  saveSettingsRemote(remote); bumpSettings()
+}
+function loadCreativeTax(clientId) { return (SETTINGS.creativetax && SETTINGS.creativetax[clientId]) || {} }
 
 // UI-added clients (Settings -> Add client), persisted server-side and merged
 // into the dashboard's client list.
@@ -5925,6 +5952,186 @@ function ChangePasswordCard() {
 }
 
 /* ============ Shell ============ */
+/* ============ Creative Cockpit ============ */
+// A hub for creative insight, performance and strategy: every Meta creative in
+// one grid, with fillable categorisation columns (awareness stage, persona,
+// angle, format, destination, CTA, copy) that save to the client and feed
+// reusable dropdowns, joined to the real lead funnel behind each ad so we can
+// see what's working and build more like it.
+const AWARENESS_OPTS = ['Unaware', 'Problem-aware', 'Solution-aware', 'Product-aware', 'Most-aware']
+const DEST_DEFAULTS = ['Landing page', 'Meta lead form', 'Schedule page', 'Caalano Systems landing', 'Website']
+
+function useCreatives(clientId, range, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=creatives&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
+
+// Left-nav wrapper: pick a client, then show its cockpit. Placement is global
+// (a top-level menu item) but the data stays per-client.
+function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
+  const list = clients
+  const [selId, setSelId] = useState(list[0] ? list[0].id : null)
+  const sel = list.find((c) => c.id === selId) || list[0]
+  if (!list.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No clients with a Meta account yet.</b></div>
+  return (
+    <>
+      <div className="cockpit-clientbar chan-toggle">{list.map((c) => <button key={c.id} className={sel && sel.id === c.id ? 'on' : ''} onClick={() => setSelId(c.id)}>{c.name}</button>)}</div>
+      {sel ? <CreativeCockpit key={sel.id} client={sel} currency={currency} range={range} nonce={nonce} authUser={authUser} /> : null}
+    </>
+  )
+}
+
+// A single reusable combobox: native input + datalist so you can pick a saved
+// value or type a new one (which is then remembered for next time).
+function TagCombo({ value, onChange, options, listId, placeholder }) {
+  return (
+    <>
+      <input className="cc-in" list={listId} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      <datalist id={listId}>{options.map((o) => <option key={o} value={o} />)}</datalist>
+    </>
+  )
+}
+
+function CreativeCockpit({ client, currency, range, nonce }) {
+  useSettingsSync()
+  const st = useCreatives(client.id, range, nonce)
+  const money = (v) => fmtCurrency(v, currency)
+  const tags = loadCreativeMeta(client.id)
+  const tax = loadCreativeTax(client.id)
+  const personaOpts = tax.persona || []
+  const angleOpts = tax.angle || []
+  const destOpts = [...new Set([...DEST_DEFAULTS, ...(tax.dest || [])])]
+  const [sort, setSort] = useState({ key: 'spend', dir: -1 })
+  const [f, setF] = useState({ aware: '', persona: '', angle: '', format: '', dest: '', q: '' })
+  const [dim, setDim] = useState('angle') // "what's working" rollup dimension
+  const [open, setOpen] = useState(() => new Set())
+  const set = (patch) => setF((p) => ({ ...p, ...patch }))
+
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading creatives…" /></div>
+  const d = st.data
+  if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load creatives.</b></div>
+  if (d.meta === false) return <div className="card empty-deep"><div className="big">🎬</div><b>No Meta account mapped for {client.name}.</b></div>
+  const all = d.creatives || []
+  if (!all.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No creatives ran in this period.</b></div>
+
+  // Attach saved tags; derive the fields we filter / rank on.
+  const rows = all.map((c) => {
+    const t = tags[c.id] || {}
+    const crm = c.crm || {}
+    return { ...c, t, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || '', cta: t.cta || '', copy: t.copy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
+  })
+  const filtered = rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
+  const sorted = [...filtered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
+  const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
+  const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
+  const tot = rows.reduce((a, c) => ({ spend: a.spend + c.spend, leads: a.leads + (c.crm ? c.crm.leads : c.leads), ql: a.ql + c.ql, tagged: a.tagged + (c.aware || c.persona || c.angle ? 1 : 0) }), { spend: 0, leads: 0, ql: 0, tagged: 0 })
+
+  // "What's working" — rank the chosen dimension's values by cost per qualified.
+  const dimFn = { aware: (c) => c.aware, persona: (c) => c.persona, angle: (c) => c.angle, format: (c) => c.format, dest: (c) => c.dest }[dim]
+  const rmap = new Map()
+  for (const c of rows) { const key = dimFn(c); if (!key) continue; const e = rmap.get(key) || { key, n: 0, spend: 0, leads: 0, ql: 0, wn: 0 }; e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.ql += c.ql; e.wn += c.wn; rmap.set(key, e) }
+  const rollup = [...rmap.values()].map((e) => ({ ...e, cpq: e.ql ? Math.round(e.spend / e.ql) : null })).sort((a, b) => (a.cpq == null ? 1 : b.cpq == null ? -1 : a.cpq - b.cpq))
+  const hasCrm = d.hasCrm
+
+  return (
+    <>
+      <div className="lvl-title">Creative Cockpit <span className="sub">· {client.name} · {rangeLabel(range)} · {fmtNumber(all.length)} creatives{hasCrm ? '' : ' · no CRM mapped (paid metrics only)'}</span></div>
+      <div className="scorecard">
+        <Sc label="Creatives" value={fmtNumber(all.length)} />
+        <Sc label="Ad spend" value={money(tot.spend)} />
+        <Sc label="Leads" value={fmtNumber(tot.leads)} />
+        {hasCrm && <Sc label="Qualified" value={fmtNumber(tot.ql)} />}
+        <Sc label="Tagged" value={`${fmtNumber(tot.tagged)} / ${fmtNumber(all.length)}`} />
+      </div>
+
+      {/* What's working — dimension rollup ranked by cost per qualified */}
+      <div className="card cc-work">
+        <div className="cc-work-h">What’s working <span className="sub">· by</span>
+          <div className="chan-toggle cc-dim">{[['aware', 'Awareness'], ['persona', 'Persona'], ['angle', 'Angle'], ['format', 'Format'], ['dest', 'Destination']].map(([k, l]) => <button key={k} className={dim === k ? 'on' : ''} onClick={() => setDim(k)}>{l}</button>)}</div>
+        </div>
+        {rollup.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+          <thead><tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Qualified</th>}{hasCrm && <th>Cost / qual</th>}{hasCrm && <th>Won</th>}</tr></thead>
+          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.ql)}</td>}{hasCrm && <td>{e.cpq != null ? money(e.cpq) : '—'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
+        </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
+      </div>
+
+      {/* Filters */}
+      <div className="cc-filters">
+        <input className="cc-search" placeholder="Search creative name…" value={f.q} onChange={(e) => set({ q: e.target.value })} />
+        <select value={f.format} onChange={(e) => set({ format: e.target.value })}><option value="">All formats</option><option>Image</option><option>Video</option></select>
+        <select value={f.aware} onChange={(e) => set({ aware: e.target.value })}><option value="">All awareness</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select>
+        <select value={f.persona} onChange={(e) => set({ persona: e.target.value })}><option value="">All personas</option>{personaOpts.map((o) => <option key={o}>{o}</option>)}</select>
+        <select value={f.angle} onChange={(e) => set({ angle: e.target.value })}><option value="">All angles</option>{angleOpts.map((o) => <option key={o}>{o}</option>)}</select>
+        <select value={f.dest} onChange={(e) => set({ dest: e.target.value })}><option value="">All destinations</option>{destOpts.map((o) => <option key={o}>{o}</option>)}</select>
+        {(f.aware || f.persona || f.angle || f.format || f.dest || f.q) ? <button className="link-btn sm" onClick={() => setF({ aware: '', persona: '', angle: '', format: '', dest: '', q: '' })}>Clear</button> : null}
+      </div>
+
+      {/* Creative grid */}
+      <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
+        <thead><tr>
+          <Th k="name" l>Creative</Th><Th k="format" l>Format</Th>
+          <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th>
+          <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="ql">Qual</Th>}{hasCrm && <Th k="cpq">Cost/qual</Th>}
+        </tr></thead>
+        <tbody>{sorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
+      </table></div>
+      <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative — values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.</p>
+      {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad — likely paused or renamed creatives.</p> : null}
+    </>
+  )
+}
+
+// One creative: a scannable row (thumb, name, format, current tags, performance)
+// that expands to the full tag editor + ad preview link.
+function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destOpts, open, onToggle }) {
+  const save = (patch) => saveCreativeMeta(clientId, c.id, patch)
+  const chip = (v) => v ? <span className="cc-chip">{v}</span> : <span className="cc-none">—</span>
+  return (
+    <React.Fragment>
+      <tr className={open ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={onToggle}>
+        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm">{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
+        <td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td>
+        <td className="lft">{chip(c.aware)}</td>
+        <td className="lft">{chip(c.persona)}</td>
+        <td className="lft">{chip(c.angle)}</td>
+        <td>{money(c.spend)}</td>
+        <td>{fmtNumber(c.crm ? c.crm.leads : c.leads)}</td>
+        {hasCrm && <td>{fmtNumber(c.ql)}</td>}
+        {hasCrm && <td>{c.cpq != null ? money(c.cpq) : '—'}</td>}
+      </tr>
+      {open && <tr className="cc-edit-row"><td colSpan={hasCrm ? 9 : 7}>
+        <div className="cc-edit" onClick={(e) => e.stopPropagation()}>
+          <div className="cc-edit-perf">
+            {hasCrm && <><span><b>{fmtNumber(c.bk)}</b> booked</span><span><b>{fmtNumber(c.wn)}</b> won</span><span><b>{money(c.rev)}</b> revenue</span></>}
+            <span><b>{fmtNumber(c.impressions)}</b> impr</span><span><b>{fmtNumber(c.clicks)}</b> clicks</span>
+            {c.igUrl && <a className="cc-view" href={c.igUrl} target="_blank" rel="noreferrer">↗ View ad on Instagram</a>}
+          </div>
+          <div className="cc-fields">
+            <label>Awareness<select value={c.aware} onChange={(e) => save({ aware: e.target.value })}><option value="">—</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select></label>
+            <label>Persona<TagCombo value={c.persona} onChange={(v) => save({ persona: v })} options={personaOpts} listId={`cc-persona-${clientId}`} placeholder="e.g. First-home buyer" /></label>
+            <label>Angle<TagCombo value={c.angle} onChange={(v) => save({ angle: v })} options={angleOpts} listId={`cc-angle-${clientId}`} placeholder="e.g. Save on tax" /></label>
+            <label>Destination<TagCombo value={c.dest} onChange={(v) => save({ dest: v })} options={destOpts} listId={`cc-dest-${clientId}`} placeholder="Where traffic lands" /></label>
+            <label>CTA button<input className="cc-in" value={c.cta} onChange={(e) => save({ cta: e.target.value })} placeholder="e.g. Book Now" /></label>
+          </div>
+          <div className="cc-fields2">
+            <label>Ad copy<textarea rows={2} value={c.copy} onChange={(e) => save({ copy: e.target.value })} placeholder="Paste the primary text of the ad…" /></label>
+            <label>Notes<textarea rows={2} value={c.notes} onChange={(e) => save({ notes: e.target.value })} placeholder="What’s the concept / why it works…" /></label>
+          </div>
+        </div>
+      </td></tr>}
+    </React.Fragment>
+  )
+}
+
 function Dashboard({ authUser, authEnabled, onLogout }) {
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
@@ -5999,6 +6206,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
             <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
             <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
+            <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic">🎬</span>Creative Cockpit</button>
           </>}
           {isViewer && <>
             <div className="nav-lab">My reports</div>
@@ -6033,6 +6241,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
+          {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}

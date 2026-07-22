@@ -17,6 +17,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.55.0 — 2026-07-22 · `PENDING`
+- **Creative Cockpit (new left-nav hub).** Every Meta creative for a client in
+  one grid, joined to the real lead funnel behind each ad (leads → qualified →
+  booked → won, matched by `utm_content`), so creatives can be ranked by cost
+  per qualified / booked / won.
+  - **Fillable categorisation columns per creative** — awareness stage (Unaware →
+    Most-aware), persona, angle, destination, CTA button, ad copy, notes. Format
+    (image/video) is auto-detected. Values **save to the client** and any new
+    persona / angle / destination is **remembered in a reusable dropdown** for
+    next time (native combo: pick a saved value or type a new one).
+  - **"What's working" analysis** — roll every creative up by awareness / persona
+    / angle / format / destination and rank each by cost per qualified lead, to
+    see which parts of the funnel and which angles perform.
+  - Filters (awareness/persona/angle/format/destination/search), sortable
+    performance columns, thumbnail preview, and a link to view each ad on
+    Instagram. Placed as a top-level "Creative Cockpit" menu item (pick a client,
+    then drill in); staff only.
+  - Backend: `scope=creatives` (Meta ads + per-creative CRM funnel via a new
+    `buildCreativePerf`) and a `scope=creativefields` probe to confirm which
+    creative fields (CTA, copy, destination link, video URL) Windsor exposes.
+
 ## v3.54.1 — 2026-07-22 · `PENDING`
 - **Location map colours retuned:** Leads = yellow, Booked = blue, Won = green,
   Lost = red (legend and markers updated to match).

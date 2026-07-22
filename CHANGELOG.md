@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.57.1 — 2026-07-22 · `PENDING`
+- **Creative Cockpit polish + fixes:**
+  - Client selector is now a **dropdown** at the top (matching Weekly Traffic
+    Light) instead of a chip row.
+  - **Fixed horizontal overflow** — the creative grid now scrolls inside its own
+    box instead of pushing the whole page off-screen; long creative names
+    truncate with a hover tooltip. (Added global `.tbl-scroll` containment.)
+  - **One row per creative** — creatives that run across several ad sets are
+    aggregated by name (spend/leads total correctly; no duplicate rows).
+  - No-link (on-Facebook) ads default their destination to **"Meta Lead Form"**.
+  - Note: isolating performance by individual lead-form type needs Windsor's
+    separate `facebook_leads` (lead-level) connector — the Meta insights feed
+    we use carries lead counts but no form identifier. Tracked as a follow-up.
+
 ## v3.57.0 — 2026-07-22 · `PENDING`
 - **Creative Cockpit auto-fill (Windsor fields confirmed).** Verified the Meta
   connector's creative fields and wired auto-detection: **CTA button**

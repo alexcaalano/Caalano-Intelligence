@@ -1047,7 +1047,9 @@ async function buildHealth(c, from, to, preset, key, weights) {
 function prettyCta(v) { return v ? titleCase(String(v).replace(/_/g, ' ')) : '' }
 function classifyDest(link, objType) {
   const l = String(link || '').toLowerCase()
-  if (!l) return String(objType || '').toUpperCase().includes('LEAD') ? 'Meta lead form' : ''
+  // No external link ⇒ on-Facebook destination — almost always a Meta lead form
+  // for lead-gen accounts. (User can override in the cockpit.)
+  if (!l) return 'Meta Lead Form'
   if (/leadconnector|gohighlevel|msgsndr/.test(l)) return 'Caalano Systems landing'
   if (/calendly|\/book|schedul|appointment|\/calendar|acuity|tidycal/.test(l)) return 'Schedule page'
   if (/facebook\.com\/.*lead|fb\.me\b|\/instant.?form|leadgen/.test(l)) return 'Meta lead form'
@@ -1446,20 +1448,31 @@ export default async (req) => {
       const nk = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
       const perfByKey = {}; for (const [k, v] of Object.entries(byContent)) perfByKey[nk(k)] = v
       const usedKeys = new Set()
-      const creatives = (meta.ads || []).map((a) => {
+      // The same creative (ad_name) can run across several ad sets — aggregate to
+      // one row per name so spend/leads total correctly and ids stay unique.
+      const adAgg = new Map()
+      for (const a of (meta.ads || [])) {
+        const e = adAgg.get(a.name) || { name: a.name, campaign: a.campaign, adset: a.adset, adsetN: 0, type: a.type, quality: a.quality, thumb: a.thumb, igUrl: a.igUrl, spend: 0, impressions: 0, clicks: 0, leads: 0, results: 0, resultType: a.resultType }
+        e.spend += a.spend; e.impressions += a.impressions; e.clicks += a.clicks; e.leads += a.leads; e.results += (a.results || 0); e.adsetN++
+        if (a.type === 'Video') e.type = 'Video'
+        if (!e.thumb && a.thumb) e.thumb = a.thumb
+        if (!e.resultType && a.resultType) e.resultType = a.resultType
+        adAgg.set(a.name, e)
+      }
+      const creatives = [...adAgg.values()].map((a) => {
         const key2 = nk(a.name); const crm = perfByKey[key2] || null; if (crm) usedKeys.add(key2)
         const ex = creBy.get(a.name) || {}
         const link = ex.link_url || ex.website_destination_url || null
         return {
-          id: a.name, name: a.name, campaign: a.campaign, adset: a.adset, creativeId: ex.creative_id || null,
+          id: a.name, name: a.name, campaign: a.campaign, adset: a.adsetN > 1 ? `${a.adsetN} ad sets` : a.adset, creativeId: ex.creative_id || null,
           format: a.type, quality: a.quality, thumb: a.thumb,
           igUrl: ex.ad_preview_shareable_link || a.igUrl, previewUrl: ex.ad_preview_shareable_link || null,
           spend: Math.round(a.spend), impressions: a.impressions, clicks: a.clicks, leads: a.leads,
-          results: a.results, resultType: a.resultType, costPerResult: a.costPerResult,
+          results: a.results, resultType: a.resultType, costPerResult: a.results ? Math.round((a.spend / a.results) * 100) / 100 : null,
           autoCta: prettyCta(ex.call_to_action_type), autoCopy: ex.body || '', headline: ex.title || '', link, autoDest: classifyDest(link, ex.object_type),
           crm: crm ? { ...crm, costPerQualified: crm.qualified ? Math.round(a.spend / crm.qualified) : null, costPerBooked: crm.booked ? Math.round(a.spend / crm.booked) : null, costPerWon: crm.won ? Math.round(a.spend / crm.won) : null } : null,
         }
-      })
+      }).sort((a, b) => b.spend - a.spend)
       // CRM outcomes whose utm_content matched no live ad (paused/old creatives).
       const unmatched = Object.entries(byContent).filter(([k]) => !usedKeys.has(nk(k))).map(([content, v]) => ({ content, ...v })).sort((a, b) => b.leads - a.leads).slice(0, 50)
       return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, unmatched }, 200, true)

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.57.0'
+const APP_VERSION = '3.57.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5959,7 +5959,7 @@ function ChangePasswordCard() {
 // reusable dropdowns, joined to the real lead funnel behind each ad so we can
 // see what's working and build more like it.
 const AWARENESS_OPTS = ['Unaware', 'Problem-aware', 'Solution-aware', 'Product-aware', 'Most-aware']
-const DEST_DEFAULTS = ['Landing page', 'Meta lead form', 'Schedule page', 'Caalano Systems landing', 'Website']
+const DEST_DEFAULTS = ['Landing page', 'Meta Lead Form', 'Schedule page', 'Caalano Systems landing', 'Website']
 
 function useCreatives(clientId, range, nonce = 0) {
   const [st, setSt] = useState({ status: 'loading', data: null })
@@ -5978,13 +5978,17 @@ function useCreatives(clientId, range, nonce = 0) {
 // Left-nav wrapper: pick a client, then show its cockpit. Placement is global
 // (a top-level menu item) but the data stays per-client.
 function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
-  const list = clients
+  const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
   const [selId, setSelId] = useState(list[0] ? list[0].id : null)
   const sel = list.find((c) => c.id === selId) || list[0]
   if (!list.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No clients with a Meta account yet.</b></div>
   return (
     <>
-      <div className="cockpit-clientbar chan-toggle">{list.map((c) => <button key={c.id} className={sel && sel.id === c.id ? 'on' : ''} onClick={() => setSelId(c.id)}>{c.name}</button>)}</div>
+      <div className="c360-head" style={{ marginTop: 0 }}>
+        <div className="pipe-sel"><label>Client</label>
+          <select value={(sel && sel.id) || ''} onChange={(e) => setSelId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </div>
+      </div>
       {sel ? <CreativeCockpit key={sel.id} client={sel} currency={currency} range={range} nonce={nonce} authUser={authUser} /> : null}
     </>
   )
@@ -6150,7 +6154,7 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={onToggle}>
-        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm">{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
+        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm" title={c.name}>{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
         <td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td>
         <td className="lft">{chip(c.aware)}</td>
         <td className="lft">{chip(c.persona)}</td>

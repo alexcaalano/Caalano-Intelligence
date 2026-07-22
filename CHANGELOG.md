@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.51.2 — 2026-07-22 · `PENDING`
+- **Executive KPI scorecard now spans the full width.** The seven headline tiles
+  (ad spend, leads, qualified, cost/lead, booked, won, revenue) stretch evenly
+  across the row instead of clustering on the left, stepping down to 4 then 2
+  columns on narrower screens.
+
 ## v3.51.1 — 2026-07-22 · `PENDING`
 - **Open-deals drill table now fits the modal — no horizontal scroll.** The
   Users open-pipeline drill-down (and the executive Revenue-at-risk table) used

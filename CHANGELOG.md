@@ -17,6 +17,37 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.51.0 — 2026-07-22 · `PENDING`
+- **Caalano 360 Executive Dashboard.** The Caalano 360 tab now leads with an
+  executive layer; the previous blended breakdown moves into a collapsible
+  "Full Caalano 360 breakdown" beneath it (nothing removed).
+  - **Business Health Score (0–100)** across four pillars — Marketing, Sales,
+    Operations, Revenue — each a small set of real metrics scored against the
+    previous equal-length period. Every pillar expands to show its working
+    (each metric's actual vs reference and the 0–100 it contributed). Weights
+    default to 25/25/25/25 and are configurable server-side (`health` settings
+    section). **No AI touches the maths** — it's all plain, explainable calc.
+  - **Scalable "qualified lead" definition** that needs zero per-client setup: a
+    lead is qualified once a human advances it past the pipeline's entry stage,
+    OR it was won, OR it has a booked appointment, OR a deal value was set —
+    works on any GoHighLevel pipeline regardless of stage naming. Optional
+    per-client stage override is plumbed. Surfaced per-rep in the Users data and
+    in the executive funnel/KPIs.
+  - **KPI scorecard** (spend, leads, qualified, cost/lead, booked, won, revenue)
+    with vs-previous deltas, **run-rate forecast** (projected revenue/leads/won
+    vs last period), **Revenue-at-risk** (aged open deals ranked by value, each
+    expanding to the contact's notes for "why stuck"), and a **rules-based
+    Priority Actions** list (weakest pillar, rising CPL, falling volume/revenue,
+    pacing behind — all derived deterministically, no AI).
+  - **AI executive summary** (opt-in button) via the existing Anthropic
+    integration: Claude receives the already-computed health payload and only
+    narrates it into a board-level briefing — it never recomputes a figure, and
+    is reminded that unanswered CRM messages don't imply an ignored lead.
+  - **Daily health snapshots** (`health-snapshot` scheduled function → new
+    `caalano-health` blob) build a real score trend from launch forward on a
+    fixed trailing-30-day window; an on-demand `scope=healthbackfill` seeds
+    weekly history per client. The header sparkline shows the trend as it fills.
+
 ## v3.50.0 — 2026-07-22 · `PENDING`
 - **Mobile responsiveness pass across the whole app.** Audited every screen at
   phone widths and hardened the gaps:

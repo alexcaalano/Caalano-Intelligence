@@ -72,11 +72,56 @@ Be specific and numeric. Keep it under 300 words. Do not use em-dashes or en-das
   return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
 }
 
+// Executive summary for the Caalano 360 executive tab. The health score, KPIs,
+// forecast and priority flags are ALL computed server-side and passed in here;
+// Claude only narrates them into a board-level briefing. It must not invent or
+// recompute figures - if a number isn't supplied it says so.
+async function execInsights(apiKey, body) {
+  const { clientName, period, health: h } = body
+  if (!h || !h.score) throw new Error('no health data supplied')
+  const s = h.score, k = h.kpis || {}, pv = k.prev || {}, fc = h.forecast || {}
+  const pillarLine = ['marketing', 'sales', 'ops', 'revenue'].map((key) => `${key} ${s[key] == null ? 'n/a' : s[key]}`).join(', ')
+  const lines = []
+  lines.push(`Composite health ${s.composite == null ? 'n/a' : s.composite}/100 (pillars: ${pillarLine}). Weights: ${JSON.stringify(s.weights || {})}.`)
+  lines.push(`This period: ad spend $${n0(k.adSpend)}, leads ${n0(k.leads)}, qualified ${n0(k.qualified)}, booked ${n0(k.booked)}, shown ${n0(k.shown)}, won ${n0(k.won)}, revenue $${n0(k.revenue)}, cost/lead $${n0(k.cpl)}, cost/qualified $${n0(k.cpql)}, open pipeline $${n0(k.openValue)}.`)
+  if (k.prev) lines.push(`Previous period: spend $${n0(pv.adSpend)}, leads ${n0(pv.leads)}, qualified ${n0(pv.qualified)}, booked ${n0(pv.booked)}, won ${n0(pv.won)}, revenue $${n0(pv.revenue)}.`)
+  if (fc && fc.projectedRevenue != null) lines.push(`Run-rate forecast (at ${fc.elapsedPct}% elapsed): projected revenue $${n0(fc.projectedRevenue)} vs last period $${n0(fc.prevRevenue)}, projected won ${n0(fc.projectedWon)}, pace ${fc.pacePct == null ? 'n/a' : fc.pacePct + '%'} of prior revenue.`)
+  // The pillar working (each metric's actual vs reference) for grounded detail.
+  for (const key of ['marketing', 'sales', 'ops', 'revenue']) {
+    const p = s.pillars && s.pillars[key]
+    if (p && p.components && p.components.length) lines.push(`${p.label} detail: ${p.components.map((c) => `${c.label} ${c.actual == null ? 'n/a' : c.fmt === 'pct' ? Math.round(c.actual * 100) + '%' : c.fmt === 'money' ? '$' + n0(c.actual) : n0(c.actual)} (score ${c.score == null ? 'n/a' : c.score})`).join('; ')}.`)
+  }
+  const prompt = `You are the head of a marketing agency writing a short executive briefing to the leadership team about one client's overall business health. Every figure below has already been calculated - use only these numbers, never invent or recompute, and if something is marked n/a say it isn't available.
+
+Client: ${clientName || 'Client'}
+Period: ${period || 'selected period'}
+
+${lines.join('\n')}
+
+The health score compares this period to the previous equal-length period. Note: unanswered CRM messages do NOT mean a lead was ignored - clients may respond on phone or other channels, so treat any responsiveness signal as indicative only.
+
+Write a concise executive briefing in markdown:
+1. **Bottom line** - one sentence: overall health (cite the composite score and whether it improved) and the single most important thing leadership should know.
+2. **What's driving it** - 2-4 bullets on the strongest and weakest pillars, citing the specific metrics and their vs-previous movement.
+3. **Watch list** - 1-3 bullets on risks (pacing behind, rising cost per lead, falling conversion, stalled pipeline value).
+4. **Recommended focus** - 2-3 concrete actions for the team this period.
+
+Be specific and numeric. Keep it under 280 words. Do not use em-dashes or en-dashes anywhere; use commas, colons or hyphens instead.`
+  const out = await callClaude(apiKey, prompt)
+  return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
+}
+
 export default async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return json({ error: 'AI insights not configured - add ANTHROPIC_API_KEY in Netlify, then redeploy.' }, 400)
   let body; try { body = await req.json() } catch { return json({ error: 'bad request body' }, 400) }
+
+  // Caalano 360 executive summary path.
+  if (body && (body.mode === 'exec' || body.health)) {
+    try { return json(await execInsights(apiKey, body)) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
 
   // Caalano360 blended briefing path.
   if (body && (body.mode === 'blend' || body.blend)) {

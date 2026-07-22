@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, fetchOppNotes, deriveBusinessHours, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -301,6 +301,86 @@ async function readMetaPrimary(clientId) {
   } catch { /* ignore */ }
   return null
 }
+// Health-score config for a client: pillar weights + optional qualified-stage
+// override. Falls back to equal 25/25/25/25 weights and the zero-config
+// qualified default when nothing is configured.
+async function readHealthConfig(clientId) {
+  const out = { weights: { marketing: 25, sales: 25, ops: 25, revenue: 25 }, qualStagePos: null }
+  try {
+    const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+    const h = s && s.health
+    const glob = h && h._global
+    const per = h && h[clientId]
+    const wOf = (o) => (o && o.weights && typeof o.weights === 'object') ? o.weights : null
+    const gw = wOf(glob), pw = wOf(per)
+    if (gw) out.weights = { ...out.weights, ...gw }
+    if (pw) out.weights = { ...out.weights, ...pw }
+    if (per && per.qualStagePos != null) out.qualStagePos = num(per.qualStagePos)
+  } catch { /* defaults */ }
+  return out
+}
+
+// Daily health-score history per client (Netlify Blobs). One object per client,
+// keyed by ISO date, capped so it can't grow without bound. The interactive
+// scope reads it for the trend; the snapshot job writes it once a day on a fixed
+// trailing window so points are comparable over time.
+const healthStore = () => getStore({ name: 'caalano-health', consistency: 'strong' })
+async function readHealthHistory(clientId) {
+  try {
+    const rec = await healthStore().get(clientId, { type: 'json' })
+    const days = (rec && rec.days) || {}
+    return Object.entries(days).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date))
+  } catch { return [] }
+}
+async function writeHealthSnapshot(clientId, date, point) {
+  const st = healthStore()
+  const rec = (await st.get(clientId, { type: 'json' }).catch(() => null)) || { days: {} }
+  rec.days = rec.days || {}
+  rec.days[date] = point
+  // Keep the most recent ~400 days.
+  const keys = Object.keys(rec.days).sort()
+  if (keys.length > 400) for (const k of keys.slice(0, keys.length - 400)) delete rec.days[k]
+  rec.updatedAt = new Date().toISOString()
+  await st.setJSON(clientId, rec)
+  return rec.days[date]
+}
+
+// Compute a fixed trailing-window health point for one client and store it under
+// `date`, so daily points stay comparable regardless of the UI's selected range.
+const addDaysStr = (dateStr, delta) => { const d = new Date(dateStr + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10) }
+async function snapshotClient(clientId, cc, key, date, windowDays = 30) {
+  const to = date
+  const from = addDaysStr(date, -(windowDays - 1))
+  const cfg = await readHealthConfig(clientId)
+  const h = await buildHealth(cc, from, to, null, key, cfg.weights)
+  const s = h.score
+  const point = {
+    composite: s.composite, marketing: s.marketing, sales: s.sales, ops: s.ops, revenue: s.revenue,
+    leads: h.kpis.leads || 0, qualified: h.kpis.qualified || 0, spend: h.kpis.adSpend || 0, revenue$: h.kpis.revenue || 0, won: h.kpis.won || 0,
+    window: windowDays,
+  }
+  await writeHealthSnapshot(clientId, date, point)
+  return point
+}
+// Daily snapshot across every client (scheduled). Sequential + resilient: one
+// client failing never aborts the rest. `dates` optional (defaults to today).
+export async function runHealthSnapshots(dates) {
+  const key = process.env.WINDSOR_API_KEY
+  if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
+  try { Object.assign(CLIENTS, await customClients()) } catch { /* non-fatal */ }
+  const today = new Date().toISOString().slice(0, 10)
+  const targets = (dates && dates.length) ? dates : [today]
+  const results = []
+  for (const [id, cc] of Object.entries(CLIENTS)) {
+    if (!cc.ghl && !cc.meta && !cc.google) continue
+    for (const date of targets) {
+      try { const p = await snapshotClient(id, cc, key, date); results.push({ client: id, date, composite: p.composite }) }
+      catch (e) { results.push({ client: id, date, error: String(e.message || e).slice(0, 120) }) }
+    }
+  }
+  return { ok: true, count: results.length, results }
+}
+
 async function buildMeta(accountId, from, to, preset, key, fallback) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const pr = prevRange(from, to)
@@ -688,20 +768,21 @@ function stageIndex(pipeRows) {
   const idx = new Map()
   for (const p of pipeRows) {
     const stages = asArray(p.pipeline_stages)
-    const byId = {}; let bookPos = null, showPos = null
+    const byId = {}; let bookPos = null, showPos = null, minPos = null
     for (const s of stages) {
       byId[s.id] = { name: s.name, pos: s.position }
+      if (minPos == null || s.position < minPos) minPos = s.position
       const nm = String(s.name || '')
       if (STAGE_EXC.test(nm)) continue
       if (BOOK_RE.test(nm)) bookPos = bookPos == null ? s.position : Math.min(bookPos, s.position)
       if (SHOW_RE.test(nm)) showPos = showPos == null ? s.position : Math.min(showPos, s.position)
     }
-    if (p.pipeline_id) idx.set(p.pipeline_id, { byId, bookPos, showPos })
+    if (p.pipeline_id) idx.set(p.pipeline_id, { byId, bookPos, showPos, minPos: minPos == null ? 0 : minPos })
   }
   return idx
 }
 function blendCrm(oppRows, idx) {
-  let leads = 0, booked = 0, shown = 0, won = 0, lost = 0, open = 0, revenue = 0, openValue = 0
+  let leads = 0, qualified = 0, booked = 0, shown = 0, won = 0, lost = 0, open = 0, revenue = 0, openValue = 0
   for (const r of oppRows) {
     leads++
     const st = String(r.opportunity_status || '').toLowerCase()
@@ -715,9 +796,11 @@ function blendCrm(oppRows, idx) {
     else { open++; openValue += val }
     if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) booked++
     if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) shown++
+    const entryPos = pi && pi.minPos != null ? pi.minPos : 0
+    if (isQualified({ status: st, pos, entryPos, value: val })) qualified++
   }
   return {
-    leads, booked, shown, won, lost, open,
+    leads, qualified, booked, shown, won, lost, open,
     revenue: Math.round(revenue), openValue: Math.round(openValue),
     avgValue: won ? Math.round(revenue / won) : 0,
   }
@@ -845,6 +928,117 @@ async function buildBlend(c, from, to, preset, key) {
       metaImpr: Math.round(metaImpr), metaClicks: Math.round(metaClicks), googleImpr: Math.round(googleImpr), googleClicks: Math.round(googleClicks),
     },
     crm: account.crm, pipelines: account.pipelines, users, campaigns, prev,
+  }
+}
+
+// --- Executive health score ------------------------------------------------
+// A transparent 0-100 score across four pillars — Marketing, Sales, Operations,
+// Revenue — each a small set of real metrics compared to a reference (the
+// previous equal-length period, the honest baseline until daily snapshots build
+// a rolling average). NO AI is used here: every figure is a plain calculation
+// the UI shows the working for. Pillars with no data drop out and the composite
+// re-weights across whatever has data, so a client with no CRM still scores on
+// what it does have.
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+// Map a metric to 0-100 vs a reference. 50 = at reference; a full doubling in
+// the good direction → ~100, collapsing to zero → ~0. Linear + clamped so it is
+// explainable rather than a black box.
+function scoreVs(actual, ref, higherBetter) {
+  if (actual == null || ref == null || !isFinite(actual) || !isFinite(ref) || ref === 0) return null
+  const rel = (actual - ref) / Math.abs(ref)
+  return clampN(Math.round(50 + 50 * (higherBetter ? rel : -rel)), 0, 100)
+}
+// Absolute good→bad band (e.g. show rate where an industry norm exists), used
+// when a prior-period reference is missing or a universal standard applies.
+function scoreBand(actual, good, bad) {
+  if (actual == null || !isFinite(actual) || good === bad) return null
+  return clampN(Math.round(100 - 100 * ((actual - good) / (bad - good))), 0, 100)
+}
+const avgScores = (arr) => { const v = arr.filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null }
+const safeDiv = (a, b) => (b ? a / b : null)
+const pillar = (label, comps) => { const score = avgScores(comps.map((c) => c.score)); return { label, score, components: comps.filter((c) => c.score != null || c.actual != null) } }
+
+async function buildHealth(c, from, to, preset, key, weights) {
+  const blend = await buildBlend(c, from, to, preset, key)
+  const p = blend.paid, crm = blend.crm || {}, prev = blend.prev || null
+  const pc = (prev && prev.crm) || {}
+  const pSpend = prev ? prev.adSpend : null
+  const has = { crm: !!c.ghl, meta: !!c.meta, google: !!c.google, prev: !!prev }
+
+  // Marketing — lead generation & paid efficiency. CRM lead count is the real
+  // signal; a client with no CRM falls back to ad-reported conversions.
+  const leads = c.ghl ? crm.leads : p.adConversions
+  const pLeads = c.ghl ? (pc.leads != null ? pc.leads : null) : null
+  const cpl = p.adSpend > 0 && leads ? p.adSpend / leads : null
+  const pCpl = pSpend > 0 && pLeads ? pSpend / pLeads : null
+  const marketing = pillar('Marketing', [
+    { label: 'Lead volume', actual: leads, ref: pLeads, fmt: 'int', score: scoreVs(leads, pLeads, true) },
+    { label: 'Cost per lead', actual: cpl, ref: pCpl, fmt: 'money', score: scoreVs(cpl, pCpl, false) },
+  ])
+
+  // Sales — conversion quality through the pipeline.
+  const qRate = safeDiv(crm.qualified, crm.leads), pqRate = safeDiv(pc.qualified, pc.leads)
+  const bRate = safeDiv(crm.booked, crm.leads), pbRate = safeDiv(pc.booked, pc.leads)
+  const wRate = safeDiv(crm.won, crm.leads), pwRate = safeDiv(pc.won, pc.leads)
+  const sales = pillar('Sales', [
+    { label: 'Lead → qualified', actual: qRate, ref: pqRate, fmt: 'pct', score: scoreVs(qRate, pqRate, true) },
+    { label: 'Lead → booked', actual: bRate, ref: pbRate, fmt: 'pct', score: scoreVs(bRate, pbRate, true) },
+    { label: 'Lead → won', actual: wRate, ref: pwRate, fmt: 'pct', score: scoreVs(wRate, pwRate, true) },
+  ])
+
+  // Operations — execution on the leads booked (did they actually show up).
+  const showRate = safeDiv(crm.shown, crm.booked), pShowRate = safeDiv(pc.shown, pc.booked)
+  // Prefer a vs-previous score; fall back to an absolute band (80% good, 40% poor)
+  // so a first-ever period still scores instead of showing blank.
+  const showScore = scoreVs(showRate, pShowRate, true) != null ? scoreVs(showRate, pShowRate, true) : scoreBand(showRate, 0.8, 0.4)
+  const ops = pillar('Operations', [
+    { label: 'Show rate', actual: showRate, ref: pShowRate, fmt: 'pct', score: showScore },
+  ])
+
+  // Revenue — realised money & deal quality.
+  const revenue = pillar('Revenue', [
+    { label: 'Revenue', actual: crm.revenue, ref: pc.revenue, fmt: 'money', score: scoreVs(crm.revenue, pc.revenue, true) },
+    { label: 'Deals won', actual: crm.won, ref: pc.won, fmt: 'int', score: scoreVs(crm.won, pc.won, true) },
+    { label: 'Avg deal value', actual: crm.avgValue, ref: pc.avgValue, fmt: 'money', score: scoreVs(crm.avgValue, pc.avgValue, true) },
+  ])
+
+  const w = { marketing: 25, sales: 25, ops: 25, revenue: 25, ...(weights || {}) }
+  const pillars = { marketing, sales, ops, revenue }
+  const wKeys = ['marketing', 'sales', 'ops', 'revenue']
+  let wSum = 0, acc = 0
+  for (const k of wKeys) { const s = pillars[k].score; const wt = num(w[k]); if (s != null && wt > 0) { acc += s * wt; wSum += wt } }
+  const composite = wSum ? Math.round(acc / wSum) : null
+
+  // Forecast — run-rate projection of the current period from elapsed time,
+  // against the previous full period. Elapsed fraction from the client timezone
+  // period bounds; a completed period paces at 100%.
+  let forecast = null
+  try {
+    let frac = 1
+    if (c.ghl && from && to) { const { fromMs, toMs } = await periodBounds(c.ghl, from, to); const now = Date.now(); if (fromMs != null && toMs != null && toMs > fromMs) frac = clampN((now - fromMs) / (toMs - fromMs), 0.02, 1) }
+    const proj = (v) => (frac > 0 ? Math.round(v / frac) : v)
+    forecast = {
+      elapsedPct: Math.round(frac * 100),
+      projectedRevenue: proj(crm.revenue || 0), prevRevenue: pc.revenue != null ? pc.revenue : null,
+      projectedLeads: proj(leads || 0), prevLeads: pLeads,
+      projectedWon: proj(crm.won || 0), prevWon: pc.won != null ? pc.won : null,
+      pacePct: pc.revenue ? Math.round((proj(crm.revenue || 0) / pc.revenue) * 100) : null,
+    }
+  } catch { /* forecast is best-effort */ }
+
+  const kpis = {
+    adSpend: p.adSpend, leads, qualified: crm.qualified != null ? crm.qualified : null,
+    booked: crm.booked != null ? crm.booked : null, shown: crm.shown != null ? crm.shown : null,
+    won: crm.won != null ? crm.won : null, revenue: crm.revenue != null ? crm.revenue : null,
+    openValue: crm.openValue != null ? crm.openValue : null,
+    cpl: cpl != null ? Math.round(cpl) : null,
+    cpql: (p.adSpend > 0 && crm.qualified) ? Math.round(p.adSpend / crm.qualified) : null,
+    prev: prev ? { adSpend: pSpend, leads: pLeads, qualified: pc.qualified, booked: pc.booked, shown: pc.shown, won: pc.won, revenue: pc.revenue, openValue: pc.openValue } : null,
+  }
+
+  return {
+    score: { composite, weights: w, marketing: marketing.score, sales: sales.score, ops: ops.score, revenue: revenue.score, pillars },
+    kpis, forecast, has,
   }
 }
 
@@ -1064,6 +1258,46 @@ export default async (req) => {
   }
 
   // Per-user (sales rep) performance for the client's Users tab.
+  // Executive health score — the headline of the Caalano 360 executive tab.
+  // Live computation for the selected range plus whatever daily trend history the
+  // snapshot job has accumulated (empty until it first runs — no fake history).
+  if (url.searchParams.get('scope') === 'health') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ scope: 'health', client, error: `unknown client ${client}` }, 404)
+    try {
+      const cfg = await readHealthConfig(client)
+      const [health, history] = await Promise.all([
+        buildHealth(cc, from, to, preset, key, cfg.weights),
+        readHealthHistory(client).catch(() => []),
+      ])
+      return json({ scope: 'health', client, period: { from, to, preset }, ...health, history }, 200, true)
+    } catch (e) { return json({ scope: 'health', client, error: String(e.message || e).slice(0, 200) }, 200) }
+  }
+
+  // On-demand trend backfill for one client — weekly trailing-window points going
+  // back in time. Bounded per call (staff only) with a `before` cursor so the UI
+  // can seed ~12 months of history across several quick calls without a timeout.
+  if (url.searchParams.get('scope') === 'healthbackfill') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    const cc = CLIENTS[client]
+    if (!cc) return json({ scope: 'healthbackfill', client, error: `unknown client ${client}` }, 404)
+    const key2 = process.env.WINDSOR_API_KEY
+    const today = new Date().toISOString().slice(0, 10)
+    const before = url.searchParams.get('before') || today
+    const perCall = 6
+    const done = []
+    let cursor = before
+    for (let i = 0; i < perCall; i++) {
+      try { const p = await snapshotClient(client, cc, key2, cursor); done.push({ date: cursor, composite: p.composite }) }
+      catch (e) { done.push({ date: cursor, error: String(e.message || e).slice(0, 100) }) }
+      cursor = addDaysStr(cursor, -7)
+    }
+    // Stop ~12 months back.
+    const limit = addDaysStr(today, -364)
+    const next = cursor > limit ? cursor : null
+    return json({ scope: 'healthbackfill', client, done, nextBefore: next }, 200)
+  }
+
   if (url.searchParams.get('scope') === 'users') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'users', client, ghl: false })

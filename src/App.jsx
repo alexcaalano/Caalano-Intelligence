@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.50.0'
+const APP_VERSION = '3.51.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2382,6 +2382,234 @@ function ClientChat({ clientId, clientName, period, context }) {
   )
 }
 
+/* ============ Caalano 360 Executive Dashboard ============ */
+// The executive layer that leads the Caalano 360 tab: a 0-100 business health
+// score (Marketing / Sales / Operations / Revenue), headline KPI scorecard,
+// run-rate forecast, revenue-at-risk and a rules-based priority list. Every
+// number is computed server-side (scope=health) from the same live feeds the
+// rest of the app uses; the AI summary only narrates these figures.
+const hColor = (s) => (s == null ? '#9aa0a6' : s >= 70 ? '#1e9e5a' : s >= 40 ? '#d9a400' : '#d64545')
+const hLabel = (s) => (s == null ? 'No data' : s >= 70 ? 'Healthy' : s >= 40 ? 'Needs attention' : 'At risk')
+const PILLAR_KEYS = [['marketing', 'Marketing'], ['sales', 'Sales'], ['ops', 'Operations'], ['revenue', 'Revenue']]
+
+function useHealth(clientId, range, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true
+    setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
+
+// Minimal inline SVG sparkline for the composite trend (no extra deps).
+function Sparkline({ data, width = 120, height = 30 }) {
+  const pts = (data || []).filter((v) => v != null)
+  if (pts.length < 2) return null
+  const min = Math.min(...pts), max = Math.max(...pts), span = max - min || 1
+  const step = width / (pts.length - 1)
+  const d = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(height - ((v - min) / span) * (height - 4) - 2).toFixed(1)}`).join(' ')
+  const last = pts[pts.length - 1], first = pts[0]
+  return (
+    <svg className="spark" width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <path d={d} fill="none" stroke={hColor(last >= first ? 70 : 40)} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function HealthGauge({ score }) {
+  const col = hColor(score)
+  return (
+    <div className="hs-gauge" style={{ '--v': `${score == null ? 0 : score}%`, '--col': col }}>
+      <div className="hs-gauge-inner">
+        <div className="hs-num" style={{ color: col }}>{score == null ? '—' : score}</div>
+        <div className="hs-den">/ 100</div>
+      </div>
+    </div>
+  )
+}
+
+// One pillar: score bar + expandable working (each metric's actual vs the
+// previous-period reference, and the 0-100 it contributed).
+function PillarRow({ pk, pillar, open, onToggle, money }) {
+  const s = pillar ? pillar.score : null
+  const fmtVal = (v, f) => (v == null ? '—' : f === 'money' ? money(Math.round(v)) : f === 'pct' ? `${Math.round(v * 100)}%` : fmtNumber(Math.round(v)))
+  return (
+    <div className={`hs-pillar ${open ? 'open' : ''}`}>
+      <button className="hs-pillar-head" onClick={onToggle}>
+        <span className="hs-chev">{open ? '▾' : '▸'}</span>
+        <span className="hs-pk">{pk}</span>
+        <span className="hs-bar"><span className="hs-bar-fill" style={{ width: `${s == null ? 0 : s}%`, background: hColor(s) }} /></span>
+        <span className="hs-pscore" style={{ color: hColor(s) }}>{s == null ? 'N/A' : s}</span>
+      </button>
+      {open && <div className="hs-pillar-body">
+        {(pillar && pillar.components && pillar.components.length) ? pillar.components.map((c, i) => (
+          <div className="hs-comp" key={i}>
+            <span className="hs-comp-l">{c.label}</span>
+            <span className="hs-comp-v">{fmtVal(c.actual, c.fmt)}<span className="hs-comp-ref"> vs {fmtVal(c.ref, c.fmt)}</span></span>
+            <span className="hs-comp-s" style={{ color: hColor(c.score) }}>{c.score == null ? '—' : c.score}</span>
+          </div>
+        )) : <div className="cap">No data for this pillar in the selected period.</div>}
+      </div>}
+    </div>
+  )
+}
+
+// Revenue at risk — aged, still-open deals ranked by value (reuses the Users
+// open-deal drill, so each row expands to the client's notes for "why stuck").
+function AtRiskPanel({ clientId, range, nonce, money }) {
+  const [st, setSt] = useState({ status: 'loading', deals: [] })
+  useEffect(() => {
+    let alive = true
+    setSt({ status: 'loading', deals: [] })
+    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => {
+        const deals = []
+        for (const u of (j.users || [])) for (const d of (u.openDeals || [])) deals.push({ ...d, rep: u.name })
+        deals.sort((a, b) => (b.value - a.value) || ((b.ageDays || 0) - (a.ageDays || 0)))
+        if (alive) setSt({ status: 'ok', deals })
+      })
+      .catch(() => { if (alive) setSt({ status: 'err', deals: [] }) })
+    return () => { alive = false }
+  }, [clientId, range.from, range.to, nonce])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading open pipeline…" /></div>
+  const deals = st.deals.slice(0, 8)
+  const totOpen = st.deals.reduce((s, d) => s + (d.value || 0), 0)
+  const stale = st.deals.filter((d) => (d.ageDays || 0) > 30)
+  const staleVal = stale.reduce((s, d) => s + (d.value || 0), 0)
+  return (
+    <div className="card exec-atrisk">
+      <div className="exec-panel-h">Revenue at risk <span className="sub">· {fmtNumber(st.deals.length)} open deals · {money(totOpen)} in pipeline · {fmtNumber(stale.length)} stalled &gt;30d ({money(staleVal)})</span></div>
+      {deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th className="lft">Contact</th><th>Value</th><th>Age</th></tr></thead>
+        <tbody>{deals.map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe />)}</tbody></table></div>
+        : <div className="cap">No open deals in this period.</div>}
+    </div>
+  )
+}
+
+// Deterministic priority actions derived from the health payload + at-risk —
+// no AI. Flags the biggest movers against the previous period.
+function priorityActions(h, money) {
+  if (!h || !h.kpis) return []
+  const k = h.kpis, pv = k.prev || {}, out = []
+  const dropPct = (cur, prev) => (prev ? Math.round(((cur - prev) / prev) * 100) : null)
+  // Weakest pillar.
+  const pillars = PILLAR_KEYS.map(([id, label]) => ({ id, label, s: h.score ? h.score[id] : null })).filter((p) => p.s != null).sort((a, b) => a.s - b.s)
+  if (pillars.length && pillars[0].s < 50) out.push({ sev: pillars[0].s < 35 ? 'high' : 'med', text: `${pillars[0].label} is the weakest pillar at ${pillars[0].s}/100 — focus here first.` })
+  // CPL rising.
+  if (k.cpl != null && pv.leads && pv.adSpend) { const pc = Math.round(pv.adSpend / pv.leads); const dp = dropPct(k.cpl, pc); if (dp != null && dp >= 15) out.push({ sev: dp >= 40 ? 'high' : 'med', text: `Cost per lead up ${dp}% (${money(pc)} → ${money(k.cpl)}).` }) }
+  // Lead volume down.
+  if (k.leads != null && pv.leads) { const dp = dropPct(k.leads, pv.leads); if (dp != null && dp <= -15) out.push({ sev: dp <= -40 ? 'high' : 'med', text: `Lead volume down ${Math.abs(dp)}% vs last period (${fmtNumber(pv.leads)} → ${fmtNumber(k.leads)}).` }) }
+  // Win/revenue down.
+  if (k.revenue != null && pv.revenue) { const dp = dropPct(k.revenue, pv.revenue); if (dp != null && dp <= -15) out.push({ sev: dp <= -40 ? 'high' : 'med', text: `Revenue down ${Math.abs(dp)}% vs last period (${money(pv.revenue)} → ${money(k.revenue)}).` }) }
+  // Forecast pacing behind.
+  if (h.forecast && h.forecast.pacePct != null && h.forecast.pacePct < 85) out.push({ sev: h.forecast.pacePct < 70 ? 'high' : 'med', text: `Pacing at ${h.forecast.pacePct}% of last period's revenue on run-rate.` })
+  return out.slice(0, 5)
+}
+
+function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav }) {
+  const health = useHealth(clientId, range, nonce)
+  const [openPillar, setOpenPillar] = useState(null)
+  const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiErr, setAiErr] = useState(null)
+  useEffect(() => { setAi(loadInsights(clientId + ':exec')); setAiErr(null) }, [clientId])
+  const money = (v) => fmtCurrency(v, currency)
+  const genExec = async () => {
+    if (aiLoading || health.status !== 'ok') return
+    setAiLoading(true); setAiErr(null)
+    try {
+      const payload = { mode: 'exec', clientName, period: rangeLabel(range), health: { score: health.data.score, kpis: health.data.kpis, forecast: health.data.forecast } }
+      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      const rec = { insights: j.insights, period: j.period || rangeLabel(range), generatedAt: j.generatedAt || new Date().toISOString(), model: j.model }
+      saveInsights(clientId + ':exec', rec); setAi(rec)
+    } catch (e) { setAiErr(String(e.message || e)) } finally { setAiLoading(false) }
+  }
+  if (health.status === 'loading') return <div className="card"><Spinner label="Scoring business health…" /></div>
+  if (health.status === 'err' || !health.data) return <div className="note">Couldn’t load the executive health score for this period. The detailed breakdown below is still available.</div>
+  const h = health.data
+  const sc = h.score || {}
+  const k = h.kpis || {}
+  const pv = k.prev || {}
+  const hist = (h.history || []).filter((p) => p.composite != null)
+  const actions = priorityActions(h, money)
+  const fc = h.forecast
+  return (
+    <div className="exec-wrap">
+      {/* Header + composite gauge */}
+      <div className="card exec-hero">
+        <div className="exec-hero-l">
+          <HealthGauge score={sc.composite} />
+          <div className="exec-hero-meta">
+            <div className="exec-hero-lab" style={{ color: hColor(sc.composite) }}>{hLabel(sc.composite)}</div>
+            <div className="exec-hero-sub">Business health · {rangeLabel(range)}</div>
+            {hist.length > 1 && <div className="exec-spark"><Sparkline data={hist.map((p) => p.composite)} /><span className="cap">{hist.length}d trend</span></div>}
+          </div>
+        </div>
+        <div className="exec-pillars">
+          {PILLAR_KEYS.map(([id, label]) => <PillarRow key={id} pk={label} pillar={sc.pillars && sc.pillars[id]} open={openPillar === id} onToggle={() => setOpenPillar(openPillar === id ? null : id)} money={money} />)}
+        </div>
+      </div>
+
+      {/* KPI scorecard */}
+      <div className="scorecard exec-kpis">
+        <Kpi label="Ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown />
+        <Kpi label="Leads" value={k.leads != null ? fmtNumber(k.leads) : '—'} cur={k.leads} prev={pv.leads} />
+        <Kpi label="Qualified" value={k.qualified != null ? fmtNumber(k.qualified) : '—'} cur={k.qualified} prev={pv.qualified} />
+        <Kpi label="Cost / lead" value={k.cpl != null ? money(k.cpl) : '—'} cur={k.cpl} prev={pv.leads && pv.adSpend ? Math.round(pv.adSpend / pv.leads) : null} goodWhenDown />
+        <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={k.booked} prev={pv.booked} />
+        <Kpi label="Won" value={k.won != null ? fmtNumber(k.won) : '—'} cur={k.won} prev={pv.won} />
+        <Kpi label="Revenue" value={k.revenue != null ? money(k.revenue) : '—'} cur={k.revenue} prev={pv.revenue} />
+      </div>
+
+      <div className="exec-grid2">
+        {/* Priority actions */}
+        <div className="card exec-actions">
+          <div className="exec-panel-h">Priority actions</div>
+          {actions.length ? <ul className="exec-act-list">{actions.map((a, i) => <li key={i} className={`exec-act sev-${a.sev}`}><span className="exec-act-dot" />{a.text}</li>)}</ul>
+            : <div className="cap">No red flags this period — the numbers are tracking with or ahead of last period.</div>}
+          <div className="exec-nav"><button className="link-btn" onClick={() => onNav && onNav('users')}>Open the Users tab →</button></div>
+        </div>
+        {/* Forecast */}
+        <div className="card exec-forecast">
+          <div className="exec-panel-h">Forecast <span className="sub">· run-rate at {fc ? fc.elapsedPct : 0}% of period</span></div>
+          {fc ? <div className="exec-fc-grid">
+            <div className="exec-fc"><span className="exec-fc-l">Projected revenue</span><span className="exec-fc-v">{money(fc.projectedRevenue)}</span><span className="cap">{fc.prevRevenue != null ? `last period ${money(fc.prevRevenue)}` : 'no prior period'}</span></div>
+            <div className="exec-fc"><span className="exec-fc-l">Projected leads</span><span className="exec-fc-v">{fmtNumber(fc.projectedLeads)}</span><span className="cap">{fc.prevLeads != null ? `last period ${fmtNumber(fc.prevLeads)}` : ''}</span></div>
+            <div className="exec-fc"><span className="exec-fc-l">Projected deals won</span><span className="exec-fc-v">{fmtNumber(fc.projectedWon)}</span><span className="cap">{fc.prevWon != null ? `last period ${fmtNumber(fc.prevWon)}` : ''}</span></div>
+            {fc.pacePct != null && <div className="exec-fc"><span className="exec-fc-l">Pace vs last period</span><span className="exec-fc-v" style={{ color: hColor(fc.pacePct >= 100 ? 80 : fc.pacePct >= 85 ? 55 : 30) }}>{fc.pacePct}%</span><span className="cap">of prior revenue</span></div>}
+          </div> : <div className="cap">Forecast needs a prior period to compare against.</div>}
+        </div>
+      </div>
+
+      {/* AI executive summary — narrates the figures above; never recomputes them */}
+      <div className="card ai-card exec-ai">
+        <div className="ai-head">
+          <div className="ai-title">✨ AI executive summary {ai ? <span className="sub">· {ai.period} · generated {new Date(ai.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads the health score above and briefs you</span>}</div>
+          <button className="ai-btn" onClick={genExec} disabled={aiLoading}>{aiLoading ? 'Generating…' : ai ? '↻ Regenerate' : '✨ Generate summary'}</button>
+        </div>
+        {aiErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{aiErr}</p>}
+        {aiLoading ? <Spinner label="Claude is reviewing the numbers…" />
+          : ai ? <MdText text={ai.insights} />
+            : <p className="cap" style={{ margin: 0 }}>Generate a board-level read of {clientName}'s health score, forecast and priority flags for {rangeLabel(range)}. Runs only when you click; the figures are computed here and Claude only interprets them.</p>}
+      </div>
+
+      {/* Revenue at risk */}
+      <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
+
+      <div className="cap exec-foot">Health is scored against the previous equal-length period. A consistent daily trend builds from launch as snapshots accumulate. Messaging/response signals are indicative only — clients may reply on channels outside Caalano Systems.</div>
+    </div>
+  )
+}
+
 function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const b = blend
   const users = b.users || []
@@ -4305,7 +4533,13 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {curTab === 'overall' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />)}
+        {curTab === 'overall' && <>
+          <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} />
+          <details className="exec-full">
+            <summary>Full Caalano 360 breakdown — campaigns, pipelines, funnel &amp; per-rep detail</summary>
+            {live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />}
+          </details>
+        </>}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}

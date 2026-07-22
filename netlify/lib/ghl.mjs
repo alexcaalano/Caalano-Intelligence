@@ -176,6 +176,25 @@ async function pipelineStageIndex(locTok, locationId) {
   return stageIndexFrom(await fetchPipelines(locTok, locationId))
 }
 
+// "Qualified lead" — a definition that scales across every business with zero
+// per-client setup. The signal is human intent: a lead is qualified once someone
+// has actively advanced it past the pipeline's entry stage, OR it was won, OR it
+// has a booked appointment, OR a deal value was set. Stage naming is irrelevant,
+// so it works on any GoHighLevel pipeline out of the box. An optional per-client
+// override (qualStagePos) names a specific stage position that must be reached
+// instead of "past entry"; with the override set, only the stage (or a win)
+// counts — the appointment / value shortcuts are ignored so the definition stays
+// exactly what was configured.
+export function isQualified({ status, pos, entryPos, hasAppt, value, qualStagePos }) {
+  if (String(status || '').toLowerCase() === 'won') return true
+  const threshold = qualStagePos != null ? qualStagePos : (entryPos ?? 0) + 1
+  if (pos != null && pos >= 0 && pos >= threshold) return true
+  if (qualStagePos != null) return false
+  if (hasAppt) return true
+  if (num(value) > 0) return true
+  return false
+}
+
 // first-touch UTMs from an opportunity's inline `attributions` array
 function utmOf(opp) {
   const atts = Array.isArray(opp.attributions) ? opp.attributions : []
@@ -1247,7 +1266,9 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const U = new Map()
   const nowMs = Date.now()
   const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
-  const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, totalValue: 0, openValue: 0, lostValue: 0, stages: new Map(), stageOpen: new Map(), reasons: new Map(), openList: [], byPipe: new Map() }; U.set(uid, u) } return u }
+  const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, qualified: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, totalValue: 0, openValue: 0, lostValue: 0, stages: new Map(), stageOpen: new Map(), reasons: new Map(), openList: [], byPipe: new Map() }; U.set(uid, u) } return u }
+  const qualStagePos = opts.qualStagePos != null ? opts.qualStagePos : null
+  let totQualified = 0
   for (const o of cohort) {
     const uid = o.assignedTo || 'unassigned'
     const u = getU(uid)
@@ -1272,10 +1293,15 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
     const pid = o.pipelineId || 'none'; let bp = u.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, won: 0, revenue: 0 }; u.byPipe.set(pid, bp) } bp.leads++; if (st === 'won') { bp.won++; bp.revenue += val }
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
     if (f) { if (f.bookedInPeriod) u.booked++; if (f.shownByStatus) u.shown++; if (f.cancelledInPeriod) u.cancelled++ }
+    // Qualified lead (scalable definition — see isQualified). Counted per rep and
+    // for the whole client so the funnel can show Lead → Qualified → Booked → Won.
+    const entryPos = pi && pi.stages.length ? pi.stages[0].pos : 0
+    if (isQualified({ status: st, pos, entryPos, hasAppt: !!(f && f.bookedInPeriod), value: val, qualStagePos })) { u.qualified++; totQualified++ }
   }
   const users = [...U.values()].map((u) => ({
     id: u.id, name: nameOf(u.id),
-    leads: u.leads, open: u.open, lost: u.lost, booked: u.booked, shown: u.shown, cancelled: u.cancelled, won: u.won, revenue: Math.round(u.revenue),
+    leads: u.leads, qualified: u.qualified, open: u.open, lost: u.lost, booked: u.booked, shown: u.shown, cancelled: u.cancelled, won: u.won, revenue: Math.round(u.revenue),
+    qualRate: u.leads ? Math.round((u.qualified / u.leads) * 100) : null,
     bookRate: u.leads ? Math.round((u.booked / u.leads) * 100) : null,
     showRate: u.booked ? Math.round((u.shown / u.booked) * 100) : null,
     winRate: u.leads ? Math.round((u.won / u.leads) * 100) : null,
@@ -1288,8 +1314,10 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
     lostReasons: [...u.reasons.entries()].map(([reason, v]) => ({ reason, count: v.count, value: Math.round(v.value) })).sort((a, b) => b.count - a.count),
     byPipeline: [...u.byPipe.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue) })).sort((a, b) => b.leads - a.leads),
   })).sort((a, b) => b.leads - a.leads)
+  const totLeads = cohort.length
   return {
     connected: true, tz, users,
+    qualified: totQualified, leads: totLeads, qualRate: totLeads ? Math.round((totQualified / totLeads) * 100) : null,
     pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s) => s.name) })),
   }
 }

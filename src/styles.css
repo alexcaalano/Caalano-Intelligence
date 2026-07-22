@@ -1396,3 +1396,61 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .res-ty { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; letter-spacing: .01em; color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); padding: 1px 6px; border-radius: 5px; vertical-align: middle; white-space: nowrap; }
 .res-cell { cursor: help; }
 .res-more { display: inline-block; margin-left: 4px; font-size: 9.5px; font-weight: 700; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-2); padding: 0 4px; border-radius: 5px; vertical-align: middle; }
+
+/* ============ Caalano 360 Executive Dashboard ============ */
+.exec-wrap { display: flex; flex-direction: column; gap: 14px; }
+.exec-hero { display: flex; gap: 22px; align-items: stretch; flex-wrap: wrap; }
+.exec-hero-l { display: flex; gap: 16px; align-items: center; min-width: 240px; }
+.hs-gauge { width: 132px; height: 132px; border-radius: 50%; background: conic-gradient(var(--col) var(--v), var(--border) 0); display: grid; place-items: center; flex: 0 0 auto; }
+.hs-gauge-inner { width: 104px; height: 104px; border-radius: 50%; background: var(--panel); display: grid; place-items: center; text-align: center; }
+.hs-num { font-size: 38px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+.hs-den { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.exec-hero-meta { display: flex; flex-direction: column; gap: 4px; }
+.exec-hero-lab { font-size: 17px; font-weight: 750; }
+.exec-hero-sub { font-size: 12px; color: var(--muted); }
+.exec-spark { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.spark { display: block; }
+.exec-pillars { flex: 1 1 340px; display: flex; flex-direction: column; gap: 6px; min-width: 280px; }
+.hs-pillar { border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); overflow: hidden; }
+.hs-pillar-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 11px; background: none; border: 0; cursor: pointer; color: var(--text); }
+.hs-chev { color: var(--muted); font-size: 11px; width: 10px; }
+.hs-pk { font-size: 12.5px; font-weight: 650; width: 78px; text-align: left; flex: 0 0 auto; }
+.hs-bar { flex: 1 1 auto; height: 8px; border-radius: 5px; background: var(--border); overflow: hidden; }
+.hs-bar-fill { display: block; height: 100%; border-radius: 5px; transition: width .3s; }
+.hs-pscore { font-size: 13px; font-weight: 750; width: 34px; text-align: right; flex: 0 0 auto; }
+.hs-pillar-body { padding: 4px 12px 10px 31px; display: flex; flex-direction: column; gap: 5px; }
+.hs-comp { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.hs-comp-l { flex: 1 1 auto; color: var(--muted); }
+.hs-comp-v { font-weight: 600; }
+.hs-comp-ref { color: var(--faint); font-weight: 400; font-size: 11px; }
+.hs-comp-s { width: 28px; text-align: right; font-weight: 700; flex: 0 0 auto; }
+.exec-kpis { margin: 0; }
+.exec-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.exec-panel-h { font-size: 13.5px; font-weight: 720; margin-bottom: 10px; }
+.exec-panel-h .sub { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.exec-act-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.exec-act { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; line-height: 1.45; }
+.exec-act-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: 0 0 auto; background: var(--muted); }
+.exec-act.sev-high .exec-act-dot { background: #d64545; }
+.exec-act.sev-med .exec-act-dot { background: #d9a400; }
+.exec-nav { margin-top: 12px; }
+.exec-fc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.exec-fc { display: flex; flex-direction: column; gap: 2px; }
+.exec-fc-l { font-size: 11.5px; color: var(--muted); }
+.exec-fc-v { font-size: 20px; font-weight: 750; letter-spacing: -.01em; }
+.exec-atrisk .tbl-scroll { overflow-x: auto; }
+.exec-foot { margin-top: 2px; }
+.exec-full { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 8px; }
+.exec-full > summary { cursor: pointer; font-size: 12.5px; font-weight: 650; color: var(--muted); padding: 8px 2px; list-style: none; }
+.exec-full > summary::-webkit-details-marker { display: none; }
+.exec-full > summary:before { content: '▸ '; color: var(--brand); }
+.exec-full[open] > summary:before { content: '▾ '; }
+.exec-full > summary:hover { color: var(--text); }
+@media (max-width: 760px) {
+  .exec-grid2 { grid-template-columns: 1fr; }
+  .exec-fc-grid { grid-template-columns: 1fr 1fr; }
+  .exec-hero { gap: 14px; }
+  .hs-gauge { width: 112px; height: 112px; }
+  .hs-gauge-inner { width: 88px; height: 88px; }
+  .hs-num { font-size: 30px; }
+}

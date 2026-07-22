@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import 'leaflet/dist/leaflet.css'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ComposedChart, ReferenceLine, LabelList,
@@ -10,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.45.0'
+const APP_VERSION = '3.46.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3424,76 +3425,101 @@ function stateOfPostcode(p) {
   return null
 }
 const LEAD_MAP_COLOR = [['volume', 'Volume'], ['book', 'Booked %'], ['win', 'Won %']]
+// Outcome colours: red = leads (unconverted), amber = booked (not yet won),
+// green = won. A location's marker takes its furthest outcome.
+const LM_RED = '#f0435b', LM_AMBER = '#f5a524', LM_GREEN = '#17b26a'
+const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : 'lead')
+const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_AMBER : LM_RED)
+// Interactive Leaflet map (OpenStreetMap tiles) — real base map with suburb
+// names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
 function LeadMap({ locs }) {
   const [db, setDb] = useState(undefined)
-  const [zoom, setZoom] = useState('fit') // 'fit' (to leads) | 'all' (whole country)
-  const [colorBy, setColorBy] = useState('volume')
+  const [filter, setFilter] = useState('all') // all | lead | booked | won
+  const [ready, setReady] = useState(false)
+  const elRef = useRef(null)
+  const mapRef = useRef(null)
+  const layerRef = useRef(null)
+  const LRef = useRef(null)
   useEffect(() => { let a = true; import('./data/aupostcodes.json').then((m) => { if (a) setDb(m.default || m) }).catch(() => { if (a) setDb(null) }); return () => { a = false } }, [])
+
+  // Resolve every location answer to a [lat, lng], inferring the client's
+  // dominant state so same-named suburbs elsewhere aren't mis-plotted.
+  const { pts, unmatched, clientState } = useMemo(() => {
+    if (!db) return { pts: [], unmatched: [], clientState: null }
+    const tally = {}
+    for (const l of locs) {
+      const v = String(l.value).trim(); let stt = null
+      if (/^\d{4}$/.test(v)) stt = stateOfPostcode(v)
+      else if (/^\d{3}$/.test(v)) stt = stateOfPostcode('0' + v)
+      else { const sv = db.sub[normSub(v)]; if (sv && typeof sv[0] === 'number') stt = sv[2] }
+      if (stt) tally[stt] = (tally[stt] || 0) + (l.leads || 1)
+    }
+    const cs = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || null
+    const coordOf = (value) => {
+      const v = String(value).trim()
+      if (/^\d{4}$/.test(v)) return db.pc[v] || null
+      if (/^\d{3}$/.test(v)) return db.pc['0' + v] || null
+      const sv = db.sub[normSub(v)]; if (!sv) return null
+      if (typeof sv[0] === 'number') return [sv[0], sv[1]]
+      const pick = sv.find((x) => x[2] === cs) || sv[0]
+      return [pick[0], pick[1]]
+    }
+    const p = [], um = []
+    for (const l of locs) { const c = coordOf(l.value); if (c) p.push({ ...l, lat: c[0], lng: c[1] }); else um.push(l) }
+    return { pts: p, unmatched: um, clientState: cs }
+  }, [db, locs])
+
+  // Create the Leaflet map once (dynamic import keeps it out of the main bundle).
+  useEffect(() => {
+    if (!db || !elRef.current || mapRef.current) return
+    let dead = false
+    import('leaflet').then((mod) => {
+      if (dead || !elRef.current || mapRef.current) return
+      const L = mod.default || mod; LRef.current = L
+      const map = L.map(elRef.current, { scrollWheelZoom: true, worldCopyJump: true }).setView([-25.6, 134.4], 4)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map)
+      layerRef.current = L.layerGroup().addTo(map)
+      mapRef.current = map
+      setTimeout(() => map.invalidateSize(), 60) // container may size after mount
+      setReady(true) // signal the marker effect that the map exists
+    }).catch(() => {})
+    return () => { dead = true; setReady(false); if (mapRef.current) { mapRef.current.remove(); mapRef.current = null } }
+  }, [db])
+
+  // (Re)draw markers whenever the points or filter change; fit to bounds.
+  const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
+  useEffect(() => {
+    const L = LRef.current, map = mapRef.current, layer = layerRef.current
+    if (!L || !map || !layer) return
+    layer.clearLayers()
+    const shown = pts.filter((p) => filter === 'all' ? true : filter === 'lead' ? true : filter === 'booked' ? p.booked > 0 : p.won > 0)
+    const latlngs = []
+    for (const p of shown) {
+      const o = filter === 'all' ? outcomeOf(p) : filter
+      const col = outcomeColor(o)
+      const r = 5 + Math.sqrt(p.leads / maxLeads) * 20
+      const m = L.circleMarker([p.lat, p.lng], { radius: r, color: col, weight: 1.5, fillColor: col, fillOpacity: 0.55 })
+      m.bindPopup(`<b>${p.value}</b><br/>${p.leads} lead${p.leads === 1 ? '' : 's'} · ${p.booked || 0} booked · ${p.won || 0} won`)
+      m.bindTooltip(`${p.value}: ${p.leads}L / ${p.booked || 0}B / ${p.won || 0}W`)
+      m.addTo(layer); latlngs.push([p.lat, p.lng])
+    }
+    if (latlngs.length) { try { map.fitBounds(latlngs, { padding: [34, 34], maxZoom: 13 }) } catch { /* single point */ } }
+  }, [pts, filter, maxLeads, ready])
+
   if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
   if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
-  // Infer the client's dominant state (weighted by leads) from unambiguous
-  // answers, so same-named suburbs in other states don't get mis-plotted.
-  const tally = {}
-  for (const l of locs) {
-    const v = String(l.value).trim(); let stt = null
-    if (/^\d{4}$/.test(v)) stt = stateOfPostcode(v)
-    else if (/^\d{3}$/.test(v)) stt = stateOfPostcode('0' + v)
-    else { const sv = db.sub[normSub(v)]; if (sv && typeof sv[0] === 'number') stt = sv[2] }
-    if (stt) tally[stt] = (tally[stt] || 0) + (l.leads || 1)
-  }
-  const clientState = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || null
-  const coordOf = (value) => {
-    const v = String(value).trim()
-    if (/^\d{4}$/.test(v)) return db.pc[v] || null
-    if (/^\d{3}$/.test(v)) return db.pc['0' + v] || null
-    const sv = db.sub[normSub(v)]; if (!sv) return null
-    if (typeof sv[0] === 'number') return [sv[0], sv[1]] // unique suburb, suburb-level coords
-    const pick = sv.find((x) => x[2] === clientState) || sv[0] // ambiguous -> client's state
-    return [pick[0], pick[1]]
-  }
-  const pts = []; const unmatched = []
-  for (const l of locs) { const c = coordOf(l.value); if (c) { const [x, y] = projAU(c[1], c[0]); pts.push({ ...l, x, y }) } else unmatched.push(l) }
-  const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
   const matchedLeads = pts.reduce((s, p) => s + p.leads, 0)
-  const rateOf = (p) => (!p.leads ? 0 : colorBy === 'book' ? p.booked / p.leads : p.won / p.leads)
-  const maxRate = Math.max(0.0001, ...pts.map(rateOf))
-  const dotFill = (p) => (colorBy === 'volume' ? null : `hsl(${Math.round(Math.min(1, rateOf(p) / maxRate) * 130)} 65% 47%)`)
-  // Viewbox: fit tightly to the plotted points (with padding, a minimum span so a
-  // single suburb isn't over-zoomed, and an aspect ratio that fills the card),
-  // or the whole country.
-  let vb
-  if (zoom === 'fit' && pts.length) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
-    let w = maxX - minX, h = maxY - minY
-    const padX = Math.max(w * 0.35, 16), padY = Math.max(h * 0.35, 16)
-    minX -= padX; maxX += padX; minY -= padY; maxY += padY; w = maxX - minX; h = maxY - minY
-    const FLOOR = 60 // ~2° minimum, so one point still shows context
-    if (w < FLOOR) { const c = (minX + maxX) / 2; minX = c - FLOOR / 2; maxX = c + FLOOR / 2; w = FLOOR }
-    if (h < FLOOR) { const c = (minY + maxY) / 2; minY = c - FLOOR / 2; maxY = c + FLOOR / 2; h = FLOOR }
-    const T = 1.3
-    if (w / h < T) { const nw = h * T, d = (nw - w) / 2; minX -= d; maxX += d; w = nw } else { const nh = w / T, d = (nh - h) / 2; minY -= d; maxY += d; h = nh }
-    vb = { x: minX, y: minY, w, h }
-  } else vb = { x: 0, y: 0, w: 1000, h: AU_VH }
-  const sw = Math.max(0.35, vb.w * 0.0022)
-  const dotR = (leads) => vb.w * (0.013 + Math.sqrt(leads / maxLeads) * 0.021)
+  const FILTERS = [['all', 'All'], ['lead', 'Leads'], ['booked', 'Booked'], ['won', 'Won']]
   return (
     <div className="lead-map-wrap">
       <div className="lead-map">
         <div className="lead-map-bar">
-          <div className="lead-map-tabs">
-            <button className={zoom === 'fit' ? 'on' : ''} onClick={() => setZoom('fit')} disabled={!pts.length}>Fit to leads</button>
-            <button className={zoom === 'all' ? 'on' : ''} onClick={() => setZoom('all')}>All Australia</button>
-          </div>
-          <div className="lead-map-tabs"><span className="lead-map-lab">Colour</span>{LEAD_MAP_COLOR.map(([k, l]) => <button key={k} className={colorBy === k ? 'on' : ''} onClick={() => setColorBy(k)}>{l}</button>)}</div>
+          <div className="lead-map-tabs"><span className="lead-map-lab">Show</span>{FILTERS.map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
+          <div className="lm-legend2"><span><i style={{ background: LM_RED }} />Leads</span><span><i style={{ background: LM_AMBER }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span></div>
         </div>
-        <svg viewBox={`${vb.x.toFixed(1)} ${vb.y.toFixed(1)} ${vb.w.toFixed(1)} ${vb.h.toFixed(1)}`} width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Map of leads across Australia">
-          {(db.outline || []).map((d, i) => <path key={i} d={d} className="au-land" strokeWidth={sw} />)}
-          {pts.map((p, i) => { const f = dotFill(p); return <circle key={i} cx={p.x} cy={p.y} r={dotR(p.leads)} className="au-dot" strokeWidth={sw} style={f ? { fill: f, stroke: f, fillOpacity: 0.72 } : undefined}><title>{`${p.value} — ${p.leads} lead${p.leads === 1 ? '' : 's'} · ${p.booked || 0} booked (${p.leads ? Math.round((p.booked / p.leads) * 100) : 0}%) · ${p.won || 0} won (${p.leads ? Math.round((p.won / p.leads) * 100) : 0}%)`}</title></circle> })}
-        </svg>
-        {colorBy !== 'volume' && <div className="lead-map-legend"><span className="cap">{colorBy === 'book' ? 'Booked %' : 'Won %'} (size = leads):</span><span className="lm-grad" /><span className="cap">low → high</span></div>}
+        <div ref={elRef} className="lead-map-leaflet" />
       </div>
-      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''}{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
+      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the breakdown{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
     </div>
   )
 }

@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.46.0 — 2026-07-21 · `PENDING`
+- **Lead location map is now a real interactive map.** Replaced the hand-drawn
+  Australia outline with a proper **OpenStreetMap** slippy map (Leaflet): pan and
+  **zoom right down to street/suburb names**, like Google Maps. Each postcode /
+  suburb is a marker **coloured by outcome — red = Leads, amber = Booked, green =
+  Won** (the marker takes the furthest outcome), **sized by lead volume**, with a
+  click popup showing the leads / booked / won breakdown. A **Show** filter
+  toggles All / Leads / Booked / Won, and the map auto-fits to the plotted area.
+  Leaflet loads lazily (only when the map is opened), so it doesn't weigh down the
+  rest of the app.
+
 ## v3.45.0 — 2026-07-21 · `PENDING`
 - **New Super Admin role (owner tier).** Above Admin, with exclusive powers:
   - **Manages Admins** — only a Super Admin can create, promote, demote or remove

@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.41.0 — 2026-07-21 · `PENDING`
+- **Meta results now auto-detect each campaign's optimisation event.** The Meta
+  tab reads every ad set's **optimisation goal + promoted object** (from Windsor)
+  and reports its *own* result — so a **Schedule** campaign shows Schedule
+  results and a **Leads** campaign shows Leads, side by side in the same account
+  (matching Ads Manager). The campaign & ad-set tables now show **Results** (with
+  a small result-type chip) and **Cost/result** in place of the fixed Leads/CPL;
+  the Meta scorecard shows the account **Results / Cost per result**, and when ad
+  sets optimise to different events the total is a per-type breakdown (e.g.
+  "24 Schedule · 2 Lead") rather than a misleading single number. Custom-
+  conversion campaigns fall back to the client's configured **primary** (Settings
+  → Meta conversions), then to Leads. (By-form / by-format / creative tables
+  still show Leads for now — a follow-up.)
+
 ## v3.40.0 — 2026-07-21 · `PENDING`
 - **Per-client Meta conversion selection (Settings → Meta conversions).** A new
   tab in each client's Settings that **loads the Meta conversion events that

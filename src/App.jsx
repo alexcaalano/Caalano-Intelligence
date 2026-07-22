@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.47.0'
+const APP_VERSION = '3.48.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3425,6 +3425,60 @@ function stateOfPostcode(p) {
   return null
 }
 const LEAD_MAP_COLOR = [['volume', 'Volume'], ['book', 'Booked %'], ['win', 'Won %']]
+// Shared, cached loader for the AU postcode/suburb dataset (used by the location
+// list merge + the map), so it's fetched at most once.
+let _auDbPromise = null
+function loadAuDb() { if (!_auDbPromise) _auDbPromise = import('./data/aupostcodes.json').then((m) => m.default || m); return _auDbPromise }
+function useAuDb() {
+  const [db, setDb] = useState(undefined)
+  useEffect(() => { let a = true; loadAuDb().then((d) => { if (a) setDb(d) }).catch(() => { if (a) setDb(null) }); return () => { a = false } }, [])
+  return db
+}
+const isPostcodeVal = (v) => /^\d{3,4}$/.test(String(v).trim())
+// Collapse location answers that resolve to the SAME place — e.g. a postcode
+// (2110) and its suburb name (Hunters Hill) — into one entry, summing outcomes
+// and labelling it "Suburb (postcode)". Carries lat/lng so the map plots it
+// directly. Unresolvable junk answers are kept as-is.
+function mergeLocations(locs, db) {
+  if (!db) return locs
+  const tally = {}
+  for (const l of locs) {
+    const v = String(l.value).trim(); let stt = null
+    if (/^\d{4}$/.test(v)) stt = stateOfPostcode(v)
+    else if (/^\d{3}$/.test(v)) stt = stateOfPostcode('0' + v)
+    else { const sv = db.sub[normSub(v)]; if (sv && typeof sv[0] === 'number') stt = sv[2] }
+    if (stt) tally[stt] = (tally[stt] || 0) + (l.leads || 1)
+  }
+  const clientState = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || null
+  const coordOf = (value) => {
+    const v = String(value).trim()
+    if (/^\d{4}$/.test(v)) return db.pc[v] || null
+    if (/^\d{3}$/.test(v)) return db.pc['0' + v] || null
+    const sv = db.sub[normSub(v)]; if (!sv) return null
+    if (typeof sv[0] === 'number') return [sv[0], sv[1]]
+    const pick = sv.find((x) => x[2] === clientState) || sv[0]
+    return [pick[0], pick[1]]
+  }
+  const groups = new Map(); const kept = []
+  for (const l of locs) {
+    const c = coordOf(l.value)
+    if (!c) { kept.push(l); continue }
+    const key = c[0].toFixed(3) + ',' + c[1].toFixed(3)
+    let g = groups.get(key)
+    if (!g) { g = { lat: c[0], lng: c[1], leads: 0, booked: 0, shown: 0, won: 0, members: [] }; groups.set(key, g) }
+    g.leads += l.leads || 0; g.booked += l.booked || 0; g.shown += l.shown || 0; g.won += l.won || 0
+    if (l.members) g.members.push(...l.members); else g.members.push({ value: l.value, leads: l.leads || 0 })
+  }
+  const merged = [...groups.values()].map((g) => {
+    const vals = [...new Set(g.members.map((m) => String(m.value).trim()))]
+    const pcs = [...new Set(vals.filter(isPostcodeVal))]
+    const names = [...new Set(vals.filter((v) => !isPostcodeVal(v)))]
+    const label = names.length && pcs.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''} (${pcs.join('/')})`
+      : names.length ? names.join(' / ') : pcs.join(' / ')
+    return { value: label, leads: g.leads, booked: g.booked, shown: g.shown, won: g.won, lat: g.lat, lng: g.lng, merged: g.members.length > 1, members: g.members }
+  })
+  return [...merged, ...kept].sort((a, b) => b.leads - a.leads)
+}
 // Outcome colours: red = leads (unconverted), amber = booked (not yet won),
 // green = won. A location's marker takes its furthest outcome.
 const LM_RED = '#f0435b', LM_AMBER = '#f5a524', LM_GREEN = '#17b26a'
@@ -3465,7 +3519,7 @@ function LeadMap({ locs }) {
       return [pick[0], pick[1]]
     }
     const p = [], um = []
-    for (const l of locs) { const c = coordOf(l.value); if (c) p.push({ ...l, lat: c[0], lng: c[1] }); else um.push(l) }
+    for (const l of locs) { const c = (l.lat != null && l.lng != null) ? [l.lat, l.lng] : coordOf(l.value); if (c) p.push({ ...l, lat: c[0], lng: c[1] }); else um.push(l) }
     return { pts: p, unmatched: um, clientState: cs }
   }, [db, locs])
 
@@ -3528,7 +3582,10 @@ function LeadMap({ locs }) {
 // not a headline, so it only opens when asked for.
 function FormLocations({ form }) {
   const [open, setOpen] = useState(false)
-  const locs = groupAnswers(form.locations || []) // merges suburb spellings; postcodes stay separate
+  const db = useAuDb()
+  // Merge suburb spellings first, then collapse postcode/suburb duplicates that
+  // resolve to the same place (e.g. 2110 + Hunters Hill) once the dataset loads.
+  const locs = useMemo(() => mergeLocations(groupAnswers(form.locations || []), db), [form, db])
   if (!locs.length) return null
   const max = Math.max(1, ...locs.map((l) => l.leads))
   return (

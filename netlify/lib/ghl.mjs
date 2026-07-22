@@ -1294,6 +1294,18 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   }
 }
 
+// GHL note bodies are often HTML — convert to clean text (lists → bullets,
+// block tags → line breaks, entities decoded) rather than render markup.
+function htmlToText(s) {
+  return String(s || '')
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\s*li[^>]*>/gi, '\n• ')
+    .replace(/<\/\s*(p|div|li|ul|ol|h[1-6]|tr)\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&#0?39;|&apos;|&rsquo;/gi, '’').replace(/&quot;/gi, '"').replace(/&#(\d+);/g, (_, d) => String.fromCharCode(+d))
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim()
+}
 // Notes on a deal's contact (Caalano Systems), newest first — the on-demand
 // "why is this stuck?" context for the Users open-deal drill-down.
 export async function fetchOppNotes(locationId, { contactId }) {
@@ -1304,7 +1316,7 @@ export async function fetchOppNotes(locationId, { contactId }) {
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
   ])
   const uName = {}; for (const u of un) uName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null
-  const notes = (cn || []).map((n) => ({ body: String(n.body || n.note || '').trim(), createdAt: n.dateAdded || n.createdAt || n.updatedAt || null, author: uName[n.userId] || null }))
+  const notes = (cn || []).map((n) => ({ body: htmlToText(n.body || n.note || ''), createdAt: n.dateAdded || n.createdAt || n.updatedAt || null, author: uName[n.userId] || null }))
     .filter((n) => n.body)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
   return { notes }

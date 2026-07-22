@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.48.0 — 2026-07-21 · `PENDING`
+- **Deal notes now render as clean text.** GHL note bodies are HTML; they're now
+  converted to readable text (lists → bullets, block tags → line breaks, entities
+  decoded) instead of showing raw `<p style=…>` markup.
+- **Location map/list merges postcode + suburb duplicates.** Where a postcode and
+  its suburb name refer to the same place (e.g. **2110** and **Hunters Hill**),
+  they're now combined into a single entry — labelled **"Hunters Hill (2110)"** —
+  with their leads/booked/won summed, both in the location list and as one map
+  marker (no more overlapping dots for the same spot).
+
 ## v3.47.0 — 2026-07-21 · `PENDING`
 - **Deal notes in the open-deals drill-down.** In the Users tab, click a stage →
   click any live deal to **expand its Caalano Systems notes** (fetched on demand

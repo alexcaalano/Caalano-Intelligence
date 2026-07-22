@@ -1042,15 +1042,21 @@ export default async (req) => {
     if (!cc || !cc.ghl) return json({ scope: 'users', client, ghl: false })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'users', client, connected: false })
     const pipeline = url.searchParams.get('pipeline') || null
+    const channel = url.searchParams.get('channel') || 'all'
     try {
       const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
       const [perf, fb, gg] = await Promise.all([
-        buildUserPerformance(cc.ghl, from, to, { pipeline }),
+        buildUserPerformance(cc.ghl, from, to, { pipeline, channel }),
         cc.meta ? windsorFetch('facebook', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
         cc.google ? windsorFetch('google_ads', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
       ])
-      const totalSpend = Math.round(fb.reduce((s, r) => s + num(r.spend), 0) + gg.reduce((s, r) => s + num(r.spend), 0))
-      return json({ scope: 'users', client, period: { from, to, preset }, totalSpend, ...perf }, 200, true)
+      const metaSpend = Math.round(fb.reduce((s, r) => s + num(r.spend), 0))
+      const googleSpend = Math.round(gg.reduce((s, r) => s + num(r.spend), 0))
+      // Ad spend can't be attributed to an individual rep, but it CAN be scoped to
+      // the selected channel. Non-paid has no ad spend, so cost figures are N/A.
+      const spendByChannel = { all: metaSpend + googleSpend, paid: metaSpend + googleSpend, meta: metaSpend, google: googleSpend, nonpaid: 0 }
+      const totalSpend = spendByChannel[channel] != null ? spendByChannel[channel] : metaSpend + googleSpend
+      return json({ scope: 'users', client, period: { from, to, preset }, channel, totalSpend, metaSpend, googleSpend, ...perf }, 200, true)
     } catch (e) { return json({ scope: 'users', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

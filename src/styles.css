@@ -401,8 +401,8 @@ tr.u-detail-row > td { background: var(--panel-2); padding: 0; border-bottom: 1p
 .u-detail { display: grid; grid-template-columns: minmax(280px, 1.2fr) 1.4fr; gap: 20px; padding: 14px 16px; align-items: start; }
 @media (max-width: 820px) { .u-detail { grid-template-columns: 1fr; } }
 .u-funnel { display: flex; flex-direction: column; gap: 7px; }
-.u-fn-row { display: grid; grid-template-columns: 64px 1fr 42px; align-items: center; gap: 10px; }
-.u-fn-lab { font-size: 12px; color: var(--muted); font-weight: 600; }
+.u-fn-row { display: grid; grid-template-columns: 130px 1fr 42px; align-items: center; gap: 10px; }
+.u-fn-lab { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .u-fn-track { height: 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .u-fn-fill { display: flex; align-items: center; justify-content: flex-end; height: 100%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 5px; min-width: 22px; box-sizing: border-box; font-variant-numeric: tabular-nums; }
 .u-fn-rate { font-size: 11px; font-weight: 700; color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }

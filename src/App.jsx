@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.41.0'
+const APP_VERSION = '3.42.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3993,20 +3993,22 @@ function TimingDebug({ clientId, range }) {
 function UsersView({ clientId, range, nonce, currency }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [pipe, setPipe] = useState('all')
+  const [chan, setChan] = useState('all')
   const [sort, setSort] = useState({ key: 'won', dir: -1 })
   const [open, setOpen] = useState(null) // expanded user id
   const money = (v) => fmtCurrency(v, currency)
   const pipeParam = pipe !== 'all' ? `&pipeline=${encodeURIComponent(pipe)}` : ''
+  const chanParam = chan !== 'all' ? `&channel=${chan}` : ''
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
-    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
+    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${chanParam}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
       .finally(() => clearTimeout(timer))
     return () => { alive = false; ctl.abort() }
-  }, [clientId, rangeQuery(range), pipeParam, nonce])
+  }, [clientId, rangeQuery(range), pipeParam, chanParam, nonce])
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading user performance…" /></div>
   const d = st.data || {}
   if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">👤</div><b>Couldn't load user performance.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
@@ -4015,6 +4017,9 @@ function UsersView({ clientId, range, nonce, currency }) {
   const totalSpend = d.totalSpend || 0
   const pipeSel = pipes.length > 1 && (
     <label className="appt-f"><span>Pipeline</span><select value={pipe} onChange={(e) => { setPipe(e.target.value); setOpen(null) }}><option value="all">All pipelines</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+  )
+  const chanSel = (
+    <div className="chan-toggle">{[['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => { setChan(k); setOpen(null) }}>{lbl}</button>)}</div>
   )
   if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b></div></div>
   // Configured stage key events -> matrix columns (stage reach per user).
@@ -4029,8 +4034,8 @@ function UsersView({ clientId, range, nonce, currency }) {
   return (
     <div className="timing-view">
       <div className="appt-head">
-        <div><h3 style={{ margin: '0 0 2px' }}>Users — sales-rep performance</h3><p className="cap" style={{ margin: 0 }}>Opportunities grouped by their <b>assigned user</b>: full funnel, per-stage reach, win rate, revenue and time-to-close. Cost figures divide the account's ad spend by each rep's outcomes (a blended efficiency — spend isn't caused by the rep).</p></div>
-        {pipeSel}
+        <div><h3 style={{ margin: '0 0 2px' }}>Users — sales-rep performance</h3><p className="cap" style={{ margin: 0 }}>Opportunities grouped by their <b>assigned user</b>: full funnel, per-stage reach, win rate, revenue and time-to-close. The channel filter scopes each rep's leads by their first-touch UTM; cost figures use the <b>{chan === 'nonpaid' ? 'n/a — no ad spend for non-paid' : chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : chan === 'paid' ? 'Meta + Google' : 'total'}</b> ad spend ÷ that rep's outcomes (blended — spend isn't caused by the rep).</p></div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>{chanSel}{pipeSel}</div>
       </div>
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Reps</span><b>{fmtNumber(users.length)}</b><span className="tm-sub">with assigned leads</span></div>
@@ -4072,9 +4077,9 @@ function UsersView({ clientId, range, nonce, currency }) {
                 {isOpen && <tr className="u-detail-row"><td colSpan={12}>
                   <div className="u-detail">
                     <div className="u-funnel">
-                      {[['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]].map(([lbl, n], i, arr) => {
+                      {(stageCols.length ? [['Leads', u.leads], ...stageCols.map((s) => [s, (u.stages && u.stages[s]) || 0]), ['Won', u.won]] : [['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]]).map(([lbl, n], i, arr) => {
                         const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null
-                        return <div className="u-fn-row" key={lbl}><span className="u-fn-lab">{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span></div>
+                        return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span><span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span><span className="u-fn-rate">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span></div>
                       })}
                     </div>
                     {u.byPipeline && u.byPipeline.length > 1 && <div className="u-pipes">

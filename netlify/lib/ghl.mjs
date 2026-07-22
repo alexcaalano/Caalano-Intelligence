@@ -1234,7 +1234,10 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))
   const nameOf = (id) => (id === 'unassigned' ? 'Unassigned' : (userName[id] || 'User ' + String(id).slice(-4)))
   const opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
-  const cohort = opts.pipeline ? opps.filter((o) => o.pipelineId === opts.pipeline) : opps
+  let cohort = opts.pipeline ? opps.filter((o) => o.pipelineId === opts.pipeline) : opps
+  // Optional channel filter (first-touch UTM): all | paid | nonpaid | meta | google.
+  const chan = opts.channel && opts.channel !== 'all' ? opts.channel : null
+  if (chan) cohort = cohort.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
   const U = new Map()
   const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, stages: new Map(), byPipe: new Map() }; U.set(uid, u) } return u }
   for (const o of cohort) {

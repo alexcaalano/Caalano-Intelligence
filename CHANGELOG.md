@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.42.0 — 2026-07-21 · `PENDING`
+- **Users tab: per-rep key-event funnel + channel filter.**
+  - Expanding a rep now shows their funnel across **all of the account's
+    configured key events** (Settings → Key events) — Leads → each key stage →
+    Won — instead of the fixed Leads/Booked/Shown/Won, with step conversion %.
+  - New **All / Paid / Non-Paid / Meta / Google** filter scopes every rep's
+    leads by their **first-touch UTM** channel.
+  - **Ad spend is scoped to the channel** you pick (Meta spend for Meta, Google
+    for Google, both for Paid, none for Non-Paid), and Cost/Won uses that. Note:
+    ad spend still can't be attributed to an *individual* rep (spend isn't caused
+    by a rep), so Cost/Won stays a blended channel-spend ÷ rep-wins figure —
+    now correctly scoped to the selected channel.
+- Fixes the Users tab crash ("Invariant failed") from a chart axis mismatch.
+
 ## v3.41.0 — 2026-07-21 · `PENDING`
 - **Meta results now auto-detect each campaign's optimisation event.** The Meta
   tab reads every ad set's **optimisation goal + promoted object** (from Windsor)

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.40.0'
+const APP_VERSION = '3.40.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4039,9 +4039,7 @@ function UsersView({ clientId, range, nonce, currency }) {
             <XAxis type="number" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
             <YAxis type="category" dataKey="name" width={130} fontSize={11} stroke="var(--muted)" interval={0} />
             <Tooltip formatter={(v, n) => [n === 'Revenue' ? money(v) : fmtNumber(v), n]} />
-            <Legend />
             <Bar dataKey="Won" fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={16} />
-            <Bar dataKey="Revenue" fill="#4f7cff" radius={[0, 3, 3, 0]} maxBarSize={16} yAxisId="rev" hide />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

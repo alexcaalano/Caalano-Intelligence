@@ -1163,6 +1163,44 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .cre-grid { grid-template-columns: 1fr; }
 }
 
+/* ===== Mobile hardening pass — newer components + toolbars + edge cases ===== */
+@media (max-width: 900px) {
+  /* Safety net: wide content has its own scroll container (.table-wrap, the map,
+     charts), so nothing should scroll the whole page sideways on a phone. */
+  body { overflow-x: hidden; }
+  /* Segmented toggles (All/Paid/Meta/… etc.) scroll instead of overflowing the pill */
+  .chan-toggle { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .chan-toggle::-webkit-scrollbar { display: none; }
+  .chan-toggle button { flex: 0 0 auto; }
+  .appt-head > div:first-child, .u-head-row > div:first-child { flex: 1 1 100%; }
+  .appt-head, .u-head-row { gap: 10px; }
+  /* Wide card grids that used a 340–360px min would overflow a phone → single col */
+  .set-grid, .forms-charts { grid-template-columns: 1fr; }
+  /* Wide fixed-min tables keep their own horizontal scroll inside .table-wrap */
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+  .card { padding: 15px; }
+}
+@media (max-width: 560px) {
+  .set-stats, .timing-scards, .u-val-cards { grid-template-columns: repeat(2, 1fr); }
+  .u-invite { gap: 7px; }
+  .u-invite input, .u-invite select { min-width: 0; flex: 1 1 100%; width: 100%; }
+  .u-modal-foot { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .u-modal-foot-l, .u-modal-foot-r { justify-content: space-between; }
+  .u-modal-foot-r .btn-primary, .u-modal-foot-r .btn-ghost { flex: 1 1 auto; text-align: center; }
+  .u-open-row { gap: 8px; }
+  .lead-map-bar { gap: 8px; }
+  .card { padding: 13px; }
+  .head h2 { font-size: 17px; }
+}
+@media (max-width: 420px) {
+  /* Per-rep funnel: tighten the label/step columns so the bar keeps room */
+  .u-fn-row, .u-fn-head { grid-template-columns: 88px 1fr 34px 34px; gap: 6px; }
+  .u-fn-lab { font-size: 11px; }
+  .kpis-6, .scorecard, .set-stats, .timing-scards, .u-val-cards { grid-template-columns: 1fr 1fr; }
+  .kpi .value { font-size: 22px; }
+  .tm-sc b { font-size: 19px; }
+}
+
 /* Client chatbot dock (Caalano360) */
 .cc-dock { position: fixed; right: 20px; bottom: 20px; z-index: 60; }
 .cc-launch { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #6d5efc, #9b8cff); color: #fff; border: none; border-radius: 999px; padding: 12px 18px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 8px 26px rgba(109,94,252,.4); }

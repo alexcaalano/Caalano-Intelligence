@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.50.0 — 2026-07-22 · `PENDING`
+- **Mobile responsiveness pass across the whole app.** Audited every screen at
+  phone widths and hardened the gaps:
+  - Segmented filter toggles (All/Paid/Meta/… etc.) now **scroll** instead of
+    overflowing their pill on narrow screens.
+  - Wide card grids that used a 340–360px minimum (Settings client cards, form
+    charts) drop to a **single column** on phones instead of overflowing.
+  - Newer components tuned for small screens: the **Users** value cards,
+    per-rep funnel (label/step columns tighten), invite fields go full-width,
+    and modal footers stack; scorecard / KPI / stat grids step down to 2 → 1
+    columns as the screen narrows.
+  - Added a mobile-only horizontal-overflow safety net (wide tables, the map and
+    charts keep their own scroll containers). Verified the Agency Overview and
+    login render cleanly with no sideways scroll at phone width.
+
 ## v3.49.0 — 2026-07-21 · `PENDING`
 - **Meta results: fix lead-form counts, name the exact optimisation, and show
   all actions on hover.**

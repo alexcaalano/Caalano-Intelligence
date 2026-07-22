@@ -111,11 +111,82 @@ Be specific and numeric. Keep it under 280 words. Do not use em-dashes or en-das
   return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
 }
 
+// Creative Cockpit — suggest categorisation tags for ONE creative from its copy
+// + format + performance. Returns strict JSON (awareness / persona / angle) that
+// the UI drops into the editor for the user to confirm. Reuses the client's
+// existing persona / angle lists so tagging stays consistent.
+async function creativeTagSuggest(apiKey, body) {
+  const { creative: c, personas = [], angles = [] } = body
+  if (!c) throw new Error('no creative supplied')
+  const prompt = `You are a paid-social creative strategist. Categorise ONE ad from its details. Reply with ONLY a JSON object, no prose, shaped exactly:
+{"aware":"<one of: Unaware, Problem-aware, Solution-aware, Product-aware, Most-aware>","persona":"<short persona label>","angle":"<short angle label>","reason":"<one sentence>"}
+
+Prefer reusing an existing label when it fits.
+Existing personas: ${personas.length ? personas.join(', ') : 'none yet'}
+Existing angles: ${angles.length ? angles.join(', ') : 'none yet'}
+
+Ad name: ${c.name || 'n/a'}
+Format: ${c.format || 'n/a'}
+Call to action: ${c.cta || 'n/a'}
+Primary text / copy: ${c.copy ? c.copy.slice(0, 1200) : '(none provided)'}
+${c.transcript ? `Video transcript: ${String(c.transcript).slice(0, 2000)}` : ''}`
+  const out = await callClaude(apiKey, prompt)
+  let parsed = null
+  try { const m = out.insights.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : null } catch { parsed = null }
+  if (!parsed) throw new Error('could not parse AI tag suggestion')
+  const AW = ['Unaware', 'Problem-aware', 'Solution-aware', 'Product-aware', 'Most-aware']
+  return { suggestion: { aware: AW.includes(parsed.aware) ? parsed.aware : '', persona: String(parsed.persona || '').slice(0, 60), angle: String(parsed.angle || '').slice(0, 60), reason: String(parsed.reason || '').slice(0, 240) }, model: out.model, generatedAt: new Date().toISOString() }
+}
+
+// Creative Cockpit — a strategy briefing over the whole tagged + performance set:
+// what's working, what to double down on, and new concepts to test. Every number
+// is supplied; Claude only interprets it.
+async function creativeStrategy(apiKey, body) {
+  const { clientName, period, rollups = {}, top = [], bottom = [] } = body
+  const dimLine = (label, arr) => `${label}: ${(arr || []).slice(0, 8).map((e) => `${e.key} (${e.n} ads, $${n0(e.spend)} spend, ${n0(e.leads)} leads${e.ql != null ? `, ${n0(e.ql)} qual` : ''}${e.cpq != null ? `, $${n0(e.cpq)}/qual` : ''})`).join('; ') || 'untagged'}`
+  const lines = []
+  for (const [k, label] of [['angle', 'By angle'], ['persona', 'By persona'], ['aware', 'By awareness'], ['format', 'By format'], ['dest', 'By destination']]) if (rollups[k]) lines.push(dimLine(label, rollups[k]))
+  const cLine = (c) => `${c.name} (${c.format}${c.angle ? `, ${c.angle}` : ''}${c.persona ? `, ${c.persona}` : ''}): $${n0(c.spend)} spend, ${n0(c.leads)} leads${c.ql != null ? `, ${n0(c.ql)} qual` : ''}${c.cpq != null ? `, $${n0(c.cpq)}/qual` : ''}`
+  const prompt = `You are the creative strategy lead at a paid-social agency, briefing the team on one client's Meta creative. Every figure below is already calculated; use only these numbers, do not invent.
+
+Client: ${clientName || 'Client'}
+Period: ${period || 'selected period'}
+
+Performance rolled up by category (ranked by cost per qualified lead where available):
+${lines.join('\n') || 'No tagged creatives yet.'}
+
+Best performers:
+${top.map(cLine).join('\n') || 'n/a'}
+
+Weakest performers:
+${bottom.map(cLine).join('\n') || 'n/a'}
+
+Write a concise creative strategy briefing in markdown:
+1. **What's working** - 2-3 bullets on the angles / personas / formats / awareness stages driving the best qualified-lead efficiency, citing the numbers.
+2. **Cut or fix** - 1-2 bullets on what's underperforming and whether to kill or iterate.
+3. **Make more like this** - 2-3 concrete new creative concepts to test next (angle + persona + format + hook idea), grounded in what's already winning.
+4. **Coverage gaps** - 1 bullet on any awareness stage or persona that's under-served.
+
+Be specific and numeric. Under 320 words. Do not use em-dashes or en-dashes; use commas, colons or hyphens.`
+  const out = await callClaude(apiKey, prompt)
+  return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
+}
+
 export default async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return json({ error: 'AI insights not configured - add ANTHROPIC_API_KEY in Netlify, then redeploy.' }, 400)
   let body; try { body = await req.json() } catch { return json({ error: 'bad request body' }, 400) }
+
+  // Creative Cockpit paths.
+  if (body && body.mode === 'creative-tag') {
+    try { return json(await creativeTagSuggest(apiKey, body)) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+  if (body && body.mode === 'creative-strategy') {
+    try { return json(await creativeStrategy(apiKey, body)) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
 
   // Caalano 360 executive summary path.
   if (body && (body.mode === 'exec' || body.health)) {

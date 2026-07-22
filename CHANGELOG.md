@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.56.0 — 2026-07-22 · `PENDING`
+- **Creative Cockpit — AI layer.** Two AI helpers (existing Anthropic
+  integration, server-side key):
+  - **Suggest tags** per creative: Claude reads the ad's copy / CTA / format and
+    proposes awareness stage, persona and angle (reusing the client's existing
+    labels), dropped into the editor for you to confirm or override.
+  - **AI creative strategy**: a briefing over the whole tagged + performance set
+    — what's working by angle / persona / format, what to cut, and concrete new
+    concepts to test. All figures are computed here; Claude only interprets them.
+
 ## v3.55.0 — 2026-07-22 · `PENDING`
 - **Creative Cockpit (new left-nav hub).** Every Meta creative for a client in
   one grid, joined to the real lead funnel behind each ad (leads → qualified →

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.55.0'
+const APP_VERSION = '3.56.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6015,6 +6015,10 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const [dim, setDim] = useState('angle') // "what's working" rollup dimension
   const [open, setOpen] = useState(() => new Set())
   const set = (patch) => setF((p) => ({ ...p, ...patch }))
+  const [strat, setStrat] = useState(() => loadInsights(client.id + ':cockpit'))
+  const [stratBusy, setStratBusy] = useState(false)
+  const [stratErr, setStratErr] = useState(null)
+  useEffect(() => { setStrat(loadInsights(client.id + ':cockpit')); setStratErr(null) }, [client.id])
 
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading creatives…" /></div>
   const d = st.data
@@ -6042,6 +6046,25 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const rollup = [...rmap.values()].map((e) => ({ ...e, cpq: e.ql ? Math.round(e.spend / e.ql) : null })).sort((a, b) => (a.cpq == null ? 1 : b.cpq == null ? -1 : a.cpq - b.cpq))
   const hasCrm = d.hasCrm
 
+  // AI creative strategy over the tagged + performance set.
+  const rollupBy = (fn) => { const m = new Map(); for (const c of rows) { const k = fn(c); if (!k) continue; const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, ql: 0, wn: 0 }; e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.ql += c.ql; e.wn += c.wn; m.set(k, e) } return [...m.values()].map((e) => ({ ...e, cpq: e.ql ? Math.round(e.spend / e.ql) : null })).sort((a, b) => (a.cpq == null ? 1 : b.cpq == null ? -1 : a.cpq - b.cpq)) }
+  const genStrategy = async () => {
+    if (stratBusy) return
+    setStratBusy(true); setStratErr(null)
+    try {
+      const slim = (c) => ({ name: c.name, format: c.format, angle: c.angle, persona: c.persona, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, ql: c.ql, cpq: c.cpq })
+      const ranked = [...rows].filter((c) => c.spend > 0).sort((a, b) => (a.cpq == null ? 1 : b.cpq == null ? -1 : a.cpq - b.cpq))
+      const payload = { mode: 'creative-strategy', clientName: client.name, period: rangeLabel(range),
+        rollups: { angle: rollupBy((c) => c.angle), persona: rollupBy((c) => c.persona), aware: rollupBy((c) => c.aware), format: rollupBy((c) => c.format), dest: rollupBy((c) => c.dest) },
+        top: ranked.slice(0, 6).map(slim), bottom: ranked.slice(-4).map(slim) }
+      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      const rec = { insights: j.insights, period: j.period || rangeLabel(range), generatedAt: j.generatedAt || new Date().toISOString(), model: j.model }
+      saveInsights(client.id + ':cockpit', rec); setStrat(rec)
+    } catch (e) { setStratErr(String(e.message || e)) } finally { setStratBusy(false) }
+  }
+
   return (
     <>
       <div className="lvl-title">Creative Cockpit <span className="sub">· {client.name} · {rangeLabel(range)} · {fmtNumber(all.length)} creatives{hasCrm ? '' : ' · no CRM mapped (paid metrics only)'}</span></div>
@@ -6062,6 +6085,18 @@ function CreativeCockpit({ client, currency, range, nonce }) {
           <thead><tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Qualified</th>}{hasCrm && <th>Cost / qual</th>}{hasCrm && <th>Won</th>}</tr></thead>
           <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.ql)}</td>}{hasCrm && <td>{e.cpq != null ? money(e.cpq) : '—'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
         </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
+      </div>
+
+      {/* AI creative strategy */}
+      <div className="card ai-card cc-strategy">
+        <div className="ai-head">
+          <div className="ai-title">✨ AI creative strategy {strat ? <span className="sub">· {strat.period} · generated {new Date(strat.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads the tagged performance and tells you what to make next</span>}</div>
+          <button className="ai-btn" onClick={genStrategy} disabled={stratBusy}>{stratBusy ? 'Generating…' : strat ? '↻ Regenerate' : '✨ Generate strategy'}</button>
+        </div>
+        {stratErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{stratErr}</p>}
+        {stratBusy ? <Spinner label="Claude is reviewing the creative…" />
+          : strat ? <MdText text={strat.insights} />
+            : <p className="cap" style={{ margin: 0 }}>Tag your creatives, then generate a strategy read: what's working by angle / persona / format, what to cut, and concrete new concepts to test. Runs only when you click.</p>}
       </div>
 
       {/* Filters */}
@@ -6095,6 +6130,21 @@ function CreativeCockpit({ client, currency, range, nonce }) {
 function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destOpts, open, onToggle }) {
   const save = (patch) => saveCreativeMeta(clientId, c.id, patch)
   const chip = (v) => v ? <span className="cc-chip">{v}</span> : <span className="cc-none">—</span>
+  const [ai, setAi] = useState({ busy: false, err: null, reason: null })
+  const suggest = async () => {
+    if (ai.busy) return
+    setAi({ busy: true, err: null, reason: null })
+    try {
+      const payload = { mode: 'creative-tag', creative: { name: c.name, format: c.format, cta: c.cta, copy: c.copy }, personas: personaOpts, angles: angleOpts }
+      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      const s = j.suggestion || {}
+      const patch = {}; if (s.aware) patch.aware = s.aware; if (s.persona) patch.persona = s.persona; if (s.angle) patch.angle = s.angle
+      if (Object.keys(patch).length) save(patch)
+      setAi({ busy: false, err: null, reason: s.reason || null })
+    } catch (e) { setAi({ busy: false, err: String(e.message || e), reason: null }) }
+  }
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={onToggle}>
@@ -6113,8 +6163,11 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
           <div className="cc-edit-perf">
             {hasCrm && <><span><b>{fmtNumber(c.bk)}</b> booked</span><span><b>{fmtNumber(c.wn)}</b> won</span><span><b>{money(c.rev)}</b> revenue</span></>}
             <span><b>{fmtNumber(c.impressions)}</b> impr</span><span><b>{fmtNumber(c.clicks)}</b> clicks</span>
+            <button className="ai-btn sm" onClick={suggest} disabled={ai.busy} title="Let Claude suggest awareness / persona / angle from the copy">{ai.busy ? 'Thinking…' : '✨ Suggest tags'}</button>
             {c.igUrl && <a className="cc-view" href={c.igUrl} target="_blank" rel="noreferrer">↗ View ad on Instagram</a>}
           </div>
+          {ai.err && <div className="cap" style={{ color: 'var(--neg)' }}>{ai.err}</div>}
+          {ai.reason && <div className="cap cc-ai-reason">✨ {ai.reason} <span className="cc-ai-note">· suggested — edit anything below</span></div>}
           <div className="cc-fields">
             <label>Awareness<select value={c.aware} onChange={(e) => save({ aware: e.target.value })}><option value="">—</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select></label>
             <label>Persona<TagCombo value={c.persona} onChange={(v) => save({ persona: v })} options={personaOpts} listId={`cc-persona-${clientId}`} placeholder="e.g. First-home buyer" /></label>

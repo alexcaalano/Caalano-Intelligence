@@ -1515,3 +1515,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .cc-fields2 textarea { resize: vertical; }
 @media (max-width: 900px) { .cc-fields { grid-template-columns: 1fr 1fr; } .cc-fields2 { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .cc-fields { grid-template-columns: 1fr; } }
+.ai-btn.sm { padding: 5px 10px; font-size: 11.5px; }
+.cc-ai-reason { color: var(--muted); }
+.cc-ai-note { color: var(--faint); }
+.cc-strategy { margin: 4px 0 12px; }

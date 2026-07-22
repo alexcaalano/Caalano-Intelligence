@@ -1355,7 +1355,12 @@ export async function buildCreativePerf(locationId, from, to, opts = {}) {
     else if (st === 'lost' || st === 'abandoned') c.lost++
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
-    if (f) { if (f.bookedInPeriod) c.booked++; if (f.shownByStatus) c.shown++ }
+    // Booked call = calendar booking in period OR the opp reached this pipeline's
+    // booked stage (bookPos, derived from stage names) OR it was won. Matches the
+    // blended "booked" definition so the cockpit reconciles with the other tabs.
+    const reachedBook = pi && pi.bookPos != null && pos >= pi.bookPos
+    if ((f && f.bookedInPeriod) || reachedBook || st === 'won') c.booked++
+    if ((f && f.shownByStatus) || (pi && pi.showPos != null && pos >= pi.showPos) || st === 'won') c.shown++
     const entryPos = pi && pi.stages.length ? pi.stages[0].pos : 0
     if (isQualified({ status: st, pos, entryPos, hasAppt: !!(f && f.bookedInPeriod), value: val, qualStagePos })) c.qualified++
   }

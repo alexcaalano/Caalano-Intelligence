@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.57.1'
+const APP_VERSION = '3.58.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6043,23 +6043,23 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const sorted = [...filtered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
-  const tot = rows.reduce((a, c) => ({ spend: a.spend + c.spend, leads: a.leads + (c.crm ? c.crm.leads : c.leads), ql: a.ql + c.ql, tagged: a.tagged + (c.aware || c.persona || c.angle ? 1 : 0) }), { spend: 0, leads: 0, ql: 0, tagged: 0 })
+  const tot = rows.reduce((a, c) => ({ spend: a.spend + c.spend, leads: a.leads + (c.crm ? c.crm.leads : c.leads), bk: a.bk + c.bk, tagged: a.tagged + (c.aware || c.persona || c.angle ? 1 : 0) }), { spend: 0, leads: 0, bk: 0, tagged: 0 })
 
-  // "What's working" — rank the chosen dimension's values by cost per qualified.
+  // "What's working" — rank the chosen dimension's values by cost per booked call
+  // (the concrete, per-pipeline metric), not the fuzzier qualified-lead heuristic.
   const dimFn = { aware: (c) => c.aware, persona: (c) => c.persona, angle: (c) => c.angle, format: (c) => c.format, dest: (c) => c.dest }[dim]
-  const rmap = new Map()
-  for (const c of rows) { const key = dimFn(c); if (!key) continue; const e = rmap.get(key) || { key, n: 0, spend: 0, leads: 0, ql: 0, wn: 0 }; e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.ql += c.ql; e.wn += c.wn; rmap.set(key, e) }
-  const rollup = [...rmap.values()].map((e) => ({ ...e, cpq: e.ql ? Math.round(e.spend / e.ql) : null })).sort((a, b) => (a.cpq == null ? 1 : b.cpq == null ? -1 : a.cpq - b.cpq))
+  const buildRollup = (fn) => { const m = new Map(); for (const c of rows) { const k = fn(c); if (!k) continue; const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, bk: 0, wn: 0 }; e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.bk += c.bk; e.wn += c.wn; m.set(k, e) } return [...m.values()].map((e) => ({ ...e, cpb: e.bk ? Math.round(e.spend / e.bk) : null })).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb)) }
+  const rollup = buildRollup(dimFn)
   const hasCrm = d.hasCrm
 
   // AI creative strategy over the tagged + performance set.
-  const rollupBy = (fn) => { const m = new Map(); for (const c of rows) { const k = fn(c); if (!k) continue; const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, ql: 0, wn: 0 }; e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.ql += c.ql; e.wn += c.wn; m.set(k, e) } return [...m.values()].map((e) => ({ ...e, cpq: e.ql ? Math.round(e.spend / e.ql) : null })).sort((a, b) => (a.cpq == null ? 1 : b.cpq == null ? -1 : a.cpq - b.cpq)) }
+  const rollupBy = buildRollup
   const genStrategy = async () => {
     if (stratBusy) return
     setStratBusy(true); setStratErr(null)
     try {
-      const slim = (c) => ({ name: c.name, format: c.format, angle: c.angle, persona: c.persona, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, ql: c.ql, cpq: c.cpq })
-      const ranked = [...rows].filter((c) => c.spend > 0).sort((a, b) => (a.cpq == null ? 1 : b.cpq == null ? -1 : a.cpq - b.cpq))
+      const slim = (c) => ({ name: c.name, format: c.format, angle: c.angle, persona: c.persona, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, booked: c.bk, cpb: c.cpb })
+      const ranked = [...rows].filter((c) => c.spend > 0).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb))
       const payload = { mode: 'creative-strategy', clientName: client.name, period: rangeLabel(range),
         rollups: { angle: rollupBy((c) => c.angle), persona: rollupBy((c) => c.persona), aware: rollupBy((c) => c.aware), format: rollupBy((c) => c.format), dest: rollupBy((c) => c.dest) },
         top: ranked.slice(0, 6).map(slim), bottom: ranked.slice(-4).map(slim) }
@@ -6078,18 +6078,18 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <Sc label="Creatives" value={fmtNumber(all.length)} />
         <Sc label="Ad spend" value={money(tot.spend)} />
         <Sc label="Leads" value={fmtNumber(tot.leads)} />
-        {hasCrm && <Sc label="Qualified" value={fmtNumber(tot.ql)} />}
+        {hasCrm && <Sc label="Booked calls" value={fmtNumber(tot.bk)} />}
         <Sc label="Tagged" value={`${fmtNumber(tot.tagged)} / ${fmtNumber(all.length)}`} />
       </div>
 
-      {/* What's working — dimension rollup ranked by cost per qualified */}
+      {/* What's working — dimension rollup ranked by cost per booked call */}
       <div className="card cc-work">
-        <div className="cc-work-h">What’s working <span className="sub">· by</span>
+        <div className="cc-work-h">What’s working <span className="sub">· ranked by cost / booked call · by</span>
           <div className="chan-toggle cc-dim">{[['aware', 'Awareness'], ['persona', 'Persona'], ['angle', 'Angle'], ['format', 'Format'], ['dest', 'Destination']].map(([k, l]) => <button key={k} className={dim === k ? 'on' : ''} onClick={() => setDim(k)}>{l}</button>)}</div>
         </div>
         {rollup.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl">
-          <thead><tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Qualified</th>}{hasCrm && <th>Cost / qual</th>}{hasCrm && <th>Won</th>}</tr></thead>
-          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.ql)}</td>}{hasCrm && <td>{e.cpq != null ? money(e.cpq) : '—'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
+          <thead><tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}</tr></thead>
+          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '—'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
         </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
       </div>
 
@@ -6121,7 +6121,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <thead><tr>
           <Th k="name" l>Creative</Th><Th k="format" l>Format</Th>
           <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th>
-          <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="ql">Qual</Th>}{hasCrm && <Th k="cpq">Cost/qual</Th>}
+          <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="bk">Booked</Th>}{hasCrm && <Th k="cpb">Cost/book</Th>}
         </tr></thead>
         <tbody>{sorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
       </table></div>
@@ -6161,8 +6161,8 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
         <td className="lft">{chip(c.angle)}</td>
         <td>{money(c.spend)}</td>
         <td>{fmtNumber(c.crm ? c.crm.leads : c.leads)}</td>
-        {hasCrm && <td>{fmtNumber(c.ql)}</td>}
-        {hasCrm && <td>{c.cpq != null ? money(c.cpq) : '—'}</td>}
+        {hasCrm && <td>{fmtNumber(c.bk)}</td>}
+        {hasCrm && <td>{c.cpb != null ? money(c.cpb) : '—'}</td>}
       </tr>
       {open && <tr className="cc-edit-row"><td colSpan={hasCrm ? 9 : 7}>
         <div className="cc-edit" onClick={(e) => e.stopPropagation()}>

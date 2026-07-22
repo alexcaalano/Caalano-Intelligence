@@ -143,10 +143,10 @@ ${c.transcript ? `Video transcript: ${String(c.transcript).slice(0, 2000)}` : ''
 // is supplied; Claude only interprets it.
 async function creativeStrategy(apiKey, body) {
   const { clientName, period, rollups = {}, top = [], bottom = [] } = body
-  const dimLine = (label, arr) => `${label}: ${(arr || []).slice(0, 8).map((e) => `${e.key} (${e.n} ads, $${n0(e.spend)} spend, ${n0(e.leads)} leads${e.ql != null ? `, ${n0(e.ql)} qual` : ''}${e.cpq != null ? `, $${n0(e.cpq)}/qual` : ''})`).join('; ') || 'untagged'}`
+  const dimLine = (label, arr) => `${label}: ${(arr || []).slice(0, 8).map((e) => `${e.key} (${e.n} ads, $${n0(e.spend)} spend, ${n0(e.leads)} leads${e.bk != null ? `, ${n0(e.bk)} booked` : ''}${e.cpb != null ? `, $${n0(e.cpb)}/booked call` : ''})`).join('; ') || 'untagged'}`
   const lines = []
   for (const [k, label] of [['angle', 'By angle'], ['persona', 'By persona'], ['aware', 'By awareness'], ['format', 'By format'], ['dest', 'By destination']]) if (rollups[k]) lines.push(dimLine(label, rollups[k]))
-  const cLine = (c) => `${c.name} (${c.format}${c.angle ? `, ${c.angle}` : ''}${c.persona ? `, ${c.persona}` : ''}): $${n0(c.spend)} spend, ${n0(c.leads)} leads${c.ql != null ? `, ${n0(c.ql)} qual` : ''}${c.cpq != null ? `, $${n0(c.cpq)}/qual` : ''}`
+  const cLine = (c) => `${c.name} (${c.format}${c.angle ? `, ${c.angle}` : ''}${c.persona ? `, ${c.persona}` : ''}): $${n0(c.spend)} spend, ${n0(c.leads)} leads${c.booked != null ? `, ${n0(c.booked)} booked` : ''}${c.cpb != null ? `, $${n0(c.cpb)}/booked call` : ''}`
   const prompt = `You are the creative strategy lead at a paid-social agency, briefing the team on one client's Meta creative. Every figure below is already calculated; use only these numbers, do not invent.
 
 Client: ${clientName || 'Client'}

@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.58.0 — 2026-07-22 · `PENDING`
+- **Creative Cockpit headline metric → cost per booked call** (replaces cost per
+  qualified lead). "Booked" is now the concrete, per-pipeline definition used
+  across the platform: a lead counts as booked if it has a calendar booking in
+  period, OR its opportunity reached that pipeline's booked-call stage, OR it was
+  won — read from the pipeline each lead actually landed in (no reliance on the
+  campaign→pipeline link). The grid, scorecards, "what's working" rollup and AI
+  strategy all now rank on cost per booked call. (Qualified-lead was ambiguous
+  across clients with no consistent stage; booked is unambiguous.)
+
 ## v3.57.1 — 2026-07-22 · `PENDING`
 - **Creative Cockpit polish + fixes:**
   - Client selector is now a **dropdown** at the top (matching Weekly Traffic

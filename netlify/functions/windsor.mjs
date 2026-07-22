@@ -105,28 +105,38 @@ const META_RESULT_FIELDS = [
   'conversions_submit_application_total',
 ]
 // Meta standard event (from the ad set's promoted_object.custom_event_type) →
-// [result field, friendly label].
+// [result field, event noun]. The noun is combined with the ad set's destination
+// to name the result exactly like Ads Manager ("Website leads", "Website
+// schedule", …).
 const META_EVENT_FIELD = {
-  SCHEDULE: ['conversions_schedule_total', 'Schedule'],
-  LEAD: ['actions_offsite_conversion_fb_pixel_lead', 'Lead'],
-  PURCHASE: ['actions_purchase', 'Purchase'],
-  CONTACT: ['conversions_contact_total', 'Contact'],
-  COMPLETE_REGISTRATION: ['actions_complete_registration', 'Registration'],
-  SUBMIT_APPLICATION: ['conversions_submit_application_total', 'Application'],
+  LEAD: ['actions_offsite_conversion_fb_pixel_lead', 'leads'],
+  SCHEDULE: ['conversions_schedule_total', 'schedule'],
+  PURCHASE: ['actions_purchase', 'purchases'],
+  CONTACT: ['conversions_contact_total', 'contacts'],
+  COMPLETE_REGISTRATION: ['actions_complete_registration', 'registrations'],
+  SUBMIT_APPLICATION: ['conversions_submit_application_total', 'applications'],
 }
+const DEST_PREFIX = { WEBSITE: 'Website', MESSENGER: 'Messenger', ON_AD: 'On-Facebook', ON_POST: 'On-Facebook', ON_PAGE: 'On-Facebook', ON_VIDEO: 'On-Facebook', PHONE_CALL: 'Call', APP: 'App' }
 const prettyField = (id) => META_CONV_LABEL[id] || String(id || '').replace(/^(conversions_|actions_)/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-// Auto-detect a row's result field + label from its ad set optimisation goal +
-// promoted object. Returns null when it can't be resolved (e.g. a custom
-// conversion), so the caller can fall back to the client's configured primary.
+const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+// Auto-detect a row's result field + Ads-Manager-style label from its ad set
+// optimisation goal + destination + promoted object. Returns null when it can't
+// be resolved (e.g. a custom conversion), so the caller falls back to the
+// client's configured primary.
 function resolveMetaResult(row) {
   const goal = String(row.adsset_optimization_goal || '').toUpperCase()
+  const dest = String(row.adset_destination_type || '').toUpperCase()
   let promoted = {}
   try { promoted = row.adset_promoted_object ? (typeof row.adset_promoted_object === 'string' ? JSON.parse(row.adset_promoted_object) : row.adset_promoted_object) : {} } catch { promoted = {} }
   const evt = String(promoted.custom_event_type || '').toUpperCase()
-  if (goal === 'LEAD_GENERATION' || goal === 'QUALITY_LEAD') return { field: 'actions_leadgen_grouped', label: 'Lead' }
-  if (goal.includes('CONVERSATION') || goal === 'MESSAGING_PURCHASE_CONVERSION') return { field: 'actions_onsite_conversion_messaging_conversation_started_7d', label: 'Messaging' }
+  // Lead-gen = Instant Forms (or on-Facebook leads) — count the native lead form
+  // submissions, not the website pixel lead.
+  if (goal === 'LEAD_GENERATION' || goal === 'QUALITY_LEAD') return { field: 'leads_native', label: dest === 'ON_AD' || dest === 'MESSENGER' ? 'On-Facebook leads' : 'Instant form leads' }
+  if (goal.includes('CONVERSATION') || goal === 'MESSAGING_PURCHASE_CONVERSION') return { field: 'actions_onsite_conversion_messaging_conversation_started_7d', label: 'Messaging conversations' }
   if (goal === 'OFFSITE_CONVERSIONS' || goal === 'ONSITE_CONVERSIONS' || goal === 'CONVERSIONS') {
-    const m = META_EVENT_FIELD[evt]; return m ? { field: m[0], label: m[1] } : null
+    const m = META_EVENT_FIELD[evt]; if (!m) return null
+    const prefix = DEST_PREFIX[dest] || (goal === 'ONSITE_CONVERSIONS' ? 'On-Facebook' : 'Website')
+    return { field: m[0], label: `${prefix} ${m[1]}` }
   }
   if (goal === 'LINK_CLICKS') return { field: 'inline_link_clicks', label: 'Link clicks' }
   return null
@@ -134,12 +144,26 @@ function resolveMetaResult(row) {
 // Resolve a row's result using auto-detect first, then the client's configured
 // primary conversion, then leads as the last resort. Returns {field,label,auto}.
 function rowResult(entity, fallback) {
-  const auto = resolveMetaResult({ adsset_optimization_goal: entity.optGoal, adset_promoted_object: entity.promoted })
+  const auto = resolveMetaResult({ adsset_optimization_goal: entity.optGoal, adset_destination_type: entity.destType, adset_promoted_object: entity.promoted })
   if (auto) return { field: auto.field, label: auto.label, auto: true }
-  if (fallback && fallback.field) return { field: fallback.field, label: fallback.label, auto: false }
+  if (fallback && fallback.field) return { field: fallback.field, label: cap1(prettyField(fallback.field)), auto: false }
   return { field: null, label: 'Leads', auto: false }
 }
-const resultCount = (entity, field) => field === 'inline_link_clicks' ? entity.linkClicks : field ? (entity._rf ? entity._rf[field] || 0 : 0) : entity.leads
+// 'leads_native' = Instant Form + on-Facebook leads (matches Ads Manager's
+// lead-gen "Results"); null field = fbLeads; else the raw conversion field.
+const resultCount = (entity, field) => field === 'inline_link_clicks' ? entity.linkClicks
+  : field === 'leads_native' ? ((entity._rf ? (entity._rf.actions_leadgen_grouped || 0) + (entity._rf.actions_onsite_conversion_lead_grouped || 0) : 0) || entity.leads)
+  : field ? (entity._rf ? entity._rf[field] || 0 : 0) : entity.leads
+// All conversion actions an entity accrued (non-zero), for the results hover —
+// so a Lead campaign can still show it also drove messaging, website leads, etc.
+const META_BREAKDOWN = [
+  ['actions_leadgen_grouped', 'Instant form leads'], ['actions_onsite_conversion_lead_grouped', 'On-Facebook leads'],
+  ['actions_offsite_conversion_fb_pixel_lead', 'Website leads'], ['conversions_schedule_total', 'Schedule'],
+  ['actions_purchase', 'Purchase'], ['conversions_contact_total', 'Contact'],
+  ['actions_onsite_conversion_messaging_conversation_started_7d', 'Messaging conversations'],
+  ['actions_complete_registration', 'Registration'], ['conversions_submit_application_total', 'Application'],
+]
+const breakdownOf = (e) => META_BREAKDOWN.map(([f, lbl]) => ({ label: lbl, count: Math.round((e._rf && e._rf[f]) || 0) })).filter((x) => x.count > 0).sort((a, b) => b.count - a.count)
 const fbLeads = (r) => { const native = num(r.actions_leadgen_grouped) + num(r.actions_onsite_conversion_lead_grouped); return native || num(r.actions_offsite_conversion_fb_pixel_lead) }
 
 // Everything reports against Australian Eastern time (Sydney). "Today" is the
@@ -181,16 +205,17 @@ function aggMeta(rows, keyField) {
   for (const r of rows) {
     const k = r[keyField]; if (!k) continue
     let e = m.get(k)
-    if (!e) { e = { name: k, campaign: r.campaign || null, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0, _rf: {}, optGoal: null, promoted: null }; m.set(k, e) }
+    if (!e) { e = { name: k, campaign: r.campaign || null, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0, _rf: {}, optGoal: null, destType: null, promoted: null }; m.set(k, e) }
     e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks)
     e.linkClicks += num(r.inline_link_clicks); e.leads += fbLeads(r); e.videoViews += num(r.actions_video_view); e.reach += num(r.reach)
     for (const f of META_RESULT_FIELDS) e._rf[f] = (e._rf[f] || 0) + num(r[f])
     if (!e.optGoal && r.adsset_optimization_goal) e.optGoal = r.adsset_optimization_goal
+    if (!e.destType && r.adset_destination_type) e.destType = r.adset_destination_type
     if (!e.promoted && r.adset_promoted_object) e.promoted = r.adset_promoted_object
   }
   return [...m.values()]
 }
-const clean = (e) => { const { _rf, optGoal, promoted, ...v } = e; return v }
+const clean = (e) => { const { _rf, optGoal, destType, promoted, ...v } = e; return v }
 function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback) {
   // FIX A: campaign / ad-set counts come from Meta's own per-level breakdowns
   // (de-duplicated at each level), not from summing the ad rows, so they match
@@ -206,6 +231,7 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
     a.resultField = rr.field; a.resultType = rr.label; a.resultAuto = rr.auto
     a.results = resultCount(a, rr.field)
     a.costPerResult = a.results ? Math.round((a.spend / a.results) * 100) / 100 : null
+    a.breakdown = breakdownOf(a)
   }
   const adsetByName = new Map(adsets.map((a) => [a.name, a]))
   // Per-campaign result: sum of its ad sets' own results; type is uniform label
@@ -217,11 +243,12 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
     if (e) { c.resultType = e.labels.size === 1 ? [...e.labels][0] : 'Mixed'; c.results = e.results }
     else { const rr = rowResult(c, fallback); c.resultType = rr.label; c.results = resultCount(c, rr.field) }
     c.costPerResult = c.results ? Math.round((c.spend / c.results) * 100) / 100 : null
+    c.breakdown = breakdownOf(c)
     const p = prevCamp.get(c.name)
     c.prev = p ? { spend: p.spend, impressions: p.impressions, clicks: p.clicks, linkClicks: p.linkClicks, leads: p.leads, videoViews: p.videoViews, reach: p.reach } : null
     return clean(c)
   })
-  const readField = (r, field) => field === 'inline_link_clicks' ? num(r.inline_link_clicks) : field ? num(r[field]) : fbLeads(r)
+  const readField = (r, field) => field === 'inline_link_clicks' ? num(r.inline_link_clicks) : field === 'leads_native' ? fbLeads(r) : field ? num(r[field]) : fbLeads(r)
   const ads = adRows.map((r) => {
     const parent = adsetByName.get(r.adset_name)
     const field = parent ? parent.resultField : (fallback && fallback.field) || null
@@ -281,7 +308,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   const campFields = ['account_id', 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
   // Ad-set query carries the optimisation goal + promoted object so results
   // auto-detect per ad set.
-  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),

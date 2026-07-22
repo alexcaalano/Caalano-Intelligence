@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.49.0 — 2026-07-21 · `PENDING`
+- **Meta results: fix lead-form counts, name the exact optimisation, and show
+  all actions on hover.**
+  - **Instant Form lead campaigns now count correctly** (were showing 0). Lead-
+    gen results use the native Instant-Form + on-Facebook lead count, not the
+    website-pixel lead field.
+  - **The result-type label now names the specific Meta optimisation** — e.g.
+    *Instant form leads*, *Website leads*, *Website schedule*, *Messaging
+    conversations* — using the ad set's optimisation goal + destination, matching
+    how Ads Manager describes it (instead of a generic "LEAD").
+  - **Hover the Results cell** to see **every** conversion action the campaign
+    accrued (Instant form leads, Website leads, Messaging conversations, Schedule,
+    …) with counts — while the headline number stays the **primary** optimisation
+    result. A small "+N" marks how many other actions it also drove.
+
 ## v3.48.0 — 2026-07-21 · `PENDING`
 - **Deal notes now render as clean text.** GHL note bodies are HTML; they're now
   converted to readable text (lists → bullets, block tags → line breaks, entities

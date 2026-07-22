@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.40.0 — 2026-07-21 · `PENDING`
+- **Per-client Meta conversion selection (Settings → Meta conversions).** A new
+  tab in each client's Settings that **loads the Meta conversion events that
+  actually fired** for that ad account (last 90 days, incl. custom-pixel events
+  like *booked appointment* / *booking confirmed*), each with its 90-day count
+  and cost-per. Pick one as the **primary result** and tick any **secondary**
+  events. Saved to the shared settings store per client. This is the setup step
+  so accounts that optimise to e.g. *Schedule* (a booking) can report the right
+  result instead of generic “Leads”. (Next: wiring the chosen events into the
+  Meta tab’s headline result, columns and cost-per.)
+
 ## v3.39.0 — 2026-07-21 · `PENDING`
 - **Team & access — edit users in a popup.** The team list is now a clean table
   (Name · Email · Role · Access · Status) with a single **Edit access** button

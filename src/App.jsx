@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.39.0'
+const APP_VERSION = '3.40.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1933,6 +1933,7 @@ const KEV_KEY = 'caalano_keyevents'
 const ENABLED_KEY = 'caalano_enabled'
 const CLIENTS_KEY = 'caalano_clients' // UI-added clients { id: { name, meta, google, ghl } }
 const FORMMETA_KEY = 'caalano_formmeta' // { clientId: { formLabel: { pipeline, notes } } }
+const METACONV_KEY = 'caalano_metaconv' // { clientId: { primary: fieldId, secondary: [fieldId] } }
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1941,7 +1942,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1957,13 +1958,13 @@ async function hydrateSettings() {
     const r = await fetch('/.netlify/functions/settings')
     const j = await r.json().catch(() => null)
     const d = j && j.ok && j.data ? j.data : null
-    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta'].some((s) => d[s] && Object.keys(d[s]).length)
+    const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2025,6 +2026,15 @@ function saveFormMeta(clientId, formLabel, meta) {
 // How many of a client's forms have been reviewed (saved, even if left blank),
 // for the Settings card health icon. Only counts real per-form entries.
 function formsDoneCount(clientId) { const fm = SETTINGS.formmeta && SETTINGS.formmeta[clientId]; return fm ? Object.values(fm).filter((v) => v && typeof v === 'object' && v.done).length : 0 }
+
+// Per-client Meta conversion selection: which Meta conversion event is this
+// client's PRIMARY reported result, plus optional SECONDARY events to show.
+function loadMetaConv(clientId) { return (SETTINGS.metaconv && SETTINGS.metaconv[clientId]) || { primary: null, secondary: [] } }
+function saveMetaConv(clientId, obj) {
+  const next = { primary: obj.primary || null, secondary: Array.isArray(obj.secondary) ? obj.secondary : [] }
+  SETTINGS.metaconv = { ...(SETTINGS.metaconv || {}), [clientId]: next }
+  writeLS(METACONV_KEY, SETTINGS.metaconv); saveSettingsRemote({ metaconv: { [clientId]: next } }); bumpSettings()
+}
 // Suggest a pipeline for a form: the only pipeline for single-pipeline clients,
 // else the best name-token overlap between the form label and a pipeline name
 // (incl. a bracketed [TAG] abbreviation). '' when nothing matches.
@@ -4866,6 +4876,57 @@ function ActiveHoursField({ clientId }) {
     </div>
   )
 }
+// Per-client Meta conversion picker: loads the conversion events that actually
+// fired for the account and lets an admin choose a primary result + secondaries.
+function MetaConversionsEditor({ clientId, currency }) {
+  const [st, setSt] = useState({ status: 'loading', actions: [] })
+  const [cfg, setCfg] = useState(() => loadMetaConv(clientId))
+  const [saved, setSaved] = useState(false)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', actions: [] })
+    fetch(`/.netlify/functions/windsor?scope=metaactions&client=${clientId}`)
+      .then((r) => r.json())
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend }) })
+      .catch((e) => { if (alive) setSt({ status: 'err', actions: [], error: String((e && e.message) || e) }) })
+    return () => { alive = false }
+  }, [clientId])
+  const setPrimary = (id) => setCfg((c) => ({ primary: id, secondary: (c.secondary || []).filter((s) => s !== id) }))
+  const toggleSecondary = (id) => setCfg((c) => { const has = (c.secondary || []).includes(id); return { ...c, secondary: has ? c.secondary.filter((s) => s !== id) : [...(c.secondary || []), id] } })
+  const save = () => { saveMetaConv(clientId, cfg); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  const money = (v) => fmtCurrency(v, currency)
+  const known = st.actions || []
+  // Keep a previously-saved choice visible even if it didn't fire in the window.
+  const extra = [cfg.primary, ...(cfg.secondary || [])].filter(Boolean).filter((id) => !known.some((a) => a.id === id)).map((id) => ({ id, label: id, count: 0, costPer: null }))
+  const list = [...known, ...extra]
+  const labelOf = (id) => (list.find((a) => a.id === id) || {}).label || id
+  return (
+    <div className="mconv">
+      <p className="cap" style={{ marginTop: 0 }}>Choose the Meta conversion this client optimises to as its <b>primary result</b> — it becomes the headline result &amp; cost-per on the Meta tab. Tick any <b>secondary</b> events to show alongside. Only events that fired in the last 90 days are listed (custom-pixel events are this client’s own funnel steps).</p>
+      {st.status === 'loading' ? <Spinner label="Loading Meta conversions…" />
+        : st.status === 'err' ? <div className="cap">Couldn’t load conversions{st.error ? ` — ${st.error}` : ''}.</div>
+          : !list.length ? <div className="cap">No Meta conversions have fired for this account in the last 90 days. If the account is new, they’ll appear once data flows.</div>
+            : <>
+              <div className="table-wrap"><table className="mini-tbl mconv-tbl">
+                <thead><tr><th className="lft">Conversion event</th><th>Count · 90d</th><th>Cost / action</th><th>Primary</th><th>Secondary</th></tr></thead>
+                <tbody>{list.map((a) => (
+                  <tr key={a.id} className={cfg.primary === a.id ? 'row-sel' : ''}>
+                    <td className="lft">{a.label}</td>
+                    <td>{fmtNumber(a.count)}</td>
+                    <td>{a.costPer != null ? money(a.costPer) : '-'}</td>
+                    <td><input type="radio" name={`prim-${clientId}`} checked={cfg.primary === a.id} onChange={() => setPrimary(a.id)} /></td>
+                    <td><input type="checkbox" checked={(cfg.secondary || []).includes(a.id)} disabled={cfg.primary === a.id} onChange={() => toggleSecondary(a.id)} /></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+              <div className="mconv-foot">
+                <button className="btn-primary" onClick={save}>{saved ? '✓ Saved' : 'Save conversions'}</button>
+                {cfg.primary && <button className="btn-ghost sm" onClick={() => setCfg({ primary: null, secondary: [] })}>Clear</button>}
+                <span className="cap">{cfg.primary ? `Primary: ${labelOf(cfg.primary)}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}` : 'No primary set — the Meta tab shows Leads by default.'}</span>
+              </div>
+            </>}
+    </div>
+  )
+}
 function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
@@ -4887,6 +4948,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
   const sig = normId(c.ghl) + '-' + normId(c.meta) + '-' + normId(c.google)
   const tabs = [['summary', 'Summary']]
   if (c.ghl) tabs.push(['keyevents', 'Key events'])
+  if (c.meta) tabs.push(['metaconv', 'Meta conversions'])
   if (canLink) tabs.push(['links', 'Campaign links'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
   if (c.ghl) tabs.push(['forms', 'Forms'])
@@ -4922,6 +4984,7 @@ function SettingsEditModal({ client: c, names, currency, onClose, onOpen, onReli
             {c.ghl && <ActiveHoursField clientId={c.id} />}
           </div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions — primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}

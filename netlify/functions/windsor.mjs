@@ -65,6 +65,36 @@ const norm = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
 // lead-form outcome (Instant Form + on-Facebook lead/Messenger); website
 // conversion campaigns report under the pixel field, so use that as a fallback.
 const FB_LEAD_FIELDS = ['actions_leadgen_grouped', 'actions_onsite_conversion_lead_grouped', 'actions_offsite_conversion_fb_pixel_lead']
+// Candidate Meta conversion events offered in the per-client conversion picker
+// (Settings → Meta conversions). We query these for the account and only surface
+// the ones that actually fired. Custom pixel conversions (custom_*) are the
+// client's own funnel events (e.g. booked_appointment). Extend freely — unknown
+// events fall back to a prettified label.
+const META_CONV_CANDIDATES = [
+  ['actions_leadgen_grouped', 'Lead — Instant Form'],
+  ['actions_onsite_conversion_lead_grouped', 'Lead — on-Facebook'],
+  ['actions_offsite_conversion_fb_pixel_lead', 'Lead — website pixel'],
+  ['conversions_schedule_total', 'Schedule (booking)'],
+  ['conversions_contact_total', 'Contact'],
+  ['conversions_submit_application_total', 'Submit application'],
+  ['conversions_subscribe_total', 'Subscribe'],
+  ['conversions_start_trial_total', 'Start trial'],
+  ['conversions_find_location_total', 'Find location'],
+  ['conversions_donate_total', 'Donate'],
+  ['actions_complete_registration', 'Complete registration'],
+  ['actions_purchase', 'Purchase'],
+  ['actions_initiate_checkout', 'Initiate checkout'],
+  ['actions_add_to_cart', 'Add to cart'],
+  ['actions_onsite_conversion_messaging_conversation_started_7d', 'Messaging conversation started'],
+  ['actions_click_to_call_call_confirm', 'Click to call — confirmed'],
+  ['conversions_offsite_conversion_fb_pixel_custom_new_lead', 'New lead (custom pixel)'],
+  ['conversions_offsite_conversion_fb_pixel_custom_booked_appointment', 'Booked appointment (custom pixel)'],
+  ['conversions_offsite_conversion_fb_pixel_custom_booking_confirmed', 'Booking confirmed (custom pixel)'],
+  ['conversions_offsite_conversion_fb_pixel_custom_shown_to_appointment', 'Shown to appointment (custom pixel)'],
+  ['conversions_offsite_conversion_fb_pixel_custom_no_show_to_appointment', 'No-show to appointment (custom pixel)'],
+  ['conversions_offsite_conversion_fb_pixel_custom_client_lost', 'Client lost (custom pixel)'],
+]
+const META_CONV_LABEL = Object.fromEntries(META_CONV_CANDIDATES)
 const fbLeads = (r) => { const native = num(r.actions_leadgen_grouped) + num(r.actions_onsite_conversion_lead_grouped); return native || num(r.actions_offsite_conversion_fb_pixel_lead) }
 
 // Everything reports against Australian Eastern time (Sydney). "Today" is the
@@ -981,6 +1011,27 @@ export default async (req) => {
     const meta = [...metaMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedMeta.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const google = [...googleMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGoogle.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     return json({ scope: 'discover', ghl, meta, google, ghlErr, connected: await isConnected().catch(() => false) }, 200)
+  }
+
+  // Meta conversion actions that actually fired for a client's ad account, for
+  // the per-client "primary / secondary conversion" picker in Settings. Queries
+  // a wide (90-day) window so a rarely-firing event still appears, and returns
+  // only non-zero events with their count + blended cost-per.
+  if (url.searchParams.get('scope') === 'metaactions') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'metaactions', client, meta: false, actions: [] })
+    const DAY = 86400000
+    const f90 = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10)
+    const t0 = new Date().toISOString().slice(0, 10)
+    const ids = META_CONV_CANDIDATES.map(([id]) => id)
+    try {
+      const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...ids], f90, t0, null, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+      let spend = 0; const sums = {}
+      for (const r of rows) { spend += num(r.spend); for (const id of ids) sums[id] = (sums[id] || 0) + num(r[id]) }
+      const actions = ids.map((id) => ({ id, label: META_CONV_LABEL[id] || id, count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
+        .filter((a) => a.count > 0).sort((a, b) => b.count - a.count)
+      return json({ scope: 'metaactions', client, window: { from: f90, to: t0 }, spend: Math.round(spend), actions }, 200, true)
+    } catch (e) { return json({ scope: 'metaactions', client, error: String(e.message || e).slice(0, 200), actions: [] }, 200) }
   }
 
   // Lean per-client GHL metrics for the Agency Overview comparison table:

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.51.0'
+const APP_VERSION = '3.51.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2486,7 +2486,7 @@ function AtRiskPanel({ clientId, range, nonce, money }) {
   return (
     <div className="card exec-atrisk">
       <div className="exec-panel-h">Revenue at risk <span className="sub">· {fmtNumber(st.deals.length)} open deals · {money(totOpen)} in pipeline · {fmtNumber(stale.length)} stalled &gt;30d ({money(staleVal)})</span></div>
-      {deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th className="lft">Contact</th><th>Value</th><th>Age</th></tr></thead>
+      {deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl u-drill-tbl"><colgroup><col className="c-opp" /><col className="c-con" /><col className="c-val" /><col className="c-days" /></colgroup><thead><tr><th className="lft">Deal</th><th className="lft">Contact</th><th>Value</th><th>Age</th></tr></thead>
         <tbody>{deals.map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe />)}</tbody></table></div>
         : <div className="cap">No open deals in this period.</div>}
     </div>
@@ -4505,6 +4505,7 @@ function UsersView({ clientId, range, nonce, currency }) {
           <div className="m-head"><div><h3 style={{ margin: 0 }}>Open deals — {drill.stage}</h3><span className="cap">{drill.name} · {fmtNumber(drill.deals.length)} live · {money(drill.deals.reduce((s, d) => s + d.value, 0))}</span></div><button className="icon-btn" onClick={() => setDrill(null)}>✕</button></div>
           <div className="m-body">
             <div className="table-wrap"><table className="mini-tbl u-drill-tbl">
+              <colgroup><col className="c-opp" /><col className="c-con" /><col className="c-val" /><col className="c-days" /></colgroup>
               <thead><tr><th className="lft">Opportunity</th><th className="lft">Contact</th><th>Value</th><th>Days in stage</th></tr></thead>
               <tbody>{(() => { const showPipe = drill.deals.some((x) => x.pipeline !== drill.deals[0].pipeline); return drill.deals.slice().sort((a, b) => b.value - a.value).map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe={showPipe} />) })()}</tbody>
             </table></div>

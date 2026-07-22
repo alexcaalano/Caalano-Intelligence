@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.51.1 — 2026-07-22 · `PENDING`
+- **Open-deals drill table now fits the modal — no horizontal scroll.** The
+  Users open-pipeline drill-down (and the executive Revenue-at-risk table) used
+  to overflow sideways because long emails/phone numbers wouldn't wrap, clipping
+  the Opportunity column. Switched those tables to a fixed layout with wrapping
+  so every column is visible without scrolling, on desktop and mobile.
+
 ## v3.51.0 — 2026-07-22 · `PENDING`
 - **Caalano 360 Executive Dashboard.** The Caalano 360 tab now leads with an
   executive layer; the previous blended breakdown moves into a collapsible

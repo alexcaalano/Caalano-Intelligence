@@ -1456,3 +1456,13 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 }
 .exec-bf { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .link-btn.sm { padding: 4px 9px; font-size: 11px; }
+
+/* Open-deals drill table: fit the modal exactly, no horizontal scroll. Fixed
+   layout + wrapping so long emails/phone numbers break instead of overflowing. */
+.u-drill-tbl { table-layout: fixed; width: 100%; }
+.u-drill-tbl th.lft, .u-drill-tbl td.lft { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.u-drill-tbl col.c-opp { width: 40%; }
+.u-drill-tbl col.c-con { width: 36%; }
+.u-drill-tbl col.c-val { width: 12%; }
+.u-drill-tbl col.c-days { width: 12%; }
+.u-drill-tbl .cap { white-space: normal; overflow-wrap: anywhere; }

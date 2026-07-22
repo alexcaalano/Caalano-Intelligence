@@ -2392,18 +2392,18 @@ const hColor = (s) => (s == null ? '#9aa0a6' : s >= 70 ? '#1e9e5a' : s >= 40 ? '
 const hLabel = (s) => (s == null ? 'No data' : s >= 70 ? 'Healthy' : s >= 40 ? 'Needs attention' : 'At risk')
 const PILLAR_KEYS = [['marketing', 'Marketing'], ['sales', 'Sales'], ['ops', 'Operations'], ['revenue', 'Revenue']]
 
-function useHealth(clientId, range, nonce = 0) {
+function useHealth(clientId, range, nonce = 0, reload = 0) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true
     setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}`)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}${reload ? `&_b=${reload}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [clientId, q, nonce])
+  }, [clientId, q, nonce, reload])
   return st
 }
 
@@ -2513,14 +2513,36 @@ function priorityActions(h, money) {
   return out.slice(0, 5)
 }
 
-function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav }) {
-  const health = useHealth(clientId, range, nonce)
+function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser }) {
+  const [reload, setReload] = useState(0)
+  const health = useHealth(clientId, range, nonce, reload)
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
   const [aiLoading, setAiLoading] = useState(false)
   const [aiErr, setAiErr] = useState(null)
-  useEffect(() => { setAi(loadInsights(clientId + ':exec')); setAiErr(null) }, [clientId])
+  const [bf, setBf] = useState({ running: false, done: 0, err: null })
+  const canBackfill = !authUser || authUser.role !== 'viewer'
+  useEffect(() => { setAi(loadInsights(clientId + ':exec')); setAiErr(null); setBf({ running: false, done: 0, err: null }) }, [clientId])
   const money = (v) => fmtCurrency(v, currency)
+  // Seed the score trend on demand: walk the backfill cursor (weekly points,
+  // ~12 months back) a few points per call, then reload health for the sparkline.
+  const runBackfill = async () => {
+    if (bf.running) return
+    setBf({ running: true, done: 0, err: null })
+    let before = null
+    try {
+      for (let guard = 0; guard < 60; guard++) {
+        const r = await fetch(`/.netlify/functions/windsor?scope=healthbackfill&client=${clientId}${before ? `&before=${before}` : ''}`)
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`)
+        setBf((s) => ({ ...s, done: s.done + ((j.done && j.done.length) || 0) }))
+        if (!j.nextBefore) break
+        before = j.nextBefore
+      }
+      setBf((s) => ({ ...s, running: false }))
+      setReload((n) => n + 1)
+    } catch (e) { setBf({ running: false, done: 0, err: String(e.message || e) }) }
+  }
   const genExec = async () => {
     if (aiLoading || health.status !== 'ok') return
     setAiLoading(true); setAiErr(null)
@@ -2551,7 +2573,11 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           <div className="exec-hero-meta">
             <div className="exec-hero-lab" style={{ color: hColor(sc.composite) }}>{hLabel(sc.composite)}</div>
             <div className="exec-hero-sub">Business health · {rangeLabel(range)}</div>
-            {hist.length > 1 && <div className="exec-spark"><Sparkline data={hist.map((p) => p.composite)} /><span className="cap">{hist.length}d trend</span></div>}
+            {hist.length > 1 && <div className="exec-spark"><Sparkline data={hist.map((p) => p.composite)} /><span className="cap">{hist.length}-point trend</span></div>}
+            {canBackfill && <div className="exec-bf">
+              <button className="link-btn sm" onClick={runBackfill} disabled={bf.running}>{bf.running ? `Building… ${bf.done} pts` : hist.length > 1 ? '↻ Rebuild trend history' : '＋ Build trend history'}</button>
+              {bf.err ? <span className="cap" style={{ color: 'var(--neg)' }}>{bf.err}</span> : hist.length <= 1 && !bf.running ? <span className="cap">seed ~12 months of weekly points</span> : null}
+            </div>}
           </div>
         </div>
         <div className="exec-pillars">
@@ -4534,7 +4560,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
       </div>
       <div style={{ marginTop: 16 }}>
         {curTab === 'overall' && <>
-          <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} />
+          <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />
           <details className="exec-full">
             <summary>Full Caalano 360 breakdown — campaigns, pipelines, funnel &amp; per-rep detail</summary>
             {live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />}

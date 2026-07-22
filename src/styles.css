@@ -1454,3 +1454,5 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .hs-gauge-inner { width: 88px; height: 88px; }
   .hs-num { font-size: 30px; }
 }
+.exec-bf { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.link-btn.sm { padding: 4px 9px; font-size: 11px; }

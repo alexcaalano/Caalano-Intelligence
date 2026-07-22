@@ -1284,7 +1284,9 @@ export default async (req) => {
     const key2 = process.env.WINDSOR_API_KEY
     const today = new Date().toISOString().slice(0, 10)
     const before = url.searchParams.get('before') || today
-    const perCall = 6
+    // Each point is a full blend computation; keep the batch small so a single
+    // call stays well under the function timeout. The UI walks the cursor.
+    const perCall = 3
     const done = []
     let cursor = before
     for (let i = 0; i < perCall; i++) {

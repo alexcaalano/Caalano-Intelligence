@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.52.0 — 2026-07-22 · `PENDING`
+- **Revenue bottleneck analysis** added to the Caalano 360 executive tab: the
+  whole-account funnel (Leads → Qualified → Booked → Shown → Won) with the step
+  conversion rate at each stage, flagging the single biggest drop-off as the
+  bottleneck — where a small improvement moves the most revenue.
+- **Simplified the executive tab.** Removed the collapsible "Full Caalano 360
+  breakdown" (the old blended campaigns/pipelines/per-rep view) so the tab is
+  just the executive dashboard. The detailed paid/CRM breakdowns remain on the
+  Meta Ads, Google Ads, Users and Cohorts tabs.
+
 ## v3.51.2 — 2026-07-22 · `PENDING`
 - **Executive KPI scorecard now spans the full width.** The seven headline tiles
   (ad spend, leads, qualified, cost/lead, booked, won, revenue) stretch evenly

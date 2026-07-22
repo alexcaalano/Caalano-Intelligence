@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.51.2'
+const APP_VERSION = '3.52.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2513,6 +2513,43 @@ function priorityActions(h, money) {
   return out.slice(0, 5)
 }
 
+// Revenue bottleneck — the whole-account funnel (Leads → Qualified → Booked →
+// Shown → Won) with the step conversion rates, flagging the single biggest
+// drop-off as the bottleneck. Built from the health KPIs (no extra fetch).
+function BottleneckPanel({ kpis, money }) {
+  const raw = [
+    { label: 'Leads', v: kpis.leads },
+    { label: 'Qualified', v: kpis.qualified },
+    { label: 'Booked', v: kpis.booked },
+    { label: 'Shown', v: kpis.shown },
+    { label: 'Won', v: kpis.won },
+  ].filter((s) => s.v != null)
+  if (raw.length < 2 || !raw[0].v) return null
+  const top = raw[0].v || 1
+  const rows = raw.map((s, i) => { const prev = i > 0 ? raw[i - 1].v : null; return { ...s, prev, conv: prev ? s.v / prev : null, drop: prev != null ? prev - s.v : 0 } })
+  const cands = rows.filter((r) => r.conv != null && r.prev > 0)
+  const worst = cands.length ? cands.reduce((a, b) => (b.conv < a.conv ? b : a)) : null
+  return (
+    <div className="card exec-bottleneck">
+      <div className="exec-panel-h">Revenue bottleneck {worst ? <span className="sub">· biggest drop-off: <b>{worst.prev != null ? rows[rows.indexOf(worst) - 1].label : ''} → {worst.label}</b> ({Math.round(worst.conv * 100)}% through, {fmtNumber(worst.drop)} lost)</span> : null}</div>
+      <div className="bn-funnel">
+        {rows.map((r, i) => {
+          const isWorst = worst && r === worst
+          return (
+            <div className={`bn-row ${isWorst ? 'bn-worst' : ''}`} key={i}>
+              <span className="bn-lab">{r.label}</span>
+              <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, (r.v / top) * 100)}%` }} /></span>
+              <span className="bn-count">{fmtNumber(r.v)}</span>
+              <span className="bn-conv">{r.conv == null ? '' : `${Math.round(r.conv * 100)}%`}</span>
+            </div>
+          )
+        })}
+      </div>
+      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost — the place a small improvement moves the most revenue.</p>
+    </div>
+  )
+}
+
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser }) {
   const [reload, setReload] = useState(0)
   const health = useHealth(clientId, range, nonce, reload)
@@ -2595,6 +2632,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         <Kpi label="Won" value={k.won != null ? fmtNumber(k.won) : '—'} cur={k.won} prev={pv.won} />
         <Kpi label="Revenue" value={k.revenue != null ? money(k.revenue) : '—'} cur={k.revenue} prev={pv.revenue} />
       </div>
+
+      {/* Revenue bottleneck funnel */}
+      <BottleneckPanel kpis={k} money={money} />
 
       <div className="exec-grid2">
         {/* Priority actions */}
@@ -4560,13 +4600,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {curTab === 'overall' && <>
-          <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />
-          <details className="exec-full">
-            <summary>Full Caalano 360 breakdown — campaigns, pipelines, funnel &amp; per-rep detail</summary>
-            {live.status === 'loading' ? <div className="card"><Spinner label="Loading Caalano360…" /></div> : live.status === 'ok' && live.data && live.data.blend ? <Caalano360 blend={live.data.blend} client={client} currency={data.currency} range={range} nonce={nonce} utmAttr={attr} /> : <OverallTab client={client} currency={data.currency} side="cur" />}
-          </details>
-        </>}
+        {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}

@@ -1700,6 +1700,29 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'fatiguewebhook', client, error: String(e.message || e).slice(0, 200), connected: false, creatives: [] }, 200) }
   }
 
+  // Webhook connection status — lists everything the meta-webhook receiver has
+  // stored across all accounts, so the UI can confirm the pipe works the moment
+  // a test (or real) event lands, even for accounts not mapped to a client.
+  if (url.searchParams.get('scope') === 'webhookstatus') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    try {
+      const store = getStore({ name: 'meta-webhooks', consistency: 'strong' })
+      const { blobs } = await store.list()
+      // Map each stored account id back to a client name where we can.
+      const acctToClient = {}
+      for (const [cid, cc] of Object.entries(CLIENTS)) if (cc.meta) acctToClient[String(cc.meta).replace(/\D/g, '')] = cid
+      const accounts = []; let events = []
+      for (const b of (blobs || [])) {
+        const rec = await store.get(b.key, { type: 'json' }).catch(() => null); if (!rec) continue
+        const acctDigits = b.key.replace(/^acct:/, '')
+        accounts.push({ acct: acctDigits, client: acctToClient[acctDigits] || null, ads: Object.keys(rec.ads || {}).length, updatedAt: rec.updatedAt || null, verified: !!rec.verified })
+        for (const e of (rec.events || [])) events.push({ acct: acctDigits, client: acctToClient[acctDigits] || null, adId: e.adId, level: e.level, field: e.field, ts: e.ts })
+      }
+      events.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || ''))); events = events.slice(0, 30)
+      return json({ scope: 'webhookstatus', endpoint: '/.netlify/functions/meta-webhook', accounts, events, everReceived: events.length > 0 }, 200)
+    } catch (e) { return json({ scope: 'webhookstatus', error: String(e.message || e).slice(0, 200), accounts: [], events: [] }, 200) }
+  }
+
   // Meta anomaly / delivery-health signal for the Meta Insights tab — one client
   // per request, current vs prior-window movement in the key delivery metrics.
   if (url.searchParams.get('scope') === 'anomalies') {

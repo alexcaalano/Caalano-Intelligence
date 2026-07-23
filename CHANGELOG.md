@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.70.0 — 2026-07-23 · `PENDING`
+- **Meta webhook — live connection status panel.** The "Creative fatigue · Meta"
+  tab now shows a receiver-status card that lists every event Meta has sent
+  (test or real), so you get instant confirmation the pipe works — even for test
+  events whose placeholder account id doesn't map to a client. Backend
+  `scope=webhookstatus` lists the stored events across all accounts.
+
 ## v3.69.1 — 2026-07-23 · `PENDING`
 - **Fix: Meta webhook was blocked by the site auth gate.** The `auth` edge
   function refuses any `/.netlify/functions/*` call without a login cookie, which

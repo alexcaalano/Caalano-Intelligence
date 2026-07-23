@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.69.1'
+const APP_VERSION = '3.70.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6247,6 +6247,34 @@ function FatigueWebhookCard({ client, range, nonce, onStatus }) {
     </div>
   )
 }
+// Live connection status: proves the receiver is wired up the moment any event
+// (test or real) lands, even before accounts are mapped to clients.
+function WebhookStatusPanel({ nonce }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true
+    fetch(`/.netlify/functions/windsor?scope=webhookstatus${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [nonce])
+  const d = st.data
+  const ever = d && d.everReceived
+  return (
+    <div className="card wh-status">
+      <div className="wh-status-h">
+        <span className={`wh-dot ${ever ? 'on' : ''}`} />
+        <b>Webhook receiver</b>
+        <span className="cap">· endpoint live at <code>/.netlify/functions/meta-webhook</code></span>
+        {st.status === 'loading' ? <span className="cap">· checking…</span> : ever ? <span className="wh-ok">· ✓ events received</span> : <span className="cap">· no events received yet</span>}
+      </div>
+      {d && d.events && d.events.length ? <div className="wh-events">
+        <div className="cap" style={{ marginBottom: 4 }}>Last {d.events.length} event{d.events.length === 1 ? '' : 's'} Meta sent us:</div>
+        <table className="mini-tbl users-tbl"><thead><tr><th className="lft">When</th><th className="lft">Account</th><th className="lft">Field</th><th className="lft">Ad</th><th className="lft">Verdict</th></tr></thead>
+          <tbody>{d.events.map((e, i) => <tr key={i}><td className="lft cap">{e.ts ? new Date(e.ts).toLocaleString() : '—'}</td><td className="lft">{e.client || e.acct || '—'}</td><td className="lft">{e.field || '—'}</td><td className="lft">{e.adId || '—'}</td><td className="lft">{e.level || '—'}</td></tr>)}</tbody>
+        </table>
+      </div> : null}
+    </div>
+  )
+}
 function MetaFatigueWebhookPage({ clients, range, nonce }) {
   const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
   const [status, setStatus] = useState({})
@@ -6256,10 +6284,11 @@ function MetaFatigueWebhookPage({ clients, range, nonce }) {
   return (
     <>
       <div className="lvl-title">Creative fatigue · Meta’s signal <span className="sub">· official webhook verdicts</span></div>
+      <WebhookStatusPanel nonce={nonce} />
       {!anyConnected && <div className="card mi-setup">
-        <div className="mi-setup-h">🔌 Not receiving Meta events yet</div>
-        <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict — pushed to the dashboard by webhook, not computed. The receiver endpoint is live at <code>/.netlify/functions/meta-webhook</code>; it starts filling in once a Meta App is connected and subscribes each client account.</p>
-        <p className="cap">Setup steps and the exact subscription commands are in <code>META-WEBHOOK-SETUP.md</code> in the repo. Until then, use the <b>Creative fatigue · proxy</b> tab — it covers every client live.</p>
+        <div className="mi-setup-h">🔌 No per-account verdicts yet</div>
+        <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict — pushed by webhook, not computed. Once an ad account is <b>subscribed</b> (see the setup doc) and Meta detects fatigue on a live creative, its verdict appears here as a per-account card.</p>
+        <p className="cap">Test events from Meta’s dashboard show in the receiver panel above (proving the pipe works) but won’t map to a client card — they carry a placeholder account id. Setup + subscription commands: <code>META-WEBHOOK-SETUP.md</code>. Meanwhile the <b>Creative fatigue · proxy</b> tab covers every client live.</p>
       </div>}
       {anyConnected && <p className="caveat">Meta’s official verdicts for the {connectedCount} connected account{connectedCount === 1 ? '' : 's'}. These are pushed by Meta as creatives tire — compare against the proxy tab, which explains the “why”. Accounts not yet subscribed don’t appear here.</p>}
       <div className="fat-grid">{metaClients.map((c) => <FatigueWebhookCard key={c.id} client={c} range={range} nonce={nonce} onStatus={onStatus} />)}</div>

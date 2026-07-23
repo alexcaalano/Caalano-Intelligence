@@ -1371,6 +1371,85 @@ export async function buildCreativePerf(locationId, from, to, opts = {}) {
   return { connected: true, tz, byContent, byMedium }
 }
 
+// Extra intelligence for the Client Update module: appointment reporting nuance,
+// lost-reason trends, average close time, and (for poor lead→booking cohorts) a
+// sample of the notes on contacts who did NOT book, so the AI can suggest a
+// likely cause. One opportunities+appointments pass; notes fetched only for the
+// small non-booker sample.
+export async function buildUpdateExtra(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const DAY = 86400000
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 200 * DAY).toISOString().slice(0, 10)
+  const [wideOpps, pipelines, appts, reasons] = await Promise.all([
+    allOpportunities(locTok, locationId, wideFrom, to, 2500),
+    fetchPipelines(locTok, locationId),
+    fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map() })),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
+  const NOSHOW_RE = /no.?show/i
+  const inWin = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  // Appointment reporting nuance.
+  let booked = 0, upcoming = 0, occurred = 0, attended = 0, noShow = 0, stageOnlyShown = 0
+  // Lost-reason trend.
+  const lostAgg = new Map()
+  // Non-booker sample (leads with no booking, still open) for the notes dig.
+  const nonBookers = []
+  for (const o of inWin) {
+    const st = String(o.status || '').toLowerCase()
+    const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
+    const stageName = stg ? stg.name : ''
+    const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
+    const calBooked = !!(f && f.bookedInPeriod)
+    const reachedBook = !!(pi && pi.bookPos != null && pos >= pi.bookPos)
+    const isBooked = calBooked || reachedBook || st === 'won'
+    const callOccurred = !!(f && f.hasCallInPeriod)
+    const shown = !!(f && f.shownByStatus)
+    const isNoShow = NOSHOW_RE.test(stageName)
+    if (calBooked) {
+      booked++
+      if (shown) { attended++; occurred++ }
+      else if (isNoShow) { noShow++; occurred++ }
+      else if (callOccurred) { occurred++; if (pi && pi.showPos != null && pos >= pi.showPos) stageOnlyShown++ }
+      else upcoming++
+    } else if (isBooked && (pi && pi.showPos != null && pos >= pi.showPos) && !shown && !isNoShow) {
+      // Advanced past the show stage but no appointment marked shown: reporting gap.
+      stageOnlyShown++
+    }
+    if (st === 'lost' || st === 'abandoned') { const rn = lostReasonOf(o); const e = lostAgg.get(rn) || 0; lostAgg.set(rn, e + 1) }
+    // Non-booker: an open lead with no booking and not past the booked stage.
+    if (!isBooked && st !== 'lost' && st !== 'abandoned' && cid && nonBookers.length < 40) nonBookers.push({ cid, pipeline: (pi && pi.name) || 'Pipeline', created: Date.parse(o.createdAt) || 0 })
+  }
+  // Average close time (won opps, wide set), to judge if "no wins yet" is expected.
+  let cycSum = 0, cycN = 0
+  for (const o of wideOpps) { if (String(o.status || '').toLowerCase() !== 'won') continue; const c = Date.parse(o.createdAt); const w = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || ''); if (!isFinite(c) || !isFinite(w)) continue; const d = (w - c) / DAY; if (d >= 0 && d < 400) { cycSum += d; cycN++ } }
+  const avgCloseDays = cycN ? Math.round(cycSum / cycN) : null
+  const lostReasons = [...lostAgg.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count).slice(0, 8)
+  // Sample the most recent non-bookers and read a short note each (light: notes
+  // endpoint only, no user-name resolution). Themes only; never surfaced verbatim.
+  nonBookers.sort((a, b) => b.created - a.created)
+  const sample = nonBookers.slice(0, 15)
+  const notes = (await mapPool(sample, 5, async (nb) => {
+    try {
+      const cn = await ghlGet(locTok, `/contacts/${nb.cid}/notes`, {}).then((j) => j.notes || []).catch(() => [])
+      const sorted = (cn || []).slice().sort((a, b) => String(b.dateAdded || b.createdAt || '').localeCompare(String(a.dateAdded || a.createdAt || '')))
+      const latest = sorted.map((n) => htmlToText(n.body || n.note || '')).filter(Boolean)[0]
+      return latest ? { pipeline: nb.pipeline, note: latest.slice(0, 240) } : null
+    } catch { return null }
+  })).filter(Boolean)
+  return {
+    connected: true, tz,
+    appts: { booked, upcoming, occurred, attended, noShow, stageOnlyShown },
+    lostReasons, avgCloseDays, nonBookerNotes: notes.slice(0, 12), nonBookerSampled: sample.length,
+  }
+}
+
 // GHL note bodies are often HTML — convert to clean text (lists → bullets,
 // block tags → line breaks, entities decoded) rather than render markup.
 function htmlToText(s) {

@@ -17,6 +17,30 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.61.0 — 2026-07-23 · `PENDING`
+- **Client Update — depth pass from feedback.** New `scope=updateextra` +
+  `buildUpdateExtra` feed the generator much richer, honest context:
+  - **Attendance honesty:** a low "attended" is now explained properly — how many
+    calls are **still upcoming** (can't have shown yet), how many were **no-shows**,
+    and a **reporting-gap flag** when deals were advanced past the show stage in the
+    pipeline but the appointment was never marked attended (team moved the deal,
+    didn't tick the calendar). No-show stages are treated as genuine no-shows.
+  - **No wins in context:** pulls the average lead-to-close time; if the period's
+    leads are more recent than the typical close time, it states that no wins yet
+    is expected, not a concern.
+  - **Lost-reason trends** for the period are surfaced and called out.
+  - **Non-booker cause detection:** for a poor lead-to-booking rate, it samples the
+    notes on leads who didn't book and adds one tactful, themes-only observation
+    (no names, no quotes).
+  - **Richer Top Performing Ads** (leads, cost per lead, booked, cost per booked);
+    the separate ad-set list is gone, replaced by a **Segments** section grouped by
+    named audience (Health Professionals, Borrowing Capacity, Buyers Advocacy).
+  - **Email restructured** with a "Quick Summary" heading; **pipeline stages now in
+    funnel order**; comparisons name what they're vs; **no clichés/idioms**
+    ("punching above its weight" etc. banned); date range referenced casually.
+  - Booked calls confirmed as **Caalano Systems bookings attributed by UTM** (not
+    Meta's schedule metric). Still strictly grounded in computed data.
+
 ## v3.60.0 — 2026-07-23 · `PENDING`
 - **Client Update — per-pipeline + ad-set segmentation.**
   - **Per-pipeline commentary:** for clients with more than one pipeline (e.g.

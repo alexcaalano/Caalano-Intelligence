@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1044,7 +1044,8 @@ async function buildHealth(c, from, to, preset, key, weights) {
   // per-pipeline commentary and the "no wins? here's where deals got to" note).
   const pipelines = (blend.pipelines || []).map((pp) => ({
     name: pp.name, leads: pp.crm.leads, booked: pp.crm.booked, shown: pp.crm.shown, won: pp.crm.won, lost: pp.crm.lost, open: pp.crm.open, revenue: pp.crm.revenue, openValue: pp.crm.openValue,
-    stages: (pp.stages || []).filter((s) => s.active > 0).map((s) => ({ name: s.name, open: s.active })),
+    // Stages in pipeline (funnel) order, open deals only.
+    stages: (pp.stages || []).slice().sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0)).filter((s) => s.active > 0).map((s) => ({ name: s.name, open: s.active })),
   })).sort((a, b) => b.leads - a.leads)
 
   return {
@@ -1297,6 +1298,16 @@ export default async (req) => {
       ])
       return json({ scope: 'health', client, period: { from, to, preset }, ...health, history }, 200, true)
     } catch (e) { return json({ scope: 'health', client, error: String(e.message || e).slice(0, 200) }, 200) }
+  }
+
+  // Extra CRM intelligence for the Client Update module: appointment reporting
+  // nuance, lost-reason trends, average close time, and non-booker note themes.
+  if (url.searchParams.get('scope') === 'updateextra') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'updateextra', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'updateextra', client, connected: false })
+    try { return json({ scope: 'updateextra', client, period: { from, to, preset }, ...(await buildUpdateExtra(cc.ghl, from, to)) }, 200, true) }
+    catch (e) { return json({ scope: 'updateextra', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
   // On-demand trend backfill for one client — weekly trailing-window points going

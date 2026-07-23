@@ -177,7 +177,7 @@ Be specific and numeric. Under 320 words. Do not use em-dashes or en-dashes; use
 // is supplied; Claude only writes it up. Returns strict JSON {subject, email,
 // whatsapp}. Australian spelling, no em dashes, from Caalano Digital.
 async function clientUpdate(apiKey, body) {
-  const { clientName, firstName, period, kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [] } = body
+  const { clientName, firstName, period, kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [], pipelines: pls = [], segments: segs = [] } = body
   const pv = k.prev || {}
   const delta = (cur, prev, lowerBetter) => { if (cur == null || prev == null || !prev) return ''; const pc = Math.round(((cur - prev) / prev) * 100); const better = lowerBetter ? pc < 0 : pc > 0; return ` (${pc >= 0 ? 'up' : 'down'} ${Math.abs(pc)}% vs previous period, ${better ? 'good' : 'worse'})` }
   const lines = []
@@ -193,6 +193,15 @@ async function clientUpdate(apiKey, body) {
   // Best-performing creatives (ads) for the period, so the update can call them out.
   const topCreatives = (cr || []).slice(0, 4).map((c) => `${c.name} (${c.format || 'ad'}): ${n0(c.leads)} leads, ${n0(c.booked)} booked calls`)
   const creativeBlock = topCreatives.length ? `\nBest performing ads this period (highest lead and booking volume):\n${topCreatives.join('\n')}` : ''
+  // Per-pipeline funnels + where open deals are sitting.
+  const multiPipe = (pls || []).filter((p) => p.leads > 0 || p.booked > 0 || p.won > 0).length > 1
+  const pipeBlock = (pls || []).length ? `\nBy pipeline (each pipeline is a different part of the business):\n${pls.filter((p) => p.leads > 0 || p.booked > 0 || p.won > 0 || p.open > 0).map((p) => {
+    const sits = (p.stages || []).slice().sort((a, b) => b.open - a.open).slice(0, 6).map((s) => `${n0(s.open)} at "${s.name}"`).join(', ')
+    return `- ${p.name}: ${n0(p.leads)} leads, ${n0(p.booked)} booked, ${n0(p.won)} won${p.revenue ? `, $${n0(p.revenue)} revenue` : ''}${p.openValue ? `, $${n0(p.openValue)} still open in the pipeline` : ''}.${sits ? ` Open deals are currently sitting: ${sits}.` : ''}`
+  }).join('\n')}` : ''
+  // Ad-set segments (sub-campaigns) — identify the theme from each ad set name.
+  const segTop = (segs || []).filter((s) => (s.leads || 0) > 0 || (s.spend || 0) > 0).slice(0, 8)
+  const segBlock = segTop.length ? `\nAd set segments / sub-campaigns (work out the audience or theme from each ad set name, e.g. two names containing "Health Professionals" and "Borrowing Capacity" are two segments):\n${segTop.map((s) => `- ${s.name}: $${n0(s.spend)} spend, ${n0(s.leads)} leads${s.booked != null ? `, ${n0(s.booked)} booked` : ''}${s.won ? `, ${n0(s.won)} won` : ''}`).join('\n')}` : ''
   const prompt = `You are the account manager at Caalano Digital, a marketing agency, writing a results update to a client for a reporting period. Write in Australian English (spelling: optimise, prioritise, colour, etc.). Never use em dashes or en dashes; use commas, colons or hyphens.
 
 CRITICAL: Use ONLY the figures and facts provided below. Do NOT invent, estimate, extrapolate or add any number, metric, claim or insight that is not explicitly given. Do not speculate about causes or make up context. If a figure is marked n/a or is not provided, do not mention it. Every statement you make must be directly supported by the data below.
@@ -201,17 +210,24 @@ Client business: ${clientName || 'the client'}
 Client first name: ${firstName || '(none given)'}
 Reporting period: ${period || 'the selected period'}
 
+Reporting period label: ${period || 'the selected period'}
+
 Results:
-${lines.join('\n')}${creativeBlock}
+${lines.join('\n')}${creativeBlock}${pipeBlock}${segBlock}
+
+Refer to the time period casually and naturally so it reads like a human wrote it (for example "over the last month", "this past fortnight", "in the last few weeks"). Do NOT quote the raw dates or say "reporting period".
 
 Produce TWO versions of the same update and reply with ONLY a JSON object, no prose outside it, shaped exactly:
 {"subject":"<email subject line>","email":"<full formal email body>","whatsapp":"<casual WhatsApp message>"}
 
-Email version: formal and structured. ${firstName ? `Open with "Hi ${firstName},"` : 'Open with "Hi there,"'} Then a short intro line, then clearly grouped results (you may use short headings or bullet points) covering: spend and cost efficiency; lead and booking generation; revenue/wins; and a short "top performing ads" callout naming the best ads and what drove them (only if ad data is provided above). Call out the notable movements versus the previous period. Then invite the client to share their feedback: how the lead quality has been, how the business is tracking their end, and any wins or closed jobs we should know about. Finish with a brief forward-looking line and sign off from the Caalano Digital team. Professional, confident, warm. No emojis.
+Email version: formal and structured. ${firstName ? `Open with "Hi ${firstName},"` : 'Open with "Hi there,"'} Then a short intro, then clearly grouped results (short headings or bullets) covering: spend and cost efficiency; lead and booking generation; revenue/wins; and a short "top performing ads" callout (only if ad data is provided). Call out notable movements versus the previous period.
+${multiPipe ? 'This client runs MORE THAN ONE pipeline. Give a SHORT dedicated section for EACH pipeline listed above, using its name, covering that pipeline\'s leads/bookings/wins AND, importantly, where its open deals have got to (name the stages deals are sitting at). If a pipeline has no wins yet, do not gloss over it: say how many leads and bookings it produced and where those deals are now sitting in the funnel and heading next.' : 'If there are no wins yet, do not gloss over it: explain how many leads and bookings came through and where those deals have got to in the funnel (which stages they are sitting at).'}
+${segTop.length ? 'Add a short "what\'s working in the ads" note: identify the sub-campaign segments from the ad set names above and give a one-line insight on how each key segment performed (e.g. which audience is driving the most leads or bookings). Only mention segments in the data.' : ''}
+Then invite the client to share feedback: how the lead quality has been, how the business is tracking on their end, and any wins or closed jobs we should know about. Finish with a brief forward-looking line and sign off from the Caalano Digital team. Professional, confident, warm. No emojis.
 
-WhatsApp version: casual and conversational, like a real text message to a client you have a good relationship with. ${firstName ? `Start with "Hey ${firstName},"` : 'Start with "Hey,"'} Keep it shorter than the email, hit the headline numbers, the best news and a quick mention of the standout ad if provided, plain language, no jargon. End by asking how the leads have been on their end and if they have had any wins lately. NO emojis. Sign off casually from the Caalano Digital team.
+WhatsApp version: casual and conversational, like a real text to a client you get on well with. ${firstName ? `Start with "Hey ${firstName},"` : 'Start with "Hey,"'} Shorter than the email: hit the headline numbers and the best news${multiPipe ? ', mention each pipeline briefly in a sentence (do not do a full breakdown)' : ''}${segTop.length ? ', and a quick word on the standout ad or audience if it stands out' : ''}. Plain language, no jargon. End by asking how the leads have been on their end and if they have had any wins lately. NO emojis. Sign off casually from the Caalano Digital team.
 
-Both must be positive but honest: if something went down, frame it constructively without hiding it. Keep the email under 340 words and the WhatsApp under 140 words.`
+Both must be positive but honest: if something went down, frame it constructively without hiding it. Keep the email under 420 words and the WhatsApp under 150 words.`
   const out = await callClaude(apiKey, prompt)
   let parsed = null
   try { const m = out.insights.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : null } catch { parsed = null }

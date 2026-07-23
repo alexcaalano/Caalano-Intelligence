@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.59.0'
+const APP_VERSION = '3.60.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6231,7 +6231,7 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
       const topCr = (creatives.creatives || [])
         .map((c) => ({ name: c.name, format: c.format, leads: c.crm ? c.crm.leads : c.leads, booked: c.crm ? c.crm.booked : 0 }))
         .sort((a, b) => (b.booked - a.booked) || (b.leads - a.leads)).slice(0, 4)
-      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), period: rangeLabel(range), kpis: health.kpis, channels: health.channels, forecast: health.forecast, creatives: topCr }
+      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), period: rangeLabel(range), kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr }
       const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)

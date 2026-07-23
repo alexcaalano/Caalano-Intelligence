@@ -1040,10 +1040,16 @@ async function buildHealth(c, from, to, preset, key, weights) {
   }
   // Paid channel split, for the client-update module.
   const channels = { metaSpend: p.metaSpend, googleSpend: p.googleSpend, metaLeads: p.metaLeads, googleConv: p.googleConv }
+  // Per-pipeline funnels + where open deals are sitting (for the client update's
+  // per-pipeline commentary and the "no wins? here's where deals got to" note).
+  const pipelines = (blend.pipelines || []).map((pp) => ({
+    name: pp.name, leads: pp.crm.leads, booked: pp.crm.booked, shown: pp.crm.shown, won: pp.crm.won, lost: pp.crm.lost, open: pp.crm.open, revenue: pp.crm.revenue, openValue: pp.crm.openValue,
+    stages: (pp.stages || []).filter((s) => s.active > 0).map((s) => ({ name: s.name, open: s.active })),
+  })).sort((a, b) => b.leads - a.leads)
 
   return {
     score: { composite, weights: w, marketing: marketing.score, sales: sales.score, ops: ops.score, revenue: revenue.score, pillars },
-    kpis, channels, forecast, has,
+    kpis, channels, pipelines, forecast, has,
   }
 }
 
@@ -1480,7 +1486,12 @@ export default async (req) => {
       }).sort((a, b) => b.spend - a.spend)
       // CRM outcomes whose utm_content matched no live ad (paused/old creatives).
       const unmatched = Object.entries(byContent).filter(([k]) => !usedKeys.has(nk(k))).map(([content, v]) => ({ content, ...v })).sort((a, b) => b.leads - a.leads).slice(0, 50)
-      return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, unmatched }, 200, true)
+      // Ad-set "segments" (sub-campaigns): Meta ad-set spend/leads joined to the
+      // per-ad-set CRM funnel (utm_medium). Drives the update's per-segment insight.
+      const byMedium = perf.byMedium || {}
+      const medByKey = {}; for (const [k, v] of Object.entries(byMedium)) medByKey[nk(k)] = v
+      const segments = (meta.adsets || []).map((a) => { const crm = medByKey[nk(a.name)] || null; return { name: a.name, campaign: a.campaign, spend: Math.round(a.spend), leads: crm ? crm.leads : a.leads, booked: crm ? crm.booked : null, won: crm ? crm.won : null, revenue: crm ? crm.revenue : null } }).sort((a, b) => b.spend - a.spend)
+      return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, segments, unmatched }, 200, true)
     } catch (e) { return json({ scope: 'creatives', client, error: String(e.message || e).slice(0, 200), creatives: [] }, 200) }
   }
 

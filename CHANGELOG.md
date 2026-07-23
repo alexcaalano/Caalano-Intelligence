@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.60.0 — 2026-07-23 · `PENDING`
+- **Client Update — per-pipeline + ad-set segmentation.**
+  - **Per-pipeline commentary:** for clients with more than one pipeline (e.g.
+    Finr's Buyers Advocacy + Finance), the email now gives a dedicated section
+    per pipeline; the WhatsApp mentions each briefly. Where a pipeline has **no
+    wins**, it reports how many leads/bookings came through and **where the open
+    deals have got to** (naming the stages deals are sitting at), rather than
+    glossing over it.
+  - **Ad-set segments:** identifies sub-campaigns automatically from ad-set names
+    (e.g. "Health Professionals" vs "Borrowing Capacity") and gives a per-segment
+    insight on leads/bookings. Backend now returns ad-set `segments` (spend +
+    leads + booked + won via `utm_medium`) and per-pipeline funnels + open-by-stage.
+  - **Casual date range:** the period is referenced naturally ("over the last
+    month") rather than as raw dates, so it doesn't read as AI-generated.
+  - Still strictly grounded: only computed figures are used, nothing invented.
+
 ## v3.59.0 — 2026-07-23 · `PENDING`
 - **Client Update generator (new left-nav module).** Pick a client + date range,
   add their first name, and generate a client-ready account update in two

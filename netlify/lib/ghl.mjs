@@ -1343,30 +1343,32 @@ export async function buildCreativePerf(locationId, from, to, opts = {}) {
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
   const qualStagePos = opts.qualStagePos != null ? opts.qualStagePos : null
-  const C = new Map()
-  const getC = (key) => { let c = C.get(key); if (!c) { c = { content: key, leads: 0, qualified: 0, booked: 0, shown: 0, won: 0, lost: 0, revenue: 0 }; C.set(key, c) } return c }
+  const C = new Map(); const M = new Map()
+  const mk = (key, dimKey) => ({ [dimKey]: key, leads: 0, qualified: 0, booked: 0, shown: 0, won: 0, lost: 0, revenue: 0 })
+  const getC = (key) => { let c = C.get(key); if (!c) { c = mk(key, 'content'); C.set(key, c) } return c }
+  const getM = (key) => { let m = M.get(key); if (!m) { m = mk(key, 'medium'); M.set(key, m) } return m }
   for (const o of opps) {
     const u = utmOf(o); const content = u && u.content ? String(u.content) : null
-    if (!content) continue
-    const c = getC(content)
-    c.leads++
+    // utm_medium carries the ad set name, so it's the segment / sub-campaign key.
+    const medium = u && u.medium ? String(u.medium) : null
+    if (!content && !medium) continue
     const st = String(o.status || '').toLowerCase(); const val = num(o.monetaryValue)
-    if (st === 'won') { c.won++; c.revenue += val }
-    else if (st === 'lost' || st === 'abandoned') c.lost++
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
     // Booked call = calendar booking in period OR the opp reached this pipeline's
-    // booked stage (bookPos, derived from stage names) OR it was won. Matches the
-    // blended "booked" definition so the cockpit reconciles with the other tabs.
-    const reachedBook = pi && pi.bookPos != null && pos >= pi.bookPos
-    if ((f && f.bookedInPeriod) || reachedBook || st === 'won') c.booked++
-    if ((f && f.shownByStatus) || (pi && pi.showPos != null && pos >= pi.showPos) || st === 'won') c.shown++
+    // booked stage (bookPos) OR it was won. Matches the blended "booked".
+    const isBooked = !!((f && f.bookedInPeriod) || (pi && pi.bookPos != null && pos >= pi.bookPos) || st === 'won')
+    const isShown = !!((f && f.shownByStatus) || (pi && pi.showPos != null && pos >= pi.showPos) || st === 'won')
     const entryPos = pi && pi.stages.length ? pi.stages[0].pos : 0
-    if (isQualified({ status: st, pos, entryPos, hasAppt: !!(f && f.bookedInPeriod), value: val, qualStagePos })) c.qualified++
+    const isQual = isQualified({ status: st, pos, entryPos, hasAppt: !!(f && f.bookedInPeriod), value: val, qualStagePos })
+    const bump = (e) => { e.leads++; if (st === 'won') { e.won++; e.revenue += val } else if (st === 'lost' || st === 'abandoned') e.lost++; if (isBooked) e.booked++; if (isShown) e.shown++; if (isQual) e.qualified++ }
+    if (content) bump(getC(content))
+    if (medium) bump(getM(medium))
   }
-  const byContent = {}
-  for (const c of C.values()) byContent[c.content] = { leads: c.leads, qualified: c.qualified, booked: c.booked, shown: c.shown, won: c.won, lost: c.lost, revenue: Math.round(c.revenue) }
-  return { connected: true, tz, byContent }
+  const slim = (e) => ({ leads: e.leads, qualified: e.qualified, booked: e.booked, shown: e.shown, won: e.won, lost: e.lost, revenue: Math.round(e.revenue) })
+  const byContent = {}; for (const c of C.values()) byContent[c.content] = slim(c)
+  const byMedium = {}; for (const m of M.values()) byMedium[m.medium] = slim(m)
+  return { connected: true, tz, byContent, byMedium }
 }
 
 // GHL note bodies are often HTML — convert to clean text (lists → bullets,

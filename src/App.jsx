@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.64.0'
+const APP_VERSION = '3.65.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1946,6 +1946,7 @@ const FORMMETA_KEY = 'caalano_formmeta' // { clientId: { formLabel: { pipeline, 
 const METACONV_KEY = 'caalano_metaconv' // { clientId: { primary: fieldId, secondary: [fieldId] } }
 const CREATIVEMETA_KEY = 'caalano_creativemeta' // { clientId: { creativeId: { aware, persona, angle, format, dest, cta, copy, notes } } }
 const CREATIVETAX_KEY = 'caalano_creativetax'   // { clientId: { persona: [...], angle: [...], dest: [...] } } — reusable dropdown values
+const CLIENTCTX_KEY = 'caalano_clientctx'        // { clientId: "free-text context / notes about the client, fed into the client-update prompt" }
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1954,7 +1955,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1973,10 +1974,10 @@ async function hydrateSettings() {
     const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2012,6 +2013,12 @@ function saveCreativeMeta(clientId, creativeId, patch) {
   saveSettingsRemote(remote); bumpSettings()
 }
 function loadCreativeTax(clientId) { return (SETTINGS.creativetax && SETTINGS.creativetax[clientId]) || {} }
+// Free-text client context/notes, fed into the client-update prompt as background.
+function loadClientCtx(clientId) { return (SETTINGS.clientctx && SETTINGS.clientctx[clientId]) || '' }
+function saveClientCtx(clientId, text) {
+  SETTINGS.clientctx = { ...(SETTINGS.clientctx || {}), [clientId]: text }
+  writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); saveSettingsRemote({ clientctx: { [clientId]: text } }); bumpSettings()
+}
 
 // UI-added clients (Settings -> Add client), persisted server-side and merged
 // into the dashboard's client list.
@@ -6389,15 +6396,16 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
   const [selId, setSelId] = useState(list[0] ? list[0].id : null)
   const sel = list.find((c) => c.id === selId) || list[0]
   const [firstName, setFirstName] = useState('')
+  const [ctx, setCtx] = useState('')
   const [rec, setRec] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const dataSt = useUpdateData(sel && sel.id, range, nonce)
-  // Load the last saved update (and first name) whenever the client changes.
+  // Load the last saved update, first name and client context on client change.
   useEffect(() => {
     if (!sel) return
     const saved = loadInsights(sel.id + ':update')
-    setRec(saved || null); setFirstName((saved && saved.firstName) || ''); setErr(null)
+    setRec(saved || null); setFirstName((saved && saved.firstName) || ''); setCtx(loadClientCtx(sel.id)); setErr(null)
   }, [selId, SETTINGS.loaded])
   const generate = async () => {
     if (!sel || busy) return
@@ -6411,7 +6419,7 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
         .sort((a, b) => (b.booked - a.booked) || (b.leads - a.leads)).slice(0, 5)
       // Elapsed days in the selected range, for the "is no-wins expected?" note.
       const periodDays = Math.max(1, Math.round((new Date(range.to) - new Date(range.from)) / 86400000) + 1)
-      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [] }
+      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), clientContext: (ctx || '').trim(), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [] }
       const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
@@ -6432,6 +6440,11 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
         <button className="ai-btn cu-gen" onClick={generate} disabled={busy}>{busy ? 'Generating…' : rec ? '↻ Regenerate update' : '✨ Generate update'}</button>
       </div>
       <p className="cap" style={{ marginTop: 2 }}>Pulls this client's computed results for <b>{rangeLabel(range)}</b> (spend, leads, booked calls, revenue, cost per result, best-performing ads) and writes a client-ready update. Set the period with the date range up top. Nothing is invented — it only uses the numbers on the dashboard.</p>
+      <details className="cu-ctx" open={!!ctx}>
+        <summary>Client context &amp; notes {ctx ? <span className="cu-ctx-on">· saved</span> : <span className="cap">· optional background the AI uses for tone &amp; framing</span>}</summary>
+        <textarea className="cu-ctx-ta" rows={4} value={ctx} placeholder="Anything the AI should know about this client: their business, tone to use, what they care about, current focus, sensitivities, offers running, seasonality, relationship notes… This is fed into the update as background (it never invents numbers). Saved to this client and shared with the team." onChange={(e) => setCtx(e.target.value)} onBlur={() => sel && saveClientCtx(sel.id, ctx)} />
+        <div className="cap">Saved to Settings for {sel ? sel.name : 'this client'} and shared across the team. Edited here for convenience.</div>
+      </details>
       {err && <div className="card empty-deep" style={{ padding: 18 }}><b>Couldn’t generate.</b><p className="cap" style={{ marginTop: 6 }}>{err}</p></div>}
       {busy && <div className="card"><Spinner label="Pulling the numbers and writing the update…" /></div>}
       {!busy && rec && (rec.email || rec.whatsapp) && <>

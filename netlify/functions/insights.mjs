@@ -177,7 +177,7 @@ Be specific and numeric. Under 320 words. Do not use em-dashes or en-dashes; use
 // is supplied; Claude only writes it up. Returns strict JSON {subject, email,
 // whatsapp}. Australian spelling, no em dashes, from Caalano Digital.
 async function clientUpdate(apiKey, body) {
-  const { clientName, firstName, period, periodDays, kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [], pipelines: pls = [], segments: segs = [], appts: ap = null, lostReasons: lr = [], avgCloseDays = null, nonBookerNotes: nbn = [] } = body
+  const { clientName, firstName, period, periodDays, clientContext = '', kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [], pipelines: pls = [], segments: segs = [], appts: ap = null, lostReasons: lr = [], avgCloseDays = null, nonBookerNotes: nbn = [] } = body
   const pv = k.prev || {}
   const delta = (cur, prev, lowerBetter) => { if (cur == null || prev == null || !prev) return ''; const pc = Math.round(((cur - prev) / prev) * 100); const better = lowerBetter ? pc < 0 : pc > 0; return ` (${pc >= 0 ? 'up' : 'down'} ${Math.abs(pc)}% on the previous period, ${better ? 'better' : 'worse'})` }
   // Ad-reported leads (matches Meta/Google Ads Manager) are the basis for the
@@ -231,7 +231,7 @@ FORMATTING: The email must be plain text that pastes cleanly straight into an em
 
 Client business: ${clientName || 'the client'}
 Reporting period label (for length only, describe it casually): ${period || 'the selected period'}
-
+${clientContext ? `\nBackground and context about this client (provided by the Caalano team; use it to guide tone, framing, what to emphasise and any relevant mentions, but it does NOT contain metrics - never treat anything here as a number or performance figure, and never contradict the data below):\n"""\n${String(clientContext).slice(0, 2000)}\n"""\n` : ''}
 Data:
 ${lines.join('\n')}${creativeBlock}${pipeBlock}${segBlock}${notesBlock}
 

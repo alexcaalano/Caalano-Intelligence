@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.65.0 — 2026-07-23 · `PENDING`
+- **Client context / notes** on the Client Update page. A free-text field where
+  you record background about a client (their business, tone to use, what they
+  care about, current focus, sensitivities, offers, relationship notes). It's fed
+  into the update as **background to guide tone and framing** — with a hard
+  guardrail that it is never treated as a metric and can't override or invent
+  numbers. Saved per client to the shared settings blob (so it lives in Settings)
+  but editable right here on the comms screen.
+
 ## v3.64.0 — 2026-07-23 · `PENDING`
 - **Client Update — call out the channel split when two channels run.** When a
   client runs both Meta and Google in the period, the supporting dashboard now

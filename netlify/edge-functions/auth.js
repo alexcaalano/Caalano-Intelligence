@@ -84,6 +84,8 @@ export default async (request, context) => {
 
 export const config = {
   path: '/*',
-  // The login API and the GoHighLevel OAuth callback must always be reachable.
-  excludedPath: ['/.netlify/functions/auth', '/.netlify/functions/caalano-connect'],
+  // Always-public endpoints: the login API, the GoHighLevel OAuth callback, and
+  // the Meta Ads webhook receiver (Meta calls it server-side with no cookie; it
+  // secures itself with the X-Hub-Signature-256 HMAC check instead).
+  excludedPath: ['/.netlify/functions/auth', '/.netlify/functions/caalano-connect', '/.netlify/functions/meta-webhook'],
 }

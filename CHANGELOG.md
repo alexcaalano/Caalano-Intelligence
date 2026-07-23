@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.69.1 — 2026-07-23 · `PENDING`
+- **Fix: Meta webhook was blocked by the site auth gate.** The `auth` edge
+  function refuses any `/.netlify/functions/*` call without a login cookie, which
+  also blocked Meta's server-side webhook verification (it has no cookie).
+  Added `/.netlify/functions/meta-webhook` to the edge function's `excludedPath`
+  so Meta can reach it. The endpoint still secures itself with the
+  `X-Hub-Signature-256` HMAC check, so it's safe to leave un-gated.
+
 ## v3.69.0 — 2026-07-23 · `PENDING`
 - **Meta creative-fatigue webhook receiver.** New `meta-webhook` Netlify
   function that accepts Meta's official `creative_fatigue` push events: it

@@ -433,6 +433,8 @@ function metaFatigue(ads, daily, cfg) {
     const days = [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
     const mid = Math.floor(days.length / 2); let i1 = 0, k1 = 0, i2 = 0, k2 = 0
     days.forEach(([, v], i) => { if (i < mid) { i1 += v.i; k1 += v.k } else { i2 += v.i; k2 += v.k } })
+    // Need a real baseline both halves, else a couple of clicks fake a 100% "drop".
+    if (k1 < 4 || i1 < 200 || i2 < 200) return null
     const ctr1 = i1 ? k1 / i1 : null, ctr2 = i2 ? k2 / i2 : null
     if (ctr1 == null || ctr2 == null || !ctr1) return null
     return (ctr1 - ctr2) / ctr1 // positive = CTR declined over the period
@@ -444,11 +446,15 @@ function metaFatigue(ads, daily, cfg) {
     const drop = ctrDropOf(e.name)
     const belowAvg = /BELOW_AVERAGE/i.test(e.quality || '')
     const reasons = []
-    let s = 0
-    if (freq != null) { if (freq >= c.freqHigh) { s += 2; reasons.push(`high frequency (${freq.toFixed(1)}x)`) } else if (freq >= c.freqMed) { s += 1; reasons.push(`rising frequency (${freq.toFixed(1)}x)`) } }
-    if (belowAvg) { s += 1; reasons.push('below-average quality ranking') }
-    if (drop != null) { if (drop >= c.ctrDropHigh) { s += 2; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } else if (drop >= c.ctrDropMed) { s += 1; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } }
-    const level = s >= 3 ? 'High' : s >= 1 ? 'Medium' : 'Low'
+    let s = 0, declining = false
+    // Fatigue = actual wear: rising frequency and/or a falling CTR. These are the
+    // only things that can raise a flag.
+    if (freq != null) { if (freq >= c.freqHigh) { s += 2; declining = true; reasons.push(`high frequency (${freq.toFixed(1)}x)`) } else if (freq >= c.freqMed) { s += 1; declining = true; reasons.push(`rising frequency (${freq.toFixed(1)}x)`) } }
+    if (drop != null) { if (drop >= c.ctrDropHigh) { s += 2; declining = true; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } else if (drop >= c.ctrDropMed) { s += 1; declining = true; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } }
+    // Quality ranking is a relevance signal, not fatigue on its own — it can only
+    // escalate a creative that's already showing wear, never trigger a flag alone.
+    if (belowAvg && declining) { s += 1; reasons.push('below-average quality ranking') }
+    const level = !declining ? 'Low' : s >= 3 ? 'High' : 'Medium'
     if (level === 'High') high++; else if (level === 'Medium') medium++; else low++
     out.push({ name: e.name, campaign: e.campaign, adset: e.adset, thumb: e.thumb, format: e.format, spend: Math.round(e.spend), impressions: e.impressions, frequency: freq != null ? Math.round(freq * 10) / 10 : null, ctrDrop: drop != null ? Math.round(drop * 100) : null, quality: e.quality || null, level, score: s, reasons })
   }

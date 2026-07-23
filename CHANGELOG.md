@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.68.0 — 2026-07-23 · `PENDING`
+- **Creative fatigue — smarter scoring (fewer false flags).** Fatigue now
+  requires genuine wear — rising frequency and/or a falling CTR — before a
+  creative is flagged Watch/Fatiguing. A below-average quality ranking no longer
+  triggers a flag on its own (it's a relevance signal, not fatigue); it can only
+  *escalate* a creative that's already declining. The CTR-trend now needs a real
+  baseline in both halves of the window, so low-spend creatives stop throwing
+  bogus "▼100%" drops. Net effect: the Watch/Fatiguing counts drop to creatives
+  that are actually tiring.
+- **Meta Insights — two fatigue sub-tabs.** "Creative fatigue · proxy" (our live
+  read, unchanged) and "Creative fatigue · Meta" — a placeholder for Meta's
+  official webhook signal that explains what unlocks it (a Meta App with a System
+  User token + App Review) and will show Meta's verdict beside the proxy once
+  connected.
+
 ## v3.67.0 — 2026-07-23 · `PENDING`
 - **Meta Insights hub.** New left-nav "Meta Insights" tab that gathers
   everything Meta-derived into one place, sub-tabbed like the client workspace.

@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.71.1 — 2026-07-23 · `PENDING`
+- **Webhook receiver panel is now collapsible** — it starts collapsed to a single
+  status line (green dot + "events received" + count) and expands on click to
+  show the recent-events table, so it stays out of the way.
+
 ## v3.71.0 — 2026-07-23 · `PENDING`
 - **Meta Insights — Ad recommendations tab.** New sub-tab that surfaces Meta's
   own `ad_recommendations` webhook events (already streaming in once the field is

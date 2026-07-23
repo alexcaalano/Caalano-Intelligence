@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.71.0'
+const APP_VERSION = '3.71.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6251,6 +6251,7 @@ function FatigueWebhookCard({ client, range, nonce, onStatus }) {
 // (test or real) lands, even before accounts are mapped to clients.
 function WebhookStatusPanel({ nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
+  const [open, setOpen] = useState(false)
   useEffect(() => {
     let alive = true
     fetch(`/.netlify/functions/windsor?scope=webhookstatus${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
@@ -6258,16 +6259,19 @@ function WebhookStatusPanel({ nonce }) {
   }, [nonce])
   const d = st.data
   const ever = d && d.everReceived
+  const n = (d && d.events && d.events.length) || 0
   return (
     <div className="card wh-status">
-      <div className="wh-status-h">
+      <div className="wh-status-h" onClick={() => setOpen((o) => !o)} style={{ cursor: n ? 'pointer' : 'default' }}>
+        {n ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null}
         <span className={`wh-dot ${ever ? 'on' : ''}`} />
         <b>Webhook receiver</b>
         <span className="cap">· endpoint live at <code>/.netlify/functions/meta-webhook</code></span>
         {st.status === 'loading' ? <span className="cap">· checking…</span> : ever ? <span className="wh-ok">· ✓ events received</span> : <span className="cap">· no events received yet</span>}
+        {n ? <span className="cap">· {n} recent{open ? '' : ' · click to view'}</span> : null}
       </div>
-      {d && d.events && d.events.length ? <div className="wh-events">
-        <div className="cap" style={{ marginBottom: 4 }}>Last {d.events.length} event{d.events.length === 1 ? '' : 's'} Meta sent us:</div>
+      {open && n ? <div className="wh-events">
+        <div className="cap" style={{ marginBottom: 4 }}>Last {n} event{n === 1 ? '' : 's'} Meta sent us:</div>
         <table className="mini-tbl users-tbl"><thead><tr><th className="lft">When</th><th className="lft">Account</th><th className="lft">Field</th><th className="lft">Ad</th><th className="lft">Verdict</th></tr></thead>
           <tbody>{d.events.map((e, i) => <tr key={i}><td className="lft cap">{e.ts ? new Date(e.ts).toLocaleString() : '—'}</td><td className="lft">{e.client || e.acct || '—'}</td><td className="lft">{e.field || '—'}</td><td className="lft">{e.adId || '—'}</td><td className="lft">{e.level || '—'}</td></tr>)}</tbody>
         </table>

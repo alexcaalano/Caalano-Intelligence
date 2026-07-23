@@ -849,8 +849,8 @@ async function buildBlend(c, from, to, preset, key) {
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at', 'opportunity_assigned_to'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
     c.ghl ? windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
-    pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend'], pr.from, pr.to, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
-    pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend'], pr.from, pr.to, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
     pr.from && c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], pr.from, pr.to, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
   ])
   // Windsor's GoHighLevel feed returns opportunities on a broader basis than
@@ -914,8 +914,11 @@ async function buildBlend(c, from, to, preset, key) {
   if (pr.from) {
     const pMetaSpend = pFb.reduce((a, r) => a + num(r.spend), 0)
     const pGoogleSpend = pGg.reduce((a, r) => a + num(r.spend), 0)
+    const pMetaLeads = pFb.reduce((a, r) => a + fbLeads(r), 0)
+    const pGoogleConv = pGg.reduce((a, r) => a + num(r.conversions), 0)
     prev = {
       adSpend: Math.round(pMetaSpend + pGoogleSpend), metaSpend: Math.round(pMetaSpend), googleSpend: Math.round(pGoogleSpend),
+      metaLeads: Math.round(pMetaLeads), googleConv: Math.round(pGoogleConv),
       crm: blendCrm(pOpps, idx),
     }
   }
@@ -1038,8 +1041,10 @@ async function buildHealth(c, from, to, preset, key, weights) {
     avgDeal: crm.avgValue != null ? crm.avgValue : null,
     prev: prev ? { adSpend: pSpend, leads: pLeads, qualified: pc.qualified, booked: pc.booked, shown: pc.shown, won: pc.won, revenue: pc.revenue, openValue: pc.openValue } : null,
   }
-  // Paid channel split, for the client-update module.
-  const channels = { metaSpend: p.metaSpend, googleSpend: p.googleSpend, metaLeads: p.metaLeads, googleConv: p.googleConv }
+  // Paid channel split + ad-reported leads (current & previous), so the client
+  // update reports leads/cost-per-lead on the SAME basis as Meta/Google Ads
+  // Manager rather than mixing in CRM opportunities from other sources.
+  const channels = { metaSpend: p.metaSpend, googleSpend: p.googleSpend, metaLeads: p.metaLeads, googleConv: p.googleConv, prevMetaLeads: prev ? prev.metaLeads : null, prevGoogleConv: prev ? prev.googleConv : null }
   // Per-pipeline funnels + where open deals are sitting (for the client update's
   // per-pipeline commentary and the "no wins? here's where deals got to" note).
   const pipelines = (blend.pipelines || []).map((pp) => ({

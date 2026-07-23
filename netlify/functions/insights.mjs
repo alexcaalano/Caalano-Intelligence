@@ -180,11 +180,18 @@ async function clientUpdate(apiKey, body) {
   const { clientName, firstName, period, periodDays, kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [], pipelines: pls = [], segments: segs = [], appts: ap = null, lostReasons: lr = [], avgCloseDays = null, nonBookerNotes: nbn = [] } = body
   const pv = k.prev || {}
   const delta = (cur, prev, lowerBetter) => { if (cur == null || prev == null || !prev) return ''; const pc = Math.round(((cur - prev) / prev) * 100); const better = lowerBetter ? pc < 0 : pc > 0; return ` (${pc >= 0 ? 'up' : 'down'} ${Math.abs(pc)}% on the previous period, ${better ? 'better' : 'worse'})` }
+  // Ad-reported leads (matches Meta/Google Ads Manager) are the basis for the
+  // headline lead count and cost per lead. The CRM opportunity count is reported
+  // separately, because it counts every source and counts differently.
+  const adLeads = (ch.metaLeads || 0) + (ch.googleConv || 0)
+  const prevAdLeads = (ch.prevMetaLeads != null || ch.prevGoogleConv != null) ? ((ch.prevMetaLeads || 0) + (ch.prevGoogleConv || 0)) : null
+  const adCpl = adLeads ? Math.round(k.adSpend / adLeads) : null
   const lines = []
   lines.push(`Ad spend $${n0(k.adSpend)}${delta(k.adSpend, pv.adSpend, false)} (Meta $${n0(ch.metaSpend)}, Google $${n0(ch.googleSpend)})`)
-  lines.push(`Leads ${n0(k.leads)}${delta(k.leads, pv.leads, false)}`)
-  lines.push(`Booked calls ${n0(k.booked)}${delta(k.booked, pv.booked, false)}`)
-  lines.push(`Cost per lead $${n0(k.cpl)}, cost per booked call ${k.cpBooked != null ? '$' + n0(k.cpBooked) : 'n/a'}`)
+  lines.push(`Leads from the ads: ${n0(adLeads)}${delta(adLeads, prevAdLeads, false)}. THIS is the headline lead number to use; it is the ad-reported count and matches Meta/Google Ads Manager (Meta ${n0(ch.metaLeads)}, Google ${n0(ch.googleConv)}).`)
+  lines.push(`Cost per lead $${adCpl != null ? n0(adCpl) : 'n/a'} (ad spend divided by ad-reported leads, so it matches Ads Manager), cost per booked call ${k.cpBooked != null ? '$' + n0(k.cpBooked) : 'n/a'}.`)
+  lines.push(`Booked calls ${n0(k.booked)}${delta(k.booked, pv.booked, false)} (Caalano Systems bookings attributed to the ads by UTM).`)
+  if (k.leads != null && k.leads !== adLeads) lines.push(`For context only (do NOT use as the ad lead count): the CRM logged ${n0(k.leads)} opportunities across all pipelines and sources this period. This differs from the ${n0(adLeads)} ad-reported leads because the CRM counts every source and can count differently. If you mention pipeline lead numbers, describe them as opportunities in the CRM, not ad leads.`)
   if (k.openValue) lines.push(`Open pipeline value right now $${n0(k.openValue)}`)
   // Appointment reporting nuance: attendance can look low simply because calls
   // are still upcoming, and a pipeline-vs-appointment gap flags a reporting issue.
@@ -218,6 +225,8 @@ async function clientUpdate(apiKey, body) {
 CRITICAL: Use ONLY the figures and facts provided below. Do NOT invent, estimate, extrapolate or add any number, metric, claim or insight that is not explicitly given. If a figure is n/a or not provided, do not mention it. Every statement must be directly supported by the data below.
 
 STYLE: Write plainly and professionally, the way a real account manager talks. Do NOT use clichés, idioms or sporting/boxing metaphors. Never write things like "punching above its weight", "hit the ground running", "moving the needle", "smashing it" or similar. When you cite a percentage change, say what it is compared to naturally (for example "up 143% on the previous fortnight"). Refer to the time period casually (for example "over the last fortnight", "this past month") and never quote raw dates or say "reporting period".
+
+FORMATTING: The email must be plain text that pastes cleanly straight into an email client. Do NOT use any Markdown: no asterisks for bold (no **), no hash symbols for headings, no backticks. Write section headings as plain words on their own line (for example "Quick Summary" then a line break), optionally with a colon. Use a simple hyphen and a space ("- ") for bullet points. The WhatsApp version should be plain text with no formatting symbols at all.
 
 Client business: ${clientName || 'the client'}
 Reporting period label (for length only, describe it casually): ${period || 'the selected period'}

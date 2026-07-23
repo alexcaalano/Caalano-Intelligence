@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.61.2 — 2026-07-23 · `PENDING`
+- **Fix: Client Update lead count + cost per lead now reconcile with Ads
+  Manager.** The headline "leads" was using the CRM opportunity count (every
+  source) but dividing it against Meta-only spend, so cost per lead came out low
+  (e.g. 85 leads / $46 instead of Meta's 66 / $59). The update now uses the
+  **ad-reported lead count** (Meta + Google, matching Ads Manager) for the
+  headline leads and cost per lead, with the vs-previous delta on the same basis,
+  and reports the CRM opportunity total separately and clearly labelled.
+- **Fix: email is now plain text for clean copy-paste** — no Markdown asterisks
+  or hash headings; section titles are plain lines and lists use simple hyphens.
+
 ## v3.61.1 — 2026-07-23 · `PENDING`
 - **Fix: Client Update sometimes returned the old saved copy instead of a new
   one.** The generator asked Claude for a JSON object, but the multi-line email

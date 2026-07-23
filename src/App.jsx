@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.61.2'
+const APP_VERSION = '3.62.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6198,6 +6198,112 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
 // formal/structured (email). Australian spelling, no em dashes, from Caalano
 // Digital, addressed by first name. Every figure comes from computed data; the
 // AI only writes it up. The last update is saved per client.
+// Loads every data source behind a client update in one shot (ad platforms +
+// CRM), so the page can both render the supporting dashboard and generate the
+// message from the same numbers.
+function useUpdateData(clientId, range, nonce) {
+  const [st, setSt] = useState({ status: 'idle', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    if (!clientId) { setSt({ status: 'idle', data: null }); return }
+    let alive = true; setSt({ status: 'loading', data: null })
+    const base = `/.netlify/functions/windsor?client=${clientId}`
+    const g = (s) => fetch(`${base}&scope=${s}&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({}))
+    Promise.all([
+      g('health'), g('creatives'), g('updateextra'), g('users'),
+      fetch(`${base}&channel=google&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
+    ]).then(([health, creatives, extra, users, google]) => { if (alive) setSt({ status: (health && health.error) ? 'err' : 'ok', data: { health, creatives, extra, users, google } }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
+
+// The read-only dashboard of every figure behind the update: ad-platform results
+// (front of funnel) blended with Caalano Systems bookings, pipeline and wins via
+// UTM. Consolidated summary tables that mirror what the AI writes up.
+function UpdateDataDashboard({ st, currency }) {
+  const money = (v) => fmtCurrency(v, currency)
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading the numbers behind the update…" /></div>
+  if (st.status !== 'ok' || !st.data) return null
+  const { health, creatives, extra, users, google } = st.data
+  const k = (health && health.kpis) || {}, ch = (health && health.channels) || {}, pls = (health && health.pipelines) || []
+  const adLeads = (ch.metaLeads || 0) + (ch.googleConv || 0)
+  const adCpl = adLeads ? Math.round(k.adSpend / adLeads) : null
+  const cre = (creatives && creatives.creatives) || [], segs = (creatives && creatives.segments) || []
+  const ap = extra && extra.appts, lr = (extra && extra.lostReasons) || [], nbn = (extra && extra.nonBookerNotes) || []
+  const us = (users && users.users) || []
+  const gg = google && google.google
+  // Meta campaign rollup from the creatives (UTM-blended bookings).
+  const campMap = new Map()
+  for (const c of cre) { const key = c.campaign || '—'; const e = campMap.get(key) || { name: key, spend: 0, leads: 0, booked: 0 }; e.spend += c.spend || 0; e.leads += (c.crm ? c.crm.leads : c.leads) || 0; e.booked += (c.crm ? c.crm.booked : 0) || 0; campMap.set(key, e) }
+  const metaCamps = [...campMap.values()].sort((a, b) => b.spend - a.spend)
+  const topCre = [...cre].sort((a, b) => ((b.crm ? b.crm.booked : 0) - (a.crm ? a.crm.booked : 0)) || (b.spend - a.spend)).slice(0, 12)
+  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '—')
+  return (
+    <div className="ud-wrap">
+      <div className="lvl-title" style={{ marginTop: 18 }}>The numbers behind this update <span className="sub">· ad-platform results blended with Caalano Systems bookings &amp; pipeline via UTM</span></div>
+      {/* Scorecards */}
+      <div className="scorecard">
+        <Sc label="Ad spend" value={money(k.adSpend || 0)} />
+        <Sc label="Leads (ads)" value={fmtNumber(adLeads)} />
+        <Sc label="Cost / lead" value={adCpl != null ? money(adCpl) : '—'} />
+        <Sc label="Booked calls" value={fmtNumber(k.booked || 0)} />
+        <Sc label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} />
+        <Sc label="Won" value={fmtNumber(k.won || 0)} />
+        <Sc label="Revenue" value={money(k.revenue || 0)} />
+      </div>
+      <p className="cap">Leads and cost per lead are ad-reported (Meta {fmtNumber(ch.metaLeads || 0)}, Google {fmtNumber(ch.googleConv || 0)}) so they match Ads Manager. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>
+      {ap && <p className="cap">Appointments: {fmtNumber(ap.attended)} attended, {fmtNumber(ap.noShow)} no-shows, {fmtNumber(ap.upcoming)} still upcoming, {fmtNumber(ap.occurred)} calls have happened.{ap.stageOnlyShown > 0 ? ` ${fmtNumber(ap.stageOnlyShown)} advanced past the show stage but weren’t marked attended (reporting gap).` : ''}</p>}
+
+      {/* Pipelines */}
+      {pls.length > 0 && <>
+        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Pipeline — where leads are at</div>
+        <div className="ud-pipes">{pls.map((p) => {
+          const maxOpen = Math.max(1, ...(p.stages || []).map((s) => s.open))
+          return (
+            <div className="card ud-pipe" key={p.name}>
+              <div className="ud-pipe-h">{p.name} <span className="sub">· {fmtNumber(p.leads)} leads · {fmtNumber(p.booked)} booked · {fmtNumber(p.won)} won{p.revenue ? ` · ${money(p.revenue)}` : ''}{p.openValue ? ` · ${money(p.openValue)} open` : ''}</span></div>
+              {(p.stages || []).length ? <div className="ud-funnel">{p.stages.map((s) => (
+                <div className="ud-stage" key={s.name}><span className="ud-stage-n">{s.name}</span><span className="ud-stage-bar"><span style={{ width: `${Math.max(4, (s.open / maxOpen) * 100)}%` }} /></span><span className="ud-stage-c">{fmtNumber(s.open)}</span></div>
+              ))}</div> : <div className="cap">No open deals sitting in a stage.</div>}
+            </div>
+          )
+        })}</div>
+      </>}
+
+      {/* Meta Ads */}
+      {(metaCamps.length > 0 || segs.length > 0) && <>
+        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Meta Ads <span className="sub">· campaign → ad set → creative · bookings via UTM</span></div>
+        <div className="ud-tbls">
+          {metaCamps.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Campaigns</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Campaign</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{metaCamps.map((c) => <tr key={c.name}><td className="lft">{c.name}</td><td>{money(c.spend)}</td><td>{fmtNumber(c.leads)}</td><td>{fmtNumber(c.booked)}</td><td>{cpr(c.spend, c.booked)}</td></tr>)}</tbody></table></div>}
+          {segs.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Ad sets (segments)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad set</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{segs.slice(0, 20).map((s) => <tr key={s.name}><td className="lft">{s.name}</td><td>{money(s.spend)}</td><td>{fmtNumber(s.leads)}</td><td>{s.booked != null ? fmtNumber(s.booked) : '—'}</td><td>{s.booked ? cpr(s.spend, s.booked) : '—'}</td></tr>)}</tbody></table></div>}
+        </div>
+        {topCre.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Top creatives</div><table className="mini-tbl users-tbl cc-tbl"><thead><tr><th className="lft">Creative</th><th className="lft">Format</th><th>Spend</th><th>Leads</th><th>Cost/lead</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{topCre.map((c) => { const cl = c.crm ? c.crm.leads : c.leads, bk = c.crm ? c.crm.booked : 0; return <tr key={c.id}><td className="lft"><span className="cc-nm" title={c.name}>{c.name}</span></td><td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td><td>{money(c.spend)}</td><td>{fmtNumber(cl)}</td><td>{cpr(c.spend, cl)}</td><td>{fmtNumber(bk)}</td><td>{cpr(c.spend, bk)}</td></tr> })}</tbody></table></div>}
+      </>}
+
+      {/* Google Ads */}
+      {gg && ((gg.campaigns || []).length > 0 || (gg.adGroups || []).length > 0) && <>
+        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Google Ads <span className="sub">· campaign → ad group · ad-reported</span></div>
+        <div className="ud-tbls">
+          {(gg.campaigns || []).length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Campaigns</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Campaign</th><th>Cost</th><th>Clicks</th><th>Conv.</th></tr></thead><tbody>{gg.campaigns.slice(0, 15).map((c) => <tr key={c.name}><td className="lft">{c.name}</td><td>{money(c.cost)}</td><td>{fmtNumber(c.clicks)}</td><td>{fmtNumber(Math.round(c.conversions))}</td></tr>)}</tbody></table></div>}
+          {(gg.adGroups || []).length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Ad groups</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad group</th><th>Cost</th><th>Clicks</th><th>Conv.</th></tr></thead><tbody>{gg.adGroups.slice(0, 20).map((c) => <tr key={c.campaign + c.name}><td className="lft">{c.name}<span className="cap"> · {c.campaign}</span></td><td>{money(c.cost)}</td><td>{fmtNumber(c.clicks)}</td><td>{fmtNumber(Math.round(c.conversions))}</td></tr>)}</tbody></table></div>}
+        </div>
+      </>}
+
+      {/* Users + lost reasons */}
+      <div className="ud-tbls">
+        {us.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">User performance</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Rep</th><th>Leads</th><th>Booked</th><th>Won</th><th>Revenue</th></tr></thead><tbody>{[...us].sort((a, b) => b.won - a.won || b.booked - a.booked).slice(0, 12).map((u) => <tr key={u.id}><td className="lft">{u.name}</td><td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{fmtNumber(u.won)}</td><td>{money(u.revenue)}</td></tr>)}</tbody></table></div>}
+        {lr.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Lost reasons</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Reason</th><th>Count</th></tr></thead><tbody>{lr.map((r) => <tr key={r.reason}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td></tr>)}</tbody></table></div>}
+      </div>
+
+      {/* Non-booker note themes */}
+      {nbn.length > 0 && <details className="ud-notes"><summary>Notes on {fmtNumber(nbn.length)} leads who didn’t book (the AI uses these for cause detection)</summary>
+        <div className="u-notes" style={{ marginTop: 8 }}>{nbn.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.pipeline}</div><div className="u-note-body">{n.note}</div></div>)}</div>
+      </details>}
+    </div>
+  )
+}
+
 function CopyBtn({ text, label = 'Copy' }) {
   const [done, setDone] = useState(false)
   const copy = async () => { try { await navigator.clipboard.writeText(text || ''); setDone(true); setTimeout(() => setDone(false), 1600) } catch { /* clipboard blocked */ } }
@@ -6212,6 +6318,7 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
   const [rec, setRec] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
+  const dataSt = useUpdateData(sel && sel.id, range, nonce)
   // Load the last saved update (and first name) whenever the client changes.
   useEffect(() => {
     if (!sel) return
@@ -6220,14 +6327,10 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
   }, [selId, SETTINGS.loaded])
   const generate = async () => {
     if (!sel || busy) return
+    if (dataSt.status !== 'ok' || !dataSt.data) { setErr('The client numbers are still loading, give it a moment and try again.'); return }
     setBusy(true); setErr(null)
     try {
-      const q = rangeQuery(range)
-      const [health, creatives, extra] = await Promise.all([
-        fetch(`/.netlify/functions/windsor?client=${sel.id}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()),
-        fetch(`/.netlify/functions/windsor?client=${sel.id}&scope=creatives&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({ creatives: [] })),
-        fetch(`/.netlify/functions/windsor?client=${sel.id}&scope=updateextra&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
-      ])
+      const { health, creatives, extra } = dataSt.data
       if (!health || health.error) throw new Error((health && health.error) || 'could not load the client data')
       const topCr = (creatives.creatives || [])
         .map((c) => ({ name: c.name, format: c.format, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, booked: c.crm ? c.crm.booked : 0 }))
@@ -6272,6 +6375,7 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
         </div>
       </>}
       {!busy && !rec && !err && <div className="card empty-deep"><div className="big">✉️</div><b>Generate an update for {sel ? sel.name : 'this client'}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add the client's first name, pick your date range up top, then Generate. You'll get a casual WhatsApp version and a formal email version, ready to copy and send.</p></div>}
+      <UpdateDataDashboard st={dataSt} currency={currency} />
     </>
   )
 }

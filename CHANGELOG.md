@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.62.0 — 2026-07-23 · `PENDING`
+- **"The numbers behind this update" dashboard** on the Client Update page.
+  Loads with the selected client + date range and shows every figure the update
+  is built from, so you can see how it all connects:
+  - **Scorecards** on the standard basis: ad spend, ad-reported leads (Meta +
+    Google, matches Ads Manager), cost per lead, booked calls, cost per booked,
+    won, revenue, plus the appointment breakdown (attended / no-show / upcoming /
+    reporting gap).
+  - **Pipeline view** per pipeline: a funnel of where open deals are sitting, in
+    stage order, with leads / booked / won / revenue.
+  - **Meta Ads** consolidated tables: Campaign → Ad set (segment) → Creative, with
+    spend, leads, cost per lead, booked and cost per booked (bookings blended in
+    by UTM).
+  - **Google Ads** tables (Campaign → Ad group) where the client runs Google.
+  - **User performance**, **lost reasons**, and the sampled **non-booker notes**.
+  - The page now loads all data once; Generate reuses it (faster, and the message
+    and its evidence always match).
+
 ## v3.61.2 — 2026-07-23 · `PENDING`
 - **Fix: Client Update lead count + cost per lead now reconcile with Ads
   Manager.** The headline "leads" was using the CRM opportunity count (every

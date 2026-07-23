@@ -1542,3 +1542,21 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .cu-subject .cu-copy { margin-left: auto; }
 .cu-body { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.55; color: var(--text); margin: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
 @media (max-width: 900px) { .cu-grid { grid-template-columns: 1fr; } }
+
+/* ============ Client Update — supporting data dashboard ============ */
+.ud-wrap { margin-top: 8px; }
+.ud-pipes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ud-pipe-h { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.ud-pipe-h .sub { font-weight: 500; color: var(--muted); font-size: 11.5px; }
+.ud-funnel { display: flex; flex-direction: column; gap: 5px; }
+.ud-stage { display: grid; grid-template-columns: 150px 1fr 40px; align-items: center; gap: 8px; }
+.ud-stage-n { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ud-stage-bar { height: 14px; border-radius: 5px; background: var(--border); overflow: hidden; }
+.ud-stage-bar > span { display: block; height: 100%; border-radius: 5px; background: var(--brand); }
+.ud-stage-c { font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.ud-tbls { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.ud-tbl { margin-top: 8px; }
+.ud-tbl-h { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 4px; }
+.ud-notes { margin-top: 14px; }
+.ud-notes > summary { cursor: pointer; font-size: 12.5px; font-weight: 650; color: var(--muted); padding: 6px 2px; }
+@media (max-width: 900px) { .ud-pipes, .ud-tbls { grid-template-columns: 1fr; } .ud-stage { grid-template-columns: 110px 1fr 36px; } }

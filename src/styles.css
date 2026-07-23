@@ -1565,9 +1565,8 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .ud-thumb { position: relative; display: inline-block; vertical-align: middle; margin-right: 6px; }
 .ud-thumb > img { width: 30px; height: 30px; object-fit: cover; border-radius: 5px; border: 1px solid var(--border); background: var(--panel-2); display: block; }
 .ud-thumb-none { width: 30px; height: 30px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--border); }
-.ud-thumb-pop { display: none; position: absolute; z-index: 60; bottom: 130%; left: 0; }
-.ud-thumb:hover .ud-thumb-pop { display: block; }
-.ud-thumb-pop > img { width: 240px; max-width: 60vw; height: auto; border-radius: 10px; border: 1px solid var(--border-2); box-shadow: var(--shadow); }
+.ud-thumb-pop { pointer-events: none; }
+.ud-thumb-pop > img { width: 240px; max-width: 70vw; height: auto; border-radius: 10px; border: 1px solid var(--border-2); box-shadow: var(--shadow); display: block; background: var(--panel); }
 .ud-child > td { background: color-mix(in srgb, var(--panel-2) 60%, transparent); font-size: 12px; }
 .ud-child .cc-nm { max-width: 260px; }
 .ud-prev { margin-left: 6px; color: var(--brand); font-weight: 700; }

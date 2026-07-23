@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.63.1 — 2026-07-23 · `PENDING`
+- **Fix: ad thumbnail preview was being clipped** by the table's scroll
+  container. The hover preview now renders as a fixed overlay positioned from the
+  thumbnail, so it sits over the top of everything (and flips below the thumbnail
+  when there isn't room above).
+
 ## v3.63.0 — 2026-07-23 · `PENDING`
 - **Supporting dashboard — drill-down + thumbnails + booking attribution.**
   - **Click a campaign or ad set** to expand the ads inside it, each with a

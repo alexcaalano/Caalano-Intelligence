@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.63.0'
+const APP_VERSION = '3.63.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6218,10 +6218,24 @@ function useUpdateData(clientId, range, nonce) {
   return st
 }
 
-// Small thumbnail that pops a larger preview on hover.
+// Small thumbnail that pops a larger preview on hover. The preview is
+// position:fixed (positioned from the thumbnail's on-screen rect) so it renders
+// over the table instead of being clipped by the scroll container's overflow.
 function ThumbZoom({ src }) {
+  const ref = useRef(null)
+  const [pos, setPos] = useState(null)
   if (!src) return <span className="ud-thumb ud-thumb-none" />
-  return <span className="ud-thumb"><img src={src} alt="" loading="lazy" /><span className="ud-thumb-pop"><img src={src} alt="" /></span></span>
+  const show = () => {
+    const r = ref.current && ref.current.getBoundingClientRect(); if (!r) return
+    const W = 240, above = r.top > 260
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - W - 12)), top: above ? r.top - 8 : r.bottom + 8, above })
+  }
+  return (
+    <span className="ud-thumb" ref={ref} onMouseEnter={show} onMouseLeave={() => setPos(null)}>
+      <img src={src} alt="" loading="lazy" />
+      {pos && <span className="ud-thumb-pop" style={{ position: 'fixed', left: pos.left, top: pos.top, transform: pos.above ? 'translateY(-100%)' : 'none', zIndex: 9999 }}><img src={src} alt="" /></span>}
+    </span>
+  )
 }
 // Campaign / ad-set rows that expand to the ads inside them (with thumbnails).
 function MetaGroupRows({ groups, adsFor, money, level }) {

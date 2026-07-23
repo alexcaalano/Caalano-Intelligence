@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.71.0 — 2026-07-23 · `PENDING`
+- **Meta Insights — Ad recommendations tab.** New sub-tab that surfaces Meta's
+  own `ad_recommendations` webhook events (already streaming in once the field is
+  subscribed), grouped by client, newest first, with whatever detail the payload
+  carried. Backend `scope=recommendations` reads them from the webhook store.
+
 ## v3.70.0 — 2026-07-23 · `PENDING`
 - **Meta webhook — live connection status panel.** The "Creative fatigue · Meta"
   tab now shows a receiver-status card that lists every event Meta has sent

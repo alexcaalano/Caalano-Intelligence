@@ -1723,6 +1723,51 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'webhookstatus', error: String(e.message || e).slice(0, 200), accounts: [], events: [] }, 200) }
   }
 
+  // Meta's own ad recommendations (webhook field ad_recommendations), grouped by
+  // client. The webhook flags that a recommendation exists for an ad/account; we
+  // surface the events and whatever detail the payload carried, newest first.
+  if (url.searchParams.get('scope') === 'recommendations') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    try {
+      const store = getStore({ name: 'meta-webhooks', consistency: 'strong' })
+      const { blobs } = await store.list()
+      const acctToClient = {}
+      for (const [cid, cc] of Object.entries(CLIENTS)) if (cc.meta) acctToClient[String(cc.meta).replace(/\D/g, '')] = cid
+      // Pull a few interpretable fields out of whatever shape Meta sent.
+      const detailOf = (raw) => {
+        if (!raw || typeof raw !== 'object') return null
+        const pick = (...keys) => { for (const k of keys) if (raw[k] != null && raw[k] !== '') return String(raw[k]); return null }
+        const type = pick('recommendation_type', 'type', 'category', 'name')
+        const message = pick('message', 'title', 'recommendation', 'description', 'text', 'body')
+        const adId = pick('ad_id', 'adgroup_id', 'id')
+        // Fall back to a compact key list so nothing is silently hidden.
+        const other = Object.keys(raw).filter((k) => !['recommendation_type', 'type', 'category', 'name', 'message', 'title', 'recommendation', 'description', 'text', 'body', 'ad_id', 'adgroup_id', 'id'].includes(k)).slice(0, 6)
+        return { type, message, adId, extra: other.map((k) => `${k}: ${JSON.stringify(raw[k]).slice(0, 60)}`) }
+      }
+      const groups = {}
+      for (const b of (blobs || [])) {
+        const rec = await store.get(b.key, { type: 'json' }).catch(() => null); if (!rec) continue
+        const acctDigits = b.key.replace(/^acct:/, ''); const client = acctToClient[acctDigits] || null
+        for (const e of (rec.events || [])) {
+          if (e.field !== 'ad_recommendations') continue
+          const gk = client || `acct:${acctDigits}`
+          const g = groups[gk] || (groups[gk] = { client, acct: acctDigits, items: [] })
+          g.items.push({ ts: e.ts, adId: e.adId, detail: detailOf(e.raw) })
+        }
+      }
+      // Newest first per client; collapse exact repeats (same ad + same detail).
+      const out = Object.values(groups).map((g) => {
+        const seen = new Set(); const items = []
+        for (const it of g.items.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')))) {
+          const sig = `${it.adId}|${it.detail ? it.detail.type + it.detail.message : ''}`
+          if (seen.has(sig)) continue; seen.add(sig); items.push(it)
+        }
+        return { ...g, items: items.slice(0, 40), count: items.length, latest: items[0] ? items[0].ts : null }
+      }).sort((a, b) => String(b.latest || '').localeCompare(String(a.latest || '')))
+      return json({ scope: 'recommendations', groups: out, total: out.reduce((n, g) => n + g.count, 0) }, 200)
+    } catch (e) { return json({ scope: 'recommendations', error: String(e.message || e).slice(0, 200), groups: [] }, 200) }
+  }
+
   // Meta anomaly / delivery-health signal for the Meta Insights tab — one client
   // per request, current vs prior-window movement in the key delivery metrics.
   if (url.searchParams.get('scope') === 'anomalies') {

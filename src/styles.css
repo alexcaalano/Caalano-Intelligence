@@ -1631,3 +1631,11 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .wh-dot.on { background: #17b26a; box-shadow: 0 0 0 3px color-mix(in srgb, #17b26a 22%, transparent); }
 .wh-ok { color: #17b26a; font-weight: 700; }
 .wh-events { margin-top: 10px; }
+.rec-list { display: flex; flex-direction: column; }
+.rec-row { display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.rec-row:first-child { border-top: none; }
+.rec-when { flex-shrink: 0; width: 130px; }
+.rec-body { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.rec-type { font-weight: 700; }
+.rec-msg { color: var(--text); }
+.rec-extra { opacity: .8; }

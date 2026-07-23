@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.70.0'
+const APP_VERSION = '3.71.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6296,6 +6296,46 @@ function MetaFatigueWebhookPage({ clients, range, nonce }) {
   )
 }
 
+/* ============ Meta ad recommendations (webhook-fed, agency-wide) ============ */
+function useRecommendations(nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=recommendations${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [nonce])
+  return st
+}
+function RecommendationsPage({ clients, nonce }) {
+  const st = useRecommendations(nonce)
+  const nameById = {}; for (const c of clients) nameById[c.id] = c.name
+  const d = st.data
+  const groups = (d && d.groups) || []
+  return (
+    <>
+      <div className="lvl-title">Ad recommendations · Meta’s signal <span className="sub">· pushed by webhook</span></div>
+      <p className="caveat">Meta’s own optimisation recommendations, delivered by webhook as they’re issued (the <code>ad_recommendations</code> field, per subscribed account). Each entry flags that Meta has a suggestion for an ad or account — open Ads Manager for the full write-up. Newest first.</p>
+      {st.status === 'loading' ? <div className="card"><Spinner label="Loading recommendations…" /></div>
+        : !groups.length ? <div className="card empty-deep"><div className="big">💡</div><b>No recommendations received yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>They’ll appear here as Meta pushes them for your subscribed accounts. Make sure the <code>ad_recommendations</code> field is subscribed for each account.</p></div>
+          : <div className="fat-grid">{groups.map((g, i) => (
+            <div className="card fat-card" key={i}>
+              <div className="fat-card-h"><div className="fat-card-nm">{nameById[g.client] || g.client || `Account ${g.acct}`}</div><span className="fat-c fat-low">{g.count} recommendation{g.count === 1 ? '' : 's'}</span></div>
+              <div className="rec-list">{g.items.map((it, j) => (
+                <div className="rec-row" key={j}>
+                  <div className="rec-when cap">{it.ts ? new Date(it.ts).toLocaleString() : '—'}</div>
+                  <div className="rec-body">
+                    {it.detail && it.detail.type ? <span className="rec-type">{it.detail.type}</span> : null}
+                    {it.detail && it.detail.message ? <span className="rec-msg">{it.detail.message}</span> : <span className="cap">Meta flagged a recommendation{it.adId ? ` for ad ${it.adId}` : ''} — open Ads Manager for the detail.</span>}
+                    {it.detail && it.detail.extra && it.detail.extra.length ? <div className="cap rec-extra">{it.detail.extra.join(' · ')}</div> : null}
+                  </div>
+                </div>
+              ))}</div>
+            </div>
+          ))}</div>}
+    </>
+  )
+}
+
 /* ============ Meta Insights — hub for everything Meta-derived ============ */
 // Sub-tabbed like the client workspace. Fatigue + Anomalies ship today (computed
 // from Windsor data); the Meta-App-gated reads (opportunity score, benchmarks,
@@ -6304,6 +6344,7 @@ const META_INSIGHTS_TABS = [
   { id: 'anomalies', label: 'Delivery health', ready: true },
   { id: 'fatigue', label: 'Creative fatigue · proxy', ready: true },
   { id: 'fatigue-webhook', label: 'Creative fatigue · Meta', ready: true },
+  { id: 'recommendations', label: 'Ad recommendations', ready: true },
   { id: 'benchmarks', label: 'Benchmarks', ready: false },
   { id: 'opportunity', label: 'Opportunity score', ready: false },
   { id: 'library', label: 'Ad Library', ready: false },
@@ -6317,6 +6358,7 @@ function MetaInsightsPage({ clients, currency, range, nonce }) {
       {tab === 'anomalies' && <MetaAnomaliesPage clients={clients} currency={currency} range={range} nonce={nonce} />}
       {tab === 'fatigue' && <MetaFatiguePage clients={clients} currency={currency} range={range} nonce={nonce} />}
       {tab === 'fatigue-webhook' && <MetaFatigueWebhookPage clients={clients} range={range} nonce={nonce} />}
+      {tab === 'recommendations' && <RecommendationsPage clients={clients} nonce={nonce} />}
       {!cur.ready && <div className="card mi-soon-card">
         <div className="big">🔒</div>
         <b>{cur.label} needs a Meta App connection.</b>

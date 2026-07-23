@@ -1672,6 +1672,34 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'fatigue', client, error: String(e.message || e).slice(0, 200), creatives: [], summary: { high: 0, medium: 0, low: 0, total: 0 } }, 200) }
   }
 
+  // Meta's OWN creative-fatigue verdicts, as pushed to the meta-webhook function
+  // and stored in Blobs. Read-only; joins each ad id to a name/thumbnail from
+  // Windsor so the "Creative fatigue · Meta" tab reads like the proxy tab. Shows
+  // connected:false until the webhook is set up and Meta sends its first event.
+  if (url.searchParams.get('scope') === 'fatiguewebhook') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'fatiguewebhook', client, meta: false, connected: false, creatives: [] })
+    try {
+      const key2 = 'acct:' + String(cc.meta).replace(/\D/g, '')
+      const rec = await getStore({ name: 'meta-webhooks', consistency: 'strong' }).get(key2, { type: 'json' }).catch(() => null)
+      const ads = (rec && rec.ads) || {}
+      const ids = Object.keys(ads)
+      if (!ids.length) return json({ scope: 'fatiguewebhook', client, connected: !!rec, updatedAt: rec ? rec.updatedAt : null, creatives: [] }, 200, true)
+      // Best-effort join ad_id → name/thumbnail via Windsor (field may be absent).
+      let nameById = {}
+      try {
+        const rows = (await windsorFetch('facebook', ['account_id', 'ad_id', 'ad_name', 'thumbnail_url'], from, to, preset, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+        for (const r of rows) if (r.ad_id) nameById[String(r.ad_id)] = { name: r.ad_name, thumb: r.thumbnail_url }
+      } catch { /* names optional */ }
+      const norml = (l) => /high/i.test(l) ? 'High' : /med/i.test(l) ? 'Medium' : /low/i.test(l) ? 'Low' : l
+      const creatives = ids.map((id) => ({ adId: id, level: norml(ads[id].level), rawLevel: ads[id].level, ts: ads[id].ts, name: (nameById[id] || {}).name || null, thumb: (nameById[id] || {}).thumb || null }))
+        .sort((a, b) => ({ High: 0, Medium: 1, Low: 2 }[a.level] ?? 3) - ({ High: 0, Medium: 1, Low: 2 }[b.level] ?? 3))
+      const summary = { high: creatives.filter((c) => c.level === 'High').length, medium: creatives.filter((c) => c.level === 'Medium').length, low: creatives.filter((c) => c.level === 'Low').length, total: creatives.length }
+      return json({ scope: 'fatiguewebhook', client, connected: true, updatedAt: rec.updatedAt, verified: !!rec.verified, creatives, summary }, 200, true)
+    } catch (e) { return json({ scope: 'fatiguewebhook', client, error: String(e.message || e).slice(0, 200), connected: false, creatives: [] }, 200) }
+  }
+
   // Meta anomaly / delivery-health signal for the Meta Insights tab — one client
   // per request, current vs prior-window movement in the key delivery metrics.
   if (url.searchParams.get('scope') === 'anomalies') {

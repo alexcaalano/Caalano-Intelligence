@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.68.0'
+const APP_VERSION = '3.69.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6063,6 +6063,21 @@ function useAnomalies(clientId, range, nonce = 0) {
   return st
 }
 
+// Meta's own creative-fatigue verdicts (pushed to the webhook, stored in Blobs).
+function useFatigueWebhook(clientId, range, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=fatiguewebhook&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
+
 // Small fatigue chip. Low = no chip (only surface what needs attention).
 function FatigueBadge({ fat }) {
   if (!fat || fat.level === 'Low') return null
@@ -6205,6 +6220,53 @@ function MetaAnomaliesPage({ clients, currency, range, nonce }) {
   )
 }
 
+/* ====== Meta's own creative-fatigue verdicts (webhook-fed, agency-wide) ====== */
+function FatigueWebhookCard({ client, range, nonce, onStatus }) {
+  const st = useFatigueWebhook(client.id, range, nonce)
+  const d = st.data
+  const connected = !!(d && d.connected)
+  const creatives = (d && d.creatives) || []
+  useEffect(() => { onStatus(client.id, { connected, count: creatives.length }) }, [connected, creatives.length])
+  if (st.status === 'loading') return <div className="card fat-card"><div className="fat-card-h"><div className="fat-card-nm">{client.name}</div><span className="cap">Checking…</span></div></div>
+  if (!connected) return null // hidden until this account is subscribed and sends events
+  return (
+    <div className="card fat-card">
+      <div className="fat-card-h">
+        <div className="fat-card-nm">{client.name}</div>
+        {d.summary ? <div className="fat-counts"><span className="fat-c fat-high">{d.summary.high} High</span><span className="fat-c fat-med">{d.summary.medium} Med</span><span className="fat-c fat-low">{d.summary.low} Low</span></div> : null}
+      </div>
+      {!creatives.length ? <div className="cap">Connected — waiting for Meta’s first fatigue event on this account.</div>
+        : <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
+          <thead><tr><th className="lft">Creative</th><th className="lft">Meta verdict</th><th className="lft">Updated</th></tr></thead>
+          <tbody>{creatives.map((c) => <tr key={c.adId}>
+            <td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name || c.adId}>{c.name || `Ad ${c.adId}`}</span></td>
+            <td className="lft"><span className={`fat-badge ${c.level === 'High' ? 'fat-high' : c.level === 'Medium' ? 'fat-med' : ''}`}>{c.level === 'High' ? '🔥 High' : c.level === 'Medium' ? '👀 Medium' : `✅ ${c.level}`}</span></td>
+            <td className="lft cap">{c.ts ? new Date(c.ts).toLocaleDateString() : '—'}</td>
+          </tr>)}</tbody>
+        </table></div>}
+    </div>
+  )
+}
+function MetaFatigueWebhookPage({ clients, range, nonce }) {
+  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
+  const [status, setStatus] = useState({})
+  const onStatus = React.useCallback((id, s) => setStatus((p) => ({ ...p, [id]: s })), [])
+  const anyConnected = Object.values(status).some((s) => s && s.connected)
+  const connectedCount = Object.values(status).filter((s) => s && s.connected).length
+  return (
+    <>
+      <div className="lvl-title">Creative fatigue · Meta’s signal <span className="sub">· official webhook verdicts</span></div>
+      {!anyConnected && <div className="card mi-setup">
+        <div className="mi-setup-h">🔌 Not receiving Meta events yet</div>
+        <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict — pushed to the dashboard by webhook, not computed. The receiver endpoint is live at <code>/.netlify/functions/meta-webhook</code>; it starts filling in once a Meta App is connected and subscribes each client account.</p>
+        <p className="cap">Setup steps and the exact subscription commands are in <code>META-WEBHOOK-SETUP.md</code> in the repo. Until then, use the <b>Creative fatigue · proxy</b> tab — it covers every client live.</p>
+      </div>}
+      {anyConnected && <p className="caveat">Meta’s official verdicts for the {connectedCount} connected account{connectedCount === 1 ? '' : 's'}. These are pushed by Meta as creatives tire — compare against the proxy tab, which explains the “why”. Accounts not yet subscribed don’t appear here.</p>}
+      <div className="fat-grid">{metaClients.map((c) => <FatigueWebhookCard key={c.id} client={c} range={range} nonce={nonce} onStatus={onStatus} />)}</div>
+    </>
+  )
+}
+
 /* ============ Meta Insights — hub for everything Meta-derived ============ */
 // Sub-tabbed like the client workspace. Fatigue + Anomalies ship today (computed
 // from Windsor data); the Meta-App-gated reads (opportunity score, benchmarks,
@@ -6212,7 +6274,7 @@ function MetaAnomaliesPage({ clients, currency, range, nonce }) {
 const META_INSIGHTS_TABS = [
   { id: 'anomalies', label: 'Delivery health', ready: true },
   { id: 'fatigue', label: 'Creative fatigue · proxy', ready: true },
-  { id: 'fatigue-webhook', label: 'Creative fatigue · Meta', ready: false },
+  { id: 'fatigue-webhook', label: 'Creative fatigue · Meta', ready: true },
   { id: 'benchmarks', label: 'Benchmarks', ready: false },
   { id: 'opportunity', label: 'Opportunity score', ready: false },
   { id: 'library', label: 'Ad Library', ready: false },
@@ -6225,6 +6287,7 @@ function MetaInsightsPage({ clients, currency, range, nonce }) {
       <div className="subtabs">{META_INSIGHTS_TABS.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}{!t.ready ? <span className="mi-soon">soon</span> : null}</button>)}</div>
       {tab === 'anomalies' && <MetaAnomaliesPage clients={clients} currency={currency} range={range} nonce={nonce} />}
       {tab === 'fatigue' && <MetaFatiguePage clients={clients} currency={currency} range={range} nonce={nonce} />}
+      {tab === 'fatigue-webhook' && <MetaFatigueWebhookPage clients={clients} range={range} nonce={nonce} />}
       {!cur.ready && <div className="card mi-soon-card">
         <div className="big">🔒</div>
         <b>{cur.label} needs a Meta App connection.</b>

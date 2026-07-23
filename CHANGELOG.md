@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.69.0 — 2026-07-23 · `PENDING`
+- **Meta creative-fatigue webhook receiver.** New `meta-webhook` Netlify
+  function that accepts Meta's official `creative_fatigue` push events: it
+  answers Meta's verification handshake, verifies each POST's `X-Hub-Signature-256`
+  against `META_APP_SECRET`, and stores each ad's latest verdict in Netlify Blobs.
+  - *Read path* — `scope=fatiguewebhook` in windsor.mjs reads the stored verdicts
+    for a client's Meta account and joins ad ids to names/thumbnails.
+  - *UI* — the "Creative fatigue · Meta" sub-tab now renders real data: a clear
+    "not receiving events yet" setup banner until connected, then per-account
+    cards with Meta's Low/Med/High beside our proxy on the neighbouring tab.
+  - *Docs* — `META-WEBHOOK-SETUP.md` walks through the Meta App, System User,
+    webhook wiring, per-account subscription commands and App Review.
+  - Requires two env vars (`META_VERIFY_TOKEN`, `META_APP_SECRET`) and a Meta App
+    with App Review to cover all client accounts; the proxy tab covers everyone
+    in the meantime.
+
 ## v3.68.0 — 2026-07-23 · `PENDING`
 - **Creative fatigue — smarter scoring (fewer false flags).** Fatigue now
   requires genuine wear — rising frequency and/or a falling CTR — before a

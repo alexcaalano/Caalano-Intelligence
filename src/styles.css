@@ -1620,3 +1620,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .anom-ads { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .anom-ad { display: flex; align-items: center; gap: 4px; font-size: 12px; margin-bottom: 3px; }
 .anom-ad .cc-nm { max-width: 240px; }
+.mi-setup { border: 1px dashed var(--border-2); background: var(--panel-2); }
+.mi-setup-h { font-weight: 720; font-size: 14px; margin-bottom: 6px; }
+.mi-setup p { font-size: 12.5px; line-height: 1.55; margin: 6px 0; }
+.mi-setup code { background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-size: 11.5px; }

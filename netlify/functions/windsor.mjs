@@ -1507,7 +1507,16 @@ export default async (req) => {
       const byMedium = perf.byMedium || {}
       const medByKey = {}; for (const [k, v] of Object.entries(byMedium)) medByKey[nk(k)] = v
       const segments = (meta.adsets || []).map((a) => { const crm = medByKey[nk(a.name)] || null; return { name: a.name, campaign: a.campaign, spend: Math.round(a.spend), leads: crm ? crm.leads : a.leads, booked: crm ? crm.booked : null, won: crm ? crm.won : null, revenue: crm ? crm.revenue : null } }).sort((a, b) => b.spend - a.spend)
-      return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, segments, unmatched }, 200, true)
+      // Flat per-(campaign, ad set, creative) rows for the drill-down + thumbnails.
+      const adRows = (meta.ads || []).map((a) => { const ex = creBy.get(a.name) || {}; const crm = perfByKey[nk(a.name)] || null; return { name: a.name, campaign: a.campaign, adset: a.adset, format: a.type, thumb: a.thumb, previewUrl: ex.ad_preview_shareable_link || a.igUrl || null, spend: Math.round(a.spend), leads: a.leads, booked: crm ? crm.booked : 0 } })
+      // Which UTM values actually carry the bookings, so unattributed bookings are
+      // visible. Resolve each utm_content back to a live ad by creative_id or name.
+      const creById = {}; const nameByKey = {}
+      for (const [an, ex] of creBy.entries()) { if (ex.creative_id) creById[String(ex.creative_id)] = an; nameByKey[nk(an)] = an }
+      const resolveContent = (v) => creById[String(v)] || nameByKey[nk(v)] || null
+      const bkContent = Object.entries(byContent).filter(([, x]) => (x.booked || 0) > 0).map(([utm, x]) => ({ utm, matchedAd: resolveContent(utm), booked: x.booked, leads: x.leads, won: x.won })).sort((a, b) => b.booked - a.booked).slice(0, 40)
+      const bkMedium = Object.entries(byMedium).filter(([, x]) => (x.booked || 0) > 0).map(([utm, x]) => ({ utm, booked: x.booked, leads: x.leads, won: x.won })).sort((a, b) => b.booked - a.booked).slice(0, 40)
+      return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, segments, ads: adRows, bookingsByUtm: { content: bkContent, medium: bkMedium }, unmatched }, 200, true)
     } catch (e) { return json({ scope: 'creatives', client, error: String(e.message || e).slice(0, 200), creatives: [] }, 200) }
   }
 

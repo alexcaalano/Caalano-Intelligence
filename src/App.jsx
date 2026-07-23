@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.62.0'
+const APP_VERSION = '3.63.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6218,6 +6218,36 @@ function useUpdateData(clientId, range, nonce) {
   return st
 }
 
+// Small thumbnail that pops a larger preview on hover.
+function ThumbZoom({ src }) {
+  if (!src) return <span className="ud-thumb ud-thumb-none" />
+  return <span className="ud-thumb"><img src={src} alt="" loading="lazy" /><span className="ud-thumb-pop"><img src={src} alt="" /></span></span>
+}
+// Campaign / ad-set rows that expand to the ads inside them (with thumbnails).
+function MetaGroupRows({ groups, adsFor, money, level }) {
+  const [open, setOpen] = useState(() => new Set())
+  const toggle = (n) => setOpen((p) => { const s = new Set(p); s.has(n) ? s.delete(n) : s.add(n); return s })
+  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '—')
+  return groups.map((g) => {
+    const isOpen = open.has(g.name); const kids = isOpen ? adsFor(g.name) : []
+    return (
+      <React.Fragment key={g.name}>
+        <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => toggle(g.name)}>
+          <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {g.name}</td>
+          <td>{money(g.spend)}</td><td>{fmtNumber(g.leads)}</td><td>{g.booked != null ? fmtNumber(g.booked) : '—'}</td><td>{g.booked ? cpr(g.spend, g.booked) : '—'}</td>
+        </tr>
+        {isOpen && kids.map((a, i) => (
+          <tr className="ud-child" key={a.name + i}>
+            <td className="lft"><ThumbZoom src={a.thumb} /> <span className="cc-nm" title={a.name}>{a.name}</span>{a.previewUrl ? <a className="ud-prev" href={a.previewUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>↗</a> : null}</td>
+            <td>{money(a.spend)}</td><td>{fmtNumber(a.leads)}</td><td>{fmtNumber(a.booked)}</td><td>{a.booked ? cpr(a.spend, a.booked) : '—'}</td>
+          </tr>
+        ))}
+        {isOpen && !kids.length && <tr className="ud-child"><td colSpan={5} className="cap">No ads found in this {level}.</td></tr>}
+      </React.Fragment>
+    )
+  })
+}
+
 // The read-only dashboard of every figure behind the update: ad-platform results
 // (front of funnel) blended with Caalano Systems bookings, pipeline and wins via
 // UTM. Consolidated summary tables that mirror what the AI writes up.
@@ -6239,6 +6269,12 @@ function UpdateDataDashboard({ st, currency }) {
   const metaCamps = [...campMap.values()].sort((a, b) => b.spend - a.spend)
   const topCre = [...cre].sort((a, b) => ((b.crm ? b.crm.booked : 0) - (a.crm ? a.crm.booked : 0)) || (b.spend - a.spend)).slice(0, 12)
   const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '—')
+  // Flat ad rows (per campaign/ad set/creative) for the drill-down.
+  const ads = (creatives && creatives.ads) || []
+  const adsInCampaign = (name) => ads.filter((a) => a.campaign === name).sort((a, b) => b.spend - a.spend)
+  const adsInAdset = (name) => ads.filter((a) => a.adset === name).sort((a, b) => b.spend - a.spend)
+  const bk = (creatives && creatives.bookingsByUtm) || { content: [], medium: [] }
+  const bkContent = bk.content || [], bkMedium = bk.medium || []
   return (
     <div className="ud-wrap">
       <div className="lvl-title" style={{ marginTop: 18 }}>The numbers behind this update <span className="sub">· ad-platform results blended with Caalano Systems bookings &amp; pipeline via UTM</span></div>
@@ -6271,14 +6307,26 @@ function UpdateDataDashboard({ st, currency }) {
         })}</div>
       </>}
 
-      {/* Meta Ads */}
+      {/* Meta Ads — campaign / ad set rows drill into their ads */}
       {(metaCamps.length > 0 || segs.length > 0) && <>
-        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Meta Ads <span className="sub">· campaign → ad set → creative · bookings via UTM</span></div>
+        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Meta Ads <span className="sub">· click a campaign or ad set to see its ads · hover a thumbnail to enlarge</span></div>
         <div className="ud-tbls">
-          {metaCamps.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Campaigns</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Campaign</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{metaCamps.map((c) => <tr key={c.name}><td className="lft">{c.name}</td><td>{money(c.spend)}</td><td>{fmtNumber(c.leads)}</td><td>{fmtNumber(c.booked)}</td><td>{cpr(c.spend, c.booked)}</td></tr>)}</tbody></table></div>}
-          {segs.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Ad sets (segments)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad set</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{segs.slice(0, 20).map((s) => <tr key={s.name}><td className="lft">{s.name}</td><td>{money(s.spend)}</td><td>{fmtNumber(s.leads)}</td><td>{s.booked != null ? fmtNumber(s.booked) : '—'}</td><td>{s.booked ? cpr(s.spend, s.booked) : '—'}</td></tr>)}</tbody></table></div>}
+          {metaCamps.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Campaigns</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Campaign</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody><MetaGroupRows groups={metaCamps} adsFor={adsInCampaign} money={money} level="campaign" /></tbody></table></div>}
+          {segs.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Ad sets (segments)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad set</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody><MetaGroupRows groups={segs} adsFor={adsInAdset} money={money} level="ad set" /></tbody></table></div>}
         </div>
-        {topCre.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Top creatives</div><table className="mini-tbl users-tbl cc-tbl"><thead><tr><th className="lft">Creative</th><th className="lft">Format</th><th>Spend</th><th>Leads</th><th>Cost/lead</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{topCre.map((c) => { const cl = c.crm ? c.crm.leads : c.leads, bk = c.crm ? c.crm.booked : 0; return <tr key={c.id}><td className="lft"><span className="cc-nm" title={c.name}>{c.name}</span></td><td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td><td>{money(c.spend)}</td><td>{fmtNumber(cl)}</td><td>{cpr(c.spend, cl)}</td><td>{fmtNumber(bk)}</td><td>{cpr(c.spend, bk)}</td></tr> })}</tbody></table></div>}
+        {topCre.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Top creatives</div><table className="mini-tbl users-tbl cc-tbl"><thead><tr><th className="lft">Creative</th><th className="lft">Format</th><th>Spend</th><th>Leads</th><th>Cost/lead</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{topCre.map((c) => { const cl = c.crm ? c.crm.leads : c.leads, bkd = c.crm ? c.crm.booked : 0; return <tr key={c.id}><td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name}>{c.name}</span></td><td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td><td>{money(c.spend)}</td><td>{fmtNumber(cl)}</td><td>{cpr(c.spend, cl)}</td><td>{fmtNumber(bkd)}</td><td>{cpr(c.spend, bkd)}</td></tr> })}</tbody></table></div>}
+      </>}
+
+      {/* Which ads drove the bookings — traced through the lead UTMs */}
+      {(k.booked || 0) > 0 && <>
+        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Which ads drove the {fmtNumber(k.booked)} booked calls <span className="sub">· traced through the lead UTMs</span></div>
+        {(bkContent.length > 0 || bkMedium.length > 0) ? <>
+          <p className="cap">Bookings are attributed to each lead's UTMs. Where a <code>utm_content</code> matches a live ad (by name or creative ID) it's named; the rest show the raw UTM value, which reveals how tracking is set (e.g. ad IDs or a different naming scheme) and is why some ads read 0 booked above.</p>
+          <div className="ud-tbls">
+            {bkContent.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">By creative (utm_content)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad / UTM value</th><th>Booked</th><th>Leads</th><th>Won</th></tr></thead><tbody>{bkContent.map((r, i) => <tr key={i}><td className="lft">{r.matchedAd || r.utm}<span className="cap"> · {r.matchedAd ? 'matched ad' : 'unmatched utm'}</span></td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.won)}</td></tr>)}</tbody></table></div>}
+            {bkMedium.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">By ad set (utm_medium)</div><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Ad set / UTM value</th><th>Booked</th><th>Leads</th><th>Won</th></tr></thead><tbody>{bkMedium.map((r, i) => <tr key={i}><td className="lft">{r.utm}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.won)}</td></tr>)}</tbody></table></div>}
+          </div>
+        </> : <p className="cap">None of the {fmtNumber(k.booked)} booked calls could be traced to an ad: the booked leads carried no <code>utm_content</code> or <code>utm_medium</code>. That means the booking-stage opportunities lost their ad tracking (or came in without it), which is why the per-ad booked figures read 0. Worth checking how UTMs are captured onto the opportunity.</p>}
       </>}
 
       {/* Google Ads */}

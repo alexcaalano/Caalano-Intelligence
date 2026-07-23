@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.63.0 — 2026-07-23 · `PENDING`
+- **Supporting dashboard — drill-down + thumbnails + booking attribution.**
+  - **Click a campaign or ad set** to expand the ads inside it, each with a
+    thumbnail; **hover a thumbnail** to see a larger preview. Top creatives now
+    show thumbnails too.
+  - **"Which ads drove the N booked calls"** section: traces the bookings back
+    through the lead UTMs. Where a `utm_content` matches a live ad (by name or
+    creative ID) it's named; unmatched values are shown as-is, which reveals when
+    tracking uses ad IDs or a different naming scheme — the reason some ads read
+    0 booked. If the booked leads carried no UTM at all, it says so plainly (a
+    tracking gap to fix), rather than silently showing zeros.
+- **Client Update email reordered high-level → drill-down:** Quick Summary →
+  Attendance & Wins → **Segments** → **Pipelines** → **Top Performing Ads** (most
+  granular, last). Segments now include **booked calls** where the figure is
+  available.
+
 ## v3.62.0 — 2026-07-23 · `PENDING`
 - **"The numbers behind this update" dashboard** on the Client Update page.
   Loads with the selected client + date range and shows every figure the update

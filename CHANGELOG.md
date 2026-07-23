@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.61.1 — 2026-07-23 · `PENDING`
+- **Fix: Client Update sometimes returned the old saved copy instead of a new
+  one.** The generator asked Claude for a JSON object, but the multi-line email
+  body produced literal newlines that broke `JSON.parse`, so generation failed
+  silently and the UI fell back to the last saved update. Switched to a robust
+  marker-based output format (`###SUBJECT/EMAIL/WHATSAPP###`), raised the token
+  budget so the two-version output can't truncate, and made a failed regenerate
+  say so clearly instead of looking like the same response.
+
 ## v3.61.0 — 2026-07-23 · `PENDING`
 - **Client Update — depth pass from feedback.** New `scope=updateextra` +
   `buildUpdateExtra` feed the generator much richer, honest context:

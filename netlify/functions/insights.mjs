@@ -13,7 +13,7 @@ async function callClaude(apiKey, prompt) {
     // thinking disabled: Sonnet 5 runs adaptive thinking by default, which can
     // eat the whole max_tokens budget and return no text block for a simple
     // generation task. Disabling keeps the full budget for the answer.
-    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 1500, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] }),
+    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 2400, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] }),
   })
   const j = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error((j.error && j.error.message) || `AI error ${r.status}`)
@@ -225,8 +225,13 @@ Reporting period label (for length only, describe it casually): ${period || 'the
 Data:
 ${lines.join('\n')}${creativeBlock}${pipeBlock}${segBlock}${notesBlock}
 
-Produce TWO versions of the same update and reply with ONLY a JSON object, no prose outside it, shaped exactly:
-{"subject":"<email subject line>","email":"<full formal email body>","whatsapp":"<casual WhatsApp message>"}
+Produce TWO versions of the same update. Reply in EXACTLY this format and nothing else (no preamble, no JSON, no code fences). Use these literal marker lines so the sections can be separated:
+###SUBJECT###
+<the email subject line on one line>
+###EMAIL###
+<the full formal email body, which can span many lines>
+###WHATSAPP###
+<the casual WhatsApp message, which can span many lines>
 
 EMAIL version: formal and structured with clear headings/bullets. ${firstName ? `Open with "Hi ${firstName},"` : 'Open with "Hi there,"'} then a one-line intro. Sections:
 1. "Quick Summary" - fold spend, cost efficiency, leads and booked calls together here with the key movements versus the previous period.
@@ -241,10 +246,16 @@ WHATSAPP version: casual and conversational, like a real text to a client you ge
 
 Both must be positive but honest: if something dropped, frame it constructively without hiding it. Keep the email under 480 words and the WhatsApp under 150 words.`
   const out = await callClaude(apiKey, prompt)
-  let parsed = null
-  try { const m = out.insights.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : null } catch { parsed = null }
-  if (!parsed || (!parsed.email && !parsed.whatsapp)) throw new Error('could not parse the generated update')
-  return { subject: String(parsed.subject || '').slice(0, 200), email: String(parsed.email || ''), whatsapp: String(parsed.whatsapp || ''), model: out.model, period: period || '', generatedAt: new Date().toISOString() }
+  // Robust marker-based parse (the email/WhatsApp bodies are multi-line, which
+  // makes JSON brittle). Fall back to a JSON parse if markers are absent.
+  const raw = String(out.insights || '')
+  const sec = (name) => { const m = raw.match(new RegExp(`###\\s*${name}\\s*###([\\s\\S]*?)(?=###\\s*[A-Z]+\\s*###|$)`, 'i')); return m ? m[1].trim() : '' }
+  let subject = sec('SUBJECT'), email = sec('EMAIL'), whatsapp = sec('WHATSAPP')
+  if (!email && !whatsapp) {
+    try { const m = raw.match(/\{[\s\S]*\}/); const j = m ? JSON.parse(m[0]) : null; if (j) { subject = subject || j.subject || ''; email = j.email || ''; whatsapp = j.whatsapp || '' } } catch { /* ignore */ }
+  }
+  if (!email && !whatsapp) throw new Error('could not parse the generated update')
+  return { subject: String(subject || '').slice(0, 200), email: String(email || ''), whatsapp: String(whatsapp || ''), model: out.model, period: period || '', generatedAt: new Date().toISOString() }
 }
 
 export default async (req) => {

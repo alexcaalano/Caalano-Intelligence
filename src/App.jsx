@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.61.0'
+const APP_VERSION = '3.61.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6258,7 +6258,7 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
       {err && <div className="card empty-deep" style={{ padding: 18 }}><b>Couldn’t generate.</b><p className="cap" style={{ marginTop: 6 }}>{err}</p></div>}
       {busy && <div className="card"><Spinner label="Pulling the numbers and writing the update…" /></div>}
       {!busy && rec && (rec.email || rec.whatsapp) && <>
-        <div className="cu-meta cap">Last generated {new Date(rec.generatedAt).toLocaleString()} · {rec.period}</div>
+        <div className="cu-meta cap">{err ? 'Showing your last saved update — the new one didn’t generate (see the error above). ' : ''}Last generated {new Date(rec.generatedAt).toLocaleString()} · {rec.period}</div>
         <div className="cu-grid">
           <div className="card cu-panel">
             <div className="cu-panel-h">💬 WhatsApp <span className="sub">· casual</span><CopyBtn text={rec.whatsapp} /></div>

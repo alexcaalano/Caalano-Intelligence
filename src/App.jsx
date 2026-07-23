@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.63.1'
+const APP_VERSION = '3.64.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6273,6 +6273,9 @@ function UpdateDataDashboard({ st, currency }) {
   const k = (health && health.kpis) || {}, ch = (health && health.channels) || {}, pls = (health && health.pipelines) || []
   const adLeads = (ch.metaLeads || 0) + (ch.googleConv || 0)
   const adCpl = adLeads ? Math.round(k.adSpend / adLeads) : null
+  const twoChannels = (ch.metaSpend || 0) > 0 && (ch.googleSpend || 0) > 0
+  const metaCpl = ch.metaLeads ? Math.round(ch.metaSpend / ch.metaLeads) : null
+  const googCpc = ch.googleConv ? Math.round(ch.googleSpend / ch.googleConv) : null
   const cre = (creatives && creatives.creatives) || [], segs = (creatives && creatives.segments) || []
   const ap = extra && extra.appts, lr = (extra && extra.lostReasons) || [], nbn = (extra && extra.nonBookerNotes) || []
   const us = (users && users.users) || []
@@ -6295,14 +6298,23 @@ function UpdateDataDashboard({ st, currency }) {
       {/* Scorecards */}
       <div className="scorecard">
         <Sc label="Ad spend" value={money(k.adSpend || 0)} />
-        <Sc label="Leads (ads)" value={fmtNumber(adLeads)} />
-        <Sc label="Cost / lead" value={adCpl != null ? money(adCpl) : '—'} />
+        {twoChannels ? <>
+          <Sc label="Meta leads" value={fmtNumber(ch.metaLeads || 0)} />
+          <Sc label="Meta cost/lead" value={metaCpl != null ? money(metaCpl) : '—'} />
+          <Sc label="Google conv." value={fmtNumber(ch.googleConv || 0)} />
+          <Sc label="Google cost/conv" value={googCpc != null ? money(googCpc) : '—'} />
+        </> : <>
+          <Sc label="Leads (ads)" value={fmtNumber(adLeads)} />
+          <Sc label="Cost / lead" value={adCpl != null ? money(adCpl) : '—'} />
+        </>}
         <Sc label="Booked calls" value={fmtNumber(k.booked || 0)} />
         <Sc label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} />
         <Sc label="Won" value={fmtNumber(k.won || 0)} />
         <Sc label="Revenue" value={money(k.revenue || 0)} />
       </div>
-      <p className="cap">Leads and cost per lead are ad-reported (Meta {fmtNumber(ch.metaLeads || 0)}, Google {fmtNumber(ch.googleConv || 0)}) so they match Ads Manager. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>
+      {twoChannels
+        ? <p className="cap"><b>Two channels are running this period.</b> Meta and Google are shown separately above so each matches its own platform (Meta form/website leads vs Google conversions, which aren’t always the same thing). Combined that’s {fmtNumber(adLeads)} leads at {adCpl != null ? money(adCpl) : '—'} blended. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>
+        : <p className="cap">Leads and cost per lead are ad-reported (Meta {fmtNumber(ch.metaLeads || 0)}, Google {fmtNumber(ch.googleConv || 0)}) so they match Ads Manager. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>}
       {ap && <p className="cap">Appointments: {fmtNumber(ap.attended)} attended, {fmtNumber(ap.noShow)} no-shows, {fmtNumber(ap.upcoming)} still upcoming, {fmtNumber(ap.occurred)} calls have happened.{ap.stageOnlyShown > 0 ? ` ${fmtNumber(ap.stageOnlyShown)} advanced past the show stage but weren’t marked attended (reporting gap).` : ''}</p>}
 
       {/* Pipelines */}

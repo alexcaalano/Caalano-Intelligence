@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.64.0 — 2026-07-23 · `PENDING`
+- **Client Update — call out the channel split when two channels run.** When a
+  client runs both Meta and Google in the period, the supporting dashboard now
+  splits the headline into **Meta leads / Meta cost-per-lead** and **Google
+  conversions / Google cost-per-conversion** as separate tiles (so each matches
+  its own platform exactly), with a note that Google conversions aren't always
+  the same as a form lead, plus the blended combined figure. The email's Quick
+  Summary now explicitly breaks out the Meta vs Google split too. Single-channel
+  clients are unchanged (one combined leads/cost-per-lead view).
+
 ## v3.63.1 — 2026-07-23 · `PENDING`
 - **Fix: ad thumbnail preview was being clipped** by the table's scroll
   container. The hover preview now renders as a fixed overlay positioned from the

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.65.0'
+const APP_VERSION = '3.66.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1947,6 +1947,7 @@ const METACONV_KEY = 'caalano_metaconv' // { clientId: { primary: fieldId, secon
 const CREATIVEMETA_KEY = 'caalano_creativemeta' // { clientId: { creativeId: { aware, persona, angle, format, dest, cta, copy, notes } } }
 const CREATIVETAX_KEY = 'caalano_creativetax'   // { clientId: { persona: [...], angle: [...], dest: [...] } } — reusable dropdown values
 const CLIENTCTX_KEY = 'caalano_clientctx'        // { clientId: "free-text context / notes about the client, fed into the client-update prompt" }
+const FATIGUE_KEY = 'caalano_fatigue'            // { _global: { freqMed, freqHigh, ctrDropMed, ctrDropHigh, minImpr } } — creative-fatigue thresholds
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1955,7 +1956,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1974,10 +1975,10 @@ async function hydrateSettings() {
     const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2018,6 +2019,14 @@ function loadClientCtx(clientId) { return (SETTINGS.clientctx && SETTINGS.client
 function saveClientCtx(clientId, text) {
   SETTINGS.clientctx = { ...(SETTINGS.clientctx || {}), [clientId]: text }
   writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); saveSettingsRemote({ clientctx: { [clientId]: text } }); bumpSettings()
+}
+// Shared creative-fatigue thresholds (one set across all clients). CTR drops are
+// stored as whole percents everywhere; the backend divides by 100 when scoring.
+const FATIGUE_DEFAULTS = { freqMed: 3, freqHigh: 5, ctrDropMed: 15, ctrDropHigh: 35, minImpr: 800 }
+function loadFatigueCfg() { return { ...FATIGUE_DEFAULTS, ...((SETTINGS.fatigue && SETTINGS.fatigue._global) || {}) } }
+function saveFatigueCfg(cfg) {
+  SETTINGS.fatigue = { ...(SETTINGS.fatigue || {}), _global: { ...cfg } }
+  writeLS(FATIGUE_KEY, SETTINGS.fatigue); saveSettingsRemote({ fatigue: { _global: { ...cfg } } }); bumpSettings()
 }
 
 // UI-added clients (Settings -> Add client), persisted server-side and merged
@@ -5263,6 +5272,46 @@ function HealthStrip({ c }) {
   )
 }
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
+// Global creative-fatigue thresholds — one shared set, applied to every active
+// Meta client's fatigue read (Cockpit badges + the Meta Creative Fatigue tab).
+function FatigueSettings() {
+  useSettingsSync()
+  const [cfg, setCfg] = useState(() => loadFatigueCfg())
+  useEffect(() => { setCfg(loadFatigueCfg()) }, [SETTINGS.loaded])
+  const upd = (k, v) => { const n = { ...cfg, [k]: v }; setCfg(n) }
+  const commit = () => saveFatigueCfg(cfg)
+  const reset = () => { setCfg({ ...FATIGUE_DEFAULTS }); saveFatigueCfg({ ...FATIGUE_DEFAULTS }) }
+  const Row = ({ label, k, suffix, step, hint }) => (
+    <label className="fat-set-row">
+      <span className="fat-set-lab">{label}{hint ? <span className="cap"> · {hint}</span> : null}</span>
+      <span className="fat-set-in"><input type="number" step={step || 1} value={cfg[k]} onChange={(e) => upd(k, e.target.value === '' ? '' : Number(e.target.value))} onBlur={commit} />{suffix ? <em>{suffix}</em> : null}</span>
+    </label>
+  )
+  return (
+    <div className="card fat-set">
+      <h3 style={{ marginTop: 0 }}>Creative fatigue thresholds</h3>
+      <p className="cap" style={{ marginTop: -4 }}>One shared set of rules, applied live to every active Meta client. A creative scores points for high frequency, a falling click-through rate, and a below-average quality ranking: <b>2+ points = High 🔥</b>, <b>1 point = Medium 👀</b>. Changes save to the server and apply on the next load.</p>
+      <div className="fat-set-grid">
+        <div className="fat-set-col">
+          <div className="fat-set-t">Frequency (impressions ÷ reach)</div>
+          <Row label="Watch when frequency reaches" k="freqMed" suffix="×" step={0.5} />
+          <Row label="Fatigued when frequency reaches" k="freqHigh" suffix="×" step={0.5} />
+        </div>
+        <div className="fat-set-col">
+          <div className="fat-set-t">CTR decline (first vs second half of the window)</div>
+          <Row label="Watch when CTR falls by" k="ctrDropMed" suffix="%" step={5} />
+          <Row label="Fatigued when CTR falls by" k="ctrDropHigh" suffix="%" step={5} />
+        </div>
+        <div className="fat-set-col">
+          <div className="fat-set-t">Noise filter</div>
+          <Row label="Ignore creatives under" k="minImpr" suffix="impressions" step={100} hint="too little data to judge" />
+        </div>
+      </div>
+      <div style={{ marginTop: 12 }}><button className="link-btn sm" onClick={reset}>Reset to defaults</button> <span className="set-saved" style={{ marginLeft: 8 }}>✓ Saved to server · shared across your team</span></div>
+    </div>
+  )
+}
+
 function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEnabled, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
@@ -5289,9 +5338,11 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
     <div className="settings-page">
       <div className="set-sections">
         {isAdmin && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
+        {isAdmin && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
       </div>
+      {isAdmin && section === 'fatigue' && <FatigueSettings />}
       {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name }))} />}
       {authEnabled && section === 'account' && (
         <div className="card">
@@ -5982,8 +6033,90 @@ function useCreatives(clientId, range, nonce = 0) {
   return st
 }
 
+// Creative-fatigue signal fetch (agency Meta Fatigue tab), one client per call.
+function useFatigue(clientId, range, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=fatigue&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
+
+// Small fatigue chip. Low = no chip (only surface what needs attention).
+function FatigueBadge({ fat }) {
+  if (!fat || fat.level === 'Low') return null
+  const cls = fat.level === 'High' ? 'fat-high' : 'fat-med'
+  return <span className={`fat-badge ${cls}`} title={(fat.reasons || []).join(' · ') || 'Creative fatigue'}>{fat.level === 'High' ? '🔥 Fatiguing' : '👀 Watch'}</span>
+}
+
 // Left-nav wrapper: pick a client, then show its cockpit. Placement is global
 // (a top-level menu item) but the data stays per-client.
+/* ============ Meta Creative Fatigue (agency-wide) ============ */
+// One card per active Meta client, each lazily pulling its own fatigue read
+// (frequency + CTR decline + quality ranking). Clients with a live signal float
+// to the top. Thresholds are shared and edited in Settings.
+function FatigueClientCard({ client, currency, range, nonce, onSummary }) {
+  const st = useFatigue(client.id, range, nonce)
+  const money = (v) => fmtCurrency(v, currency)
+  const d = st.data
+  const sum = (d && d.summary) || null
+  useEffect(() => { onSummary(client.id, sum) }, [sum && sum.high, sum && sum.medium, sum && sum.total])
+  const flagged = ((d && d.creatives) || []).filter((c) => c.level !== 'Low')
+  return (
+    <div className="card fat-card">
+      <div className="fat-card-h">
+        <div className="fat-card-nm">{client.name}</div>
+        {st.status === 'loading' ? <span className="cap">Checking…</span>
+          : sum ? <div className="fat-counts"><span className="fat-c fat-high">{fmtNumber(sum.high)} 🔥</span><span className="fat-c fat-med">{fmtNumber(sum.medium)} 👀</span><span className="fat-c fat-low">{fmtNumber(sum.low)} ok</span></div>
+            : <span className="cap">No data</span>}
+      </div>
+      {st.status === 'loading' ? <Spinner label="" />
+        : st.status === 'err' ? <div className="cap" style={{ color: 'var(--neg)' }}>Couldn’t load.</div>
+          : !flagged.length ? <div className="cap">No creatives showing fatigue in this window. 🎉</div>
+            : <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
+              <thead><tr><th className="lft">Creative</th><th className="lft">Signal</th><th>Spend</th><th>Freq</th><th>CTR trend</th><th>Quality</th></tr></thead>
+              <tbody>{flagged.map((c, i) => <tr key={c.name + i}>
+                <td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name}>{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
+                <td className="lft"><FatigueBadge fat={c} /></td>
+                <td>{money(c.spend)}</td>
+                <td>{c.frequency != null ? `${c.frequency}x` : '—'}</td>
+                <td>{c.ctrDrop != null ? <span className={c.ctrDrop > 0 ? 'fat-down' : 'fat-up'}>{c.ctrDrop > 0 ? '▼' : '▲'} {Math.abs(c.ctrDrop)}%</span> : '—'}</td>
+                <td>{c.quality && c.quality !== 'UNKNOWN' ? titleCaseWord(c.quality) : '—'}</td>
+              </tr>)}</tbody>
+            </table></div>}
+    </div>
+  )
+}
+const titleCaseWord = (s) => String(s || '').toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
+function MetaFatiguePage({ clients, currency, range, nonce }) {
+  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
+  const [sums, setSums] = useState({})
+  const onSummary = React.useCallback((id, s) => setSums((p) => (p[id] === s ? p : { ...p, [id]: s })), [])
+  if (!metaClients.length) return <div className="card empty-deep"><div className="big">🔥</div><b>No clients with a Meta account yet.</b></div>
+  const agg = Object.values(sums).reduce((a, s) => s ? { high: a.high + s.high, medium: a.medium + s.medium, total: a.total + s.total } : a, { high: 0, medium: 0, total: 0 })
+  // Show clients with a live signal first, then the rest alphabetically.
+  const ordered = [...metaClients].sort((a, b) => { const sa = sums[a.id], sb = sums[b.id]; const wa = sa ? sa.high * 2 + sa.medium : -1, wb = sb ? sb.high * 2 + sb.medium : -1; return wb - wa || a.name.localeCompare(b.name) })
+  return (
+    <>
+      <div className="lvl-title">Meta Creative Fatigue <span className="sub">· {rangeLabel(range)} · {metaClients.length} active Meta clients</span></div>
+      <div className="scorecard">
+        <Sc label="Fatiguing (High)" value={fmtNumber(agg.high)} />
+        <Sc label="Watch (Medium)" value={fmtNumber(agg.medium)} />
+        <Sc label="Creatives scanned" value={fmtNumber(agg.total)} />
+      </div>
+      <p className="caveat">A creative-fatigue proxy computed live from Meta delivery: frequency (impressions ÷ reach), CTR decline across the first vs second half of the window, and Meta’s quality ranking. Scored to <b>High 🔥</b> (refresh now), <b>Medium 👀</b> (watch) or ok. Thresholds are shared across clients and set in <b>Settings → Creative fatigue</b>. Not Meta’s official webhook signal (that needs a Meta App with App Review) — this is our best on-platform read of the same signals.</p>
+      <div className="fat-grid">{ordered.map((c) => <FatigueClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
+    </>
+  )
+}
+
 function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
   const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
   const [selId, setSelId] = useState(list[0] ? list[0].id : null)
@@ -6037,6 +6170,9 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   if (d.meta === false) return <div className="card empty-deep"><div className="big">🎬</div><b>No Meta account mapped for {client.name}.</b></div>
   const all = d.creatives || []
   if (!all.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No creatives ran in this period.</b></div>
+  // Fatigue signal keyed by creative (ad) name, so each row can badge itself.
+  const fatBy = {}; for (const fc of ((d.fatigue && d.fatigue.creatives) || [])) fatBy[fc.name] = fc
+  const fatSum = (d.fatigue && d.fatigue.summary) || null
 
   // Attach saved tags; derive the fields we filter / rank on.
   const rows = all.map((c) => {
@@ -6044,7 +6180,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
     const crm = c.crm || {}
     // Auto-detected CTA / copy / destination flow in as defaults; a saved tag
     // overrides. So the grid, filters and rollups work before any manual tagging.
-    return { ...c, t, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
+    return { ...c, t, fat: fatBy[c.name] || null, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
   })
   const filtered = rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
   const sorted = [...filtered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
@@ -6086,6 +6222,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <Sc label="Ad spend" value={money(tot.spend)} />
         <Sc label="Leads" value={fmtNumber(tot.leads)} />
         {hasCrm && <Sc label="Booked calls" value={fmtNumber(tot.bk)} />}
+        {fatSum && (fatSum.high + fatSum.medium) > 0 && <Sc label="Fatiguing" value={`${fmtNumber(fatSum.high)} 🔥 · ${fmtNumber(fatSum.medium)} 👀`} />}
         <Sc label="Tagged" value={`${fmtNumber(tot.tagged)} / ${fmtNumber(all.length)}`} />
       </div>
 
@@ -6161,7 +6298,7 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={onToggle}>
-        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm" title={c.name}>{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
+        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm" title={c.name}>{c.name}<FatigueBadge fat={c.fat} /><span className="cap"> · {c.adset || c.campaign}</span></span></td>
         <td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td>
         <td className="lft">{chip(c.aware)}</td>
         <td className="lft">{chip(c.persona)}</td>
@@ -6179,6 +6316,7 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
             <button className="ai-btn sm" onClick={suggest} disabled={ai.busy} title="Let Claude suggest awareness / persona / angle from the copy">{ai.busy ? 'Thinking…' : '✨ Suggest tags'}</button>
             {c.igUrl && <a className="cc-view" href={c.igUrl} target="_blank" rel="noreferrer">↗ View ad on Instagram</a>}
           </div>
+          {c.fat && c.fat.level !== 'Low' && <div className="cap cc-fat-reason"><FatigueBadge fat={c.fat} /> {c.fat.frequency != null ? `frequency ${c.fat.frequency}x` : ''}{c.fat.ctrDrop != null ? ` · CTR ${c.fat.ctrDrop >= 0 ? 'down' : 'up'} ${Math.abs(c.fat.ctrDrop)}% over the period` : ''}{(c.fat.reasons && c.fat.reasons.length) ? ` · ${c.fat.reasons.join(' · ')}` : ''} — consider a fresh variation.</div>}
           {ai.err && <div className="cap" style={{ color: 'var(--neg)' }}>{ai.err}</div>}
           {ai.reason && <div className="cap cc-ai-reason">✨ {ai.reason} <span className="cc-ai-note">· suggested — edit anything below</span></div>}
           <div className="cc-fields">
@@ -6542,6 +6680,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
             <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
             <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic">🎬</span>Creative Cockpit</button>
+            <button className={curView === 'fatigue' ? 'active' : ''} onClick={() => go('fatigue')}><span className="ic">🔥</span>Meta Creative Fatigue</button>
             <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic">✉️</span>Client Update</button>
           </>}
           {isViewer && <>
@@ -6565,8 +6704,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'update' ? 'Client Update' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'fatigue' ? 'Meta Creative Fatigue' : curView === 'update' ? 'Client Update' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'fatigue' ? 'Tiring creatives across every active Meta client - frequency, CTR decline and quality ranking.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -6577,6 +6716,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
+          {curView === 'fatigue' && !isViewer && <MetaFatiguePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}

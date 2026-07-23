@@ -1576,3 +1576,28 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .cu-ctx > summary { cursor: pointer; font-size: 12.5px; font-weight: 650; padding: 2px 0; }
 .cu-ctx-on { color: var(--pos, #17b26a); font-weight: 600; font-size: 11.5px; }
 .cu-ctx-ta { width: 100%; margin-top: 8px; background: var(--panel); border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 9px 11px; font-size: 12.5px; font-family: inherit; line-height: 1.5; resize: vertical; box-sizing: border-box; }
+
+/* Creative fatigue — badges, agency tab, settings */
+.fat-badge { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
+.fat-badge.fat-high { background: color-mix(in srgb, #e5484d 16%, transparent); color: #e5484d; }
+.fat-badge.fat-med { background: color-mix(in srgb, #d9920a 16%, transparent); color: #cf8a00; }
+.cc-fat-reason { color: var(--muted); margin: 2px 0 4px; }
+.fat-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+.fat-card { padding: 12px 14px; }
+.fat-card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.fat-card-nm { font-weight: 720; font-size: 14px; }
+.fat-counts { display: flex; gap: 6px; }
+.fat-c { font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); }
+.fat-c.fat-high { color: #e5484d; }
+.fat-c.fat-med { color: #cf8a00; }
+.fat-c.fat-low { color: var(--muted); }
+.fat-down { color: #e5484d; font-weight: 700; }
+.fat-up { color: var(--pos, #17b26a); font-weight: 700; }
+.fat-set { margin-top: 4px; }
+.fat-set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px 26px; margin-top: 10px; }
+.fat-set-t { font-size: 12px; font-weight: 720; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
+.fat-set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; font-size: 12.5px; }
+.fat-set-lab { flex: 1; }
+.fat-set-in { display: inline-flex; align-items: center; gap: 5px; }
+.fat-set-in input { width: 72px; background: var(--panel); border: 1px solid var(--border-2); color: var(--text); border-radius: 7px; padding: 6px 8px; font-size: 12.5px; text-align: right; }
+.fat-set-in em { color: var(--muted); font-style: normal; font-size: 11.5px; }

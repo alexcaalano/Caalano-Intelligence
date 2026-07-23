@@ -17,6 +17,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.66.0 — 2026-07-23 · `PENDING`
+- **Meta Creative Fatigue.** A new left-nav tab that scans every active Meta
+  client for tiring creatives, plus inline fatigue badges in the Creative
+  Cockpit. The signal is computed live from Meta delivery — **frequency**
+  (impressions ÷ reach), **CTR decline** across the first vs second half of the
+  window, and Meta's **quality ranking** — scored to **High 🔥** (refresh now),
+  **Medium 👀** (watch) or ok, each with the reasons behind it.
+  - *Agency tab* — one card per Meta client, clients with a live signal floated
+    to the top, each listing its fatiguing creatives with thumbnails (hover to
+    zoom), frequency, CTR trend arrow and quality ranking.
+  - *Cockpit badges* — every creative row shows its fatigue chip; a "Fatiguing"
+    scorecard tile summarises the client; the expanded row spells out the signal
+    and suggests a fresh variation.
+  - *Settings → Creative fatigue* — one shared set of thresholds (frequency,
+    CTR-drop and a minimum-impressions noise filter) applied across all clients,
+    saved to the shared settings blob.
+  - Note: this is our on-platform *proxy* for fatigue. Meta's official
+    `creative_fatigue` webhook is push-only and needs a Meta App with App Review;
+    this reproduces the same signals from data we already pull.
+
 ## v3.65.0 — 2026-07-23 · `PENDING`
 - **Client context / notes** on the Client Update page. A free-text field where
   you record background about a client (their business, tone to use, what they

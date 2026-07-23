@@ -259,6 +259,7 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
       name: r.ad_name, campaign: r.campaign, adset: r.adset_name,
       type: num(r.actions_video_view) > 0 ? 'Video' : 'Image',
       quality: r.quality_ranking || 'UNKNOWN', thumb: r.thumbnail_url, igUrl: r.instagram_permalink_url || null,
+      reach: num(r.reach),
       spend, impressions: num(r.impressions), clicks: num(r.clicks),
       linkClicks: num(r.inline_link_clicks), leads: fbLeads(r), videoViews: num(r.actions_video_view),
       resultType: label, results, costPerResult: results ? Math.round((spend / results) * 100) / 100 : null,
@@ -390,7 +391,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   // auto-detect per ad set.
   const adsetFields = ['account_id', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
@@ -403,6 +404,75 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   roll.prev = metaTotals(prevRows)
   roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name, ad: r.ad_name, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && r.ad)
   return roll
+}
+
+// --- Meta Creative Fatigue (proxy) -----------------------------------------
+// Meta's own creative_fatigue signal is webhook-push-only (not queryable), so
+// this approximates the same Low/Med/High from the signals we CAN pull via
+// Windsor: frequency (impressions / reach — the leading indicator), CTR decline
+// across the period (first half vs second half), and Meta's quality ranking.
+// Scored per creative (aggregated by ad name); indicative, not Meta's exact call.
+const FATIGUE_DEFAULTS = { freqMed: 3, freqHigh: 5, ctrDropMed: 0.15, ctrDropHigh: 0.35, minImpr: 800 }
+function metaFatigue(ads, daily, cfg) {
+  const c = { ...FATIGUE_DEFAULTS, ...(cfg || {}) }
+  const C = new Map()
+  for (const a of ads) {
+    if (!a.name) continue
+    const e = C.get(a.name) || { name: a.name, campaign: a.campaign, adset: a.adset, thumb: a.thumb || null, format: a.type || null, quality: null, reach: 0, impressions: 0, clicks: 0, spend: 0 }
+    e.impressions += num(a.impressions); e.clicks += num(a.clicks); e.spend += num(a.spend); e.reach += num(a.reach)
+    if (!e.thumb && a.thumb) e.thumb = a.thumb
+    // Keep the worst (below-average) quality ranking we see for the creative.
+    if (a.quality && a.quality !== 'UNKNOWN' && (!e.quality || /BELOW_AVERAGE/i.test(a.quality))) e.quality = a.quality
+    C.set(a.name, e)
+  }
+  // Daily impressions/clicks per creative for the CTR trend.
+  const D = new Map()
+  for (const r of (daily || [])) { const ad = r.ad || r.ad_name; const date = r.date; if (!ad || !date) continue; let m = D.get(ad); if (!m) { m = new Map(); D.set(ad, m) } const d = m.get(date) || { i: 0, k: 0 }; d.i += num(r.impressions); d.k += num(r.clicks); m.set(date, d) }
+  const ctrDropOf = (name) => {
+    const m = D.get(name); if (!m || m.size < 4) return null
+    const days = [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    const mid = Math.floor(days.length / 2); let i1 = 0, k1 = 0, i2 = 0, k2 = 0
+    days.forEach(([, v], i) => { if (i < mid) { i1 += v.i; k1 += v.k } else { i2 += v.i; k2 += v.k } })
+    const ctr1 = i1 ? k1 / i1 : null, ctr2 = i2 ? k2 / i2 : null
+    if (ctr1 == null || ctr2 == null || !ctr1) return null
+    return (ctr1 - ctr2) / ctr1 // positive = CTR declined over the period
+  }
+  const out = []; let high = 0, medium = 0, low = 0
+  for (const e of C.values()) {
+    if (e.impressions < c.minImpr) continue
+    const freq = e.reach ? e.impressions / e.reach : null
+    const drop = ctrDropOf(e.name)
+    const belowAvg = /BELOW_AVERAGE/i.test(e.quality || '')
+    const reasons = []
+    let s = 0
+    if (freq != null) { if (freq >= c.freqHigh) { s += 2; reasons.push(`high frequency (${freq.toFixed(1)}x)`) } else if (freq >= c.freqMed) { s += 1; reasons.push(`rising frequency (${freq.toFixed(1)}x)`) } }
+    if (belowAvg) { s += 1; reasons.push('below-average quality ranking') }
+    if (drop != null) { if (drop >= c.ctrDropHigh) { s += 2; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } else if (drop >= c.ctrDropMed) { s += 1; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } }
+    const level = s >= 3 ? 'High' : s >= 1 ? 'Medium' : 'Low'
+    if (level === 'High') high++; else if (level === 'Medium') medium++; else low++
+    out.push({ name: e.name, campaign: e.campaign, adset: e.adset, thumb: e.thumb, format: e.format, spend: Math.round(e.spend), impressions: e.impressions, frequency: freq != null ? Math.round(freq * 10) / 10 : null, ctrDrop: drop != null ? Math.round(drop * 100) : null, quality: e.quality || null, level, score: s, reasons })
+  }
+  out.sort((a, b) => b.score - a.score || b.spend - a.spend)
+  return { creatives: out, summary: { high, medium, low, total: out.length } }
+}
+// Light fetch for the agency fatigue tab (ads + daily only, no CRM/campaign roll-up).
+async function buildFatigue(accountId, from, to, preset, key, cfg) {
+  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const [adRows, dayRows] = await Promise.all([
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'impressions', 'clicks', 'spend', 'actions_video_view'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'date', 'ad_name', 'impressions', 'clicks'], from, to, preset, key).then(filt),
+  ])
+  const ads = adRows.map((r) => ({ name: r.ad_name, campaign: r.campaign, adset: r.adset_name, thumb: r.thumbnail_url, type: num(r.actions_video_view) > 0 ? 'Video' : 'Image', quality: r.quality_ranking, reach: num(r.reach), impressions: num(r.impressions), clicks: num(r.clicks), spend: num(r.spend) }))
+  return metaFatigue(ads, dayRows, cfg)
+}
+async function readFatigueConfig() {
+  try {
+    const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+    const f = s && s.fatigue && s.fatigue._global
+    // Settings store CTR drops as whole percents (15, 35); score against fractions.
+    if (f && typeof f === 'object') return { ...FATIGUE_DEFAULTS, freqMed: num(f.freqMed) || FATIGUE_DEFAULTS.freqMed, freqHigh: num(f.freqHigh) || FATIGUE_DEFAULTS.freqHigh, ctrDropMed: f.ctrDropMed != null ? num(f.ctrDropMed) / 100 : FATIGUE_DEFAULTS.ctrDropMed, ctrDropHigh: f.ctrDropHigh != null ? num(f.ctrDropHigh) / 100 : FATIGUE_DEFAULTS.ctrDropHigh, minImpr: num(f.minImpr) || FATIGUE_DEFAULTS.minImpr }
+  } catch { /* defaults */ }
+  return { ...FATIGUE_DEFAULTS }
 }
 
 const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
@@ -1516,8 +1586,26 @@ export default async (req) => {
       const resolveContent = (v) => creById[String(v)] || nameByKey[nk(v)] || null
       const bkContent = Object.entries(byContent).filter(([, x]) => (x.booked || 0) > 0).map(([utm, x]) => ({ utm, matchedAd: resolveContent(utm), booked: x.booked, leads: x.leads, won: x.won })).sort((a, b) => b.booked - a.booked).slice(0, 40)
       const bkMedium = Object.entries(byMedium).filter(([, x]) => (x.booked || 0) > 0).map(([utm, x]) => ({ utm, booked: x.booked, leads: x.leads, won: x.won })).sort((a, b) => b.booked - a.booked).slice(0, 40)
-      return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, segments, ads: adRows, bookingsByUtm: { content: bkContent, medium: bkMedium }, unmatched }, 200, true)
+      // Creative fatigue signal (frequency + CTR decline + quality ranking) so the
+      // Cockpit can badge tiring creatives inline without a second round-trip.
+      let fatigue = null
+      try { fatigue = metaFatigue(meta.ads || [], meta.adDaily || [], await readFatigueConfig()) } catch { /* non-fatal */ }
+      return json({ scope: 'creatives', client, period: { from, to, preset }, hasCrm: !!cc.ghl, creatives, segments, ads: adRows, bookingsByUtm: { content: bkContent, medium: bkMedium }, unmatched, fatigue }, 200, true)
     } catch (e) { return json({ scope: 'creatives', client, error: String(e.message || e).slice(0, 200), creatives: [] }, 200) }
+  }
+
+  // Meta Creative Fatigue for the agency-wide tab: one client per request (the UI
+  // fans out across active Meta clients). Light fetch — ads + daily only — scored
+  // by frequency, CTR decline and quality ranking against the shared thresholds.
+  if (url.searchParams.get('scope') === 'fatigue') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'fatigue', client, meta: false, creatives: [], summary: { high: 0, medium: 0, low: 0, total: 0 } })
+    try {
+      const cfg = await readFatigueConfig()
+      const res = await buildFatigue(cc.meta, from, to, preset, key, cfg)
+      return json({ scope: 'fatigue', client, period: { from, to, preset }, ...res }, 200, true)
+    } catch (e) { return json({ scope: 'fatigue', client, error: String(e.message || e).slice(0, 200), creatives: [], summary: { high: 0, medium: 0, low: 0, total: 0 } }, 200) }
   }
 
   // Field probe for the Creative Cockpit: which creative-level fields Windsor's

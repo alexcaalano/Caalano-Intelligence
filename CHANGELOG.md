@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.72.0 — 2026-07-23 · `PENDING`
+- **Meta fatigue tab — show subscribed-but-quiet accounts.** Previously only
+  accounts that had already sent a webhook event appeared, which made it look
+  like the others weren't connected. Added an "Awaiting Meta's first event"
+  panel listing the remaining Meta clients, so you can see the full picture:
+  a card shows once Meta pushes an account's first event; everything else waits
+  in the panel until then.
+
 ## v3.71.1 — 2026-07-23 · `PENDING`
 - **Webhook receiver panel is now collapsible** — it starts collapsed to a single
   status line (green dot + "events received" + count) and expands on click to

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.71.1'
+const APP_VERSION = '3.72.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6294,8 +6294,19 @@ function MetaFatigueWebhookPage({ clients, range, nonce }) {
         <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict — pushed by webhook, not computed. Once an ad account is <b>subscribed</b> (see the setup doc) and Meta detects fatigue on a live creative, its verdict appears here as a per-account card.</p>
         <p className="cap">Test events from Meta’s dashboard show in the receiver panel above (proving the pipe works) but won’t map to a client card — they carry a placeholder account id. Setup + subscription commands: <code>META-WEBHOOK-SETUP.md</code>. Meanwhile the <b>Creative fatigue · proxy</b> tab covers every client live.</p>
       </div>}
-      {anyConnected && <p className="caveat">Meta’s official verdicts for the {connectedCount} connected account{connectedCount === 1 ? '' : 's'}. These are pushed by Meta as creatives tire — compare against the proxy tab, which explains the “why”. Accounts not yet subscribed don’t appear here.</p>}
+      {anyConnected && <p className="caveat">Meta’s official verdicts for the {connectedCount} account{connectedCount === 1 ? '' : 's'} that have sent events so far. A card appears once Meta pushes its first event for an account; verdicts fill in as creatives tire. Compare against the proxy tab, which explains the “why”.</p>}
       <div className="fat-grid">{metaClients.map((c) => <FatigueWebhookCard key={c.id} client={c} range={range} nonce={nonce} onStatus={onStatus} />)}</div>
+      {(() => {
+        // Meta clients that have resolved but sent no events yet — surfaced so
+        // subscribed-but-quiet accounts are visible rather than silently hidden.
+        const awaiting = metaClients.filter((c) => status[c.id] && !status[c.id].connected)
+        if (!awaiting.length) return null
+        return <div className="card mi-await">
+          <b>Awaiting Meta’s first event · {awaiting.length}</b>
+          <p className="cap" style={{ margin: '4px 0 8px' }}>Set up, but Meta hasn’t pushed anything for these yet — they’ll move up as cards the moment it does (fatigue events are sparse and event-driven). If one never appears, re-check that its ad account is subscribed (<code>subscribed_apps</code>).</p>
+          <div className="mi-await-list">{awaiting.map((c) => <span key={c.id} className="mi-await-chip">{c.name}</span>)}</div>
+        </div>
+      })()}
     </>
   )
 }

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.66.0'
+const APP_VERSION = '3.67.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6048,6 +6048,21 @@ function useFatigue(clientId, range, nonce = 0) {
   return st
 }
 
+// Meta anomaly / delivery-health signal fetch, one client per call.
+function useAnomalies(clientId, range, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=anomalies&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
+
 // Small fatigue chip. Low = no chip (only surface what needs attention).
 function FatigueBadge({ fat }) {
   if (!fat || fat.level === 'Low') return null
@@ -6117,6 +6132,107 @@ function MetaFatiguePage({ clients, currency, range, nonce }) {
   )
 }
 
+/* ============ Meta anomaly / delivery-health (agency-wide) ============ */
+const SEV_ICON = { high: '🔴', med: '🟠', good: '🟢' }
+function AnomalyClientCard({ client, currency, range, nonce, onSummary }) {
+  const st = useAnomalies(client.id, range, nonce)
+  const money = (v) => fmtCurrency(v, currency)
+  const d = st.data
+  const sum = (d && d.summary) || null
+  useEffect(() => { onSummary(client.id, sum) }, [sum && sum.high, sum && sum.med, sum && sum.good])
+  const alerts = (d && d.alerts) || []
+  const m = d && d.metrics
+  const pctChip = (metric) => { // cur vs prev change for the metric strip
+    if (!m || !m.prev) return null
+    const cur = m.cur[metric], prev = m.prev[metric]
+    if (cur == null || prev == null || !prev) return null
+    const ch = Math.round(((cur - prev) / prev) * 100)
+    if (ch === 0) return <span className="cap"> · flat</span>
+    const goodDown = metric === 'cpl' || metric === 'freq'
+    const good = goodDown ? ch < 0 : ch > 0
+    return <span className={good ? 'fat-up' : 'fat-down'}> · {ch > 0 ? '▲' : '▼'}{Math.abs(ch)}%</span>
+  }
+  const fmtCtr = (v) => v == null ? '—' : `${(v * 100).toFixed(2)}%`
+  return (
+    <div className="card fat-card">
+      <div className="fat-card-h">
+        <div className="fat-card-nm">{client.name}</div>
+        {st.status === 'loading' ? <span className="cap">Checking…</span>
+          : sum ? <div className="fat-counts">{sum.high ? <span className="fat-c fat-high">{sum.high} 🔴</span> : null}{sum.med ? <span className="fat-c fat-med">{sum.med} 🟠</span> : null}{sum.good ? <span className="fat-c fat-low">{sum.good} 🟢</span> : null}{!sum.high && !sum.med && !sum.good ? <span className="fat-c fat-low">all steady</span> : null}</div>
+            : <span className="cap">No data</span>}
+      </div>
+      {st.status === 'loading' ? <Spinner label="" />
+        : st.status === 'err' || d.meta === false ? <div className="cap">{d && d.meta === false ? 'No Meta account mapped.' : 'Couldn’t load.'}</div>
+          : <>
+            {m && <div className="anom-strip">
+              <span>Spend <b>{money(m.cur.spend)}</b>{pctChip('spend')}</span>
+              <span>Leads <b>{fmtNumber(m.cur.leads)}</b>{pctChip('leads')}</span>
+              <span>CPL <b>{m.cur.cpl != null ? money(m.cur.cpl) : '—'}</b>{pctChip('cpl')}</span>
+              <span>CTR <b>{fmtCtr(m.cur.ctr)}</b>{pctChip('ctr')}</span>
+              <span>Freq <b>{m.cur.freq != null ? `${m.cur.freq.toFixed(1)}x` : '—'}</b>{pctChip('freq')}</span>
+            </div>}
+            {!alerts.length ? <div className="cap" style={{ marginTop: 8 }}>No anomalies in this window — delivery looks steady. ✅</div>
+              : <div className="anom-list">{alerts.map((a, i) => <div key={i} className={`anom-row anom-${a.severity}`}>
+                <span className="anom-ic">{SEV_ICON[a.severity]}</span>
+                <span className="anom-txt"><b>{a.title}</b> — {a.detail}</span>
+              </div>)}</div>}
+            {d.zeroLeadAds && d.zeroLeadAds.length ? <div className="anom-ads">
+              <div className="cap" style={{ marginBottom: 4 }}>Spending with no leads:</div>
+              {d.zeroLeadAds.map((a, i) => <div key={i} className="anom-ad"><ThumbZoom src={a.thumb} /> <span className="cc-nm" title={a.name}>{a.name}</span> <span className="cap">· {money(a.spend)} · 0 leads</span></div>)}
+            </div> : null}
+          </>}
+    </div>
+  )
+}
+function MetaAnomaliesPage({ clients, currency, range, nonce }) {
+  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
+  const [sums, setSums] = useState({})
+  const onSummary = React.useCallback((id, s) => setSums((p) => (p[id] === s ? p : { ...p, [id]: s })), [])
+  if (!metaClients.length) return <div className="card empty-deep"><div className="big">📡</div><b>No clients with a Meta account yet.</b></div>
+  const agg = Object.values(sums).reduce((a, s) => s ? { high: a.high + s.high, med: a.med + s.med } : a, { high: 0, med: 0 })
+  const ordered = [...metaClients].sort((a, b) => { const sa = sums[a.id], sb = sums[b.id]; const wa = sa ? sa.high * 2 + sa.med : -1, wb = sb ? sb.high * 2 + sb.med : -1; return wb - wa || a.name.localeCompare(b.name) })
+  return (
+    <>
+      <div className="lvl-title">Delivery health &amp; anomalies <span className="sub">· {rangeLabel(range)} · vs the prior equal window</span></div>
+      <div className="scorecard">
+        <Sc label="Urgent (🔴)" value={fmtNumber(agg.high)} />
+        <Sc label="Watch (🟠)" value={fmtNumber(agg.med)} />
+        <Sc label="Meta clients" value={fmtNumber(metaClients.length)} />
+      </div>
+      <p className="caveat">Each active Meta client compared to the equal prior window: cost per lead, click-through rate, frequency, and spend-vs-leads movement, plus delivery stalls and any ad spending with zero leads. Computed live from Meta delivery data — no Meta App required. Clients needing attention float to the top.</p>
+      <div className="fat-grid">{ordered.map((c) => <AnomalyClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
+    </>
+  )
+}
+
+/* ============ Meta Insights — hub for everything Meta-derived ============ */
+// Sub-tabbed like the client workspace. Fatigue + Anomalies ship today (computed
+// from Windsor data); the Meta-App-gated reads (opportunity score, benchmarks,
+// recommendations, Ad Library) are listed as coming so the roadmap is visible.
+const META_INSIGHTS_TABS = [
+  { id: 'anomalies', label: 'Delivery health', ready: true },
+  { id: 'fatigue', label: 'Creative fatigue', ready: true },
+  { id: 'benchmarks', label: 'Benchmarks', ready: false },
+  { id: 'opportunity', label: 'Opportunity score', ready: false },
+  { id: 'library', label: 'Ad Library', ready: false },
+]
+function MetaInsightsPage({ clients, currency, range, nonce }) {
+  const [tab, setTab] = useState('anomalies')
+  const cur = META_INSIGHTS_TABS.find((t) => t.id === tab) || META_INSIGHTS_TABS[0]
+  return (
+    <>
+      <div className="subtabs">{META_INSIGHTS_TABS.map((t) => <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}{!t.ready ? <span className="mi-soon">soon</span> : null}</button>)}</div>
+      {tab === 'anomalies' && <MetaAnomaliesPage clients={clients} currency={currency} range={range} nonce={nonce} />}
+      {tab === 'fatigue' && <MetaFatiguePage clients={clients} currency={currency} range={range} nonce={nonce} />}
+      {!cur.ready && <div className="card mi-soon-card">
+        <div className="big">🔒</div>
+        <b>{cur.label} needs a Meta App connection.</b>
+        <p style={{ maxWidth: 520, margin: '8px auto 0' }}>{tab === 'benchmarks' ? 'Meta computes industry and auction benchmarks from cross-advertiser data we can’t replicate locally — this needs a Meta App with a System User token.' : tab === 'opportunity' ? 'The 0–100 opportunity score and Meta’s own recommendations are generated by Meta and require a direct Graph API connection (Meta App).' : 'Searching any advertiser’s live ads for inspiration needs the public Ad Library API, which requires a verified Meta App.'} Once the Meta App is set up, this tab lights up automatically.</p>
+      </div>}
+    </>
+  )
+}
+
 function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
   const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
   const [selId, setSelId] = useState(list[0] ? list[0].id : null)
@@ -6155,7 +6271,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const angleOpts = tax.angle || []
   const destOpts = [...new Set([...DEST_DEFAULTS, ...(tax.dest || [])])]
   const [sort, setSort] = useState({ key: 'spend', dir: -1 })
-  const [f, setF] = useState({ aware: '', persona: '', angle: '', format: '', dest: '', q: '' })
+  const [f, setF] = useState({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })
   const [dim, setDim] = useState('angle') // "what's working" rollup dimension
   const [open, setOpen] = useState(() => new Set())
   const set = (patch) => setF((p) => ({ ...p, ...patch }))
@@ -6180,9 +6296,10 @@ function CreativeCockpit({ client, currency, range, nonce }) {
     const crm = c.crm || {}
     // Auto-detected CTA / copy / destination flow in as defaults; a saved tag
     // overrides. So the grid, filters and rollups work before any manual tagging.
-    return { ...c, t, fat: fatBy[c.name] || null, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
+    const fat = fatBy[c.name] || null
+    return { ...c, t, fat, fatLevel: fat ? fat.level : null, fatScore: fat ? fat.score : -1, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
   })
-  const filtered = rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
+  const filtered = rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.fat || (f.fat === 'None' ? !c.fat : c.fatLevel === f.fat)) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
   const sorted = [...filtered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
@@ -6257,14 +6374,15 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <select value={f.persona} onChange={(e) => set({ persona: e.target.value })}><option value="">All personas</option>{personaOpts.map((o) => <option key={o}>{o}</option>)}</select>
         <select value={f.angle} onChange={(e) => set({ angle: e.target.value })}><option value="">All angles</option>{angleOpts.map((o) => <option key={o}>{o}</option>)}</select>
         <select value={f.dest} onChange={(e) => set({ dest: e.target.value })}><option value="">All destinations</option>{destOpts.map((o) => <option key={o}>{o}</option>)}</select>
-        {(f.aware || f.persona || f.angle || f.format || f.dest || f.q) ? <button className="link-btn sm" onClick={() => setF({ aware: '', persona: '', angle: '', format: '', dest: '', q: '' })}>Clear</button> : null}
+        <select value={f.fat} onChange={(e) => set({ fat: e.target.value })}><option value="">All fatigue</option><option value="High">🔥 Fatiguing</option><option value="Medium">👀 Watch</option><option value="Low">✅ OK</option><option value="None">— No signal</option></select>
+        {(f.aware || f.persona || f.angle || f.format || f.dest || f.fat || f.q) ? <button className="link-btn sm" onClick={() => setF({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })}>Clear</button> : null}
       </div>
 
       {/* Creative grid */}
       <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
         <thead><tr>
           <Th k="name" l>Creative</Th><Th k="format" l>Format</Th>
-          <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th>
+          <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th><Th k="fatScore" l>Fatigue</Th>
           <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="bk">Booked</Th>}{hasCrm && <Th k="cpb">Cost/book</Th>}
         </tr></thead>
         <tbody>{sorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
@@ -6298,17 +6416,18 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={onToggle}>
-        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm" title={c.name}>{c.name}<FatigueBadge fat={c.fat} /><span className="cap"> · {c.adset || c.campaign}</span></span></td>
+        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {c.thumb ? <img className="cc-thumb" src={c.thumb} alt="" loading="lazy" /> : <span className="cc-thumb cc-thumb-none" />}<span className="cc-nm" title={c.name}>{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
         <td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td>
         <td className="lft">{chip(c.aware)}</td>
         <td className="lft">{chip(c.persona)}</td>
         <td className="lft">{chip(c.angle)}</td>
+        <td className="lft">{c.fat ? (c.fat.level === 'Low' ? <span className="fat-ok">✅ OK</span> : <FatigueBadge fat={c.fat} />) : <span className="cc-none">—</span>}</td>
         <td>{money(c.spend)}</td>
         <td>{fmtNumber(c.crm ? c.crm.leads : c.leads)}</td>
         {hasCrm && <td>{fmtNumber(c.bk)}</td>}
         {hasCrm && <td>{c.cpb != null ? money(c.cpb) : '—'}</td>}
       </tr>
-      {open && <tr className="cc-edit-row"><td colSpan={hasCrm ? 9 : 7}>
+      {open && <tr className="cc-edit-row"><td colSpan={hasCrm ? 10 : 8}>
         <div className="cc-edit" onClick={(e) => e.stopPropagation()}>
           <div className="cc-edit-perf">
             {hasCrm && <><span><b>{fmtNumber(c.bk)}</b> booked</span><span><b>{fmtNumber(c.wn)}</b> won</span><span><b>{money(c.rev)}</b> revenue</span></>}
@@ -6680,7 +6799,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
             <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
             <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic">🎬</span>Creative Cockpit</button>
-            <button className={curView === 'fatigue' ? 'active' : ''} onClick={() => go('fatigue')}><span className="ic">🔥</span>Meta Creative Fatigue</button>
+            <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic">📡</span>Meta Insights</button>
             <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic">✉️</span>Client Update</button>
           </>}
           {isViewer && <>
@@ -6704,8 +6823,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'fatigue' ? 'Meta Creative Fatigue' : curView === 'update' ? 'Client Update' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'fatigue' ? 'Tiring creatives across every active Meta client - frequency, CTR decline and quality ranking.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -6716,7 +6835,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
-          {curView === 'fatigue' && !isViewer && <MetaFatiguePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
+          {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}

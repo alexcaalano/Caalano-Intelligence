@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.67.0 — 2026-07-23 · `PENDING`
+- **Meta Insights hub.** New left-nav "Meta Insights" tab that gathers
+  everything Meta-derived into one place, sub-tabbed like the client workspace.
+  The standalone "Meta Creative Fatigue" tab moved in here (Cockpit fatigue
+  badges stay where they were).
+  - *Delivery health* (new) — every active Meta client compared to the equal
+    prior window: cost per lead, click-through rate, frequency and
+    spend-vs-leads movement, plus delivery stalls and any ad spending with zero
+    leads. Clients needing attention float to the top. Computed live from
+    Windsor data — no Meta App required. (`scope=anomalies` in windsor.mjs.)
+  - *Creative fatigue* — the agency-wide fatigue board, now a sub-tab.
+  - *Benchmarks / Opportunity score / Ad Library* — placeholder sub-tabs that
+    explain what unlocks them (a Meta App with a System User token), so the
+    roadmap is visible in-product.
+- **Creative Cockpit — fatigue is now its own sortable, filterable column.**
+  Moved the fatigue signal out of the creative name into a dedicated column with
+  a filter (Fatiguing / Watch / OK / No signal) and sortable by severity.
+
 ## v3.66.0 — 2026-07-23 · `PENDING`
 - **Meta Creative Fatigue.** A new left-nav tab that scans every active Meta
   client for tiring creatives, plus inline fatigue badges in the Creative

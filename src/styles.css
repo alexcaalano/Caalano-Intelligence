@@ -1601,3 +1601,22 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .fat-set-in { display: inline-flex; align-items: center; gap: 5px; }
 .fat-set-in input { width: 72px; background: var(--panel); border: 1px solid var(--border-2); color: var(--text); border-radius: 7px; padding: 6px 8px; font-size: 12.5px; text-align: right; }
 .fat-set-in em { color: var(--muted); font-style: normal; font-size: 11.5px; }
+.fat-ok { font-size: 11px; color: var(--muted); font-weight: 600; }
+.fat-badge + .fat-badge, td .fat-badge { margin-left: 0; }
+
+/* Meta Insights — sub-tab hub + delivery-health / anomaly cards */
+.mi-soon { margin-left: 6px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; vertical-align: middle; }
+.mi-soon-card { text-align: center; padding: 40px 20px; }
+.mi-soon-card .big { font-size: 34px; margin-bottom: 8px; }
+.anom-strip { display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--border); margin-bottom: 8px; font-size: 12.5px; color: var(--muted); }
+.anom-strip b { color: var(--text); font-weight: 720; }
+.anom-list { display: flex; flex-direction: column; gap: 6px; }
+.anom-row { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; padding: 7px 9px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); }
+.anom-row.anom-high { border-color: color-mix(in srgb, #e5484d 40%, var(--border)); background: color-mix(in srgb, #e5484d 7%, var(--panel-2)); }
+.anom-row.anom-med { border-color: color-mix(in srgb, #d9920a 36%, var(--border)); }
+.anom-row.anom-good { border-color: color-mix(in srgb, #17b26a 32%, var(--border)); }
+.anom-ic { flex-shrink: 0; }
+.anom-txt { line-height: 1.45; }
+.anom-ads { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.anom-ad { display: flex; align-items: center; gap: 4px; font-size: 12px; margin-bottom: 3px; }
+.anom-ad .cc-nm { max-width: 240px; }

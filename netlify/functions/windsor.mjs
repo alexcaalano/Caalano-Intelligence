@@ -475,6 +475,64 @@ async function readFatigueConfig() {
   return { ...FATIGUE_DEFAULTS }
 }
 
+// --- Meta anomaly / delivery-health signal (Meta Insights tab) --------------
+// Compares the selected window against the equal prior window at account level
+// and flags material moves (CPL, CTR, frequency, spend/leads) plus delivery
+// stalls and high-spend zero-lead ads. Pure Windsor data — no Meta App needed.
+async function buildAnomalies(accountId, from, to, preset, key) {
+  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const pr = prevRange(from, to)
+  const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
+  const [curRows, prevRows, adRows] = await Promise.all([
+    windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
+    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
+  ])
+  const cur = metaTotals(curRows), prev = metaTotals(prevRows)
+  const met = (t) => ({ spend: t.spend, leads: t.leads, impressions: t.impressions, clicks: t.clicks, reach: t.reach, cpl: t.leads ? t.spend / t.leads : null, ctr: t.impressions ? t.clicks / t.impressions : null, freq: t.reach ? t.impressions / t.reach : null })
+  const c = met(cur), p = met(prev)
+  const pct = (a, b) => (b ? (a - b) / b : null) // change of a vs b
+  const alerts = []
+  const material = c.spend >= 50 // ignore trivially small accounts/windows
+  // CPL movement (the headline efficiency metric).
+  if (material && c.cpl != null && p.cpl != null && p.leads > 0) {
+    const ch = pct(c.cpl, p.cpl)
+    if (ch >= 0.5) alerts.push({ metric: 'cpl', severity: 'high', dir: 'up', pct: Math.round(ch * 100), cur: c.cpl, prev: p.cpl, title: 'Cost per lead jumped', detail: `up ${Math.round(ch * 100)}% vs the prior window` })
+    else if (ch >= 0.25) alerts.push({ metric: 'cpl', severity: 'med', dir: 'up', pct: Math.round(ch * 100), cur: c.cpl, prev: p.cpl, title: 'Cost per lead rising', detail: `up ${Math.round(ch * 100)}% vs the prior window` })
+    else if (ch <= -0.25) alerts.push({ metric: 'cpl', severity: 'good', dir: 'down', pct: Math.round(-ch * 100), cur: c.cpl, prev: p.cpl, title: 'Cost per lead improving', detail: `down ${Math.round(-ch * 100)}% vs the prior window` })
+  }
+  // CTR decline (creative/audience wear).
+  if (material && c.ctr != null && p.ctr != null && p.ctr > 0) {
+    const ch = pct(c.ctr, p.ctr)
+    if (ch <= -0.35) alerts.push({ metric: 'ctr', severity: 'high', dir: 'down', pct: Math.round(-ch * 100), cur: c.ctr, prev: p.ctr, title: 'Click-through rate dropped', detail: `down ${Math.round(-ch * 100)}% — creative or audience wearing out` })
+    else if (ch <= -0.2) alerts.push({ metric: 'ctr', severity: 'med', dir: 'down', pct: Math.round(-ch * 100), cur: c.ctr, prev: p.ctr, title: 'Click-through rate slipping', detail: `down ${Math.round(-ch * 100)}% vs the prior window` })
+  }
+  // Frequency (audience saturation) — absolute, not relative.
+  if (material && c.freq != null) {
+    if (c.freq >= 6) alerts.push({ metric: 'freq', severity: 'high', cur: c.freq, prev: p.freq, title: 'High frequency', detail: `each person saw an ad ${c.freq.toFixed(1)}x on average — audience saturating` })
+    else if (c.freq >= 4) alerts.push({ metric: 'freq', severity: 'med', cur: c.freq, prev: p.freq, title: 'Frequency climbing', detail: `${c.freq.toFixed(1)}x average frequency — widen the audience or refresh creative` })
+  }
+  // Delivery stall — spend collapsed vs a materially-spending prior window.
+  if (p.spend >= 100 && c.spend < p.spend * 0.4) {
+    alerts.push({ metric: 'spend', severity: 'high', dir: 'down', pct: Math.round((1 - (p.spend ? c.spend / p.spend : 0)) * 100), cur: c.spend, prev: p.spend, title: 'Spend stalled', detail: `only ${p.spend ? Math.round((c.spend / p.spend) * 100) : 0}% of the prior window's spend delivered — check budgets and delivery` })
+  }
+  // Spend up but leads not keeping pace.
+  if (material && p.spend > 0) {
+    const sCh = pct(c.spend, p.spend), lCh = p.leads ? pct(c.leads, p.leads) : null
+    if (sCh >= 0.6 && (lCh == null || lCh < sCh * 0.5)) alerts.push({ metric: 'spendleads', severity: 'med', dir: 'up', pct: Math.round(sCh * 100), cur: c.spend, prev: p.spend, title: 'Spend up, leads flat', detail: `spend up ${Math.round(sCh * 100)}% but leads ${lCh == null ? 'not tracking' : (lCh < 0 ? `down ${Math.round(-lCh * 100)}%` : `only up ${Math.round(lCh * 100)}%`)}` })
+  }
+  // Zero-lead spend — the account is spending but reporting no leads at all.
+  if (c.spend >= 100 && c.leads === 0) alerts.push({ metric: 'noleads', severity: 'high', cur: c.spend, prev: null, title: 'Spending with no leads', detail: `${Math.round(c.spend)} spent this window with zero reported leads — check tracking and delivery` })
+  // Worst-offender ads: highest spend with zero leads (aggregated by ad name).
+  const adAgg = new Map()
+  for (const r of adRows) { const n = r.ad_name; if (!n) continue; const e = adAgg.get(n) || { name: n, campaign: r.campaign, adset: r.adset_name, thumb: r.thumbnail_url, spend: 0, leads: 0, clicks: 0 }; e.spend += num(r.spend); e.leads += fbLeads(r); e.clicks += num(r.clicks); if (!e.thumb && r.thumbnail_url) e.thumb = r.thumbnail_url; adAgg.set(n, e) }
+  const zeroLeadAds = [...adAgg.values()].filter((a) => a.spend >= 50 && a.leads === 0).sort((a, b) => b.spend - a.spend).slice(0, 6).map((a) => ({ ...a, spend: Math.round(a.spend) }))
+  const order = { high: 0, med: 1, good: 2 }
+  alerts.sort((a, b) => (order[a.severity] - order[b.severity]))
+  const sev = { high: alerts.filter((a) => a.severity === 'high').length, med: alerts.filter((a) => a.severity === 'med').length, good: alerts.filter((a) => a.severity === 'good').length }
+  return { metrics: { cur: c, prev: p }, alerts, zeroLeadAds, summary: sev, period: { from, to }, prevPeriod: pr }
+}
+
 const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
 function daysInRange(from, to, preset) {
   if (from && to) { const d = Math.round((new Date(to) - new Date(from)) / 86400000) + 1; return d > 0 ? d : 30 }
@@ -1606,6 +1664,18 @@ export default async (req) => {
       const res = await buildFatigue(cc.meta, from, to, preset, key, cfg)
       return json({ scope: 'fatigue', client, period: { from, to, preset }, ...res }, 200, true)
     } catch (e) { return json({ scope: 'fatigue', client, error: String(e.message || e).slice(0, 200), creatives: [], summary: { high: 0, medium: 0, low: 0, total: 0 } }, 200) }
+  }
+
+  // Meta anomaly / delivery-health signal for the Meta Insights tab — one client
+  // per request, current vs prior-window movement in the key delivery metrics.
+  if (url.searchParams.get('scope') === 'anomalies') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'anomalies', client, meta: false, alerts: [], summary: { high: 0, med: 0, good: 0 } })
+    try {
+      const res = await buildAnomalies(cc.meta, from, to, preset, key)
+      return json({ scope: 'anomalies', client, ...res }, 200, true)
+    } catch (e) { return json({ scope: 'anomalies', client, error: String(e.message || e).slice(0, 200), alerts: [], summary: { high: 0, med: 0, good: 0 } }, 200) }
   }
 
   // Field probe for the Creative Cockpit: which creative-level fields Windsor's

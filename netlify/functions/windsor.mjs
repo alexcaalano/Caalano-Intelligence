@@ -1033,12 +1033,17 @@ async function buildHealth(c, from, to, preset, key, weights) {
     openValue: crm.openValue != null ? crm.openValue : null,
     cpl: cpl != null ? Math.round(cpl) : null,
     cpql: (p.adSpend > 0 && crm.qualified) ? Math.round(p.adSpend / crm.qualified) : null,
+    cpBooked: (p.adSpend > 0 && crm.booked) ? Math.round(p.adSpend / crm.booked) : null,
+    cpWon: (p.adSpend > 0 && crm.won) ? Math.round(p.adSpend / crm.won) : null,
+    avgDeal: crm.avgValue != null ? crm.avgValue : null,
     prev: prev ? { adSpend: pSpend, leads: pLeads, qualified: pc.qualified, booked: pc.booked, shown: pc.shown, won: pc.won, revenue: pc.revenue, openValue: pc.openValue } : null,
   }
+  // Paid channel split, for the client-update module.
+  const channels = { metaSpend: p.metaSpend, googleSpend: p.googleSpend, metaLeads: p.metaLeads, googleConv: p.googleConv }
 
   return {
     score: { composite, weights: w, marketing: marketing.score, sales: sales.score, ops: ops.score, revenue: revenue.score, pillars },
-    kpis, forecast, has,
+    kpis, channels, forecast, has,
   }
 }
 

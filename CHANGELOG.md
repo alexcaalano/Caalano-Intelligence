@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.59.0 — 2026-07-23 · `PENDING`
+- **Client Update generator (new left-nav module).** Pick a client + date range,
+  add their first name, and generate a client-ready account update in two
+  formats side by side: a **casual WhatsApp** message and a **formal, structured
+  email** (with subject line), each with copy buttons. The last update is saved
+  per client.
+  - Pulls the client's **computed** results for the period — spend (Meta/Google
+    split), leads, booked calls, shows, deals won, revenue, cost per lead /
+    booked call / won, open pipeline, run-rate forecast, and the **best-performing
+    ads** (by leads + booked calls).
+  - Invites the client to reply with feedback on lead quality, how the business
+    is tracking, and any wins.
+  - Australian spelling, no em dashes, addressed by first name, from Caalano
+    Digital. **Only uses computed data** — the AI is instructed never to invent,
+    estimate or add any figure, claim or insight not in the payload. Staff only.
+
 ## v3.58.0 — 2026-07-22 · `PENDING`
 - **Creative Cockpit headline metric → cost per booked call** (replaces cost per
   qualified lead). "Booked" is now the concrete, per-pipeline definition used

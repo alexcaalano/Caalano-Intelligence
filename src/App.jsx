@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.58.0'
+const APP_VERSION = '3.59.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6192,6 +6192,87 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
   )
 }
 
+/* ============ Client Update generator ============ */
+// Pick a client + date range, pull the computed intelligence for the period, and
+// generate a client-facing account update in two formats: casual (WhatsApp) and
+// formal/structured (email). Australian spelling, no em dashes, from Caalano
+// Digital, addressed by first name. Every figure comes from computed data; the
+// AI only writes it up. The last update is saved per client.
+function CopyBtn({ text, label = 'Copy' }) {
+  const [done, setDone] = useState(false)
+  const copy = async () => { try { await navigator.clipboard.writeText(text || ''); setDone(true); setTimeout(() => setDone(false), 1600) } catch { /* clipboard blocked */ } }
+  return <button className="link-btn sm cu-copy" onClick={copy}>{done ? '✓ Copied' : label}</button>
+}
+function ClientUpdatePage({ clients, currency, range, nonce }) {
+  useSettingsSync()
+  const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
+  const [selId, setSelId] = useState(list[0] ? list[0].id : null)
+  const sel = list.find((c) => c.id === selId) || list[0]
+  const [firstName, setFirstName] = useState('')
+  const [rec, setRec] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  // Load the last saved update (and first name) whenever the client changes.
+  useEffect(() => {
+    if (!sel) return
+    const saved = loadInsights(sel.id + ':update')
+    setRec(saved || null); setFirstName((saved && saved.firstName) || ''); setErr(null)
+  }, [selId, SETTINGS.loaded])
+  const generate = async () => {
+    if (!sel || busy) return
+    setBusy(true); setErr(null)
+    try {
+      const q = rangeQuery(range)
+      const [health, creatives] = await Promise.all([
+        fetch(`/.netlify/functions/windsor?client=${sel.id}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()),
+        fetch(`/.netlify/functions/windsor?client=${sel.id}&scope=creatives&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({ creatives: [] })),
+      ])
+      if (!health || health.error) throw new Error((health && health.error) || 'could not load the client data')
+      const topCr = (creatives.creatives || [])
+        .map((c) => ({ name: c.name, format: c.format, leads: c.crm ? c.crm.leads : c.leads, booked: c.crm ? c.crm.booked : 0 }))
+        .sort((a, b) => (b.booked - a.booked) || (b.leads - a.leads)).slice(0, 4)
+      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), period: rangeLabel(range), kpis: health.kpis, channels: health.channels, forecast: health.forecast, creatives: topCr }
+      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      const full = { subject: j.subject || '', email: j.email || '', whatsapp: j.whatsapp || '', firstName: firstName.trim(), period: j.period || rangeLabel(range), generatedAt: j.generatedAt || new Date().toISOString() }
+      saveInsights(sel.id + ':update', full); setRec(full)
+    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+  if (!list.length) return <div className="card empty-deep"><div className="big">✉️</div><b>No clients available.</b></div>
+  return (
+    <>
+      <div className="c360-head" style={{ marginTop: 0 }}>
+        <div className="pipe-sel"><label>Client</label>
+          <select value={(sel && sel.id) || ''} onChange={(e) => setSelId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </div>
+        <div className="pipe-sel"><label>Client first name</label>
+          <input className="cu-name" value={firstName} placeholder="e.g. Jason" onChange={(e) => setFirstName(e.target.value)} />
+        </div>
+        <button className="ai-btn cu-gen" onClick={generate} disabled={busy}>{busy ? 'Generating…' : rec ? '↻ Regenerate update' : '✨ Generate update'}</button>
+      </div>
+      <p className="cap" style={{ marginTop: 2 }}>Pulls this client's computed results for <b>{rangeLabel(range)}</b> (spend, leads, booked calls, revenue, cost per result, best-performing ads) and writes a client-ready update. Set the period with the date range up top. Nothing is invented — it only uses the numbers on the dashboard.</p>
+      {err && <div className="card empty-deep" style={{ padding: 18 }}><b>Couldn’t generate.</b><p className="cap" style={{ marginTop: 6 }}>{err}</p></div>}
+      {busy && <div className="card"><Spinner label="Pulling the numbers and writing the update…" /></div>}
+      {!busy && rec && (rec.email || rec.whatsapp) && <>
+        <div className="cu-meta cap">Last generated {new Date(rec.generatedAt).toLocaleString()} · {rec.period}</div>
+        <div className="cu-grid">
+          <div className="card cu-panel">
+            <div className="cu-panel-h">💬 WhatsApp <span className="sub">· casual</span><CopyBtn text={rec.whatsapp} /></div>
+            <pre className="cu-body">{rec.whatsapp}</pre>
+          </div>
+          <div className="card cu-panel">
+            <div className="cu-panel-h">✉️ Email <span className="sub">· formal</span><CopyBtn text={`Subject: ${rec.subject}\n\n${rec.email}`} label="Copy all" /></div>
+            {rec.subject && <div className="cu-subject"><span className="cu-subj-l">Subject</span>{rec.subject}<CopyBtn text={rec.subject} label="Copy" /></div>}
+            <pre className="cu-body">{rec.email}</pre>
+          </div>
+        </div>
+      </>}
+      {!busy && !rec && !err && <div className="card empty-deep"><div className="big">✉️</div><b>Generate an update for {sel ? sel.name : 'this client'}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add the client's first name, pick your date range up top, then Generate. You'll get a casual WhatsApp version and a formal email version, ready to copy and send.</p></div>}
+    </>
+  )
+}
+
 function Dashboard({ authUser, authEnabled, onLogout }) {
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
@@ -6267,6 +6348,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
             <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
             <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic">🎬</span>Creative Cockpit</button>
+            <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic">✉️</span>Client Update</button>
           </>}
           {isViewer && <>
             <div className="nav-lab">My reports</div>
@@ -6289,8 +6371,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'update' ? 'Client Update' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -6301,6 +6383,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
+          {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}

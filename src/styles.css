@@ -1527,3 +1527,18 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .cc-nm { display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .cc-tbl { min-width: 720px; }
 @media (max-width: 640px) { .cc-nm { max-width: 150px; } }
+
+/* ============ Client Update generator ============ */
+.cu-name { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 7px 10px; font-size: 13px; min-width: 160px; }
+.cu-gen { align-self: flex-end; }
+.cu-meta { margin: 6px 0 10px; }
+.cu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.cu-panel { display: flex; flex-direction: column; }
+.cu-panel-h { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 720; margin-bottom: 10px; }
+.cu-panel-h .sub { font-weight: 500; color: var(--muted); }
+.cu-copy { margin-left: auto; }
+.cu-subject { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; }
+.cu-subj-l { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.cu-subject .cu-copy { margin-left: auto; }
+.cu-body { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.55; color: var(--text); margin: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+@media (max-width: 900px) { .cu-grid { grid-template-columns: 1fr; } }

@@ -172,11 +172,64 @@ Be specific and numeric. Under 320 words. Do not use em-dashes or en-dashes; use
   return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
 }
 
+// Client Update generator — a client-facing account update for a period, in two
+// formats: a casual WhatsApp message and a formal structured email. Every figure
+// is supplied; Claude only writes it up. Returns strict JSON {subject, email,
+// whatsapp}. Australian spelling, no em dashes, from Caalano Digital.
+async function clientUpdate(apiKey, body) {
+  const { clientName, firstName, period, kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [] } = body
+  const pv = k.prev || {}
+  const delta = (cur, prev, lowerBetter) => { if (cur == null || prev == null || !prev) return ''; const pc = Math.round(((cur - prev) / prev) * 100); const better = lowerBetter ? pc < 0 : pc > 0; return ` (${pc >= 0 ? 'up' : 'down'} ${Math.abs(pc)}% vs previous period, ${better ? 'good' : 'worse'})` }
+  const lines = []
+  lines.push(`Ad spend $${n0(k.adSpend)}${delta(k.adSpend, pv.adSpend, false)} (Meta $${n0(ch.metaSpend)}, Google $${n0(ch.googleSpend)})`)
+  lines.push(`Leads ${n0(k.leads)}${delta(k.leads, pv.leads, false)}`)
+  lines.push(`Booked calls ${n0(k.booked)}${delta(k.booked, pv.booked, false)}`)
+  if (k.shown != null) lines.push(`Attended / shown ${n0(k.shown)}${delta(k.shown, pv.shown, false)}`)
+  lines.push(`Deals won ${n0(k.won)}${delta(k.won, pv.won, false)}, revenue $${n0(k.revenue)}${delta(k.revenue, pv.revenue, false)}`)
+  if (k.avgDeal) lines.push(`Average deal value $${n0(k.avgDeal)}`)
+  lines.push(`Cost per lead $${n0(k.cpl)}, cost per booked call ${k.cpBooked != null ? '$' + n0(k.cpBooked) : 'n/a'}, cost per won ${k.cpWon != null ? '$' + n0(k.cpWon) : 'n/a'}`)
+  if (k.openValue) lines.push(`Open pipeline value right now $${n0(k.openValue)}`)
+  if (fc && fc.projectedRevenue != null && fc.elapsedPct != null && fc.elapsedPct < 100) lines.push(`On current run rate this period projects to about $${n0(fc.projectedRevenue)} revenue and ${n0(fc.projectedLeads)} leads`)
+  // Best-performing creatives (ads) for the period, so the update can call them out.
+  const topCreatives = (cr || []).slice(0, 4).map((c) => `${c.name} (${c.format || 'ad'}): ${n0(c.leads)} leads, ${n0(c.booked)} booked calls`)
+  const creativeBlock = topCreatives.length ? `\nBest performing ads this period (highest lead and booking volume):\n${topCreatives.join('\n')}` : ''
+  const prompt = `You are the account manager at Caalano Digital, a marketing agency, writing a results update to a client for a reporting period. Write in Australian English (spelling: optimise, prioritise, colour, etc.). Never use em dashes or en dashes; use commas, colons or hyphens.
+
+CRITICAL: Use ONLY the figures and facts provided below. Do NOT invent, estimate, extrapolate or add any number, metric, claim or insight that is not explicitly given. Do not speculate about causes or make up context. If a figure is marked n/a or is not provided, do not mention it. Every statement you make must be directly supported by the data below.
+
+Client business: ${clientName || 'the client'}
+Client first name: ${firstName || '(none given)'}
+Reporting period: ${period || 'the selected period'}
+
+Results:
+${lines.join('\n')}${creativeBlock}
+
+Produce TWO versions of the same update and reply with ONLY a JSON object, no prose outside it, shaped exactly:
+{"subject":"<email subject line>","email":"<full formal email body>","whatsapp":"<casual WhatsApp message>"}
+
+Email version: formal and structured. ${firstName ? `Open with "Hi ${firstName},"` : 'Open with "Hi there,"'} Then a short intro line, then clearly grouped results (you may use short headings or bullet points) covering: spend and cost efficiency; lead and booking generation; revenue/wins; and a short "top performing ads" callout naming the best ads and what drove them (only if ad data is provided above). Call out the notable movements versus the previous period. Then invite the client to share their feedback: how the lead quality has been, how the business is tracking their end, and any wins or closed jobs we should know about. Finish with a brief forward-looking line and sign off from the Caalano Digital team. Professional, confident, warm. No emojis.
+
+WhatsApp version: casual and conversational, like a real text message to a client you have a good relationship with. ${firstName ? `Start with "Hey ${firstName},"` : 'Start with "Hey,"'} Keep it shorter than the email, hit the headline numbers, the best news and a quick mention of the standout ad if provided, plain language, no jargon. End by asking how the leads have been on their end and if they have had any wins lately. NO emojis. Sign off casually from the Caalano Digital team.
+
+Both must be positive but honest: if something went down, frame it constructively without hiding it. Keep the email under 340 words and the WhatsApp under 140 words.`
+  const out = await callClaude(apiKey, prompt)
+  let parsed = null
+  try { const m = out.insights.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : null } catch { parsed = null }
+  if (!parsed || (!parsed.email && !parsed.whatsapp)) throw new Error('could not parse the generated update')
+  return { subject: String(parsed.subject || '').slice(0, 200), email: String(parsed.email || ''), whatsapp: String(parsed.whatsapp || ''), model: out.model, period: period || '', generatedAt: new Date().toISOString() }
+}
+
 export default async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return json({ error: 'AI insights not configured - add ANTHROPIC_API_KEY in Netlify, then redeploy.' }, 400)
   let body; try { body = await req.json() } catch { return json({ error: 'bad request body' }, 400) }
+
+  // Client Update generator.
+  if (body && body.mode === 'client-update') {
+    try { return json(await clientUpdate(apiKey, body)) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
 
   // Creative Cockpit paths.
   if (body && body.mode === 'creative-tag') {

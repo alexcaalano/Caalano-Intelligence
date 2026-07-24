@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.72.0'
+const APP_VERSION = '3.73.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6351,6 +6351,62 @@ function RecommendationsPage({ clients, nonce }) {
   )
 }
 
+/* ============ Meta opportunity score (Graph API, agency-wide) ============ */
+function useOpportunity(clientId, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=opportunity&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: 'ok', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, nonce])
+  return st
+}
+function OpportunityCard({ client, nonce, onConfig }) {
+  const st = useOpportunity(client.id, nonce)
+  const d = st.data
+  useEffect(() => { onConfig(client.id, d ? { configured: d.configured !== false, meta: d.meta !== false } : null) }, [d && d.configured, d && d.meta])
+  if (st.status === 'loading') return <div className="card fat-card"><div className="fat-card-h"><div className="fat-card-nm">{client.name}</div><span className="cap">Loading…</span></div></div>
+  if (!d || d.meta === false || d.configured === false) return null
+  const score = d.score
+  const cls = score == null ? '' : score >= 80 ? 'opp-good' : score >= 60 ? 'opp-mid' : 'opp-low'
+  return (
+    <div className="card fat-card">
+      <div className="fat-card-h"><div className="fat-card-nm">{client.name}</div>{score != null ? <div className={`opp-score ${cls}`}>{score}<span>/100</span></div> : <span className="cap">no score returned</span>}</div>
+      {d.error ? <div className="cap" style={{ color: 'var(--neg)' }}>Meta: {d.error}</div>
+        : !d.recommendations || !d.recommendations.length ? <div className="cap">No open recommendations — Meta considers this account well optimised. ✅</div>
+          : <div className="opp-list">{d.recommendations.map((r, i) => (
+            <div className="opp-row" key={i}>
+              <span className={`opp-pts ${r.points ? '' : 'opp-pts-0'}`}>{r.points ? `+${r.points}` : '·'}</span>
+              <div className="opp-body">
+                <div>{r.body || prettyOppType(r.type)}</div>
+                {r.lift ? <div className="cap">{r.lift}{r.stage === 'mid_flight_recommendation' ? ' · on a live campaign' : ''}</div> : null}
+                {r.url ? <a className="cap opp-link" href={r.url} target="_blank" rel="noreferrer">Open in Ads Manager ↗</a> : null}
+              </div>
+            </div>
+          ))}</div>}
+    </div>
+  )
+}
+const prettyOppType = (t) => String(t || 'Recommendation').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+function OpportunityPage({ clients, nonce }) {
+  const metaClients = [...clients].filter((c) => c.meta).sort((a, b) => a.name.localeCompare(b.name))
+  const [cfg, setCfg] = useState({})
+  const onConfig = React.useCallback((id, s) => setCfg((p) => ({ ...p, [id]: s })), [])
+  const resolved = Object.values(cfg).filter(Boolean)
+  const tokenMissing = resolved.length > 0 && resolved.every((s) => s.configured === false)
+  return (
+    <>
+      <div className="lvl-title">Opportunity score · Meta’s signal <span className="sub">· 0–100 account health + recommendations</span></div>
+      {tokenMissing
+        ? <div className="card mi-setup"><div className="mi-setup-h">🔌 Meta token not configured</div>
+          <p>The opportunity score is pulled live from Meta’s Graph API, which needs your <b>System User token</b> stored on the server. Add an env var <code>META_SYSTEM_TOKEN</code> in Netlify (Site configuration → Environment variables) with the token you generated, then redeploy.</p>
+          <p className="cap">It’s used for read-only calls only. Full steps are in <code>META-WEBHOOK-SETUP.md</code>.</p></div>
+        : <p className="caveat">Meta’s own 0–100 opportunity score per account, with its top recommendations ranked by expected <b>point lift</b>. Pulled live from the Graph API — higher means better aligned with Meta’s best practices. This is account-level, never per-campaign.</p>}
+      <div className="fat-grid">{metaClients.map((c) => <OpportunityCard key={c.id} client={c} nonce={nonce} onConfig={onConfig} />)}</div>
+    </>
+  )
+}
+
 /* ============ Meta Insights — hub for everything Meta-derived ============ */
 // Sub-tabbed like the client workspace. Fatigue + Anomalies ship today (computed
 // from Windsor data); the Meta-App-gated reads (opportunity score, benchmarks,
@@ -6360,8 +6416,8 @@ const META_INSIGHTS_TABS = [
   { id: 'fatigue', label: 'Creative fatigue · proxy', ready: true },
   { id: 'fatigue-webhook', label: 'Creative fatigue · Meta', ready: true },
   { id: 'recommendations', label: 'Ad recommendations', ready: true },
+  { id: 'opportunity', label: 'Opportunity score', ready: true },
   { id: 'benchmarks', label: 'Benchmarks', ready: false },
-  { id: 'opportunity', label: 'Opportunity score', ready: false },
   { id: 'library', label: 'Ad Library', ready: false },
 ]
 function MetaInsightsPage({ clients, currency, range, nonce }) {
@@ -6374,6 +6430,7 @@ function MetaInsightsPage({ clients, currency, range, nonce }) {
       {tab === 'fatigue' && <MetaFatiguePage clients={clients} currency={currency} range={range} nonce={nonce} />}
       {tab === 'fatigue-webhook' && <MetaFatigueWebhookPage clients={clients} range={range} nonce={nonce} />}
       {tab === 'recommendations' && <RecommendationsPage clients={clients} nonce={nonce} />}
+      {tab === 'opportunity' && <OpportunityPage clients={clients} nonce={nonce} />}
       {!cur.ready && <div className="card mi-soon-card">
         <div className="big">🔒</div>
         <b>{cur.label} needs a Meta App connection.</b>

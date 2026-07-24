@@ -1642,3 +1642,14 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mi-await { margin-top: 12px; background: var(--panel-2); border: 1px dashed var(--border-2); }
 .mi-await-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .mi-await-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); color: var(--muted); }
+.opp-score { font-size: 26px; font-weight: 800; line-height: 1; }
+.opp-score span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.opp-score.opp-good { color: #17b26a; }
+.opp-score.opp-mid { color: #cf8a00; }
+.opp-score.opp-low { color: #e5484d; }
+.opp-list { display: flex; flex-direction: column; gap: 8px; }
+.opp-row { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; }
+.opp-pts { flex-shrink: 0; min-width: 34px; text-align: center; font-weight: 800; color: #17b26a; background: color-mix(in srgb, #17b26a 12%, transparent); border-radius: 6px; padding: 3px 6px; }
+.opp-pts.opp-pts-0 { color: var(--muted); background: var(--panel-2); }
+.opp-body { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
+.opp-link { color: var(--brand); font-weight: 600; }

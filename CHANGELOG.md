@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.73.0 — 2026-07-23 · `PENDING`
+- **Meta Insights — Opportunity score tab (live from the Graph API).** Meta's own
+  0–100 account health score per client, with its top recommendations ranked by
+  expected point lift (e.g. "Maximise qualified leads · +4 · 24% lower cost per
+  quality lead"), each linking into Ads Manager. Backend `scope=opportunity`
+  calls the Graph API with a stored System User token (`META_SYSTEM_TOKEN`, env
+  var, read-only). Shows a clear setup banner until the token is configured.
+  This is the first tab that pulls *from* Meta (the webhook pushes *to* us).
+
 ## v3.72.0 — 2026-07-23 · `PENDING`
 - **Meta fatigue tab — show subscribed-but-quiet accounts.** Previously only
   accounts that had already sent a webhook event appeared, which made it look

@@ -1768,6 +1768,30 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'recommendations', error: String(e.message || e).slice(0, 200), groups: [] }, 200) }
   }
 
+  // Meta opportunity score + recommendations — pulled live from the Graph API
+  // using the stored System User token (META_SYSTEM_TOKEN). One client per call.
+  if (url.searchParams.get('scope') === 'opportunity') {
+    if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'opportunity', client, meta: false })
+    const token = process.env.META_SYSTEM_TOKEN
+    if (!token) return json({ scope: 'opportunity', client, configured: false })
+    try {
+      const gv = 'v21.0'
+      const acct = `act_${String(cc.meta).replace(/^act_/, '')}`
+      const api = `https://graph.facebook.com/${gv}/${acct}/recommendations?access_token=${encodeURIComponent(token)}`
+      const r = await fetch(api)
+      const j = await r.json().catch(() => ({}))
+      if (j && j.error) return json({ scope: 'opportunity', client, configured: true, error: (j.error.message || 'Graph error').slice(0, 240), code: j.error.code || null }, 200)
+      const arr = j.recommendations || j.data || []
+      const recs = arr.map((x) => { const c = x.recommendation_content || x
+        return { type: x.type || x.recommendation_type || null, body: c.body || x.body || x.message || null, lift: c.lift_estimate || x.lift_estimate || null, points: num(c.opportunity_score_lift != null ? c.opportunity_score_lift : x.opportunity_score_lift) || null, stage: x.recommendation_stage || null, url: x.url || null } })
+        .sort((a, b) => (b.points || 0) - (a.points || 0))
+      const score = j.opportunity_score != null ? num(j.opportunity_score) : (j.summary && j.summary.opportunity_score != null ? num(j.summary.opportunity_score) : null)
+      return json({ scope: 'opportunity', client, configured: true, score, recommendations: recs.slice(0, 12) }, 200, true)
+    } catch (e) { return json({ scope: 'opportunity', client, configured: true, error: String(e.message || e).slice(0, 240) }, 200) }
+  }
+
   // Meta anomaly / delivery-health signal for the Meta Insights tab — one client
   // per request, current vs prior-window movement in the key delivery metrics.
   if (url.searchParams.get('scope') === 'anomalies') {

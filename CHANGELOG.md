@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.75.0 — 2026-07-23 · `PENDING`
+- **Client Update now reads the whole client profile.** The generator pulls in
+  every tab's data, not just spend + pipeline: Location (where leads and the
+  booked/won ones come from), Appointments (booking lead time, self vs
+  staff-booked, show rate, downstream wins), Timing/speed-to-lead (typical
+  response time and the book-rate gap between fast and slow follow-up), Cohorts
+  (whether newer lead cohorts are converting better or worse), and Forms (which
+  offer pulls the best-converting leads). It's fed as background so the AI has
+  the full picture, but instructed to surface only the one or two most valuable
+  insights (often as a smart client question), keeping the email tight.
+
 ## v3.74.0 — 2026-07-23 · `PENDING`
 - **Client Update — rewritten to sound human and drive replies.** The generator
   prompt was overhauled: a "trusted operator" voice (lead with the story, every

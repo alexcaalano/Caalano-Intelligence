@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.74.0'
+const APP_VERSION = '3.75.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6683,7 +6683,9 @@ function useUpdateData(clientId, range, nonce) {
     Promise.all([
       g('health'), g('creatives'), g('updateextra'), g('users'),
       fetch(`${base}&channel=google&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
-    ]).then(([health, creatives, extra, users, google]) => { if (alive) setSt({ status: (health && health.error) ? 'err' : 'ok', data: { health, creatives, extra, users, google } }) })
+      g('forms'), g('appts'), g('speed'),
+      fetch(`${base}&scope=cohorts&weeks=12${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
+    ]).then(([health, creatives, extra, users, google, forms, appts, speed, cohorts]) => { if (alive) setSt({ status: (health && health.error) ? 'err' : 'ok', data: { health, creatives, extra, users, google, forms, appts, speed, cohorts } }) })
     return () => { alive = false }
   }, [clientId, q, nonce])
   return st
@@ -6864,6 +6866,7 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
   const [rec, setRec] = useState(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
+  const auDb = useAuDb() // for the geo digest (same postcode/suburb merge as the Location tab)
   const dataSt = useUpdateData(sel && sel.id, range, nonce)
   // Load the last saved update, first name and client context on client change.
   useEffect(() => {
@@ -6890,7 +6893,27 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
       const stalled = Object.values(stalledBy).sort((a, b) => b.value - a.value).slice(0, 6)
       // Elapsed days in the selected range, for the "is no-wins expected?" note.
       const periodDays = Math.max(1, Math.round((new Date(range.to) - new Date(range.from)) / 86400000) + 1)
-      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), clientContext: (ctx || '').trim(), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [], stalled }
+      // --- Extra digests (compact) so the update draws on all of the client's data ---
+      // Geo: top regions by leads, merged the same way the Location tab does.
+      const formsArr = (dataSt.data.forms && dataSt.data.forms.forms) || []
+      const allLocs = formsArr.flatMap((f) => f.locations || [])
+      const geo = allLocs.length ? mergeLocations(groupAnswers(allLocs), auDb).slice(0, 5).map((l) => ({ region: l.value, leads: l.leads || 0, booked: l.booked || 0, won: l.won || 0 })) : []
+      // Appointment insights (booking lead time, self vs staff, show rate, downstream win).
+      const ai = (dataSt.data.appts && dataSt.data.appts.channels && dataSt.data.appts.channels.all) || null
+      const apptInsights = ai ? { avgLeadDays: ai.avgLeadDays, avgTimeToBookDays: ai.avgTimeToBookDays, self: ai.self, staff: ai.staff, selfPct: ai.selfPct, showRate: ai.showRate, booked: ai.booked, won: ai.won, winRate: ai.winRate } : null
+      // Speed to lead: typical response time + fast vs slow follow-up book rate.
+      const sp = dataSt.data.speed || null
+      const speed = (sp && sp.measured) ? (() => {
+        const bk = sp.buckets || []
+        const agg = (re) => bk.filter((b) => re.test(b.label)).reduce((a, b) => ({ count: a.count + b.count, booked: a.booked + b.booked }), { count: 0, booked: 0 })
+        const fast = agg(/Under 5|5-15/), slow = agg(/4-24 hrs|Over 24/)
+        return { medianMin: sp.medianMin, avgMin: sp.avgMin, within5Pct: sp.within5Pct, measured: sp.measured, fastCount: fast.count, fastBookRate: fast.count ? Math.round((fast.booked / fast.count) * 100) : null, slowCount: slow.count, slowBookRate: slow.count ? Math.round((slow.booked / slow.count) * 100) : null }
+      })() : null
+      // Cohort trend: recent acquisition weeks (leads -> booked -> won) for a maturation read.
+      const cohortTrend = ((dataSt.data.cohorts && dataSt.data.cohorts.weeks) || []).slice(-6).map((w) => { const a = (w.ch && w.ch.all) || {}; return { week: w.label, leads: a.leads || 0, booked: a.booked || 0, won: a.won || 0 } })
+      // Top forms/offers by submissions, with booked/won where available.
+      const forms = formsArr.slice(0, 3).map((f) => ({ name: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, won: f.won || 0 }))
+      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), clientContext: (ctx || '').trim(), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [], stalled, geo, apptInsights, speed, cohortTrend, forms }
       const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)

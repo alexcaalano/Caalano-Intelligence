@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.74.0 — 2026-07-23 · `PENDING`
+- **Client Update — rewritten to sound human and drive replies.** The generator
+  prompt was overhauled: a "trusted operator" voice (lead with the story, every
+  number gets a "so what", have a point of view), the AI now interprets and
+  recommends rather than just restating figures, and a hard ban-list of AI-tell
+  phrases/words. The old "what we're doing next" is replaced by a consultative
+  closing that asks the client 2-3 specific questions to earn a reply (e.g. are
+  the cheap, well-booking leads turning into good conversations — and only then,
+  as a joint decision, explore leaning in). Never assumes budget can be moved.
+  Stops calling the client's customers "jobs". Feeds in stalled deals (open, no
+  movement 30+ days, from the Users data) so it can ask informed questions about
+  where deals are stuck.
+
 ## v3.73.0 — 2026-07-23 · `PENDING`
 - **Meta Insights — Opportunity score tab (live from the Graph API).** Meta's own
   0–100 account health score per client, with its top recommendations ranked by

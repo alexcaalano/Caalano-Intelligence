@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.73.0'
+const APP_VERSION = '3.74.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6876,14 +6876,21 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
     if (dataSt.status !== 'ok' || !dataSt.data) { setErr('The client numbers are still loading, give it a moment and try again.'); return }
     setBusy(true); setErr(null)
     try {
-      const { health, creatives, extra } = dataSt.data
+      const { health, creatives, extra, users } = dataSt.data
       if (!health || health.error) throw new Error((health && health.error) || 'could not load the client data')
       const topCr = (creatives.creatives || [])
         .map((c) => ({ name: c.name, format: c.format, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, booked: c.crm ? c.crm.booked : 0 }))
         .sort((a, b) => (b.booked - a.booked) || (b.leads - a.leads)).slice(0, 5)
+      // Stalled deals from the Users data: open opportunities that haven't moved
+      // in 30+ days, grouped by stage, so the update can ask informed questions
+      // about where deals are getting stuck.
+      const allOpen = ((users && users.users) || []).flatMap((u) => u.openDeals || [])
+      const stalledBy = {}
+      for (const d of allOpen) { if ((d.ageDays || 0) >= 30) { const s = stalledBy[d.stage] || { stage: d.stage, pipeline: d.pipeline, count: 0, value: 0, maxAge: 0 }; s.count++; s.value += (d.value || 0); s.maxAge = Math.max(s.maxAge, d.ageDays || 0); stalledBy[d.stage] = s } }
+      const stalled = Object.values(stalledBy).sort((a, b) => b.value - a.value).slice(0, 6)
       // Elapsed days in the selected range, for the "is no-wins expected?" note.
       const periodDays = Math.max(1, Math.round((new Date(range.to) - new Date(range.from)) / 86400000) + 1)
-      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), clientContext: (ctx || '').trim(), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [] }
+      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), clientContext: (ctx || '').trim(), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [], stalled }
       const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)

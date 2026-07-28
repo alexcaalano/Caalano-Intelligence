@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.79.0'
+const APP_VERSION = '3.80.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2689,8 +2689,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const cpl2 = pv.leads && pv.adSpend ? Math.round(pv.adSpend / pv.leads) : null
         return <div className="exec-cc">
           <div className="exec-panel-h">Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}</span></div>
-          <div className="cc-group-lab">Spend &amp; efficiency</div>
-          <div className="scorecard exec-kpis">
+          <div className="cc-group-lab x-internal">Spend &amp; efficiency</div>
+          <div className="scorecard exec-kpis x-internal">
             <Kpi label="Total ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown />
             <Kpi label="Cost / lead" value={k.cpl != null ? money(k.cpl) : '—'} cur={k.cpl} prev={cpl2} goodWhenDown />
             <Kpi label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} cur={k.cpBooked} goodWhenDown />
@@ -7116,6 +7116,10 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const [navOpen, setNavOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('caalano_sb') === '1' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('caalano_sb', collapsed ? '1' : '0') } catch {} }, [collapsed])
+  // Present mode: hide agency-internal (cost / spend / margin) figures so the
+  // dashboard is safe to screen-share with a client. Not persisted — always
+  // starts off so it can never be left on by accident.
+  const [present, setPresent] = useState(false)
   const agency = useAgencyLive(range, refreshKey)
   // Server-backed settings: re-render on hydrate/change; enabled is a derived
   // write-through value so client on/off persists to the server like the rest.
@@ -7171,7 +7175,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0
 
   return (
-    <div className={`shell ${collapsed ? 'sb-collapsed' : ''}`}>
+    <div className={`shell ${collapsed ? 'sb-collapsed' : ''} ${present ? 'present' : ''}`}>
       {navOpen && <div className="nav-overlay" onClick={() => setNavOpen(false)} />}
       {collapsed && <button className="sb-expand" onClick={() => setCollapsed(false)} aria-label="Show sidebar" title="Show sidebar">»</button>}
       <aside className={`side ${navOpen ? 'open' : ''}`}>
@@ -7193,6 +7197,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         <div style={{ marginTop: 'auto' }}>
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic">⚙</span>Settings</button>
           <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
+          {!isViewer && <button className={`settings-btn ${present ? 'active' : ''}`} onClick={() => setPresent((p) => !p)} title="Hide agency-internal cost/spend figures for client screen-shares"><span className="ic">{present ? '🟢' : '👁'}</span>{present ? 'Present mode: on' : 'Present mode'}</button>}
           {authUser && <div className="side-user"><div className="side-user-who"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}><b>v{APP_VERSION}</b> · deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
         </div>

@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.80.0 — 2026-07-28 · `PENDING`
+- **Present mode.** A sidebar toggle that hides agency-internal cost/spend/margin
+  figures so the dashboard is safe to screen-share with a client. First pass hides
+  the Command Centre's "Spend & efficiency" block; the mechanism (`.x-internal`
+  elements shown only when present mode is off) is reusable to tag more internal
+  figures across other views. Always starts off so it can't be left on by mistake.
+
 ## v3.79.0 — 2026-07-28 · `PENDING`
 - **Collapsible sidebar.** A « toggle collapses the left nav on desktop to give
   the main screen more room; a » button brings it back. The choice is remembered.

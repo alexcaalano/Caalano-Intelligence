@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.77.0 — 2026-07-28 · `PENDING`
+- **Forms — answer drill-down + per-client Key Events funnel.** Click any form
+  answer to expand the list of people who gave it: name, status (won/lost/open),
+  the pipeline stage they're at, opportunity value, days in stage, booking detail
+  (which calendars, and whether the call occurred/showed) and the channel that
+  brought them in. Click a person to read their Caalano Systems notes inline.
+  The answer table also carries the client's own **Key Events** as funnel columns
+  (for Pool Haus: Booked Pool Specialist Call → Shown + Site Visit Booked → Site
+  Visit Shown → Quote Sent → Won), driven by each client's configured key events
+  so it adapts automatically. (Backend: buildForms attaches a per-answer people
+  list, capped at 80; fetchAppointments additively carries per-contact calendar
+  detail.)
+
 ## v3.76.0 — 2026-07-23 · `PENDING`
 - **Caalano360 tab is now a CRM + spend command centre.** Replaced the old KPI
   strip with a full control centre that pivots the whole of Caalano Systems on

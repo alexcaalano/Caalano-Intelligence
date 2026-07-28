@@ -304,7 +304,7 @@ async function fetchAppointments(locTok, locationId, from, to) {
     const calId = cal.id || cal._id || cal.calendarId
     if (!calId) return
     let rec = perCalendar.get(calId)
-    if (!rec) { rec = { name: cal.name || cal.calendarName || 'Calendar', byContact: new Map() }; perCalendar.set(calId, rec) }
+    if (!rec) { rec = { id: calId, name: cal.name || cal.calendarName || 'Calendar', byContact: new Map() }; perCalendar.set(calId, rec) }
     try {
       const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
       for (const ev of (j.events || [])) {
@@ -332,6 +332,18 @@ async function fetchAppointments(locTok, locationId, from, to) {
     if (e.bookedInPeriod) bookedContacts++
     if (e.shownByStatus) shownContacts++
     if (e.cancelledInPeriod) cancelledContacts++
+  }
+  // ADDITIVE: which calendar(s) each contact interacted with in-period, and
+  // whether that booking occurred / showed / cancelled. Purely additive - the
+  // existing bookedInPeriod / shownByStatus / hasCallInPeriod fields above are
+  // untouched, so every other caller keeps working.
+  for (const rec of perCalendar.values()) {
+    for (const [cid, f] of rec.byContact) {
+      if (!f.bookedInPeriod && !f.hasCallInPeriod && !f.shownByStatus) continue
+      const e = byContact.get(cid); if (!e) continue
+      if (!e.calendars) e.calendars = []
+      e.calendars.push({ id: rec.id || null, name: rec.name, occurred: !!f.hasCallInPeriod, shown: !!f.shownByStatus, cancelled: !!(f._cancelled && !f._live) })
+    }
   }
   return { byContact, perCalendar, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
 }
@@ -486,7 +498,10 @@ export async function buildForms(locationId, from, to) {
     // Postcode is denied for segmentation (PII-ish) but wanted for the location
     // breakdown, so capture it separately from the submission.
     const pc = String(o.postalCode || o.postal_code || o.postal || (o.customFields && '') || '').trim()
-    contactData.set(cid, { L, answers, pc })
+    // Contact name for the per-answer people drill (PII stays server-side until a
+    // row is expanded). Prefer an explicit full name, else first+last, else email.
+    const nm = String(o.full_name || o.fullName || o.name || [o.first_name || o.firstName, o.last_name || o.lastName].filter(Boolean).join(' ') || o.email || '').trim()
+    contactData.set(cid, { L, answers, pc, name: nm })
   }
   const [wideOpps, appts, pipelines] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 1800),
@@ -494,6 +509,9 @@ export async function buildForms(locationId, from, to) {
     fetchPipelines(locTok, locationId).catch(() => []),
   ])
   const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
+  const idx = stageIndexFrom(pipelines)
+  const nowMs = Date.now()
+  const nameOfOpp = (o) => (o && ((o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name)) || null
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const oppByContact = new Map()
   for (const o of wideOpps) { const cid = contactIdOf(o); if (cid && !oppByContact.has(cid)) oppByContact.set(cid, o) }
@@ -504,11 +522,34 @@ export async function buildForms(locationId, from, to) {
   const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map() } ; agg.set(L.label, e) } return e }
   const bump = (o, booked, shown, won, rev) => { o.leads++; if (booked) o.booked++; if (shown) o.shown++; if (won) { o.won++; o.revenue += rev } }
   const bumpLoc = (m, value, booked, won, lost) => { if (!value) return; let a = m.get(value); if (!a) { a = { value, leads: 0, booked: 0, won: 0, lost: 0 }; m.set(value, a) } a.leads++; if (booked) a.booked++; if (won) a.won++; if (lost) a.lost++ }
-  for (const [cid, { L, answers, pc }] of contactData) {
+  for (const [cid, { L, answers, pc, name }] of contactData) {
     const e = ent(L)
     const f = apptByContact.get(cid); const booked = !!(f && f.bookedInPeriod); const shown = !!(f && f.shownByStatus)
     const o = oppByContact.get(cid); const st = o ? String(o.status || '').toLowerCase() : ''; const won = st === 'won'; const lost = st === 'lost' || st === 'abandoned'; const rev = won ? num(o.monetaryValue) : 0
     bump(e, booked, shown, won, rev)
+    // One person record per contact, attached to each answer value they gave, so
+    // the Forms drill can list who gave an answer, where they are in the funnel
+    // and which key events they reached (frontend reuses the key-event helpers).
+    const pi = o ? idx.get(o.pipelineId) : null
+    const stg = pi ? pi.byId[o.pipelineStageId] : null
+    const aMs = o ? Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt) : NaN
+    const cMs = o ? Date.parse(o.createdAt) : NaN
+    const person = {
+      contactId: cid,
+      name: nameOfOpp(o) || name || 'Lead',
+      status: won ? 'won' : lost ? 'lost' : 'open',
+      stageName: stg ? stg.name : null,
+      stagePos: stg ? stg.pos : null,
+      pipelineId: (o && o.pipelineId) || null,
+      pipelineName: o && o.pipelineId ? (pipeName[o.pipelineId] || 'Pipeline') : null,
+      value: o ? num(o.monetaryValue) : 0,
+      ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null,
+      booked, shown, occurred: !!(f && f.hasCallInPeriod),
+      calendars: f && Array.isArray(f.calendars) ? f.calendars.map((c) => ({ name: c.name, occurred: !!c.occurred, shown: !!c.shown })) : [],
+      channel: o ? channelOf(utmOf(o)) : null,
+      createdMs: isFinite(cMs) ? cMs : null,
+      lastActivityDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null,
+    }
     // Per-pipeline split, so a multi-pipeline client can categorise a form.
     const pid = o && o.pipelineId
     if (pid) { let bp = e.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; e.byPipe.set(pid, bp) } bump(bp, booked, shown, won, rev) }
@@ -517,8 +558,9 @@ export async function buildForms(locationId, from, to) {
     // Answer-level segmentation: per question, per answer value.
     for (const [q, v] of Object.entries(answers)) {
       let qm = e.seg.get(q); if (!qm) { qm = new Map(); e.seg.set(q, qm) }
-      let av = qm.get(v); if (!av) { av = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; qm.set(v, av) }
+      let av = qm.get(v); if (!av) { av = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, people: [] }; qm.set(v, av) }
       bump(av, booked, shown, won, rev)
+      if (av.people.length < 80) av.people.push(person)
       if (LOC_RE.test(q)) bumpLoc(e.loc, v, booked, won, lost)
     }
   }
@@ -535,7 +577,9 @@ export async function buildForms(locationId, from, to) {
         const answers = [...qm.values()].sort((a, b) => b.leads - a.leads)
         const total = answers.reduce((a, x) => a + x.leads, 0)
         const kind = answers.length > 12 && answers.every((x) => x.leads <= 1) ? 'written' : 'choice'
-        const shown = answers.slice(0, ROW_CAP)
+        // Choice questions keep their per-answer people list (for the drill-down);
+        // high-cardinality free-text drops it to avoid bloating the payload.
+        const shown = answers.slice(0, ROW_CAP).map((a) => (kind === 'written' ? (({ people, ...rest }) => rest)(a) : a))
         return { question, kind, total, distinct: answers.length, more: Math.max(0, answers.length - shown.length), answers: shown }
       })
       // drop a lone constant answer that every lead gave (system/hidden field)
@@ -550,7 +594,9 @@ export async function buildForms(locationId, from, to) {
     const { seg, byPipe, loc, ...rest } = e
     return { ...rest, capturedQuestions: seg.size, questions, byPipeline, locations, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments }
   })
-  return { connected: true, tz, submissions: subs.length, contacts: contactData.size, pipelines: pipelines.map((p) => ({ id: p.id, name: p.name })), forms }
+  // Pipelines carry their ordered stages (id + name + position) so the frontend
+  // can map configured key events to stage positions for the per-answer funnel.
+  return { connected: true, tz, submissions: subs.length, contacts: contactData.size, pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).map((s, i) => ({ id: s.id, name: s.name, pos: s.position ?? i })).sort((a, b) => a.pos - b.pos) })), forms }
 }
 
 // Read-only probe for the Forms feature: the location's forms (id -> name), a

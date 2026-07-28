@@ -918,6 +918,15 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .form-seg-t th:first-child { text-align: left; }
 .form-seg-t td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
 .form-seg-t td:first-child { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Forms answer drill: key-event columns, totals row + per-answer people table */
+.fseg-tbl td:nth-child(2), .fseg-tbl th:nth-child(2) { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fseg-tbl th.fke-col { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fseg-tot-row td { font-weight: 700; color: var(--muted); border-bottom: 2px solid var(--border-2); background: var(--panel-2); text-align: right; }
+.fseg-tot-row td:nth-child(2) { text-align: left; }
+tr.form-people-row > td { background: var(--panel-2); padding: 8px 10px; }
+.fp-tbl { width: 100%; }
+.fp-cal { display: inline-block; margin-right: 6px; }
+.fp-tick { color: var(--pos); font-weight: 700; }
 /* Agency comparison table */
 .ov-cmp-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
 .ov-filter button { font-size: 12px; }

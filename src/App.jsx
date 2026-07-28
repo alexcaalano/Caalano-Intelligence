@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.76.0'
+const APP_VERSION = '3.77.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3649,8 +3649,9 @@ function groupAnswers(answers) {
     const dt = parseFormDate(v)
     const key = dt ? 'date:' + dt.iso : (/\d/.test(v) ? 'num:' + v : answerKeyOf(v)) // dates merge; other numeric (postcode/budget) never
     let g = groups.get(key)
-    if (!g) { g = { value: v, leads: 0, booked: 0, shown: 0, won: 0, lost: 0, revenue: 0, members: [], _max: -1 }; groups.set(key, g) }
+    if (!g) { g = { value: v, leads: 0, booked: 0, shown: 0, won: 0, lost: 0, revenue: 0, members: [], people: [], _max: -1 }; groups.set(key, g) }
     g.leads += a.leads || 0; g.booked += a.booked || 0; g.shown += a.shown || 0; g.won += a.won || 0; g.lost += a.lost || 0; g.revenue += a.revenue || 0
+    if (Array.isArray(a.people)) g.people.push(...a.people)
     g.members.push({ value: v, leads: a.leads || 0 })
     const canon = dt ? dt.display : (key.startsWith('state:') ? key.slice(6) : v)
     if (a.leads > g._max) { g._max = a.leads; g.value = canon }
@@ -3659,14 +3660,83 @@ function groupAnswers(answers) {
 }
 // One question at a time: pick a question from the selector, then see that
 // question's answer breakdown as a bar chart + table (answers grouped).
-function FormSegments({ segments, captured, currency }) {
+// Resolve a client's configured key events for the Forms drill, reusing the
+// SAME helpers the CRM / Caalano360 views use (loadKeyEvents → keyEventsForPipe
+// → stagePosMap → resolveKeyEvents). Returns the ordered events plus a per-person
+// `reached(person, keyEvent)` test built from the person's stagePos / pipelineId /
+// booked / status - so counting who reached each event never reinvents the
+// key-event resolution.
+function formKeyEvents(clientId, pipe, pipes) {
+  const stagePos = stagePosMap(pipes || [])
+  const kePipe = pipe && !String(pipe).startsWith('link:') ? pipe : 'all'
+  const events = resolveKeyEvents(keyEventsForPipe(loadKeyEvents(clientId), kePipe), stagePos)
+  const posAt = (pipeline, name) => (pipeline && stagePos.has(pipeline + '::' + name) ? stagePos.get(pipeline + '::' + name) : stagePos.get(name))
+  const keyPos = (k) => (k.kind === 'calendar' ? (k.stage ? posAt(k.pipeline, k.stage) : null) : posAt(k.pipeline, k.ref))
+  const reachedStage = (p, k) => {
+    const kp = keyPos(k)
+    if (kp == null || p.stagePos == null) return false
+    if (k.pipeline && p.pipelineId && k.pipeline !== p.pipelineId) return false
+    return p.stagePos >= kp
+  }
+  const reached = (p, k) => {
+    if (!p) return false
+    if (k.kind === 'won' || WON_RE.test(k.label)) return p.status === 'won'
+    if (p.status === 'won') return true // a won opp passed every earlier step
+    if (k.kind === 'calendar') return !!p.booked || reachedStage(p, k)
+    return reachedStage(p, k)
+  }
+  return { events, reached }
+}
+const CHAN_LABEL = { meta: 'Meta', google: 'Google', other: 'Other' }
+function statusChip(status) { const s = status === 'won' ? 'won' : status === 'lost' ? 'lost' : 'open'; return <span className={`sch ${s}`}>{s === 'won' ? 'Won' : s === 'lost' ? 'Lost' : 'Open'}</span> }
+// One person in a form answer's drill-down. Expands to fetch that contact's CRM
+// notes on demand - same pattern (and notes markup) as OpenDealRow.
+function PersonRow({ p, clientId, money, cols }) {
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const load = () => {
+    setLoading(true)
+    const q = new URLSearchParams({ scope: 'oppnotes', client: clientId })
+    if (p.contactId) q.set('contact', p.contactId)
+    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false))
+  }
+  const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && p.contactId) load() }
+  const cals = (p.calendars || []).filter((c) => c.name)
+  return (
+    <React.Fragment>
+      <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
+        <td className="lft">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
+        <td className="lft">{statusChip(p.status)}</td>
+        <td className="lft">{p.stageName || '-'}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</td>
+        <td>{p.value ? money(p.value) : '-'}</td>
+        <td className={p.ageDays != null && p.ageDays >= 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '-'}</td>
+        <td className="lft">{cals.length ? cals.map((c, i) => <span key={i} className="fp-cal">{c.name}{(c.shown || c.occurred) ? <span className="fp-tick" title={c.shown ? 'Showed' : 'Occurred'}> ✓</span> : null}</span>) : (p.booked ? 'Booked' : '-')}</td>
+        <td className="lft">{p.channel ? (CHAN_LABEL[p.channel] || p.channel) : '-'}</td>
+      </tr>
+      {open && <tr className="u-notes-row"><td colSpan={cols}>
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
+      </td></tr>}
+    </React.Fragment>
+  )
+}
+function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
   const money = (v) => fmtCurrency(v, currency)
   const [sel, setSel] = useState(0)
+  const [openAns, setOpenAns] = useState(() => new Set())
+  const ke = formKeyEvents(clientId, pipe, pipes)
   if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form — its submissions only carried contact details (name / email / phone).'}</div>
   const s = segments[Math.min(sel, segments.length - 1)]
   const grouped = groupAnswers(s.answers)
   const chart = grouped.slice(0, 12).map((a) => ({ name: a.value.length > 22 ? a.value.slice(0, 21) + '…' : a.value, leads: a.leads, booked: a.booked, won: a.won }))
   const totalLeads = grouped.reduce((t, a) => t + a.leads, 0)
+  const events = ke.events || []
+  // Per-answer count of people who reached each key event (people are capped
+  // server-side, so this reflects the sampled people list for the answer).
+  const keCount = (a, k) => (a.people || []).reduce((n, p) => n + (ke.reached(p, k) ? 1 : 0), 0)
+  const keTotals = events.map((k) => grouped.reduce((n, a) => n + keCount(a, k), 0))
+  const toggleAns = (v) => setOpenAns((prev) => { const n = new Set(prev); n.has(v) ? n.delete(v) : n.add(v); return n })
+  const totalCols = 10 + events.length // chevron, answer, leads, %, booked, book%, shown, won, win%, revenue + key events
   return (
     <div className="fseg">
       <div className="fseg-sel">
@@ -3695,22 +3765,44 @@ function FormSegments({ segments, captured, currency }) {
             </BarChart>
           </ResponsiveContainer>
         </div>}
+        <div className="tbl-scroll">
         <table className="form-seg-t fseg-tbl">
-          <thead><tr><th>Answer</th><th className="num">Leads</th><th className="num">% of leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th></tr></thead>
-          <tbody>{grouped.map((a) => (
-            <tr key={a.value}>
-              <td title={a.merged ? `Combines: ${a.members.sort((x, y) => y.leads - x.leads).map((m) => `${m.value} (${m.leads})`).join(', ')}` : a.value}>{a.value}{a.merged ? <span className="ans-merged" title={`Combines ${a.members.length} spellings`}> ⓘ{a.members.length}</span> : null}</td>
-              <td className="num">{fmtNumber(a.leads)}</td>
-              <td className="num">{totalLeads ? fmtPct((a.leads / totalLeads) * 100, 0) : '-'}</td>
-              <td className="num">{fmtNumber(a.booked)}</td>
-              <td className="num">{a.leads ? fmtPct((a.booked / a.leads) * 100, 0) : '-'}</td>
-              <td className="num">{fmtNumber(a.shown)}</td>
-              <td className="num">{fmtNumber(a.won)}</td>
-              <td className="num">{a.leads ? fmtPct((a.won / a.leads) * 100, 0) : '-'}</td>
-              <td className="num">{money(a.revenue)}</td>
-            </tr>
-          ))}</tbody>
+          <thead>
+            <tr><th style={{ width: 18 }} /><th>Answer</th><th className="num">Leads</th><th className="num">% of leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th>{events.map((k, i) => <th key={i} className="num fke-col" title={`Reached: ${k.label}`}>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</th>)}</tr>
+            {events.length ? <tr className="fseg-tot-row"><td /><td>All answers</td><td className="num">{fmtNumber(totalLeads)}</td><td className="num">-</td><td className="num">{fmtNumber(grouped.reduce((t, a) => t + a.booked, 0))}</td><td className="num">-</td><td className="num">{fmtNumber(grouped.reduce((t, a) => t + a.shown, 0))}</td><td className="num">{fmtNumber(grouped.reduce((t, a) => t + a.won, 0))}</td><td className="num">-</td><td className="num">{money(grouped.reduce((t, a) => t + a.revenue, 0))}</td>{keTotals.map((n, i) => <td key={i} className="num fke-col">{fmtNumber(n)}</td>)}</tr> : null}
+          </thead>
+          <tbody>{grouped.map((a) => {
+            const isOpen = openAns.has(a.value)
+            const people = a.people || []
+            const clickable = people.length > 0
+            return (
+              <React.Fragment key={a.value}>
+                <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: clickable ? 'pointer' : 'default' }} onClick={clickable ? () => toggleAns(a.value) : undefined}>
+                  <td className="num" style={{ color: 'var(--faint)' }}>{clickable ? (isOpen ? '▾' : '▸') : ''}</td>
+                  <td title={a.merged ? `Combines: ${a.members.sort((x, y) => y.leads - x.leads).map((m) => `${m.value} (${m.leads})`).join(', ')}` : a.value}>{a.value}{a.merged ? <span className="ans-merged" title={`Combines ${a.members.length} spellings`}> ⓘ{a.members.length}</span> : null}</td>
+                  <td className="num">{fmtNumber(a.leads)}</td>
+                  <td className="num">{totalLeads ? fmtPct((a.leads / totalLeads) * 100, 0) : '-'}</td>
+                  <td className="num">{fmtNumber(a.booked)}</td>
+                  <td className="num">{a.leads ? fmtPct((a.booked / a.leads) * 100, 0) : '-'}</td>
+                  <td className="num">{fmtNumber(a.shown)}</td>
+                  <td className="num">{fmtNumber(a.won)}</td>
+                  <td className="num">{a.leads ? fmtPct((a.won / a.leads) * 100, 0) : '-'}</td>
+                  <td className="num">{money(a.revenue)}</td>
+                  {events.map((k, i) => <td key={i} className="num fke-col">{fmtNumber(keCount(a, k))}</td>)}
+                </tr>
+                {isOpen && clickable && <tr className="form-people-row"><td /><td colSpan={totalCols - 1}>
+                  <div className="tbl-scroll"><table className="mini-tbl users-tbl fp-tbl">
+                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th><th>Days in stage</th><th className="lft">Booked</th><th className="lft">Channel</th></tr></thead>
+                    <tbody>{people.slice().sort((x, y) => (y.value || 0) - (x.value || 0)).map((p, i) => <PersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={7} />)}</tbody>
+                  </table></div>
+                  {people.length >= 80 ? <div className="cap" style={{ padding: '4px 2px' }}>Showing the first 80 people for this answer.</div> : null}
+                </td></tr>}
+              </React.Fragment>
+            )
+          })}</tbody>
         </table>
+        </div>
+        {events.length ? <p className="caveat" style={{ marginTop: 8 }}>Key event columns count the people (of those listed) who reached each of this client&apos;s configured key events. Click an answer to see who gave it and where each person sits in the funnel; click a person for their CRM notes.</p> : <p className="caveat" style={{ marginTop: 8 }}>Set this client&apos;s <b>key events</b> in Settings to see a per-answer funnel here. Click an answer to see who gave it.</p>}
         {s.more > 0 && <div className="form-seg-more">+{s.more} more written answer{s.more === 1 ? '' : 's'}</div>}
       </div>
     </div>
@@ -4192,7 +4284,7 @@ function FormsView({ clientId, currency, range, nonce }) {
               {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}>
                 <FormMetaPanel clientId={clientId} form={f} pipes={pipes} onEdit={setEditForm} />
                 <FormLocations form={f} />
-                <FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} />
+                <FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} clientId={clientId} pipes={pipes} pipe={pipeFilter} />
               </td></tr>}
             </tbody>
           )

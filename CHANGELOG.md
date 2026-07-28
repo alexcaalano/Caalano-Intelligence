@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.83.0 — 2026-07-28 · `PENDING`
+- **Appointments — status breakdown + reporting-gap detection.** New status row:
+  Booked · Occurred · Resulted · Shown · Show rate, where "Resulted" means the
+  appointment's status has actually moved out of "confirmed" into an outcome. An
+  amber warning flags "N occurred but not resulted — needs status updating" (the
+  calls that happened but were never marked showed/no-show), plus the reverse odd
+  case. Click **Resulted** to drill into who fell into each status (Showed /
+  No-show / Cancelled / Other) and the two reporting-gap groups. Backend adds the
+  normalised status, per-status tallies and a per-appointment people list to
+  buildAppointmentInsights (additive — the client-update path is untouched).
+
 ## v3.82.0 — 2026-07-28 · `PENDING`
 - **Forms tab reworked around Key Events.** The top scorecards now span full width
   and show Forms · Leads · one tile per client Key Event · Revenue (instead of the

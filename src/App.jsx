@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.82.0'
+const APP_VERSION = '3.83.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4314,6 +4314,50 @@ function defaultApptCals(clientId, pipe) {
   if (firstCal) return { calIds: (firstCal.refs || [firstCal.ref]).filter(Boolean), stage: firstCal.stage || firstCal.label }
   return { calIds: [], stage: null }
 }
+// Resulted drill: per-status breakdown (counts + people) plus the two reporting-
+// gap groups (occurred-but-still-confirmed = errors to fix; resulted-before-time).
+// People are only captured on the All channel; other channels show counts only.
+function ApptResultedDrill({ C, onClose }) {
+  const people = C.people || []
+  const bs = C.byStatus || { showed: 0, noshow: 0, cancelled: 0, confirmed: 0, other: 0 }
+  const fmtD = (ms) => { const d = new Date(ms); return isFinite(d.getTime()) ? d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' }
+  const groups = [['showed', 'Showed', '#12b886'], ['noshow', 'No-show', '#f5a524'], ['cancelled', 'Cancelled', '#ff6b6b'], ['other', 'Other', '#8b5cf6']]
+  const occNotRes = people.filter((p) => p.occurred && p.status === 'confirmed')
+  const resNotOcc = people.filter((p) => !p.occurred && p.status !== 'confirmed')
+  const tbl = (rows) => (
+    <div className="table-wrap"><table className="mini-tbl users-tbl">
+      <thead><tr><th className="lft">Name</th><th className="lft">Calendar</th><th>Appt date</th><th>Occurred</th></tr></thead>
+      <tbody>{rows.length ? rows.map((p, i) => (
+        <tr key={(p.contactId || 'x') + i}><td className="lft">{p.name}</td><td className="lft">{p.calendar}</td><td>{fmtD(p.start)}</td><td>{p.occurred ? '✓' : '—'}</td></tr>
+      )) : <tr><td colSpan={4} className="cap">No people to show.</td></tr>}</tbody>
+    </table></div>
+  )
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal set-modal appt-drill-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head"><div><h3>Resulted appointments — {fmtNumber(C.resulted)} of {fmtNumber(C.booked)} booked</h3><span className="cap">Outcome recorded (moved out of confirmed). Show rate {C.showRate == null ? '-' : `${C.showRate}%`} of occurred.</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-body">
+          <div className="appt-drill-counts">
+            {groups.map(([k, lbl, col]) => <span key={k} className="appt-drill-pill" style={{ borderColor: col }}><span className="dot" style={{ background: col }} />{lbl} <b>{fmtNumber(bs[k] || 0)}</b></span>)}
+            <span className="appt-drill-pill"><span className="dot" style={{ background: 'var(--muted)' }} />Still confirmed <b>{fmtNumber(bs.confirmed || 0)}</b></span>
+          </div>
+          {!people.length && <p className="cap" style={{ marginTop: 4 }}>Per-person detail is available on the <b>All</b> channel filter.</p>}
+          {(C.occurredNotResulted > 0 || occNotRes.length > 0) && <div className="appt-drill-sec warn">
+            <div className="appt-drill-h">⚠ Occurred but still confirmed — {fmtNumber(C.occurredNotResulted)} · reporting errors to fix</div>
+            {tbl(occNotRes)}
+          </div>}
+          {(C.resultedNotOccurred > 0 || resNotOcc.length > 0) && <div className="appt-drill-sec">
+            <div className="appt-drill-h">Resulted but not yet occurred — {fmtNumber(C.resultedNotOccurred)} · outcome set before the appt time</div>
+            {tbl(resNotOcc)}
+          </div>}
+          {groups.map(([k, lbl]) => { const rows = people.filter((p) => p.status === k); if (!(bs[k] || 0) && !rows.length) return null; return (
+            <div className="appt-drill-sec" key={k}><div className="appt-drill-h">{lbl} — {fmtNumber(bs[k] || 0)}</div>{tbl(rows)}</div>
+          ) })}
+        </div>
+      </div>
+    </div>
+  )
+}
 function AppointmentsView({ clientId, range, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [chan, setChan] = useState('all')
@@ -4321,6 +4365,7 @@ function AppointmentsView({ clientId, range, nonce }) {
   const [cals, setCals] = useState(null) // null = use default for pipe; array = explicit
   const [userSel, setUserSel] = useState('all')
   const [showDbg, setShowDbg] = useState(false)
+  const [apptDrill, setApptDrill] = useState(false)
   useSettingsSync()
   const dflt = useMemo(() => defaultApptCals(clientId, pipe), [clientId, pipe])
   const effCals = cals !== null ? cals : dflt.calIds
@@ -4369,6 +4414,21 @@ function AppointmentsView({ clientId, range, nonce }) {
     <div className="timing-view">
       <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments — booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show / win rates and time-to-close. Bookings are counted on the day they were booked{usedNames.length ? ` · based on: ${usedNames.slice(0, 4).join(', ')}${usedNames.length > 4 ? ` +${usedNames.length - 4}` : ''}` : ''}.</p></div>{selectors}</div>
       {calChips}
+      <div className="timing-scards appt-status-row">
+        <div className="tm-sc"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">in period</span></div>
+        <div className="tm-sc"><span className="tm-lab">Occurred</span><b>{fmtNumber(C.occurred)}</b><span className="tm-sub">appt time passed</span></div>
+        <button type="button" className="tm-sc tm-sc-btn" onClick={() => setApptDrill(true)}><span className="tm-lab">Resulted ▸</span><b>{fmtNumber(C.resulted)}</b><span className="tm-sub">outcome recorded · click for detail</span></button>
+        <div className="tm-sc"><span className="tm-lab">Shown</span><b>{fmtNumber(C.shown)}</b><span className="tm-sub">of {fmtNumber(C.occurred)} occurred</span></div>
+        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">shown ÷ occurred{C.resultShowRate != null ? ` · ${C.resultShowRate}% of resulted` : ''}</span></div>
+      </div>
+      {(C.occurredNotResulted > 0 || C.resultedNotOccurred > 0) && (
+        <div className={`appt-gap-warn${C.occurredNotResulted > 0 ? '' : ' info'}`}>
+          {C.occurredNotResulted > 0 && <span>⚠ <b>{fmtNumber(C.occurredNotResulted)}</b> occurred but not resulted — needs status updating.</span>}
+          {C.resultedNotOccurred > 0 && <span className="appt-gap-sub">{C.occurredNotResulted > 0 ? ' · ' : ''}{fmtNumber(C.resultedNotOccurred)} resulted before the appt time (odd).</span>}
+          <button type="button" className="appt-gap-link" onClick={() => setApptDrill(true)}>view people</button>
+        </div>
+      )}
+      {apptDrill && <ApptResultedDrill C={C} onClose={() => setApptDrill(false)} />}
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">appointments</span></div>
         <div className="tm-sc"><span className="tm-lab">Time to book</span><b>{fmtDays(C.medianTimeToBookDays)}</b><span className="tm-sub">median · avg {fmtDays(C.avgTimeToBookDays)} · lead → booked</span></div>

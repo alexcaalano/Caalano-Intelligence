@@ -360,6 +360,19 @@ tbody tr:hover { background: var(--panel-2); }
 .tm-sc b { font-size: 22px; line-height: 1.1; }
 .tm-sc.hero b { font-size: 26px; color: var(--brand); }
 .tm-sc .tm-sub { font-size: 11px; color: var(--faint); }
+.appt-status-row { margin-bottom: 10px; }
+.tm-sc-btn { text-align: left; cursor: pointer; font: inherit; border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); background: color-mix(in srgb, var(--brand) 5%, var(--panel)); }
+.tm-sc-btn:hover { border-color: var(--brand); }
+.appt-gap-warn { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 12px; padding: 9px 13px; border-radius: 10px; font-size: 13px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); }
+.appt-gap-warn.info { border-color: var(--border); background: var(--panel); }
+.appt-gap-warn .appt-gap-sub { color: var(--muted); }
+.appt-gap-link { margin-left: auto; background: none; border: none; color: var(--brand); font-weight: 700; cursor: pointer; font-size: 12px; }
+.appt-drill-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.appt-drill-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
+.appt-drill-pill .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.appt-drill-sec { margin-bottom: 16px; }
+.appt-drill-sec.warn .appt-drill-h { color: var(--warn); }
+.appt-drill-h { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
 .timing-bars { display: flex; flex-direction: column; gap: 8px; }
 .tm-bar-row { display: grid; grid-template-columns: 88px 1fr 34px; align-items: center; gap: 10px; }
 .tm-bar-lab { font-size: 12px; color: var(--muted); font-weight: 600; }

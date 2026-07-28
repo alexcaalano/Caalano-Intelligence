@@ -1461,15 +1461,18 @@ export async function buildCcDrill(locationId, from, to) {
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
-  const [wideOpps, pipelines, appts, reasons, formAns] = await Promise.all([
+  const [wideOpps, pipelines, appts, reasons, formAns, userRows] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 2000),
     fetchPipelines(locTok, locationId),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), perCalendar: new Map() })),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     formAnswersByContact(locTok, locationId, from, to).catch(() => new Map()),
+    ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
   ])
   const idx = stageIndexFrom(pipelines)
   const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
+  const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))
+  const userNameOf = (id) => (!id ? 'Unassigned' : (userName[id] || 'User ' + String(id).slice(-4)))
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const nowMs = Date.now()
@@ -1536,7 +1539,7 @@ export async function buildCcDrill(locationId, from, to) {
         let g = openByStage.get(key)
         if (!g) { g = { key, stage: stg ? stg.name : 'Stage', stageId: o.pipelineStageId, pipeline: pipeName[o.pipelineId] || 'Pipeline', pipelineId: o.pipelineId, pos: stg ? stg.pos : 999, count: 0, value: 0, deals: [] }; openByStage.set(key, g) }
         g.count++; g.value += val
-        if (g.deals.length < 200) g.deals.push({ name, value: Math.round(val), source: label, channel: ch, ageDays })
+        if (g.deals.length < 200) g.deals.push({ name, contactId: contactIdOf(o) || null, assignedUser: userNameOf(o.assignedTo), value: Math.round(val), source: label, channel: ch, ageDays })
       }
     }
   }

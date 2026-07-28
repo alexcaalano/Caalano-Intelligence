@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.88.0'
+const APP_VERSION = '3.89.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2581,6 +2581,35 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
 }
 const sourceDotChan = (ch) => ch === 'meta' ? '#4f7cff' : ch === 'google' ? '#12b886' : ch === 'other' ? '#e8a13a' : '#9aa1ac'
 
+// One open deal in the bottleneck's open-by-stage list — shows the assigned rep
+// + lead source, and expands on click to that contact's Caalano Systems notes.
+function BnDealRow({ d, clientId, money }) {
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const load = () => {
+    setLoading(true)
+    const q = new URLSearchParams({ scope: 'oppnotes', client: clientId })
+    if (d.contactId) q.set('contact', d.contactId)
+    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false))
+  }
+  const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && d.contactId) load() }
+  return (
+    <React.Fragment>
+      <tr className={open ? 'row-sel' : ''} style={{ cursor: d.contactId ? 'pointer' : 'default' }} onClick={d.contactId ? toggle : undefined}>
+        <td className="lft">{d.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {d.name}</td>
+        <td className="lft">{d.assignedUser || 'Unassigned'}</td>
+        <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(d.channel) }} />{d.source}</span></td>
+        <td>{money(d.value)}</td>
+        <td className={d.ageDays != null && d.ageDays > 30 ? 'u-stale' : ''}>{d.ageDays != null ? `${d.ageDays}d` : '—'}</td>
+      </tr>
+      {open && <tr className="u-notes-row"><td colSpan={5}>
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
+      </td></tr>}
+    </React.Fragment>
+  )
+}
+
 // Revenue bottleneck — the whole-account key-event funnel with step conversions,
 // flagging the biggest drop-off, plus a clickable "open pipeline by stage" list
 // (who's still in play, and where they came from). In a paid channel view it also
@@ -2644,7 +2673,7 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
         })}
       </div>
       {openStages.length ? <div className="bn-open">
-        <div className="bn-open-h">Open pipeline by stage <span className="sub">· {fmtNumber(totOpen)} live · {money(totOpenVal)} · click a stage to see who’s in it &amp; where they came from</span></div>
+        <div className="bn-open-h">Open pipeline by stage <span className="sub">· {fmtNumber(totOpen)} live · {money(totOpenVal)} · click a stage to see who’s in it · click a lead for their notes</span></div>
         {openStages.map((s) => {
           const on = openStage === s.key
           return (
@@ -2655,13 +2684,8 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
                 <span className="bn-open-caret">{on ? '▾' : '→'}</span>
               </button>
               {on ? <div className="bn-open-deals"><table className="mini-tbl users-tbl">
-                <thead><tr><th className="lft">Contact</th><th className="lft">Source</th><th>Value</th><th>Days in stage</th></tr></thead>
-                <tbody>{s.deals.map((d, i) => <tr key={i}>
-                  <td className="lft">{d.name}</td>
-                  <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(d.channel) }} />{d.source}</span></td>
-                  <td>{money(d.value)}</td>
-                  <td>{d.ageDays != null ? `${d.ageDays}d` : '—'}</td>
-                </tr>)}</tbody>
+                <thead><tr><th className="lft">Contact</th><th className="lft">Assigned</th><th className="lft">Source</th><th>Value</th><th>Days in stage</th></tr></thead>
+                <tbody>{s.deals.map((d, i) => <BnDealRow key={i} d={d} clientId={clientId} money={money} />)}</tbody>
               </table></div> : null}
             </div>
           )

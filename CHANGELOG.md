@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.89.0 — 2026-07-28 · `PENDING`
+- **Open-by-stage deals now show the assigned rep and open to their notes.** Each
+  open deal in the bottleneck's Open pipeline by stage list gains an **Assigned**
+  column (who owns it), and clicking a lead expands to that contact's **Caalano
+  Systems notes** — the same notes drill used on the Users tab. buildCcDrill now
+  loads the user list and tags each open deal with its owner + contact id.
+
 ## v3.88.0 — 2026-07-28 · `PENDING`
 - **Revenue bottleneck reworked into a hybrid drill.** The bottleneck card now
   splits cleanly into two: the **key-event funnel** and a separate **Show rate by

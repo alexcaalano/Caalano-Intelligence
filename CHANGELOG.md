@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.87.0 — 2026-07-28 · `PENDING`
+- **Command Centre — Booked tile now drills into bookings per calendar.** Clicking
+  **Booked** in the Caalano360 command centre opens a per-calendar breakdown
+  (booked · occurred · shown, with show rate per calendar), and clicking any
+  calendar lists who booked in and whether they occurred / showed. Uses the same
+  calendar drill already behind the booking-rate and show-rate tiles.
+
 ## v3.86.0 — 2026-07-28 · `PENDING`
 - **Command Centre channel filter now re-pivots every metric.** Previously only a
   few CRM tiles responded to All / Paid / Non-paid / Google / Meta. Now ad spend,

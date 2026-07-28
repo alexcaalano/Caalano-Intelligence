@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.86.0'
+const APP_VERSION = '3.87.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2905,7 +2905,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
           <div className="scorecard exec-kpis">
             <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} cur={chActive ? null : oppsV} prev={chActive ? null : pv.leads} onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
-            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} cur={chActive ? null : k.booked} prev={chActive ? null : pv.booked} />
+            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} cur={chActive ? null : k.booked} prev={chActive ? null : pv.booked} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
             <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} cur={chActive ? null : wonV} prev={chActive ? null : pv.won} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
             <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} cur={chActive ? null : revV} prev={chActive ? null : pv.revenue} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
             <Kpi label="Avg deal value" value={avgV != null ? money(avgV) : '—'} cur={chActive ? null : avgV} />

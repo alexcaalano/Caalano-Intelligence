@@ -43,6 +43,17 @@ body {
 /* Shell */
 .shell { display: grid; grid-template-columns: 244px 1fr; min-height: 100vh; }
 @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } }
+/* Desktop sidebar collapse — widen the main area for more room / screen shares */
+.sb-toggle, .sb-expand { display: none; }
+@media (min-width: 901px) {
+  .shell.sb-collapsed { grid-template-columns: 1fr; --drill-gutter: 76px; }
+  .shell.sb-collapsed > .side { display: none; }
+  .sb-toggle { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-left: auto; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2); color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; flex-shrink: 0; }
+  .sb-toggle:hover { color: var(--text); border-color: var(--border-2); }
+  .sb-collapsed .sb-expand { display: inline-flex; align-items: center; justify-content: center; position: fixed; top: 16px; left: 12px; width: 30px; height: 30px; z-index: 60; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--muted); cursor: pointer; font-size: 16px; box-shadow: var(--shadow); }
+  .sb-collapsed .sb-expand:hover { color: var(--text); }
+  .sb-collapsed .main { padding-left: clamp(48px, 3.2vw, 56px); }
+}
 /* Mobile top bar with hamburger (hidden on desktop) */
 .mtop { display: none; }
 
@@ -405,9 +416,12 @@ tbody tr:hover { background: var(--panel-2); }
 .users-tbl th.num, .users-tbl th:not(.lft), .users-tbl td:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
 .users-tbl th.lft, .users-tbl td.lft { text-align: left; }
 .u-chev { display: inline-block; width: 12px; color: var(--muted); font-size: 11px; }
-tr.u-detail-row > td { background: var(--panel-2); padding: 0; border-bottom: 1px solid var(--border); }
-.u-detail { display: grid; grid-template-columns: 1.7fr 1fr; gap: 20px; padding: 14px 16px; align-items: start; }
-@media (max-width: 920px) { .u-detail { grid-template-columns: 1fr; } }
+/* The rep detail spans a 12-col table that scrolls, so it inherits that wide
+   scroll-width. Pin it to the left edge and clamp it to the visible area so the
+   drill-down fits the panel instead of running off to the right. */
+tr.u-detail-row > td { background: var(--panel-2); padding: 0; border-bottom: 1px solid var(--border); position: sticky; left: 0; }
+.u-detail { display: grid; grid-template-columns: 1.7fr 1fr; gap: 20px; padding: 14px 16px; align-items: start; width: calc(100vw - var(--drill-gutter, 320px)); max-width: 100%; box-sizing: border-box; }
+@media (max-width: 920px) { .u-detail { grid-template-columns: 1fr; width: calc(100vw - 28px); } }
 .u-detail-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .u-detail-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .u-val-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }

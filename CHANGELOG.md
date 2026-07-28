@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.79.0 — 2026-07-28 · `PENDING`
+- **Collapsible sidebar.** A « toggle collapses the left nav on desktop to give
+  the main screen more room; a » button brings it back. The choice is remembered.
+- **Users drill-down fits the panel.** The expanded rep detail no longer inherits
+  the wide leaderboard's scroll-width and run off-screen — it's pinned to the
+  left and clamped to the visible area (and adapts when the sidebar is collapsed).
+
 ## v3.78.0 — 2026-07-28 · `PENDING`
 - **Caalano360 pared back to a clean command centre.** Removed the business-health
   gauge + pillar breakdown (and with it the "Build trend history" 504), the

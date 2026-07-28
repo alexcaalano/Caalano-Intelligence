@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.78.0'
+const APP_VERSION = '3.79.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7114,6 +7114,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const [range, setRange] = useState(() => presetRange('last_30d'))
   const [refreshKey, setRefreshKey] = useState(0)
   const [navOpen, setNavOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('caalano_sb') === '1' } catch { return false } })
+  useEffect(() => { try { localStorage.setItem('caalano_sb', collapsed ? '1' : '0') } catch {} }, [collapsed])
   const agency = useAgencyLive(range, refreshKey)
   // Server-backed settings: re-render on hydrate/change; enabled is a derived
   // write-through value so client on/off persists to the server like the rest.
@@ -7169,10 +7171,11 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0
 
   return (
-    <div className="shell">
+    <div className={`shell ${collapsed ? 'sb-collapsed' : ''}`}>
       {navOpen && <div className="nav-overlay" onClick={() => setNavOpen(false)} />}
+      {collapsed && <button className="sb-expand" onClick={() => setCollapsed(false)} aria-label="Show sidebar" title="Show sidebar">»</button>}
       <aside className={`side ${navOpen ? 'open' : ''}`}>
-        <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div><button className="side-close" onClick={() => setNavOpen(false)} aria-label="Close menu">✕</button></div>
+        <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div><button className="sb-toggle" onClick={() => setCollapsed(true)} aria-label="Collapse sidebar" title="Collapse sidebar">«</button><button className="side-close" onClick={() => setNavOpen(false)} aria-label="Close menu">✕</button></div>
         <nav className="nav">
           {!isViewer && <>
             <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>

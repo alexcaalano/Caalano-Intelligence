@@ -519,7 +519,7 @@ export async function buildForms(locationId, from, to) {
   // the location breakdown.
   const LOC_RE = /(location|suburb|postcode|postal|\barea\b|region|\btown\b|\bcity\b|where.*(build|project|located))/i
   const agg = new Map()
-  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map() } ; agg.set(L.label, e) } return e }
+  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map(), people: [] } ; agg.set(L.label, e) } return e }
   const bump = (o, booked, shown, won, rev) => { o.leads++; if (booked) o.booked++; if (shown) o.shown++; if (won) { o.won++; o.revenue += rev } }
   const bumpLoc = (m, value, booked, won, lost) => { if (!value) return; let a = m.get(value); if (!a) { a = { value, leads: 0, booked: 0, won: 0, lost: 0 }; m.set(value, a) } a.leads++; if (booked) a.booked++; if (won) a.won++; if (lost) a.lost++ }
   for (const [cid, { L, answers, pc, name }] of contactData) {
@@ -550,6 +550,10 @@ export async function buildForms(locationId, from, to) {
       createdMs: isFinite(cMs) ? cMs : null,
       lastActivityDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null,
     }
+    // One record per distinct contact credited to this form (its entry point),
+    // so the frontend can run the form's people through the client's key events
+    // (same shape as the per-answer people). Capped to keep the payload small.
+    if (e.people.length < 120) e.people.push(person)
     // Per-pipeline split, so a multi-pipeline client can categorise a form.
     const pid = o && o.pipelineId
     if (pid) { let bp = e.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; e.byPipe.set(pid, bp) } bump(bp, booked, shown, won, rev) }

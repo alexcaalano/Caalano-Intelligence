@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.81.0'
+const APP_VERSION = '3.82.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4151,16 +4151,28 @@ function FormPipeFilter({ pipes, value, onChange }) {
   )
 }
 const FORM_COLORS = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#8b5cf6', '#0e8f6a', '#f97316']
-// Visual summary of form performance: lead share (donut), funnel counts and
-// conversion rates by form (bars). Top forms by leads.
-function FormsCharts({ forms }) {
+// Key-event series colours: Leads keeps the app's lead-blue; each key event
+// takes a distinct colour from the shared palette (green / purple / orange …)
+// so counts and rate charts read as one legend.
+const KE_COLORS = ['#12b886', '#8b5cf6', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#0e8f6a', '#f97316']
+// Visual summary of form performance: lead share (donut) + the client's Key
+// Events per form (counts) and the conversion rate to each key event. Falls back
+// to the legacy Booked/Shown/Won funnel when no key events are configured.
+function FormsCharts({ forms, kEvents, reached, evLabel }) {
   const top = [...forms].sort((a, b) => b.leads - a.leads).slice(0, 8).filter((f) => f.leads > 0)
   if (!top.length) return null
   const shortName = (s) => (s.length > 16 ? s.slice(0, 15) + '…' : s)
   const pie = top.map((f, i) => ({ name: f.form, value: f.leads, color: FORM_COLORS[i % FORM_COLORS.length] }))
-  const funnel = top.map((f) => ({ name: shortName(f.form), Leads: f.leads, Booked: f.booked, Shown: f.shown, Won: f.won }))
-  const rates = top.map((f) => ({ name: shortName(f.form), 'Book %': f.leads ? Math.round((f.booked / f.leads) * 100) : 0, 'Show %': f.booked ? Math.round((f.shown / f.booked) * 100) : 0, 'Win %': f.leads ? Math.round((f.won / f.leads) * 100) : 0 }))
   const xa = <XAxis dataKey="name" fontSize={9} stroke="var(--muted)" interval={0} angle={-18} textAnchor="end" height={54} />
+  const hasKe = kEvents && kEvents.length > 0
+  const countFor = (f, k) => (f.people || []).reduce((n, p) => n + (reached(p, k) ? 1 : 0), 0)
+  // Key-event mode: labels + per-form counts / rates.
+  const labels = hasKe ? kEvents.map(evLabel) : []
+  const counts = top.map((f) => { const o = { name: shortName(f.form), Leads: f.leads }; kEvents && kEvents.forEach((k, i) => { o[labels[i]] = countFor(f, k) }); return o })
+  const rates = top.map((f) => { const o = { name: shortName(f.form) }; kEvents && kEvents.forEach((k, i) => { o[labels[i]] = f.leads ? Math.round((countFor(f, k) / f.leads) * 100) : 0 }); return o })
+  // Legacy fallback (no key events configured).
+  const funnel = top.map((f) => ({ name: shortName(f.form), Leads: f.leads, Booked: f.booked, Shown: f.shown, Won: f.won }))
+  const legacyRates = top.map((f) => ({ name: shortName(f.form), 'Book %': f.leads ? Math.round((f.booked / f.leads) * 100) : 0, 'Show %': f.booked ? Math.round((f.shown / f.booked) * 100) : 0, 'Win %': f.leads ? Math.round((f.won / f.leads) * 100) : 0 }))
   return (
     <div className="forms-charts">
       <div className="card chart-card"><h3>Lead share by form</h3>
@@ -4168,16 +4180,29 @@ function FormsCharts({ forms }) {
           <PieChart><Pie data={pie} dataKey="value" nameKey="name" innerRadius={46} outerRadius={82} paddingAngle={2}>{pie.map((e, i) => <Cell key={i} fill={e.color} />)}</Pie><Tooltip formatter={(v) => fmtNumber(v) + ' leads'} /></PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="card chart-card"><h3>Funnel by form</h3>
-        <ResponsiveContainer width="100%" height={230}>
-          <BarChart data={funnel} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip /><Legend /><Bar dataKey="Leads" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Booked" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Shown" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Won" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={20} /></BarChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="card chart-card"><h3>Conversion rates by form</h3>
-        <ResponsiveContainer width="100%" height={230}>
-          <BarChart data={rates} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} /><Tooltip formatter={(v) => v + '%'} /><Legend /><Bar dataKey="Book %" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Show %" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Win %" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={20} /></BarChart>
-        </ResponsiveContainer>
-      </div>
+      {hasKe ? <>
+        <div className="card chart-card"><h3>Key events by form</h3>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={counts} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip formatter={(v, n) => [fmtNumber(v), n]} /><Legend /><Bar dataKey="Leads" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={18} />{labels.map((l, i) => <Bar key={l} dataKey={l} fill={KE_COLORS[i % KE_COLORS.length]} radius={[3, 3, 0, 0]} maxBarSize={18} />)}</BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="card chart-card"><h3>Conversion to each key event</h3>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={rates} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} /><Tooltip formatter={(v, n) => [v + '%', n]} /><Legend />{labels.map((l, i) => <Bar key={l} dataKey={l} fill={KE_COLORS[i % KE_COLORS.length]} radius={[3, 3, 0, 0]} maxBarSize={18} />)}</BarChart>
+          </ResponsiveContainer>
+        </div>
+      </> : <>
+        <div className="card chart-card"><h3>Funnel by form</h3>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={funnel} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} /><Tooltip /><Legend /><Bar dataKey="Leads" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Booked" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Shown" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Won" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={20} /></BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="card chart-card"><h3>Conversion rates by form</h3>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={legacyRates} margin={{ left: -16, right: 6, top: 6 }}><CartesianGrid stroke="var(--border)" vertical={false} />{xa}<YAxis fontSize={10} stroke="var(--muted)" tickFormatter={(v) => v + '%'} /><Tooltip formatter={(v) => v + '%'} /><Legend /><Bar dataKey="Book %" fill="#12b886" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Show %" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={20} /><Bar dataKey="Win %" fill="#f5a524" radius={[3, 3, 0, 0]} maxBarSize={20} /></BarChart>
+          </ResponsiveContainer>
+        </div>
+      </>}
     </div>
   )
 }
@@ -4209,26 +4234,43 @@ function FormsView({ clientId, currency, range, nonce }) {
   }).filter(Boolean)
   const forms = projected
   if (!forms.length) return (<><div className="lvl-title">Form performance</div><FormPipeFilter pipes={pipes} value={pipeFilter} onChange={setPipeFilter} /><div className="card empty-deep"><div className="big">🗂️</div><b>No forms in this pipeline for the range.</b></div></>)
-  const rows = forms.map((f) => ({ ...f, bookRate: f.leads ? (f.booked / f.leads) * 100 : null, showRate: f.booked ? (f.shown / f.booked) * 100 : null, winRate: f.leads ? (f.won / f.leads) * 100 : null, avgDeal: f.won ? f.revenue / f.won : null }))
+  // The client's configured Key Events replace the generic Booked/Shown/Won
+  // funnel throughout this tab. Resolved with the SAME helper the answer drill
+  // uses, so counting who reached each event never reinvents the resolution.
+  const ke = formKeyEvents(clientId, pipeFilter, pipes)
+  const kEvents = ke.events || []
+  const evLabel = (k) => (k.kind === 'calendar' ? '📅 ' : '') + k.label
+  const hasKe = kEvents.length > 0
+  const keCountsFor = (f) => kEvents.map((k) => (f.people || []).reduce((n, p) => n + (ke.reached(p, k) ? 1 : 0), 0))
+  const rows = forms.map((f) => {
+    const counts = keCountsFor(f)
+    const row = { ...f, bookRate: f.leads ? (f.booked / f.leads) * 100 : null, showRate: f.booked ? (f.shown / f.booked) * 100 : null, winRate: f.leads ? (f.won / f.leads) * 100 : null, avgDeal: f.won ? f.revenue / f.won : null, _keCounts: counts }
+    counts.forEach((c, i) => { row['ke' + i] = c })
+    return row
+  })
   const sorted = [...rows].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; return (av - bv) * sort.dir })
-  const tot = rows.reduce((a, f) => ({ leads: a.leads + f.leads, booked: a.booked + f.booked, shown: a.shown + f.shown, won: a.won + f.won, revenue: a.revenue + f.revenue }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
+  const tot = rows.reduce((a, f) => ({ leads: a.leads + f.leads, booked: a.booked + f.booked, shown: a.shown + f.shown, won: a.won + f.won, revenue: a.revenue + f.revenue, ke: a.ke.map((v, i) => v + (f._keCounts[i] || 0)) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, ke: kEvents.map(() => 0) })
+  // Columns after Form/Leads and before Revenue/Avg deal: one per key event, or
+  // the legacy Booked/Won when the client has no key events configured.
+  const metricCount = hasKe ? kEvents.length : 2
+  const bodySpan = 4 + metricCount // Form + Leads + metrics + Revenue + Avg deal
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
     <>
-      <div className="scorecard">
+      <div className="scorecard forms-sc">
         <Sc label="Forms" value={fmtNumber(forms.length)} />
         <Sc label="Leads" value={fmtNumber(tot.leads)} />
-        <Sc label="Booked" value={fmtNumber(tot.booked)} />
-        <Sc label="Shown" value={fmtNumber(tot.shown)} />
-        <Sc label="Won" value={fmtNumber(tot.won)} />
+        {hasKe
+          ? kEvents.map((k, i) => <Sc key={i} label={evLabel(k)} value={fmtNumber(tot.ke[i])} />)
+          : <><Sc label="Booked" value={fmtNumber(tot.booked)} /><Sc label="Won" value={fmtNumber(tot.won)} /></>}
         <Sc label="Revenue" value={money(tot.revenue)} />
       </div>
       <FormPipeFilter pipes={pipes} value={pipeFilter} onChange={setPipeFilter} />
-      <FormsCharts forms={forms} />
-      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· leads → booked → shown → won by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></div>
+      <FormsCharts forms={forms} kEvents={kEvents} reached={ke.reached} evLabel={evLabel} />
+      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· {hasKe ? 'leads → key events' : 'leads → booked → won'} by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></div>
       <div className="table-wrap"><table>
-        <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
+        <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th>{hasKe ? kEvents.map((k, i) => <Th key={i} k={'ke' + i}>{evLabel(k)}</Th>) : <><Th k="booked">Booked</Th><Th k="won">Won</Th></>}<Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
         {sorted.map((f) => {
           const isOpen = open.has(f.form)
           const fm = fmeta[f.form] || {}
@@ -4239,16 +4281,13 @@ function FormsView({ clientId, currency, range, nonce }) {
                 <td className="num" style={{ color: 'var(--faint)' }}>{isOpen ? '▾' : '▸'}</td>
                 <td className="lft" title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}{pipeName ? <span className="form-pipe-chip">{pipeName}</span> : null}{fm.notes ? <span className="form-note-chip" title={fm.notes}>📝</span> : null}</td>
                 <td className="num">{fmtNumber(f.leads)}</td>
-                <td className="num">{fmtNumber(f.booked)}</td>
-                <td className="num">{f.bookRate != null ? fmtPct(f.bookRate, 0) : '-'}</td>
-                <td className="num">{fmtNumber(f.shown)}</td>
-                <td className="num">{f.showRate != null ? fmtPct(f.showRate, 0) : '-'}</td>
-                <td className="num">{fmtNumber(f.won)}</td>
-                <td className="num">{f.winRate != null ? fmtPct(f.winRate, 0) : '-'}</td>
+                {hasKe
+                  ? kEvents.map((k, i) => <td key={i} className="num fke-col">{fmtNumber(f['ke' + i])}{f.leads ? <span className="fke-pct"> {fmtPct((f['ke' + i] / f.leads) * 100, 0)}</span> : null}</td>)
+                  : <><td className="num">{fmtNumber(f.booked)}</td><td className="num">{fmtNumber(f.won)}</td></>}
                 <td className="num">{money(f.revenue)}</td>
                 <td className="num">{f.avgDeal != null ? money(f.avgDeal) : '-'}</td>
               </tr>
-              {isOpen && <tr className="form-seg-row"><td /><td colSpan={10}>
+              {isOpen && <tr className="form-seg-row"><td /><td colSpan={bodySpan}>
                 <FormMetaPanel clientId={clientId} form={f} pipes={pipes} onEdit={setEditForm} />
                 <FormLocations form={f} />
                 <FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} clientId={clientId} pipes={pipes} pipe={pipeFilter} />
@@ -4257,7 +4296,7 @@ function FormsView({ clientId, currency, range, nonce }) {
           )
         })}
       </table></div>
-      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. Booked / Shown come from the date-of-action appointment feed; Won / Revenue from won opportunities. <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher Book / Show / Win %. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers actually book, show and win. Similar text answers (e.g. NSW / nsw / New South Wales) are merged — hover an answer to see what it combines.</p>
+      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged — hover an answer to see what it combines.</p>
       {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
     </>
   )

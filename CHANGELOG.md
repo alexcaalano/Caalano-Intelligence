@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.82.0 — 2026-07-28 · `PENDING`
+- **Forms tab reworked around Key Events.** The top scorecards now span full width
+  and show Forms · Leads · one tile per client Key Event · Revenue (instead of the
+  generic Leads/Booked/Shown/Won). The Form performance table swaps its
+  Booked/Shown/Won columns for one column per Key Event (count + % of the form's
+  leads), and every column is sortable on header click. The charts are reworked to
+  "Key events by form" and "Conversion to each key event", with a consistent
+  palette. Clients with no key events configured fall back to the old Booked/Won
+  view. (Backend: buildForms attaches a per-form people list, cap 120.)
+
 ## v3.81.0 — 2026-07-28 · `PENDING`
 - **Command Centre — Lost reasons full width, no sideways scroll.** Moved the
   Lost reasons panel to its own full-width card (long reason names wrap) and added

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.75.0'
+const APP_VERSION = '3.76.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2561,8 +2561,7 @@ function priorityActions(h, money) {
 // drop-off as the bottleneck. Built from the health KPIs (no extra fetch).
 function BottleneckPanel({ kpis, money }) {
   const raw = [
-    { label: 'Leads', v: kpis.leads },
-    { label: 'Qualified', v: kpis.qualified },
+    { label: 'Opportunities', v: kpis.leads },
     { label: 'Booked', v: kpis.booked },
     { label: 'Shown', v: kpis.shown },
     { label: 'Won', v: kpis.won },
@@ -2593,9 +2592,38 @@ function BottleneckPanel({ kpis, money }) {
   )
 }
 
+// Aggregates the per-user CRM feed (scope=users) into whole-account totals for
+// the command centre: open / lost counts + values and the merged lost-reason
+// breakdown (with names), which the health payload doesn't carry.
+function useCrmAgg(clientId, range, nonce) {
+  const [d, setD] = useState(null)
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setD(null)
+    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => r.json()).then((j) => {
+        if (!alive) return
+        const us = (j && j.users) || []
+        const a = { opps: 0, open: 0, openValue: 0, lost: 0, lostValue: 0, won: 0, revenue: 0 }
+        const rs = {}
+        for (const u of us) {
+          a.opps += u.leads || 0; a.open += u.open || 0; a.openValue += u.openValue || 0
+          a.lost += u.lost || 0; a.lostValue += u.lostValue || 0; a.won += u.won || 0; a.revenue += u.revenue || 0
+          for (const r of (u.lostReasons || [])) { const e = rs[r.reason] || { reason: r.reason, count: 0, value: 0 }; e.count += r.count; e.value += r.value || 0; rs[r.reason] = e }
+        }
+        a.lostReasons = Object.values(rs).sort((x, y) => y.count - x.count)
+        setD(a)
+      }).catch(() => { if (alive) setD(null) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return d
+}
+const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—')
+
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser }) {
   const [reload, setReload] = useState(0)
   const health = useHealth(clientId, range, nonce, reload)
+  const crmAgg = useCrmAgg(clientId, range, nonce)
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
   const [aiLoading, setAiLoading] = useState(false)
@@ -2665,19 +2693,75 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         </div>
       </div>
 
-      {/* KPI scorecard */}
-      <div className="scorecard exec-kpis">
-        <Kpi label="Ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown />
-        <Kpi label="Leads" value={k.leads != null ? fmtNumber(k.leads) : '—'} cur={k.leads} prev={pv.leads} />
-        <Kpi label="Qualified" value={k.qualified != null ? fmtNumber(k.qualified) : '—'} cur={k.qualified} prev={pv.qualified} />
-        <Kpi label="Cost / lead" value={k.cpl != null ? money(k.cpl) : '—'} cur={k.cpl} prev={pv.leads && pv.adSpend ? Math.round(pv.adSpend / pv.leads) : null} goodWhenDown />
-        <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={k.booked} prev={pv.booked} />
-        <Kpi label="Won" value={k.won != null ? fmtNumber(k.won) : '—'} cur={k.won} prev={pv.won} />
-        <Kpi label="Revenue" value={k.revenue != null ? money(k.revenue) : '—'} cur={k.revenue} prev={pv.revenue} />
-      </div>
+      {/* Command centre — all of Caalano Systems + spend, pivoting on the range */}
+      {(() => {
+        const ca = crmAgg || {}
+        const roas = (k.adSpend && k.revenue) ? k.revenue / k.adSpend : null
+        const lost = ca.lost != null ? ca.lost : null
+        const cpl2 = pv.leads && pv.adSpend ? Math.round(pv.adSpend / pv.leads) : null
+        return <div className="exec-cc">
+          <div className="exec-panel-h">Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}</span></div>
+          <div className="scorecard exec-kpis">
+            <Kpi label="Total ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown />
+            <Kpi label="Opportunities" value={k.leads != null ? fmtNumber(k.leads) : '—'} cur={k.leads} prev={pv.leads} />
+            <Kpi label="Cost / lead" value={k.cpl != null ? money(k.cpl) : '—'} cur={k.cpl} prev={cpl2} goodWhenDown />
+            <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={k.booked} prev={pv.booked} />
+            <Kpi label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} cur={k.cpBooked} goodWhenDown />
+            <Kpi label="Won" value={k.won != null ? fmtNumber(k.won) : '—'} cur={k.won} prev={pv.won} />
+            <Kpi label="Cost / won" value={k.cpWon != null ? money(k.cpWon) : '—'} cur={k.cpWon} goodWhenDown />
+          </div>
+          <div className="scorecard exec-kpis">
+            <Kpi label="Revenue" value={k.revenue != null ? money(k.revenue) : '—'} cur={k.revenue} prev={pv.revenue} />
+            <Kpi label="Avg deal value" value={k.avgDeal != null ? money(k.avgDeal) : '—'} cur={k.avgDeal} />
+            <Kpi label="ROAS" value={roas != null ? `${roas.toFixed(2)}x` : '—'} cur={roas} />
+            <Kpi label="Open now" value={ca.open != null ? fmtNumber(ca.open) : '—'} cur={ca.open} />
+            <Kpi label="Open value" value={k.openValue != null ? money(k.openValue) : (ca.openValue != null ? money(ca.openValue) : '—')} cur={k.openValue} />
+            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} cur={lost} goodWhenDown />
+            <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} cur={ca.lostValue} goodWhenDown />
+          </div>
+          <div className="scorecard exec-kpis">
+            <Kpi label="Booking rate" value={pctOf(k.booked, k.leads)} />
+            <Kpi label="Show rate" value={pctOf(k.shown, k.booked)} />
+            <Kpi label="Shown" value={k.shown != null ? fmtNumber(k.shown) : '—'} cur={k.shown} prev={pv.shown} />
+            <Kpi label="Conversion rate" value={pctOf(k.won, k.leads)} />
+            <Kpi label="Close rate" value={lost != null ? pctOf(k.won, (k.won || 0) + lost) : '—'} />
+          </div>
+        </div>
+      })()}
 
       {/* Revenue bottleneck funnel */}
       <BottleneckPanel kpis={k} money={money} />
+
+      {/* Lost reasons + channel split */}
+      <div className="exec-grid2">
+        <div className="card">
+          <div className="exec-panel-h">Lost reasons {crmAgg && crmAgg.lost ? <span className="sub">· {fmtNumber(crmAgg.lost)} lost{crmAgg.lostValue ? `, ${money(crmAgg.lostValue)}` : ''}</span> : null}</div>
+          {!crmAgg ? <Spinner label="" />
+            : !(crmAgg.lostReasons && crmAgg.lostReasons.length) ? <div className="cap">No lost opportunities recorded this period. ✅</div>
+              : <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th></tr></thead>
+                <tbody>{crmAgg.lostReasons.slice(0, 10).map((r, i) => <tr key={i}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '—'}</td></tr>)}</tbody></table></div>}
+        </div>
+        <div className="card">
+          <div className="exec-panel-h">Channel split</div>
+          {(() => { const ch = h.channels || {}; const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
+            if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
+            return <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Leads / conv</th></tr></thead>
+              <tbody>
+                <tr><td className="lft">Meta</td><td>{money(ch.metaSpend || 0)}</td><td>{fmtNumber(ch.metaLeads || 0)}</td></tr>
+                <tr><td className="lft">Google</td><td>{money(ch.googleSpend || 0)}</td><td>{fmtNumber(ch.googleConv || 0)}</td></tr>
+              </tbody></table></div>
+          })()}
+        </div>
+      </div>
+
+      {/* Per-pipeline breakdown */}
+      {h.pipelines && h.pipelines.length > 0 && <div className="card">
+        <div className="exec-panel-h">By pipeline <span className="sub">· dive deeper in the CRM tab</span></div>
+        <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+          <thead><tr><th className="lft">Pipeline</th><th>Opps</th><th>Booked</th><th>Won</th><th>Lost</th><th>Open</th><th>Revenue</th><th>Open value</th></tr></thead>
+          <tbody>{h.pipelines.map((p, i) => <tr key={i}><td className="lft">{p.name}</td><td>{fmtNumber(p.leads || 0)}</td><td>{fmtNumber(p.booked || 0)}</td><td>{fmtNumber(p.won || 0)}</td><td>{fmtNumber(p.lost || 0)}</td><td>{fmtNumber(p.open || 0)}</td><td>{money(p.revenue || 0)}</td><td>{money(p.openValue || 0)}</td></tr>)}</tbody>
+        </table></div>
+      </div>}
 
       <div className="exec-grid2">
         {/* Priority actions */}

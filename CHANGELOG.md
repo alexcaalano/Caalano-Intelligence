@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.76.0 — 2026-07-23 · `PENDING`
+- **Caalano360 tab is now a CRM + spend command centre.** Replaced the old KPI
+  strip with a full control centre that pivots the whole of Caalano Systems on
+  the selected range: total ad spend, opportunities, cost per lead / booked /
+  won, booked, won, revenue, average deal value, ROAS, open (count + value),
+  lost (count + value), booking rate, show rate, conversion rate and close rate.
+  Added a **Lost reasons** breakdown (reason, deals, value), a **Channel split**
+  (Meta vs Google spend + leads), and a **By pipeline** table. The health gauge,
+  forecast and AI summary stay on top as the glance; the other tabs remain for
+  deeper dives. Removed "Qualified" from this view (scorecard and the bottleneck
+  funnel). No backend change — the lost value/reasons come from the existing
+  Users feed, aggregated client-side.
+
 ## v3.75.0 — 2026-07-23 · `PENDING`
 - **Client Update now reads the whole client profile.** The generator pulls in
   every tab's data, not just spend + pipeline: Location (where leads and the

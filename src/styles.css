@@ -1668,6 +1668,8 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .opp-body { display: flex; flex-direction: column; gap: 1px; line-height: 1.4; }
 .opp-link { color: var(--brand); font-weight: 600; }
 .exec-cc { margin: 4px 0 12px; }
+.cc-group-lab { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin: 10px 0 6px; }
+.cc-group-lab:first-of-type { margin-top: 4px; }
 .exec-cc > .exec-panel-h { margin-bottom: 8px; }
 .exec-cc .scorecard { margin-bottom: 8px; }
 .exec-cc .scorecard:last-child { margin-bottom: 0; }

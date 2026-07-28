@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.78.0 — 2026-07-28 · `PENDING`
+- **Caalano360 pared back to a clean command centre.** Removed the business-health
+  gauge + pillar breakdown (and with it the "Build trend history" 504), the
+  Forecast panel, and the AI executive summary. The command-centre metrics are
+  now grouped into labelled sections (Spend & efficiency · Pipeline & revenue ·
+  Rates). Priority actions are rebuilt to read straight from the CRM + spend data
+  (cost-per-lead moves, low show/booking rates, deals lost + top reason, open
+  pipeline to chase, no-wins-yet) instead of health pillars. "By pipeline" only
+  shows when a client runs more than one pipeline.
+
 ## v3.77.0 — 2026-07-28 · `PENDING`
 - **Forms — answer drill-down + per-client Key Events funnel.** Click any form
   answer to expand the list of people who gave it: name, status (won/lost/open),

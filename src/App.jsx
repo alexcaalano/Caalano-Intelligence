@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.77.0'
+const APP_VERSION = '3.78.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2538,22 +2538,30 @@ function AtRiskPanel({ clientId, range, nonce, money }) {
 
 // Deterministic priority actions derived from the health payload + at-risk —
 // no AI. Flags the biggest movers against the previous period.
-function priorityActions(h, money) {
+// Prioritised summary of what needs attention, read straight from the command
+// centre (spend + CRM) — no health-score pillars. `ca` is the aggregated CRM
+// feed (open/lost/lostReasons) from useCrmAgg.
+function priorityActions(h, money, ca) {
   if (!h || !h.kpis) return []
   const k = h.kpis, pv = k.prev || {}, out = []
   const dropPct = (cur, prev) => (prev ? Math.round(((cur - prev) / prev) * 100) : null)
-  // Weakest pillar.
-  const pillars = PILLAR_KEYS.map(([id, label]) => ({ id, label, s: h.score ? h.score[id] : null })).filter((p) => p.s != null).sort((a, b) => a.s - b.s)
-  if (pillars.length && pillars[0].s < 50) out.push({ sev: pillars[0].s < 35 ? 'high' : 'med', text: `${pillars[0].label} is the weakest pillar at ${pillars[0].s}/100 — focus here first.` })
-  // CPL rising.
-  if (k.cpl != null && pv.leads && pv.adSpend) { const pc = Math.round(pv.adSpend / pv.leads); const dp = dropPct(k.cpl, pc); if (dp != null && dp >= 15) out.push({ sev: dp >= 40 ? 'high' : 'med', text: `Cost per lead up ${dp}% (${money(pc)} → ${money(k.cpl)}).` }) }
+  const spend = k.adSpend || 0
+  // Cost per lead movement.
+  if (spend >= 50 && k.cpl != null && pv.leads && pv.adSpend) { const pc = Math.round(pv.adSpend / pv.leads); const dp = dropPct(k.cpl, pc); if (dp != null && dp >= 40) out.push({ sev: 'high', text: `Cost per lead is up ${dp}% on the previous period (${money(pc)} to ${money(k.cpl)}) — review targeting and creative.` }); else if (dp != null && dp >= 20) out.push({ sev: 'med', text: `Cost per lead is climbing, up ${dp}% on the previous period (now ${money(k.cpl)}).` }) }
   // Lead volume down.
-  if (k.leads != null && pv.leads) { const dp = dropPct(k.leads, pv.leads); if (dp != null && dp <= -15) out.push({ sev: dp <= -40 ? 'high' : 'med', text: `Lead volume down ${Math.abs(dp)}% vs last period (${fmtNumber(pv.leads)} → ${fmtNumber(k.leads)}).` }) }
-  // Win/revenue down.
-  if (k.revenue != null && pv.revenue) { const dp = dropPct(k.revenue, pv.revenue); if (dp != null && dp <= -15) out.push({ sev: dp <= -40 ? 'high' : 'med', text: `Revenue down ${Math.abs(dp)}% vs last period (${money(pv.revenue)} → ${money(k.revenue)}).` }) }
-  // Forecast pacing behind.
-  if (h.forecast && h.forecast.pacePct != null && h.forecast.pacePct < 85) out.push({ sev: h.forecast.pacePct < 70 ? 'high' : 'med', text: `Pacing at ${h.forecast.pacePct}% of last period's revenue on run-rate.` })
-  return out.slice(0, 5)
+  if (k.leads != null && pv.leads) { const dp = dropPct(k.leads, pv.leads); if (dp != null && dp <= -20) out.push({ sev: dp <= -40 ? 'high' : 'med', text: `Opportunities down ${Math.abs(dp)}% on the previous period (${fmtNumber(pv.leads)} to ${fmtNumber(k.leads)}).` }) }
+  // Show rate low (attendance).
+  if (k.booked >= 3 && k.shown != null) { const sr = k.shown / k.booked; if (sr < 0.5) out.push({ sev: 'med', text: `Show rate is ${Math.round(sr * 100)}% — a lot of booked calls aren't being attended. Tighten reminders and confirmations.` }) }
+  // Booking rate low (early-funnel drop).
+  if (k.leads >= 10 && k.booked != null) { const br = k.booked / k.leads; if (br < 0.3) out.push({ sev: 'med', text: `Only ${Math.round(br * 100)}% of opportunities are booking a call — the drop is early in the funnel.` }) }
+  // Lost deals + top reason.
+  if (ca && ca.lost >= 1) { const top = ca.lostReasons && ca.lostReasons[0]; out.push({ sev: (ca.lostValue && ca.lostValue >= (k.revenue || 0)) ? 'med' : 'low', text: `${fmtNumber(ca.lost)} ${ca.lost === 1 ? 'deal' : 'deals'} lost${ca.lostValue ? ` worth ${money(ca.lostValue)}` : ''}${top ? `, most commonly "${top.reason}"` : ''}.` }) }
+  // Open pipeline to chase.
+  if (ca && ca.open >= 1 && (k.openValue || ca.openValue)) out.push({ sev: 'low', text: `${money(k.openValue || ca.openValue)} across ${fmtNumber(ca.open)} open ${ca.open === 1 ? 'opportunity' : 'opportunities'} still to chase.` })
+  // No wins yet.
+  if (k.won === 0 && k.leads > 0) out.push({ sev: 'low', text: `No deals won yet this period — check where the open deals have reached in the funnel.` })
+  const rank = { high: 0, med: 1, low: 2 }
+  return out.sort((a, b) => rank[a.sev] - rank[b.sev]).slice(0, 6)
 }
 
 // Revenue bottleneck — the whole-account funnel (Leads → Qualified → Booked →
@@ -2670,29 +2678,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const k = h.kpis || {}
   const pv = k.prev || {}
   const hist = (h.history || []).filter((p) => p.composite != null)
-  const actions = priorityActions(h, money)
-  const fc = h.forecast
+  const actions = priorityActions(h, money, crmAgg)
   return (
     <div className="exec-wrap">
-      {/* Header + composite gauge */}
-      <div className="card exec-hero">
-        <div className="exec-hero-l">
-          <HealthGauge score={sc.composite} />
-          <div className="exec-hero-meta">
-            <div className="exec-hero-lab" style={{ color: hColor(sc.composite) }}>{hLabel(sc.composite)}</div>
-            <div className="exec-hero-sub">Business health · {rangeLabel(range)}</div>
-            {hist.length > 1 && <div className="exec-spark"><Sparkline data={hist.map((p) => p.composite)} /><span className="cap">{hist.length}-point trend</span></div>}
-            {canBackfill && <div className="exec-bf">
-              <button className="link-btn sm" onClick={runBackfill} disabled={bf.running}>{bf.running ? `Building… ${bf.done} pts` : hist.length > 1 ? '↻ Rebuild trend history' : '＋ Build trend history'}</button>
-              {bf.err ? <span className="cap" style={{ color: 'var(--neg)' }}>{bf.err}</span> : hist.length <= 1 && !bf.running ? <span className="cap">seed ~12 months of weekly points</span> : null}
-            </div>}
-          </div>
-        </div>
-        <div className="exec-pillars">
-          {PILLAR_KEYS.map(([id, label]) => <PillarRow key={id} pk={label} pillar={sc.pillars && sc.pillars[id]} open={openPillar === id} onToggle={() => setOpenPillar(openPillar === id ? null : id)} money={money} />)}
-        </div>
-      </div>
-
       {/* Command centre — all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         const ca = crmAgg || {}
@@ -2701,24 +2689,27 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const cpl2 = pv.leads && pv.adSpend ? Math.round(pv.adSpend / pv.leads) : null
         return <div className="exec-cc">
           <div className="exec-panel-h">Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}</span></div>
+          <div className="cc-group-lab">Spend &amp; efficiency</div>
           <div className="scorecard exec-kpis">
             <Kpi label="Total ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown />
-            <Kpi label="Opportunities" value={k.leads != null ? fmtNumber(k.leads) : '—'} cur={k.leads} prev={pv.leads} />
             <Kpi label="Cost / lead" value={k.cpl != null ? money(k.cpl) : '—'} cur={k.cpl} prev={cpl2} goodWhenDown />
-            <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={k.booked} prev={pv.booked} />
             <Kpi label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} cur={k.cpBooked} goodWhenDown />
-            <Kpi label="Won" value={k.won != null ? fmtNumber(k.won) : '—'} cur={k.won} prev={pv.won} />
             <Kpi label="Cost / won" value={k.cpWon != null ? money(k.cpWon) : '—'} cur={k.cpWon} goodWhenDown />
+            <Kpi label="ROAS" value={roas != null ? `${roas.toFixed(2)}x` : '—'} cur={roas} />
           </div>
+          <div className="cc-group-lab">Pipeline &amp; revenue</div>
           <div className="scorecard exec-kpis">
+            <Kpi label="Opportunities" value={k.leads != null ? fmtNumber(k.leads) : '—'} cur={k.leads} prev={pv.leads} />
+            <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={k.booked} prev={pv.booked} />
+            <Kpi label="Won" value={k.won != null ? fmtNumber(k.won) : '—'} cur={k.won} prev={pv.won} />
             <Kpi label="Revenue" value={k.revenue != null ? money(k.revenue) : '—'} cur={k.revenue} prev={pv.revenue} />
             <Kpi label="Avg deal value" value={k.avgDeal != null ? money(k.avgDeal) : '—'} cur={k.avgDeal} />
-            <Kpi label="ROAS" value={roas != null ? `${roas.toFixed(2)}x` : '—'} cur={roas} />
             <Kpi label="Open now" value={ca.open != null ? fmtNumber(ca.open) : '—'} cur={ca.open} />
             <Kpi label="Open value" value={k.openValue != null ? money(k.openValue) : (ca.openValue != null ? money(ca.openValue) : '—')} cur={k.openValue} />
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} cur={lost} goodWhenDown />
             <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} cur={ca.lostValue} goodWhenDown />
           </div>
+          <div className="cc-group-lab">Rates</div>
           <div className="scorecard exec-kpis">
             <Kpi label="Booking rate" value={pctOf(k.booked, k.leads)} />
             <Kpi label="Show rate" value={pctOf(k.shown, k.booked)} />
@@ -2754,8 +2745,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         </div>
       </div>
 
-      {/* Per-pipeline breakdown */}
-      {h.pipelines && h.pipelines.length > 0 && <div className="card">
+      {/* Per-pipeline breakdown — only when the client runs more than one */}
+      {h.pipelines && h.pipelines.length > 1 && <div className="card">
         <div className="exec-panel-h">By pipeline <span className="sub">· dive deeper in the CRM tab</span></div>
         <div className="tbl-scroll"><table className="mini-tbl users-tbl">
           <thead><tr><th className="lft">Pipeline</th><th>Opps</th><th>Booked</th><th>Won</th><th>Lost</th><th>Open</th><th>Revenue</th><th>Open value</th></tr></thead>
@@ -2763,42 +2754,18 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         </table></div>
       </div>}
 
-      <div className="exec-grid2">
-        {/* Priority actions */}
-        <div className="card exec-actions">
-          <div className="exec-panel-h">Priority actions</div>
-          {actions.length ? <ul className="exec-act-list">{actions.map((a, i) => <li key={i} className={`exec-act sev-${a.sev}`}><span className="exec-act-dot" />{a.text}</li>)}</ul>
-            : <div className="cap">No red flags this period — the numbers are tracking with or ahead of last period.</div>}
-          <div className="exec-nav"><button className="link-btn" onClick={() => onNav && onNav('users')}>Open the Users tab →</button></div>
-        </div>
-        {/* Forecast */}
-        <div className="card exec-forecast">
-          <div className="exec-panel-h">Forecast <span className="sub">· run-rate at {fc ? fc.elapsedPct : 0}% of period</span></div>
-          {fc ? <div className="exec-fc-grid">
-            <div className="exec-fc"><span className="exec-fc-l">Projected revenue</span><span className="exec-fc-v">{money(fc.projectedRevenue)}</span><span className="cap">{fc.prevRevenue != null ? `last period ${money(fc.prevRevenue)}` : 'no prior period'}</span></div>
-            <div className="exec-fc"><span className="exec-fc-l">Projected leads</span><span className="exec-fc-v">{fmtNumber(fc.projectedLeads)}</span><span className="cap">{fc.prevLeads != null ? `last period ${fmtNumber(fc.prevLeads)}` : ''}</span></div>
-            <div className="exec-fc"><span className="exec-fc-l">Projected deals won</span><span className="exec-fc-v">{fmtNumber(fc.projectedWon)}</span><span className="cap">{fc.prevWon != null ? `last period ${fmtNumber(fc.prevWon)}` : ''}</span></div>
-            {fc.pacePct != null && <div className="exec-fc"><span className="exec-fc-l">Pace vs last period</span><span className="exec-fc-v" style={{ color: hColor(fc.pacePct >= 100 ? 80 : fc.pacePct >= 85 ? 55 : 30) }}>{fc.pacePct}%</span><span className="cap">of prior revenue</span></div>}
-          </div> : <div className="cap">Forecast needs a prior period to compare against.</div>}
-        </div>
-      </div>
-
-      {/* AI executive summary — narrates the figures above; never recomputes them */}
-      <div className="card ai-card exec-ai">
-        <div className="ai-head">
-          <div className="ai-title">✨ AI executive summary {ai ? <span className="sub">· {ai.period} · generated {new Date(ai.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads the health score above and briefs you</span>}</div>
-          <button className="ai-btn" onClick={genExec} disabled={aiLoading}>{aiLoading ? 'Generating…' : ai ? '↻ Regenerate' : '✨ Generate summary'}</button>
-        </div>
-        {aiErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{aiErr}</p>}
-        {aiLoading ? <Spinner label="Claude is reviewing the numbers…" />
-          : ai ? <MdText text={ai.insights} />
-            : <p className="cap" style={{ margin: 0 }}>Generate a board-level read of {clientName}'s health score, forecast and priority flags for {rangeLabel(range)}. Runs only when you click; the figures are computed here and Claude only interprets them.</p>}
+      {/* Priority actions — a prioritised read of the command centre */}
+      <div className="card exec-actions">
+        <div className="exec-panel-h">Priority actions</div>
+        {actions.length ? <ul className="exec-act-list">{actions.map((a, i) => <li key={i} className={`exec-act sev-${a.sev}`}><span className="exec-act-dot" />{a.text}</li>)}</ul>
+          : <div className="cap">Nothing flagged this period — the numbers are tracking with or ahead of last period.</div>}
+        <div className="exec-nav"><button className="link-btn" onClick={() => onNav && onNav('users')}>Open the Users tab →</button></div>
       </div>
 
       {/* Revenue at risk */}
       <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
 
-      <div className="cap exec-foot">Health is scored against the previous equal-length period. A consistent daily trend builds from launch as snapshots accumulate. Messaging/response signals are indicative only — clients may reply on channels outside Caalano Systems.</div>
+      <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only — clients may reply on channels outside Caalano Systems.</div>
     </div>
   )
 }

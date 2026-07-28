@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.86.0 — 2026-07-28 · `PENDING`
+- **Command Centre channel filter now re-pivots every metric.** Previously only a
+  few CRM tiles responded to All / Paid / Non-paid / Google / Meta. Now ad spend,
+  cost per lead, cost per booked, cost per won, ROAS, booked, shown and all the
+  rates (booking / show / conversion / close) all slice by the selected channel
+  too. **Cost per won** reflects the channel's paid-attributed wons only (Meta →
+  Meta spend ÷ Meta-attributed wons, etc.); non-paid shows no cost figures since
+  there's no attributable spend.
+
 ## v3.85.0 — 2026-07-28 · `PENDING`
 - **Appointments — Resulted column on the "Booked ahead" table, clickable.** Each
   lead-time bucket now shows how many resulted, and clicking it drills into that

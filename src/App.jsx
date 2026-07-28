@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.85.0'
+const APP_VERSION = '3.86.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2644,11 +2644,12 @@ function useCrmAgg(clientId, range, nonce, channel = 'all') {
       .then((r) => r.json()).then((j) => {
         if (!alive) return
         const us = (j && j.users) || []
-        const a = { opps: 0, open: 0, openValue: 0, lost: 0, lostValue: 0, won: 0, revenue: 0 }
+        const a = { opps: 0, open: 0, openValue: 0, lost: 0, lostValue: 0, won: 0, revenue: 0, booked: 0, shown: 0 }
         const rs = {}
         for (const u of us) {
           a.opps += u.leads || 0; a.open += u.open || 0; a.openValue += u.openValue || 0
           a.lost += u.lost || 0; a.lostValue += u.lostValue || 0; a.won += u.won || 0; a.revenue += u.revenue || 0
+          a.booked += u.booked || 0; a.shown += u.shown || 0
           for (const r of (u.lostReasons || [])) { const e = rs[r.reason] || { reason: r.reason, count: 0, value: 0 }; e.count += r.count; e.value += r.value || 0; rs[r.reason] = e }
         }
         a.lostReasons = Object.values(rs).sort((x, y) => y.count - x.count)
@@ -2855,56 +2856,71 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       {/* Command centre — all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         const ca = crmAgg || {}
-        // Channel toggle: CRM-count tiles reflect the selected channel via the
-        // channel-scoped scope=users feed (crmAgg). Spend / booked / shown / rate
-        // tiles stay account-wide (health has no channel split) — noted below.
         const chActive = chan !== 'all'
+        // Every metric follows the channel toggle. CRM counts come from the
+        // channel-scoped scope=users feed (crmAgg); spend + paid cost figures are
+        // sliced per channel from health.channels + the ccdrill paid feed.
+        const chn = h.channels || {}
+        const p = (cc && cc.paid) || {}
+        // Channel-scoped ad spend.
+        const chanSpend = chan === 'all' ? k.adSpend
+          : chan === 'meta' ? chn.metaSpend
+            : chan === 'google' ? chn.googleSpend
+              : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0))
+                : 0 // non-paid has no ad spend
+        // Cost per lead / won for the selected channel (paid-attributed). Non-paid
+        // has no attributable spend, so cost figures are n/a there.
+        const cplV = chan === 'meta' ? p.metaCpl : chan === 'google' ? p.googleCpl : chan === 'nonpaid' ? null : p.paidCpl
+        const cpaV = chan === 'meta' ? p.metaCpa : chan === 'google' ? p.googleCpa : chan === 'nonpaid' ? null : p.paidCpa
+        const paidCpl = cplV != null ? Math.round(cplV) : null
+        const paidCpa = cpaV != null ? Math.round(cpaV) : null
+        // CRM counts: channel-scoped from crmAgg when a channel is active, else the
+        // authoritative health totals (which also carry vs-previous deltas).
         const oppsV = chActive ? (ca.opps != null ? ca.opps : null) : k.leads
+        const bookedV = chActive ? (ca.booked != null ? ca.booked : null) : k.booked
+        const shownV = chActive ? (ca.shown != null ? ca.shown : null) : k.shown
         const wonV = chActive ? (ca.won != null ? ca.won : null) : k.won
         const revV = chActive ? (ca.revenue != null ? ca.revenue : null) : k.revenue
         const avgV = chActive ? (wonV ? Math.round((revV || 0) / wonV) : null) : k.avgDeal
+        const openV = chActive ? (ca.open != null ? ca.open : null) : ca.open
         const openValV = chActive ? (ca.openValue != null ? ca.openValue : null) : (k.openValue != null ? k.openValue : ca.openValue)
-        const roas = (k.adSpend && k.revenue) ? k.revenue / k.adSpend : null
         const lost = ca.lost != null ? ca.lost : null
-        const cpl2 = pv.leads && pv.adSpend ? Math.round(pv.adSpend / pv.leads) : null
-        // Paid-attributed cost figures (spend ÷ paid-channel leads / wons) from
-        // the ccdrill feed — replaces spend ÷ ALL-CRM which over-counts.
-        const p = (cc && cc.paid) || {}
-        const paidCpl = p.paidCpl != null ? Math.round(p.paidCpl) : null
-        const paidCpa = p.paidCpa != null ? Math.round(p.paidCpa) : null
+        const cpBookedV = (chanSpend && bookedV) ? Math.round(chanSpend / bookedV) : (chActive ? null : k.cpBooked)
+        const roas = (chanSpend && revV) ? revV / chanSpend : null
+        const cpl2 = (!chActive && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
         const tileClick = (drill2) => (cc ? () => setDrill(drill2) : undefined)
         return <div className="exec-cc">
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
             <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
           </div>
-          <div className="cc-group-lab x-internal">Spend &amp; efficiency</div>
+          <div className="cc-group-lab x-internal">Spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
           <div className="scorecard exec-kpis x-internal">
-            <Kpi label="Total ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Total ad spend' })} />
-            <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : (k.cpl != null ? money(k.cpl) : '—')} cur={paidCpl != null ? paidCpl : k.cpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead — paid attributed' })} />
-            <Kpi label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} cur={k.cpBooked} goodWhenDown />
-            <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : (k.cpWon != null ? money(k.cpWon) : '—')} cur={paidCpa != null ? paidCpa : k.cpWon} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won — paid attributed' })} />
+            <Kpi label="Ad spend" value={chanSpend != null ? money(chanSpend) : '—'} cur={chActive ? null : k.adSpend} prev={chActive ? null : pv.adSpend} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+            <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '—'} cur={paidCpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead — paid attributed' })} />
+            <Kpi label="Cost / booked" value={cpBookedV != null ? money(cpBookedV) : '—'} cur={cpBookedV} goodWhenDown />
+            <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : '—'} cur={paidCpa} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won — paid attributed' })} />
             <Kpi label="ROAS" value={roas != null ? `${roas.toFixed(2)}x` : '—'} cur={roas} />
           </div>
           <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
           <div className="scorecard exec-kpis">
             <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} cur={chActive ? null : oppsV} prev={chActive ? null : pv.leads} onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
-            <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={chActive ? null : k.booked} prev={chActive ? null : pv.booked} />
+            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} cur={chActive ? null : k.booked} prev={chActive ? null : pv.booked} />
             <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} cur={chActive ? null : wonV} prev={chActive ? null : pv.won} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
             <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} cur={chActive ? null : revV} prev={chActive ? null : pv.revenue} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
             <Kpi label="Avg deal value" value={avgV != null ? money(avgV) : '—'} cur={chActive ? null : avgV} />
-            <Kpi label="Open now" value={ca.open != null ? fmtNumber(ca.open) : '—'} cur={ca.open} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+            <Kpi label="Open now" value={openV != null ? fmtNumber(openV) : '—'} cur={openV} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
             <Kpi label="Open value" value={openValV != null ? money(openValV) : '—'} cur={chActive ? null : k.openValue} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} cur={lost} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
             <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} cur={ca.lostValue} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
           </div>
-          <div className="cc-group-lab">Rates{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · account-wide (no channel split)</span> : null}</div>
+          <div className="cc-group-lab">Rates{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
           <div className="scorecard exec-kpis">
-            <Kpi label="Booking rate" value={pctOf(k.booked, k.leads)} onClick={tileClick({ kind: 'booking', title: 'Booking rate — by calendar' })} />
-            <Kpi label="Show rate" value={pctOf(k.shown, k.booked)} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
-            <Kpi label="Shown" value={k.shown != null ? fmtNumber(k.shown) : '—'} cur={chActive ? null : k.shown} prev={chActive ? null : pv.shown} />
-            <Kpi label="Conversion rate" value={pctOf(k.won, k.leads)} />
-            <Kpi label="Close rate" value={lost != null ? pctOf(k.won, (k.won || 0) + lost) : '—'} onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
+            <Kpi label="Booking rate" value={pctOf(bookedV, oppsV)} onClick={tileClick({ kind: 'booking', title: 'Booking rate — by calendar' })} />
+            <Kpi label="Show rate" value={pctOf(shownV, bookedV)} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
+            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} cur={chActive ? null : k.shown} prev={chActive ? null : pv.shown} />
+            <Kpi label="Conversion rate" value={pctOf(wonV, oppsV)} />
+            <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
           </div>
         </div>
       })()}

@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.85.0 — 2026-07-28 · `PENDING`
+- **Appointments — Resulted column on the "Booked ahead" table, clickable.** Each
+  lead-time bucket now shows how many resulted, and clicking it drills into that
+  bucket's appointments by status (Showed / No-show / Cancelled / Other) plus the
+  reporting-gap groups — the same Resulted drill, scoped to the booked-ahead row.
+
 ## v3.84.0 — 2026-07-28 · `PENDING`
 - **Command Centre — clickable drill-downs, accuracy fixes, channel filter, key-events funnel.**
   - Every metric tile is now clickable: Booking/Show rate → calendars → the people

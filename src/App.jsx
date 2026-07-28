@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.84.0'
+const APP_VERSION = '3.85.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4512,7 +4512,16 @@ function defaultApptCals(clientId, pipe) {
 // Resulted drill: per-status breakdown (counts + people) plus the two reporting-
 // gap groups (occurred-but-still-confirmed = errors to fix; resulted-before-time).
 // People are only captured on the All channel; other channels show counts only.
-function ApptResultedDrill({ C, onClose }) {
+// Build a bucket-scoped view of the resulted appointments from the All-channel
+// people list (each tagged with its lead-time bucket), for the per-bucket drill.
+function bucketResultC(C, b) {
+  const people = (C.people || []).filter((p) => p.leadBucket === b.key)
+  const bs = { showed: 0, noshow: 0, cancelled: 0, confirmed: 0, other: 0 }
+  let occ = 0, res = 0
+  for (const p of people) { bs[p.status] = (bs[p.status] || 0) + 1; if (p.occurred && p.status === 'confirmed') occ++; if (!p.occurred && p.status !== 'confirmed') res++ }
+  return { booked: b.booked, resulted: b.resulted, showRate: b.showRate, people, byStatus: bs, occurredNotResulted: occ, resultedNotOccurred: res }
+}
+function ApptResultedDrill({ C, onClose, label }) {
   const people = C.people || []
   const bs = C.byStatus || { showed: 0, noshow: 0, cancelled: 0, confirmed: 0, other: 0 }
   const fmtD = (ms) => { const d = new Date(ms); return isFinite(d.getTime()) ? d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' }
@@ -4530,7 +4539,7 @@ function ApptResultedDrill({ C, onClose }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal appt-drill-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>Resulted appointments — {fmtNumber(C.resulted)} of {fmtNumber(C.booked)} booked</h3><span className="cap">Outcome recorded (moved out of confirmed). Show rate {C.showRate == null ? '-' : `${C.showRate}%`} of occurred.</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-head"><div><h3>Resulted appointments{label ? ` · ${label}` : ''} — {fmtNumber(C.resulted)} of {fmtNumber(C.booked)} booked</h3><span className="cap">Outcome recorded (moved out of confirmed). Show rate {C.showRate == null ? '-' : `${C.showRate}%`} of occurred.</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
           <div className="appt-drill-counts">
             {groups.map(([k, lbl, col]) => <span key={k} className="appt-drill-pill" style={{ borderColor: col }}><span className="dot" style={{ background: col }} />{lbl} <b>{fmtNumber(bs[k] || 0)}</b></span>)}
@@ -4561,6 +4570,7 @@ function AppointmentsView({ clientId, range, nonce }) {
   const [userSel, setUserSel] = useState('all')
   const [showDbg, setShowDbg] = useState(false)
   const [apptDrill, setApptDrill] = useState(false)
+  const [bucketDrill, setBucketDrill] = useState(null)
   useSettingsSync()
   const dflt = useMemo(() => defaultApptCals(clientId, pipe), [clientId, pipe])
   const effCals = cals !== null ? cals : dflt.calIds
@@ -4624,6 +4634,7 @@ function AppointmentsView({ clientId, range, nonce }) {
         </div>
       )}
       {apptDrill && <ApptResultedDrill C={C} onClose={() => setApptDrill(false)} />}
+      {bucketDrill && <ApptResultedDrill C={bucketResultC(C, bucketDrill)} label={`booked ${bucketDrill.label.toLowerCase()} ahead`} onClose={() => setBucketDrill(null)} />}
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">appointments</span></div>
         <div className="tm-sc"><span className="tm-lab">Time to book</span><b>{fmtDays(C.medianTimeToBookDays)}</b><span className="tm-sub">median · avg {fmtDays(C.avgTimeToBookDays)} · lead → booked</span></div>
@@ -4651,12 +4662,13 @@ function AppointmentsView({ clientId, range, nonce }) {
           </ComposedChart>
         </ResponsiveContainer>
         <div className="table-wrap" style={{ marginTop: 10 }}><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Booked ahead</th><th>Booked</th><th>Occurred</th><th>Show %</th><th>Cancel %</th><th>Won</th><th>Win %</th><th>Time to close</th></tr></thead>
+          <thead><tr><th className="lft">Booked ahead</th><th>Booked</th><th>Occurred</th><th>Resulted</th><th>Show %</th><th>Cancel %</th><th>Won</th><th>Win %</th><th>Time to close</th></tr></thead>
           <tbody>{C.buckets.map((b) => (
             <tr key={b.label}>
               <td className="lft">{b.label}</td>
               <td>{fmtNumber(b.booked)}</td>
               <td>{fmtNumber(b.occurred)}</td>
+              <td>{b.resulted ? <button type="button" className="link-btn sm appt-res-cell" onClick={() => setBucketDrill(b)} title="See who resulted, by status">{fmtNumber(b.resulted)} ›</button> : fmtNumber(b.resulted || 0)}</td>
               <td>{b.showRate == null ? '-' : `${b.showRate}%`}</td>
               <td>{b.cancelRate == null ? '-' : `${b.cancelRate}%`}</td>
               <td>{fmtNumber(b.won)}</td>

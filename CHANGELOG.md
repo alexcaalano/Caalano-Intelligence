@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.92.0 — 2026-07-28 · `PENDING`
+- **Fixed the command-centre opportunity count mismatch.** The scorecard tiles
+  were reading the health engine's lead count (a narrower, deduped basis) while
+  the drills and funnel counted every opportunity — so "Opportunities" showed 42
+  but the drill showed 74. All command-centre CRM tiles (Opportunities, Booked,
+  Won, Revenue, Open, Lost) now read from the same per-opportunity feed the drills
+  use, in both All and channel views, so the tile, the funnel's Leads anchor and
+  the drill always agree (and paid filters correctly to the paid opportunity
+  count). This also fixes the key-event reach / funnel steps reading over 100%.
+  The now-inconsistent "vs prev" deltas were removed from those tiles (ad spend
+  keeps its delta).
+- **Calendar drills now show real names instead of "Lead".** buildCcDrill resolves
+  a booked contact's name from the appointment event itself (and any opportunity
+  in the wider window), so people who booked but had no in-period opportunity are
+  no longer all labelled "Lead".
+
 ## v3.91.0 — 2026-07-28 · `PENDING`
 - **The Caalano360 channel filter now re-pivots the whole drill layer.** Selecting
   All / Paid / Non-paid / Google / Meta now filters the **Revenue bottleneck

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.91.0'
+const APP_VERSION = '3.92.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2621,9 +2621,12 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   // Leads/Won denominators match its (channel-filtered) stage numerators.
   const chActiveBn = chan !== 'all'
   const ccTot = (cc && cc.totals) || null
-  const chanLeads = chActiveBn ? (ccTot ? ccTot.leads : 0) : kpis.leads
-  const chanWon = chActiveBn ? (ccTot ? ccTot.won : 0) : kpis.won
-  const kef = ccKeyEventFunnel(cc, clientId, chActiveBn ? chanWon : kpis.won, chActiveBn ? (ccTot ? ccTot.leads : null) : kpis.leads)
+  // Anchor the funnel on the drill's opportunity totals (same basis as its stage
+  // numerators) in both all and channel views, so Leads == New Lead reach and the
+  // rates never exceed 100%.
+  const chanLeads = ccTot ? ccTot.leads : kpis.leads
+  const chanWon = ccTot ? ccTot.won : kpis.won
+  const kef = ccKeyEventFunnel(cc, clientId, chanWon, ccTot ? ccTot.leads : kpis.leads)
   const usingKe = kef.usingKe
   const leadTotal = kef.leadTotal
   const raw = usingKe
@@ -2996,25 +2999,28 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const cpaV = chan === 'meta' ? p.metaCpa : chan === 'google' ? p.googleCpa : chan === 'nonpaid' ? null : p.paidCpa
         const paidCpl = cplV != null ? Math.round(cplV) : null
         const paidCpa = cpaV != null ? Math.round(cpaV) : null
-        // CRM counts: channel-scoped from crmAgg when a channel is active, else the
-        // authoritative health totals (which also carry vs-previous deltas).
-        const oppsV = chActive ? (ca.opps != null ? ca.opps : null) : k.leads
-        const bookedV = chActive ? (ca.booked != null ? ca.booked : null) : k.booked
-        const shownV = chActive ? (ca.shown != null ? ca.shown : null) : k.shown
-        const wonV = chActive ? (ca.won != null ? ca.won : null) : k.won
-        const revV = chActive ? (ca.revenue != null ? ca.revenue : null) : k.revenue
-        const avgV = chActive ? (wonV ? Math.round((revV || 0) / wonV) : null) : k.avgDeal
-        const openV = chActive ? (ca.open != null ? ca.open : null) : ca.open
-        const openValV = chActive ? (ca.openValue != null ? ca.openValue : null) : (k.openValue != null ? k.openValue : ca.openValue)
+        // CRM counts come from the same per-opportunity feed as the drills (crmAgg
+        // / scope=users) in BOTH the all and channel views, so the scorecard, the
+        // funnel and every drill always agree on the opportunity count. Health (k)
+        // is only a fallback while crmAgg is still loading.
+        const oppsV = ca.opps != null ? ca.opps : k.leads
+        const bookedV = ca.booked != null ? ca.booked : k.booked
+        const shownV = ca.shown != null ? ca.shown : k.shown
+        const wonV = ca.won != null ? ca.won : k.won
+        const revV = ca.revenue != null ? ca.revenue : k.revenue
+        const avgV = wonV ? Math.round((revV || 0) / wonV) : (ca.won != null ? null : k.avgDeal)
+        const openV = ca.open != null ? ca.open : null
+        const openValV = ca.openValue != null ? ca.openValue : (k.openValue != null ? k.openValue : null)
         const lost = ca.lost != null ? ca.lost : null
         const cpBookedV = (chanSpend && bookedV) ? Math.round(chanSpend / bookedV) : (chActive ? null : k.cpBooked)
         const roas = (chanSpend && revV) ? revV / chanSpend : null
         const cpl2 = (!chActive && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
         const tileClick = (drill2) => (cc ? () => setDrill(drill2) : undefined)
-        // Key-event reach as rates — each selected key event as a share of all
-        // leads. Channel-scoped (via the ccdrill payload) when a channel is active.
+        // Key-event reach as rates — each selected key event as a share of leads.
+        // Denominator/won come from the ccdrill totals (same opportunity basis as
+        // the funnel numerators) in both all and channel views.
         const kefTot = (cc && cc.totals) || null
-        const kef = ccKeyEventFunnel(cc, clientId, chActive ? (kefTot ? kefTot.won : null) : k.won, chActive ? (kefTot ? kefTot.leads : null) : k.leads)
+        const kef = ccKeyEventFunnel(cc, clientId, kefTot ? kefTot.won : k.won, kefTot ? kefTot.leads : k.leads)
         return <div className="exec-cc">
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
@@ -3030,21 +3036,21 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           </div>
           <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
           <div className="scorecard exec-kpis">
-            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} cur={chActive ? null : oppsV} prev={chActive ? null : pv.leads} onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
-            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} cur={chActive ? null : k.booked} prev={chActive ? null : pv.booked} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
-            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} cur={chActive ? null : wonV} prev={chActive ? null : pv.won} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
-            <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} cur={chActive ? null : revV} prev={chActive ? null : pv.revenue} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
-            <Kpi label="Avg deal value" value={avgV != null ? money(avgV) : '—'} cur={chActive ? null : avgV} />
-            <Kpi label="Open now" value={openV != null ? fmtNumber(openV) : '—'} cur={openV} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
-            <Kpi label="Open value" value={openValV != null ? money(openValV) : '—'} cur={chActive ? null : k.openValue} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
-            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} cur={lost} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
-            <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} cur={ca.lostValue} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
+            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
+            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
+            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
+            <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
+            <Kpi label="Avg deal value" value={avgV != null ? money(avgV) : '—'} />
+            <Kpi label="Open now" value={openV != null ? fmtNumber(openV) : '—'} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+            <Kpi label="Open value" value={openValV != null ? money(openValV) : '—'} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
+            <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
           </div>
           <div className="cc-group-lab">Rates{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
           <div className="scorecard exec-kpis">
             <Kpi label="Booking rate" value={pctOf(bookedV, oppsV)} onClick={tileClick({ kind: 'booking', title: 'Booking rate — by calendar' })} />
             <Kpi label="Show rate" value={pctOf(shownV, bookedV)} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
-            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} cur={chActive ? null : k.shown} prev={chActive ? null : pv.shown} />
+            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} />
             <Kpi label="Conversion rate" value={pctOf(wonV, oppsV)} />
             <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
           </div>

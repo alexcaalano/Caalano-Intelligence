@@ -260,6 +260,7 @@ const APPT_INVALID_RE = /invalid/i
 const APPT_CANCEL_RE = /cancel/i
 async function fetchAppointments(locTok, locationId, from, to) {
   const byContact = new Map()
+  const nameByContact = new Map() // contactId -> display name from the calendar event
   // Same flags, but kept per (calendar × contact) so a client with several
   // booking types (e.g. an online consult then an on-site quote) can be split
   // by calendar. Deduping per contact WITHIN a calendar means a reschedule
@@ -310,6 +311,10 @@ async function fetchAppointments(locTok, locationId, from, to) {
       for (const ev of (j.events || [])) {
         events++
         const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
+        // Capture the booked contact's name from the event so drills can show who
+        // booked even when the contact has no opportunity created in the period.
+        const nm = (ev.contact && (ev.contact.name || [ev.contact.firstName, ev.contact.lastName].filter(Boolean).join(' '))) || ev.contactName || null
+        if (cid && nm && nm.trim() && !nameByContact.has(cid)) nameByContact.set(cid, nm.trim())
         // GHL sometimes returns the field misspelled as "appoinmentStatus".
         const st = ev.appointmentStatus || ev.appoinmentStatus || ev.status
         const added = Date.parse(ev.dateAdded), start = Date.parse(ev.startTime)
@@ -345,7 +350,7 @@ async function fetchAppointments(locTok, locationId, from, to) {
       e.calendars.push({ id: rec.id || null, name: rec.name, occurred: !!f.hasCallInPeriod, shown: !!f.shownByStatus, cancelled: !!(f._cancelled && !f._live) })
     }
   }
-  return { byContact, perCalendar, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
+  return { byContact, perCalendar, nameByContact, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
 }
 
 // Custom clients added at runtime via Settings -> Add client, stored in the
@@ -1486,7 +1491,11 @@ export async function buildCcDrill(locationId, from, to, channel) {
   // Contacts that belong to this channel — used to scope calendar bookings, which
   // aren't UTM-tagged themselves, to the same channel as the opportunities.
   const chanContacts = chan ? new Set(opps.map((o) => contactIdOf(o)).filter(Boolean)) : null
-  const oppNameById = new Map(); for (const o of opps) { const cid = contactIdOf(o); if (cid && !oppNameById.has(cid)) oppNameById.set(cid, contactNameOf(o)) }
+  // Name lookup for booked contacts: prefer the appointment's own contact name,
+  // then any opportunity in the wide window (not just the in-period cohort) so a
+  // lead booked this period whose opp was created earlier still resolves.
+  const apptNames = appts && appts.nameByContact instanceof Map ? appts.nameByContact : new Map()
+  const oppNameById = new Map(); for (const o of wideOpps) { const cid = contactIdOf(o); if (cid) { const nm = contactNameOf(o); if (nm && nm !== '—' && !oppNameById.has(cid)) oppNameById.set(cid, nm) } }
   // Friendly source label + kind from the first-touch UTMs. Paid channels map to
   // Paid Social / Paid Search; everything else reads from the utm source.
   const capFirst = (s) => { const t = String(s || '').trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t }
@@ -1560,7 +1569,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
       const isBooked = !!f.bookedInPeriod, isOcc = !!f.hasCallInPeriod, isShown = !!f.shownByStatus
       if (!isBooked && !isOcc && !isShown) continue
       if (isBooked) booked++; if (isOcc) occurred++; if (isShown) shown++
-      if (people.length < 100) people.push({ name: oppNameById.get(cid) || 'Lead', occurred: isOcc, shown: isShown })
+      if (people.length < 100) people.push({ name: apptNames.get(cid) || oppNameById.get(cid) || 'Lead', occurred: isOcc, shown: isShown })
     }
     return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, shown, people }
   }).filter((c) => c.booked || c.occurred || c.shown).sort((a, b) => b.booked - a.booked)

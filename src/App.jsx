@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.89.0'
+const APP_VERSION = '3.90.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2756,10 +2756,40 @@ function useCcDrill(clientId, range, nonce = 0) {
 const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—')
 const chLabel = (ch) => ch === 'meta' ? 'Meta' : ch === 'google' ? 'Google' : ch === 'other' ? 'Other' : ch
 
+// One lost opportunity — shows the lead's source trail (opportunity source, UTM
+// source, first-touch content) + any form answers, and expands on click to that
+// contact's Caalano Systems notes.
+function LostPersonRow({ p, clientId, money }) {
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const load = () => {
+    setLoading(true)
+    const q = new URLSearchParams({ scope: 'oppnotes', client: clientId })
+    if (p.contactId) q.set('contact', p.contactId)
+    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false))
+  }
+  const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && p.contactId) load() }
+  const hasSrc = p.oppSource || p.utmSource || p.utmContent || p.channelSource
+  return (
+    <div className={`cc-drill-row${p.contactId ? ' cc-click' : ''}`} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
+      <b>{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</b> <span className="cc-drill-ans">{p.stage || 'no stage'}{p.pipeline ? ` · ${p.pipeline}` : ''}{p.value ? ` · ${money(p.value)}` : ''}
+        {hasSrc ? <div className="cc-src-line">
+          {p.oppSource ? <span><b>Opp source:</b> {p.oppSource}</span> : null}
+          {p.channelSource ? <span><b>Channel:</b> {p.channelSource}</span> : null}
+          {p.utmSource ? <span><b>UTM source:</b> {p.utmSource}</span> : null}
+          {p.utmContent ? <span><b>UTM content:</b> {p.utmContent}</span> : null}
+        </div> : null}
+        {(p.formAnswers || []).length ? <div style={{ marginTop: 3 }}>{p.formAnswers.map((a, j) => <div key={j}><b>{a.q}:</b> {a.a}</div>)}</div> : <div style={{ marginTop: 3, opacity: .7 }}>No form answers captured.</div>}
+        {open ? <div className="lost-notes">{loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '4px 0 2px' }}>No notes on this contact in Caalano Systems.</div>}</div> : null}
+      </span>
+    </div>
+  )
+}
 // One reusable modal for every command-centre drill. `drill` = { kind, title }.
 // Reads the ccdrill payload and renders the right table; supports one level of
 // nested drill-in (calendar -> people, source -> opps, channel -> won deals).
-function CcDrillModal({ drill, cc, money, onClose }) {
+function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   const [sub, setSub] = useState(null)
   useEffect(() => { setSub(drill && drill.preselect ? drill.preselect : null) }, [drill])
   if (!drill) return null
@@ -2847,10 +2877,8 @@ function CcDrillModal({ drill, cc, money, onClose }) {
     if (sub) {
       const r = sub
       title = `Lost — ${r.reason}`
-      subhead = `${fmtNumber(r.count)} lost · ${money(r.value || 0)}`
-      body = (r.people || []).length ? (r.people || []).map((p, i) => <div key={i} className="cc-drill-row" style={{ cursor: 'default' }}>
-        <b>{p.name}</b> <span className="cc-drill-ans">{p.stage || 'no stage'}{p.pipeline ? ` · ${p.pipeline}` : ''}{p.value ? ` · ${money(p.value)}` : ''}
-          {(p.formAnswers || []).length ? <div style={{ marginTop: 3 }}>{p.formAnswers.map((a, j) => <div key={j}><b>{a.q}:</b> {a.a}</div>)}</div> : <div style={{ marginTop: 3, opacity: .7 }}>No form answers captured.</div>}</span></div>)
+      subhead = `${fmtNumber(r.count)} lost · ${money(r.value || 0)} · click a lead for their notes`
+      body = (r.people || []).length ? (r.people || []).map((p, i) => <LostPersonRow key={i} p={p} clientId={clientId} money={money} />)
         : <div className="cap">No people recorded for this reason.</div>
     } else {
       const reasons = d.lostByReason || []
@@ -3066,7 +3094,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
 
       <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only — clients may reply on channels outside Caalano Systems.</div>
 
-      {drill && cc && <CcDrillModal drill={drill} cc={cc} money={money} onClose={() => setDrill(null)} />}
+      {drill && cc && <CcDrillModal drill={drill} cc={cc} money={money} clientId={clientId} onClose={() => setDrill(null)} />}
     </div>
   )
 }

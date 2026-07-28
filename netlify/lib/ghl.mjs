@@ -1526,7 +1526,7 @@ export async function buildCcDrill(locationId, from, to) {
       let lr = lostByReason.get(rn); if (!lr) { lr = { reason: rn, count: 0, value: 0, people: [] }; lostByReason.set(rn, lr) }
       lr.count++; lr.value += val
       const cid = contactIdOf(o)
-      if (lr.people.length < 60) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), formAnswers: (cid && formAns.get(cid)) || [] })
+      if (lr.people.length < 60) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), oppSource: o.source || null, channelSource: label, utmSource: u.source || null, utmContent: u.content || null, formAnswers: (cid && formAns.get(cid)) || [] })
     } else {
       openCount++; openValueTotal += val
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)

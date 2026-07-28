@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.90.0 — 2026-07-28 · `PENDING`
+- **Lost reasons drill now shows each lead's source + opens to their notes.** In
+  the Caalano360 Lost reasons view, clicking a reason lists the people lost with
+  their **source trail** — opportunity source, channel, UTM source and first-touch
+  UTM content (whichever are available) — alongside their form answers. Click any
+  lead to expand their **Caalano Systems notes** inline. buildCcDrill now attaches
+  the source fields to each lost person.
+
 ## v3.89.0 — 2026-07-28 · `PENDING`
 - **Open-by-stage deals now show the assigned rep and open to their notes.** Each
   open deal in the bottleneck's Open pipeline by stage list gains an **Assigned**

@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1496,6 +1496,45 @@ export default async (req) => {
       const totalSpend = spendByChannel[channel] != null ? spendByChannel[channel] : metaSpend + googleSpend
       return json({ scope: 'users', client, period: { from, to, preset }, channel, totalSpend, metaSpend, googleSpend, ...perf }, 200, true)
     } catch (e) { return json({ scope: 'users', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
+  // Command Centre drill dataset — staff-only. Assembles every clickable
+  // command-centre tile's backing data (opps by source, revenue deals, open
+  // deals, lost-by-reason joined to form answers, per-calendar booking, per-
+  // channel close) from a single direct-GHL load, and grafts on the paid spend /
+  // CPL / CPA figures from the health feed so cost-per is paid-attributed, not
+  // spend ÷ all-CRM. Cached like scope=users. Partial + error string on failure.
+  if (url.searchParams.get('scope') === 'ccdrill') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'ccdrill', client, ghl: false })
+    if (me && me.role === 'viewer') return json({ scope: 'ccdrill', client, error: 'Staff only.' }, 403)
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'ccdrill', client, connected: false })
+    try {
+      const [drill, health] = await Promise.all([
+        buildCcDrill(cc.ghl, from, to),
+        buildHealth(cc, from, to, preset, key).catch(() => null),
+      ])
+      const chn = (health && health.channels) || {}
+      const metaSpend = num(chn.metaSpend), googleSpend = num(chn.googleSpend)
+      const metaLeads = num(chn.metaLeads), googleLeads = num(chn.googleConv)
+      const paidLeads = metaLeads + googleLeads, totalSpend = metaSpend + googleSpend
+      const wbc = drill.wonByChannel || {}
+      const r2 = (v) => Math.round(v * 100) / 100
+      const paid = {
+        metaLeads, googleLeads, paidLeads,
+        metaCpl: metaLeads ? r2(metaSpend / metaLeads) : null,
+        googleCpl: googleLeads ? r2(googleSpend / googleLeads) : null,
+        paidCpl: paidLeads ? r2(totalSpend / paidLeads) : null,
+        paidWon: wbc.paidWon || 0, metaWon: wbc.metaWon || 0, googleWon: wbc.googleWon || 0,
+        paidCpa: wbc.paidWon ? r2(totalSpend / wbc.paidWon) : null,
+        metaCpa: wbc.metaWon ? r2(metaSpend / wbc.metaWon) : null,
+        googleCpa: wbc.googleWon ? r2(googleSpend / wbc.googleWon) : null,
+      }
+      const { wonByChannel, connected, tz, ...rest } = drill
+      return json({ scope: 'ccdrill', client, period: { from, to, preset }, spend: { meta: metaSpend, google: googleSpend, total: totalSpend }, paid, ...rest }, 200, true)
+    } catch (e) {
+      return json({ scope: 'ccdrill', client, error: String(e.message || e).slice(0, 200), connected: true }, 200)
+    }
   }
 
   // Notes on a specific deal's contact, for the Users open-deal drill-down.

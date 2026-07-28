@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.83.0'
+const APP_VERSION = '3.84.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -285,9 +285,11 @@ function Delta({ cur, prev, goodWhenDown = false }) {
   const pct = pctChange(cur, prev); const up = pct >= 0; const good = goodWhenDown ? !up : up
   return <span className={`delta ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))}<span className="vs">vs prev</span></span>
 }
-function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat }) {
+function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat, onClick }) {
+  const clickable = typeof onClick === 'function'
   return (
-    <div className="card kpi">
+    <div className={`card kpi${clickable ? ' kpi-click' : ''}`} onClick={onClick} {...(clickable ? { role: 'button', tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } } : {})}>
+      {clickable ? <span className="kpi-go">›</span> : null}
       <div className="top"><span className="label">{label}</span>{tag && <span className={`tag ${tag.toLowerCase()}`}>{tag}</span>}</div>
       <div className="value">{value}</div>
       {flat ? <span className="flat">{flat}</span> : (cur != null && prev != null) ? <Delta cur={cur} prev={prev} goodWhenDown={goodWhenDown} /> : null}
@@ -2567,21 +2569,38 @@ function priorityActions(h, money, ca) {
 // Revenue bottleneck — the whole-account funnel (Leads → Qualified → Booked →
 // Shown → Won) with the step conversion rates, flagging the single biggest
 // drop-off as the bottleneck. Built from the health KPIs (no extra fetch).
-function BottleneckPanel({ kpis, money }) {
-  const raw = [
-    { label: 'Opportunities', v: kpis.leads },
-    { label: 'Booked', v: kpis.booked },
-    { label: 'Shown', v: kpis.shown },
-    { label: 'Won', v: kpis.won },
-  ].filter((s) => s.v != null)
+function BottleneckPanel({ kpis, money, clientId, cc, health, currency }) {
+  // Prefer the client's configured KEY EVENTS as the funnel (adapts per client);
+  // fall back to the default Leads -> Booked -> Shown -> Won. Stage reach comes
+  // from ccdrill's per-pipeline stage tallies; calendar events from its
+  // bookingByCalendar. Calendar show-rate is shown as separate bars below.
+  const pipes = (cc && cc.pipelinesFunnel) || []
+  const keList = clientId ? loadKeyEvents(clientId) : []
+  const rmap = reachedByStage(pipes)
+  const stagePos = stagePosMap(pipes)
+  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, cancelled: 0 }]))
+  const keRows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, kpis.won) : []
+  const usingKe = keRows.length > 0
+  const leadTotal = kpis.leads || rmap.total || 0
+  const raw = usingKe
+    ? [{ label: 'Leads', v: leadTotal }, ...keRows.map((r) => ({ label: r.label, v: r.count }))]
+    : [
+      { label: 'Opportunities', v: kpis.leads },
+      { label: 'Booked', v: kpis.booked },
+      { label: 'Shown', v: kpis.shown },
+      { label: 'Won', v: kpis.won },
+    ].filter((s) => s.v != null)
   if (raw.length < 2 || !raw[0].v) return null
   const top = raw[0].v || 1
   const rows = raw.map((s, i) => { const prev = i > 0 ? raw[i - 1].v : null; return { ...s, prev, conv: prev ? s.v / prev : null, drop: prev != null ? prev - s.v : 0 } })
   const cands = rows.filter((r) => r.conv != null && r.prev > 0)
   const worst = cands.length ? cands.reduce((a, b) => (b.conv < a.conv ? b : a)) : null
+  // Calendar show-rate bars — shown / occurred per calendar (separate from the
+  // funnel), so a booking key event's attendance is legible on its own.
+  const showCals = ((cc && cc.bookingByCalendar) || []).filter((c) => c.occurred > 0)
   return (
     <div className="card exec-bottleneck">
-      <div className="exec-panel-h">Revenue bottleneck {worst ? <span className="sub">· biggest drop-off: <b>{worst.prev != null ? rows[rows.indexOf(worst) - 1].label : ''} → {worst.label}</b> ({Math.round(worst.conv * 100)}% through, {fmtNumber(worst.drop)} lost)</span> : null}</div>
+      <div className="exec-panel-h">Revenue bottleneck {worst ? <span className="sub">· biggest drop-off: <b>{worst.prev != null ? rows[rows.indexOf(worst) - 1].label : ''} → {worst.label}</b> ({Math.round(worst.conv * 100)}% through, {fmtNumber(worst.drop)} lost)</span> : <span className="sub">· {usingKe ? 'your key events' : 'default funnel'}</span>}</div>
       <div className="bn-funnel">
         {rows.map((r, i) => {
           const isWorst = worst && r === worst
@@ -2595,7 +2614,20 @@ function BottleneckPanel({ kpis, money }) {
           )
         })}
       </div>
-      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost — the place a small improvement moves the most revenue.</p>
+      {showCals.length ? <div style={{ marginTop: 12 }}>
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 6 }}>Show rate by calendar</div>
+        <div className="bn-funnel">
+          {showCals.map((c, i) => { const sr = c.occurred ? c.shown / c.occurred : 0; return (
+            <div className="bn-row" key={i}>
+              <span className="bn-lab" title={c.calendar}>{c.calendar}</span>
+              <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, sr * 100)}%`, background: sr >= 0.6 ? '#12b886' : sr >= 0.4 ? 'var(--brand)' : '#d64545' }} /></span>
+              <span className="bn-count">{fmtNumber(c.shown)}/{fmtNumber(c.occurred)}</span>
+              <span className="bn-conv">{Math.round(sr * 100)}%</span>
+            </div>
+          ) })}
+        </div>
+      </div> : null}
+      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost — the place a small improvement moves the most revenue.{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}</p>
     </div>
   )
 }
@@ -2603,12 +2635,12 @@ function BottleneckPanel({ kpis, money }) {
 // Aggregates the per-user CRM feed (scope=users) into whole-account totals for
 // the command centre: open / lost counts + values and the merged lost-reason
 // breakdown (with names), which the health payload doesn't carry.
-function useCrmAgg(clientId, range, nonce) {
+function useCrmAgg(clientId, range, nonce, channel = 'all') {
   const [d, setD] = useState(null)
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true; setD(null)
-    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => r.json()).then((j) => {
         if (!alive) return
         const us = (j && j.users) || []
@@ -2623,15 +2655,154 @@ function useCrmAgg(clientId, range, nonce) {
         setD(a)
       }).catch(() => { if (alive) setD(null) })
     return () => { alive = false }
-  }, [clientId, q, nonce])
+  }, [clientId, q, nonce, channel])
   return d
 }
+// Command-centre drill dataset (scope=ccdrill) — backs every clickable tile.
+function useCcDrill(clientId, range, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true
+    setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
 const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—')
+const chLabel = (ch) => ch === 'meta' ? 'Meta' : ch === 'google' ? 'Google' : ch === 'other' ? 'Other' : ch
 
+// One reusable modal for every command-centre drill. `drill` = { kind, title }.
+// Reads the ccdrill payload and renders the right table; supports one level of
+// nested drill-in (calendar -> people, source -> opps, channel -> won deals).
+function CcDrillModal({ drill, cc, money, onClose }) {
+  const [sub, setSub] = useState(null)
+  useEffect(() => { setSub(drill && drill.preselect ? drill.preselect : null) }, [drill])
+  if (!drill) return null
+  const d = cc || {}
+  const spend = d.spend || {}, paid = d.paid || {}
+  let title = drill.title, subhead = null, body = null
+  if (drill.kind === 'booking') {
+    if (sub) {
+      const cal = sub
+      title = cal.calendar
+      subhead = `${fmtNumber(cal.booked)} booked · ${fmtNumber(cal.occurred)} occurred · ${fmtNumber(cal.shown)} shown`
+      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Contact</th><th>Occurred</th><th>Shown</th></tr></thead>
+        <tbody>{(cal.people || []).map((p, i) => <tr key={i}><td className="lft">{p.name}</td><td>{p.occurred ? '✓' : '—'}</td><td>{p.shown ? '✓' : '—'}</td></tr>)}</tbody></table>
+    } else {
+      const cals = d.bookingByCalendar || []
+      subhead = `${fmtNumber(cals.length)} ${cals.length === 1 ? 'calendar' : 'calendars'} · click a calendar for who booked in`
+      body = cals.length ? cals.map((c, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(c)}>
+        <b>{c.calendar}</b> <span className="cc-drill-ans">{fmtNumber(c.booked)} booked · {fmtNumber(c.occurred)} occurred · {fmtNumber(c.shown)} shown{c.occurred ? ` · ${pctOf(c.shown, c.occurred)} show rate` : ''}</span></button>)
+        : <div className="cap">No calendar bookings in this period.</div>
+    }
+  } else if (drill.kind === 'revenue') {
+    const deals = (d.revenue && d.revenue.deals) || []
+    subhead = `${fmtNumber(deals.length)} won ${deals.length === 1 ? 'deal' : 'deals'} · ${money((d.revenue && d.revenue.total) || 0)}`
+    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Closed</th><th>Channel</th></tr></thead>
+      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '—'}</td><td>{chLabel(dl.channel)}</td></tr>)}</tbody></table>
+      : <div className="cap">No won deals in this period.</div>
+  } else if (drill.kind === 'spend') {
+    subhead = `${money(spend.total || 0)} total ad spend`
+    body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Platform</th><th>Spend</th><th>Share</th></tr></thead>
+      <tbody>
+        <tr><td className="lft">Meta</td><td>{money(spend.meta || 0)}</td><td>{pctOf(spend.meta, spend.total)}</td></tr>
+        <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{pctOf(spend.google, spend.total)}</td></tr>
+      </tbody></table>
+  } else if (drill.kind === 'opps') {
+    if (sub) {
+      const s = sub
+      title = s.source
+      subhead = `${fmtNumber(s.count)} ${s.count === 1 ? 'opportunity' : 'opportunities'} · ${money(s.value)}`
+      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Contact</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th></tr></thead>
+        <tbody>{(s.opps || []).map((o, i) => <tr key={i}><td className="lft">{o.name}</td><td className="lft">{o.status}</td><td className="lft">{o.stage || '—'}</td><td>{money(o.value)}</td></tr>)}</tbody></table>
+    } else {
+      const src = d.oppsBySource || []
+      subhead = `${fmtNumber(src.reduce((a, s) => a + s.count, 0))} opportunities by source · click a source`
+      body = src.length ? src.map((s, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(s)}>
+        <b>{s.source}</b> <span className="cc-drill-ans">{fmtNumber(s.count)} {s.count === 1 ? 'opp' : 'opps'} · {money(s.value)} · {s.kind}</span></button>)
+        : <div className="cap">No opportunities in this period.</div>
+    }
+  } else if (drill.kind === 'cpl') {
+    subhead = `Paid-attributed · ${fmtNumber(paid.paidLeads || 0)} paid leads from ${money(spend.total || 0)} spend`
+    body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Leads</th><th>Cost / lead</th></tr></thead>
+      <tbody>
+        <tr><td className="lft">Meta</td><td>{money(spend.meta || 0)}</td><td>{fmtNumber(paid.metaLeads || 0)}</td><td>{paid.metaCpl != null ? money(paid.metaCpl) : '—'}</td></tr>
+        <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{fmtNumber(paid.googleLeads || 0)}</td><td>{paid.googleCpl != null ? money(paid.googleCpl) : '—'}</td></tr>
+        <tr><td className="lft"><b>Paid total</b></td><td>{money(spend.total || 0)}</td><td>{fmtNumber(paid.paidLeads || 0)}</td><td>{paid.paidCpl != null ? money(paid.paidCpl) : '—'}</td></tr>
+      </tbody></table>
+  } else if (drill.kind === 'cpwon') {
+    subhead = `Paid-attributed · ${fmtNumber(paid.paidWon || 0)} won from paid channels`
+    body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Won</th><th>Cost / won</th></tr></thead>
+      <tbody>
+        <tr><td className="lft">Meta</td><td>{money(spend.meta || 0)}</td><td>{fmtNumber(paid.metaWon || 0)}</td><td>{paid.metaCpa != null ? money(paid.metaCpa) : '—'}</td></tr>
+        <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{fmtNumber(paid.googleWon || 0)}</td><td>{paid.googleCpa != null ? money(paid.googleCpa) : '—'}</td></tr>
+        <tr><td className="lft"><b>Paid total</b></td><td>{money(spend.total || 0)}</td><td>{fmtNumber(paid.paidWon || 0)}</td><td>{paid.paidCpa != null ? money(paid.paidCpa) : '—'}</td></tr>
+      </tbody></table>
+  } else if (drill.kind === 'openvalue') {
+    const deals = (d.open && d.open.deals) || []
+    subhead = `${fmtNumber((d.open && d.open.total) || 0)} open · ${money((d.open && d.open.value) || 0)} in pipeline`
+    body = deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th className="lft">Stage</th><th className="lft">Pipeline</th><th>Age</th></tr></thead>
+      <tbody>{deals.map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td className="lft">{dl.stage || '—'}</td><td className="lft">{dl.pipeline}</td><td>{dl.ageDays != null ? `${dl.ageDays}d` : '—'}</td></tr>)}</tbody></table></div>
+      : <div className="cap">No open deals in this period.</div>
+  } else if (drill.kind === 'close') {
+    if (sub) {
+      const c = sub
+      title = `${chLabel(c.channel)} — won deals`
+      subhead = `${fmtNumber(c.won)} won of ${fmtNumber(c.closed)} closed · ${c.closeRate != null ? c.closeRate + '%' : '—'} close rate`
+      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Closed</th></tr></thead>
+        <tbody>{(c.deals || []).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '—'}</td></tr>)}</tbody></table>
+    } else {
+      const chans = d.closeByChannel || []
+      subhead = 'Close rate by channel · click a channel for its won deals'
+      body = chans.length ? chans.map((c, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(c)}>
+        <b>{chLabel(c.channel)}</b> <span className="cc-drill-ans">{fmtNumber(c.won)} won / {fmtNumber(c.closed)} closed · <b>{c.closeRate != null ? c.closeRate + '%' : '—'}</b> close rate</span></button>)
+        : <div className="cap">No closed deals in this period.</div>
+    }
+  } else if (drill.kind === 'lost') {
+    if (sub) {
+      const r = sub
+      title = `Lost — ${r.reason}`
+      subhead = `${fmtNumber(r.count)} lost · ${money(r.value || 0)}`
+      body = (r.people || []).length ? (r.people || []).map((p, i) => <div key={i} className="cc-drill-row" style={{ cursor: 'default' }}>
+        <b>{p.name}</b> <span className="cc-drill-ans">{p.stage || 'no stage'}{p.pipeline ? ` · ${p.pipeline}` : ''}{p.value ? ` · ${money(p.value)}` : ''}
+          {(p.formAnswers || []).length ? <div style={{ marginTop: 3 }}>{p.formAnswers.map((a, j) => <div key={j}><b>{a.q}:</b> {a.a}</div>)}</div> : <div style={{ marginTop: 3, opacity: .7 }}>No form answers captured.</div>}</span></div>)
+        : <div className="cap">No people recorded for this reason.</div>
+    } else {
+      const reasons = d.lostByReason || []
+      subhead = `${fmtNumber(reasons.reduce((a, r) => a + r.count, 0))} lost · click a reason for who + what they typed`
+      body = reasons.length ? reasons.map((r, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(r)}>
+        <b>{r.reason}</b> <span className="cc-drill-ans">{fmtNumber(r.count)} lost{r.value ? ` · ${money(r.value)}` : ''}</span></button>)
+        : <div className="cap">No lost opportunities recorded this period.</div>
+    }
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 780 }}>
+        <div className="m-head"><div><h3 style={{ margin: 0 }}>{title}</h3>{subhead ? <span className="cap">{subhead}</span> : null}</div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-body">
+          {sub ? <button className="cc-back" onClick={() => setSub(null)}>← Back</button> : null}
+          {body}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const CC_CHANS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['google', 'Google'], ['meta', 'Meta']]
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser }) {
   const [reload, setReload] = useState(0)
+  const [chan, setChan] = useState('all')
+  useEffect(() => { setChan('all') }, [clientId])
   const health = useHealth(clientId, range, nonce, reload)
-  const crmAgg = useCrmAgg(clientId, range, nonce)
+  const crmAgg = useCrmAgg(clientId, range, nonce, chan)
+  const ccDrill = useCcDrill(clientId, range, nonce)
+  const cc = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
+  const [drill, setDrill] = useState(null)
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
   const [aiLoading, setAiLoading] = useState(false)
@@ -2684,52 +2855,74 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       {/* Command centre — all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         const ca = crmAgg || {}
+        // Channel toggle: CRM-count tiles reflect the selected channel via the
+        // channel-scoped scope=users feed (crmAgg). Spend / booked / shown / rate
+        // tiles stay account-wide (health has no channel split) — noted below.
+        const chActive = chan !== 'all'
+        const oppsV = chActive ? (ca.opps != null ? ca.opps : null) : k.leads
+        const wonV = chActive ? (ca.won != null ? ca.won : null) : k.won
+        const revV = chActive ? (ca.revenue != null ? ca.revenue : null) : k.revenue
+        const avgV = chActive ? (wonV ? Math.round((revV || 0) / wonV) : null) : k.avgDeal
+        const openValV = chActive ? (ca.openValue != null ? ca.openValue : null) : (k.openValue != null ? k.openValue : ca.openValue)
         const roas = (k.adSpend && k.revenue) ? k.revenue / k.adSpend : null
         const lost = ca.lost != null ? ca.lost : null
         const cpl2 = pv.leads && pv.adSpend ? Math.round(pv.adSpend / pv.leads) : null
+        // Paid-attributed cost figures (spend ÷ paid-channel leads / wons) from
+        // the ccdrill feed — replaces spend ÷ ALL-CRM which over-counts.
+        const p = (cc && cc.paid) || {}
+        const paidCpl = p.paidCpl != null ? Math.round(p.paidCpl) : null
+        const paidCpa = p.paidCpa != null ? Math.round(p.paidCpa) : null
+        const tileClick = (drill2) => (cc ? () => setDrill(drill2) : undefined)
         return <div className="exec-cc">
-          <div className="exec-panel-h">Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}</span></div>
+          <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
+            <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
+          </div>
           <div className="cc-group-lab x-internal">Spend &amp; efficiency</div>
           <div className="scorecard exec-kpis x-internal">
-            <Kpi label="Total ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown />
-            <Kpi label="Cost / lead" value={k.cpl != null ? money(k.cpl) : '—'} cur={k.cpl} prev={cpl2} goodWhenDown />
+            <Kpi label="Total ad spend" value={k.adSpend != null ? money(k.adSpend) : '—'} cur={k.adSpend} prev={pv.adSpend} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Total ad spend' })} />
+            <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : (k.cpl != null ? money(k.cpl) : '—')} cur={paidCpl != null ? paidCpl : k.cpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead — paid attributed' })} />
             <Kpi label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} cur={k.cpBooked} goodWhenDown />
-            <Kpi label="Cost / won" value={k.cpWon != null ? money(k.cpWon) : '—'} cur={k.cpWon} goodWhenDown />
+            <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : (k.cpWon != null ? money(k.cpWon) : '—')} cur={paidCpa != null ? paidCpa : k.cpWon} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won — paid attributed' })} />
             <Kpi label="ROAS" value={roas != null ? `${roas.toFixed(2)}x` : '—'} cur={roas} />
           </div>
-          <div className="cc-group-lab">Pipeline &amp; revenue</div>
+          <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
           <div className="scorecard exec-kpis">
-            <Kpi label="Opportunities" value={k.leads != null ? fmtNumber(k.leads) : '—'} cur={k.leads} prev={pv.leads} />
-            <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={k.booked} prev={pv.booked} />
-            <Kpi label="Won" value={k.won != null ? fmtNumber(k.won) : '—'} cur={k.won} prev={pv.won} />
-            <Kpi label="Revenue" value={k.revenue != null ? money(k.revenue) : '—'} cur={k.revenue} prev={pv.revenue} />
-            <Kpi label="Avg deal value" value={k.avgDeal != null ? money(k.avgDeal) : '—'} cur={k.avgDeal} />
-            <Kpi label="Open now" value={ca.open != null ? fmtNumber(ca.open) : '—'} cur={ca.open} />
-            <Kpi label="Open value" value={k.openValue != null ? money(k.openValue) : (ca.openValue != null ? money(ca.openValue) : '—')} cur={k.openValue} />
-            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} cur={lost} goodWhenDown />
-            <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} cur={ca.lostValue} goodWhenDown />
+            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} cur={chActive ? null : oppsV} prev={chActive ? null : pv.leads} onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
+            <Kpi label="Booked" value={k.booked != null ? fmtNumber(k.booked) : '—'} cur={chActive ? null : k.booked} prev={chActive ? null : pv.booked} />
+            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} cur={chActive ? null : wonV} prev={chActive ? null : pv.won} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
+            <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} cur={chActive ? null : revV} prev={chActive ? null : pv.revenue} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
+            <Kpi label="Avg deal value" value={avgV != null ? money(avgV) : '—'} cur={chActive ? null : avgV} />
+            <Kpi label="Open now" value={ca.open != null ? fmtNumber(ca.open) : '—'} cur={ca.open} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+            <Kpi label="Open value" value={openValV != null ? money(openValV) : '—'} cur={chActive ? null : k.openValue} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} cur={lost} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
+            <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} cur={ca.lostValue} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
           </div>
-          <div className="cc-group-lab">Rates</div>
+          <div className="cc-group-lab">Rates{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · account-wide (no channel split)</span> : null}</div>
           <div className="scorecard exec-kpis">
-            <Kpi label="Booking rate" value={pctOf(k.booked, k.leads)} />
-            <Kpi label="Show rate" value={pctOf(k.shown, k.booked)} />
-            <Kpi label="Shown" value={k.shown != null ? fmtNumber(k.shown) : '—'} cur={k.shown} prev={pv.shown} />
+            <Kpi label="Booking rate" value={pctOf(k.booked, k.leads)} onClick={tileClick({ kind: 'booking', title: 'Booking rate — by calendar' })} />
+            <Kpi label="Show rate" value={pctOf(k.shown, k.booked)} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
+            <Kpi label="Shown" value={k.shown != null ? fmtNumber(k.shown) : '—'} cur={chActive ? null : k.shown} prev={chActive ? null : pv.shown} />
             <Kpi label="Conversion rate" value={pctOf(k.won, k.leads)} />
-            <Kpi label="Close rate" value={lost != null ? pctOf(k.won, (k.won || 0) + lost) : '—'} />
+            <Kpi label="Close rate" value={lost != null ? pctOf(k.won, (k.won || 0) + lost) : '—'} onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
           </div>
         </div>
       })()}
 
-      {/* Revenue bottleneck funnel */}
-      <BottleneckPanel kpis={k} money={money} />
+      {/* Revenue bottleneck funnel — client key events + calendar show-rate */}
+      <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} />
 
-      {/* Lost reasons — full width so the table never needs to scroll sideways */}
+      {/* Lost reasons — full width so the table never needs to scroll sideways.
+          Rows are clickable → the per-reason people + their form answers. */}
       <div className="card">
-        <div className="exec-panel-h">Lost reasons {crmAgg && crmAgg.lost ? <span className="sub">· {fmtNumber(crmAgg.lost)} lost{crmAgg.lostValue ? `, ${money(crmAgg.lostValue)}` : ''}</span> : null}</div>
+        <div className="exec-panel-h">Lost reasons {crmAgg && crmAgg.lost ? <span className="sub">· {fmtNumber(crmAgg.lost)} lost{crmAgg.lostValue ? `, ${money(crmAgg.lostValue)}` : ''}{cc ? ' · click a reason for who + what they typed' : ''}</span> : null}</div>
         {!crmAgg ? <Spinner label="" />
           : !(crmAgg.lostReasons && crmAgg.lostReasons.length) ? <div className="cap">No lost opportunities recorded this period. ✅</div>
             : <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
-              <tbody>{crmAgg.lostReasons.slice(0, 12).map((r, i) => <tr key={i}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '—'}</td><td>{pctOf(r.count, crmAgg.lost)}</td></tr>)}</tbody></table>}
+              <tbody>{crmAgg.lostReasons.slice(0, 12).map((r, i) => {
+                const ccReason = cc && (cc.lostByReason || []).find((x) => x.reason === r.reason)
+                return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '—'}</td><td>{pctOf(r.count, crmAgg.lost)}</td></tr>
+              })}</tbody></table>}
       </div>
 
       {/* Channel split (spend is internal — hidden in present mode) */}
@@ -2766,6 +2959,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
 
       <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only — clients may reply on channels outside Caalano Systems.</div>
+
+      {drill && cc && <CcDrillModal drill={drill} cc={cc} money={money} onClose={() => setDrill(null)} />}
     </div>
   )
 }

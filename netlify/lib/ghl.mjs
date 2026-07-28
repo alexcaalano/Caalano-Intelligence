@@ -1396,6 +1396,172 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   }
 }
 
+// Per-contact form answers for a location in [from,to]: contactId -> [{q,a}].
+// Reuses buildForms's submission -> answer parsing (custom-field labels, Meta
+// Lead Form customFields arrays, nested answer containers) but returns just the
+// raw answers so the Command Centre lost-reason drill can join a lost contact to
+// what they typed (e.g. a "location" loss shows the suburb they gave). Kept
+// standalone so buildForms stays untouched.
+async function formAnswersByContact(locTok, locationId, from, to) {
+  const cfById = {}
+  await ghlGet(locTok, `/locations/${locationId}/customFields`, {})
+    .then((j) => { for (const f of (j.customFields || j.customField || [])) { if (f.id) cfById[f.id] = f.name; if (f.fieldKey) cfById[f.fieldKey] = f.name } })
+    .catch(() => {})
+  const labelKey = (k) => cfById[k] || cfById[k.replace(/^contact\./, '')] || k.replace(/^contact\./, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  const subs = []
+  try {
+    for (let page = 1; page <= 10; page++) {
+      const j = await ghlGet(locTok, '/forms/submissions', { locationId, limit: 100, page, startAt: from, endAt: to })
+      const arr = j.submissions || []; subs.push(...arr)
+      if (arr.length < 100) break
+    }
+  } catch { return new Map() }
+  const subMs = (s) => { const raw = s.createdAt || s.dateAdded || s.submittedAt || s.date; const t = typeof raw === 'number' ? raw : Date.parse(raw || ''); return Number.isFinite(t) ? t : Infinity }
+  subs.sort((a, b) => subMs(a) - subMs(b))
+  const SYS_KEY = /^(formId|location_?id|sessionId|submissionId|timezone|calendar|selected_|source$|^type$|productType|facebookLead|facebookForm|postal_?code|message|additional|comment|first_?name|last_?name|full_?name|^name$|email|phone|signature|^ip$|contact_?id|funnel|page|utm|fbclid|gclid|why do you|how did you hear|organization)/i
+  const out = new Map()
+  for (const s of subs) {
+    const cid = s.contactId; if (!cid || out.has(cid)) continue
+    const o = s.others || {}
+    const answers = []
+    const put = (k, v) => {
+      if (!k || SYS_KEY.test(k)) return
+      let str = null
+      if (Array.isArray(v)) str = v.filter((x) => typeof x === 'string' || typeof x === 'number').map(String).join(', ')
+      else if (typeof v === 'number' && Number.isFinite(v)) str = String(v)
+      else if (typeof v === 'string') str = v.trim()
+      if (!str || str.length > 200) return
+      answers.push({ q: labelKey(k), a: str })
+    }
+    for (const [k, v] of Object.entries(o)) {
+      if (Array.isArray(v)) {
+        if (/^(customFields|custom_fields|customData|fields)$/i.test(k)) { for (const el of v) { if (el && typeof el === 'object') put(el.id || el.key || el.fieldKey || el.name, el.value !== undefined ? el.value : (el.field_value !== undefined ? el.field_value : el.fieldValue)) } }
+        else put(k, v)
+        continue
+      }
+      if (v && typeof v === 'object') { if (/^(customData|formData|form_data|answers|fields|data)$/i.test(k)) for (const [k2, v2] of Object.entries(v)) put(k2, v2); continue }
+      put(k, v)
+    }
+    if (answers.length) out.set(cid, answers.slice(0, 12))
+  }
+  return out
+}
+
+// Command Centre drill dataset — assembles, from a single load of the client's
+// opportunities + pipelines + calendar appointments + form answers, the tables
+// behind every clickable command-centre tile: opportunities by source, won
+// revenue deals, open deals, lost-by-reason (joined to form answers), per-
+// calendar booking/show, and per-channel close rate. Spend / paid-lead figures
+// are added by the caller (windsor) from the health feed. Each opp is classified
+// to a paid channel via channelOf(utmOf()) with a friendly source label.
+export async function buildCcDrill(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const DAY = 86400000
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  const [wideOpps, pipelines, appts, reasons, formAns] = await Promise.all([
+    allOpportunities(locTok, locationId, wideFrom, to, 2000),
+    fetchPipelines(locTok, locationId),
+    fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), perCalendar: new Map() })),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+    formAnswersByContact(locTok, locationId, from, to).catch(() => new Map()),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
+  const nowMs = Date.now()
+  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
+  const opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  const oppNameById = new Map(); for (const o of opps) { const cid = contactIdOf(o); if (cid && !oppNameById.has(cid)) oppNameById.set(cid, contactNameOf(o)) }
+  // Friendly source label + kind from the first-touch UTMs. Paid channels map to
+  // Paid Social / Paid Search; everything else reads from the utm source.
+  const capFirst = (s) => { const t = String(s || '').trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t }
+  const sourceLabel = (u, ch) => {
+    if (ch === 'meta') return 'Paid Social'
+    if (ch === 'google') return 'Paid Search'
+    const hay = `${u.source || ''} ${u.medium || ''}`.toLowerCase()
+    if (/referr/.test(hay)) return 'Referral'
+    if (/organic|seo|search/.test(hay)) return 'Organic'
+    if (!hay.trim() || /direct|typein|\bnone\b/.test(hay)) return 'Direct'
+    return u.source ? capFirst(u.source).slice(0, 40) : 'Other'
+  }
+  const kindOf = (ch, label) => (ch === 'meta' || ch === 'google') ? 'paid' : (label === 'Referral' || label === 'Organic' || label === 'Direct') ? 'organic' : 'other'
+  const bySource = new Map()
+  const wonDeals = [], openDeals = []
+  const lostByReason = new Map()
+  const closeByChannel = new Map()
+  let revenueTotal = 0, openValueTotal = 0, openCount = 0
+  let paidWon = 0, metaWon = 0, googleWon = 0
+  const stageAt = new Map() // pipelineId -> Map(stageId -> count), for the key-events funnel
+  for (const o of opps) {
+    const st = String(o.status || '').toLowerCase()
+    const val = num(o.monetaryValue)
+    const u = utmOf(o); const ch = channelOf(u)
+    const label = sourceLabel(u, ch); const kind = kindOf(ch, label)
+    const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null
+    const name = contactNameOf(o)
+    if (o.pipelineId && o.pipelineStageId) { let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1) }
+    const isWon = st === 'won', isLost = st === 'lost' || st === 'abandoned'
+    let bs = bySource.get(label); if (!bs) { bs = { source: label, channel: ch, kind, count: 0, value: 0, opps: [] }; bySource.set(label, bs) }
+    bs.count++; bs.value += val
+    if (bs.opps.length < 100) bs.opps.push({ name, status: isWon ? 'won' : isLost ? 'lost' : 'open', stage: stg ? stg.name : null, value: Math.round(val), channel: ch })
+    let cc = closeByChannel.get(ch); if (!cc) { cc = { channel: ch, won: 0, lost: 0, deals: [] }; closeByChannel.set(ch, cc) }
+    if (isWon) {
+      revenueTotal += val
+      if (ch === 'meta') { metaWon++; paidWon++ } else if (ch === 'google') { googleWon++; paidWon++ }
+      const closeMs = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)
+      const closeDate = isFinite(closeMs) ? new Date(closeMs).toISOString().slice(0, 10) : null
+      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, channel: ch })
+      cc.won++; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })
+    } else if (isLost) {
+      cc.lost++
+      const rn = lostReasonOf(o)
+      let lr = lostByReason.get(rn); if (!lr) { lr = { reason: rn, count: 0, value: 0, people: [] }; lostByReason.set(rn, lr) }
+      lr.count++; lr.value += val
+      const cid = contactIdOf(o)
+      if (lr.people.length < 60) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), formAnswers: (cid && formAns.get(cid)) || [] })
+    } else {
+      openCount++; openValueTotal += val
+      const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
+      if (openDeals.length < 150) openDeals.push({ name, value: Math.round(val), stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || 'Pipeline', ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null })
+    }
+  }
+  const perCal = appts && appts.perCalendar instanceof Map ? appts.perCalendar : new Map()
+  const bookingByCalendar = [...perCal.values()].map((rec) => {
+    let booked = 0, occurred = 0, shown = 0; const people = []
+    for (const [cid, f] of rec.byContact) {
+      const isBooked = !!f.bookedInPeriod, isOcc = !!f.hasCallInPeriod, isShown = !!f.shownByStatus
+      if (!isBooked && !isOcc && !isShown) continue
+      if (isBooked) booked++; if (isOcc) occurred++; if (isShown) shown++
+      if (people.length < 100) people.push({ name: oppNameById.get(cid) || 'Lead', occurred: isOcc, shown: isShown })
+    }
+    return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, shown, people }
+  }).filter((c) => c.booked || c.occurred || c.shown).sort((a, b) => b.booked - a.booked)
+  const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
+  openDeals.sort((a, b) => b.value - a.value)
+  // Per-pipeline stage AT-counts (funnel order) so the frontend key-events
+  // funnel can compute cumulative reach via reachedByStage().
+  const pipelinesFunnel = pipelines.map((p) => {
+    const pi = idx.get(p.id); const sm = stageAt.get(p.id) || new Map()
+    const stages = (pi ? pi.stages : []).map((s) => ({ id: s.id, name: s.name, pos: s.pos, count: sm.get(s.id) || 0 }))
+    return { id: p.id, name: p.name, stages }
+  }).filter((p) => p.stages.some((s) => s.count > 0))
+  return {
+    connected: true, tz,
+    oppsBySource: [...bySource.values()].map((s) => ({ ...s, value: Math.round(s.value) })).sort((a, b) => b.count - a.count),
+    revenue: { total: Math.round(revenueTotal), deals: wonDeals },
+    open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },
+    lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),
+    bookingByCalendar,
+    closeByChannel: closeArr,
+    pipelinesFunnel,
+    wonByChannel: { paidWon, metaWon, googleWon },
+  }
+}
+
 // Per-creative CRM performance for the Creative Cockpit: group every
 // opportunity by the creative that brought it in (first-touch utm_content) and
 // compute the real funnel — leads, qualified, booked, won, revenue — so each ad

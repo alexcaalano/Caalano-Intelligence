@@ -17,6 +17,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.84.0 — 2026-07-28 · `PENDING`
+- **Command Centre — clickable drill-downs, accuracy fixes, channel filter, key-events funnel.**
+  - Every metric tile is now clickable: Booking/Show rate → calendars → the people
+    who booked; Revenue/Won → the won deals; Ad spend → platform split;
+    Opportunities → by source (Paid Social / Paid Search / Organic / …) → the opps;
+    Open value → open deals + stage + age; Close rate → per channel → won deals;
+    Lost / Lost value → per reason → the people, their pipeline stage **and their
+    form answers** (so a "location" loss shows what they typed). Lost-reason rows
+    are clickable too.
+  - **Accuracy fix:** Cost / lead and Cost / won now use **paid-attributed** spend
+    ÷ paid leads / wons (relabelled "(paid)"), with the Meta vs Google split in the
+    drill — instead of dividing by all CRM opportunities. These read higher and
+    truer. (Still hidden in present mode.)
+  - **Channel filter** (All / Paid / Non-paid / Google / Meta) at the top; CRM tiles
+    re-pivot by channel, account-wide-only tiles are labelled as such.
+  - **Revenue bottleneck** now uses the client's **Key Events** funnel with a
+    separate **calendar Show-Rate** bar; falls back to Leads→Booked→Shown→Won when
+    no key events are configured.
+  - Backend: new `scope=ccdrill` (buildCcDrill) assembles the drill dataset in one
+    load; a standalone form-answers helper joins lost contacts to their submissions.
+
 ## v3.83.0 — 2026-07-28 · `PENDING`
 - **Appointments — status breakdown + reporting-gap detection.** New status row:
   Booked · Occurred · Resulted · Shown · Show rate, where "Resulted" means the

@@ -1491,6 +1491,7 @@ export async function buildCcDrill(locationId, from, to) {
   const kindOf = (ch, label) => (ch === 'meta' || ch === 'google') ? 'paid' : (label === 'Referral' || label === 'Organic' || label === 'Direct') ? 'organic' : 'other'
   const bySource = new Map()
   const wonDeals = [], openDeals = []
+  const openByStage = new Map() // pipelineId::stageId -> open deals currently sitting there
   const lostByReason = new Map()
   const closeByChannel = new Map()
   let revenueTotal = 0, openValueTotal = 0, openCount = 0
@@ -1526,7 +1527,17 @@ export async function buildCcDrill(locationId, from, to) {
     } else {
       openCount++; openValueTotal += val
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
-      if (openDeals.length < 150) openDeals.push({ name, value: Math.round(val), stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || 'Pipeline', ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null })
+      const ageDays = isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null
+      if (openDeals.length < 150) openDeals.push({ name, value: Math.round(val), stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || 'Pipeline', source: label, channel: ch, ageDays })
+      // Open deals grouped by their CURRENT stage — the "who's sitting where, still
+      // in play" view. Full counts/values; a generous per-stage people cap.
+      if (o.pipelineId && o.pipelineStageId) {
+        const key = o.pipelineId + '::' + o.pipelineStageId
+        let g = openByStage.get(key)
+        if (!g) { g = { key, stage: stg ? stg.name : 'Stage', stageId: o.pipelineStageId, pipeline: pipeName[o.pipelineId] || 'Pipeline', pipelineId: o.pipelineId, pos: stg ? stg.pos : 999, count: 0, value: 0, deals: [] }; openByStage.set(key, g) }
+        g.count++; g.value += val
+        if (g.deals.length < 200) g.deals.push({ name, value: Math.round(val), source: label, channel: ch, ageDays })
+      }
     }
   }
   const perCal = appts && appts.perCalendar instanceof Map ? appts.perCalendar : new Map()
@@ -1554,6 +1565,7 @@ export async function buildCcDrill(locationId, from, to) {
     oppsBySource: [...bySource.values()].map((s) => ({ ...s, value: Math.round(s.value) })).sort((a, b) => b.count - a.count),
     revenue: { total: Math.round(revenueTotal), deals: wonDeals },
     open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },
+    openByStage: [...openByStage.values()].map((g) => ({ key: g.key, stage: g.stage, stageId: g.stageId, pipeline: g.pipeline, pipelineId: g.pipelineId, pos: g.pos, count: g.count, value: Math.round(g.value), deals: g.deals.sort((a, b) => b.value - a.value) })).sort((a, b) => a.pos - b.pos),
     lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),
     bookingByCalendar,
     closeByChannel: closeArr,

@@ -1537,6 +1537,30 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .bn-worst .bn-lab, .bn-worst .bn-conv { color: #d64545; font-weight: 700; }
 @media (max-width: 640px) { .bn-row { grid-template-columns: 64px 1fr 48px 40px; gap: 7px; } }
 
+/* Paid-channel funnel view: adds Cost per stage + next-step conversion columns. */
+.bn-row.bn-row-paid, .bn-paid .bn-row.bn-head { grid-template-columns: 92px 1fr 50px 44px 66px 54px; }
+.bn-cost { font-size: 12.5px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.bn-next { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.bn-row.bn-head { align-items: end; }
+.bn-head .bn-count, .bn-head .bn-conv, .bn-head .bn-cost, .bn-head .bn-next { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+@media (max-width: 640px) { .bn-row.bn-row-paid, .bn-paid .bn-row.bn-head { grid-template-columns: 70px 1fr 40px 34px 52px 42px; gap: 6px; } }
+
+/* Open pipeline by stage — clickable accordion of who's still in play. */
+.bn-open { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.bn-open-h { font-size: 12.5px; font-weight: 700; margin-bottom: 8px; }
+.bn-open-item { margin-bottom: 6px; }
+.bn-open-row { width: 100%; display: grid; grid-template-columns: 1fr auto 20px; align-items: center; gap: 10px; padding: 9px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 9px; cursor: pointer; text-align: left; font: inherit; transition: border-color .15s, background .15s; }
+.bn-open-row:hover { border-color: var(--brand); }
+.bn-open-row.on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 6%, var(--card)); }
+.bn-open-stage { font-size: 13px; font-weight: 700; }
+.bn-open-pipe { font-weight: 500; color: var(--muted); font-size: 12px; }
+.bn-open-meta { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bn-open-meta b { color: var(--text); }
+.bn-open-caret { text-align: center; color: var(--muted); font-size: 13px; }
+.bn-open-deals { padding: 6px 2px 4px; }
+.bn-src { display: inline-flex; align-items: center; gap: 6px; }
+.bn-src i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+
 /* Full-height map for the dedicated Location tab */
 .lead-map-tall { height: 70vh; min-height: 520px; }
 @media (max-width: 640px) { .lead-map-tall { height: 62vh; min-height: 420px; } }

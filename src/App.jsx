@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.87.0'
+const APP_VERSION = '3.88.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2566,24 +2566,33 @@ function priorityActions(h, money, ca) {
   return out.sort((a, b) => rank[a.sev] - rank[b.sev]).slice(0, 6)
 }
 
-// Revenue bottleneck — the whole-account funnel (Leads → Qualified → Booked →
-// Shown → Won) with the step conversion rates, flagging the single biggest
-// drop-off as the bottleneck. Built from the health KPIs (no extra fetch).
-function BottleneckPanel({ kpis, money, clientId, cc, health, currency }) {
-  // Prefer the client's configured KEY EVENTS as the funnel (adapts per client);
-  // fall back to the default Leads -> Booked -> Shown -> Won. Stage reach comes
-  // from ccdrill's per-pipeline stage tallies; calendar events from its
-  // bookingByCalendar. Calendar show-rate is shown as separate bars below.
+// Build a client's key-event funnel rows from the ccdrill payload. Shared by the
+// Revenue-bottleneck panel and the command-centre Rates tiles so both read the
+// exact same numbers. Returns { rows, leadTotal, usingKe }.
+function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const pipes = (cc && cc.pipelinesFunnel) || []
   const keList = clientId ? loadKeyEvents(clientId) : []
   const rmap = reachedByStage(pipes)
   const stagePos = stagePosMap(pipes)
   const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, cancelled: 0 }]))
-  const keRows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, kpis.won) : []
-  const usingKe = keRows.length > 0
-  const leadTotal = kpis.leads || rmap.total || 0
+  const rows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, wonTotal) : []
+  const leadTotal = leadsFallback || rmap.total || 0
+  return { rows, leadTotal, usingKe: rows.length > 0 }
+}
+const sourceDotChan = (ch) => ch === 'meta' ? '#4f7cff' : ch === 'google' ? '#12b886' : ch === 'other' ? '#e8a13a' : '#9aa1ac'
+
+// Revenue bottleneck — the whole-account key-event funnel with step conversions,
+// flagging the biggest drop-off, plus a clickable "open pipeline by stage" list
+// (who's still in play, and where they came from). In a paid channel view it also
+// shows cost per stage and the next-step conversion. Calendar show-rate lives in
+// its own card below. Built from the ccdrill payload (no extra fetch).
+function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = 'all', stageSpend = 0 }) {
+  const [openStage, setOpenStage] = useState(null)
+  const kef = ccKeyEventFunnel(cc, clientId, kpis.won, kpis.leads)
+  const usingKe = kef.usingKe
+  const leadTotal = kef.leadTotal
   const raw = usingKe
-    ? [{ label: 'Leads', v: leadTotal }, ...keRows.map((r) => ({ label: r.label, v: r.count }))]
+    ? [{ label: 'Leads', v: leadTotal }, ...kef.rows.map((r) => ({ label: r.label, v: r.count }))]
     : [
       { label: 'Opportunities', v: kpis.leads },
       { label: 'Booked', v: kpis.booked },
@@ -2593,42 +2602,88 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency }) {
   if (raw.length < 2 || !raw[0].v) return null
   const top = raw[0].v || 1
   const rows = raw.map((s, i) => { const prev = i > 0 ? raw[i - 1].v : null; return { ...s, prev, conv: prev ? s.v / prev : null, drop: prev != null ? prev - s.v : 0 } })
+  rows.forEach((r, i) => { r.next = (i < rows.length - 1 && r.v) ? rows[i + 1].v / r.v : null })
   const cands = rows.filter((r) => r.conv != null && r.prev > 0)
   const worst = cands.length ? cands.reduce((a, b) => (b.conv < a.conv ? b : a)) : null
-  // Calendar show-rate bars — shown / occurred per calendar (separate from the
-  // funnel), so a booking key event's attendance is legible on its own.
+  // Paid channel view → show cost per stage + forward (next-step) conversion.
+  const paidMode = (chan === 'paid' || chan === 'meta' || chan === 'google') && stageSpend > 0
+  const chanLbl = chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : 'paid'
+  // Calendar show-rate bars — shown / occurred per calendar (own card).
   const showCals = ((cc && cc.bookingByCalendar) || []).filter((c) => c.occurred > 0)
+  // Open pipeline by stage — who's still in play, and where they came from.
+  const openStages = (cc && cc.openByStage) || []
+  const totOpen = openStages.reduce((a, s) => a + s.count, 0)
+  const totOpenVal = openStages.reduce((a, s) => a + s.value, 0)
+  const multiPipe = new Set(openStages.map((s) => s.pipeline)).size > 1
   return (
+    <>
     <div className="card exec-bottleneck">
-      <div className="exec-panel-h">Revenue bottleneck {worst ? <span className="sub">· biggest drop-off: <b>{worst.prev != null ? rows[rows.indexOf(worst) - 1].label : ''} → {worst.label}</b> ({Math.round(worst.conv * 100)}% through, {fmtNumber(worst.drop)} lost)</span> : <span className="sub">· {usingKe ? 'your key events' : 'default funnel'}</span>}</div>
-      <div className="bn-funnel">
+      <div className="exec-panel-h">Revenue bottleneck {worst ? <span className="sub">· biggest drop-off: <b>{worst.prev != null ? rows[rows.indexOf(worst) - 1].label : ''} → {worst.label}</b> ({Math.round(worst.conv * 100)}% through, {fmtNumber(worst.drop)} lost)</span> : <span className="sub">· {usingKe ? 'your key events' : 'default funnel'}</span>}{paidMode ? <span className="sub"> · {chanLbl} cost view</span> : null}</div>
+      <div className={`bn-funnel${paidMode ? ' bn-paid' : ''}`}>
+        {paidMode ? <div className="bn-row bn-head">
+          <span className="bn-lab" />
+          <span className="bn-track" />
+          <span className="bn-count">Reached</span>
+          <span className="bn-conv">Step</span>
+          <span className="bn-cost">Cost</span>
+          <span className="bn-next">→ Next</span>
+        </div> : null}
         {rows.map((r, i) => {
           const isWorst = worst && r === worst
+          const cost = (stageSpend && r.v) ? stageSpend / r.v : null
           return (
-            <div className={`bn-row ${isWorst ? 'bn-worst' : ''}`} key={i}>
+            <div className={`bn-row${paidMode ? ' bn-row-paid' : ''} ${isWorst ? 'bn-worst' : ''}`} key={i}>
               <span className="bn-lab">{r.label}</span>
               <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, (r.v / top) * 100)}%` }} /></span>
               <span className="bn-count">{fmtNumber(r.v)}</span>
               <span className="bn-conv">{r.conv == null ? '' : `${Math.round(r.conv * 100)}%`}</span>
+              {paidMode ? <span className="bn-cost" title={`${chanLbl} spend ÷ ${r.label} reached`}>{cost != null ? money(Math.round(cost)) : '—'}</span> : null}
+              {paidMode ? <span className="bn-next" title="Conversion into the next step">{r.next == null ? '—' : `→ ${Math.round(r.next * 100)}%`}</span> : null}
             </div>
           )
         })}
       </div>
-      {showCals.length ? <div style={{ marginTop: 12 }}>
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 6 }}>Show rate by calendar</div>
-        <div className="bn-funnel">
-          {showCals.map((c, i) => { const sr = c.occurred ? c.shown / c.occurred : 0; return (
-            <div className="bn-row" key={i}>
-              <span className="bn-lab" title={c.calendar}>{c.calendar}</span>
-              <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, sr * 100)}%`, background: sr >= 0.6 ? '#12b886' : sr >= 0.4 ? 'var(--brand)' : '#d64545' }} /></span>
-              <span className="bn-count">{fmtNumber(c.shown)}/{fmtNumber(c.occurred)}</span>
-              <span className="bn-conv">{Math.round(sr * 100)}%</span>
+      {openStages.length ? <div className="bn-open">
+        <div className="bn-open-h">Open pipeline by stage <span className="sub">· {fmtNumber(totOpen)} live · {money(totOpenVal)} · click a stage to see who’s in it &amp; where they came from</span></div>
+        {openStages.map((s) => {
+          const on = openStage === s.key
+          return (
+            <div key={s.key} className="bn-open-item">
+              <button className={`bn-open-row${on ? ' on' : ''}`} onClick={() => setOpenStage(on ? null : s.key)}>
+                <span className="bn-open-stage">{s.stage}{multiPipe ? <span className="bn-open-pipe"> · {s.pipeline}</span> : null}</span>
+                <span className="bn-open-meta"><b>{fmtNumber(s.count)}</b> open · <b>{money(s.value)}</b></span>
+                <span className="bn-open-caret">{on ? '▾' : '→'}</span>
+              </button>
+              {on ? <div className="bn-open-deals"><table className="mini-tbl users-tbl">
+                <thead><tr><th className="lft">Contact</th><th className="lft">Source</th><th>Value</th><th>Days in stage</th></tr></thead>
+                <tbody>{s.deals.map((d, i) => <tr key={i}>
+                  <td className="lft">{d.name}</td>
+                  <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(d.channel) }} />{d.source}</span></td>
+                  <td>{money(d.value)}</td>
+                  <td>{d.ageDays != null ? `${d.ageDays}d` : '—'}</td>
+                </tr>)}</tbody>
+              </table></div> : null}
             </div>
-          ) })}
-        </div>
+          )
+        })}
       </div> : null}
-      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost — the place a small improvement moves the most revenue.{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}</p>
+      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost — the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</p>
     </div>
+    {showCals.length ? <div className="card exec-bottleneck">
+      <div className="exec-panel-h">Show rate by calendar <span className="sub">· shown ÷ occurred per booked calendar</span></div>
+      <div className="bn-funnel">
+        {showCals.map((c, i) => { const sr = c.occurred ? c.shown / c.occurred : 0; return (
+          <div className="bn-row" key={i}>
+            <span className="bn-lab" title={c.calendar}>{c.calendar}</span>
+            <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, sr * 100)}%`, background: sr >= 0.6 ? '#12b886' : sr >= 0.4 ? 'var(--brand)' : '#d64545' }} /></span>
+            <span className="bn-count">{fmtNumber(c.shown)}/{fmtNumber(c.occurred)}</span>
+            <span className="bn-conv">{Math.round(sr * 100)}%</span>
+          </div>
+        ) })}
+      </div>
+      <p className="caveat">Show rate is how many booked calls actually happened. Green ≥ 60%, red &lt; 40%.</p>
+    </div> : null}
+    </>
   )
 }
 
@@ -2889,6 +2944,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const roas = (chanSpend && revV) ? revV / chanSpend : null
         const cpl2 = (!chActive && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
         const tileClick = (drill2) => (cc ? () => setDrill(drill2) : undefined)
+        // Key-event reach as rates — each selected key event as a share of all
+        // leads. Account-wide (the funnel isn't channel-split), shown under Rates.
+        const kef = ccKeyEventFunnel(cc, clientId, k.won, k.leads)
         return <div className="exec-cc">
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
@@ -2922,11 +2980,19 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Conversion rate" value={pctOf(wonV, oppsV)} />
             <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
           </div>
+          {kef.usingKe && kef.rows.length ? <>
+            <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· share of all {fmtNumber(kef.leadTotal)} leads{chActive ? ' · account-wide (not channel-split)' : ''}</span></div>
+            <div className="scorecard exec-kpis">
+              {kef.rows.map((r, i) => <Kpi key={i} label={r.label} value={kef.leadTotal ? `${Math.round((r.count / kef.leadTotal) * 100)}%` : '—'} flat={`${fmtNumber(r.count)} of ${fmtNumber(kef.leadTotal)}`} />)}
+            </div>
+          </> : null}
         </div>
       })()}
 
-      {/* Revenue bottleneck funnel — client key events + calendar show-rate */}
-      <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} />
+      {/* Revenue bottleneck funnel — client key events + calendar show-rate.
+          Passes the selected channel's spend so a paid view shows cost/stage. */}
+      {(() => { const chn = h.channels || {}; const bnSpend = chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : chan === 'all' ? (k.adSpend || 0) : 0
+        return <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} chan={chan} stageSpend={bnSpend} /> })()}
 
       {/* Lost reasons — full width so the table never needs to scroll sideways.
           Rows are clickable → the per-reason people + their form answers. */}

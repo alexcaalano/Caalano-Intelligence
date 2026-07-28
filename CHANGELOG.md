@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.88.0 — 2026-07-28 · `PENDING`
+- **Revenue bottleneck reworked into a hybrid drill.** The bottleneck card now
+  splits cleanly into two: the **key-event funnel** and a separate **Show rate by
+  calendar** card. Below the funnel is a new **Open pipeline by stage** list —
+  every stage with deals still in play, clickable to reveal exactly who's sitting
+  in it, each with their **lead source** (colour-dotted by channel), value and days
+  in stage. Mirrors the per-rep Users drill, but for the whole account.
+- **Paid channel view shows cost per stage + next-step conversion.** When the
+  command centre is filtered to Paid / Meta / Google, the funnel adds a **Cost**
+  column (that channel's spend ÷ everyone who reached the stage) and a **→ Next**
+  column (the share who move on to the following step).
+- **Key event reach as rates.** The Rates section now lists each of the client's
+  selected key events as a percentage of all leads (e.g. Site Visit Booked = 28%
+  of leads), with the raw count underneath.
+
 ## v3.87.0 — 2026-07-28 · `PENDING`
 - **Command Centre — Booked tile now drills into bookings per calendar.** Clicking
   **Booked** in the Caalano360 command centre opens a per-calendar breakdown

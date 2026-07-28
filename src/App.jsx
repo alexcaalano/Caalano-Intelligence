@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.90.0'
+const APP_VERSION = '3.91.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2617,18 +2617,31 @@ function BnDealRow({ d, clientId, money }) {
 // its own card below. Built from the ccdrill payload (no extra fetch).
 function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = 'all', stageSpend = 0 }) {
   const [openStage, setOpenStage] = useState(null)
-  const kef = ccKeyEventFunnel(cc, clientId, kpis.won, kpis.leads)
+  // Channel-scoped totals from the drill when a channel is active, so the funnel's
+  // Leads/Won denominators match its (channel-filtered) stage numerators.
+  const chActiveBn = chan !== 'all'
+  const ccTot = (cc && cc.totals) || null
+  const chanLeads = chActiveBn ? (ccTot ? ccTot.leads : 0) : kpis.leads
+  const chanWon = chActiveBn ? (ccTot ? ccTot.won : 0) : kpis.won
+  const kef = ccKeyEventFunnel(cc, clientId, chActiveBn ? chanWon : kpis.won, chActiveBn ? (ccTot ? ccTot.leads : null) : kpis.leads)
   const usingKe = kef.usingKe
   const leadTotal = kef.leadTotal
   const raw = usingKe
     ? [{ label: 'Leads', v: leadTotal }, ...kef.rows.map((r) => ({ label: r.label, v: r.count }))]
-    : [
-      { label: 'Opportunities', v: kpis.leads },
-      { label: 'Booked', v: kpis.booked },
-      { label: 'Shown', v: kpis.shown },
-      { label: 'Won', v: kpis.won },
-    ].filter((s) => s.v != null)
-  if (raw.length < 2 || !raw[0].v) return null
+    : chActiveBn
+      // Channel view with no key events resolving (e.g. no opps on this channel) —
+      // strictly channel-scoped so it reads 0, never account-wide numbers.
+      ? [{ label: 'Opportunities', v: chanLeads || 0 }, { label: 'Won', v: chanWon || 0 }]
+      : [
+        { label: 'Opportunities', v: kpis.leads },
+        { label: 'Booked', v: kpis.booked },
+        { label: 'Shown', v: kpis.shown },
+        { label: 'Won', v: kpis.won },
+      ].filter((s) => s.v != null)
+  if (raw.length < 2) return null
+  // All-channel with no leads hides the card (as before); a channel view always
+  // renders so the filter visibly reads 0 rather than vanishing silently.
+  if (!raw[0].v && !chActiveBn) return null
   const top = raw[0].v || 1
   const rows = raw.map((s, i) => { const prev = i > 0 ? raw[i - 1].v : null; return { ...s, prev, conv: prev ? s.v / prev : null, drop: prev != null ? prev - s.v : 0 } })
   rows.forEach((r, i) => { r.next = (i < rows.length - 1 && r.v) ? rows[i + 1].v / r.v : null })
@@ -2739,18 +2752,20 @@ function useCrmAgg(clientId, range, nonce, channel = 'all') {
   return d
 }
 // Command-centre drill dataset (scope=ccdrill) — backs every clickable tile.
-function useCcDrill(clientId, range, nonce = 0) {
+// Channel-scoped: passing a channel re-pivots the whole drill (funnel, open-by-
+// stage, sources, revenue, lost, close, bookings) to that channel's opportunities.
+function useCcDrill(clientId, range, nonce = 0, channel = 'all') {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true
     setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+    fetch(`/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [clientId, q, nonce])
+  }, [clientId, q, nonce, channel])
   return st
 }
 const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—')
@@ -2908,7 +2923,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   useEffect(() => { setChan('all') }, [clientId])
   const health = useHealth(clientId, range, nonce, reload)
   const crmAgg = useCrmAgg(clientId, range, nonce, chan)
-  const ccDrill = useCcDrill(clientId, range, nonce)
+  const ccDrill = useCcDrill(clientId, range, nonce, chan)
   const cc = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
   const [drill, setDrill] = useState(null)
   const [openPillar, setOpenPillar] = useState(null)
@@ -2997,8 +3012,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const cpl2 = (!chActive && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
         const tileClick = (drill2) => (cc ? () => setDrill(drill2) : undefined)
         // Key-event reach as rates — each selected key event as a share of all
-        // leads. Account-wide (the funnel isn't channel-split), shown under Rates.
-        const kef = ccKeyEventFunnel(cc, clientId, k.won, k.leads)
+        // leads. Channel-scoped (via the ccdrill payload) when a channel is active.
+        const kefTot = (cc && cc.totals) || null
+        const kef = ccKeyEventFunnel(cc, clientId, chActive ? (kefTot ? kefTot.won : null) : k.won, chActive ? (kefTot ? kefTot.leads : null) : k.leads)
         return <div className="exec-cc">
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
@@ -3033,7 +3049,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
           </div>
           {kef.usingKe && kef.rows.length ? <>
-            <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· share of all {fmtNumber(kef.leadTotal)} leads{chActive ? ' · account-wide (not channel-split)' : ''}</span></div>
+            <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· share of {fmtNumber(kef.leadTotal)} {chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}</span></div>
             <div className="scorecard exec-kpis">
               {kef.rows.map((r, i) => <Kpi key={i} label={r.label} value={kef.leadTotal ? `${Math.round((r.count / kef.leadTotal) * 100)}%` : '—'} flat={`${fmtNumber(r.count)} of ${fmtNumber(kef.leadTotal)}`} />)}
             </div>

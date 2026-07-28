@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.91.0 — 2026-07-28 · `PENDING`
+- **The Caalano360 channel filter now re-pivots the whole drill layer.** Selecting
+  All / Paid / Non-paid / Google / Meta now filters the **Revenue bottleneck
+  funnel**, **Open pipeline by stage**, **Lost reasons**, **Key event reach** and
+  every tile drill (opportunities by source, revenue, close rate, bookings) to
+  that channel's opportunities — not just the top scorecards. buildCcDrill takes a
+  channel and filters the opportunity cohort (calendar bookings are scoped to the
+  same channel's contacts). So filtering Pool Haus to **Paid** for the last 30
+  days now correctly shows only paid opportunities everywhere — and reads **0**
+  where there are none, instead of falling back to account-wide numbers.
+
 ## v3.90.0 — 2026-07-28 · `PENDING`
 - **Lost reasons drill now shows each lead's source + opens to their notes.** In
   the Caalano360 Lost reasons view, clicking a reason lists the people lost with

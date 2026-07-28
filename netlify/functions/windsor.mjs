@@ -1509,9 +1509,10 @@ export default async (req) => {
     if (!cc || !cc.ghl) return json({ scope: 'ccdrill', client, ghl: false })
     if (me && me.role === 'viewer') return json({ scope: 'ccdrill', client, error: 'Staff only.' }, 403)
     if (!(await isConnected().catch(() => false))) return json({ scope: 'ccdrill', client, connected: false })
+    const channel = url.searchParams.get('channel') || 'all'
     try {
       const [drill, health] = await Promise.all([
-        buildCcDrill(cc.ghl, from, to),
+        buildCcDrill(cc.ghl, from, to, channel),
         buildHealth(cc, from, to, preset, key).catch(() => null),
       ])
       const chn = (health && health.channels) || {}

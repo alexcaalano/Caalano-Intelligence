@@ -1454,7 +1454,7 @@ async function formAnswersByContact(locTok, locationId, from, to) {
 // calendar booking/show, and per-channel close rate. Spend / paid-lead figures
 // are added by the caller (windsor) from the health feed. Each opp is classified
 // to a paid channel via channelOf(utmOf()) with a friendly source label.
-export async function buildCcDrill(locationId, from, to) {
+export async function buildCcDrill(locationId, from, to, channel) {
   const locTok = await locationToken(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
@@ -1477,7 +1477,15 @@ export async function buildCcDrill(locationId, from, to) {
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const nowMs = Date.now()
   const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
-  const opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  // Optional channel filter (first-touch UTM): all | paid | nonpaid | meta | google.
+  // When set, the whole drill (funnel, open-by-stage, sources, revenue, lost,
+  // close, and calendar bookings) reflects only opportunities on that channel.
+  const chan = channel && channel !== 'all' ? channel : null
+  let opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  if (chan) opps = opps.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
+  // Contacts that belong to this channel — used to scope calendar bookings, which
+  // aren't UTM-tagged themselves, to the same channel as the opportunities.
+  const chanContacts = chan ? new Set(opps.map((o) => contactIdOf(o)).filter(Boolean)) : null
   const oppNameById = new Map(); for (const o of opps) { const cid = contactIdOf(o); if (cid && !oppNameById.has(cid)) oppNameById.set(cid, contactNameOf(o)) }
   // Friendly source label + kind from the first-touch UTMs. Paid channels map to
   // Paid Social / Paid Search; everything else reads from the utm source.
@@ -1497,7 +1505,7 @@ export async function buildCcDrill(locationId, from, to) {
   const openByStage = new Map() // pipelineId::stageId -> open deals currently sitting there
   const lostByReason = new Map()
   const closeByChannel = new Map()
-  let revenueTotal = 0, openValueTotal = 0, openCount = 0
+  let revenueTotal = 0, openValueTotal = 0, openCount = 0, wonCount = 0, lostCount = 0, leadCount = 0
   let paidWon = 0, metaWon = 0, googleWon = 0
   const stageAt = new Map() // pipelineId -> Map(stageId -> count), for the key-events funnel
   for (const o of opps) {
@@ -1509,6 +1517,7 @@ export async function buildCcDrill(locationId, from, to) {
     const name = contactNameOf(o)
     if (o.pipelineId && o.pipelineStageId) { let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1) }
     const isWon = st === 'won', isLost = st === 'lost' || st === 'abandoned'
+    leadCount++; if (isWon) wonCount++; if (isLost) lostCount++
     let bs = bySource.get(label); if (!bs) { bs = { source: label, channel: ch, kind, count: 0, value: 0, opps: [] }; bySource.set(label, bs) }
     bs.count++; bs.value += val
     if (bs.opps.length < 100) bs.opps.push({ name, status: isWon ? 'won' : isLost ? 'lost' : 'open', stage: stg ? stg.name : null, value: Math.round(val), channel: ch })
@@ -1547,6 +1556,7 @@ export async function buildCcDrill(locationId, from, to) {
   const bookingByCalendar = [...perCal.values()].map((rec) => {
     let booked = 0, occurred = 0, shown = 0; const people = []
     for (const [cid, f] of rec.byContact) {
+      if (chanContacts && !chanContacts.has(cid)) continue
       const isBooked = !!f.bookedInPeriod, isOcc = !!f.hasCallInPeriod, isShown = !!f.shownByStatus
       if (!isBooked && !isOcc && !isShown) continue
       if (isBooked) booked++; if (isOcc) occurred++; if (isShown) shown++
@@ -1564,9 +1574,10 @@ export async function buildCcDrill(locationId, from, to) {
     return { id: p.id, name: p.name, stages }
   }).filter((p) => p.stages.some((s) => s.count > 0))
   return {
-    connected: true, tz,
+    connected: true, tz, channel: chan || 'all',
+    totals: { leads: leadCount, won: wonCount, lost: lostCount, open: openCount },
     oppsBySource: [...bySource.values()].map((s) => ({ ...s, value: Math.round(s.value) })).sort((a, b) => b.count - a.count),
-    revenue: { total: Math.round(revenueTotal), deals: wonDeals },
+    revenue: { total: Math.round(revenueTotal), count: wonCount, deals: wonDeals },
     open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },
     openByStage: [...openByStage.values()].map((g) => ({ key: g.key, stage: g.stage, stageId: g.stageId, pipeline: g.pipeline, pipelineId: g.pipelineId, pos: g.pos, count: g.count, value: Math.round(g.value), deals: g.deals.sort((a, b) => b.value - a.value) })).sort((a, b) => a.pos - b.pos),
     lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.92.0'
+const APP_VERSION = '3.93.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3027,32 +3027,22 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
           </div>
           <div className="cc-group-lab x-internal">Spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
-          <div className="scorecard exec-kpis x-internal">
+          <div className="scorecard exec-kpis exec-kpis-4 x-internal">
             <Kpi label="Ad spend" value={chanSpend != null ? money(chanSpend) : '—'} cur={chActive ? null : k.adSpend} prev={chActive ? null : pv.adSpend} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
             <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '—'} cur={paidCpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead — paid attributed' })} />
             <Kpi label="Cost / booked" value={cpBookedV != null ? money(cpBookedV) : '—'} cur={cpBookedV} goodWhenDown />
             <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : '—'} cur={paidCpa} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won — paid attributed' })} />
-            <Kpi label="ROAS" value={roas != null ? `${roas.toFixed(2)}x` : '—'} cur={roas} />
           </div>
-          <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
-          <div className="scorecard exec-kpis">
-            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
-            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
-            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
-            <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
-            <Kpi label="Avg deal value" value={avgV != null ? money(avgV) : '—'} />
-            <Kpi label="Open now" value={openV != null ? fmtNumber(openV) : '—'} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
-            <Kpi label="Open value" value={openValV != null ? money(openValV) : '—'} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
-            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
-            <Kpi label="Lost value" value={ca.lostValue != null ? money(ca.lostValue) : '—'} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
-          </div>
-          <div className="cc-group-lab">Rates{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null}</div>
-          <div className="scorecard exec-kpis">
-            <Kpi label="Booking rate" value={pctOf(bookedV, oppsV)} onClick={tileClick({ kind: 'booking', title: 'Booking rate — by calendar' })} />
-            <Kpi label="Show rate" value={pctOf(shownV, bookedV)} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
-            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} />
-            <Kpi label="Conversion rate" value={pctOf(wonV, oppsV)} />
-            <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
+          <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null} <span className="sub" style={{ fontWeight: 500 }}>· top row is the funnel; the small line under each number is its rate</span></div>
+          <div className="scorecard exec-kpis exec-kpis-4">
+            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
+            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
+            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
+            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} flat={oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
+            <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
+            <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '—'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
+            <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} flat="won ÷ closed" onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
           </div>
           {kef.usingKe && kef.rows.length ? <>
             <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· share of {fmtNumber(kef.leadTotal)} {chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}</span></div>

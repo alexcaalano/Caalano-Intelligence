@@ -1484,6 +1484,11 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .exec-kpis { margin: 0; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 @media (max-width: 1100px) { .exec-kpis { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 640px) { .exec-kpis { grid-template-columns: repeat(2, 1fr); } }
+/* Fewer, roomier tiles — 4 across so the pipeline group reads as two clean rows
+   (funnel on top, money below) instead of a dense 7-wide strip. */
+.exec-kpis.exec-kpis-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .exec-kpis.exec-kpis-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .exec-kpis.exec-kpis-4 { grid-template-columns: repeat(2, 1fr); } }
 .exec-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 /* Grid children default to min-width:auto, so a wide table pushes its column
    past the page edge. Clamp children and let inner tables scroll instead. */

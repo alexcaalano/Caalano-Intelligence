@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.93.0 — 2026-07-28 · `PENDING`
+- **Command centre decluttered — fewer, calmer tiles.** Cut ~24 tiles down to ~17
+  and dropped a whole group. Each rate now rides as a small line under its number
+  instead of being its own box: Booked shows "68% booking rate", Shown "5% show
+  rate", Won "3% conversion", Revenue "avg $67k · 35.9x ROAS". Open now + open
+  value merged into one **Open pipeline** tile (count · value), Lost + lost value
+  merged into one **Lost** tile. The Pipeline & revenue group is now a tidy two-row
+  block — the funnel (Opportunities → Booked → Shown → Won) on top, the money
+  (Revenue, Open, Lost, Close rate) below. Every tile stays clickable to its drill.
+
 ## v3.92.0 — 2026-07-28 · `PENDING`
 - **Fixed the command-centre opportunity count mismatch.** The scorecard tiles
   were reading the health engine's lead count (a narrower, deduped basis) while

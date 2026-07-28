@@ -1686,6 +1686,8 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .cc-group-lab:first-of-type { margin-top: 4px; }
 /* Present mode — hide agency-internal cost/spend figures for client screen shares */
 .present .x-internal { display: none !important; }
+.lr-tbl { width: 100%; }
+.lr-tbl td.lft, .lr-tbl th.lft { white-space: normal; }
 .exec-cc > .exec-panel-h { margin-bottom: 8px; }
 .exec-cc .scorecard { margin-bottom: 8px; }
 .exec-cc .scorecard:last-child { margin-bottom: 0; }

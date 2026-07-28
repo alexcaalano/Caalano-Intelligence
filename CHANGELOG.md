@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.81.0 — 2026-07-28 · `PENDING`
+- **Command Centre — Lost reasons full width, no sideways scroll.** Moved the
+  Lost reasons panel to its own full-width card (long reason names wrap) and added
+  a Share column. Channel split is now its own card and hides in present mode.
+
 ## v3.80.0 — 2026-07-28 · `PENDING`
 - **Present mode.** A sidebar toggle that hides agency-internal cost/spend/margin
   figures so the dashboard is safe to screen-share with a client. First pass hides

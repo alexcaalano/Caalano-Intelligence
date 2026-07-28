@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.80.0'
+const APP_VERSION = '3.81.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2723,26 +2723,26 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       {/* Revenue bottleneck funnel */}
       <BottleneckPanel kpis={k} money={money} />
 
-      {/* Lost reasons + channel split */}
-      <div className="exec-grid2">
-        <div className="card">
-          <div className="exec-panel-h">Lost reasons {crmAgg && crmAgg.lost ? <span className="sub">· {fmtNumber(crmAgg.lost)} lost{crmAgg.lostValue ? `, ${money(crmAgg.lostValue)}` : ''}</span> : null}</div>
-          {!crmAgg ? <Spinner label="" />
-            : !(crmAgg.lostReasons && crmAgg.lostReasons.length) ? <div className="cap">No lost opportunities recorded this period. ✅</div>
-              : <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th></tr></thead>
-                <tbody>{crmAgg.lostReasons.slice(0, 10).map((r, i) => <tr key={i}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '—'}</td></tr>)}</tbody></table></div>}
-        </div>
-        <div className="card">
-          <div className="exec-panel-h">Channel split</div>
-          {(() => { const ch = h.channels || {}; const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
-            if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
-            return <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Leads / conv</th></tr></thead>
-              <tbody>
-                <tr><td className="lft">Meta</td><td>{money(ch.metaSpend || 0)}</td><td>{fmtNumber(ch.metaLeads || 0)}</td></tr>
-                <tr><td className="lft">Google</td><td>{money(ch.googleSpend || 0)}</td><td>{fmtNumber(ch.googleConv || 0)}</td></tr>
-              </tbody></table></div>
-          })()}
-        </div>
+      {/* Lost reasons — full width so the table never needs to scroll sideways */}
+      <div className="card">
+        <div className="exec-panel-h">Lost reasons {crmAgg && crmAgg.lost ? <span className="sub">· {fmtNumber(crmAgg.lost)} lost{crmAgg.lostValue ? `, ${money(crmAgg.lostValue)}` : ''}</span> : null}</div>
+        {!crmAgg ? <Spinner label="" />
+          : !(crmAgg.lostReasons && crmAgg.lostReasons.length) ? <div className="cap">No lost opportunities recorded this period. ✅</div>
+            : <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
+              <tbody>{crmAgg.lostReasons.slice(0, 12).map((r, i) => <tr key={i}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '—'}</td><td>{pctOf(r.count, crmAgg.lost)}</td></tr>)}</tbody></table>}
+      </div>
+
+      {/* Channel split (spend is internal — hidden in present mode) */}
+      <div className="card x-internal">
+        <div className="exec-panel-h">Channel split</div>
+        {(() => { const ch = h.channels || {}; const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
+          if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
+          return <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Leads / conv</th></tr></thead>
+            <tbody>
+              <tr><td className="lft">Meta</td><td>{money(ch.metaSpend || 0)}</td><td>{fmtNumber(ch.metaLeads || 0)}</td></tr>
+              <tr><td className="lft">Google</td><td>{money(ch.googleSpend || 0)}</td><td>{fmtNumber(ch.googleConv || 0)}</td></tr>
+            </tbody></table>
+        })()}
       </div>
 
       {/* Per-pipeline breakdown — only when the client runs more than one */}

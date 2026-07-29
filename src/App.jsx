@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.94.0'
+const APP_VERSION = '3.95.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7556,6 +7556,518 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Monthly Report — a full-page, one-client, one-month slide deck built from a
+// FROZEN snapshot. Wins/revenue are attributed by close month (won date), not
+// lead-created date, so late-closing leads land in the month they closed.
+// Exports via native print (Save-as-PDF) and a direct jsPDF download.
+// ---------------------------------------------------------------------------
+
+// Bounds + label for a 'YYYY-MM' month string (UTC-safe).
+function monthBounds(m) {
+  const [y, mo] = m.split('-').map(Number)
+  const from = `${m}-01`
+  const end = new Date(Date.UTC(y, mo, 0)).getUTCDate()
+  const to = `${m}-${String(end).padStart(2, '0')}`
+  const label = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-AU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  return { from, to, label }
+}
+// Default month = last complete calendar month.
+function lastCompleteMonth() {
+  const d = new Date()
+  const first = new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1))
+  first.setUTCDate(0) // → last day of previous month
+  return `${first.getUTCFullYear()}-${String(first.getUTCMonth() + 1).padStart(2, '0')}`
+}
+const MR_MONTHS = (back = 18) => {
+  const out = []; const now = new Date()
+  let y = now.getFullYear(), m = now.getMonth() // 0-based; start at current month, walk back
+  for (let i = 0; i < back; i++) { out.push(`${y}-${String(m + 1).padStart(2, '0')}`); m--; if (m < 0) { m = 11; y-- } }
+  return out
+}
+
+async function mrFetch(qs) {
+  const r = await fetch(`/.netlify/functions/windsor?${qs}`)
+  if (!r.ok) { let e; try { e = (await r.json()).error } catch {} throw new Error(e || `HTTP ${r.status}`) }
+  return r.json()
+}
+
+// Pull every scope the deck needs for one client + month, in parallel, and
+// shape the frozen report payload.
+async function assembleMonthlyReport(client, month) {
+  const b = monthBounds(month)
+  const q = `client=${encodeURIComponent(client.id)}&${rangeQuery(b)}`
+  const [meta, google, blend, attribution, trendR] = await Promise.all([
+    client.meta ? mrFetch(`channel=meta&${q}`).then((r) => r.meta).catch(() => null) : Promise.resolve(null),
+    client.google ? mrFetch(`channel=google&${q}`).then((r) => r.google).catch(() => null) : Promise.resolve(null),
+    mrFetch(`channel=blend&${q}`).then((r) => r.blend).catch(() => null),
+    client.ghl ? mrFetch(`channel=attribution&${q}`).then((r) => r.attribution).catch(() => null) : Promise.resolve(null),
+    client.meta ? mrFetch(`scope=monthlytrend&months=6&${q}`).then((r) => r.trend).catch(() => null) : Promise.resolve(null),
+  ])
+  // Trim the heaviest arrays so the frozen blob stays lean, and keep only the
+  // calendar counts the funnel reads from attribution (drops raw opportunity PII).
+  if (google && Array.isArray(google.conversionActions)) google.conversionActions = google.conversionActions.slice(0, 200)
+  const attrTrim = attribution && attribution.appointments ? { appointments: { byCalendar: attribution.appointments.byCalendar || [] } } : null
+  if (meta) delete meta.adDaily
+  return {
+    v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
+    month, period: b, currency: undefined,
+    hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
+    meta, google, blend, attribution: attrTrim, trend: trendR || [],
+    wonClosed: (blend && blend.wonClosed) || null,
+    generatedAt: new Date().toISOString(),
+  }
+}
+
+// --- small presentational pieces -------------------------------------------
+function MRSlide({ n, total, kicker, title, sub, children, tone }) {
+  return (
+    <section className={`mr-slide ${tone ? 'mr-slide-' + tone : ''}`}>
+      <header className="mr-slide-head">
+        <div>
+          {kicker && <div className="mr-kicker">{kicker}</div>}
+          <h3 className="mr-title">{title}</h3>
+          {sub && <p className="mr-sub">{sub}</p>}
+        </div>
+        {n != null && <div className="mr-pageno">{n}{total ? ` / ${total}` : ''}</div>}
+      </header>
+      <div className="mr-slide-body">{children}</div>
+    </section>
+  )
+}
+function MRKpi({ label, value, sub, strong }) {
+  return <div className={`mr-kpi ${strong ? 'mr-kpi-strong' : ''}`}><span className="mr-kpi-lab">{label}</span><b className="mr-kpi-val">{value}</b>{sub != null && <span className="mr-kpi-sub">{sub}</span>}</div>
+}
+function MRTable({ cols, rows, empty = 'No data for this period.', max }) {
+  const data = max ? rows.slice(0, max) : rows
+  if (!rows || !rows.length) return <div className="mr-empty">{empty}</div>
+  return (
+    <div className="mr-tablewrap">
+      <table className="mr-table">
+        <thead><tr>{cols.map((c) => <th key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.label}</th>)}</tr></thead>
+        <tbody>{data.map((row, i) => <tr key={i}>{cols.map((c) => <td key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.render ? c.render(row) : row[c.k]}</td>)}</tr>)}</tbody>
+      </table>
+      {max && rows.length > max && <div className="mr-more">+ {rows.length - max} more not shown</div>}
+    </div>
+  )
+}
+// Three compact month-over-month charts (Spend, Leads, CPL) for the Meta slide.
+function MRTrend({ trend, currency }) {
+  if (!trend || trend.length < 2) return <div className="mr-empty">Not enough history yet for a trend — this fills in as months accrue.</div>
+  const money = (v) => fmtCurrency(v, currency)
+  const charts = [
+    { key: 'spend', label: 'Ad spend', kind: 'bar', color: '#6d5efc', fmt: money },
+    { key: 'leads', label: 'Leads', kind: 'bar', color: '#22b07d', fmt: (v) => fmtNumber(v) },
+    { key: 'cpl', label: 'Cost per lead', kind: 'line', color: '#e0803a', fmt: (v) => (v == null ? '—' : money(v)) },
+  ]
+  return (
+    <div className="mr-trend">
+      {charts.map((c) => (
+        <div className="mr-trend-card" key={c.key}>
+          <div className="mr-trend-lab">{c.label} · last {trend.length} months</div>
+          <ResponsiveContainer width="100%" height={150}>
+            {c.kind === 'bar' ? (
+              <BarChart data={trend} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                <Tooltip formatter={(v) => c.fmt(v)} contentStyle={{ fontSize: 12 }} />
+                <Bar dataKey={c.key} fill={c.color} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            ) : (
+              <LineChart data={trend} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                <Tooltip formatter={(v) => c.fmt(v)} contentStyle={{ fontSize: 12 }} />
+                <Line type="monotone" dataKey={c.key} stroke={c.color} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function MonthlyReport({ clients, currency, authUser }) {
+  const list = clients || []
+  const [clientId, setClientId] = useState(list[0] ? list[0].id : '')
+  const client = list.find((c) => c.id === clientId) || list[0] || null
+  const [month, setMonth] = useState(lastCompleteMonth())
+  const [st, setSt] = useState({ status: 'idle' }) // idle|loading|ok|err|empty ; {report, frozen}
+  const [saved, setSaved] = useState(null) // {savedAt, savedBy}
+  const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const deckRef = useRef(null)
+  const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
+  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '—')
+
+  // Load the frozen snapshot whenever client/month changes.
+  useEffect(() => {
+    if (!client) return
+    let alive = true
+    setSt({ status: 'loading' }); setSaved(null)
+    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&month=${month}`)
+      .then((r) => { if (!alive) return; if (r && r.saved) { setSaved({ savedAt: r.savedAt, savedBy: r.savedBy }); setSt({ status: 'ok', report: r.report, frozen: true }) } else setSt({ status: 'empty' }) })
+      .catch(() => { if (alive) setSt({ status: 'empty' }) })
+    return () => { alive = false }
+  }, [clientId, month])
+
+  async function generate() {
+    if (!client) return
+    setBusy(true); setSt({ status: 'loading' })
+    try {
+      const report = await assembleMonthlyReport(client, month)
+      setSt({ status: 'ok', report, frozen: false })
+      const save = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month, report }) }).then((x) => x.json()).catch(() => null)
+      if (save && save.ok) { setSaved({ savedAt: save.savedAt, savedBy: save.savedBy }); setSt({ status: 'ok', report, frozen: true }) }
+    } catch (e) { setSt({ status: 'err', error: String(e.message || e) }) }
+    setBusy(false)
+  }
+
+  async function downloadPdf() {
+    if (!deckRef.current) return
+    setExporting(true)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
+      const slides = [...deckRef.current.querySelectorAll('.mr-slide')]
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight()
+      const bg = getComputedStyle(document.body).backgroundColor || '#fff'
+      for (let i = 0; i < slides.length; i++) {
+        const canvas = await html2canvas(slides[i], { scale: 2, backgroundColor: bg, useCORS: true, logging: false })
+        const img = canvas.toDataURL('image/jpeg', 0.92)
+        const r = Math.min(pw / canvas.width, ph / canvas.height)
+        const w = canvas.width * r, h = canvas.height * r
+        if (i) pdf.addPage()
+        pdf.addImage(img, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h)
+      }
+      pdf.save(`${(client && client.name || 'report').replace(/[^\w]+/g, '-')}-${month}.pdf`)
+    } catch (e) { alert('PDF export failed: ' + (e.message || e)) }
+    setExporting(false)
+  }
+
+  const rep = st.status === 'ok' ? st.report : null
+
+  return (
+    <div className="mr-page">
+      <div className="mr-bar no-print">
+        <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+          {list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select className="mr-select" value={month} onChange={(e) => setMonth(e.target.value)}>
+          {MR_MONTHS().map((m) => <option key={m} value={m}>{monthBounds(m).label}</option>)}
+        </select>
+        <button className="mr-btn primary" onClick={generate} disabled={busy}>{busy ? 'Generating…' : (saved ? 'Refresh snapshot' : 'Generate snapshot')}</button>
+        <div className="mr-bar-spacer" />
+        {saved && <span className="mr-saved" title={`Frozen ${new Date(saved.savedAt).toLocaleString()}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>🔒 Snapshot frozen {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString() : ''}</span>}
+        <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
+        <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
+      </div>
+
+      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
+      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
+      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {monthBounds(month).label} yet.</b><p>Pick the client and month, then <b>Generate snapshot</b> to freeze this month’s numbers. Wins are captured by the month a deal was marked won — so late-closing leads show in the month they closed.</p></div>}
+
+      {rep && <div className="mr-deck" ref={deckRef}>{renderMonthlyDeck(rep, { currency, money, n0, pc })}</div>}
+    </div>
+  )
+}
+
+// Pure renderer for the deck so it can be reused by both the live view and the
+// frozen snapshot (identical shape). Returns an array of <MRSlide> elements.
+function renderMonthlyDeck(rep, h) {
+  const { currency, money, n0, pc } = h
+  const b = rep.period
+  const meta = rep.meta, google = rep.google, blend = rep.blend, attribution = rep.attribution
+  const won = rep.wonClosed || (blend && blend.wonClosed) || null
+  const paid = (blend && blend.paid) || {}
+  const crm = (blend && blend.crm) || {}
+  const pipelines = (blend && blend.pipelines) || []
+  const users = (blend && blend.users) || []
+  const totalSpend = paid.adSpend || ((meta && meta.totals && meta.totals.spend) || 0) + ((google && google.totals && google.totals.cost) || 0)
+  const paidLeads = paid.adConversions != null ? paid.adConversions : ((meta && meta.totals && meta.totals.leads) || 0)
+  const realisedRev = won && won.total ? won.total.revenue : (crm.revenue || 0)
+  const dealsWon = won && won.total ? won.total.won : (crm.won || 0)
+  const roas = totalSpend ? realisedRev / totalSpend : null
+
+  // Slide list (Google slides only when connected).
+  const slides = []
+  const push = (el) => slides.push(el)
+
+  // Meta metric helpers
+  const cpm = (r) => (r.impressions ? (r.spend / r.impressions) * 1000 : null)
+  const freq = (r) => (r.reach ? r.impressions / r.reach : null)
+  const ctr = (r) => (r.impressions ? (r.clicks / r.impressions) * 100 : null)
+  const cpl = (r) => (r.leads ? r.spend / r.leads : null)
+  const metaCols = (nameKey, nameLabel, extra) => [
+    { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r[nameKey] || r.name}{extra && r[extra] ? <small>{r[extra]}</small> : null}</span> },
+    { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
+    { k: 'impr', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
+    { k: 'reach', label: 'Reach', align: 'r', render: (r) => n0(r.reach) },
+    { k: 'freq', label: 'Freq.', align: 'r', render: (r) => { const f = freq(r); return f == null ? '—' : f.toFixed(1) + 'x' } },
+    { k: 'cpm', label: 'CPM', align: 'r', render: (r) => { const v = cpm(r); return v == null ? '—' : money(v) } },
+    { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = ctr(r); return v == null ? '—' : fmtPct(v, 2) } },
+    { k: 'results', label: 'Results', align: 'r', render: (r) => (r.results ? `${n0(r.results)}${r.resultType ? ' ' + r.resultType : ''}` : '—') },
+    { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
+    { k: 'cpl', label: 'CPL', align: 'r', render: (r) => { const v = cpl(r); return v == null ? '—' : money(v) } },
+  ]
+
+  // ---- Cover ----
+  push(
+    <section className="mr-slide mr-cover" key="cover">
+      <div className="mr-cover-top"><span className="mr-cover-brand">Caalano<b>360</b></span><span className="mr-cover-kicker">Monthly Performance Report</span></div>
+      <div className="mr-cover-mid">
+        <h1>{rep.client.name}</h1>
+        {rep.client.industry && <p className="mr-cover-ind">{rep.client.industry}</p>}
+        <div className="mr-cover-month">{b.label}</div>
+      </div>
+      <div className="mr-cover-tiles">
+        <MRKpi label="Ad spend" value={money(totalSpend)} />
+        <MRKpi label="Leads" value={n0(paidLeads)} />
+        <MRKpi label="Deals won" value={n0(dealsWon)} sub="closed this month" />
+        <MRKpi label="Revenue" value={money(realisedRev)} sub={roas != null ? `${roas.toFixed(1)}x ROAS` : null} strong />
+      </div>
+      <div className="mr-cover-foot">Generated {new Date(rep.generatedAt).toLocaleDateString()} · Wins &amp; revenue attributed to the month each deal was marked won.</div>
+    </section>
+  )
+
+  // ---- Meta slides ----
+  if (rep.hasMeta && meta) {
+    const t = meta.totals || {}
+    push(
+      <MRSlide key="m-camp" kicker="Meta Ads · Platform" title="Campaign performance" sub={`${(meta.campaigns || []).length} campaign(s) · ${b.label} · platform-reported figures`}>
+        <div className="mr-kpirow">
+          <MRKpi label="Spend" value={money(t.spend)} />
+          <MRKpi label="Impressions" value={n0(t.impressions)} />
+          <MRKpi label="Reach" value={n0(t.reach)} />
+          <MRKpi label="Frequency" value={t.reach ? (t.impressions / t.reach).toFixed(1) + 'x' : '—'} />
+          <MRKpi label="CTR" value={t.impressions ? fmtPct((t.clicks / t.impressions) * 100, 2) : '—'} />
+          <MRKpi label="Leads" value={n0(t.leads)} />
+          <MRKpi label="Cost / lead" value={t.leads ? money(t.spend / t.leads) : '—'} strong />
+        </div>
+        <MRTable cols={metaCols('name', 'Campaign')} rows={meta.campaigns || []} max={14} />
+        <div className="mr-section-lab">6-month trend</div>
+        <MRTrend trend={rep.trend} currency={currency} />
+      </MRSlide>
+    )
+    push(
+      <MRSlide key="m-adset" kicker="Meta Ads · Platform" title="Ad set performance" sub={`${(meta.adsets || []).length} ad set(s), ranked by spend`}>
+        <MRTable cols={metaCols('name', 'Ad set', 'campaign')} rows={meta.adsets || []} max={18} />
+      </MRSlide>
+    )
+    push(
+      <MRSlide key="m-cre" kicker="Meta Ads · Platform" title="Creative performance" sub={`${(meta.ads || []).length} creative(s), ranked by spend`}>
+        <div className="mr-creative-grid">
+          {(meta.ads || []).slice(0, 12).map((a, i) => (
+            <div className="mr-creative" key={i}>
+              <div className="mr-creative-thumb">{a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" /> : <span className="mr-noimg">{a.type === 'Video' ? '▶' : '🖼'}</span>}</div>
+              <div className="mr-creative-body">
+                <div className="mr-creative-name" title={a.name}>{a.name}</div>
+                <div className="mr-creative-stats">
+                  <span>{money(a.spend)}</span><span>{n0(a.impressions)} impr</span>
+                  <span>{ctr(a) == null ? '—' : fmtPct(ctr(a), 2)} CTR</span>
+                  <span>{n0(a.leads)} leads</span>
+                  <span>{cpl(a) == null ? '—' : money(cpl(a))} CPL</span>
+                  {freq(a) != null && <span>{freq(a).toFixed(1)}x freq</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {!(meta.ads || []).length && <div className="mr-empty">No creatives for this period.</div>}
+      </MRSlide>
+    )
+  }
+
+  // ---- Google slides ----
+  if (rep.hasGoogle && google) {
+    const gt = google.totals || {}
+    const gctr = (r) => (r.impressions ? (r.clicks / r.impressions) * 100 : null)
+    const gcpc = (r) => (r.clicks ? r.cost / r.clicks : null)
+    const gcpa = (r) => (r.conversions ? r.cost / r.conversions : null)
+    const gCampCols = (nameLabel) => [
+      { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}{r.campaign ? <small>{r.campaign}</small> : null}</span> },
+      { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
+      { k: 'impressions', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
+      { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
+      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '—' : fmtPct(v, 2) } },
+      { k: 'cpc', label: 'CPC', align: 'r', render: (r) => { const v = gcpc(r); return v == null ? '—' : money(v) } },
+      { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
+      { k: 'cpa', label: 'Cost / conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '—' : money(v) } },
+    ]
+    push(
+      <MRSlide key="g-camp" kicker="Google Ads · Platform" title="Google campaign performance" sub={`${(google.campaigns || []).length} campaign(s) · ${b.label}`}>
+        <div className="mr-kpirow">
+          <MRKpi label="Cost" value={money(gt.cost)} />
+          <MRKpi label="Impressions" value={n0(gt.impressions)} />
+          <MRKpi label="Clicks" value={n0(gt.clicks)} />
+          <MRKpi label="CTR" value={gt.impressions ? fmtPct((gt.clicks / gt.impressions) * 100, 2) : '—'} />
+          <MRKpi label="Conversions" value={n0(gt.conversions)} />
+          <MRKpi label="Cost / conv." value={gt.conversions ? money(gt.cost / gt.conversions) : '—'} strong />
+        </div>
+        <MRTable cols={gCampCols('Campaign')} rows={google.campaigns || []} max={16} />
+      </MRSlide>
+    )
+    push(
+      <MRSlide key="g-ca" kicker="Google Ads · Account" title="Conversion action performance" sub="What conversions Google is recording at the account level">
+        <MRTable
+          cols={[
+            { k: 'name', label: 'Conversion action', render: (r) => <span className="mr-name">{r.name}</span> },
+            { k: 'category', label: 'Category' },
+            { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
+            { k: 'allConversions', label: 'All conv.', align: 'r', render: (r) => n0(r.allConversions) },
+            { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
+          ]}
+          rows={aggConvActions(google.conversionActions || [])} max={20}
+          empty="No conversion actions recorded for this period."
+        />
+      </MRSlide>
+    )
+    push(
+      <MRSlide key="g-ag" kicker="Google Ads · Platform" title="Ad group performance" sub={`${(google.adGroups || []).length} ad group(s), ranked by cost`}>
+        <MRTable cols={gCampCols('Ad group')} rows={google.adGroups || []} max={18} />
+      </MRSlide>
+    )
+    push(
+      <MRSlide key="g-kw" kicker="Google Ads · Platform" title="Keywords & search terms" sub="Top keywords and the search terms they matched">
+        <div className="mr-two">
+          <div>
+            <div className="mr-section-lab">Keywords</div>
+            <MRTable
+              cols={[
+                { k: 'text', label: 'Keyword', render: (r) => <span className="mr-name">{r.text}{r.match ? <small>{r.match}</small> : null}</span> },
+                { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
+                { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
+                { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
+              ]}
+              rows={google.keywords || []} max={14}
+            />
+          </div>
+          <div>
+            <div className="mr-section-lab">Search terms</div>
+            <MRTable
+              cols={[
+                { k: 'term', label: 'Search term', render: (r) => <span className="mr-name">{r.term}</span> },
+                { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
+                { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
+                { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
+              ]}
+              rows={google.searchTerms || []} max={14}
+            />
+          </div>
+        </div>
+      </MRSlide>
+    )
+  }
+
+  // ---- Caalano360 summary ----
+  if (rep.hasCrm && blend) {
+    const stagePos = stagePosMap(pipelines)
+    const rmap = reachedByStage(pipelines)
+    const calMap = attribution ? calCountMap(attribution, 'all') : new Map()
+    const keyEvents = resolveKeyEvents(loadKeyEvents(rep.client.id), stagePos)
+    const rows = keyEventRows(keyEvents, rmap, calMap, stagePos, dealsWon)
+    push(
+      <MRSlide key="c360" kicker="Caalano360" title="Account summary" sub="Blended paid + CRM. Leads/booked/shown = created this month · wins & revenue = closed this month (any lead date).">
+        <div className="mr-kpirow mr-kpirow-wide">
+          <MRKpi label="Total ad spend" value={money(totalSpend)} />
+          <MRKpi label="Paid leads" value={n0(paidLeads)} />
+          <MRKpi label="Blended CPL" value={paidLeads ? money(totalSpend / paidLeads) : '—'} />
+          <MRKpi label="Deals won" value={n0(dealsWon)} sub="closed this month" />
+          <MRKpi label="Revenue" value={money(realisedRev)} strong />
+          <MRKpi label="ROAS" value={roas != null ? roas.toFixed(1) + 'x' : '—'} />
+          <MRKpi label="Cost / won" value={dealsWon ? money(totalSpend / dealsWon) : '—'} />
+          <MRKpi label="Avg won value" value={won && won.total && won.total.avgValue ? money(won.total.avgValue) : (dealsWon ? money(realisedRev / dealsWon) : '—')} />
+          <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
+        </div>
+        {rows.length
+          ? <KeyEventsFunnel rows={rows} total={crm.leads || 0} spend={totalSpend} currency={currency} title="Key event funnel & cost per stage" caveat="“Won” counts deals closed this month by won date; earlier steps count leads created this month." />
+          : <div className="mr-empty">No key events configured for this client — set them in Settings → Key events.</div>}
+      </MRSlide>
+    )
+
+    // ---- User performance ----
+    const urows = users.map((u) => {
+      const w = (won && won.byUser && won.byUser[u.id]) || { won: 0, revenue: 0, avgValue: 0 }
+      const uc = u.crm || {}
+      return { id: u.id, name: u.name, leads: u.leads || uc.leads || 0, booked: uc.booked || 0, shown: uc.shown || 0, won: w.won || 0, revenue: w.revenue || 0, avg: w.avgValue || 0 }
+    }).sort((a, b2) => (b2.revenue - a.revenue) || (b2.won - a.won) || (b2.leads - a.leads))
+    const top = urows.find((u) => u.won > 0) || urows[0]
+    push(
+      <MRSlide key="users" kicker="Caalano360 · Team" title="User performance" sub="Leads allocated (created this month) and how they progressed · wins & revenue by close month.">
+        {top && <div className="mr-top">
+          <span className="mr-top-badge">★ Top performer</span>
+          <b>{top.name}</b>
+          <span className="mr-top-stats">{n0(top.won)} won · {money(top.revenue)} revenue · {n0(top.leads)} leads allocated{top.avg ? ` · ${money(top.avg)} avg` : ''}</span>
+        </div>}
+        <MRTable
+          cols={[
+            { k: 'name', label: 'User', render: (r) => <span className="mr-name">{r.name}</span> },
+            { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
+            { k: 'booked', label: 'Booked', align: 'r', render: (r) => n0(r.booked) },
+            { k: 'shown', label: 'Shown', align: 'r', render: (r) => n0(r.shown) },
+            { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
+            { k: 'winrate', label: 'Win rate', align: 'r', render: (r) => pc(r.won, r.leads) },
+            { k: 'revenue', label: 'Revenue', align: 'r', render: (r) => money(r.revenue) },
+            { k: 'avg', label: 'Avg won', align: 'r', render: (r) => (r.avg ? money(r.avg) : '—') },
+          ]}
+          rows={urows} max={20}
+          empty="No assigned-user data for this period."
+        />
+      </MRSlide>
+    )
+
+    // ---- ROI ----
+    const chan = (won && won.channels) || {}
+    const roiRows = [
+      { label: 'Meta', spend: paid.metaSpend || 0, rev: (chan.meta && chan.meta.revenue) || 0, won: (chan.meta && chan.meta.won) || 0 },
+      { label: 'Google', spend: paid.googleSpend || 0, rev: (chan.google && chan.google.revenue) || 0, won: (chan.google && chan.google.won) || 0 },
+    ].filter((r) => r.spend || r.rev)
+    push(
+      <MRSlide key="roi" kicker="Caalano360" title="Return on investment" sub="Ad spend this month vs revenue from deals closed this month.">
+        <div className="mr-kpirow mr-kpirow-wide">
+          <MRKpi label="Ad spend" value={money(totalSpend)} />
+          <MRKpi label="Revenue (closed)" value={money(realisedRev)} strong />
+          <MRKpi label="ROAS" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub={roas != null ? `${money(realisedRev)} ÷ ${money(totalSpend)}` : null} />
+          <MRKpi label="Deals won" value={n0(dealsWon)} />
+          <MRKpi label="Cost / won" value={dealsWon ? money(totalSpend / dealsWon) : '—'} />
+          <MRKpi label="Open pipeline value" value={money(crm.openValue)} />
+        </div>
+        {roiRows.length > 0 && (
+          <>
+            <div className="mr-section-lab">By channel</div>
+            <MRTable
+              cols={[
+                { k: 'label', label: 'Channel', render: (r) => <span className="mr-name">{r.label}</span> },
+                { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
+                { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
+                { k: 'rev', label: 'Revenue', align: 'r', render: (r) => money(r.rev) },
+                { k: 'roas', label: 'ROAS', align: 'r', render: (r) => (r.spend ? (r.rev / r.spend).toFixed(1) + 'x' : '—') },
+              ]}
+              rows={roiRows}
+            />
+            <p className="mr-foot-note">Revenue is attributed to the channel via the lead’s UTM source. Deals with no tracked source fall outside these channel rows but are included in the account totals above.</p>
+          </>
+        )}
+      </MRSlide>
+    )
+  }
+
+  // Number the slides (cover excluded from the count shown).
+  return slides
+}
+
+// Aggregate conversion-action rows (which come per campaign/ad-group) up to the
+// account level by action name.
+function aggConvActions(rows) {
+  const m = new Map()
+  for (const r of rows) { const e = m.get(r.name) || { name: r.name, category: r.category, conversions: 0, allConversions: 0, value: 0 }; e.conversions += r.conversions || 0; e.allConversions += r.allConversions || 0; e.value += r.value || 0; m.set(r.name, e) }
+  return [...m.values()].sort((a, b) => b.allConversions - a.allConversions)
+}
+
 // GoHighLevel-style client switcher for the sidebar: shows the active client
 // (avatar + name + subline) as a chunky pill, and drops down a searchable list
 // of every client. Picking one jumps straight to that client's workspace
@@ -7695,6 +8207,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic">🎬</span>Creative Cockpit</button>
             <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic">📡</span>Meta Insights</button>
             <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic">✉️</span>Client Update</button>
+            <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic">🗓️</span>Monthly Report</button>
           </>}
           {isViewer && <>
             <div className="nav-lab">My reports</div>
@@ -7718,12 +8231,12 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          {curView !== 'settings' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
-          <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>
+          {curView !== 'settings' && curView !== 'monthly' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {curView !== 'monthly' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => { setPicked(null); setView(isViewer ? 'clients' : 'overview') }}>
           {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
@@ -7732,6 +8245,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
+          {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}

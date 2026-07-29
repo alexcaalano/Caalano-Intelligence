@@ -17,6 +17,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.95.0 — 2026-07-29 · `PENDING`
+- **New Monthly Report tab — a frozen, slide-based client report with PDF export.**
+  Pick a client and a month; **Generate snapshot** freezes that month's numbers
+  server-side (Netlify Blobs) so an exported/reopened report never shifts. Deck:
+  cover → **Meta** campaign (with a 6-month Spend / Leads / CPL trend) → ad set →
+  creative → **Google** campaign → conversion actions → ad group → keywords & search
+  terms → **Caalano360** account summary (blended spend/CPL + key-event funnel &
+  cost-per-stage) → **team** performance (top performer + per-user funnel) → **ROI**
+  (spend vs revenue, ROAS, by channel). Google slides auto-hide with no Google
+  account; spend/CPL always show (independent of Present mode).
+  - **Won-date attribution:** wins & revenue are counted in the month a deal was
+    marked *won* (status-change date, 400-day lookback) — a lead created in January
+    but closed in March shows in **March**. Leads/booked/shown stay on lead-created
+    date; each block is labelled so the two bases don't blur.
+  - **Export:** crisp **Print → Save as PDF** (landscape, one slide per page, scoped
+    so the existing Caalano360 export stays portrait) **and** a direct **Download PDF**
+    (html2canvas-pro + jsPDF, code-split so it only loads on demand).
+  - Backend: new `monthlysnap` (save/read/list), `monthlywon` (won-by-date) and
+    `monthlytrend` (6-month Meta spend/leads/CPL) scopes on the windsor function.
+
 ## v3.94.0 — 2026-07-29 · `PENDING`
 - **Sidebar client switcher (GoHighLevel-style).** Added a dropdown pill at the top
   of the sidebar showing the active client (avatar + name + industry subline) with a

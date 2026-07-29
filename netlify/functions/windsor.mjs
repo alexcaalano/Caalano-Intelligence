@@ -1270,6 +1270,81 @@ export default async (req) => {
   const restrictTo = me && me.role === 'user' && me.allClients === false ? new Set(me.clients || []) : null
   const pickAllowed = (obj) => restrictTo ? Object.fromEntries(Object.entries(obj || {}).filter(([id]) => restrictTo.has(id))) : (obj || {})
 
+  // ---- Monthly Report ------------------------------------------------------
+  // Frozen monthly client reports. The deck itself is assembled on the client
+  // from the existing meta/google/blend/attribution scopes plus the two helpers
+  // below (won-by-date + 6-month trend), then POSTed back here to freeze so a
+  // report you export or reopen never shifts as live data updates.
+  //
+  // WON ATTRIBUTION: wins/revenue are captured by WON DATE (status-change to
+  // "won"), not lead-created date — so a lead created in an earlier month but
+  // closed in the report month counts in the report month. See wonInPeriod().
+  const monthlyStore = () => getStore({ name: 'caalano-monthly', consistency: 'strong' })
+  const monthKey = (cl, m) => `${cl}:${m}`
+
+  if (url.searchParams.get('scope') === 'monthlysnap') {
+    if (!client) return json({ error: 'client required' }, 400)
+    const store = monthlyStore()
+    const idxKey = `index:${client}`
+    if (req.method === 'POST') {
+      let body; try { body = await req.json() } catch { body = null }
+      if (!body || !body.month || !body.report) return json({ error: 'month + report required' }, 400)
+      const rec = { client, month: body.month, report: body.report, savedAt: new Date().toISOString(), savedBy: (me && (me.name || me.email)) || null }
+      await store.setJSON(monthKey(client, body.month), rec)
+      let idx = await store.get(idxKey, { type: 'json' }).catch(() => null); if (!Array.isArray(idx)) idx = []
+      if (!idx.includes(body.month)) { idx.push(body.month); idx.sort().reverse(); await store.setJSON(idxKey, idx) }
+      return json({ ok: true, savedAt: rec.savedAt, savedBy: rec.savedBy })
+    }
+    if (url.searchParams.get('list')) {
+      const idx = await store.get(idxKey, { type: 'json' }).catch(() => null)
+      return json({ months: Array.isArray(idx) ? idx : [] })
+    }
+    const month = url.searchParams.get('month')
+    if (!month) return json({ error: 'month required' }, 400)
+    const rec = await store.get(monthKey(client, month), { type: 'json' }).catch(() => null)
+    return json(rec ? { saved: true, ...rec } : { saved: false })
+  }
+
+  // Realised wins for the report month, attributed by WON DATE (regardless of
+  // when the lead came in). Account total + per-user + per-channel.
+  if (url.searchParams.get('scope') === 'monthlywon') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ error: `unknown client ${client}` }, 404)
+    if (!cc.ghl) return json({ won: null, connected: false })
+    if (!(await isConnected().catch(() => false))) return json({ won: null, connected: false, needsSetup: true })
+    try { return json({ won: await wonInPeriod(cc.ghl, from, to), period: { from, to } }, 200) }
+    catch (e) { return json({ won: null, error: String(e.message || e) }, 200) }
+  }
+
+  // Up to N (default 6) months of Meta platform spend + leads + CPL, ending on
+  // the report month, for the campaign-performance trend graph.
+  if (url.searchParams.get('scope') === 'monthlytrend') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ error: `unknown client ${client}` }, 404)
+    if (!from || !to) return json({ error: 'from/to required' }, 400)
+    const months = Math.max(1, Math.min(12, parseInt(url.searchParams.get('months') || '6', 10)))
+    const fromY = new Date(from + 'T00:00:00Z').getUTCFullYear(), fromM = new Date(from + 'T00:00:00Z').getUTCMonth()
+    const startD = new Date(Date.UTC(fromY, fromM - (months - 1), 1))
+    const winFrom = startD.toISOString().slice(0, 10)
+    const buckets = new Map()
+    for (let i = 0; i < months; i++) {
+      const d = new Date(Date.UTC(startD.getUTCFullYear(), startD.getUTCMonth() + i, 1))
+      buckets.set(d.toISOString().slice(0, 7), { month: d.toISOString().slice(0, 7), label: d.toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' }), spend: 0, leads: 0 })
+    }
+    try {
+      if (cc.meta) {
+        const rows = await windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], winFrom, to, null, key)
+        for (const r of rows) {
+          if (r.account_id && norm(r.account_id) !== norm(cc.meta)) continue
+          const b = buckets.get(String(r.date || '').slice(0, 7)); if (!b) continue
+          b.spend += num(r.spend); b.leads += fbLeads(r)
+        }
+      }
+      const trend = [...buckets.values()].map((b) => ({ month: b.month, label: b.label, spend: Math.round(b.spend), leads: Math.round(b.leads), cpl: b.leads ? Math.round(b.spend / b.leads) : null }))
+      return json({ trend }, 200)
+    } catch (e) { return json({ trend: [], error: String(e.message || e) }, 200) }
+  }
+
   // Agency-wide Caalano Systems access/scope audit across every mapped client.
   if (url.searchParams.get('scope') === 'ghlaudit') {
     if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })

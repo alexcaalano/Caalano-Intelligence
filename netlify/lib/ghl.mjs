@@ -797,6 +797,83 @@ export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
   }
 }
 
+// Deal-level lists for the Monthly Report — powers drill-downs, the Lost Reasons
+// view and the Status-Change vs Created-On revenue split. Two won bases:
+//   statusChange = deals whose status became "won" IN the month (any lead date)
+//   createdOn    = deals whose LEAD was created in the month and are now won
+// plus lost deals (marked lost in the month) with reasons. Each deal carries the
+// contact name, lead-created date, status-change (won/lost) date, value, source
+// channel, pipeline/stage and assigned user — everything needed to sense-check.
+export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
+  const locTok = await locationToken(locationId)
+  const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
+  const CAP = 3000
+  const [opps, pipelines, reasons, tz] = await Promise.all([
+    allOpportunities(locTok, locationId, back, to, CAP),
+    fetchPipelines(locTok, locationId),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+    locationTimezone(locationId),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const inWin = (ms) => (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
+  const nameOf = (o) => (o && ((o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' ').trim())) || o.contactName || o.name)) || 'Unknown contact'
+  const pInfo = (o) => idx.get(o.pipelineId) || null
+  const deal = (o, whenMs) => {
+    const p = pInfo(o); const stg = p && p.byId ? p.byId[o.pipelineStageId] : null
+    return {
+      name: nameOf(o),
+      createdAt: o.createdAt ? String(o.createdAt).slice(0, 10) : null,
+      statusAt: isFinite(whenMs) ? new Date(whenMs).toISOString().slice(0, 10) : null,
+      value: num(o.monetaryValue), channel: channelOf(utmOf(o)),
+      pipeline: p ? p.name : null, stage: stg ? stg.name : null,
+      userId: o.assignedTo || 'unassigned', reason: o.lostReasonId ? (reasonName[o.lostReasonId] || 'Other') : null,
+    }
+  }
+  const wonSC = [], wonCO = [], lost = []
+  for (const o of opps) {
+    const st = String(o.status || '').toLowerCase()
+    const scMs = Date.parse(o.lastStatusChangeAt), crMs = Date.parse(o.createdAt)
+    if (st === 'won') {
+      if (isFinite(scMs) && inWin(scMs)) wonSC.push(deal(o, scMs))
+      if (isFinite(crMs) && inWin(crMs)) wonCO.push(deal(o, scMs))
+    } else if (st === 'lost' || st === 'abandoned') {
+      if (isFinite(scMs) && inWin(scMs)) lost.push(deal(o, scMs))
+    }
+  }
+  const isPaid = (c) => c === 'meta' || c === 'google'
+  const sumV = (arr) => arr.reduce((s, d) => s + d.value, 0)
+  const aggWon = (deals) => {
+    const paid = deals.filter((d) => isPaid(d.channel))
+    const byUser = {}, byChannel = { meta: { count: 0, revenue: 0 }, google: { count: 0, revenue: 0 }, other: { count: 0, revenue: 0 } }
+    for (const d of deals) {
+      const u = byUser[d.userId] = byUser[d.userId] || { count: 0, revenue: 0 }; u.count++; u.revenue += d.value
+      const c = byChannel[isPaid(d.channel) ? d.channel : 'other']; c.count++; c.revenue += d.value
+    }
+    for (const k in byUser) byUser[k].revenue = Math.round(byUser[k].revenue)
+    for (const k in byChannel) byChannel[k].revenue = Math.round(byChannel[k].revenue)
+    return {
+      count: deals.length, revenue: Math.round(sumV(deals)), avgValue: deals.length ? Math.round(sumV(deals) / deals.length) : 0,
+      paid: { count: paid.length, revenue: Math.round(sumV(paid)) }, byUser, byChannel,
+      deals: deals.sort((a, b) => b.value - a.value).slice(0, 500),
+    }
+  }
+  const lostByReason = {}
+  for (const d of lost) { const r = d.reason || 'Not set'; const e = lostByReason[r] = lostByReason[r] || { count: 0, value: 0 }; e.count++; e.value += d.value }
+  return {
+    statusChange: { won: aggWon(wonSC) },
+    createdOn: { won: aggWon(wonCO) },
+    lost: {
+      total: { count: lost.length, value: Math.round(sumV(lost)) },
+      byReason: Object.entries(lostByReason).map(([name, v]) => ({ name, count: v.count, value: Math.round(v.value) })).sort((a, b) => b.count - a.count),
+      deals: lost.sort((a, b) => b.value - a.value).slice(0, 500),
+    },
+    capped: opps.length >= CAP,
+  }
+}
+
 // Lightweight source-tag coverage for one location (no pipeline/stage work):
 // how many opportunities carry a UTM, split by classified channel.
 export async function attributionCoverage(locationId, from, to) {

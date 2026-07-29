@@ -17,6 +17,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.98.0 — 2026-07-29 · `PENDING`
+- **Monthly Report — CRM section made consistent + interactive.** Resolves the
+  mixed-basis nonsense (funnels/user rows that printed >100% conversions):
+  - **The funnel is now one clean Created-On cohort** — this month's leads → each
+    Key Event → won *from that cohort*, so conversions can't exceed 100%. Wins/revenue
+    closed this month live in their own labelled block, not inside the funnel.
+  - **Revenue is shown Status Change vs Created On** (each Total vs Paid, plus deals
+    & avg) in a side-by-side matrix on the Account summary and ROI slides. Status
+    change = cash banked this month (any lead date); Created on = this month's leads
+    that are won.
+  - **User performance** now ranks by revenue **closed this month** (cash), shows
+    **all configured Key Events** as per-user columns (created-on cohort), and win
+    rate is single-basis (cohort won ÷ cohort leads) — no more 100% artefacts.
+  - **Drill-downs (click to sense-check live):** Won counts, per-user closed, revenue
+    cells and lost reasons open the actual deals — contact, **lead-created date**,
+    **won/lost date**, value, source, pipeline/stage, owner. Screen-only (not in PDF).
+  - **New Lost Reasons slide** — deals lost this month by reason, click-through to the
+    deals, with value lost and win rate.
+  - Fixed 360 "Cost / won" to paid basis (was paid spend ÷ all-source wins), and
+    labelled the two different "leads" (ad results vs CRM leads created).
+  - Backend: new `monthlydeals` scope + `monthlyDeals()` returning won (both bases)
+    and lost deal lists with names/dates/source/reason and paid split.
+
 ## v3.97.0 — 2026-07-29 · `PENDING`
 - **Monthly Report — trend now matches the headline.** The 6-month trend was pulling
   Meta with a `date` dimension, which splits windowed conversions per day and

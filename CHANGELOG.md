@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.100.0 — 2026-07-29 · `PENDING`
+- **Multi-month reports.** The Monthly Report now has a From → To month picker — pick
+  the same month for a single-month report, or a range (e.g. April → June) for a
+  quarter. Everything (campaign/creative/Google/CRM, drills, lost reasons, revenue
+  bases) recomputes over the range; the 6-month trend anchors on the end month.
+  Snapshots are frozen per period (single month or range) independently.
+- **Created-On ROAS vs Status-Change ROAS** added as a row in the revenue matrix, so
+  you can compare cash-return-this-month against this-month's-leads return on the same
+  ad spend (useful when a month has no paid status-change closes but its leads have).
+- **All client pickers are now alphabetical** (sidebar switcher, Monthly Report, and
+  the remaining client dropdowns). Performance leaderboards keep their ranked order.
+
 ## v3.99.0 — 2026-07-29 · `PENDING`
 - **Monthly Report fixes:** the Status-Change vs Created-On revenue matrix no longer
   runs off the card — it now uses a fixed layout with a hard width cap and wrapping

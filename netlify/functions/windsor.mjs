@@ -1345,8 +1345,10 @@ export default async (req) => {
     if (!cc) return json({ error: `unknown client ${client}` }, 404)
     if (!from || !to) return json({ error: 'from/to required' }, 400)
     const months = Math.max(1, Math.min(12, parseInt(url.searchParams.get('months') || '6', 10)))
-    const fromY = new Date(from + 'T00:00:00Z').getUTCFullYear(), fromM = new Date(from + 'T00:00:00Z').getUTCMonth()
-    const startD = new Date(Date.UTC(fromY, fromM - (months - 1), 1))
+    // Anchor on the range's END month so a multi-month report shows the correct
+    // trailing months (for a single month, from and to share a month → identical).
+    const anchor = new Date((to || from) + 'T00:00:00Z')
+    const startD = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - (months - 1), 1))
     const winFrom = startD.toISOString().slice(0, 10)
     const buckets = new Map()
     for (let i = 0; i < months; i++) {

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.99.0'
+const APP_VERSION = '3.100.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -892,7 +892,7 @@ function WeeklyTab({ rows, currency, nonce }) {
     <>
       <div className="c360-head" style={{ marginTop: 0 }}>
         <div className="pipe-sel"><label>Client</label>
-          <select value={cid || ''} onChange={(e) => setCid(e.target.value)}>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <select value={cid || ''} onChange={(e) => setCid(e.target.value)}>{[...clients].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
         </div>
         <div className="pipe-sel"><label>Weeks</label>
           <select value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>{[4, 6, 8, 12].map((n) => <option key={n} value={n}>Last {n} weeks</option>)}</select>
@@ -7583,6 +7583,14 @@ function monthBounds(m) {
   const label = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-AU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
   return { from, to, label }
 }
+const monthShort = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-AU', { month: 'short', timeZone: 'UTC' }) }
+// A report period spanning one or more months (from month `a` to month `b`).
+function periodOf(a, b) {
+  const lo = a <= b ? a : b, hi = a <= b ? b : a
+  const from = `${lo}-01`, to = monthBounds(hi).to, single = lo === hi
+  const label = single ? monthBounds(lo).label : `${monthBounds(lo).label} – ${monthBounds(hi).label}`
+  return { from, to, label, key: single ? lo : `${lo}_${hi}`, single, lo, hi }
+}
 // Default month = last complete calendar month.
 function lastCompleteMonth() {
   const d = new Date()
@@ -7612,8 +7620,8 @@ async function mrFetch(qs) {
 
 // Pull every scope the deck needs for one client + month, in parallel, and
 // shape the frozen report payload.
-async function assembleMonthlyReport(client, month) {
-  const b = monthBounds(month)
+async function assembleMonthlyReport(client, period) {
+  const b = { from: period.from, to: period.to, label: period.label }
   const q = `client=${encodeURIComponent(client.id)}&${rangeQuery(b)}`
   const [meta, google, blend, attribution, trendR, dealsR] = await Promise.all([
     client.meta ? mrFetch(`channel=meta&${q}`).then((r) => r.meta).catch(() => null) : Promise.resolve(null),
@@ -7630,7 +7638,7 @@ async function assembleMonthlyReport(client, month) {
   if (meta) delete meta.adDaily
   return {
     v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
-    month, period: b, currency: undefined,
+    month: period.key, period: b, currency: undefined,
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
     meta, google, blend, attribution: attrTrim, trend: trendR || [], deals: dealsR || null,
     wonClosed: (blend && blend.wonClosed) || null,
@@ -7710,10 +7718,12 @@ function MRTrend({ trend, currency }) {
 }
 
 function MonthlyReport({ clients, currency, authUser }) {
-  const list = clients || []
+  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   const [clientId, setClientId] = useState(list[0] ? list[0].id : '')
   const client = list.find((c) => c.id === clientId) || list[0] || null
-  const [month, setMonth] = useState(lastCompleteMonth())
+  const [fromMonth, setFromMonth] = useState(lastCompleteMonth())
+  const [toMonth, setToMonth] = useState(lastCompleteMonth())
+  const period = periodOf(fromMonth, toMonth)
   const [st, setSt] = useState({ status: 'idle' }) // idle|loading|ok|err|empty ; {report, frozen}
   const [saved, setSaved] = useState(null) // {savedAt, savedBy}
   const [busy, setBusy] = useState(false)
@@ -7724,24 +7734,24 @@ function MonthlyReport({ clients, currency, authUser }) {
   const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
   const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '—')
 
-  // Load the frozen snapshot whenever client/month changes.
+  // Load the frozen snapshot whenever client or the selected period changes.
   useEffect(() => {
     if (!client) return
     let alive = true
     setSt({ status: 'loading' }); setSaved(null)
-    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&month=${month}`)
+    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&month=${period.key}`)
       .then((r) => { if (!alive) return; if (r && r.saved) { setSaved({ savedAt: r.savedAt, savedBy: r.savedBy }); setSt({ status: 'ok', report: r.report, frozen: true }) } else setSt({ status: 'empty' }) })
       .catch(() => { if (alive) setSt({ status: 'empty' }) })
     return () => { alive = false }
-  }, [clientId, month])
+  }, [clientId, period.key])
 
   async function generate() {
     if (!client) return
     setBusy(true); setSt({ status: 'loading' })
     try {
-      const report = await assembleMonthlyReport(client, month)
+      const report = await assembleMonthlyReport(client, period)
       setSt({ status: 'ok', report, frozen: false })
-      const save = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month, report }) }).then((x) => x.json()).catch(() => null)
+      const save = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month: period.key, report }) }).then((x) => x.json()).catch(() => null)
       if (save && save.ok) { setSaved({ savedAt: save.savedAt, savedBy: save.savedBy }); setSt({ status: 'ok', report, frozen: true }) }
     } catch (e) { setSt({ status: 'err', error: String(e.message || e) }) }
     setBusy(false)
@@ -7764,7 +7774,7 @@ function MonthlyReport({ clients, currency, authUser }) {
         if (i) pdf.addPage()
         pdf.addImage(img, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h)
       }
-      pdf.save(`${(client && client.name || 'report').replace(/[^\w]+/g, '-')}-${month}.pdf`)
+      pdf.save(`${(client && client.name || 'report').replace(/[^\w]+/g, '-')}-${period.key}.pdf`)
     } catch (e) { alert('PDF export failed: ' + (e.message || e)) }
     setExporting(false)
   }
@@ -7777,7 +7787,11 @@ function MonthlyReport({ clients, currency, authUser }) {
         <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>
           {list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select className="mr-select" value={month} onChange={(e) => setMonth(e.target.value)}>
+        <select className="mr-select" value={fromMonth} onChange={(e) => { const v = e.target.value; setFromMonth(v); if (toMonth < v) setToMonth(v) }} title="From month">
+          {MR_MONTHS().map((m) => <option key={m} value={m}>{monthBounds(m).label}</option>)}
+        </select>
+        <span className="mr-to">to</span>
+        <select className="mr-select" value={toMonth} onChange={(e) => { const v = e.target.value; setToMonth(v); if (fromMonth > v) setFromMonth(v) }} title="To month (same as From = single month)">
           {MR_MONTHS().map((m) => <option key={m} value={m}>{monthBounds(m).label}</option>)}
         </select>
         <button className="mr-btn primary" onClick={generate} disabled={busy}>{busy ? 'Generating…' : (saved ? 'Refresh snapshot' : 'Generate snapshot')}</button>
@@ -7789,7 +7803,7 @@ function MonthlyReport({ clients, currency, authUser }) {
 
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
-      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {monthBounds(month).label} yet.</b><p>Pick the client and month, then <b>Generate snapshot</b> to freeze this month’s numbers. Wins are captured by the month a deal was marked won — so late-closing leads show in the month they closed.</p></div>}
+      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won — so late-closing leads show in the month they closed.</p></div>}
 
       {rep && <div className="mr-deck" ref={deckRef}>{renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d) })}</div>}
       {drill && <MRDrill drill={drill} currency={currency} onClose={() => setDrill(null)} />}
@@ -7849,16 +7863,18 @@ function MRDrill({ drill, currency, onClose }) {
 
 // Status Change vs Created On revenue matrix — the same figures side by side so
 // the client can see cash banked this month vs how this month's leads are doing.
-function MRRevMatrix({ sc, co, money, n0, onDrill }) {
+function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
   const cell = (v, deals, title) => onDrill && deals && deals.length
     ? <button className="mr-cellbtn" onClick={() => onDrill({ title, deals })}>{v}</button> : v
   const days = (v) => (v == null ? '—' : `${v} day${v === 1 ? '' : 's'}`)
+  const roas = (rev) => (spend ? (rev / spend).toFixed(1) + 'x' : '—')
   return (
     <table className="mr-table mr-revmatrix">
       <thead><tr><th></th><th className="r">Status change<small>closed this month</small></th><th className="r">Created on<small>leads created this month</small></th></tr></thead>
       <tbody>
         <tr><td>Total revenue</td><td className="r">{money(sc.revenue)}</td><td className="r">{money(co.revenue)}</td></tr>
         <tr><td>Paid revenue</td><td className="r">{money(sc.paid.revenue)}</td><td className="r">{money(co.paid.revenue)}</td></tr>
+        <tr><td>Paid ROAS</td><td className="r">{roas(sc.paid.revenue)}</td><td className="r">{roas(co.paid.revenue)}</td></tr>
         <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won — closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won — leads created this month')}</td></tr>
         <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '—'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '—'}</td></tr>
         <tr><td>Avg time to close</td><td className="r">{days(sc.avgCloseDays)}</td><td className="r">{days(co.avgCloseDays)}</td></tr>
@@ -8103,7 +8119,7 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
         </div>
         <div className="mr-section-lab">Revenue — status change vs created on</div>
-        <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} money={money} n0={n0} onDrill={openDrill} /></div>
+        <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} /></div>
         <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won.{openOtherRev > 0 ? ` ${money(openOtherRev)} of this month's closed revenue came from organic / untracked sources — in Total, excluded from Paid.` : ''}</p>
         <div className="mr-section-lab">This month's leads → key events (created-on cohort)</div>
         {funnelRows.length
@@ -8193,7 +8209,7 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Open pipeline value" value={money(crm.openValue)} />
         </div>
         <div className="mr-section-lab">Revenue — status change vs created on</div>
-        <MRRevMatrix sc={scWon} co={coWon} money={money} n0={n0} onDrill={openDrill} />
+        <MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} />
         {roiRows.length > 0 && (
           <>
             <div className="mr-section-lab">By channel (closed this month)</div>
@@ -8260,7 +8276,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
   }, [open])
   const needle = q.trim().toLowerCase()
-  const list = needle ? clients.filter((c) => c.name.toLowerCase().includes(needle) || (c.industry || '').toLowerCase().includes(needle)) : clients
+  const list = (needle ? clients.filter((c) => c.name.toLowerCase().includes(needle) || (c.industry || '').toLowerCase().includes(needle)) : clients).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   const pick = (c) => { onPick(c); setOpen(false); setQ('') }
   return (
     <div className={`csw ${open ? 'open' : ''}`} ref={ref}>

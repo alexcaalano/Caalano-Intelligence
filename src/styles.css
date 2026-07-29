@@ -1794,6 +1794,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-btn:hover:not(:disabled) { background: var(--elev); }
 .mr-btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
 .mr-btn:disabled { opacity: .5; cursor: default; }
+.mr-to { font-size: 12px; color: var(--muted); font-weight: 600; }
 .mr-bar-spacer { flex: 1; }
 .mr-saved { font-size: 12px; font-weight: 700; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); padding: 6px 11px; border-radius: 9px; }
 .mr-note { padding: 24px; text-align: center; color: var(--muted); }

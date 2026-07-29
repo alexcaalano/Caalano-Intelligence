@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.94.0 — 2026-07-29 · `PENDING`
+- **Sidebar client switcher (GoHighLevel-style).** Added a dropdown pill at the top
+  of the sidebar showing the active client (avatar + name + industry subline) with a
+  chevron. Clicking it opens a searchable list of **every** client; picking one jumps
+  straight to that client's workspace (the Client View). Type to filter by name or
+  industry, click-away / Esc to close, and the current client is ticked. Shows for
+  admins on all views (placeholder "Select a client" until one is open) and for
+  viewers who have more than one report assigned.
+
 ## v3.93.0 — 2026-07-28 · `PENDING`
 - **Command centre decluttered — fewer, calmer tiles.** Cut ~24 tiles down to ~17
   and dropped a whole group. Each rate now rides as a small line under its number

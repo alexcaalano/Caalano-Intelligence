@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.93.0'
+const APP_VERSION = '3.94.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7556,6 +7556,58 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
   )
 }
 
+// GoHighLevel-style client switcher for the sidebar: shows the active client
+// (avatar + name + subline) as a chunky pill, and drops down a searchable list
+// of every client. Picking one jumps straight to that client's workspace
+// (the "Client View"). `idxOf` keeps avatar colours stable across the app.
+function ClientSwitcher({ clients, active, onPick, idxOf }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); setQ('') } }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  const needle = q.trim().toLowerCase()
+  const list = needle ? clients.filter((c) => c.name.toLowerCase().includes(needle) || (c.industry || '').toLowerCase().includes(needle)) : clients
+  const pick = (c) => { onPick(c); setOpen(false); setQ('') }
+  return (
+    <div className={`csw ${open ? 'open' : ''}`} ref={ref}>
+      <button className="csw-trigger" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open} title="Switch client">
+        {active
+          ? <span className="avatar sm" style={{ background: acolor(idxOf(active)) }}>{initials(active.name)}</span>
+          : <span className="avatar sm csw-ph">◎</span>}
+        <span className="csw-txt">
+          <b>{active ? active.name : 'Select a client'}</b>
+          <small>{active ? (active.industry || 'Client workspace') : 'Jump to a client workspace'}</small>
+        </span>
+        <span className="csw-chev">▾</span>
+      </button>
+      {open && (
+        <div className="csw-menu" role="listbox">
+          <div className="csw-search"><input autoFocus placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <div className="csw-list">
+            {list.length ? list.map((c) => {
+              const sel = active && active.id === c.id
+              return (
+                <button key={c.id} className={`csw-item ${sel ? 'sel' : ''}`} role="option" aria-selected={sel} onClick={() => pick(c)}>
+                  <span className="avatar sm" style={{ background: acolor(idxOf(c)) }}>{initials(c.name)}</span>
+                  <span className="csw-txt"><b>{c.name}</b><small>{c.industry || '—'}</small></span>
+                  {sel && <span className="csw-tick">✓</span>}
+                </button>
+              )
+            }) : <div className="csw-empty">No clients match “{q}”.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Dashboard({ authUser, authEnabled, onLogout }) {
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
@@ -7632,6 +7684,9 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
       {collapsed && <button className="sb-expand" onClick={() => setCollapsed(false)} aria-label="Show sidebar" title="Show sidebar">»</button>}
       <aside className={`side ${navOpen ? 'open' : ''}`}>
         <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div><button className="sb-toggle" onClick={() => setCollapsed(true)} aria-label="Collapse sidebar" title="Collapse sidebar">«</button><button className="side-close" onClick={() => setNavOpen(false)} aria-label="Close menu">✕</button></div>
+        {(!isViewer || myClients.length > 1) && myClients.length > 0 && (
+          <ClientSwitcher clients={myClients} active={curView === 'clients' ? curPicked : null} onPick={openClient} idxOf={(c) => Math.max(0, baseClients.findIndex((x) => x.id === c.id))} />
+        )}
         <nav className="nav">
           {!isViewer && <>
             <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>

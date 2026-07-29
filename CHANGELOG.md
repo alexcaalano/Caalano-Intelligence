@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.102.0 — 2026-07-29 · `PENDING`
+- **Account summary now shows Deals Won on both bases as headline tiles** — "created"
+  (this month's leads, created-on cohort) and "closed" (marked won this month), so
+  the two are visible at a glance without reading the matrix.
+
 ## v3.101.0 — 2026-07-29 · `PENDING`
 - **CAC (cost per paid won)** added to the revenue matrix — ad spend ÷ paid deals
   won, for both bases (status change vs created on), sitting under Paid ROAS so the

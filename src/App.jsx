@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.101.0'
+const APP_VERSION = '3.102.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8113,7 +8113,8 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Total ad spend" value={money(totalSpend)} />
           <MRKpi label="Paid leads" value={n0(paidLeads)} sub="ad results" />
           <MRKpi label="Blended CPL" value={paidLeads ? money(totalSpend / paidLeads) : '—'} />
-          <MRKpi label="Deals won" value={n0(dealsWon)} sub="closed this month" />
+          <MRKpi label="Deals won · created" value={n0(coWon.count)} sub="this month's leads" />
+          <MRKpi label="Deals won · closed" value={n0(dealsWon)} sub="closed this month" />
           <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />
           <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub="cash / status change" />
           <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '—'} />

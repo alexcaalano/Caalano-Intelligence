@@ -1333,19 +1333,26 @@ export default async (req) => {
     }
     try {
       if (cc.meta) {
-        // Pull ad-set × day rows with the optimisation + result fields so each
-        // month's "leads" is the sum of every campaign's OWN optimised result
-        // (matches Ads Manager "Results"), not just native lead-form leads.
-        const fields = [...new Set(['account_id', 'date', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS])]
-        const rows = (await windsorFetch('facebook', fields, winFrom, to, null, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
-        const byMonth = new Map()
-        for (const r of rows) { const k = String(r.date || '').slice(0, 10).slice(0, 7); if (!buckets.has(k)) continue; if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(r) }
-        for (const [k, mrows] of byMonth) {
-          const b = buckets.get(k); if (!b) continue
+        // Compute each month with the SAME per-ad-set rollup the campaign slide's
+        // headline uses (adset fields, no `date` dimension), so the trend's latest
+        // point matches the headline exactly. A `date`-dimension pull splits
+        // windowed conversions per day and under-counts results — the bug that made
+        // the trend disagree with the headline. One fetch per month, in parallel.
+        const fallback = await readMetaPrimary(client).catch(() => null)
+        const adsetFields = ['account_id', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+        const monthList = [...buckets.keys()]
+        const lastDay = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10) }
+        const perMonth = await Promise.all(monthList.map((k) =>
+          windsorFetch('facebook', adsetFields, `${k}-01`, lastDay(k), null, key)
+            .then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta)))
+            .catch(() => [])
+        ))
+        monthList.forEach((k, i) => {
+          const b = buckets.get(k); if (!b) return
           let results = 0, spend = 0
-          for (const a of aggMeta(mrows, 'adset_name')) { const rr = rowResult(a, null); results += resultCount(a, rr.field) || 0; spend += a.spend }
+          for (const a of aggMeta(perMonth[i], 'adset_name')) { const rr = rowResult(a, fallback); results += resultCount(a, rr.field) || 0; spend += a.spend }
           b.spend = spend; b.leads = results
-        }
+        })
       }
       const trend = [...buckets.values()].map((b) => ({ month: b.month, label: b.label, spend: Math.round(b.spend), leads: Math.round(b.leads), cpl: b.leads ? Math.round(b.spend / b.leads) : null }))
       return json({ trend }, 200)

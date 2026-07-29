@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.96.0'
+const APP_VERSION = '3.97.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5907,7 +5907,7 @@ function FatigueSettings() {
   )
 }
 
-function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEnabled, onPick }) {
+function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState(null) // client being configured (modal)
@@ -5936,7 +5936,18 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
         {isAdmin && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
+        <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
       </div>
+      {section === 'appearance' && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Appearance</h3>
+          <p className="cap" style={{ marginTop: -4 }}>Choose how Caalano360 looks. Saved to this browser.</p>
+          <div className="theme-choose">
+            <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme && setTheme('light')}>☀ Light</button>
+            <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme && setTheme('dark')}>☾ Dark</button>
+          </div>
+        </div>
+      )}
       {isAdmin && section === 'fatigue' && <FatigueSettings />}
       {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name }))} />}
       {authEnabled && section === 'account' && (
@@ -8082,6 +8093,23 @@ function aggConvActions(rows) {
   return [...m.values()].sort((a, b) => b.allConversions - a.allConversions)
 }
 
+// Monochrome sidebar icons (stroke = currentColor), so every nav item reads as
+// one colour and matches the text weight — no multicolour emoji.
+function NavIcon({ name }) {
+  const P = {
+    overview: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
+    trends: <><polyline points="3 16 9 10 13 14 21 6" /><polyline points="15 6 21 6 21 12" /></>,
+    weekly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /><path d="M8.5 15l2 2 4-4" /></>,
+    cockpit: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5M8 20v-5M16 20v-5" /></>,
+    insights: <><path d="M3 12h4l2.5 7 4-15 2.5 8H21" /></>,
+    update: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3.5 7l8.5 6 8.5-6" /></>,
+    monthly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
+    report: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-2.73 1.13V21a2 2 0 0 1-4 0v-.08A1.6 1.6 0 0 0 7.13 19.4l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 3 13.87H3a2 2 0 0 1 0-4h.08A1.6 1.6 0 0 0 4.6 7.13l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9.87 3H10a2 2 0 0 1 4 0v.08a1.6 1.6 0 0 0 2.73 1.13l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 21 9.87V10a2 2 0 0 1 0 4h-.08a1.6 1.6 0 0 0-1.52 1z" /></>,
+  }[name] || null
+  return <svg className="nav-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{P}</svg>
+}
+
 // GoHighLevel-style client switcher for the sidebar: shows the active client
 // (avatar + name + subline) as a chunky pill, and drops down a searchable list
 // of every client. Picking one jumps straight to that client's workspace
@@ -8215,24 +8243,22 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         )}
         <nav className="nav">
           {!isViewer && <>
-            <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic">◎</span>Agency Overview</button>
-            <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic">📈</span>Daily Performance</button>
-            <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic">🚦</span>Weekly Traffic Light</button>
-            <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic">🎬</span>Creative Cockpit</button>
-            <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic">📡</span>Meta Insights</button>
-            <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic">✉️</span>Client Update</button>
-            <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic">🗓️</span>Monthly Report</button>
+            <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic"><NavIcon name="overview" /></span>Agency Overview</button>
+            <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>
+            <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>
+            <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>
+            <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>
+            <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>
+            <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Report</button>
           </>}
           {isViewer && <>
             <div className="nav-lab">My reports</div>
-            {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic">▸</span>{c.name}</button>) : <div className="nav-empty">No reports assigned yet — your admin will set these up.</div>}
+            {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic"><NavIcon name="report" /></span>{c.name}</button>) : <div className="nav-empty">No reports assigned yet — your admin will set these up.</div>}
           </>}
         </nav>
-        <div style={{ marginTop: 'auto' }}>
-          <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic">⚙</span>Settings</button>
-          <button className="settings-btn" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}><span className="ic">{theme === 'dark' ? '☀' : '☾'}</span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</button>
-          {!isViewer && <button className={`settings-btn ${present ? 'active' : ''}`} onClick={() => setPresent((p) => !p)} title="Hide agency-internal cost/spend figures for client screen-shares"><span className="ic">{present ? '🟢' : '👁'}</span>{present ? 'Present mode: on' : 'Present mode'}</button>}
-          {authUser && <div className="side-user"><div className="side-user-who"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
+        <div className="side-foot">
+          <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic"><NavIcon name="settings" /></span>Settings</button>
+          {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}><b>v{APP_VERSION}</b> · deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
         </div>
       </aside>
@@ -8260,7 +8286,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
-          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
+          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}
         </ErrorBoundary>

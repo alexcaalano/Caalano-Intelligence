@@ -60,7 +60,7 @@ body {
 /* Sidebar */
 .side {
   background: var(--panel); border-right: 1px solid var(--border);
-  padding: 20px 14px; display: flex; flex-direction: column; gap: 6px;
+  padding: 28px 14px 16px; display: flex; flex-direction: column; gap: 6px;
   position: sticky; top: 0; height: 100vh;
 }
 /* Mobile: sidebar becomes an off-canvas slide-in drawer (desktop untouched). */
@@ -98,18 +98,23 @@ body {
   font-weight: 850;
 }
 .brand p { margin: 2px 0 0; font-size: 11px; color: var(--muted); letter-spacing: .01em; }
-.nav { display: flex; flex-direction: column; gap: 3px; }
+.nav { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
 @media (max-width: 900px) { .nav { flex-direction: column; gap: 4px; } }
-.nav button {
-  display: flex; align-items: center; gap: 11px; width: 100%;
+.nav button, .settings-btn {
+  display: flex; align-items: center; gap: 12px; width: 100%;
   border: 0; background: transparent; color: var(--muted); cursor: pointer;
   padding: 10px 12px; border-radius: 10px; font-size: 13.5px; font-weight: 600; text-align: left;
 }
-.nav button:hover { background: var(--panel-2); color: var(--text); }
-.nav button.active { background: var(--elev); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-2); }
-.nav .ic { width: 18px; text-align: center; opacity: .9; }
-.side .foot-note { margin-top: auto; padding: 12px 10px 4px; font-size: 10.5px; color: var(--faint); line-height: 1.5; }
-.side .foot-build { padding: 0 10px 12px; font-size: 10px; color: var(--faint); opacity: .8; font-variant-numeric: tabular-nums; }
+.nav button:hover, .settings-btn:hover { background: var(--panel-2); color: var(--text); }
+.nav button.active, .settings-btn.active { background: var(--elev); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-2); }
+/* One-colour icons: the SVG inherits currentColor, so every item's glyph matches
+   its text weight/colour (muted → text on hover/active). */
+.side .ic { width: 20px; height: 20px; display: grid; place-items: center; flex-shrink: 0; opacity: .9; }
+.side .nav-svg { display: block; }
+/* Footer group: settings + a slim, blended-in user row + build stamp. */
+.side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding-top: 10px; }
+.side .foot-note { padding: 12px 10px 4px; font-size: 10.5px; color: var(--faint); line-height: 1.5; }
+.side .foot-build { padding: 8px 12px 2px; font-size: 10px; color: var(--faint); opacity: .7; font-variant-numeric: tabular-nums; }
 
 /* Main */
 .main { padding: 26px clamp(16px, 3.2vw, 40px) 70px; min-width: 0; }
@@ -1364,15 +1369,19 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .auth-btn:disabled { opacity: .55; cursor: default; }
 .auth-err { background: color-mix(in srgb, var(--neg) 14%, transparent); border: 1px solid color-mix(in srgb, var(--neg) 40%, transparent); color: var(--neg); font-size: 12.5px; font-weight: 600; padding: 8px 11px; border-radius: 9px; }
 
-/* Sidebar signed-in user + sign out */
-.side-user { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 2px 6px; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; }
-.side-user-who { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.side-user-av { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: #fff; font-weight: 700; font-size: 13px; }
-.side-user-txt { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
-.side-user-txt b { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 118px; }
-.side-user-txt span { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .03em; }
-.side-user-out { flex: 0 0 auto; background: transparent; border: 1px solid var(--border-2); color: var(--muted); border-radius: 8px; padding: 5px 9px; font-size: 11px; font-weight: 700; cursor: pointer; }
-.side-user-out:hover { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 45%, var(--border-2)); }
+/* Sidebar signed-in user — slim, blended-in row (no card box). */
+.side-user { display: flex; align-items: center; gap: 9px; min-width: 0; margin: 2px 2px; padding: 7px 12px; border-radius: 10px; }
+.side-user:hover { background: var(--panel-2); }
+.side-user-av { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--brand) 82%, var(--panel)); color: #fff; font-weight: 700; font-size: 11.5px; }
+.side-user-txt { min-width: 0; flex: 1; display: flex; flex-direction: column; line-height: 1.2; }
+.side-user-txt b { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-user-txt span { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .03em; }
+.side-user-out { flex: 0 0 auto; background: transparent; border: 0; color: var(--faint); border-radius: 7px; padding: 3px 6px; font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.side-user-out:hover { color: var(--neg); }
+/* Appearance (theme) chooser in Settings */
+.theme-choose { display: flex; gap: 8px; }
+.theme-choose button { padding: 9px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; }
+.theme-choose button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 
 /* Settings sub-sections + team & access */
 .set-sections { display: inline-flex; gap: 4px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 11px; padding: 4px; margin-bottom: 14px; }

@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.97.0 — 2026-07-29 · `PENDING`
+- **Monthly Report — trend now matches the headline.** The 6-month trend was pulling
+  Meta with a `date` dimension, which splits windowed conversions per day and
+  under-counted results (so the June point read $137/result while the headline read
+  $101). It now computes each month with the identical per-ad-set rollup the headline
+  uses (one fetch per month, no date dimension), so the latest point ties out exactly.
+- **Sidebar & Settings polish.** Nav icons are now a single-colour monochrome set
+  (they inherit the text colour) with more breathing room at the top and consistent
+  spacing. Removed **Present mode** and the sidebar theme toggle; **Light/Dark now
+  lives in Settings → Appearance**. The signed-in-user row is slimmed into a quiet,
+  blended-in strip instead of a boxed card.
+
 ## v3.96.0 — 2026-07-29 · `PENDING`
 - **Monthly Report fixes** from first review:
   - **Meta now counts optimised Results, not native leads.** The campaign slide's

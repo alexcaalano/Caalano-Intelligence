@@ -17,6 +17,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.96.0 — 2026-07-29 · `PENDING`
+- **Monthly Report fixes** from first review:
+  - **Meta now counts optimised Results, not native leads.** The campaign slide's
+    headline (and the 6-month trend) now sum each campaign's own objective result
+    (Ads-Manager "Results" — e.g. website conversions + on-Facebook leads together),
+    instead of native lead-form leads only, which under-counted website-conversion
+    campaigns. The trend backend resolves per-ad-set optimisation per month.
+  - **ROAS is now paid-only.** Every ROAS is measured on revenue from deals whose
+    lead carried a Meta/Google UTM, not total business — so organic/referral closes
+    no longer inflate it (Pool Haus June went from a misleading 42.7x to a true ~18x).
+  - **Revenue is always shown as Total vs Paid.** Cover, Caalano360 summary and the
+    ROI slide each call out total (all sources) alongside paid-attributed revenue.
+    The ROI footnote spells out how much came from untracked sources.
+  - **Fixed slides running off-screen.** Creative grid, keywords/search-terms columns,
+    trend charts and KPI rows now use shrink-safe grid tracks (`minmax(0,1fr)` /
+    auto-fit) so wide content scrolls inside its card instead of overflowing the page.
+  - Note: the KPI/ROAS/revenue changes apply to existing snapshots on reload; hit
+    **Refresh snapshot** to also rebuild the 6-month trend on the new results basis.
+
 ## v3.95.0 — 2026-07-29 · `PENDING`
 - **New Monthly Report tab — a frozen, slide-based client report with PDF export.**
   Pick a client and a month; **Generate snapshot** freezes that month's numbers

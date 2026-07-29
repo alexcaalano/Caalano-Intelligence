@@ -1333,11 +1333,18 @@ export default async (req) => {
     }
     try {
       if (cc.meta) {
-        const rows = await windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], winFrom, to, null, key)
-        for (const r of rows) {
-          if (r.account_id && norm(r.account_id) !== norm(cc.meta)) continue
-          const b = buckets.get(String(r.date || '').slice(0, 7)); if (!b) continue
-          b.spend += num(r.spend); b.leads += fbLeads(r)
+        // Pull ad-set × day rows with the optimisation + result fields so each
+        // month's "leads" is the sum of every campaign's OWN optimised result
+        // (matches Ads Manager "Results"), not just native lead-form leads.
+        const fields = [...new Set(['account_id', 'date', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS])]
+        const rows = (await windsorFetch('facebook', fields, winFrom, to, null, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+        const byMonth = new Map()
+        for (const r of rows) { const k = String(r.date || '').slice(0, 10).slice(0, 7); if (!buckets.has(k)) continue; if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(r) }
+        for (const [k, mrows] of byMonth) {
+          const b = buckets.get(k); if (!b) continue
+          let results = 0, spend = 0
+          for (const a of aggMeta(mrows, 'adset_name')) { const rr = rowResult(a, null); results += resultCount(a, rr.field) || 0; spend += a.spend }
+          b.spend = spend; b.leads = results
         }
       }
       const trend = [...buckets.values()].map((b) => ({ month: b.month, label: b.label, spend: Math.round(b.spend), leads: Math.round(b.leads), cpl: b.leads ? Math.round(b.spend / b.leads) : null }))

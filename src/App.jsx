@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.95.0'
+const APP_VERSION = '3.96.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7657,8 +7657,8 @@ function MRTrend({ trend, currency }) {
   const money = (v) => fmtCurrency(v, currency)
   const charts = [
     { key: 'spend', label: 'Ad spend', kind: 'bar', color: '#6d5efc', fmt: money },
-    { key: 'leads', label: 'Leads', kind: 'bar', color: '#22b07d', fmt: (v) => fmtNumber(v) },
-    { key: 'cpl', label: 'Cost per lead', kind: 'line', color: '#e0803a', fmt: (v) => (v == null ? '—' : money(v)) },
+    { key: 'leads', label: 'Results', kind: 'bar', color: '#22b07d', fmt: (v) => fmtNumber(v) },
+    { key: 'cpl', label: 'Cost per result', kind: 'line', color: '#e0803a', fmt: (v) => (v == null ? '—' : money(v)) },
   ]
   return (
     <div className="mr-trend">
@@ -7787,11 +7787,22 @@ function renderMonthlyDeck(rep, h) {
   const crm = (blend && blend.crm) || {}
   const pipelines = (blend && blend.pipelines) || []
   const users = (blend && blend.users) || []
-  const totalSpend = paid.adSpend || ((meta && meta.totals && meta.totals.spend) || 0) + ((google && google.totals && google.totals.cost) || 0)
-  const paidLeads = paid.adConversions != null ? paid.adConversions : ((meta && meta.totals && meta.totals.leads) || 0)
+  const chan = (won && won.channels) || {}
+  const totalSpend = paid.adSpend || (((meta && meta.totals && meta.totals.spend) || 0) + ((google && google.totals && google.totals.cost) || 0))
+  // Paid leads = Meta's optimised RESULTS (sum of each campaign's own objective
+  // result, matching Ads Manager) + Google conversions — not native lead-form
+  // leads only, which under-count website/conversion campaigns.
+  const metaResults = (meta && meta.totals && meta.totals.results != null) ? meta.totals.results : ((paid.metaLeads) || 0)
+  const gConv = (google && google.totals && google.totals.conversions) || paid.googleConv || 0
+  const paidLeads = Math.round(metaResults + gConv)
   const realisedRev = won && won.total ? won.total.revenue : (crm.revenue || 0)
   const dealsWon = won && won.total ? won.total.won : (crm.won || 0)
-  const roas = totalSpend ? realisedRev / totalSpend : null
+  // Paid-attributed revenue / wins (deals whose lead carried a Meta or Google
+  // UTM). ROAS is ALWAYS measured on this, never total business — so organic /
+  // referral / untracked closes never inflate the return on ad spend.
+  const paidRev = ((chan.meta && chan.meta.revenue) || 0) + ((chan.google && chan.google.revenue) || 0)
+  const paidWon = ((chan.meta && chan.meta.won) || 0) + ((chan.google && chan.google.won) || 0)
+  const roas = totalSpend ? paidRev / totalSpend : null
 
   // Slide list (Google slides only when connected).
   const slides = []
@@ -7826,9 +7837,10 @@ function renderMonthlyDeck(rep, h) {
       </div>
       <div className="mr-cover-tiles">
         <MRKpi label="Ad spend" value={money(totalSpend)} />
-        <MRKpi label="Leads" value={n0(paidLeads)} />
+        <MRKpi label="Paid leads" value={n0(paidLeads)} />
         <MRKpi label="Deals won" value={n0(dealsWon)} sub="closed this month" />
-        <MRKpi label="Revenue" value={money(realisedRev)} sub={roas != null ? `${roas.toFixed(1)}x ROAS` : null} strong />
+        <MRKpi label="Total revenue" value={money(realisedRev)} sub="all sources" />
+        <MRKpi label="Paid revenue" value={money(paidRev)} sub={roas != null ? `${roas.toFixed(1)}x ROAS` : null} strong />
       </div>
       <div className="mr-cover-foot">Generated {new Date(rep.generatedAt).toLocaleDateString()} · Wins &amp; revenue attributed to the month each deal was marked won.</div>
     </section>
@@ -7845,8 +7857,8 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Reach" value={n0(t.reach)} />
           <MRKpi label="Frequency" value={t.reach ? (t.impressions / t.reach).toFixed(1) + 'x' : '—'} />
           <MRKpi label="CTR" value={t.impressions ? fmtPct((t.clicks / t.impressions) * 100, 2) : '—'} />
-          <MRKpi label="Leads" value={n0(t.leads)} />
-          <MRKpi label="Cost / lead" value={t.leads ? money(t.spend / t.leads) : '—'} strong />
+          <MRKpi label="Results" value={n0(t.results != null ? t.results : t.leads)} sub={t.resultBreakdown && t.resultBreakdown.length > 1 ? 'mixed objectives' : (t.resultBreakdown && t.resultBreakdown[0] ? t.resultBreakdown[0].label : null)} />
+          <MRKpi label="Cost / result" value={(t.results != null ? t.results : t.leads) ? money(t.spend / (t.results != null ? t.results : t.leads)) : '—'} strong />
         </div>
         <MRTable cols={metaCols('name', 'Campaign')} rows={meta.campaigns || []} max={14} />
         <div className="mr-section-lab">6-month trend</div>
@@ -7977,8 +7989,9 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Paid leads" value={n0(paidLeads)} />
           <MRKpi label="Blended CPL" value={paidLeads ? money(totalSpend / paidLeads) : '—'} />
           <MRKpi label="Deals won" value={n0(dealsWon)} sub="closed this month" />
-          <MRKpi label="Revenue" value={money(realisedRev)} strong />
-          <MRKpi label="ROAS" value={roas != null ? roas.toFixed(1) + 'x' : '—'} />
+          <MRKpi label="Total revenue" value={money(realisedRev)} sub="all sources" />
+          <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="paid-attributed" />
+          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} />
           <MRKpi label="Cost / won" value={dealsWon ? money(totalSpend / dealsWon) : '—'} />
           <MRKpi label="Avg won value" value={won && won.total && won.total.avgValue ? money(won.total.avgValue) : (dealsWon ? money(realisedRev / dealsWon) : '—')} />
           <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
@@ -8011,7 +8024,7 @@ function renderMonthlyDeck(rep, h) {
             { k: 'shown', label: 'Shown', align: 'r', render: (r) => n0(r.shown) },
             { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
             { k: 'winrate', label: 'Win rate', align: 'r', render: (r) => pc(r.won, r.leads) },
-            { k: 'revenue', label: 'Revenue', align: 'r', render: (r) => money(r.revenue) },
+            { k: 'revenue', label: 'Total rev.', align: 'r', render: (r) => money(r.revenue) },
             { k: 'avg', label: 'Avg won', align: 'r', render: (r) => (r.avg ? money(r.avg) : '—') },
           ]}
           rows={urows} max={20}
@@ -8021,19 +8034,20 @@ function renderMonthlyDeck(rep, h) {
     )
 
     // ---- ROI ----
-    const chan = (won && won.channels) || {}
     const roiRows = [
       { label: 'Meta', spend: paid.metaSpend || 0, rev: (chan.meta && chan.meta.revenue) || 0, won: (chan.meta && chan.meta.won) || 0 },
       { label: 'Google', spend: paid.googleSpend || 0, rev: (chan.google && chan.google.revenue) || 0, won: (chan.google && chan.google.won) || 0 },
     ].filter((r) => r.spend || r.rev)
+    const otherRev = Math.max(0, realisedRev - paidRev)
     push(
-      <MRSlide key="roi" kicker="Caalano360" title="Return on investment" sub="Ad spend this month vs revenue from deals closed this month.">
+      <MRSlide key="roi" kicker="Caalano360" title="Return on investment" sub="ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM — not total business.">
         <div className="mr-kpirow mr-kpirow-wide">
           <MRKpi label="Ad spend" value={money(totalSpend)} />
-          <MRKpi label="Revenue (closed)" value={money(realisedRev)} strong />
-          <MRKpi label="ROAS" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub={roas != null ? `${money(realisedRev)} ÷ ${money(totalSpend)}` : null} />
-          <MRKpi label="Deals won" value={n0(dealsWon)} />
-          <MRKpi label="Cost / won" value={dealsWon ? money(totalSpend / dealsWon) : '—'} />
+          <MRKpi label="Total revenue" value={money(realisedRev)} sub="all sources" />
+          <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="paid-attributed" />
+          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub={roas != null ? `${money(paidRev)} ÷ ${money(totalSpend)}` : null} />
+          <MRKpi label="Paid deals won" value={n0(paidWon)} />
+          <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '—'} />
           <MRKpi label="Open pipeline value" value={money(crm.openValue)} />
         </div>
         {roiRows.length > 0 && (
@@ -8049,9 +8063,9 @@ function renderMonthlyDeck(rep, h) {
               ]}
               rows={roiRows}
             />
-            <p className="mr-foot-note">Revenue is attributed to the channel via the lead’s UTM source. Deals with no tracked source fall outside these channel rows but are included in the account totals above.</p>
           </>
         )}
+        <p className="mr-foot-note">Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from organic / referral / untracked sources` : ''}. Those are excluded from ROAS above, which counts only paid-attributed revenue.</p>
       </MRSlide>
     )
   }

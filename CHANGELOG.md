@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.101.0 — 2026-07-29 · `PENDING`
+- **CAC (cost per paid won)** added to the revenue matrix — ad spend ÷ paid deals
+  won, for both bases (status change vs created on), sitting under Paid ROAS so the
+  two efficiency metrics read together.
+
 ## v3.100.0 — 2026-07-29 · `PENDING`
 - **Multi-month reports.** The Monthly Report now has a From → To month picker — pick
   the same month for a single-month report, or a range (e.g. April → June) for a

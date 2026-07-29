@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.100.0'
+const APP_VERSION = '3.101.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7868,6 +7868,7 @@ function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
     ? <button className="mr-cellbtn" onClick={() => onDrill({ title, deals })}>{v}</button> : v
   const days = (v) => (v == null ? '—' : `${v} day${v === 1 ? '' : 's'}`)
   const roas = (rev) => (spend ? (rev / spend).toFixed(1) + 'x' : '—')
+  const cac = (paidWon) => (spend && paidWon ? money(spend / paidWon) : '—')
   return (
     <table className="mr-table mr-revmatrix">
       <thead><tr><th></th><th className="r">Status change<small>closed this month</small></th><th className="r">Created on<small>leads created this month</small></th></tr></thead>
@@ -7875,6 +7876,7 @@ function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
         <tr><td>Total revenue</td><td className="r">{money(sc.revenue)}</td><td className="r">{money(co.revenue)}</td></tr>
         <tr><td>Paid revenue</td><td className="r">{money(sc.paid.revenue)}</td><td className="r">{money(co.paid.revenue)}</td></tr>
         <tr><td>Paid ROAS</td><td className="r">{roas(sc.paid.revenue)}</td><td className="r">{roas(co.paid.revenue)}</td></tr>
+        <tr><td>CAC (cost / paid won)</td><td className="r">{cac(sc.paid.count)}</td><td className="r">{cac(co.paid.count)}</td></tr>
         <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won — closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won — leads created this month')}</td></tr>
         <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '—'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '—'}</td></tr>
         <tr><td>Avg time to close</td><td className="r">{days(sc.avgCloseDays)}</td><td className="r">{days(co.avgCloseDays)}</td></tr>

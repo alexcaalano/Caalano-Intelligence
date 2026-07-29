@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.98.0'
+const APP_VERSION = '3.99.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7597,6 +7597,13 @@ const MR_MONTHS = (back = 18) => {
   return out
 }
 
+// Display an ISO (YYYY-MM-DD) date as DD/MM/YYYY.
+function fmtDate(s) {
+  if (!s) return '—'
+  const p = String(s).slice(0, 10).split('-')
+  return (p.length === 3 && p[0]) ? `${p[2]}/${p[1]}/${p[0]}` : String(s)
+}
+
 async function mrFetch(qs) {
   const r = await fetch(`/.netlify/functions/windsor?${qs}`)
   if (!r.ok) { let e; try { e = (await r.json()).error } catch {} throw new Error(e || `HTTP ${r.status}`) }
@@ -7814,20 +7821,24 @@ function MRDrill({ drill, currency, onClose }) {
             <table className="mr-table">
               <thead><tr>
                 <th>Contact</th><th>Lead created</th><th>{isLost ? 'Lost' : 'Won'}</th>
+                {!isLost && <th className="r">Days to close</th>}
                 {isLost && <th>Reason</th>}<th>Source</th><th>Pipeline · stage</th><th>Owner</th><th className="r">Value</th>
               </tr></thead>
-              <tbody>{deals.map((d, i) => (
+              <tbody>{deals.map((d, i) => {
+                const days = (d.createdAt && d.statusAt) ? Math.max(0, Math.round((Date.parse(d.statusAt) - Date.parse(d.createdAt)) / 86400000)) : null
+                return (
                 <tr key={i}>
                   <td>{d.name}</td>
-                  <td>{d.createdAt || '—'}</td>
-                  <td>{d.statusAt || '—'}</td>
+                  <td>{fmtDate(d.createdAt)}</td>
+                  <td>{fmtDate(d.statusAt)}</td>
+                  {!isLost && <td className="r">{days == null ? '—' : days}</td>}
                   {isLost && <td>{d.reason || '—'}</td>}
                   <td><span className={`mr-src mr-src-${d.channel || 'other'}`}>{d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : 'Other'}</span></td>
                   <td>{[d.pipeline, d.stage].filter(Boolean).join(' · ') || '—'}</td>
                   <td>{d.userName || '—'}</td>
                   <td className="r">{money(d.value)}</td>
                 </tr>
-              ))}</tbody>
+              )})}</tbody>
             </table>
           ) : <div className="mr-empty">No deals to show.</div>}
         </div>
@@ -7841,18 +7852,18 @@ function MRDrill({ drill, currency, onClose }) {
 function MRRevMatrix({ sc, co, money, n0, onDrill }) {
   const cell = (v, deals, title) => onDrill && deals && deals.length
     ? <button className="mr-cellbtn" onClick={() => onDrill({ title, deals })}>{v}</button> : v
+  const days = (v) => (v == null ? '—' : `${v} day${v === 1 ? '' : 's'}`)
   return (
-    <div className="mr-tablewrap">
-      <table className="mr-table mr-revmatrix">
-        <thead><tr><th></th><th className="r">Status change<small>closed this month</small></th><th className="r">Created on<small>leads created this month</small></th></tr></thead>
-        <tbody>
-          <tr><td>Total revenue</td><td className="r">{money(sc.revenue)}</td><td className="r">{money(co.revenue)}</td></tr>
-          <tr><td>Paid revenue</td><td className="r">{money(sc.paid.revenue)}</td><td className="r">{money(co.paid.revenue)}</td></tr>
-          <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won — closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won — leads created this month')}</td></tr>
-          <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '—'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '—'}</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <table className="mr-table mr-revmatrix">
+      <thead><tr><th></th><th className="r">Status change<small>closed this month</small></th><th className="r">Created on<small>leads created this month</small></th></tr></thead>
+      <tbody>
+        <tr><td>Total revenue</td><td className="r">{money(sc.revenue)}</td><td className="r">{money(co.revenue)}</td></tr>
+        <tr><td>Paid revenue</td><td className="r">{money(sc.paid.revenue)}</td><td className="r">{money(co.paid.revenue)}</td></tr>
+        <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won — closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won — leads created this month')}</td></tr>
+        <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '—'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '—'}</td></tr>
+        <tr><td>Avg time to close</td><td className="r">{days(sc.avgCloseDays)}</td><td className="r">{days(co.avgCloseDays)}</td></tr>
+      </tbody>
+    </table>
   )
 }
 
@@ -7880,13 +7891,13 @@ function renderMonthlyDeck(rep, h) {
   //   scWon = STATUS CHANGE: deals marked won this month (cash view, any lead date)
   //   coWon = CREATED ON:    deals whose lead was created this month & are won
   const md = rep.deals || null
-  const emptyWon = { count: 0, revenue: 0, avgValue: 0, paid: { count: 0, revenue: 0 }, byUser: {}, byChannel: { meta: { count: 0, revenue: 0 }, google: { count: 0, revenue: 0 }, other: { count: 0, revenue: 0 } }, deals: [] }
+  const emptyWon = { count: 0, revenue: 0, avgValue: 0, avgCloseDays: null, paid: { count: 0, revenue: 0 }, byUser: {}, byChannel: { meta: { count: 0, revenue: 0 }, google: { count: 0, revenue: 0 }, other: { count: 0, revenue: 0 } }, deals: [] }
   const scWon = md ? md.statusChange.won : (won ? {
-    count: won.total.won, revenue: won.total.revenue, avgValue: won.total.avgValue,
+    count: won.total.won, revenue: won.total.revenue, avgValue: won.total.avgValue, avgCloseDays: won.avgCloseDays != null ? won.avgCloseDays : null,
     paid: { count: ((won.channels.meta && won.channels.meta.won) || 0) + ((won.channels.google && won.channels.google.won) || 0), revenue: ((won.channels.meta && won.channels.meta.revenue) || 0) + ((won.channels.google && won.channels.google.revenue) || 0) },
     byUser: won.byUser || {}, byChannel: { meta: won.channels.meta || { count: 0, revenue: 0 }, google: won.channels.google || { count: 0, revenue: 0 }, other: won.channels.other || { count: 0, revenue: 0 } }, deals: [],
   } : emptyWon)
-  const coWon = md ? md.createdOn.won : { count: crm.won || 0, revenue: crm.revenue || 0, avgValue: crm.avgValue || 0, paid: { count: 0, revenue: 0 }, byUser: {}, byChannel: emptyWon.byChannel, deals: [] }
+  const coWon = md ? md.createdOn.won : { count: crm.won || 0, revenue: crm.revenue || 0, avgValue: crm.avgValue || 0, avgCloseDays: null, paid: { count: 0, revenue: 0 }, byUser: {}, byChannel: emptyWon.byChannel, deals: [] }
   const lost = md ? md.lost : { total: { count: 0, value: 0 }, byReason: [], deals: [] }
 
   // Cash view (status change) is the headline for revenue/ROAS.
@@ -8088,6 +8099,7 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />
           <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub="cash / status change" />
           <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '—'} />
+          <MRKpi label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '—'} sub="lead → won" />
           <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
         </div>
         <div className="mr-section-lab">Revenue — status change vs created on</div>

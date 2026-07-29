@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.99.0 — 2026-07-29 · `PENDING`
+- **Monthly Report fixes:** the Status-Change vs Created-On revenue matrix no longer
+  runs off the card — it now uses a fixed layout with a hard width cap and wrapping
+  headers, so both columns always fit.
+- **Average time to close** (lead created → won) added: a KPI on the Account summary,
+  a row in the revenue matrix (both bases), and a per-deal "Days to close" column in
+  the won drill-downs.
+- **Dates now display DD/MM/YYYY** throughout the drill-downs.
+
 ## v3.98.0 — 2026-07-29 · `PENDING`
 - **Monthly Report — CRM section made consistent + interactive.** Resolves the
   mixed-basis nonsense (funnels/user rows that printed >100% conversions):

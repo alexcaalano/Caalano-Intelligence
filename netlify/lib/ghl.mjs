@@ -854,8 +854,12 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
     }
     for (const k in byUser) byUser[k].revenue = Math.round(byUser[k].revenue)
     for (const k in byChannel) byChannel[k].revenue = Math.round(byChannel[k].revenue)
+    // Average time to close = days from lead created → deal won, across deals that
+    // have both dates.
+    const spans = deals.map((d) => { const c = Date.parse(d.createdAt), s = Date.parse(d.statusAt); return (isFinite(c) && isFinite(s) && s >= c) ? (s - c) / 86400000 : null }).filter((v) => v != null)
     return {
       count: deals.length, revenue: Math.round(sumV(deals)), avgValue: deals.length ? Math.round(sumV(deals) / deals.length) : 0,
+      avgCloseDays: spans.length ? Math.round(spans.reduce((a, b) => a + b, 0) / spans.length) : null,
       paid: { count: paid.length, revenue: Math.round(sumV(paid)) }, byUser, byChannel,
       deals: deals.sort((a, b) => b.value - a.value).slice(0, 500),
     }

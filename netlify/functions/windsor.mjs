@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1314,6 +1314,17 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ won: null, connected: false, needsSetup: true })
     try { return json({ won: await wonInPeriod(cc.ghl, from, to), period: { from, to } }, 200) }
     catch (e) { return json({ won: null, error: String(e.message || e) }, 200) }
+  }
+
+  // Opportunity custom fields (date-first) for the Settings Key Events
+  // timestamp-field dropdown.
+  if (url.searchParams.get('scope') === 'oppfields') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ error: `unknown client ${client}` }, 404)
+    if (!cc.ghl) return json({ fields: [], connected: false })
+    if (!(await isConnected().catch(() => false))) return json({ fields: [], connected: false, needsSetup: true })
+    try { return json({ fields: await oppTimestampFields(cc.ghl) }, 200) }
+    catch (e) { return json({ fields: [], error: String(e.message || e) }, 200) }
   }
 
   // Deal-level won/lost lists (both attribution bases) for drill-downs, the Lost

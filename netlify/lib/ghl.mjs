@@ -878,6 +878,26 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
   }
 }
 
+// Opportunity custom fields for a location, date/time ones first — powers the
+// Settings dropdown that links a Key Event stage to the timestamp field GHL
+// stamps when a deal enters it. GHL v2 tags each field with a `model`
+// (contact|opportunity); if that's absent we keep all and just flag date types.
+export async function oppTimestampFields(locationId) {
+  const locTok = await locationToken(locationId)
+  let fields = []
+  try {
+    const j = await ghlGet(locTok, `/locations/${locationId}/customFields`, { model: 'opportunity' })
+    fields = j.customFields || j.customField || []
+  } catch { /* fall back to unfiltered below */ }
+  if (!fields.length) {
+    try { const j = await ghlGet(locTok, `/locations/${locationId}/customFields`, {}); fields = j.customFields || j.customField || [] } catch { fields = [] }
+  }
+  const isOpp = (f) => !f.model || /opportunit/i.test(String(f.model))
+  const isDate = (f) => /date|time/i.test(String(f.dataType || ''))
+  return fields.filter(isOpp).map((f) => ({ id: f.id, key: f.fieldKey || f.id, name: f.name || f.fieldKey || f.id, dataType: f.dataType || null, date: isDate(f) }))
+    .sort((a, b) => (Number(b.date) - Number(a.date)) || String(a.name).localeCompare(String(b.name)))
+}
+
 // Lightweight source-tag coverage for one location (no pipeline/stage work):
 // how many opportunities carry a UTM, split by classified channel.
 export async function attributionCoverage(locationId, from, to) {

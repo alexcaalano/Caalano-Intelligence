@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.102.0'
+const APP_VERSION = '3.103.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8245,6 +8245,169 @@ function aggConvActions(rows) {
   return [...m.values()].sort((a, b) => b.allConversions - a.allConversions)
 }
 
+// ---------------------------------------------------------------------------
+// Organic Social Media dashboard — Instagram + Facebook Page organic, per client.
+// ---------------------------------------------------------------------------
+function SocPost({ p, platform }) {
+  const n = (v) => (v == null ? '—' : fmtNumber(v))
+  const img = platform === 'ig' ? p.thumb : p.picture
+  const text = platform === 'ig' ? p.caption : p.message
+  return (
+    <a className="soc-post" href={p.permalink || undefined} target="_blank" rel="noreferrer" title={text || ''}>
+      <div className="soc-post-thumb">{img ? <img src={img} alt="" loading="lazy" /> : <span className="soc-noimg">{platform === 'ig' ? (p.type === 'VIDEO' || p.type === 'REEL' ? '▶' : '🖼') : '📄'}</span>}</div>
+      <div className="soc-post-body">
+        <div className="soc-post-top"><span className="soc-post-type">{platform === 'ig' ? (p.type || 'POST') : 'POST'}</span><span className="soc-post-date">{fmtDate(p.date)}</span></div>
+        <div className="soc-post-cap">{text || <span className="soc-faint">No caption</span>}</div>
+        <div className="soc-post-stats">
+          {platform === 'ig' ? <>
+            <span title="Reach">👁 {n(p.reach)}</span><span title="Likes">❤ {n(p.likes)}</span><span title="Comments">💬 {n(p.comments)}</span><span title="Saves">🔖 {n(p.saves)}</span><span title="Shares">↗ {n(p.shares)}</span>
+          </> : <>
+            <span title="Impressions">👁 {n(p.impressions)}</span><span title="Reactions">❤ {n(p.reactions)}</span><span title="Comments">💬 {n(p.comments)}</span><span title="Shares">↗ {n(p.shares)}</span><span title="Link clicks">🔗 {n(p.clicks)}</span>
+          </>}
+          <span className="soc-post-er" title="Engagement rate">{p.er != null ? `${p.er}% ER` : '—'}</span>
+        </div>
+      </div>
+    </a>
+  )
+}
+function SocBars({ data, labelKey, valueKey, color, fmt }) {
+  if (!data || !data.length) return <div className="soc-empty">No data.</div>
+  const max = Math.max(1, ...data.map((d) => d[valueKey] || 0))
+  return (
+    <div className="soc-bars">{data.map((d, i) => (
+      <div className="soc-bar-row" key={i}>
+        <span className="soc-bar-lab" title={d[labelKey]}>{d[labelKey]}</span>
+        <span className="soc-bar-track"><span className="soc-bar-fill" style={{ width: `${((d[valueKey] || 0) / max) * 100}%`, background: color }} /></span>
+        <span className="soc-bar-val">{fmt ? fmt(d[valueKey]) : fmtNumber(d[valueKey])}</span>
+      </div>
+    ))}</div>
+  )
+}
+function SocialDashboard({ clients, range, nonce }) {
+  const [enabled, setEnabled] = useState(null)
+  useEffect(() => { mrFetch('scope=social&list=1').then((r) => setEnabled(r.clients || [])).catch(() => setEnabled([])) }, [])
+  const list = (clients || []).filter((c) => (enabled ? enabled.includes(c.id) : false)).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+  const [clientId, setClientId] = useState('')
+  useEffect(() => { if (list.length && !list.some((c) => c.id === clientId)) setClientId(list[0].id) }, [list.length])
+  const client = list.find((c) => c.id === clientId) || null
+  const [st, setSt] = useState({ status: 'idle' })
+  const [postSort, setPostSort] = useState('engagement')
+  useEffect(() => {
+    if (!client) { setSt({ status: 'empty' }); return }
+    let alive = true; setSt({ status: 'loading' })
+    mrFetch(`scope=social&client=${encodeURIComponent(client.id)}&${rangeQuery(range)}`)
+      .then((r) => { if (alive) setSt({ status: 'ok', data: r }) })
+      .catch((e) => { if (alive) setSt({ status: 'err', error: String(e.message || e) }) })
+    return () => { alive = false }
+  }, [clientId, range.from, range.to, nonce])
+
+  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  const data = st.status === 'ok' ? st.data : null
+  const ig = data && data.ig, fb = data && data.fb
+  const igPosts = ig ? [...ig.posts].sort((a, b) => (b[postSort] || 0) - (a[postSort] || 0)).slice(0, 12) : []
+  const fbPosts = fb ? [...fb.posts].slice(0, 12) : []
+
+  return (
+    <div className="soc-page">
+      <div className="soc-bar">
+        <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+          {list.length ? list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>) : <option>No connected accounts</option>}
+        </select>
+        {ig && ig.profile.username && <a className="soc-handle" href={`https://instagram.com/${ig.profile.username}`} target="_blank" rel="noreferrer">@{ig.profile.username}</a>}
+      </div>
+
+      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading social…" /></div>}
+      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load: {st.error}</div>}
+      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">📱</div><b>No organic social accounts connected.</b><p>Connect a client's Instagram / Facebook Page in Windsor and it’ll appear here.</p></div>}
+
+      {data && !ig && !fb && <div className="mr-note mr-empty-deep"><div className="big">📱</div><b>No organic data for this client/period.</b></div>}
+
+      {ig && (
+        <section className="soc-section">
+          <div className="soc-head"><span className="soc-plat soc-ig">Instagram</span><h3>Organic performance</h3></div>
+          <div className="mr-kpirow">
+            <MRKpi label="Followers" value={n0(ig.profile.followers)} sub={ig.totals.newFollowers ? `+${n0(ig.totals.newFollowers)} this period` : 'current'} strong />
+            <MRKpi label="Reach" value={n0(ig.totals.reach)} sub="accounts reached" />
+            <MRKpi label="Views" value={n0(ig.totals.views)} />
+            <MRKpi label="Engagement" value={n0(ig.totals.engagement)} sub="likes+comments+saves+shares" />
+            <MRKpi label="Engagement rate" value={ig.totals.er != null ? `${ig.totals.er}%` : '—'} sub="vs reach" />
+            <MRKpi label="Profile link taps" value={n0(ig.totals.linkTaps)} sub="→ website/contact" />
+            <MRKpi label="Posts" value={n0(ig.posts.length)} />
+          </div>
+          <div className="mr-kpirow">
+            <MRKpi label="Likes" value={n0(ig.totals.likes)} />
+            <MRKpi label="Comments" value={n0(ig.totals.comments)} />
+            <MRKpi label="Saves" value={n0(ig.totals.saves)} />
+            <MRKpi label="Shares" value={n0(ig.totals.shares)} />
+            <MRKpi label="Replies" value={n0(ig.totals.replies)} />
+            <MRKpi label="Accounts engaged" value={n0(ig.totals.engaged)} />
+          </div>
+          {ig.daily && ig.daily.length > 1 && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Reach &amp; interactions over time</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={ig.daily} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Line type="monotone" dataKey="reach" name="Reach" stroke="#e1306c" strokeWidth={2.4} dot={false} />
+                  <Line type="monotone" dataKey="interactions" name="Interactions" stroke="#6d5efc" strokeWidth={2.4} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <div className="soc-subhead"><h4>Top posts</h4><div className="soc-sort">{[['engagement', 'Engagement'], ['reach', 'Reach'], ['er', 'Eng. rate']].map(([k, l]) => <button key={k} className={postSort === k ? 'on' : ''} onClick={() => setPostSort(k)}>{l}</button>)}</div></div>
+          <div className="soc-posts">{igPosts.length ? igPosts.map((p) => <SocPost key={p.id} p={p} platform="ig" />) : <div className="soc-empty">No posts in this period.</div>}</div>
+          {(ig.demographics.age.length > 0 || ig.demographics.gender.length > 0 || ig.demographics.country.length > 0) && (
+            <>
+              <div className="soc-subhead"><h4>Audience</h4></div>
+              <div className="soc-demo">
+                {ig.demographics.gender.length > 0 && <div className="soc-demo-card"><div className="mr-trend-lab">Gender</div><SocBars data={ig.demographics.gender} labelKey="name" valueKey="size" color="#e1306c" /></div>}
+                {ig.demographics.age.length > 0 && <div className="soc-demo-card"><div className="mr-trend-lab">Age</div><SocBars data={ig.demographics.age} labelKey="name" valueKey="size" color="#6d5efc" /></div>}
+                {ig.demographics.country.length > 0 && <div className="soc-demo-card"><div className="mr-trend-lab">Top countries</div><SocBars data={ig.demographics.country} labelKey="name" valueKey="size" color="#22b07d" /></div>}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {fb && (
+        <section className="soc-section">
+          <div className="soc-head"><span className="soc-plat soc-fb">Facebook Page</span><h3>Organic performance</h3></div>
+          <div className="mr-kpirow">
+            <MRKpi label="Page likes" value={n0(fb.page.fans)} strong />
+            <MRKpi label="Follows" value={n0(fb.page.follows)} sub={fb.totals.newFollows ? `+${n0(fb.totals.newFollows)} · -${n0(fb.totals.unfollows)}` : null} />
+            <MRKpi label="Reach" value={n0(fb.totals.reachUnique)} sub="unique" />
+            <MRKpi label="Organic impressions" value={n0(fb.totals.impressionsOrganic)} />
+            <MRKpi label="Paid impressions" value={n0(fb.totals.impressionsPaid)} />
+            <MRKpi label="Engagements" value={n0(fb.totals.engagements)} />
+            <MRKpi label="Page views" value={n0(fb.totals.pageViews)} />
+            <MRKpi label="Video views" value={n0(fb.totals.videoViews)} />
+          </div>
+          {fb.daily && fb.daily.length > 1 && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Impressions — organic vs paid</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={fb.daily} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Bar dataKey="impressionsOrganic" name="Organic" stackId="a" fill="#1877f2" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="impressionsPaid" name="Paid" stackId="a" fill="#9bbcf0" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <div className="soc-subhead"><h4>Top posts</h4></div>
+          <div className="soc-posts">{fbPosts.length ? fbPosts.map((p) => <SocPost key={p.id} p={p} platform="fb" />) : <div className="soc-empty">No posts in this period.</div>}</div>
+        </section>
+      )}
+    </div>
+  )
+}
+
 // Monochrome sidebar icons (stroke = currentColor), so every nav item reads as
 // one colour and matches the text weight — no multicolour emoji.
 function NavIcon({ name }) {
@@ -8257,6 +8420,7 @@ function NavIcon({ name }) {
     update: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3.5 7l8.5 6 8.5-6" /></>,
     monthly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
     report: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></>,
+    social: <><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-2.73 1.13V21a2 2 0 0 1-4 0v-.08A1.6 1.6 0 0 0 7.13 19.4l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.6 1.6 0 0 0 3 13.87H3a2 2 0 0 1 0-4h.08A1.6 1.6 0 0 0 4.6 7.13l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.6 1.6 0 0 0 9.87 3H10a2 2 0 0 1 4 0v.08a1.6 1.6 0 0 0 2.73 1.13l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.6 1.6 0 0 0 21 9.87V10a2 2 0 0 1 0 4h-.08a1.6 1.6 0 0 0-1.52 1z" /></>,
   }[name] || null
   return <svg className="nav-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{P}</svg>
@@ -8402,6 +8566,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>
             <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>
             <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Report</button>
+            <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>
           </>}
           {isViewer && <>
             <div className="nav-lab">My reports</div>
@@ -8423,8 +8588,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client — followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -8438,6 +8603,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
+          {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}

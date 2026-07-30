@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.103.0 — 2026-07-29 · `PENDING`
+- **New "Organic Social Media" tab.** A full organic social dashboard per client
+  (dropdown), for the selected date range, covering **Instagram** and **Facebook
+  Page** organic:
+  - KPIs — followers/page-likes, new followers, reach, views, engagement, engagement
+    rate, profile link taps, likes/comments/saves/shares.
+  - Reach & interactions trend (IG) and organic-vs-paid impressions (FB) charts.
+  - **Top posts** grid with thumbnails, per-post metrics and engagement rate,
+    sortable by engagement / reach / rate; each links to the live post.
+  - **Audience** — IG follower breakdown by gender, age and top countries.
+  - Backend `scope=social` (buildSocial) reads both Windsor organic connectors,
+    each query kept within one table and best-effort so partial data still renders.
+  - Live for the five clients with a connected organic profile (Pool Haus, Nexia,
+    SWIFT, Healan, Simchat).
+
 ## v3.102.0 — 2026-07-29 · `PENDING`
 - **Account summary now shows Deals Won on both bases as headline tiles** — "created"
   (this month's leads, created-on cohort) and "closed" (marked won this month), so

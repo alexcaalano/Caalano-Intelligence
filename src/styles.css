@@ -1914,3 +1914,47 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-drill-x { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; color: var(--muted); font-size: 13px; flex-shrink: 0; }
 .mr-drill-body { overflow: auto; padding: 6px 20px 18px; }
 .mr-drill-body .mr-table td { font-size: 12px; }
+
+/* ============ Organic Social Media dashboard ============ */
+.soc-page { display: flex; flex-direction: column; gap: 20px; }
+.soc-bar { display: flex; align-items: center; gap: 12px; }
+.soc-handle { font-size: 13px; font-weight: 700; color: var(--brand); text-decoration: none; }
+.soc-handle:hover { text-decoration: underline; }
+.soc-section { display: flex; flex-direction: column; gap: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; }
+.soc-head { display: flex; align-items: center; gap: 12px; }
+.soc-head h3 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -.02em; }
+.soc-plat { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 4px 10px; border-radius: 20px; color: #fff; }
+.soc-ig { background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045); }
+.soc-fb { background: #1877f2; }
+.soc-chart { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px 4px; }
+.soc-subhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.soc-subhead h4 { margin: 0; font-size: 14px; font-weight: 800; }
+.soc-sort { display: flex; gap: 4px; }
+.soc-sort button { border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 8px; cursor: pointer; }
+.soc-sort button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.soc-posts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1200px) { .soc-posts { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 800px) { .soc-posts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.soc-post { display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit; }
+.soc-post:hover { border-color: var(--border-2); }
+.soc-post-thumb { aspect-ratio: 1 / 1; background: var(--elev); display: grid; place-items: center; overflow: hidden; }
+.soc-post-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.soc-noimg { font-size: 30px; opacity: .5; }
+.soc-post-body { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 6px; }
+.soc-post-top { display: flex; align-items: center; justify-content: space-between; }
+.soc-post-type { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.soc-post-date { font-size: 10.5px; color: var(--faint); }
+.soc-post-cap { font-size: 12px; line-height: 1.4; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 33px; }
+.soc-faint { color: var(--faint); }
+.soc-post-stats { display: flex; flex-wrap: wrap; gap: 4px 9px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; align-items: center; }
+.soc-post-er { margin-left: auto; font-weight: 700; color: var(--brand); }
+.soc-demo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 900px) { .soc-demo { grid-template-columns: 1fr; } }
+.soc-demo-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.soc-bars { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
+.soc-bar-row { display: grid; grid-template-columns: 90px 1fr auto; align-items: center; gap: 9px; font-size: 12px; }
+.soc-bar-lab { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.soc-bar-track { height: 8px; background: var(--elev); border-radius: 5px; overflow: hidden; }
+.soc-bar-fill { display: block; height: 100%; border-radius: 5px; }
+.soc-bar-val { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text); }
+.soc-empty { padding: 18px; text-align: center; color: var(--faint); font-size: 13px; background: var(--panel-2); border-radius: 10px; }

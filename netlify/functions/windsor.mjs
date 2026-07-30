@@ -36,6 +36,17 @@ const CLIENTS = {
   'rlm-telehealth':  { meta: '1179972323913025', google: null, ghl: 'jZxjJ53Xz6JW2Cgn7Fv7' },
 }
 
+// Organic social accounts per client (Instagram business id + Facebook Page id),
+// separate from the ad accounts in CLIENTS. Only clients with a connected organic
+// profile appear here.
+const SOCIAL = {
+  'pool-haus':       { ig: '17841458350214779', fbo: '269909922862743' },
+  'nexia-health':    { ig: '17841468241791448', fbo: '426741757185139' },
+  'swift-emergency': { ig: '17841459789234916', fbo: '104111172706199' },
+  'healan-centre':   { ig: '17841463191046298', fbo: null },
+  'simchat':         { ig: '17841467452051447', fbo: null },
+}
+
 // Windsor field ids per connector. CONFIRMED via MCP where noted; others VERIFY.
 const FIELDS = {
   meta: {
@@ -1235,6 +1246,58 @@ function rollupGhl(rows) {
   }
 }
 
+// Organic social (Instagram business + Facebook Page) for one client. Each query
+// stays within a single Windsor "table" so cross-table joins don't drop rows;
+// everything is best-effort (a failed sub-fetch yields [] and the rest renders).
+async function buildSocial(soc, from, to, key) {
+  const igId = soc.ig, fbo = soc.fbo
+  const F = (connector, fields) => windsorFetch(connector, fields, from, to, null, key).catch(() => [])
+  const byDate = (rows, map) => { const m = new Map(); for (const r of rows) { const d = String(r.date || r.timestamp || '').slice(0, 10); if (!d) continue; const e = m.get(d) || { date: d }; map(e, r); m.set(d, e) } return [...m.values()].sort((a, b) => a.date.localeCompare(b.date)) }
+  const sum = (rows, k) => rows.reduce((a, r) => a + num(r[k]), 0)
+  const lastNonNull = (rows, k) => { for (let i = rows.length - 1; i >= 0; i--) { if (rows[i][k] != null && rows[i][k] !== '') return num(rows[i][k]) } return 0 }
+  const demo = (rows, nk, sk, cap) => { const out = rows.map((r) => ({ name: r[nk], size: num(r[sk]) })).filter((x) => x.name && x.size).sort((a, b) => b.size - a.size); return cap ? out.slice(0, cap) : out }
+
+  let ig = null
+  if (igId) {
+    const igFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(igId))
+    const [dtv, dins, prof, media, gender, age, country] = await Promise.all([
+      F('instagram', ['account_id', 'date', 'views', 'accounts_engaged', 'likes', 'comments', 'shares', 'saves', 'replies', 'profile_links_taps', 'total_interactions']).then(igFilt),
+      F('instagram', ['account_id', 'date', 'reach', 'follower_count']).then(igFilt),
+      F('instagram', ['account_id', 'followers_count', 'follows_count', 'media_count', 'username']).then(igFilt),
+      F('instagram', ['account_id', 'media_id', 'timestamp', 'media_type', 'media_caption', 'media_permalink', 'media_thumbnail_url', 'media_url', 'media_like_count', 'media_comments_count', 'media_reach', 'media_views', 'media_saved', 'media_shares', 'media_engagement']).then(igFilt),
+      F('instagram', ['account_id', 'audience_gender_name', 'audience_gender_size']).then(igFilt),
+      F('instagram', ['account_id', 'audience_age_name', 'audience_age_size']).then(igFilt),
+      F('instagram', ['account_id', 'audience_country_name', 'audience_country_size']).then(igFilt),
+    ])
+    const p = prof[0] || {}
+    const likes = sum(dtv, 'likes'), comments = sum(dtv, 'comments'), shares = sum(dtv, 'shares'), saves = sum(dtv, 'saves')
+    const reach = sum(dins, 'reach'), interactions = sum(dtv, 'total_interactions')
+    const totals = { reach, views: sum(dtv, 'views'), engaged: sum(dtv, 'accounts_engaged'), likes, comments, shares, saves, replies: sum(dtv, 'replies'), linkTaps: sum(dtv, 'profile_links_taps'), interactions, engagement: likes + comments + shares + saves, newFollowers: sum(dins, 'follower_count'), er: reach ? Math.round((interactions / reach) * 1000) / 10 : null }
+    const dailyA = byDate(dtv, (e, r) => { e.likes = (e.likes || 0) + num(r.likes); e.comments = (e.comments || 0) + num(r.comments); e.interactions = (e.interactions || 0) + num(r.total_interactions); e.views = (e.views || 0) + num(r.views) })
+    const rMap = new Map(byDate(dins, (e, r) => { e.reach = (e.reach || 0) + num(r.reach); e.newFollowers = (e.newFollowers || 0) + num(r.follower_count) }).map((d) => [d.date, d]))
+    const daily = dailyA.map((d) => ({ ...d, reach: (rMap.get(d.date) || {}).reach || 0, newFollowers: (rMap.get(d.date) || {}).newFollowers || 0 }))
+    const posts = media.map((m) => {
+      const eng = num(m.media_engagement) || (num(m.media_like_count) + num(m.media_comments_count) + num(m.media_saved) + num(m.media_shares)); const rch = num(m.media_reach)
+      return { id: m.media_id, date: String(m.timestamp || '').slice(0, 10), type: m.media_type || null, caption: String(m.media_caption || '').replace(/\s+/g, ' ').slice(0, 160), permalink: m.media_permalink || null, thumb: m.media_thumbnail_url || m.media_url || null, likes: num(m.media_like_count), comments: num(m.media_comments_count), saves: num(m.media_saved), shares: num(m.media_shares), reach: rch, views: num(m.media_views), engagement: eng, er: rch ? Math.round((eng / rch) * 1000) / 10 : null }
+    }).filter((x) => x.id).sort((a, b) => b.engagement - a.engagement).slice(0, 60)
+    ig = { profile: { followers: num(p.followers_count), follows: num(p.follows_count), mediaCount: num(p.media_count), username: p.username || null }, totals, daily, posts, demographics: { gender: demo(gender, 'audience_gender_name', 'audience_gender_size'), age: demo(age, 'audience_age_name', 'audience_age_size'), country: demo(country, 'audience_country_name', 'audience_country_size', 8) } }
+  }
+
+  let fb = null
+  if (fbo) {
+    const fbFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(fbo))
+    const [pageRows, postRows] = await Promise.all([
+      F('facebook_organic', ['account_id', 'date', 'page_fans', 'page_follows', 'page_impressions', 'page_impressions_organic', 'page_impressions_paid', 'page_impressions_unique', 'page_post_engagements', 'page_views_total', 'page_video_views', 'page_daily_follows', 'page_daily_unfollows']).then(fbFilt),
+      F('facebook_organic', ['account_id', 'post_id', 'post_created_time', 'post_message_oneline', 'permalink_url', 'full_picture', 'post_impressions', 'post_impressions_organic', 'post_engagements', 'post_reactions_total', 'post_comments_total', 'post_clicks', 'post_activity_by_action_type_share']).then(fbFilt),
+    ])
+    const totals = { impressions: sum(pageRows, 'page_impressions'), impressionsOrganic: sum(pageRows, 'page_impressions_organic'), impressionsPaid: sum(pageRows, 'page_impressions_paid'), reachUnique: sum(pageRows, 'page_impressions_unique'), engagements: sum(pageRows, 'page_post_engagements'), pageViews: sum(pageRows, 'page_views_total'), videoViews: sum(pageRows, 'page_video_views'), newFollows: sum(pageRows, 'page_daily_follows'), unfollows: sum(pageRows, 'page_daily_unfollows') }
+    const daily = byDate(pageRows, (e, r) => { e.impressionsOrganic = (e.impressionsOrganic || 0) + num(r.page_impressions_organic); e.impressionsPaid = (e.impressionsPaid || 0) + num(r.page_impressions_paid); e.engagements = (e.engagements || 0) + num(r.page_post_engagements) })
+    const posts = postRows.map((p) => { const eng = num(p.post_engagements); const impr = num(p.post_impressions); return { id: p.post_id, date: String(p.post_created_time || '').slice(0, 10), message: String(p.post_message_oneline || '').replace(/\s+/g, ' ').slice(0, 160), permalink: p.permalink_url || null, picture: p.full_picture || null, impressions: impr, impressionsOrganic: num(p.post_impressions_organic), engagements: eng, reactions: num(p.post_reactions_total), comments: num(p.post_comments_total), shares: num(p.post_activity_by_action_type_share), clicks: num(p.post_clicks), er: impr ? Math.round((eng / impr) * 1000) / 10 : null } }).filter((x) => x.id).sort((a, b) => b.engagements - a.engagements).slice(0, 60)
+    fb = { page: { fans: lastNonNull(pageRows, 'page_fans'), follows: lastNonNull(pageRows, 'page_follows') }, totals, daily, posts }
+  }
+  return { ig, fb }
+}
+
 export default async (req) => {
   const url = new URL(req.url)
   const client = url.searchParams.get('client')
@@ -1314,6 +1377,16 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ won: null, connected: false, needsSetup: true })
     try { return json({ won: await wonInPeriod(cc.ghl, from, to), period: { from, to } }, 200) }
     catch (e) { return json({ won: null, error: String(e.message || e) }, 200) }
+  }
+
+  // Organic social (Instagram + Facebook Page). `list` returns the client ids
+  // that have an organic profile connected, for the dashboard's dropdown.
+  if (url.searchParams.get('scope') === 'social') {
+    if (url.searchParams.get('list')) return json({ clients: Object.keys(SOCIAL).filter((id) => !restrictTo || restrictTo.has(id)) }, 200, true)
+    const soc = SOCIAL[client]
+    if (!soc) return json({ ig: null, fb: null, connected: false })
+    try { const data = await buildSocial(soc, from, to, key); return json({ client, period: { from, to }, ...data }, 200, true) }
+    catch (e) { return json({ ig: null, fb: null, error: String(e.message || e) }, 502) }
   }
 
   // Opportunity custom fields (date-first) for the Settings Key Events

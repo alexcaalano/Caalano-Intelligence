@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.106.0'
+const APP_VERSION = '3.107.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -273,7 +273,7 @@ function AttrDiag({ attr }) {
   const d = attr.data
   if (d && d.attribution) return null // green is present
   let msg
-  if (attr.status === 'err') msg = 'the attribution request failed (network / HTTP error). Try Refresh.'
+  if (attr.status === 'err') msg = `the attribution request failed${attr.error ? ` — ${attr.error}` : ''}. Try Refresh.`
   else if (d && d.connected === false) msg = 'Caalano Systems isn’t connected — re-authorise at /.netlify/functions/caalano-connect to restore them.'
   else if (d && d.error) msg = `attribution error — ${String(d.error).slice(0, 200)}`
   else msg = 'no attribution data was returned for this client / period.'
@@ -1781,10 +1781,15 @@ function useAttribution(clientId, range, nonce = 0) {
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true; setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+    const url = `/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}${nonce ? `&_r=${nonce}` : ''}`
+    // The GHL-backed attribution build is heavy and can transiently time out or
+    // hit a cold start / rate limit. Retry a couple of times with backoff before
+    // surfacing the error (and carry the real backend reason, not a generic one).
+    const attempt = (n) => fetch(url)
+      .then(async (r) => { if (r.ok) return r.json(); let m = `HTTP ${r.status}`; try { const j = await r.json(); if (j && j.error) m = j.error } catch {} throw new Error(m) })
       .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
-      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+      .catch((e) => { if (!alive) return; if (n < 2) setTimeout(() => { if (alive) attempt(n + 1) }, 1200 * (n + 1)); else setState({ status: 'err', data: null, error: String((e && e.message) || e).slice(0, 200) }) })
+    attempt(0)
     return () => { alive = false }
   }, [clientId, q, nonce])
   return state

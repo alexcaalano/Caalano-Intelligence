@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.107.0 — 2026-07-29 · `PENDING`
+- **Fix "Caalano360 columns hidden: attribution request failed."** The GHL-backed
+  attribution build is heavy and can transiently time out / cold-start / rate-limit;
+  it now **auto-retries twice with backoff** before showing an error, which clears
+  the common transient case without a manual Refresh. When it does fail, the message
+  now shows the **real backend reason** (e.g. timeout, GHL 429) instead of a generic
+  "network / HTTP error", so any persistent cause is diagnosable.
+
 ## v3.106.0 — 2026-07-29 · `PENDING`
 - **Organic Social → Competitors tab (assignment + structure).** A Performance /
   Competitors tab toggle. In Competitors you assign a client's competitors by public

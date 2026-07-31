@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.115.0'
+const APP_VERSION = '3.116.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8087,13 +8087,6 @@ function renderMonthlyDeck(rep, h) {
         {rep.client.industry && <p className="mr-cover-ind">{rep.client.industry}</p>}
         <div className="mr-cover-month">{b.label}</div>
       </div>
-      <div className="mr-cover-tiles">
-        <MRKpi label="Ad spend" value={money(totalSpend)} />
-        <MRKpi label="Paid leads" value={n0(paidLeads)} />
-        <MRKpi label="Deals won" value={n0(dealsWon)} sub="closed this month" />
-        <MRKpi label="Total revenue" value={money(realisedRev)} sub="all sources" />
-        <MRKpi label="Paid revenue" value={money(paidRev)} sub={roas != null ? `${roas.toFixed(1)}x ROAS` : null} strong />
-      </div>
       <div className="mr-cover-foot">Generated {new Date(rep.generatedAt).toLocaleDateString()} · Wins &amp; revenue attributed to the month each deal was marked won.</div>
     </section>
   )
@@ -8125,7 +8118,7 @@ function renderMonthlyDeck(rep, h) {
     push(
       <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${(meta.ads || []).length} creative(s), ranked by spend · platform metrics + CRM key events`}>
         <div className="mr-cre-grid">
-          {(meta.ads || []).slice(0, 9).map((a, i) => <MRCreative key={i} a={a} money={money} n0={n0} />)}
+          {(meta.ads || []).slice(0, 6).map((a, i) => <MRCreative key={i} a={a} money={money} n0={n0} />)}
         </div>
         {!(meta.ads || []).length && <div className="mr-empty">No creatives for this period.</div>}
         <p className="mr-foot-note">Spend, impressions, CTR &amp; frequency are Meta-reported. <b>Key events</b> (Leads → Booked → Shown → Won → Revenue, with Cost / Won &amp; ROAS) are the CRM outcomes for leads whose ad UTM (utm_content) matches this creative — the same attribution as the Meta Ads view. ▶ plays the Instagram post inline where a permalink is available.</p>

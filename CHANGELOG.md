@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.116.0 — 2026-07-31 · `PENDING`
+- **Monthly Report sizing fixes.** Removed the forced tall slide height and stopped
+  short slides stretching to the tallest one, so each page sits at its natural size
+  again — no more out-of-proportion pages or extra scrolling. Creative cards are now
+  compact horizontal cards (portrait thumbnail + stats + CRM key events side by side,
+  6 per slide); the full 9:16 view still opens on ▶ Play. **Removed the results tiles
+  from the cover page** — it's now just the client, industry and month.
+
 ## v3.115.0 — 2026-07-31 · `PENDING`
 - **Creative performance — CRM key events, bigger cards, 9:16 playback.** The Meta
   creative slide is now a grid of large vertical cards. Each shows the Meta metrics

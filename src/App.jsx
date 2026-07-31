@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.103.0'
+const APP_VERSION = '3.104.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8249,12 +8249,21 @@ function aggConvActions(rows) {
 // Organic Social Media dashboard — Instagram + Facebook Page organic, per client.
 // ---------------------------------------------------------------------------
 function SocPost({ p, platform }) {
+  const [playing, setPlaying] = useState(false)
   const n = (v) => (v == null ? '—' : fmtNumber(v))
   const img = platform === 'ig' ? p.thumb : p.picture
   const text = platform === 'ig' ? p.caption : p.message
+  const canPlay = platform === 'ig' && !!p.video
   return (
-    <a className="soc-post" href={p.permalink || undefined} target="_blank" rel="noreferrer" title={text || ''}>
-      <div className="soc-post-thumb">{img ? <img src={img} alt="" loading="lazy" /> : <span className="soc-noimg">{platform === 'ig' ? (p.type === 'VIDEO' || p.type === 'REEL' ? '▶' : '🖼') : '📄'}</span>}</div>
+    <div className="soc-post" title={text || ''}>
+      <div className="soc-post-thumb">
+        {playing && canPlay
+          ? <video className="soc-video" src={p.video} poster={img || undefined} controls autoPlay playsInline onError={() => setPlaying(false)} />
+          : <>
+              {img ? <img src={img} alt="" loading="lazy" /> : <span className="soc-noimg">{platform === 'ig' ? (p.type === 'VIDEO' || p.type === 'REEL' ? '▶' : '🖼') : '📄'}</span>}
+              {canPlay && <button className="soc-play no-print" onClick={() => setPlaying(true)} aria-label="Play reel">▶</button>}
+            </>}
+      </div>
       <div className="soc-post-body">
         <div className="soc-post-top"><span className="soc-post-type">{platform === 'ig' ? (p.type || 'POST') : 'POST'}</span><span className="soc-post-date">{fmtDate(p.date)}</span></div>
         <div className="soc-post-cap">{text || <span className="soc-faint">No caption</span>}</div>
@@ -8266,8 +8275,9 @@ function SocPost({ p, platform }) {
           </>}
           <span className="soc-post-er" title="Engagement rate">{p.er != null ? `${p.er}% ER` : '—'}</span>
         </div>
+        {p.permalink && <a className="soc-post-open no-print" href={p.permalink} target="_blank" rel="noreferrer">Open on {platform === 'ig' ? 'Instagram' : 'Facebook'} ↗</a>}
       </div>
-    </a>
+    </div>
   )
 }
 function SocBars({ data, labelKey, valueKey, color, fmt }) {
@@ -8306,14 +8316,58 @@ function SocialDashboard({ clients, range, nonce }) {
   const ig = data && data.ig, fb = data && data.fb
   const igPosts = ig ? [...ig.posts].sort((a, b) => (b[postSort] || 0) - (a[postSort] || 0)).slice(0, 12) : []
   const fbPosts = fb ? [...fb.posts].slice(0, 12) : []
+  const socRef = useRef(null)
+  const [exporting, setExporting] = useState(false)
+
+  // Blended IG + FB "overall" view (only when both are connected).
+  const overall = (ig && fb) ? (() => {
+    const audience = (ig.profile.followers || 0) + (fb.page.fans || 0)
+    const newAud = (ig.totals.newFollowers || 0) + (fb.totals.newFollows || 0) - (fb.totals.unfollows || 0)
+    const reach = (ig.totals.reach || 0) + (fb.totals.reachUnique || 0)
+    const engagement = (ig.totals.engagement || 0) + (fb.totals.engagements || 0)
+    const posts = ig.posts.length + fb.posts.length
+    const m = new Map()
+    const add = (d, k, v) => { const e = m.get(d) || { date: d }; e[k] = (e[k] || 0) + v; m.set(d, e) }
+    for (const d of ig.daily) { add(d.date, 'newAudience', d.newFollowers); add(d.date, 'posts', d.posts); add(d.date, 'engagement', d.interactions) }
+    for (const d of fb.daily) { add(d.date, 'newAudience', d.netFollowers); add(d.date, 'posts', d.posts); add(d.date, 'engagement', d.engagements) }
+    const daily = [...m.values()].sort((a, b) => a.date.localeCompare(b.date))
+    return { audience, newAud, reach, engagement, posts, er: reach ? Math.round((engagement / reach) * 1000) / 10 : null, daily }
+  })() : null
+
+  async function downloadPdf() {
+    if (!socRef.current) return
+    setExporting(true)
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
+      const canvas = await html2canvas(socRef.current, { scale: 2, backgroundColor: getComputedStyle(document.body).backgroundColor || '#fff', useCORS: true, logging: false })
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight()
+      const pageHpx = Math.floor(canvas.width * (ph / pw)) // source px per page
+      const slice = document.createElement('canvas'); slice.width = canvas.width
+      const ctx = slice.getContext('2d')
+      let y = 0, first = true
+      while (y < canvas.height) {
+        const h = Math.min(pageHpx, canvas.height - y)
+        slice.height = h; ctx.clearRect(0, 0, slice.width, h); ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h)
+        if (!first) pdf.addPage()
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, pw, h * (pw / canvas.width))
+        first = false; y += h
+      }
+      pdf.save(`${(client && client.name || 'social').replace(/[^\w]+/g, '-')}-organic-${range.from}_${range.to}.pdf`)
+    } catch (e) { alert('PDF export failed: ' + (e.message || e)) }
+    setExporting(false)
+  }
 
   return (
     <div className="soc-page">
-      <div className="soc-bar">
+      <div className="soc-bar no-print">
         <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>
           {list.length ? list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>) : <option>No connected accounts</option>}
         </select>
         {ig && ig.profile.username && <a className="soc-handle" href={`https://instagram.com/${ig.profile.username}`} target="_blank" rel="noreferrer">@{ig.profile.username}</a>}
+        <div className="mr-bar-spacer" />
+        <button className="mr-btn" onClick={() => window.print()} disabled={!data} title="Print / Save as PDF">🖨 Print</button>
+        <button className="mr-btn" onClick={downloadPdf} disabled={!data || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
       </div>
 
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading social…" /></div>}
@@ -8321,6 +8375,43 @@ function SocialDashboard({ clients, range, nonce }) {
       {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">📱</div><b>No organic social accounts connected.</b><p>Connect a client's Instagram / Facebook Page in Windsor and it’ll appear here.</p></div>}
 
       {data && !ig && !fb && <div className="mr-note mr-empty-deep"><div className="big">📱</div><b>No organic data for this client/period.</b></div>}
+
+      <div className="soc-deck" ref={socRef}>
+      {data && (ig || fb) && (
+        <div className="soc-cover"><div><span className="soc-cover-brand">Caalano<b>360</b></span><h2>{client ? client.name : ''} — Organic Social</h2><p>{rangeLabel(range)}{ig && ig.profile.username ? ` · @${ig.profile.username}` : ''}</p></div></div>
+      )}
+
+      {overall && (
+        <section className="soc-section soc-overall">
+          <div className="soc-head"><span className="soc-plat soc-all">Overall</span><h3>Blended organic performance</h3></div>
+          <div className="mr-kpirow">
+            <MRKpi label="Total audience" value={n0(overall.audience)} sub="IG followers + FB likes" strong />
+            <MRKpi label="Net new audience" value={(overall.newAud >= 0 ? '+' : '') + n0(overall.newAud)} sub="this period" />
+            <MRKpi label="Total reach" value={n0(overall.reach)} />
+            <MRKpi label="Total engagement" value={n0(overall.engagement)} />
+            <MRKpi label="Engagement rate" value={overall.er != null ? `${overall.er}%` : '—'} sub="blended" />
+            <MRKpi label="Posts published" value={n0(overall.posts)} />
+          </div>
+          {overall.daily.length > 1 && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Combined — posts per day (bars) · net new audience &amp; engagement (lines), Instagram + Facebook</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={overall.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis yAxisId="p" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={26} allowDecimals={false} />
+                  <YAxis yAxisId="v" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="p" dataKey="posts" name="Posts" fill="#8a63d2" radius={[3, 3, 0, 0]} maxBarSize={20} />
+                  <Line yAxisId="v" type="monotone" dataKey="newAudience" name="Net new audience" stroke="#22b07d" strokeWidth={2.4} dot={false} />
+                  <Line yAxisId="v" type="monotone" dataKey="engagement" name="Engagement" stroke="#6d5efc" strokeWidth={2.2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+      )}
 
       {ig && (
         <section className="soc-section">
@@ -8354,6 +8445,42 @@ function SocialDashboard({ clients, range, nonce }) {
                   <Line type="monotone" dataKey="reach" name="Reach" stroke="#e1306c" strokeWidth={2.4} dot={false} />
                   <Line type="monotone" dataKey="interactions" name="Interactions" stroke="#6d5efc" strokeWidth={2.4} dot={false} />
                 </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {ig.daily && ig.daily.length > 1 && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Posting cadence &amp; follower growth — posts per day (bars) vs new followers per day (line)</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <ComposedChart data={ig.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis yAxisId="posts" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={26} allowDecimals={false} />
+                  <YAxis yAxisId="fol" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => fmtCompact(v)} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="posts" dataKey="posts" name="Posts" fill="#e1306c" radius={[3, 3, 0, 0]} maxBarSize={20} />
+                  <Line yAxisId="fol" type="monotone" dataKey="newFollowers" name="New followers" stroke="#22b07d" strokeWidth={2.4} dot={{ r: 2 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {ig.daily && ig.daily.length > 1 && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Engagement breakdown per day — likes · comments · saves · shares · replies</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={ig.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => fmtCompact(v)} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="likes" name="Likes" stackId="e" fill="#e1306c" />
+                  <Bar dataKey="comments" name="Comments" stackId="e" fill="#6d5efc" />
+                  <Bar dataKey="saves" name="Saves" stackId="e" fill="#22b07d" />
+                  <Bar dataKey="shares" name="Shares" stackId="e" fill="#e0803a" />
+                  <Bar dataKey="replies" name="Replies" stackId="e" fill="#e6b800" radius={[3, 3, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -8400,10 +8527,45 @@ function SocialDashboard({ clients, range, nonce }) {
               </ResponsiveContainer>
             </div>
           )}
+          {fb.daily && fb.daily.length > 1 && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Posting cadence &amp; follower growth — posts per day (bars) vs net new followers (line)</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <ComposedChart data={fb.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis yAxisId="posts" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={26} allowDecimals={false} />
+                  <YAxis yAxisId="fol" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => fmtCompact(v)} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="posts" dataKey="posts" name="Posts" fill="#1877f2" radius={[3, 3, 0, 0]} maxBarSize={20} />
+                  <Line yAxisId="fol" type="monotone" dataKey="netFollowers" name="Net new followers" stroke="#22b07d" strokeWidth={2.4} dot={{ r: 2 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {fb.daily && fb.daily.length > 1 && (fb.daily.some((d) => (d.reactions || d.comments || d.shares))) && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Engagement breakdown per day — reactions · comments · shares</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={fb.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => fmtCompact(v)} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="reactions" name="Reactions" stackId="e" fill="#1877f2" />
+                  <Bar dataKey="comments" name="Comments" stackId="e" fill="#6d5efc" />
+                  <Bar dataKey="shares" name="Shares" stackId="e" fill="#e0803a" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           <div className="soc-subhead"><h4>Top posts</h4></div>
           <div className="soc-posts">{fbPosts.length ? fbPosts.map((p) => <SocPost key={p.id} p={p} platform="fb" />) : <div className="soc-empty">No posts in this period.</div>}</div>
         </section>
       )}
+      </div>
     </div>
   )
 }

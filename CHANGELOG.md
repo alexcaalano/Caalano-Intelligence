@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.104.0 — 2026-07-29 · `PENDING`
+- **Organic Social — big expansion.**
+  - **Blended "Overall" section** on top (when a client has both IG + FB): total audience
+    (IG followers + FB likes), net new audience, total reach, engagement, blended
+    engagement rate, posts — plus a combined posts/new-audience/engagement chart. Then
+    Instagram, then Facebook.
+  - **Three charts per platform:** reach & interactions; posting cadence + follower
+    growth (posts bars vs new-followers line); and an engagement breakdown stacked bar
+    (IG: likes/comments/saves/shares/replies · FB: reactions/comments/shares). Facebook
+    now has the full chart set too.
+  - **Inline reel/video playback** — hit ▶ on an IG video/reel to watch it in the card
+    (falls back to the thumbnail if the URL won't play), plus an explicit "Open on
+    Instagram/Facebook ↗" link on every post.
+  - **PDF export** — Print and Download PDF buttons (portrait, multi-page) so the
+    dashboard can be shared with the client.
+
 ## v3.103.0 — 2026-07-29 · `PENDING`
 - **New "Organic Social Media" tab.** A full organic social dashboard per client
   (dropdown), for the selected date range, covering **Instagram** and **Facebook

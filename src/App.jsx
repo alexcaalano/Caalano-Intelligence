@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.108.0'
+const APP_VERSION = '3.109.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8304,10 +8304,54 @@ function SocBars({ data, labelKey, valueKey, color, fmt }) {
     ))}</div>
   )
 }
+// One competitor's card: mapping dropdown + (once mapped) a public Instagram
+// summary pulled from Windsor's public connector.
+function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove }) {
+  const [m, setM] = useState(null)
+  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  useEffect(() => {
+    if (!comp.igAcct) { setM(null); return }
+    let alive = true; setM('loading')
+    mrFetch(`scope=competitor&connector=${encodeURIComponent(comp.igConn || igConnector || 'instagram_public')}&account=${encodeURIComponent(comp.igAcct)}&${rangeQuery(range)}`)
+      .then((r) => { if (alive) setM(r) }).catch((e) => { if (alive) setM({ error: String(e.message || e) }) })
+    return () => { alive = false }
+  }, [comp.igAcct, comp.igConn, range.from, range.to])
+  const ig = m && m.ig
+  const fmt = ig && ig.formats ? Object.entries(ig.formats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k.toLowerCase().replace('carousel_album', 'carousel')}`).join(' · ') : ''
+  return (
+    <div className="soc-comp-card">
+      <div className="soc-comp-head"><b>{comp.name}</b><button className="soc-comp-x" onClick={onRemove} aria-label="Remove">✕</button></div>
+      <div className="soc-comp-links">{comp.ig ? <a href={`https://instagram.com/${comp.ig}`} target="_blank" rel="noreferrer" className="mr-src mr-src-meta">IG @{comp.ig}</a> : null}</div>
+      <div className="soc-comp-map">
+        <label>Windsor IG account
+          <select value={comp.igAcct || ''} onChange={(e) => onMap({ igAcct: e.target.value || null, igConn: e.target.value ? igConnector : null })}>
+            <option value="">{igList.length ? '— not mapped —' : 'none available'}</option>
+            {igList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </label>
+      </div>
+      {comp.igAcct && (
+        m === 'loading' ? <div className="soc-comp-pending">Loading public data…</div>
+          : ig ? (
+            <div className="soc-comp-metrics">
+              <div className="soc-comp-kpis">
+                <div><b>{n0(ig.followers)}</b><span>Followers</span></div>
+                <div><b>{n0(ig.postCount)}</b><span>Posts</span></div>
+                <div><b>{ig.er != null ? `${ig.er}%` : '—'}</b><span>Est. ER</span></div>
+                <div><b>{n0(ig.engagement)}</b><span>Engagement</span></div>
+              </div>
+              <div className="soc-comp-sub">{n0(ig.likes)} likes · {n0(ig.comments)} comments{fmt ? ` · ${fmt}` : ''}</div>
+              {ig.posts && ig.posts.length ? <div className="soc-comp-posts">{ig.posts.slice(0, 3).map((p) => <a key={p.id} className="soc-comp-post" href={p.permalink || undefined} target="_blank" rel="noreferrer" title={`${p.caption || ''}\n${p.likes} likes · ${p.comments} comments`}>{p.thumb ? <img src={p.thumb} alt="" loading="lazy" /> : <span className="soc-noimg">🖼</span>}<span className="soc-comp-post-eng">{n0(p.engagement)}</span></a>)}</div> : null}
+            </div>
+          ) : <div className="soc-comp-pending">{m && m.error ? `Couldn’t load: ${m.error}` : 'No public data returned for this account / period.'}</div>
+      )}
+    </div>
+  )
+}
 // Competitors assigned to a client, for organic benchmarking / inspiration. The
-// assignment (name + IG/FB handle) is stored per client; live public metrics wire
-// up via the Windsor public connector once its fields are verified.
-function CompetitorsView({ client }) {
+// assignment (name + IG handle) is stored per client; public metrics come from the
+// Windsor public connector once a competitor is mapped to an account.
+function CompetitorsView({ client, range }) {
   useSettingsSync()
   const [name, setName] = useState(''); const [ig, setIg] = useState(''); const [fb, setFb] = useState('')
   const [accts, setAccts] = useState(null)
@@ -8329,38 +8373,15 @@ function CompetitorsView({ client }) {
       <div className="soc-comp-add">
         <input placeholder="Competitor name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <input placeholder="Instagram @handle" value={ig} onChange={(e) => setIg(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <input placeholder="Facebook page / handle" value={fb} onChange={(e) => setFb(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <button className="mr-btn primary" onClick={add}>+ Add competitor</button>
       </div>
       {comps.length ? (
         <div className="soc-comp-grid">
-          {comps.map((c) => (
-            <div className="soc-comp-card" key={c.id}>
-              <div className="soc-comp-head"><b>{c.name}</b><button className="soc-comp-x" onClick={() => remove(c.id)} aria-label="Remove">✕</button></div>
-              <div className="soc-comp-links">
-                {c.ig ? <a href={`https://instagram.com/${c.ig}`} target="_blank" rel="noreferrer" className="mr-src mr-src-meta">IG @{c.ig}</a> : null}
-                {c.fb ? <a href={`https://facebook.com/${c.fb}`} target="_blank" rel="noreferrer" className="mr-src mr-src-google">FB {c.fb}</a> : null}
-              </div>
-              <div className="soc-comp-map">
-                <label>Windsor IG account
-                  <select value={c.igAcct || ''} onChange={(e) => setMap(c.id, { igAcct: e.target.value || null, igConn: e.target.value ? (accts.ig.connector || null) : null })}>
-                    <option value="">{igList.length ? '— not mapped —' : 'none available'}</option>
-                    {igList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                </label>
-                <label>Windsor FB account
-                  <select value={c.fbAcct || ''} onChange={(e) => setMap(c.id, { fbAcct: e.target.value || null, fbConn: e.target.value ? (accts.fb.connector || null) : null })}>
-                    <option value="">{fbList.length ? '— not mapped —' : 'none available'}</option>
-                    {fbList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                </label>
-              </div>
-            </div>
-          ))}
+          {comps.map((c) => <CompetitorCard key={c.id} comp={c} range={range} igList={igList} igConnector={accts && accts.ig ? accts.ig.connector : null} onMap={(patch) => setMap(c.id, patch)} onRemove={() => remove(c.id)} />)}
         </div>
       ) : <div className="mr-empty">No competitors yet — add {client.name}’s competitors above to start benchmarking.</div>}
-      {accts && !igList.length && !fbList.length && <p className="mr-foot-note" style={{ color: 'var(--neg)' }}>No public accounts found via Windsor{accts.ig && accts.ig.connector ? '' : ' (couldn’t find the public connector slug)'} — tell me the connector name you used in Windsor and I’ll point the mapping at it.</p>}
-      <p className="mr-foot-note">Map each competitor to the matching <b>Windsor public account</b> above. Once mapped, benchmarks cover follower growth, posting cadence &amp; format mix, top content and an <b>estimated</b> engagement rate (likes + comments ÷ followers) — reach/impressions stay private to the account owner, so true ER isn’t available for competitors.</p>
+      {accts && !igList.length && <p className="mr-foot-note" style={{ color: 'var(--neg)' }}>No public Instagram accounts found via Windsor{accts.ig && accts.ig.connector ? '' : ' (couldn’t find the public connector slug)'} — tell me the connector name you used in Windsor and I’ll point the mapping at it.</p>}
+      <p className="mr-foot-note">Map each competitor to its <b>Windsor public Instagram account</b>. Metrics are pulled from public data (followers, posts, likes, comments); engagement rate is <b>estimated</b> (avg likes+comments per post ÷ followers) since reach/impressions stay private to the account owner. Facebook can be added later.</p>
     </div>
   )
 }
@@ -8450,7 +8471,7 @@ function SocialDashboard({ clients, range, nonce }) {
         <button className="mr-btn" onClick={downloadPdf} disabled={!data || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button></>}
       </div>
 
-      {subview === 'competitors' && <CompetitorsView client={client} />}
+      {subview === 'competitors' && <CompetitorsView client={client} range={range} />}
 
       {subview === 'perf' && (<>
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading social…" /></div>}

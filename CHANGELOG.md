@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.109.0 — 2026-07-29 · `PENDING`
+- **Competitor Instagram insights (public).** Once a competitor is mapped to a
+  Windsor public IG account, its card now pulls a live summary from public data —
+  **followers, posts, engagement (likes+comments), estimated engagement rate, format
+  mix** and its **top 3 posts** (thumbnail + engagement, linking out). Backend
+  `scope=competitor` reads the public connector defensively (falls back through
+  simpler field sets). Facebook deferred; IG-only for now. Engagement rate is
+  estimated (avg likes+comments per post ÷ followers) since competitor reach is private.
+
 ## v3.108.0 — 2026-07-29 · `PENDING`
 - **Competitors → map to Windsor public accounts.** The Competitors tab now lists
   every public Instagram / Facebook account your Windsor key can access (backend

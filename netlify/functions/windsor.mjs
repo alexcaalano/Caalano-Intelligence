@@ -1419,6 +1419,31 @@ export default async (req) => {
     return json({ ig, fb }, 200)
   }
 
+  // One competitor's public Instagram summary (followers + public posts). Reach /
+  // impressions are private, so engagement rate is estimated from likes+comments.
+  if (url.searchParams.get('scope') === 'competitor') {
+    if (me && me.role === 'viewer') return json({ error: 'not allowed' }, 403)
+    const connector = url.searchParams.get('connector') || 'instagram_public'
+    const account = url.searchParams.get('account')
+    if (!account) return json({ error: 'account required' }, 400)
+    const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(account))
+    const safe = async (variants, pre) => { for (const ff of variants) { try { const rows = await windsorFetch(connector, ff, pre ? null : from, pre ? null : to, pre || null, key); return filt(rows) } catch { /* try simpler field set */ } } return [] }
+    try {
+      const prof = (await safe([['account_id', 'username', 'followers_count', 'media_count'], ['account_id', 'followers_count']], 'last_30d'))[0] || {}
+      const media = await safe([
+        ['account_id', 'media_id', 'timestamp', 'media_type', 'media_caption', 'media_permalink', 'media_url', 'media_thumbnail_url', 'media_like_count', 'media_comments_count'],
+        ['account_id', 'media_id', 'timestamp', 'media_type', 'media_like_count', 'media_comments_count'],
+        ['account_id', 'media_id', 'timestamp', 'media_like_count', 'media_comments_count'],
+      ])
+      const followers = num(prof.followers_count)
+      const posts = media.map((m) => { const likes = num(m.media_like_count), comments = num(m.media_comments_count); return { id: m.media_id, date: String(m.timestamp || '').slice(0, 10), type: m.media_type || null, caption: String(m.media_caption || '').replace(/\s+/g, ' ').slice(0, 160), permalink: m.media_permalink || null, thumb: m.media_thumbnail_url || m.media_url || null, likes, comments, engagement: likes + comments } }).filter((p) => p.id).sort((a, b) => b.engagement - a.engagement)
+      const formats = {}; for (const p of posts) { const f = (p.type || 'OTHER').toUpperCase(); formats[f] = (formats[f] || 0) + 1 }
+      const totalEng = posts.reduce((a, p) => a + p.engagement, 0)
+      const er = (followers && posts.length) ? Math.round((totalEng / posts.length / followers) * 1000) / 10 : null
+      return json({ ig: { username: prof.username || null, followers, mediaCount: num(prof.media_count), postCount: posts.length, likes: posts.reduce((a, p) => a + p.likes, 0), comments: posts.reduce((a, p) => a + p.comments, 0), engagement: totalEng, er, formats, posts: posts.slice(0, 12) } }, 200)
+    } catch (e) { return json({ ig: null, error: String(e.message || e) }, 200) }
+  }
+
   // Generic Windsor connector probe — hit any connector slug and see the accounts
   // + field shape it returns. Used to wire the public IG/FB competitor connector
   // once its exact slug/fields are known. e.g.

@@ -2004,3 +2004,13 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .soc-comp-map { display: flex; flex-direction: column; gap: 7px; }
 .soc-comp-map label { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
 .soc-comp-map select { padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); font-size: 12.5px; font-weight: 500; }
+.soc-comp-metrics { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.soc-comp-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.soc-comp-kpis > div { display: flex; flex-direction: column; }
+.soc-comp-kpis b { font-size: 15px; font-weight: 800; letter-spacing: -.02em; }
+.soc-comp-kpis span { font-size: 9.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
+.soc-comp-sub { font-size: 11px; color: var(--muted); }
+.soc-comp-posts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.soc-comp-post { position: relative; aspect-ratio: 1/1; border-radius: 8px; overflow: hidden; background: var(--elev); display: grid; place-items: center; text-decoration: none; }
+.soc-comp-post img { width: 100%; height: 100%; object-fit: cover; }
+.soc-comp-post-eng { position: absolute; bottom: 3px; right: 4px; font-size: 10px; font-weight: 700; color: #fff; background: rgba(0,0,0,.6); padding: 1px 5px; border-radius: 10px; }

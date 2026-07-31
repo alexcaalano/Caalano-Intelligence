@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.114.0'
+const APP_VERSION = '3.115.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7642,6 +7642,16 @@ async function assembleMonthlyReport(client, period) {
     client.meta ? mrFetch(`scope=monthlytrend&months=6&${q}`).then((r) => r.trend).catch(() => null) : Promise.resolve(null),
     client.ghl ? mrFetch(`scope=monthlydeals&${q}`).then((r) => r.deals).catch(() => null) : Promise.resolve(null),
   ])
+  // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
+  // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
+  // same attribution the Meta Ads view uses. Done before the attribution trim.
+  if (meta && Array.isArray(meta.ads) && attribution && Array.isArray(attribution.byCreative)) {
+    const oCre = mkOutcomeMap(attribution.byCreative)
+    for (const a of meta.ads) {
+      const o = oCre.get(unorm(a.name))
+      if (o) a.ke = { leads: o.leads || 0, booked: o.booked || 0, shown: o.shown || 0, won: o.won || 0, revenue: o.revenue || 0 }
+    }
+  }
   // Trim the heaviest arrays so the frozen blob stays lean, and keep only the
   // calendar counts the funnel reads from attribution (drops raw opportunity PII).
   if (google && Array.isArray(google.conversionActions)) google.conversionActions = google.conversionActions.slice(0, 200)
@@ -7652,6 +7662,10 @@ async function assembleMonthlyReport(client, period) {
     month: period.key, period: b, currency: undefined,
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
     meta, google, blend, attribution: attrTrim, trend: trendR || [], deals: dealsR || null,
+    // Per-campaign CRM outcome entities (utm_campaign) so the report can render
+    // the Caalano360 green key-event columns + costings by campaign, same as the
+    // Meta Ads view. Top 40 by leads keeps the frozen blob lean.
+    campOutcomes: (attribution && Array.isArray(attribution.byCampaign)) ? attribution.byCampaign.slice(0, 40) : [],
     wonClosed: (blend && blend.wonClosed) || null,
     generatedAt: new Date().toISOString(),
   }
@@ -7911,6 +7925,73 @@ function MRDrill({ drill, currency, onClose }) {
   )
 }
 
+// One large creative card for the Monthly Report: Meta stats + the Caalano360
+// CRM key-event funnel (Leads → Booked → Shown → Won → Revenue) attributed to
+// this creative's UTM, plus inline Instagram playback via the ad's permalink.
+function MRCreative({ a, money, n0 }) {
+  const [play, setPlay] = useState(false)
+  const ctrV = a.impressions ? (a.clicks / a.impressions) * 100 : null
+  const results = a.results != null ? a.results : a.leads
+  const cprV = results ? a.spend / results : null
+  const freqV = a.reach ? a.impressions / a.reach : null
+  const embed = a.igUrl ? a.igUrl.replace(/\/+$/, '') + '/embed' : null
+  const ke = a.ke
+  const roas = ke && ke.revenue && a.spend ? ke.revenue / a.spend : null
+  const cpw = ke && ke.won && a.spend ? a.spend / ke.won : null
+  useEffect(() => {
+    if (!play) return
+    const onKey = (e) => { if (e.key === 'Escape') setPlay(false) }
+    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
+  }, [play])
+  return (
+    <div className="mr-cre">
+      <div className="mr-cre-thumb">
+        {a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" /> : <span className="mr-noimg">{a.type === 'Video' ? '▶' : '🖼'}</span>}
+        {embed
+          ? <button className="mr-cre-play no-print" onClick={() => setPlay(true)} aria-label="Play">▶</button>
+          : (a.igUrl && <a className="mr-cre-play no-print" href={a.igUrl} target="_blank" rel="noreferrer" aria-label="Open on Instagram">▶</a>)}
+        {a.type === 'Video' && <span className="mr-cre-badge">▶ Video</span>}
+      </div>
+      <div className="mr-cre-body">
+        <div className="mr-cre-name" title={a.name}>{a.name}{a.adset ? <small>{a.adset}</small> : null}</div>
+        <div className="mr-cre-metrics">
+          <div><b>{money(a.spend)}</b><span>Spend</span></div>
+          <div><b>{n0(a.impressions)}</b><span>Impr</span></div>
+          <div><b>{ctrV == null ? '—' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
+          <div><b>{freqV != null ? freqV.toFixed(1) + 'x' : '—'}</b><span>Freq</span></div>
+          <div><b>{n0(results)}</b><span>{a.resultType || 'Results'}</span></div>
+          <div><b>{cprV == null ? '—' : money(cprV)}</b><span>Cost/result</span></div>
+        </div>
+        {ke ? (
+          <div className="mr-cre-ke">
+            <div className="mr-cre-ke-lab">📈 Caalano360 · CRM key events</div>
+            <div className="mr-cre-funnel">
+              <span><b>{n0(ke.leads)}</b>Leads</span><i>→</i>
+              <span><b>{n0(ke.booked)}</b>Booked</span><i>→</i>
+              <span><b>{n0(ke.shown)}</b>Shown</span><i>→</i>
+              <span className="mr-cre-won"><b>{n0(ke.won)}</b>Won</span>
+            </div>
+            <div className="mr-cre-cash">
+              <div><b>{money(ke.revenue)}</b><span>Revenue</span></div>
+              <div><b>{cpw == null ? '—' : money(cpw)}</b><span>Cost / won</span></div>
+              <div><b>{roas == null ? '—' : roas.toFixed(1) + 'x'}</b><span>ROAS</span></div>
+            </div>
+          </div>
+        ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
+      </div>
+      {play && embed && (
+        <div className="mr-play-overlay no-print" onClick={() => setPlay(false)}>
+          <div className="mr-play-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mr-play-head"><b title={a.name}>{a.name}</b><button className="mr-play-x" onClick={() => setPlay(false)} aria-label="Close">✕</button></div>
+            <iframe className="mr-play-frame" src={embed} title={a.name} scrolling="no" frameBorder="0" allow="autoplay; encrypted-media; clipboard-write; picture-in-picture" allowFullScreen />
+            <a className="mr-play-open" href={a.igUrl} target="_blank" rel="noreferrer">Open on Instagram ↗</a>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Status Change vs Created On revenue matrix — the same figures side by side so
 // the client can see cash banked this month vs how this month's leads are doing.
 function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
@@ -8042,25 +8123,12 @@ function renderMonthlyDeck(rep, h) {
       </MRSlide>
     )
     push(
-      <MRSlide key="m-cre" kicker="Meta Ads · Platform" title="Creative performance" sub={`${(meta.ads || []).length} creative(s), ranked by spend`}>
-        <div className="mr-creative-grid">
-          {(meta.ads || []).slice(0, 12).map((a, i) => (
-            <div className="mr-creative" key={i}>
-              <div className="mr-creative-thumb">{a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" /> : <span className="mr-noimg">{a.type === 'Video' ? '▶' : '🖼'}</span>}</div>
-              <div className="mr-creative-body">
-                <div className="mr-creative-name" title={a.name}>{a.name}</div>
-                <div className="mr-creative-stats">
-                  <span>{money(a.spend)}</span><span>{n0(a.impressions)} impr</span>
-                  <span>{ctr(a) == null ? '—' : fmtPct(ctr(a), 2)} CTR</span>
-                  <span>{n0(a.leads)} leads</span>
-                  <span>{cpl(a) == null ? '—' : money(cpl(a))} CPL</span>
-                  {freq(a) != null && <span>{freq(a).toFixed(1)}x freq</span>}
-                </div>
-              </div>
-            </div>
-          ))}
+      <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${(meta.ads || []).length} creative(s), ranked by spend · platform metrics + CRM key events`}>
+        <div className="mr-cre-grid">
+          {(meta.ads || []).slice(0, 9).map((a, i) => <MRCreative key={i} a={a} money={money} n0={n0} />)}
         </div>
         {!(meta.ads || []).length && <div className="mr-empty">No creatives for this period.</div>}
+        <p className="mr-foot-note">Spend, impressions, CTR &amp; frequency are Meta-reported. <b>Key events</b> (Leads → Booked → Shown → Won → Revenue, with Cost / Won &amp; ROAS) are the CRM outcomes for leads whose ad UTM (utm_content) matches this creative — the same attribution as the Meta Ads view. ▶ plays the Instagram post inline where a permalink is available.</p>
       </MRSlide>
     )
   }
@@ -8146,7 +8214,8 @@ function renderMonthlyDeck(rep, h) {
     )
   }
 
-  // ---- Caalano360 summary ----
+  // ---- Caalano360 (order: User performance → Lost reasons → Account summary &
+  // ROI merged → Key events by campaign) ----
   if (rep.hasCrm && blend) {
     const stagePos = stagePosMap(pipelines)
     const rmap = reachedByStage(pipelines)
@@ -8157,29 +8226,6 @@ function renderMonthlyDeck(rep, h) {
     // can never exceed 100%.
     const funnelRows = keyEventRows(keyEventsRaw, rmap, calMap, stagePos, crm.won || 0)
     const openOtherRev = Math.max(0, realisedRev - paidRev)
-    push(
-      <MRSlide key="c360" kicker="Caalano360" title="Account summary" sub="Ad platform + CRM. Spend & leads are this month's; the funnel is this month's leads (created-on cohort); revenue is shown both by close month and by lead month.">
-        <div className="mr-kpirow mr-kpirow-wide">
-          <MRKpi label="Total ad spend" value={money(totalSpend)} />
-          <MRKpi label="Paid leads" value={n0(paidLeads)} sub="ad results" />
-          <MRKpi label="Blended CPL" value={paidLeads ? money(totalSpend / paidLeads) : '—'} />
-          <MRKpi label="Deals won · created" value={n0(coWon.count)} sub="this month's leads" />
-          <MRKpi label="Deals won · closed" value={n0(dealsWon)} sub="closed this month" />
-          <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />
-          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub="cash / status change" />
-          <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '—'} />
-          <MRKpi label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '—'} sub="lead → won" />
-          <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
-        </div>
-        <div className="mr-section-lab">Revenue — status change vs created on</div>
-        <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} /></div>
-        <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won.{openOtherRev > 0 ? ` ${money(openOtherRev)} of this month's closed revenue came from organic / untracked sources — in Total, excluded from Paid.` : ''}</p>
-        <div className="mr-section-lab">This month's leads → key events (created-on cohort)</div>
-        {funnelRows.length
-          ? <KeyEventsFunnel rows={funnelRows} total={crm.leads || 0} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." />
-          : <div className="mr-empty">No key events configured — set them in Settings → Key events.</div>}
-      </MRSlide>
-    )
 
     // ---- User performance ----
     // Ranked by who CLOSED the most this month (status change). Progression columns
@@ -8243,7 +8289,11 @@ function renderMonthlyDeck(rep, h) {
       </MRSlide>
     )
 
-    // ---- ROI ----
+    // ---- Account summary & ROI (merged — after Lost reasons) ----
+    // Both the old Account summary and ROI slides showed spend, paid revenue,
+    // ROAS, cost/won and the same status-change vs created-on revenue matrix, so
+    // they're merged into one: the fuller KPI row + the revenue matrix (once) +
+    // the by-channel ROI table + the created-on key-event funnel.
     const roiRows = ['meta', 'google'].map((cKey) => ({
       label: cKey === 'meta' ? 'Meta' : 'Google',
       spend: (cKey === 'meta' ? paid.metaSpend : paid.googleSpend) || 0,
@@ -8252,20 +8302,24 @@ function renderMonthlyDeck(rep, h) {
     })).filter((r) => r.spend || r.rev)
     const otherRev = Math.max(0, realisedRev - paidRev)
     push(
-      <MRSlide key="roi" kicker="Caalano360" title="Return on investment" sub="ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM — never total business.">
+      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub="Ad platform + CRM. Spend & leads are this month's; ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM — never total business.">
         <div className="mr-kpirow mr-kpirow-wide">
-          <MRKpi label="Ad spend" value={money(totalSpend)} />
-          <MRKpi label="Paid revenue (closed)" value={money(paidRev)} strong sub="status change" />
-          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub={roas != null ? `${money(paidRev)} ÷ ${money(totalSpend)}` : null} />
-          <MRKpi label="Paid deals won" value={n0(paidWon)} />
+          <MRKpi label="Total ad spend" value={money(totalSpend)} />
+          <MRKpi label="Paid leads" value={n0(paidLeads)} sub="ad results" />
+          <MRKpi label="Blended CPL" value={paidLeads ? money(totalSpend / paidLeads) : '—'} />
+          <MRKpi label="Deals won · created" value={n0(coWon.count)} sub="this month's leads" />
+          <MRKpi label="Deals won · closed" value={n0(dealsWon)} sub="closed this month" />
+          <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />
+          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub="cash / status change" />
           <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '—'} />
-          <MRKpi label="Open pipeline value" value={money(crm.openValue)} />
+          <MRKpi label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '—'} sub="lead → won" />
+          <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
         </div>
         <div className="mr-section-lab">Revenue — status change vs created on</div>
-        <MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} />
+        <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} /></div>
         {roiRows.length > 0 && (
           <>
-            <div className="mr-section-lab">By channel (closed this month)</div>
+            <div className="mr-section-lab">Return on investment — by channel (closed this month)</div>
             <MRTable
               cols={[
                 { k: 'label', label: 'Channel', render: (r) => <span className="mr-name">{r.label}</span> },
@@ -8278,9 +8332,56 @@ function renderMonthlyDeck(rep, h) {
             />
           </>
         )}
-        <p className="mr-foot-note">Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from organic / referral / untracked sources` : ''}. Those are excluded from paid ROAS above.</p>
+        <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won. Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from organic / referral / untracked sources (excluded from paid ROAS)` : ''}.</p>
+        <div className="mr-section-lab">This month's leads → key events (created-on cohort)</div>
+        {funnelRows.length
+          ? <KeyEventsFunnel rows={funnelRows} total={crm.leads || 0} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." />
+          : <div className="mr-empty">No key events configured — set them in Settings → Key events.</div>}
       </MRSlide>
     )
+
+    // ---- Key events by campaign (Caalano360 green columns + costings) ----
+    // The same grouped green key-event table as the Meta Ads view, at campaign
+    // level: which campaigns drove the most bookings / shows / wons, with the cost
+    // per each. Reads the frozen per-campaign CRM outcomes (utm_campaign) joined to
+    // paid spend. Rendered only when key-event outcomes were captured.
+    const o360cols = buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calMap && calMap.names ? calMap.names : new Map(((attribution && attribution.appointments && attribution.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name])))
+    const oCamp = mkOutcomeMap(rep.campOutcomes || [])
+    const campSrc = []
+    for (const c of (meta && meta.campaigns) || []) campSrc.push({ name: c.name, channel: 'meta', spend: c.spend || 0, leads: (c.results != null ? c.results : c.leads) || 0 })
+    for (const c of (google && google.campaigns) || []) campSrc.push({ name: c.name, channel: 'google', spend: c.cost || 0, leads: c.conversions || 0 })
+    const campRows = campSrc.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) }))
+      .sort((a, b2) => b2.spend - a.spend).slice(0, 16)
+    const anyMatched = campRows.some((c) => c._has360)
+    if ((rep.campOutcomes || []).length && anyMatched && campRows.length) {
+      push(
+        <MRSlide key="c360-camp" kicker="Caalano360" title="Key events by campaign" sub="Which campaigns are driving the key events — booked, shown, won — and the cost of each. CRM outcomes (utm_campaign) matched to paid spend.">
+          <div className="mr-tablewrap mr-o360-wrap">
+            <table className="mr-table o360-tbl mr-o360">
+              <colgroup>
+                <col style={{ width: 210 }} />
+                <col style={{ width: 84 }} />
+                <col style={{ width: 60 }} />
+                {o360cols.cols.map((c) => <col key={c.key} className={o360ColClass(c)} />)}
+              </colgroup>
+              <thead>
+                <C360GrpRow left={3} cols={o360cols} />
+                <tr><th>Campaign</th><th className="r">Spend</th><th className="r">Leads</th><O360Head cols={o360cols} /></tr>
+              </thead>
+              <tbody>{campRows.map((c, i) => (
+                <tr key={i}>
+                  <td className="mr-o360-name" title={c.name}><span className={`mr-src mr-src-${c.channel}`}>{c.channel === 'meta' ? 'Meta' : 'Google'}</span> {c.name}</td>
+                  <td className="r">{money(c.spend)}</td>
+                  <td className="r">{n0(c.leads)}</td>
+                  {o360Cells(c, currency, o360cols)}
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <p className="mr-foot-note">Green columns are the client's configured <b>key events</b> (Settings → Key events) — the count reached and the cost per each (spend ÷ reached), plus the Won revenue block and ROAS. Scroll right to see every event. Campaigns matched to CRM outcomes by <b>utm_campaign</b>; a “-” means no CRM leads carried that campaign's UTM.</p>
+        </MRSlide>
+      )
+    }
   }
 
   // Number the slides (cover excluded from the count shown).
@@ -8526,8 +8627,11 @@ function CompetitorsView({ client, range }) {
 }
 function SocialDashboard({ clients, range, nonce }) {
   const [enabled, setEnabled] = useState(null)
-  useEffect(() => { mrFetch('scope=social&list=1').then((r) => setEnabled(r.clients || [])).catch(() => setEnabled([])) }, [])
-  const list = (clients || []).filter((c) => (enabled ? enabled.includes(c.id) : false)).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+  // Cache-bust so removing a connector in Windsor refreshes the dropdown; re-runs on manual refresh (nonce).
+  useEffect(() => { mrFetch(`scope=social&list=1&_r=${Date.now()}`).then((r) => setEnabled(r.clients || [])).catch(() => setEnabled([])) }, [nonce])
+  // Pool Haus pinned first, then alphabetical.
+  const PIN = 'pool-haus'
+  const list = (clients || []).filter((c) => (enabled ? enabled.includes(c.id) : false)).slice().sort((a, b) => (a.id === PIN ? -1 : b.id === PIN ? 1 : String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })))
   const [clientId, setClientId] = useState('')
   useEffect(() => { if (list.length && !list.some((c) => c.id === clientId)) setClientId(list[0].id) }, [list.length])
   const client = list.find((c) => c.id === clientId) || null

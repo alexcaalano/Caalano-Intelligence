@@ -1880,6 +1880,49 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-creative-name { font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-creative-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* Monthly Report — big vertical creative cards with CRM key events + 9:16 playback */
+.mr-cre-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1000px) { .mr-cre-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mr-cre { display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--border); border-radius: 13px; overflow: hidden; }
+.mr-cre-thumb { position: relative; aspect-ratio: 9 / 16; max-height: 360px; background: var(--elev); display: grid; place-items: center; overflow: hidden; }
+.mr-cre-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mr-cre-play { position: absolute; inset: 0; margin: auto; width: 56px; height: 56px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 21px; cursor: pointer; display: grid; place-items: center; padding-left: 3px; text-decoration: none; }
+.mr-cre-play:hover { background: rgba(0,0,0,.74); }
+.mr-cre-badge { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 700; color: #fff; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 20px; }
+.mr-cre-body { padding: 11px 13px; display: flex; flex-direction: column; gap: 10px; }
+.mr-cre-name { font-size: 12.5px; font-weight: 800; line-height: 1.25; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.mr-cre-name small { font-weight: 500; color: var(--faint); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mr-cre-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px 6px; }
+.mr-cre-metrics > div { display: flex; flex-direction: column; min-width: 0; }
+.mr-cre-metrics b { font-size: 14px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.mr-cre-metrics span { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
+.mr-cre-ke { border-top: 1px solid var(--border); padding-top: 9px; display: flex; flex-direction: column; gap: 8px; }
+.mr-cre-ke-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #12b886; }
+.mr-cre-ke-empty { font-size: 11px; color: var(--faint); border-top: 1px solid var(--border); padding-top: 9px; }
+.mr-cre-funnel { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.mr-cre-funnel span { display: inline-flex; flex-direction: column; align-items: center; background: rgba(18,184,134,.10); border-radius: 7px; padding: 4px 8px; min-width: 46px; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+.mr-cre-funnel span b { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.mr-cre-funnel i { color: var(--faint); font-style: normal; }
+.mr-cre-won { background: rgba(18,184,134,.22) !important; }
+.mr-cre-cash { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.mr-cre-cash > div { display: flex; flex-direction: column; }
+.mr-cre-cash b { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mr-cre-cash span { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
+/* 9:16 playback lightbox */
+.mr-play-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.72); display: grid; place-items: center; padding: 20px; }
+.mr-play-modal { width: min(420px, 94vw); height: min(88vh, 780px); background: #000; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.mr-play-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 13px; color: #fff; background: #141414; }
+.mr-play-head b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mr-play-x { border: 0; background: transparent; color: #fff; font-size: 16px; cursor: pointer; line-height: 1; }
+.mr-play-frame { flex: 1; width: 100%; border: 0; background: #000; }
+.mr-play-open { text-align: center; padding: 9px; color: #fff; background: #141414; font-size: 12px; text-decoration: none; }
+.mr-play-open:hover { text-decoration: underline; }
+/* Caalano360 green key-events by campaign (report) */
+.mr-o360-wrap { overflow-x: auto; }
+.mr-o360 { min-width: 640px; }
+.mr-o360-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mr-o360-name .mr-src { margin-right: 5px; }
+
 /* Top performer */
 .mr-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: color-mix(in srgb, var(--brand) 10%, var(--panel-2)); border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border)); border-radius: 11px; padding: 12px 15px; }
 .mr-top-badge { font-size: 11px; font-weight: 800; color: var(--brand); text-transform: uppercase; letter-spacing: .04em; }
@@ -1963,7 +2006,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 @media (max-width: 800px) { .soc-posts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .soc-post { display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit; }
 .soc-post:hover { border-color: var(--border-2); }
-.soc-post-thumb { aspect-ratio: 1 / 1; background: var(--elev); display: grid; place-items: center; overflow: hidden; }
+.soc-post-thumb { aspect-ratio: 9 / 16; background: var(--elev); display: grid; place-items: center; overflow: hidden; }
 .soc-post-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .soc-noimg { font-size: 30px; opacity: .5; }
 .soc-post-body { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 6px; }

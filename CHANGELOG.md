@@ -17,6 +17,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.115.0 — 2026-07-31 · `PENDING`
+- **Creative performance — CRM key events, bigger cards, 9:16 playback.** The Meta
+  creative slide is now a grid of large vertical cards. Each shows the Meta metrics
+  (spend, impressions, CTR, frequency, results, cost/result) **and** the Caalano360
+  CRM key-event funnel for that exact creative — **Leads → Booked → Shown → Won**,
+  with **Revenue, Cost / Won and ROAS** — attributed by the ad's UTM (utm_content),
+  the same as the Meta Ads view. **▶ Play** opens a **9:16 portrait lightbox** with
+  the Instagram post so the whole reel is visible; where no permalink exists it links
+  out. (Regenerate a snapshot to populate key events + playback on existing reports.)
+- **Key events by campaign (Caalano360 green columns).** New report slide bringing
+  the full green key-event columns — **which campaigns drove the most booked / shown /
+  won, with the cost per each** plus the Won-revenue block and ROAS — at campaign level
+  across Meta + Google, matched to CRM outcomes by utm_campaign. Reads frozen
+  per-campaign outcomes stored in the snapshot.
+- **Account summary & ROI merged, moved after Lost reasons.** The old Account summary
+  and Return on Investment slides (which repeated the same spend / paid revenue / ROAS
+  / cost-per-won and revenue matrix) are now **one slide** — fuller KPI row, the revenue
+  matrix once, the by-channel ROI table and the created-on key-event funnel — placed
+  **after Lost reasons**. New CRM order: User performance → Lost reasons → Account
+  summary & ROI → Key events by campaign.
+- **Organic Social — 9:16 top-post thumbnails** so vertical reels show fully instead
+  of being cropped square.
+- **Organic Social dropdown only lists connected accounts** (a live Windsor probe, so
+  removing a connector drops it from the list), with **Pool Haus pinned first**, then
+  alphabetical.
+
 ## v3.114.0 — 2026-07-31 · `PENDING`
 - **Monthly Report — page-by-page slide view (PowerPoint / Canva style).** The deck
   now opens in **Slides** mode: one section per page, with **‹ ›  arrows, a clickable

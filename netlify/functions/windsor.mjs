@@ -1391,7 +1391,22 @@ export default async (req) => {
   // Organic social (Instagram + Facebook Page). `list` returns the client ids
   // that have an organic profile connected, for the dashboard's dropdown.
   if (url.searchParams.get('scope') === 'social') {
-    if (url.searchParams.get('list')) return json({ clients: Object.keys(SOCIAL).filter((id) => !restrictTo || restrictTo.has(id)) }, 200, true)
+    if (url.searchParams.get('list')) {
+      // Only list clients whose organic profile is actually returning data from
+      // Windsor right now — so removing a connector drops it from the dropdown.
+      // A light probe (followers / page fans) per client; falls back to the full
+      // set if every probe fails (transient), so the dropdown never goes empty.
+      const ids = Object.keys(SOCIAL).filter((id) => !restrictTo || restrictTo.has(id))
+      const live = async (soc) => {
+        const jobs = []
+        if (soc.ig) jobs.push(windsorFetch('instagram', ['account_id', 'followers_count', 'media_count'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.ig))).catch(() => []))
+        if (soc.fbo) jobs.push(windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.fbo))).catch(() => []))
+        const res = await Promise.all(jobs)
+        return res.some((rows) => rows && rows.some((r) => num(r.followers_count) || num(r.media_count) || num(r.page_fans)))
+      }
+      const connected = (await Promise.all(ids.map(async (id) => ((await live(SOCIAL[id]).catch(() => false)) ? id : null)))).filter(Boolean)
+      return json({ clients: connected.length ? connected : ids }, 200, true)
+    }
     const soc = SOCIAL[client]
     if (!soc) return json({ ig: null, fb: null, connected: false })
     try { const data = await buildSocial(soc, from, to, key); return json({ client, period: { from, to }, ...data }, 200, true) }

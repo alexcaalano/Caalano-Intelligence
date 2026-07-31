@@ -1398,6 +1398,22 @@ export default async (req) => {
     catch (e) { return json({ ig: null, fb: null, error: String(e.message || e) }, 502) }
   }
 
+  // Generic Windsor connector probe — hit any connector slug and see the accounts
+  // + field shape it returns. Used to wire the public IG/FB competitor connector
+  // once its exact slug/fields are known. e.g.
+  //   ?scope=windsorprobe&connector=instagram_public&wfields=account_id,account_name,username,followers_count&from=2026-06-01&to=2026-06-30
+  if (url.searchParams.get('scope') === 'windsorprobe') {
+    if (me && me.role === 'viewer') return json({ error: 'not allowed' }, 403)
+    const connector = url.searchParams.get('connector')
+    if (!connector) return json({ error: 'connector slug required (e.g. instagram_public)' }, 400)
+    const wfields = (url.searchParams.get('wfields') || 'account_id,account_name').split(',').map((s) => s.trim()).filter(Boolean)
+    try {
+      const rows = await windsorFetch(connector, wfields, from, to, preset || 'last_30d', key)
+      const accounts = [...new Map(rows.map((r) => [norm(r.account_id), { account_id: r.account_id, account_name: r.account_name || r.username || r.name || null }])).values()].slice(0, 100)
+      return json({ connector, rowCount: rows.length, accounts, sampleKeys: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) }, 200)
+    } catch (e) { return json({ connector, error: String(e.message || e) }, 502) }
+  }
+
   // Inbound social DMs (Instagram / Facebook) started in the period, from the
   // client's GoHighLevel inbox. `probe` returns a raw conversation sample.
   if (url.searchParams.get('scope') === 'socialdm') {

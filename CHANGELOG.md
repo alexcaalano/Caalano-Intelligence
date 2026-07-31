@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.114.0 — 2026-07-31 · `PENDING`
+- **Monthly Report — page-by-page slide view (PowerPoint / Canva style).** The deck
+  now opens in **Slides** mode: one section per page, with **‹ ›  arrows, a clickable
+  chip strip** to jump to any section (Cover, Meta, Ad sets, Creative, Google,
+  Keywords, CRM, ROI…), a **page counter**, and **keyboard navigation** (←/→,
+  PageUp/Down, Home/End). A **Slides / Scroll** toggle in the toolbar switches back
+  to the old continuous view any time. Print and PDF export are unchanged — both
+  still lay out every section, one per page, regardless of which view you're in.
+
 ## v3.113.0 — 2026-07-31 · `PENDING`
 - **Add competitors from a dropdown, not manual typing.** The Competitors tab now
   adds a competitor by picking from a **dropdown of the connected public Instagram

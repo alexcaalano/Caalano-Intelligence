@@ -1804,7 +1804,31 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-empty-deep b { display: block; margin-top: 8px; font-size: 16px; color: var(--text); }
 .mr-empty-deep p { max-width: 520px; margin: 8px auto 0; color: var(--muted); line-height: 1.6; font-size: 13px; }
 
-.mr-deck { display: flex; flex-direction: column; gap: 20px; }
+.mr-deck { display: block; }
+.mr-track { display: flex; flex-direction: column; gap: 20px; }
+/* Slides mode — one section per page, horizontal carousel */
+.mr-deck.mr-slides { overflow: hidden; border-radius: 16px; }
+.mr-deck.mr-slides .mr-track { flex-direction: row; gap: 0; transition: transform .35s cubic-bezier(.4,0,.2,1); will-change: transform; }
+.mr-deck.mr-slides .mr-track > .mr-slide { flex: 0 0 100%; width: 100%; min-height: 62vh; }
+/* Export override — lay every slide out in a normal column for html2canvas */
+.mr-deck.mr-exporting { overflow: visible; }
+.mr-deck.mr-exporting .mr-track { flex-direction: column !important; gap: 20px !important; transform: none !important; }
+.mr-deck.mr-exporting .mr-track > .mr-slide { flex: 1 1 auto !important; width: 100% !important; min-height: 0; }
+/* Slide navigation (Slides mode) */
+.mr-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.mr-nav-arrow { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 20px; line-height: 1; cursor: pointer; flex: 0 0 auto; }
+.mr-nav-arrow:disabled { opacity: .4; cursor: default; }
+.mr-nav-chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; padding-bottom: 3px; scrollbar-width: thin; }
+.mr-nav-chip { display: flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 12px; white-space: nowrap; cursor: pointer; flex: 0 0 auto; }
+.mr-nav-chip:hover { color: var(--text); }
+.mr-nav-chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.mr-nav-num { font-weight: 800; opacity: .6; }
+.mr-nav-chip.on .mr-nav-num { opacity: 1; }
+.mr-nav-t { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.mr-nav-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-weight: 700; }
+.mr-viewtoggle { display: inline-flex; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 2px; gap: 2px; }
+.mr-viewtoggle button { border: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 700; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
+.mr-viewtoggle button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 .mr-slide { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 26px 30px; box-shadow: 0 6px 26px rgba(0,0,0,.10); overflow: hidden; }
 .mr-slide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
 .mr-kicker { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--brand); }
@@ -1878,10 +1902,12 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 
 /* Print: one landscape page per slide */
 @media print {
-  .mr-bar, .mr-note { display: none !important; }
+  .mr-bar, .mr-note, .mr-nav { display: none !important; }
   .mr-page { gap: 0; }
-  .mr-deck { gap: 0; }
-  .mr-slide { page: mrdeck; break-inside: avoid; page-break-inside: avoid; page-break-after: always; box-shadow: none !important; border: 1px solid #e5e7eb !important; border-radius: 0; min-height: auto; }
+  .mr-deck, .mr-deck.mr-slides { gap: 0; overflow: visible !important; border-radius: 0; }
+  .mr-track { display: block !important; flex-direction: column !important; transform: none !important; gap: 0 !important; }
+  .mr-track > .mr-slide { width: 100% !important; }
+  .mr-slide { page: mrdeck; break-inside: avoid; page-break-inside: avoid; page-break-after: always; box-shadow: none !important; border: 1px solid #e5e7eb !important; border-radius: 0; min-height: auto !important; }
   .mr-slide:last-child { page-break-after: auto; }
   .mr-trend, .mr-creative-grid, .mr-two, .mr-tablewrap, .recharts-responsive-container { break-inside: avoid; }
   /* Landscape only for the monthly deck — leaves the Caalano360 export portrait. */

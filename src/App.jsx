@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.113.0'
+const APP_VERSION = '3.114.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7740,6 +7740,8 @@ function MonthlyReport({ clients, currency, authUser }) {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null) // {title, kind, deals}
+  const [view, setView] = useState('slides') // slides (one page at a time) | scroll (continuous)
+  const [idx, setIdx] = useState(0)
   const deckRef = useRef(null)
   const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
   const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
@@ -7771,6 +7773,9 @@ function MonthlyReport({ clients, currency, authUser }) {
   async function downloadPdf() {
     if (!deckRef.current) return
     setExporting(true)
+    // Force the deck into a laid-out, non-transformed column so every slide
+    // (including the ones translated off-screen in Slides view) captures cleanly.
+    deckRef.current.classList.add('mr-exporting')
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
       const slides = [...deckRef.current.querySelectorAll('.mr-slide')]
@@ -7787,10 +7792,26 @@ function MonthlyReport({ clients, currency, authUser }) {
       }
       pdf.save(`${(client && client.name || 'report').replace(/[^\w]+/g, '-')}-${period.key}.pdf`)
     } catch (e) { alert('PDF export failed: ' + (e.message || e)) }
+    if (deckRef.current) deckRef.current.classList.remove('mr-exporting')
     setExporting(false)
   }
 
   const rep = st.status === 'ok' ? st.report : null
+  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d) }) : []), [rep, currency])
+  const total = deck.length
+  const cur = Math.max(0, Math.min(idx, total - 1))
+  const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
+  useEffect(() => { setIdx(0) }, [clientId, period.key, view])
+  useEffect(() => {
+    if (view !== 'slides' || !total || drill) return
+    const onKey = (e) => {
+      if (/^(input|select|textarea)$/i.test((e.target && e.target.tagName) || '')) return
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { setIdx((i) => Math.min(i + 1, total - 1)); e.preventDefault() }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { setIdx((i) => Math.max(i - 1, 0)); e.preventDefault() }
+      else if (e.key === 'Home') { setIdx(0) } else if (e.key === 'End') { setIdx(total - 1) }
+    }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  }, [view, total, drill])
 
   return (
     <div className="mr-page">
@@ -7808,6 +7829,10 @@ function MonthlyReport({ clients, currency, authUser }) {
         <button className="mr-btn primary" onClick={generate} disabled={busy}>{busy ? 'Generating…' : (saved ? 'Refresh snapshot' : 'Generate snapshot')}</button>
         <div className="mr-bar-spacer" />
         {saved && <span className="mr-saved" title={`Frozen ${new Date(saved.savedAt).toLocaleString()}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>🔒 Snapshot frozen {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString() : ''}</span>}
+        <div className="mr-viewtoggle" title="Slides = one section per page · Scroll = continuous">
+          <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
+          <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
+        </div>
         <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
         <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
       </div>
@@ -7816,7 +7841,21 @@ function MonthlyReport({ clients, currency, authUser }) {
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
       {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won — so late-closing leads show in the month they closed.</p></div>}
 
-      {rep && <div className="mr-deck" ref={deckRef}>{renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d) })}</div>}
+      {rep && view === 'slides' && total > 0 && (
+        <div className="mr-nav no-print">
+          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={cur === 0} aria-label="Previous slide">‹</button>
+          <div className="mr-nav-chips">
+            {deck.map((el, i) => <button key={i} className={'mr-nav-chip' + (i === cur ? ' on' : '')} onClick={() => setIdx(i)} title={slideTitle(el, i)}><span className="mr-nav-num">{i + 1}</span><span className="mr-nav-t">{slideTitle(el, i)}</span></button>)}
+          </div>
+          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))} disabled={cur === total - 1} aria-label="Next slide">›</button>
+          <span className="mr-nav-count">{cur + 1} / {total}</span>
+        </div>
+      )}
+      {rep && (
+        <div className={'mr-deck' + (view === 'slides' ? ' mr-slides' : '')} ref={deckRef}>
+          <div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div>
+        </div>
+      )}
       {drill && <MRDrill drill={drill} currency={currency} onClose={() => setDrill(null)} />}
     </div>
   )

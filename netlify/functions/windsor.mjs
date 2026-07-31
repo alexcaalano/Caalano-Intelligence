@@ -1429,18 +1429,23 @@ export default async (req) => {
     const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(account))
     const safe = async (variants, pre) => { for (const ff of variants) { try { const rows = await windsorFetch(connector, ff, pre ? null : from, pre ? null : to, pre || null, key); return filt(rows) } catch { /* try simpler field set */ } } return [] }
     try {
-      const prof = (await safe([['account_id', 'username', 'followers_count', 'media_count'], ['account_id', 'followers_count']], 'last_30d'))[0] || {}
+      // Public IG connector field names differ from the owned `instagram` one:
+      // profile_followers_count / profile_media_count / profile_username (user_info
+      // table) and media_timestamp for post date (media_info table).
+      const prof = (await safe([['account_id', 'profile_username', 'profile_followers_count', 'profile_media_count'], ['account_id', 'profile_followers_count']], 'last_30d'))[0] || {}
       const media = await safe([
-        ['account_id', 'media_id', 'timestamp', 'media_type', 'media_caption', 'media_permalink', 'media_url', 'media_thumbnail_url', 'media_like_count', 'media_comments_count'],
-        ['account_id', 'media_id', 'timestamp', 'media_type', 'media_like_count', 'media_comments_count'],
-        ['account_id', 'media_id', 'timestamp', 'media_like_count', 'media_comments_count'],
+        ['account_id', 'media_id', 'media_timestamp', 'media_type', 'media_product_type', 'media_caption', 'media_permalink', 'media_url', 'media_thumbnail_url', 'media_like_count', 'media_comments_count'],
+        ['account_id', 'media_id', 'media_timestamp', 'media_type', 'media_like_count', 'media_comments_count'],
+        ['account_id', 'media_id', 'media_timestamp', 'media_like_count', 'media_comments_count'],
       ])
-      const followers = num(prof.followers_count)
-      const posts = media.map((m) => { const likes = num(m.media_like_count), comments = num(m.media_comments_count); return { id: m.media_id, date: String(m.timestamp || '').slice(0, 10), type: m.media_type || null, caption: String(m.media_caption || '').replace(/\s+/g, ' ').slice(0, 160), permalink: m.media_permalink || null, thumb: m.media_thumbnail_url || m.media_url || null, likes, comments, engagement: likes + comments } }).filter((p) => p.id).sort((a, b) => b.engagement - a.engagement)
+      const followers = num(prof.profile_followers_count)
+      // For images/carousels the still lives in media_url; videos/reels expose
+      // media_thumbnail_url. Format label prefers the surface (REELS/FEED/STORY).
+      const posts = media.map((m) => { const likes = num(m.media_like_count), comments = num(m.media_comments_count); return { id: m.media_id, date: String(m.media_timestamp || '').slice(0, 10), type: m.media_product_type || m.media_type || null, mediaType: m.media_type || null, caption: String(m.media_caption || '').replace(/\s+/g, ' ').slice(0, 160), permalink: m.media_permalink || null, thumb: m.media_thumbnail_url || m.media_url || null, likes, comments, engagement: likes + comments } }).filter((p) => p.id).sort((a, b) => b.engagement - a.engagement)
       const formats = {}; for (const p of posts) { const f = (p.type || 'OTHER').toUpperCase(); formats[f] = (formats[f] || 0) + 1 }
       const totalEng = posts.reduce((a, p) => a + p.engagement, 0)
       const er = (followers && posts.length) ? Math.round((totalEng / posts.length / followers) * 1000) / 10 : null
-      return json({ ig: { username: prof.username || null, followers, mediaCount: num(prof.media_count), postCount: posts.length, likes: posts.reduce((a, p) => a + p.likes, 0), comments: posts.reduce((a, p) => a + p.comments, 0), engagement: totalEng, er, formats, posts: posts.slice(0, 12) } }, 200)
+      return json({ ig: { username: prof.profile_username || account, followers, mediaCount: num(prof.profile_media_count), postCount: posts.length, likes: posts.reduce((a, p) => a + p.likes, 0), comments: posts.reduce((a, p) => a + p.comments, 0), engagement: totalEng, er, formats, posts: posts.slice(0, 12) } }, 200)
     } catch (e) { return json({ ig: null, error: String(e.message || e) }, 200) }
   }
 

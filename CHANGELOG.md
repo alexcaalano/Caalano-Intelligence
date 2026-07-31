@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.110.0 — 2026-07-31 · `PENDING`
+- **Fix competitor Instagram cards showing all zeros.** The `instagram_public`
+  connector uses different field names to the owned `instagram` one, so the metric
+  pull was silently returning nothing. Backend `scope=competitor` now reads the
+  correct public fields — `profile_followers_count`, `profile_media_count`,
+  `profile_username` (profile), and `media_timestamp` for post dates — and falls
+  back to `media_url` when a post has no `media_thumbnail_url` (images/carousels).
+  Format mix now labels by surface (REELS / FEED / STORY). Verified live against
+  `jjpoolsbrisbane` (9,408 followers, 130 posts).
+
 ## v3.109.0 — 2026-07-29 · `PENDING`
 - **Competitor Instagram insights (public).** Once a competitor is mapped to a
   Windsor public IG account, its card now pulls a live summary from public data —

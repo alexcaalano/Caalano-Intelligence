@@ -1405,12 +1405,15 @@ export default async (req) => {
     if (me && me.role === 'viewer') return json({ error: 'not allowed' }, 403)
     const igSlugs = (url.searchParams.get('ig') || 'instagram_public').split(',').map((s) => s.trim()).filter(Boolean)
     const fbSlugs = (url.searchParams.get('fb') || 'facebook_public').split(',').map((s) => s.trim()).filter(Boolean)
-    const tryFields = [['account_id', 'account_name', 'username'], ['account_id', 'account_name'], ['account_id']]
+    // Prefer the profile display name (e.g. "JJ Pools Brisbane") for the label,
+    // falling back to the handle/username. profile_name/profile_username exist on
+    // instagram_public; the fallback field sets cover connectors that lack them.
+    const tryFields = [['account_id', 'account_name', 'profile_name', 'profile_username'], ['account_id', 'account_name', 'username'], ['account_id', 'account_name'], ['account_id']]
     const pull = async (slugs) => {
       for (const s of slugs) for (const f of tryFields) {
         try {
           const rows = await windsorFetch(s, f, null, null, 'last_90d', key)
-          if (rows && rows.length) { const m = new Map(); for (const r of rows) { const id = r.account_id; if (!id) continue; if (!m.has(norm(id))) m.set(norm(id), { id, name: r.account_name || r.username || String(id) }) } return { connector: s, accounts: [...m.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))).slice(0, 200) } }
+          if (rows && rows.length) { const m = new Map(); for (const r of rows) { const id = r.account_id; if (!id) continue; if (!m.has(norm(id))) { const handle = r.profile_username || r.username || r.account_name || String(id); m.set(norm(id), { id, name: r.profile_name || r.account_name || handle, handle }) } } return { connector: s, accounts: [...m.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))).slice(0, 200) } }
         } catch { /* try next field set / slug */ }
       }
       return { connector: null, accounts: [] }

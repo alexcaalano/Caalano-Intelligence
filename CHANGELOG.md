@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.113.0 — 2026-07-31 · `PENDING`
+- **Add competitors from a dropdown, not manual typing.** The Competitors tab now
+  adds a competitor by picking from a **dropdown of the connected public Instagram
+  accounts** — the competitor name and handle are taken straight from the account's
+  profile, and it's mapped and pulling metrics the moment you add it. No more typing
+  a name and handle by hand. Accounts already added are hidden from the list. Backend
+  `scope=socialaccounts` now also returns each account's **profile display name** and
+  **handle** (falling back gracefully for connectors that don't expose them).
+
 ## v3.112.0 — 2026-07-31 · `PENDING`
 - **"You vs competitors" benchmark strip.** The Competitors tab now opens with a
   side-by-side table comparing the client's own Instagram against every mapped

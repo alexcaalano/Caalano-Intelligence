@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.112.0'
+const APP_VERSION = '3.113.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8400,7 +8400,7 @@ function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove, onD
 // Windsor public connector once a competitor is mapped to an account.
 function CompetitorsView({ client, range }) {
   useSettingsSync()
-  const [name, setName] = useState(''); const [ig, setIg] = useState(''); const [fb, setFb] = useState('')
+  const [pick, setPick] = useState('')
   const [accts, setAccts] = useState(null)
   const [self, setSelf] = useState(null)
   const [compData, setCompData] = useState({})
@@ -8418,12 +8418,15 @@ function CompetitorsView({ client, range }) {
   const igList = (accts && accts.ig && accts.ig.accounts) || []
   const fbList = (accts && accts.fb && accts.fb.accounts) || []
   const comps = loadCompetitors(client.id)
+  const igConnector = accts && accts.ig ? accts.ig.connector : null
   const setMap = (id, patch) => saveCompetitors(client.id, comps.map((c) => (c.id === id ? { ...c, ...patch } : c)))
-  const add = () => {
-    const nm = name.trim(); const igh = cleanHandle(ig), fbh = cleanHandle(fb)
-    if (!nm && !igh && !fbh) return
-    saveCompetitors(client.id, [...comps, { id: 'c' + Date.now().toString(36), name: nm || igh || fbh, ig: igh || null, fb: fbh || null }])
-    setName(''); setIg(''); setFb('')
+  const taken = new Set(comps.map((c) => c.igAcct).filter(Boolean))
+  const options = igList.filter((a) => !taken.has(a.id))
+  const addPick = () => {
+    const a = igList.find((x) => x.id === pick); if (!a) return
+    const handle = cleanHandle(a.handle || a.name) || a.id
+    saveCompetitors(client.id, [...comps, { id: 'c' + Date.now().toString(36), name: a.name || handle, ig: handle, igAcct: a.id, igConn: igConnector }])
+    setPick('')
   }
   const remove = (id) => saveCompetitors(client.id, comps.filter((c) => c.id !== id))
   // "You vs competitors" — compare on public-comparable metrics only (likes +
@@ -8445,9 +8448,11 @@ function CompetitorsView({ client, range }) {
   return (
     <div className="soc-comp">
       <div className="soc-comp-add">
-        <input placeholder="Competitor name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <input placeholder="Instagram @handle" value={ig} onChange={(e) => setIg(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
-        <button className="mr-btn primary" onClick={add}>+ Add competitor</button>
+        <select className="mr-select" value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">{!accts ? 'Loading public Instagram accounts…' : (igList.length ? (options.length ? 'Select a public Instagram account…' : 'All available accounts added') : 'No public Instagram accounts found')}</option>
+          {options.map((a) => <option key={a.id} value={a.id}>{a.name}{a.handle && a.handle !== a.name ? ` (@${a.handle})` : ''}</option>)}
+        </select>
+        <button className="mr-btn primary" onClick={addPick} disabled={!pick}>+ Add competitor</button>
       </div>
       {bench && (
         <div className="soc-vs">

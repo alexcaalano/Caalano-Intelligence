@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.111.0'
+const APP_VERSION = '3.112.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8306,7 +8306,7 @@ function SocBars({ data, labelKey, valueKey, color, fmt }) {
 }
 // One competitor's card: mapping dropdown + (once mapped) a public Instagram
 // summary pulled from Windsor's public connector.
-function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove }) {
+function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove, onData }) {
   const [m, setM] = useState(null)
   const [postSort, setPostSort] = useState('engagement')
   const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
@@ -8318,6 +8318,7 @@ function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove }) {
     return () => { alive = false }
   }, [comp.igAcct, comp.igConn, range.from, range.to])
   const ig = m && m.ig
+  useEffect(() => { if (onData) onData(comp.id, ig || null) }, [m])
   const fmt = ig && ig.formats ? Object.entries(ig.formats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k.toLowerCase().replace('carousel_album', 'carousel')}`).join(' · ') : ''
   const bestDay = ig && ig.weekday ? ig.weekday.slice().sort((a, b) => b.avgEng - a.avgEng).filter((d) => d.posts)[0] : null
   const posts = ig ? [...ig.posts].sort((a, b) => (b[postSort] || 0) - (a[postSort] || 0)) : []
@@ -8401,7 +8402,18 @@ function CompetitorsView({ client, range }) {
   useSettingsSync()
   const [name, setName] = useState(''); const [ig, setIg] = useState(''); const [fb, setFb] = useState('')
   const [accts, setAccts] = useState(null)
+  const [self, setSelf] = useState(null)
+  const [compData, setCompData] = useState({})
   useEffect(() => { mrFetch('scope=socialaccounts').then((r) => setAccts(r)).catch(() => setAccts({ ig: { accounts: [] }, fb: { accounts: [] } })) }, [])
+  useEffect(() => {
+    setCompData({})
+    if (!client) { setSelf(null); return }
+    let alive = true
+    mrFetch(`scope=social&client=${encodeURIComponent(client.id)}&${rangeQuery(range)}`)
+      .then((r) => { if (alive) setSelf(r && r.ig ? r.ig : null) }).catch(() => { if (alive) setSelf(null) })
+    return () => { alive = false }
+  }, [client && client.id, range.from, range.to])
+  const onData = React.useCallback((id, cig) => setCompData((d) => (d[id] === cig ? d : { ...d, [id]: cig })), [])
   if (!client) return <div className="mr-note">Pick a client to assign competitors.</div>
   const igList = (accts && accts.ig && accts.ig.accounts) || []
   const fbList = (accts && accts.fb && accts.fb.accounts) || []
@@ -8414,6 +8426,22 @@ function CompetitorsView({ client, range }) {
     setName(''); setIg(''); setFb('')
   }
   const remove = (id) => saveCompetitors(client.id, comps.filter((c) => c.id !== id))
+  // "You vs competitors" — compare on public-comparable metrics only (likes +
+  // comments), so the client's private saves/shares don't unfairly inflate it.
+  const rowFor = (nm, cig, isSelf) => {
+    if (!cig) return null
+    const followers = isSelf ? (cig.profile && cig.profile.followers) : cig.followers
+    const posts = isSelf ? (cig.posts ? cig.posts.length : 0) : cig.postCount
+    const likes = isSelf ? (cig.totals && cig.totals.likes) : cig.likes
+    const comments = isSelf ? (cig.totals && cig.totals.comments) : cig.comments
+    const eng = (likes || 0) + (comments || 0)
+    const er = (followers && posts) ? Math.round((eng / posts / followers) * 1000) / 10 : null
+    return { name: nm, isSelf, followers: followers || 0, posts: posts || 0, eng, er, avgEng: posts ? Math.round(eng / posts) : 0 }
+  }
+  const benchRows = [rowFor(client.name + ' (you)', self, true), ...comps.map((c) => rowFor(c.name, compData[c.id], false))].filter(Boolean)
+  const bench = benchRows.length >= 2 ? benchRows.slice().sort((a, b) => (a.isSelf ? -1 : b.isSelf ? 1 : b.followers - a.followers)) : null
+  const maxOf = bench ? { followers: Math.max(...bench.map((r) => r.followers)), er: Math.max(...bench.map((r) => r.er || 0)), avgEng: Math.max(...bench.map((r) => r.avgEng)), posts: Math.max(...bench.map((r) => r.posts)) } : null
+  const nB = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
   return (
     <div className="soc-comp">
       <div className="soc-comp-add">
@@ -8421,9 +8449,30 @@ function CompetitorsView({ client, range }) {
         <input placeholder="Instagram @handle" value={ig} onChange={(e) => setIg(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <button className="mr-btn primary" onClick={add}>+ Add competitor</button>
       </div>
+      {bench && (
+        <div className="soc-vs">
+          <div className="soc-subhead"><h4>You vs competitors</h4><span className="soc-dm-note">Instagram · likes + comments only (public-comparable) · {rangeLabel(range)}</span></div>
+          <div className="soc-vs-scroll">
+            <table className="mr-table soc-vs-table">
+              <thead><tr><th>Account</th><th className="r">Followers</th><th className="r">Posts</th><th className="r">Engagement</th><th className="r">Avg / post</th><th className="r">Est. ER</th></tr></thead>
+              <tbody>{bench.map((r, i) => (
+                <tr key={i} className={r.isSelf ? 'soc-vs-you' : ''}>
+                  <td>{r.name}</td>
+                  <td className={'r' + (r.followers === maxOf.followers ? ' soc-vs-win' : '')}>{nB(r.followers)}</td>
+                  <td className={'r' + (r.posts === maxOf.posts ? ' soc-vs-win' : '')}>{nB(r.posts)}</td>
+                  <td className="r">{nB(r.eng)}</td>
+                  <td className={'r' + (r.avgEng === maxOf.avgEng ? ' soc-vs-win' : '')}>{nB(r.avgEng)}</td>
+                  <td className={'r' + (r.er != null && r.er === maxOf.er ? ' soc-vs-win' : '')}>{r.er != null ? `${r.er}%` : '—'}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div className="mr-foot-note">Green = leads the group on that metric. Engagement rate is estimated (likes+comments per post ÷ followers) so it's comparable across you and competitors.{self ? '' : ' Connect this client’s own Instagram to see your row.'}</div>
+        </div>
+      )}
       {comps.length ? (
         <div className="soc-comp-grid">
-          {comps.map((c) => <CompetitorCard key={c.id} comp={c} range={range} igList={igList} igConnector={accts && accts.ig ? accts.ig.connector : null} onMap={(patch) => setMap(c.id, patch)} onRemove={() => remove(c.id)} />)}
+          {comps.map((c) => <CompetitorCard key={c.id} comp={c} range={range} igList={igList} igConnector={accts && accts.ig ? accts.ig.connector : null} onMap={(patch) => setMap(c.id, patch)} onRemove={() => remove(c.id)} onData={onData} />)}
         </div>
       ) : <div className="mr-empty">No competitors yet — add {client.name}’s competitors above to start benchmarking.</div>}
       {accts && !igList.length && <p className="mr-foot-note" style={{ color: 'var(--neg)' }}>No public Instagram accounts found via Windsor{accts.ig && accts.ig.connector ? '' : ' (couldn’t find the public connector slug)'} — tell me the connector name you used in Windsor and I’ll point the mapping at it.</p>}

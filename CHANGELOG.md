@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.112.0 — 2026-07-31 · `PENDING`
+- **"You vs competitors" benchmark strip.** The Competitors tab now opens with a
+  side-by-side table comparing the client's own Instagram against every mapped
+  competitor on **followers, posts, engagement, avg engagement per post and
+  estimated engagement rate**. The client's row is highlighted and pinned to the
+  top; the group leader on each metric is flagged in green. Comparison uses
+  **likes + comments only** so the client's private saves/shares don't unfairly
+  inflate it against public competitor data. Pulls the client's own IG via
+  `scope=social` and collects each competitor's numbers as their cards load.
+
 ## v3.111.0 — 2026-07-31 · `PENDING`
 - **Full competitor Instagram dashboard — every public insight + post thumbnails.**
   Each mapped competitor now renders a performance-style card mirroring the client

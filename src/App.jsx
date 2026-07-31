@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.107.0'
+const APP_VERSION = '3.108.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8310,8 +8310,13 @@ function SocBars({ data, labelKey, valueKey, color, fmt }) {
 function CompetitorsView({ client }) {
   useSettingsSync()
   const [name, setName] = useState(''); const [ig, setIg] = useState(''); const [fb, setFb] = useState('')
+  const [accts, setAccts] = useState(null)
+  useEffect(() => { mrFetch('scope=socialaccounts').then((r) => setAccts(r)).catch(() => setAccts({ ig: { accounts: [] }, fb: { accounts: [] } })) }, [])
   if (!client) return <div className="mr-note">Pick a client to assign competitors.</div>
+  const igList = (accts && accts.ig && accts.ig.accounts) || []
+  const fbList = (accts && accts.fb && accts.fb.accounts) || []
   const comps = loadCompetitors(client.id)
+  const setMap = (id, patch) => saveCompetitors(client.id, comps.map((c) => (c.id === id ? { ...c, ...patch } : c)))
   const add = () => {
     const nm = name.trim(); const igh = cleanHandle(ig), fbh = cleanHandle(fb)
     if (!nm && !igh && !fbh) return
@@ -8336,12 +8341,26 @@ function CompetitorsView({ client }) {
                 {c.ig ? <a href={`https://instagram.com/${c.ig}`} target="_blank" rel="noreferrer" className="mr-src mr-src-meta">IG @{c.ig}</a> : null}
                 {c.fb ? <a href={`https://facebook.com/${c.fb}`} target="_blank" rel="noreferrer" className="mr-src mr-src-google">FB {c.fb}</a> : null}
               </div>
-              <div className="soc-comp-pending">📊 Followers, growth, posting cadence, format mix, top posts &amp; est. engagement — wire up once the Windsor public connector is verified.</div>
+              <div className="soc-comp-map">
+                <label>Windsor IG account
+                  <select value={c.igAcct || ''} onChange={(e) => setMap(c.id, { igAcct: e.target.value || null, igConn: e.target.value ? (accts.ig.connector || null) : null })}>
+                    <option value="">{igList.length ? '— not mapped —' : 'none available'}</option>
+                    {igList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </label>
+                <label>Windsor FB account
+                  <select value={c.fbAcct || ''} onChange={(e) => setMap(c.id, { fbAcct: e.target.value || null, fbConn: e.target.value ? (accts.fb.connector || null) : null })}>
+                    <option value="">{fbList.length ? '— not mapped —' : 'none available'}</option>
+                    {fbList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </label>
+              </div>
             </div>
           ))}
         </div>
       ) : <div className="mr-empty">No competitors yet — add {client.name}’s competitors above to start benchmarking.</div>}
-      <p className="mr-foot-note">Assign each competitor’s public Instagram / Facebook handle. Benchmarks will cover follower growth, posting cadence &amp; format mix, top content and an <b>estimated</b> engagement rate (likes + comments ÷ followers) — reach/impressions stay private to the account owner, so true ER isn’t available for competitors.</p>
+      {accts && !igList.length && !fbList.length && <p className="mr-foot-note" style={{ color: 'var(--neg)' }}>No public accounts found via Windsor{accts.ig && accts.ig.connector ? '' : ' (couldn’t find the public connector slug)'} — tell me the connector name you used in Windsor and I’ll point the mapping at it.</p>}
+      <p className="mr-foot-note">Map each competitor to the matching <b>Windsor public account</b> above. Once mapped, benchmarks cover follower growth, posting cadence &amp; format mix, top content and an <b>estimated</b> engagement rate (likes + comments ÷ followers) — reach/impressions stay private to the account owner, so true ER isn’t available for competitors.</p>
     </div>
   )
 }

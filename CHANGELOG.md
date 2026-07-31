@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.108.0 — 2026-07-29 · `PENDING`
+- **Competitors → map to Windsor public accounts.** The Competitors tab now lists
+  every public Instagram / Facebook account your Windsor key can access (backend
+  `scope=socialaccounts`, auto-detecting the public connector slug) and lets you
+  map each competitor to its account via a dropdown, saved per client. If no public
+  accounts are found it prompts for the connector name. Also added a generic
+  `scope=windsorprobe&connector=<slug>` to inspect any connector's accounts/fields.
+  Live competitor metrics render off these mappings next.
+
 ## v3.107.0 — 2026-07-29 · `PENDING`
 - **Fix "Caalano360 columns hidden: attribution request failed."** The GHL-backed
   attribution build is heavy and can transiently time out / cold-start / rate-limit;

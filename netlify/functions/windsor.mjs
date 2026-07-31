@@ -1398,6 +1398,27 @@ export default async (req) => {
     catch (e) { return json({ ig: null, fb: null, error: String(e.message || e) }, 502) }
   }
 
+  // Public social accounts available in Windsor (the competitor profiles you've
+  // added), so each competitor can be mapped to a Windsor account in the UI.
+  // Tries the public connector slug(s); override with ?ig= / ?fb=.
+  if (url.searchParams.get('scope') === 'socialaccounts') {
+    if (me && me.role === 'viewer') return json({ error: 'not allowed' }, 403)
+    const igSlugs = (url.searchParams.get('ig') || 'instagram_public').split(',').map((s) => s.trim()).filter(Boolean)
+    const fbSlugs = (url.searchParams.get('fb') || 'facebook_public').split(',').map((s) => s.trim()).filter(Boolean)
+    const tryFields = [['account_id', 'account_name', 'username'], ['account_id', 'account_name'], ['account_id']]
+    const pull = async (slugs) => {
+      for (const s of slugs) for (const f of tryFields) {
+        try {
+          const rows = await windsorFetch(s, f, null, null, 'last_90d', key)
+          if (rows && rows.length) { const m = new Map(); for (const r of rows) { const id = r.account_id; if (!id) continue; if (!m.has(norm(id))) m.set(norm(id), { id, name: r.account_name || r.username || String(id) }) } return { connector: s, accounts: [...m.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))).slice(0, 200) } }
+        } catch { /* try next field set / slug */ }
+      }
+      return { connector: null, accounts: [] }
+    }
+    const [ig, fb] = await Promise.all([pull(igSlugs), pull(fbSlugs)])
+    return json({ ig, fb }, 200)
+  }
+
   // Generic Windsor connector probe — hit any connector slug and see the accounts
   // + field shape it returns. Used to wire the public IG/FB competitor connector
   // once its exact slug/fields are known. e.g.

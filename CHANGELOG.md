@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.105.0 — 2026-07-29 · `PENDING`
+- **Inbound social DMs on the Organic Social dashboard.** Counts conversations
+  started via Instagram / Facebook Messenger from the client's GoHighLevel inbox
+  (channel = IG/FB, started in the period): tiles for total / IG / FB plus a
+  per-day stacked bar. Backend `scope=socialdm` (with a `?probe=1` sample to verify
+  the GHL channel fields against live data). Shows only when DMs are found.
+
 ## v3.104.0 — 2026-07-29 · `PENDING`
 - **Organic Social — big expansion.**
   - **Blended "Overall" section** on top (when a client has both IG + FB): total audience

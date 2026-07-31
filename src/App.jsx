@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.104.0'
+const APP_VERSION = '3.105.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8301,13 +8301,17 @@ function SocialDashboard({ clients, range, nonce }) {
   useEffect(() => { if (list.length && !list.some((c) => c.id === clientId)) setClientId(list[0].id) }, [list.length])
   const client = list.find((c) => c.id === clientId) || null
   const [st, setSt] = useState({ status: 'idle' })
+  const [dm, setDm] = useState(null)
   const [postSort, setPostSort] = useState('engagement')
   useEffect(() => {
     if (!client) { setSt({ status: 'empty' }); return }
-    let alive = true; setSt({ status: 'loading' })
+    let alive = true; setSt({ status: 'loading' }); setDm(null)
     mrFetch(`scope=social&client=${encodeURIComponent(client.id)}&${rangeQuery(range)}`)
       .then((r) => { if (alive) setSt({ status: 'ok', data: r }) })
       .catch((e) => { if (alive) setSt({ status: 'err', error: String(e.message || e) }) })
+    mrFetch(`scope=socialdm&client=${encodeURIComponent(client.id)}&${rangeQuery(range)}`)
+      .then((r) => { if (alive && r && r.dm) setDm(r.dm) })
+      .catch(() => {})
     return () => { alive = false }
   }, [clientId, range.from, range.to, nonce])
 
@@ -8379,6 +8383,33 @@ function SocialDashboard({ clients, range, nonce }) {
       <div className="soc-deck" ref={socRef}>
       {data && (ig || fb) && (
         <div className="soc-cover"><div><span className="soc-cover-brand">Caalano<b>360</b></span><h2>{client ? client.name : ''} — Organic Social</h2><p>{rangeLabel(range)}{ig && ig.profile.username ? ` · @${ig.profile.username}` : ''}</p></div></div>
+      )}
+
+      {dm && dm.total > 0 && (
+        <section className="soc-section soc-dm">
+          <div className="soc-head"><span className="soc-plat soc-all">Inbound DMs</span><h3>Conversations started via social</h3><span className="soc-dm-note">from GoHighLevel inbox · first message inbound via IG/FB</span></div>
+          <div className="mr-kpirow">
+            <MRKpi label="Total inbound DMs" value={n0(dm.total)} sub="IG + FB, this period" strong />
+            <MRKpi label="Instagram DMs" value={n0(dm.ig)} />
+            <MRKpi label="Facebook DMs" value={n0(dm.fb)} />
+          </div>
+          {dm.daily && dm.daily.length > 1 && (
+            <div className="soc-chart">
+              <div className="mr-trend-lab">Inbound DMs per day</div>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={dm.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={26} allowDecimals={false} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="ig" name="Instagram" stackId="d" fill="#e1306c" />
+                  <Bar dataKey="fb" name="Facebook" stackId="d" fill="#1877f2" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
       )}
 
       {overall && (

@@ -1981,3 +1981,6 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .soc-chart, .soc-posts, .soc-demo, .recharts-responsive-container { break-inside: avoid; }
   .soc-play { display: none !important; }
 }
+
+.soc-dm-note { font-size: 11px; color: var(--faint); margin-left: auto; }
+.soc-dm { border-color: color-mix(in srgb, var(--brand) 24%, var(--border)); }

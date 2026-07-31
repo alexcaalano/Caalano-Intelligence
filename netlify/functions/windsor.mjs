@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1396,6 +1396,16 @@ export default async (req) => {
     if (!soc) return json({ ig: null, fb: null, connected: false })
     try { const data = await buildSocial(soc, from, to, key); return json({ client, period: { from, to }, ...data }, 200, true) }
     catch (e) { return json({ ig: null, fb: null, error: String(e.message || e) }, 502) }
+  }
+
+  // Inbound social DMs (Instagram / Facebook) started in the period, from the
+  // client's GoHighLevel inbox. `probe` returns a raw conversation sample.
+  if (url.searchParams.get('scope') === 'socialdm') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ dm: null, connected: false })
+    if (!(await isConnected().catch(() => false))) return json({ dm: null, connected: false, needsSetup: true })
+    try { return json({ dm: await socialDMs(cc.ghl, from, to, { debug: !!url.searchParams.get('probe') }) }, 200, !url.searchParams.get('probe')) }
+    catch (e) { return json({ dm: null, error: String(e.message || e) }, 200) }
   }
 
   // Opportunity custom fields (date-first) for the Settings Key Events

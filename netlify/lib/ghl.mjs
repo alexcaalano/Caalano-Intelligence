@@ -898,6 +898,54 @@ export async function oppTimestampFields(locationId) {
     .sort((a, b) => (Number(b.date) - Number(a.date)) || String(a.name).localeCompare(String(b.name)))
 }
 
+// Inbound social DMs from the GoHighLevel inbox — how many conversations were
+// started via Instagram / Facebook Messenger in the period. GHL tags each
+// conversation/message with a channel type (TYPE_INSTAGRAM / TYPE_FACEBOOK).
+// We page conversations newest-first and count those whose channel is IG/FB and
+// whose start (dateAdded, falling back to last message) lands in the window.
+// opts.debug returns a raw sample so channel field names can be verified live.
+export async function socialDMs(locationId, from, to, opts = {}) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const chanOf = (c) => { const t = String(c.type || c.lastMessageType || c.lastOutboundMessageType || '').toUpperCase(); if (/INSTAGRAM|(^|_)IG(_|$)/.test(t)) return 'ig'; if (/FACEBOOK|MESSENGER|(^|_)FB(_|$)/.test(t)) return 'fb'; return null }
+  const ms = (v) => (typeof v === 'number' ? v : Date.parse(v))
+  const res = { ig: 0, fb: 0, daily: {}, scanned: 0, capped: false }; const sample = []
+  let startAfterDate = null, startAfter = null
+  const CAP = 25
+  for (let page = 0; page < CAP; page++) {
+    const q = { locationId, limit: 100, sortBy: 'last_message_date', sort: 'desc' }
+    if (startAfterDate) q.startAfterDate = startAfterDate
+    if (startAfter) q.startAfter = startAfter
+    const j = await ghlGet(locTok, '/conversations/search', q).catch(() => null)
+    const convs = (j && (j.conversations || j.conversation)) || []
+    if (!convs.length) break
+    let oldest = Infinity
+    for (const c of convs) {
+      res.scanned++
+      const startMs = ms(c.dateAdded || c.dateCreated || c.createdAt) || ms(c.lastMessageDate)
+      const lastMs = ms(c.lastMessageDate) || startMs
+      if (isFinite(lastMs)) oldest = Math.min(oldest, lastMs)
+      const ch = chanOf(c)
+      if (opts.debug && sample.length < 15) sample.push({ id: c.id, type: c.type, lastMessageType: c.lastMessageType, dateAdded: c.dateAdded, lastMessageDate: c.lastMessageDate, ch })
+      if (!ch) continue
+      const s = isFinite(startMs) ? startMs : lastMs
+      if (fromMs != null && s < fromMs) continue
+      if (toMs != null && s > toMs) continue
+      res[ch]++
+      const d = new Date(s).toISOString().slice(0, 10); (res.daily[d] = res.daily[d] || { ig: 0, fb: 0 })[ch]++
+    }
+    const last = convs[convs.length - 1]
+    startAfterDate = ms(last.lastMessageDate) || null; startAfter = last.id || last._id || null
+    if (convs.length < 100) break
+    if (fromMs != null && isFinite(oldest) && oldest < fromMs) break
+    if (page === CAP - 1) res.capped = true
+  }
+  const daily = Object.entries(res.daily).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date))
+  return { ig: res.ig, fb: res.fb, total: res.ig + res.fb, daily, scanned: res.scanned, capped: res.capped, ...(opts.debug ? { sample } : {}) }
+}
+
 // Lightweight source-tag coverage for one location (no pipeline/stage work):
 // how many opportunities carry a UTM, split by classified channel.
 export async function attributionCoverage(locationId, from, to) {

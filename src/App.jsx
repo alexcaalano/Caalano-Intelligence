@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.110.0'
+const APP_VERSION = '3.111.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8280,7 +8280,7 @@ function SocPost({ p, platform }) {
         <div className="soc-post-cap">{text || <span className="soc-faint">No caption</span>}</div>
         <div className="soc-post-stats">
           {platform === 'ig' ? <>
-            <span title="Reach">👁 {n(p.reach)}</span><span title="Likes">❤ {n(p.likes)}</span><span title="Comments">💬 {n(p.comments)}</span><span title="Saves">🔖 {n(p.saves)}</span><span title="Shares">↗ {n(p.shares)}</span>
+            {p.reach != null && <span title="Reach">👁 {n(p.reach)}</span>}<span title="Likes">❤ {n(p.likes)}</span><span title="Comments">💬 {n(p.comments)}</span>{p.saves != null && <span title="Saves">🔖 {n(p.saves)}</span>}{p.shares != null && <span title="Shares">↗ {n(p.shares)}</span>}
           </> : <>
             <span title="Impressions">👁 {n(p.impressions)}</span><span title="Reactions">❤ {n(p.reactions)}</span><span title="Comments">💬 {n(p.comments)}</span><span title="Shares">↗ {n(p.shares)}</span><span title="Link clicks">🔗 {n(p.clicks)}</span>
           </>}
@@ -8308,6 +8308,7 @@ function SocBars({ data, labelKey, valueKey, color, fmt }) {
 // summary pulled from Windsor's public connector.
 function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove }) {
   const [m, setM] = useState(null)
+  const [postSort, setPostSort] = useState('engagement')
   const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
   useEffect(() => {
     if (!comp.igAcct) { setM(null); return }
@@ -8318,11 +8319,15 @@ function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove }) {
   }, [comp.igAcct, comp.igConn, range.from, range.to])
   const ig = m && m.ig
   const fmt = ig && ig.formats ? Object.entries(ig.formats).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k.toLowerCase().replace('carousel_album', 'carousel')}`).join(' · ') : ''
+  const bestDay = ig && ig.weekday ? ig.weekday.slice().sort((a, b) => b.avgEng - a.avgEng).filter((d) => d.posts)[0] : null
+  const posts = ig ? [...ig.posts].sort((a, b) => (b[postSort] || 0) - (a[postSort] || 0)) : []
   return (
     <div className="soc-comp-card">
-      <div className="soc-comp-head"><b>{comp.name}</b><button className="soc-comp-x" onClick={onRemove} aria-label="Remove">✕</button></div>
-      <div className="soc-comp-links">{comp.ig ? <a href={`https://instagram.com/${comp.ig}`} target="_blank" rel="noreferrer" className="mr-src mr-src-meta">IG @{comp.ig}</a> : null}</div>
-      <div className="soc-comp-map">
+      <div className="soc-comp-head">
+        <div><b>{comp.name}</b>{ig && ig.username ? <a className="soc-handle" href={`https://instagram.com/${ig.username}`} target="_blank" rel="noreferrer">@{ig.username}</a> : (comp.ig ? <a className="soc-handle" href={`https://instagram.com/${comp.ig}`} target="_blank" rel="noreferrer">@{comp.ig}</a> : null)}</div>
+        <button className="soc-comp-x" onClick={onRemove} aria-label="Remove">✕</button>
+      </div>
+      <div className="soc-comp-map no-print">
         <label>Windsor IG account
           <select value={comp.igAcct || ''} onChange={(e) => onMap({ igAcct: e.target.value || null, igConn: e.target.value ? igConnector : null })}>
             <option value="">{igList.length ? '— not mapped —' : 'none available'}</option>
@@ -8331,17 +8336,58 @@ function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove }) {
         </label>
       </div>
       {comp.igAcct && (
-        m === 'loading' ? <div className="soc-comp-pending">Loading public data…</div>
+        m === 'loading' ? <div className="soc-comp-pending"><Spinner label="Loading public data…" /></div>
           : ig ? (
             <div className="soc-comp-metrics">
-              <div className="soc-comp-kpis">
-                <div><b>{n0(ig.followers)}</b><span>Followers</span></div>
-                <div><b>{n0(ig.postCount)}</b><span>Posts</span></div>
-                <div><b>{ig.er != null ? `${ig.er}%` : '—'}</b><span>Est. ER</span></div>
-                <div><b>{n0(ig.engagement)}</b><span>Engagement</span></div>
+              <div className="mr-kpirow">
+                <MRKpi label="Followers" value={n0(ig.followers)} sub="current" strong />
+                <MRKpi label="Posts" value={n0(ig.postCount)} sub="this period" />
+                <MRKpi label="Engagement" value={n0(ig.engagement)} sub="likes + comments" />
+                <MRKpi label="Est. eng. rate" value={ig.er != null ? `${ig.er}%` : '—'} sub="per post ÷ followers" />
+                <MRKpi label="Avg / post" value={`${n0(ig.avgLikes)}❤ ${n0(ig.avgComments)}💬`} sub={`${n0(ig.avgEng)} eng/post`} />
+                <MRKpi label="Total" value={`${n0(ig.likes)}❤`} sub={`${n0(ig.comments)} comments`} />
               </div>
-              <div className="soc-comp-sub">{n0(ig.likes)} likes · {n0(ig.comments)} comments{fmt ? ` · ${fmt}` : ''}</div>
-              {ig.posts && ig.posts.length ? <div className="soc-comp-posts">{ig.posts.slice(0, 3).map((p) => <a key={p.id} className="soc-comp-post" href={p.permalink || undefined} target="_blank" rel="noreferrer" title={`${p.caption || ''}\n${p.likes} likes · ${p.comments} comments`}>{p.thumb ? <img src={p.thumb} alt="" loading="lazy" /> : <span className="soc-noimg">🖼</span>}<span className="soc-comp-post-eng">{n0(p.engagement)}</span></a>)}</div> : null}
+              {fmt && <div className="soc-comp-sub">Format mix: {fmt}{bestDay ? ` · Best day: ${bestDay.name} (${n0(bestDay.avgEng)} avg eng)` : ''}</div>}
+              {ig.daily && ig.daily.length > 1 && (
+                <div className="soc-chart">
+                  <div className="mr-trend-lab">Posting cadence &amp; engagement — posts per day (bars) vs engagement per day (line)</div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <ComposedChart data={ig.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(d) => fmtDate(d).slice(0, 5)} axisLine={false} tickLine={false} minTickGap={24} />
+                      <YAxis yAxisId="posts" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
+                      <YAxis yAxisId="eng" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => fmtCompact(v)} />
+                      <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={(d) => fmtDate(d)} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar yAxisId="posts" dataKey="posts" name="Posts" fill="#e1306c" radius={[3, 3, 0, 0]} maxBarSize={18} />
+                      <Line yAxisId="eng" type="monotone" dataKey="engagement" name="Engagement" stroke="#6d5efc" strokeWidth={2.2} dot={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+              {ig.weekday && ig.weekday.some((d) => d.posts) && (
+                <div className="soc-chart">
+                  <div className="mr-trend-lab">Posting cadence by weekday — posts (bars) vs avg engagement (line)</div>
+                  <ResponsiveContainer width="100%" height={170}>
+                    <ComposedChart data={ig.weekday} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="p" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={24} allowDecimals={false} />
+                      <YAxis yAxisId="e" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={38} tickFormatter={(v) => fmtCompact(v)} />
+                      <Tooltip contentStyle={{ fontSize: 12 }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar yAxisId="p" dataKey="posts" name="Posts" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={26} />
+                      <Line yAxisId="e" type="monotone" dataKey="avgEng" name="Avg engagement" stroke="#22b07d" strokeWidth={2.2} dot={{ r: 2 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+              {posts.length ? (
+                <div className="soc-comp-block">
+                  <div className="soc-subhead"><h4>Posts ({posts.length})</h4><div className="soc-sort no-print">{[['engagement', 'Engagement'], ['likes', 'Likes'], ['comments', 'Comments'], ['date', 'Newest']].map(([k, l]) => <button key={k} className={postSort === k ? 'on' : ''} onClick={() => setPostSort(k)}>{l}</button>)}</div></div>
+                  <div className="soc-posts">{posts.map((p) => <SocPost key={p.id} p={p} platform="ig" />)}</div>
+                </div>
+              ) : <div className="soc-comp-pending">No public posts in this period.</div>}
             </div>
           ) : <div className="soc-comp-pending">{m && m.error ? `Couldn’t load: ${m.error}` : 'No public data returned for this account / period.'}</div>
       )}

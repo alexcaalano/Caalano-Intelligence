@@ -1992,7 +1992,8 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .soc-comp { display: flex; flex-direction: column; gap: 16px; }
 .soc-comp-add { display: flex; gap: 8px; flex-wrap: wrap; }
 .soc-comp-add input { flex: 1; min-width: 150px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; }
-.soc-comp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.soc-comp-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.soc-comp-block { border-top: 1px solid var(--border); padding-top: 10px; }
 .soc-comp-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; }
 .soc-comp-head { display: flex; align-items: center; justify-content: space-between; }
 .soc-comp-head b { font-size: 14.5px; }

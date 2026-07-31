@@ -1441,11 +1441,32 @@ export default async (req) => {
       const followers = num(prof.profile_followers_count)
       // For images/carousels the still lives in media_url; videos/reels expose
       // media_thumbnail_url. Format label prefers the surface (REELS/FEED/STORY).
-      const posts = media.map((m) => { const likes = num(m.media_like_count), comments = num(m.media_comments_count); return { id: m.media_id, date: String(m.media_timestamp || '').slice(0, 10), type: m.media_product_type || m.media_type || null, mediaType: m.media_type || null, caption: String(m.media_caption || '').replace(/\s+/g, ' ').slice(0, 160), permalink: m.media_permalink || null, thumb: m.media_thumbnail_url || m.media_url || null, likes, comments, engagement: likes + comments } }).filter((p) => p.id).sort((a, b) => b.engagement - a.engagement)
+      const perEr = (eng) => (followers ? Math.round((eng / followers) * 1000) / 10 : null)
+      const posts = media.map((m) => { const likes = num(m.media_like_count), comments = num(m.media_comments_count), engagement = likes + comments; return { id: m.media_id, date: String(m.media_timestamp || '').slice(0, 10), type: m.media_product_type || m.media_type || null, mediaType: m.media_type || null, caption: String(m.media_caption || '').replace(/\s+/g, ' ').slice(0, 160), permalink: m.media_permalink || null, thumb: m.media_thumbnail_url || m.media_url || null, likes, comments, engagement, er: perEr(engagement) } }).filter((p) => p.id).sort((a, b) => b.engagement - a.engagement)
       const formats = {}; for (const p of posts) { const f = (p.type || 'OTHER').toUpperCase(); formats[f] = (formats[f] || 0) + 1 }
       const totalEng = posts.reduce((a, p) => a + p.engagement, 0)
+      const totalLikes = posts.reduce((a, p) => a + p.likes, 0), totalComments = posts.reduce((a, p) => a + p.comments, 0)
       const er = (followers && posts.length) ? Math.round((totalEng / posts.length / followers) * 1000) / 10 : null
-      return json({ ig: { username: prof.profile_username || account, followers, mediaCount: num(prof.profile_media_count), postCount: posts.length, likes: posts.reduce((a, p) => a + p.likes, 0), comments: posts.reduce((a, p) => a + p.comments, 0), engagement: totalEng, er, formats, posts: posts.slice(0, 12) } }, 200)
+      // Per-day series across the whole selected range (zero-filled) so the
+      // posting-cadence + engagement chart draws a continuous axis.
+      const byDay = {}
+      for (const p of posts) { if (!p.date) continue; const e = byDay[p.date] || { date: p.date, posts: 0, engagement: 0, likes: 0, comments: 0 }; e.posts++; e.likes += p.likes; e.comments += p.comments; e.engagement += p.engagement; byDay[p.date] = e }
+      const dayMs = 86400000; const span = []
+      if (from && to) { const t1 = Date.parse(from + 'T00:00:00Z'), t2 = Date.parse(to + 'T00:00:00Z'); if (!isNaN(t1) && !isNaN(t2) && t2 >= t1 && (t2 - t1) / dayMs < 400) for (let t = t1; t <= t2; t += dayMs) span.push(new Date(t).toISOString().slice(0, 10)) }
+      const daily = (span.length ? span : Object.keys(byDay).sort()).map((d) => byDay[d] || { date: d, posts: 0, engagement: 0, likes: 0, comments: 0 })
+      // Weekday cadence (posts + avg engagement per weekday) — "best day to post".
+      const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      const wdPosts = [0, 0, 0, 0, 0, 0, 0], wdEng = [0, 0, 0, 0, 0, 0, 0]
+      for (const p of posts) { const t = Date.parse(p.date + 'T00:00:00Z'); if (isNaN(t)) continue; const wd = new Date(t).getUTCDay(); wdPosts[wd]++; wdEng[wd] += p.engagement }
+      const weekday = WD.map((name, i) => ({ name, posts: wdPosts[i], avgEng: wdPosts[i] ? Math.round(wdEng[i] / wdPosts[i]) : 0 }))
+      return json({ ig: {
+        username: prof.profile_username || account, followers, mediaCount: num(prof.profile_media_count),
+        postCount: posts.length, likes: totalLikes, comments: totalComments, engagement: totalEng, er,
+        avgLikes: posts.length ? Math.round(totalLikes / posts.length) : 0,
+        avgComments: posts.length ? Math.round(totalComments / posts.length) : 0,
+        avgEng: posts.length ? Math.round(totalEng / posts.length) : 0,
+        formats, weekday, daily, posts: posts.slice(0, 24),
+      } }, 200)
     } catch (e) { return json({ ig: null, error: String(e.message || e) }, 200) }
   }
 

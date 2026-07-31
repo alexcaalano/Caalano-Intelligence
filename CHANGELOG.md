@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.111.0 — 2026-07-31 · `PENDING`
+- **Full competitor Instagram dashboard — every public insight + post thumbnails.**
+  Each mapped competitor now renders a performance-style card mirroring the client
+  Organic Social tab: a 6-tile KPI row (**followers, posts, engagement, estimated
+  engagement rate, avg likes+comments per post, totals**), **format mix + best day
+  to post**, a **posting-cadence & engagement over-time** chart (posts/day bars vs
+  engagement line), a **weekday cadence** chart (posts vs avg engagement per
+  weekday), and a **full sortable grid of post thumbnails** (sort by engagement /
+  likes / comments / newest) with per-post likes, comments and estimated ER, each
+  linking out to Instagram. Backend `scope=competitor` now returns a zero-filled
+  daily series, weekday distribution, per-post ER and averages, and up to 24 posts.
+  Private-only metrics (reach, views, saves, shares, replies, link taps) are omitted
+  rather than shown as zero, since Instagram only exposes those to the account owner.
+  Competitor cards now stack full-width.
+
 ## v3.110.0 — 2026-07-31 · `PENDING`
 - **Fix competitor Instagram cards showing all zeros.** The `instagram_public`
   connector uses different field names to the owned `instagram` one, so the metric

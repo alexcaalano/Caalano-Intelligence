@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.106.0 — 2026-07-29 · `PENDING`
+- **Organic Social → Competitors tab (assignment + structure).** A Performance /
+  Competitors tab toggle. In Competitors you assign a client's competitors by public
+  Instagram / Facebook handle (stored server-side, per client), with profile links
+  and the benchmark layout ready. Live public metrics (follower growth, posting
+  cadence & format mix, top posts, estimated engagement rate) and the paid-vs-organic
+  follower split / "% of new followers from ads" wire up once Windsor's public
+  connector + Meta ad fields are verified against live data (connector was offline).
+
 ## v3.105.0 — 2026-07-29 · `PENDING`
 - **Inbound social DMs on the Organic Social dashboard.** Counts conversations
   started via Instagram / Facebook Messenger from the client's GoHighLevel inbox

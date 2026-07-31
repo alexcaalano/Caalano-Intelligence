@@ -1984,3 +1984,20 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 
 .soc-dm-note { font-size: 11px; color: var(--faint); margin-left: auto; }
 .soc-dm { border-color: color-mix(in srgb, var(--brand) 24%, var(--border)); }
+
+/* Social — tabs + competitors */
+.soc-tabs { display: inline-flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+.soc-tabs button { border: 0; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 700; padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+.soc-tabs button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.soc-comp { display: flex; flex-direction: column; gap: 16px; }
+.soc-comp-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.soc-comp-add input { flex: 1; min-width: 150px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; }
+.soc-comp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.soc-comp-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; }
+.soc-comp-head { display: flex; align-items: center; justify-content: space-between; }
+.soc-comp-head b { font-size: 14.5px; }
+.soc-comp-x { border: 0; background: transparent; color: var(--faint); cursor: pointer; font-size: 13px; }
+.soc-comp-x:hover { color: var(--neg); }
+.soc-comp-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.soc-comp-links a { text-decoration: none; }
+.soc-comp-pending { font-size: 11.5px; color: var(--faint); line-height: 1.5; background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }

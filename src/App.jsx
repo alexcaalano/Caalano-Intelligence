@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.105.0'
+const APP_VERSION = '3.106.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1950,6 +1950,7 @@ const CREATIVEMETA_KEY = 'caalano_creativemeta' // { clientId: { creativeId: { a
 const CREATIVETAX_KEY = 'caalano_creativetax'   // { clientId: { persona: [...], angle: [...], dest: [...] } } — reusable dropdown values
 const CLIENTCTX_KEY = 'caalano_clientctx'        // { clientId: "free-text context / notes about the client, fed into the client-update prompt" }
 const FATIGUE_KEY = 'caalano_fatigue'            // { _global: { freqMed, freqHigh, ctrDropMed, ctrDropHigh, minImpr } } — creative-fatigue thresholds
+const COMPETITORS_KEY = 'caalano_competitors'    // { clientId: [{ id, name, ig, fb, igAccount, fbAccount }] } — organic-social competitors per client
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1958,7 +1959,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1979,8 +1980,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2139,6 +2140,11 @@ function kpiClass(actual, target, goodWhenUnder) { if (target == null || target 
    Unset = seeded defaults where known, else leads→booked→shown→won. */
 function loadKeyEvents(clientId) { const v = SETTINGS.keyevents[clientId]; if (v !== undefined) return v; return SEED_KEYEVENTS[clientId] || [] }
 function saveKeyEvents(clientId, arr) { SETTINGS.keyevents = { ...SETTINGS.keyevents, [clientId]: arr }; writeLS(KEV_KEY, SETTINGS.keyevents); saveSettingsRemote({ keyevents: { [clientId]: arr } }); bumpSettings() }
+// Organic-social competitors assigned to a client (name + IG/FB handle). Handles
+// are stored bare (no @, no URL); the tab derives profile links + Windsor lookups.
+function loadCompetitors(clientId) { return (SETTINGS.competitors && SETTINGS.competitors[clientId]) || [] }
+function saveCompetitors(clientId, arr) { SETTINGS.competitors = { ...(SETTINGS.competitors || {}), [clientId]: arr }; writeLS(COMPETITORS_KEY, SETTINGS.competitors); saveSettingsRemote({ competitors: { [clientId]: arr } }); bumpSettings() }
+const cleanHandle = (s) => String(s || '').trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?(instagram|facebook)\.com\//i, '').replace(/\/.*$/, '').trim()
 // reached-per-stage across a set of pipelines: cumulative from the last stage
 // (an opp at a stage passed through every earlier stage), summed by stage name.
 function reachedByStage(pipelines) {
@@ -8293,6 +8299,47 @@ function SocBars({ data, labelKey, valueKey, color, fmt }) {
     ))}</div>
   )
 }
+// Competitors assigned to a client, for organic benchmarking / inspiration. The
+// assignment (name + IG/FB handle) is stored per client; live public metrics wire
+// up via the Windsor public connector once its fields are verified.
+function CompetitorsView({ client }) {
+  useSettingsSync()
+  const [name, setName] = useState(''); const [ig, setIg] = useState(''); const [fb, setFb] = useState('')
+  if (!client) return <div className="mr-note">Pick a client to assign competitors.</div>
+  const comps = loadCompetitors(client.id)
+  const add = () => {
+    const nm = name.trim(); const igh = cleanHandle(ig), fbh = cleanHandle(fb)
+    if (!nm && !igh && !fbh) return
+    saveCompetitors(client.id, [...comps, { id: 'c' + Date.now().toString(36), name: nm || igh || fbh, ig: igh || null, fb: fbh || null }])
+    setName(''); setIg(''); setFb('')
+  }
+  const remove = (id) => saveCompetitors(client.id, comps.filter((c) => c.id !== id))
+  return (
+    <div className="soc-comp">
+      <div className="soc-comp-add">
+        <input placeholder="Competitor name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <input placeholder="Instagram @handle" value={ig} onChange={(e) => setIg(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <input placeholder="Facebook page / handle" value={fb} onChange={(e) => setFb(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <button className="mr-btn primary" onClick={add}>+ Add competitor</button>
+      </div>
+      {comps.length ? (
+        <div className="soc-comp-grid">
+          {comps.map((c) => (
+            <div className="soc-comp-card" key={c.id}>
+              <div className="soc-comp-head"><b>{c.name}</b><button className="soc-comp-x" onClick={() => remove(c.id)} aria-label="Remove">✕</button></div>
+              <div className="soc-comp-links">
+                {c.ig ? <a href={`https://instagram.com/${c.ig}`} target="_blank" rel="noreferrer" className="mr-src mr-src-meta">IG @{c.ig}</a> : null}
+                {c.fb ? <a href={`https://facebook.com/${c.fb}`} target="_blank" rel="noreferrer" className="mr-src mr-src-google">FB {c.fb}</a> : null}
+              </div>
+              <div className="soc-comp-pending">📊 Followers, growth, posting cadence, format mix, top posts &amp; est. engagement — wire up once the Windsor public connector is verified.</div>
+            </div>
+          ))}
+        </div>
+      ) : <div className="mr-empty">No competitors yet — add {client.name}’s competitors above to start benchmarking.</div>}
+      <p className="mr-foot-note">Assign each competitor’s public Instagram / Facebook handle. Benchmarks will cover follower growth, posting cadence &amp; format mix, top content and an <b>estimated</b> engagement rate (likes + comments ÷ followers) — reach/impressions stay private to the account owner, so true ER isn’t available for competitors.</p>
+    </div>
+  )
+}
 function SocialDashboard({ clients, range, nonce }) {
   const [enabled, setEnabled] = useState(null)
   useEffect(() => { mrFetch('scope=social&list=1').then((r) => setEnabled(r.clients || [])).catch(() => setEnabled([])) }, [])
@@ -8303,6 +8350,7 @@ function SocialDashboard({ clients, range, nonce }) {
   const [st, setSt] = useState({ status: 'idle' })
   const [dm, setDm] = useState(null)
   const [postSort, setPostSort] = useState('engagement')
+  const [subview, setSubview] = useState('perf') // perf | competitors
   useEffect(() => {
     if (!client) { setSt({ status: 'empty' }); return }
     let alive = true; setSt({ status: 'loading' }); setDm(null)
@@ -8368,12 +8416,19 @@ function SocialDashboard({ clients, range, nonce }) {
         <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>
           {list.length ? list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>) : <option>No connected accounts</option>}
         </select>
-        {ig && ig.profile.username && <a className="soc-handle" href={`https://instagram.com/${ig.profile.username}`} target="_blank" rel="noreferrer">@{ig.profile.username}</a>}
+        <div className="soc-tabs">
+          <button className={subview === 'perf' ? 'on' : ''} onClick={() => setSubview('perf')}>Performance</button>
+          <button className={subview === 'competitors' ? 'on' : ''} onClick={() => setSubview('competitors')}>Competitors</button>
+        </div>
+        {subview === 'perf' && ig && ig.profile.username && <a className="soc-handle" href={`https://instagram.com/${ig.profile.username}`} target="_blank" rel="noreferrer">@{ig.profile.username}</a>}
         <div className="mr-bar-spacer" />
-        <button className="mr-btn" onClick={() => window.print()} disabled={!data} title="Print / Save as PDF">🖨 Print</button>
-        <button className="mr-btn" onClick={downloadPdf} disabled={!data || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
+        {subview === 'perf' && <><button className="mr-btn" onClick={() => window.print()} disabled={!data} title="Print / Save as PDF">🖨 Print</button>
+        <button className="mr-btn" onClick={downloadPdf} disabled={!data || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button></>}
       </div>
 
+      {subview === 'competitors' && <CompetitorsView client={client} />}
+
+      {subview === 'perf' && (<>
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading social…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load: {st.error}</div>}
       {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">📱</div><b>No organic social accounts connected.</b><p>Connect a client's Instagram / Facebook Page in Windsor and it’ll appear here.</p></div>}
@@ -8597,6 +8652,7 @@ function SocialDashboard({ clients, range, nonce }) {
         </section>
       )}
       </div>
+      </>)}
     </div>
   )
 }

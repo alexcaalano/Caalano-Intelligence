@@ -6,6 +6,13 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Keep the whole dashboard out of search engines — it's a private client
+# reporting tool. Belt-and-braces alongside robots.txt + the noindex meta tag.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex"
+
 # Always revalidate the HTML so a new deploy's hashed bundle is picked up
 # immediately; the hashed assets themselves can cache forever.
 [[headers]]

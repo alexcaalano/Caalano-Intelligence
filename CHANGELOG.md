@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.116.1 — 2026-07-31 · `PENDING`
+- **Keep the dashboard out of search engines.** Added a `robots.txt` that disallows
+  all crawlers, a `noindex, nofollow` robots meta tag (plus a Googlebot-specific one)
+  in the page head, and an `X-Robots-Tag: noindex, nofollow` response header on every
+  route via Netlify — three layers so Google (and other engines) never index or rank
+  this private client reporting tool.
+
 ## v3.116.0 — 2026-07-31 · `PENDING`
 - **Monthly Report sizing fixes.** Removed the forced tall slide height and stopped
   short slides stretching to the tallest one, so each page sits at its natural size

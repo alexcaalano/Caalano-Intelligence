@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.118.0 — 2026-07-31 · `PENDING`
+- **Organic Social trend — total followers each month + organic-only stats.** The
+  KPIs & Trends view now shows the **total follower count at each month-end** (and
+  where it started), reconstructed from today's count back through the monthly net
+  gains — added as a KPI tile, a trend line and a column in the month-by-month table.
+  **All figures are now organic only:** Facebook stats use the organic-specific
+  fields (`page_impressions_organic`, `page_impressions_organic_unique`,
+  `page_video_views_organic`) so paid-boosted reach & impressions are never counted,
+  with an "Organic only" badge and clearer labels. The trend window is now a true
+  rolling window ending on the current month.
+
 ## v3.117.0 — 2026-07-31 · `PENDING`
 - **Organic Social — Monthly KPIs & rolling 6-month trend.** New **KPIs & Trends**
   tab in Organic Social. Set **monthly targets** per client (net new followers,

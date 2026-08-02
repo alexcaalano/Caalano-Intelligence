@@ -2113,3 +2113,5 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .soc-kpi-pct { font-size: 10.5px; font-weight: 700; color: var(--muted); }
 .soc-trend-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
 .soc-trend-charts .soc-chart { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; }
+.soc-organic-badge { display: inline-block; vertical-align: middle; margin-left: 8px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #12b886; background: rgba(18,184,134,.12); border: 1px solid rgba(18,184,134,.3); padding: 2px 8px; border-radius: 20px; }
+.soc-fol-start { color: var(--faint); font-weight: 500; }

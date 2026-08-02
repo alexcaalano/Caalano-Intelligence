@@ -1327,11 +1327,16 @@ async function socialMonth(soc, from, to, key) {
   }
   if (soc.fbo) {
     const fbFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.fbo))
-    const [pageRows, postRows] = await Promise.all([
-      F('facebook_organic', ['account_id', 'date', 'page_impressions', 'page_impressions_unique', 'page_post_engagements', 'page_video_views', 'page_daily_follows', 'page_daily_unfollows']).then(fbFilt),
+    // ORGANIC-only fields (page_impressions_organic / _organic_unique / video
+    // views organic) so paid-boosted impressions & reach are never counted. The
+    // organic-reach + organic-video pulls are isolated so, if a field is
+    // unavailable, only those two zero out rather than the whole month failing.
+    const [pageRows, orgRows, postRows] = await Promise.all([
+      F('facebook_organic', ['account_id', 'date', 'page_impressions_organic', 'page_post_engagements', 'page_daily_follows', 'page_daily_unfollows']).then(fbFilt),
+      F('facebook_organic', ['account_id', 'date', 'page_impressions_organic_unique', 'page_video_views_organic']).then(fbFilt),
       F('facebook_organic', ['account_id', 'post_id', 'post_created_time']).then(fbFilt),
     ])
-    fb = { impressions: sum(pageRows, 'page_impressions'), reachUnique: sum(pageRows, 'page_impressions_unique'), engagements: sum(pageRows, 'page_post_engagements'), videoViews: sum(pageRows, 'page_video_views'), netFollowers: sum(pageRows, 'page_daily_follows') - sum(pageRows, 'page_daily_unfollows'), posts: postRows.filter((p) => p.post_id).length }
+    fb = { impressions: sum(pageRows, 'page_impressions_organic'), reachUnique: sum(orgRows, 'page_impressions_organic_unique'), engagements: sum(pageRows, 'page_post_engagements'), videoViews: sum(orgRows, 'page_video_views_organic'), netFollowers: sum(pageRows, 'page_daily_follows') - sum(pageRows, 'page_daily_unfollows'), posts: postRows.filter((p) => p.post_id).length }
   }
   const blend = {
     netFollowers: ((ig && ig.netFollowers) || 0) + ((fb && fb.netFollowers) || 0),
@@ -1458,8 +1463,9 @@ export default async (req) => {
     const soc = SOCIAL[client]
     if (!soc) return json({ months: [], connected: false })
     const n = Math.max(1, Math.min(12, parseInt(url.searchParams.get('months') || '6', 10)))
-    // Anchor: the month containing `to`, else the current month.
-    const anchor = to ? new Date(to + 'T00:00:00Z') : new Date()
+    // Rolling window — always ends on the current month so the absolute-follower
+    // reconstruction (from today's count back through the monthly net deltas) is exact.
+    const anchor = new Date()
     let y = anchor.getUTCFullYear(), mo = anchor.getUTCMonth() // 0-based
     const list = []
     for (let i = 0; i < n; i++) {
@@ -1472,8 +1478,17 @@ export default async (req) => {
     }
     list.reverse() // oldest → newest for charting
     try {
+      // Current absolute follower count (IG followers + FB fans) — the anchor for
+      // reconstructing each month's total followers (start → end).
+      let curTotal = 0
+      if (soc.ig) { const r = await windsorFetch('instagram', ['account_id', 'followers_count'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.ig))).catch(() => []); curTotal += Math.max(0, ...r.map((x) => num(x.followers_count)), 0) }
+      if (soc.fbo) { const r = await windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.fbo))).catch(() => []); curTotal += Math.max(0, ...r.map((x) => num(x.page_fans)), 0) }
       const months = await Promise.all(list.map((m) => socialMonth(soc, m.from, m.to, key).then((d) => ({ month: m.key, label: m.label, ig: d.ig, fb: d.fb, ...d.blend }))))
-      return json({ client, months, hasIg: !!soc.ig, hasFb: !!soc.fbo }, 200, true)
+      // Walk newest → oldest: end-of-latest ≈ today's count; each earlier month's
+      // end is the next month's start (end minus that month's net gain).
+      let running = curTotal
+      for (let i = months.length - 1; i >= 0; i--) { months[i].followersEnd = running; months[i].followersStart = Math.max(0, running - (months[i].netFollowers || 0)); running = months[i].followersStart }
+      return json({ client, months, currentFollowers: curTotal, hasIg: !!soc.ig, hasFb: !!soc.fbo }, 200, true)
     } catch (e) { return json({ months: [], error: String(e.message || e) }, 200) }
   }
 

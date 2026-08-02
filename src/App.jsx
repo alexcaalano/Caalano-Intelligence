@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.117.0'
+const APP_VERSION = '3.118.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8646,27 +8646,28 @@ function SocTrends({ client, range, nonce }) {
   const prev = rows.length > 1 ? rows[rows.length - 2] : null
   const setTarget = (k, v) => { const nx = { ...kpi }; if (v === '' || v == null) delete nx[k]; else nx[k] = Number(v); setKpi(nx); if (client) saveSocialKpis(client.id, nx) }
   const METRICS = [
+    { k: 'followersEnd', label: 'Total followers', fmt: n0 },
     { k: 'netFollowers', label: 'Net new followers', fmt: signed },
-    { k: 'reach', label: 'Reach', fmt: n0 },
+    { k: 'reach', label: 'Organic reach', fmt: n0 },
     { k: 'views', label: 'Views', fmt: n0 },
-    { k: 'impressions', label: 'Impressions', fmt: n0 },
+    { k: 'impressions', label: 'Impressions (FB)', fmt: n0 },
     { k: 'engagement', label: 'Engagement', fmt: n0 },
     { k: 'posts', label: 'Posts', fmt: n0 },
     { k: 'er', label: 'Eng. rate %', fmt: (v) => (v == null ? '—' : `${v}%`) },
   ]
   const CHARTS = [
+    { k: 'followersEnd', label: 'Total followers', kind: 'line', color: '#0ea5e9' },
     { k: 'netFollowers', label: 'Net new followers', kind: 'bar', color: '#22b07d' },
-    { k: 'reach', label: 'Reach', kind: 'line', color: '#e1306c' },
+    { k: 'reach', label: 'Organic reach', kind: 'line', color: '#e1306c' },
     { k: 'views', label: 'Views', kind: 'line', color: '#6d5efc' },
     { k: 'engagement', label: 'Engagement', kind: 'line', color: '#f59e0b' },
-    { k: 'impressions', label: 'Impressions (FB)', kind: 'line', color: '#1877f2' },
     { k: 'posts', label: 'Posts published', kind: 'bar', color: '#8a63d2' },
   ]
   if (!client) return <div className="mr-note">Pick a client above.</div>
   return (
     <div className="soc-trends">
       <div className="soc-trend-head no-print">
-        <div><h3>Monthly KPIs &amp; rolling trend</h3><p className="cap">Set monthly targets to measure success; actuals shown for the latest complete month ({latest ? latest.label : '—'}). Charts roll the last {rows.length || months} months. Saved per client &amp; shared with the team.</p></div>
+        <div><h3>Monthly KPIs &amp; rolling trend <span className="soc-organic-badge">Organic only</span></h3><p className="cap">All figures are <b>organic</b> (paid-boosted reach/impressions excluded). Set monthly targets to measure success; actuals shown for the latest month ({latest ? latest.label : '—'}). Charts roll the last {rows.length || months} months. Saved per client &amp; shared with the team.</p></div>
         <label className="soc-trend-months">Months
           <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 9, 12].map((m) => <option key={m} value={m}>{m}</option>)}</select>
         </label>
@@ -8728,10 +8729,11 @@ function SocTrends({ client, range, nonce }) {
         <div className="soc-subhead"><h4>Month-by-month</h4></div>
         <div className="mr-tablewrap">
           <table className="mr-table">
-            <thead><tr><th>Month</th><th className="r">Net followers</th><th className="r">Reach</th><th className="r">Views</th><th className="r">Impr. (FB)</th><th className="r">Engagement</th><th className="r">Posts</th><th className="r">ER</th></tr></thead>
+            <thead><tr><th>Month</th><th className="r">Total followers</th><th className="r">Net followers</th><th className="r">Organic reach</th><th className="r">Views</th><th className="r">Impr. (FB)</th><th className="r">Engagement</th><th className="r">Posts</th><th className="r">ER</th></tr></thead>
             <tbody>{[...rows].reverse().map((m) => (
               <tr key={m.month}>
                 <td><b>{m.label}</b></td>
+                <td className="r"><b>{n0(m.followersEnd)}</b>{m.followersStart != null ? <small className="soc-fol-start"> from {n0(m.followersStart)}</small> : null}</td>
                 <td className="r">{signed(m.netFollowers)}</td>
                 <td className="r">{n0(m.reach)}</td>
                 <td className="r">{n0(m.views)}</td>
@@ -8743,7 +8745,7 @@ function SocTrends({ client, range, nonce }) {
             ))}</tbody>
           </table>
         </div>
-        <p className="mr-foot-note">Net followers = new follows minus unfollows in the month (from daily deltas — historically accurate). Reach / views / engagement / posts are the month's blended IG + FB organic totals. Impressions are Facebook-page impressions (Instagram doesn't expose an impressions figure).</p>
+        <p className="mr-foot-note"><b>Total followers</b> = the audience at each month-end (reconstructed from today's count back through the monthly net gains). <b>Net followers</b> = follows minus unfollows that month. <b>Organic reach / views / engagement</b> are organic only — Facebook paid-boosted reach &amp; impressions are excluded (organic-specific fields); Instagram figures are the account's organic insights. Impressions shown are Facebook organic page impressions (Instagram reports reach &amp; views, not impressions).</p>
       </>)}
     </div>
   )

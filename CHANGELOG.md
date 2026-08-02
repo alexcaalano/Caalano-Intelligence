@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.117.0 — 2026-07-31 · `PENDING`
+- **Organic Social — Monthly KPIs & rolling 6-month trend.** New **KPIs & Trends**
+  tab in Organic Social. Set **monthly targets** per client (net new followers,
+  reach, views, impressions, engagement, posts, engagement rate) — saved per client
+  and shared with the team — and each is scored against the **latest complete month's
+  actual** with a progress bar and MoM change. Below that, a **rolling trend** of the
+  last 3/6/9/12 months as graphs (net followers, reach, views, engagement, FB
+  impressions, posts) plus a **month-by-month table** of the high-level stats.
+  Backed by a new `scope=socialtrend` that rolls each month's blended IG + FB organic
+  totals; net-follower gain comes from daily follow/unfollow deltas so it's
+  historically accurate even though absolute follower count is current-only.
+
 ## v3.116.1 — 2026-07-31 · `PENDING`
 - **Keep the dashboard out of search engines.** Added a `robots.txt` that disallows
   all crawlers, a `noindex, nofollow` robots meta tag (plus a Googlebot-specific one)

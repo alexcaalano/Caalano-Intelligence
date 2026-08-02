@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.116.1'
+const APP_VERSION = '3.117.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1956,6 +1956,7 @@ const CREATIVETAX_KEY = 'caalano_creativetax'   // { clientId: { persona: [...],
 const CLIENTCTX_KEY = 'caalano_clientctx'        // { clientId: "free-text context / notes about the client, fed into the client-update prompt" }
 const FATIGUE_KEY = 'caalano_fatigue'            // { _global: { freqMed, freqHigh, ctrDropMed, ctrDropHigh, minImpr } } — creative-fatigue thresholds
 const COMPETITORS_KEY = 'caalano_competitors'    // { clientId: [{ id, name, ig, fb, igAccount, fbAccount }] } — organic-social competitors per client
+const SOCIALKPIS_KEY = 'caalano_socialkpis'      // { clientId: { netFollowers, reach, views, engagement, posts, er } } — monthly organic-social KPI targets
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1964,7 +1965,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1985,8 +1986,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2149,6 +2150,9 @@ function saveKeyEvents(clientId, arr) { SETTINGS.keyevents = { ...SETTINGS.keyev
 // are stored bare (no @, no URL); the tab derives profile links + Windsor lookups.
 function loadCompetitors(clientId) { return (SETTINGS.competitors && SETTINGS.competitors[clientId]) || [] }
 function saveCompetitors(clientId, arr) { SETTINGS.competitors = { ...(SETTINGS.competitors || {}), [clientId]: arr }; writeLS(COMPETITORS_KEY, SETTINGS.competitors); saveSettingsRemote({ competitors: { [clientId]: arr } }); bumpSettings() }
+// Monthly organic-social KPI targets, per client.
+function loadSocialKpis(clientId) { return (SETTINGS.socialkpis && SETTINGS.socialkpis[clientId]) || {} }
+function saveSocialKpis(clientId, obj) { SETTINGS.socialkpis = { ...(SETTINGS.socialkpis || {}), [clientId]: obj }; writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); saveSettingsRemote({ socialkpis: { [clientId]: obj } }); bumpSettings() }
 const cleanHandle = (s) => String(s || '').trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?(instagram|facebook)\.com\//i, '').replace(/\/.*$/, '').trim()
 // reached-per-stage across a set of pipelines: cumulative from the last stage
 // (an opp at a stage passed through every earlier stage), summed by stage name.
@@ -8618,6 +8622,132 @@ function CompetitorsView({ client, range }) {
     </div>
   )
 }
+// Organic-social KPIs + rolling 6-month trend. Monthly targets are set per client
+// (saved to Settings/server) and measured against the latest complete month; the
+// month-by-month table + trend charts read a lean per-month backend rollup.
+function SocTrends({ client, range, nonce }) {
+  const [st, setSt] = useState({ status: 'idle' })
+  const [kpi, setKpi] = useState({})
+  const [months, setMonths] = useState(6)
+  useEffect(() => { setKpi(loadSocialKpis(client ? client.id : '')) }, [client && client.id, SETTINGS.loaded])
+  useEffect(() => {
+    if (!client) { setSt({ status: 'empty' }); return }
+    let alive = true; setSt({ status: 'loading' })
+    mrFetch(`scope=socialtrend&client=${encodeURIComponent(client.id)}&months=${months}&${rangeQuery(range)}`)
+      .then((r) => { if (alive) setSt({ status: 'ok', data: r }) })
+      .catch((e) => { if (alive) setSt({ status: 'err', error: String(e.message || e) }) })
+    return () => { alive = false }
+  }, [client && client.id, range.to, months, nonce])
+  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  const signed = (v) => (v == null || isNaN(v) ? '—' : (v >= 0 ? '+' : '') + fmtNumber(Math.round(v)))
+  const data = st.status === 'ok' ? st.data : null
+  const rows = (data && data.months) || []
+  const latest = rows.length ? rows[rows.length - 1] : null
+  const prev = rows.length > 1 ? rows[rows.length - 2] : null
+  const setTarget = (k, v) => { const nx = { ...kpi }; if (v === '' || v == null) delete nx[k]; else nx[k] = Number(v); setKpi(nx); if (client) saveSocialKpis(client.id, nx) }
+  const METRICS = [
+    { k: 'netFollowers', label: 'Net new followers', fmt: signed },
+    { k: 'reach', label: 'Reach', fmt: n0 },
+    { k: 'views', label: 'Views', fmt: n0 },
+    { k: 'impressions', label: 'Impressions', fmt: n0 },
+    { k: 'engagement', label: 'Engagement', fmt: n0 },
+    { k: 'posts', label: 'Posts', fmt: n0 },
+    { k: 'er', label: 'Eng. rate %', fmt: (v) => (v == null ? '—' : `${v}%`) },
+  ]
+  const CHARTS = [
+    { k: 'netFollowers', label: 'Net new followers', kind: 'bar', color: '#22b07d' },
+    { k: 'reach', label: 'Reach', kind: 'line', color: '#e1306c' },
+    { k: 'views', label: 'Views', kind: 'line', color: '#6d5efc' },
+    { k: 'engagement', label: 'Engagement', kind: 'line', color: '#f59e0b' },
+    { k: 'impressions', label: 'Impressions (FB)', kind: 'line', color: '#1877f2' },
+    { k: 'posts', label: 'Posts published', kind: 'bar', color: '#8a63d2' },
+  ]
+  if (!client) return <div className="mr-note">Pick a client above.</div>
+  return (
+    <div className="soc-trends">
+      <div className="soc-trend-head no-print">
+        <div><h3>Monthly KPIs &amp; rolling trend</h3><p className="cap">Set monthly targets to measure success; actuals shown for the latest complete month ({latest ? latest.label : '—'}). Charts roll the last {rows.length || months} months. Saved per client &amp; shared with the team.</p></div>
+        <label className="soc-trend-months">Months
+          <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 9, 12].map((m) => <option key={m} value={m}>{m}</option>)}</select>
+        </label>
+      </div>
+
+      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading monthly trend…" /></div>}
+      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load: {st.error}</div>}
+      {data && !rows.length && <div className="mr-note mr-empty-deep"><div className="big">📈</div><b>No monthly data yet for this client.</b></div>}
+
+      {rows.length > 0 && (<>
+        {/* KPI targets vs latest-month actuals */}
+        <div className="soc-kpi-grid">
+          {METRICS.map((mt) => {
+            const actual = latest ? latest[mt.k] : null
+            const pv = prev ? prev[mt.k] : null
+            const target = kpi[mt.k]
+            const pct = (target && actual != null && actual !== 0) ? Math.round((actual / target) * 100) : (target ? 0 : null)
+            const mom = (pv != null && pv !== 0 && actual != null) ? Math.round(((actual - pv) / Math.abs(pv)) * 100) : null
+            return (
+              <div className="soc-kpi-card" key={mt.k}>
+                <div className="soc-kpi-h">{mt.label}</div>
+                <div className="soc-kpi-actual"><b>{mt.fmt(actual)}</b>{mom != null && <span className={`soc-kpi-mom ${mom >= 0 ? 'up' : 'down'}`}>{mom >= 0 ? '▲' : '▼'} {Math.abs(mom)}% MoM</span>}</div>
+                <label className="soc-kpi-target">Monthly target<input type="number" value={target ?? ''} placeholder="set…" onChange={(e) => setTarget(mt.k, e.target.value)} /></label>
+                {pct != null && <><div className="soc-kpi-bar"><span style={{ width: Math.min(100, Math.max(0, pct)) + '%', background: pct >= 100 ? 'var(--pos)' : pct >= 70 ? '#f59e0b' : 'var(--neg)' }} /></div><div className="soc-kpi-pct">{pct}% of target</div></>}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Rolling trend charts (blended) */}
+        <div className="soc-trend-charts">
+          {CHARTS.map((c) => (
+            <div className="soc-chart" key={c.k}>
+              <div className="mr-trend-lab">{c.label} · last {rows.length} months</div>
+              <ResponsiveContainer width="100%" height={170}>
+                {c.kind === 'bar' ? (
+                  <BarChart data={rows} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                    <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v) => fmtNumber(v)} />
+                    <Bar dataKey={c.k} name={c.label} fill={c.color} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                  </BarChart>
+                ) : (
+                  <LineChart data={rows} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                    <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v) => fmtNumber(v)} />
+                    <Line type="monotone" dataKey={c.k} name={c.label} stroke={c.color} strokeWidth={2.4} dot={{ r: 2 }} connectNulls />
+                  </LineChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+          ))}
+        </div>
+
+        {/* Month-by-month high-level stats */}
+        <div className="soc-subhead"><h4>Month-by-month</h4></div>
+        <div className="mr-tablewrap">
+          <table className="mr-table">
+            <thead><tr><th>Month</th><th className="r">Net followers</th><th className="r">Reach</th><th className="r">Views</th><th className="r">Impr. (FB)</th><th className="r">Engagement</th><th className="r">Posts</th><th className="r">ER</th></tr></thead>
+            <tbody>{[...rows].reverse().map((m) => (
+              <tr key={m.month}>
+                <td><b>{m.label}</b></td>
+                <td className="r">{signed(m.netFollowers)}</td>
+                <td className="r">{n0(m.reach)}</td>
+                <td className="r">{n0(m.views)}</td>
+                <td className="r">{n0(m.impressions)}</td>
+                <td className="r">{n0(m.engagement)}</td>
+                <td className="r">{n0(m.posts)}</td>
+                <td className="r">{m.er != null ? `${m.er}%` : '—'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <p className="mr-foot-note">Net followers = new follows minus unfollows in the month (from daily deltas — historically accurate). Reach / views / engagement / posts are the month's blended IG + FB organic totals. Impressions are Facebook-page impressions (Instagram doesn't expose an impressions figure).</p>
+      </>)}
+    </div>
+  )
+}
 function SocialDashboard({ clients, range, nonce }) {
   const [enabled, setEnabled] = useState(null)
   // Cache-bust so removing a connector in Windsor refreshes the dropdown; re-runs on manual refresh (nonce).
@@ -8699,6 +8829,7 @@ function SocialDashboard({ clients, range, nonce }) {
         </select>
         <div className="soc-tabs">
           <button className={subview === 'perf' ? 'on' : ''} onClick={() => setSubview('perf')}>Performance</button>
+          <button className={subview === 'trends' ? 'on' : ''} onClick={() => setSubview('trends')}>KPIs &amp; Trends</button>
           <button className={subview === 'competitors' ? 'on' : ''} onClick={() => setSubview('competitors')}>Competitors</button>
         </div>
         {subview === 'perf' && ig && ig.profile.username && <a className="soc-handle" href={`https://instagram.com/${ig.profile.username}`} target="_blank" rel="noreferrer">@{ig.profile.username}</a>}
@@ -8707,6 +8838,7 @@ function SocialDashboard({ clients, range, nonce }) {
         <button className="mr-btn" onClick={downloadPdf} disabled={!data || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button></>}
       </div>
 
+      {subview === 'trends' && <SocTrends client={client} range={range} nonce={nonce} />}
       {subview === 'competitors' && <CompetitorsView client={client} range={range} />}
 
       {subview === 'perf' && (<>

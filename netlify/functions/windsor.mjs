@@ -1307,6 +1307,45 @@ async function buildSocial(soc, from, to, key) {
   return { ig, fb }
 }
 
+// Lean per-month organic rollup (aggregate metrics only — no media/demographics),
+// for the KPI + 6-month trend view. Net followers come from the daily follower
+// deltas, so they're historically accurate even though absolute followers is
+// "current only". Returns per-platform + a blended summary for one month.
+async function socialMonth(soc, from, to, key) {
+  const F = (c, f) => windsorFetch(c, f, from, to, null, key).catch(() => [])
+  const sum = (rows, k) => rows.reduce((a, r) => a + num(r[k]), 0)
+  let ig = null, fb = null
+  if (soc.ig) {
+    const igFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.ig))
+    const [dtv, dins, media] = await Promise.all([
+      F('instagram', ['account_id', 'date', 'views', 'accounts_engaged', 'likes', 'comments', 'shares', 'saves', 'replies', 'profile_links_taps', 'total_interactions']).then(igFilt),
+      F('instagram', ['account_id', 'date', 'reach', 'follower_count']).then(igFilt),
+      F('instagram', ['account_id', 'media_id', 'timestamp']).then(igFilt),
+    ])
+    const likes = sum(dtv, 'likes'), comments = sum(dtv, 'comments'), shares = sum(dtv, 'shares'), saves = sum(dtv, 'saves')
+    ig = { reach: sum(dins, 'reach'), views: sum(dtv, 'views'), engaged: sum(dtv, 'accounts_engaged'), likes, comments, shares, saves, replies: sum(dtv, 'replies'), linkTaps: sum(dtv, 'profile_links_taps'), interactions: sum(dtv, 'total_interactions'), engagement: likes + comments + shares + saves, netFollowers: sum(dins, 'follower_count'), posts: media.filter((m) => m.media_id).length }
+  }
+  if (soc.fbo) {
+    const fbFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.fbo))
+    const [pageRows, postRows] = await Promise.all([
+      F('facebook_organic', ['account_id', 'date', 'page_impressions', 'page_impressions_unique', 'page_post_engagements', 'page_video_views', 'page_daily_follows', 'page_daily_unfollows']).then(fbFilt),
+      F('facebook_organic', ['account_id', 'post_id', 'post_created_time']).then(fbFilt),
+    ])
+    fb = { impressions: sum(pageRows, 'page_impressions'), reachUnique: sum(pageRows, 'page_impressions_unique'), engagements: sum(pageRows, 'page_post_engagements'), videoViews: sum(pageRows, 'page_video_views'), netFollowers: sum(pageRows, 'page_daily_follows') - sum(pageRows, 'page_daily_unfollows'), posts: postRows.filter((p) => p.post_id).length }
+  }
+  const blend = {
+    netFollowers: ((ig && ig.netFollowers) || 0) + ((fb && fb.netFollowers) || 0),
+    reach: ((ig && ig.reach) || 0) + ((fb && fb.reachUnique) || 0),
+    views: ((ig && ig.views) || 0) + ((fb && fb.videoViews) || 0),
+    impressions: ((fb && fb.impressions) || 0),
+    engagement: ((ig && ig.engagement) || 0) + ((fb && fb.engagements) || 0),
+    likes: ((ig && ig.likes) || 0), comments: ((ig && ig.comments) || 0),
+    posts: ((ig && ig.posts) || 0) + ((fb && fb.posts) || 0),
+  }
+  blend.er = blend.reach ? Math.round((blend.engagement / blend.reach) * 1000) / 10 : null
+  return { ig, fb, blend }
+}
+
 export default async (req) => {
   const url = new URL(req.url)
   const client = url.searchParams.get('client')
@@ -1411,6 +1450,31 @@ export default async (req) => {
     if (!soc) return json({ ig: null, fb: null, connected: false })
     try { const data = await buildSocial(soc, from, to, key); return json({ client, period: { from, to }, ...data }, 200, true) }
     catch (e) { return json({ ig: null, fb: null, error: String(e.message || e) }, 502) }
+  }
+
+  // Month-by-month organic rollups (default last 6 complete months, anchored on
+  // the `to` month or the current month) for the KPI panel + rolling trend graphs.
+  if (url.searchParams.get('scope') === 'socialtrend') {
+    const soc = SOCIAL[client]
+    if (!soc) return json({ months: [], connected: false })
+    const n = Math.max(1, Math.min(12, parseInt(url.searchParams.get('months') || '6', 10)))
+    // Anchor: the month containing `to`, else the current month.
+    const anchor = to ? new Date(to + 'T00:00:00Z') : new Date()
+    let y = anchor.getUTCFullYear(), mo = anchor.getUTCMonth() // 0-based
+    const list = []
+    for (let i = 0; i < n; i++) {
+      const mFrom = `${y}-${String(mo + 1).padStart(2, '0')}-01`
+      const end = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate()
+      const mTo = `${y}-${String(mo + 1).padStart(2, '0')}-${String(end).padStart(2, '0')}`
+      const label = new Date(Date.UTC(y, mo, 1)).toLocaleString('en-AU', { month: 'short', year: '2-digit', timeZone: 'UTC' })
+      list.push({ key: `${y}-${String(mo + 1).padStart(2, '0')}`, from: mFrom, to: mTo, label })
+      mo--; if (mo < 0) { mo = 11; y-- }
+    }
+    list.reverse() // oldest → newest for charting
+    try {
+      const months = await Promise.all(list.map((m) => socialMonth(soc, m.from, m.to, key).then((d) => ({ month: m.key, label: m.label, ig: d.ig, fb: d.fb, ...d.blend }))))
+      return json({ client, months, hasIg: !!soc.ig, hasFb: !!soc.fbo }, 200, true)
+    } catch (e) { return json({ months: [], error: String(e.message || e) }, 200) }
   }
 
   // Public social accounts available in Windsor (the competitor profiles you've

@@ -1478,17 +1478,55 @@ export default async (req) => {
     }
     list.reverse() // oldest → newest for charting
     try {
-      // Current absolute follower count (IG followers + FB fans) — the anchor for
+      // Current absolute follower counts (per platform) — the anchor for
       // reconstructing each month's total followers (start → end).
-      let curTotal = 0
-      if (soc.ig) { const r = await windsorFetch('instagram', ['account_id', 'followers_count'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.ig))).catch(() => []); curTotal += Math.max(0, ...r.map((x) => num(x.followers_count)), 0) }
-      if (soc.fbo) { const r = await windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.fbo))).catch(() => []); curTotal += Math.max(0, ...r.map((x) => num(x.page_fans)), 0) }
+      let curIg = 0, curFb = 0
+      if (soc.ig) { const r = await windsorFetch('instagram', ['account_id', 'followers_count'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.ig))).catch(() => []); curIg = Math.max(0, ...r.map((x) => num(x.followers_count)), 0) }
+      if (soc.fbo) { const r = await windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.fbo))).catch(() => []); curFb = Math.max(0, ...r.map((x) => num(x.page_fans)), 0) }
+      const curTotal = curIg + curFb
       const months = await Promise.all(list.map((m) => socialMonth(soc, m.from, m.to, key).then((d) => ({ month: m.key, label: m.label, ig: d.ig, fb: d.fb, ...d.blend }))))
       // Walk newest → oldest: end-of-latest ≈ today's count; each earlier month's
-      // end is the next month's start (end minus that month's net gain).
-      let running = curTotal
-      for (let i = months.length - 1; i >= 0; i--) { months[i].followersEnd = running; months[i].followersStart = Math.max(0, running - (months[i].netFollowers || 0)); running = months[i].followersStart }
-      return json({ client, months, currentFollowers: curTotal, hasIg: !!soc.ig, hasFb: !!soc.fbo }, 200, true)
+      // end is the next month's start (end minus that month's net gain). Per platform + blended.
+      let rIg = curIg, rFb = curFb, rAll = curTotal
+      for (let i = months.length - 1; i >= 0; i--) {
+        const m = months[i]
+        m.followersEnd = rAll; m.followersStart = Math.max(0, rAll - (m.netFollowers || 0)); rAll = m.followersStart
+        if (m.ig) { m.ig.followersEnd = rIg; m.ig.followersStart = Math.max(0, rIg - (m.ig.netFollowers || 0)); rIg = m.ig.followersStart }
+        if (m.fb) { m.fb.followersEnd = rFb; m.fb.followersStart = Math.max(0, rFb - (m.fb.netFollowers || 0)); rFb = m.fb.followersStart }
+      }
+      // Facebook paid vs organic new followers. Windsor flattens Facebook's
+      // paid/non-paid fan-add breakdown into suffixed fields; names vary, so probe
+      // a few candidates over the whole window (each returns daily rows we bucket by
+      // month — no per-month calls) and fall back to total−paid where needed.
+      let followerSplitField = null
+      if (soc.fbo) {
+        const fbFilt = (rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.fbo))
+        const w0 = list[0].from, w1 = list[list.length - 1].to
+        const probe = async (cands) => {
+          for (const f of cands) {
+            const rows = await windsorFetch('facebook_organic', ['account_id', 'date', f], w0, w1, null, key).then(fbFilt).catch(() => null)
+            if (rows && rows.some((r) => r[f] != null)) return { field: f, rows }
+          }
+          return null
+        }
+        const pd = await probe(['page_fan_adds_by_paid_non_paid_unique_paid', 'page_fan_adds_by_paid_unique', 'page_paid_fan_adds'])
+        const og = await probe(['page_fan_adds_by_paid_non_paid_unique_unpaid', 'page_fan_adds_by_paid_non_paid_unique_organic', 'page_organic_fan_adds'])
+        if (pd || og) {
+          const byMonth = (probeRes) => { const map = {}; if (probeRes) for (const r of probeRes.rows) { const mk = String(r.date || '').slice(0, 7); map[mk] = (map[mk] || 0) + num(r[probeRes.field]) } return map }
+          const paidM = byMonth(pd), orgM = byMonth(og)
+          for (const m of months) {
+            if (!m.fb) continue
+            let paid = pd ? (paidM[m.month] || 0) : null
+            let organic = og ? (orgM[m.month] || 0) : null
+            const total = m.fb.netFollowers
+            if (paid != null && organic == null && total != null) organic = Math.max(0, total - paid)
+            if (organic != null && paid == null && total != null) paid = Math.max(0, total - organic)
+            m.fb.followerSource = { paid: paid || 0, organic: organic || 0, known: true }
+          }
+          followerSplitField = (pd && pd.field) || (og && og.field)
+        }
+      }
+      return json({ client, months, currentFollowers: curTotal, currentIg: curIg, currentFb: curFb, followerSplitField, hasIg: !!soc.ig, hasFb: !!soc.fbo }, 200, true)
     } catch (e) { return json({ months: [], error: String(e.message || e) }, 200) }
   }
 

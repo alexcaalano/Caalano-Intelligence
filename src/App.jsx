@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.118.0'
+const APP_VERSION = '3.119.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5922,6 +5922,42 @@ function FatigueSettings() {
   )
 }
 
+// Per-client monthly organic-social KPI targets (measured on the Blended view of
+// the Organic Social → KPIs & Trends tab). Saved to the server, shared with the team.
+function SocialKpiSettings({ clients }) {
+  useSettingsSync()
+  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+  const [cid, setCid] = useState(list[0] ? list[0].id : '')
+  const cur = loadSocialKpis(cid)
+  const set = (k, v) => { const nx = { ...loadSocialKpis(cid) }; if (v === '' || v == null) delete nx[k]; else nx[k] = Number(v); saveSocialKpis(cid, nx) }
+  const FIELDS = [
+    { k: 'followersEnd', label: 'Total followers (goal)', hint: 'target audience size' },
+    { k: 'netFollowers', label: 'Net new followers / mo', hint: 'follows − unfollows' },
+    { k: 'reach', label: 'Organic reach / mo' },
+    { k: 'views', label: 'Views / mo' },
+    { k: 'impressions', label: 'Impressions / mo', hint: 'Facebook' },
+    { k: 'engagement', label: 'Engagement / mo' },
+    { k: 'posts', label: 'Posts / mo' },
+    { k: 'er', label: 'Engagement rate % / mo' },
+  ]
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>Organic social KPIs</h3>
+      <p className="cap" style={{ marginTop: -4 }}>Set each client's <b>monthly</b> organic-social targets. They're scored against the latest month on the Blended view of Organic Social → <b>KPIs &amp; Trends</b>. Saved to the server and shared with the team.</p>
+      <div className="pipe-sel" style={{ marginBottom: 12 }}><label>Client</label>
+        <select value={cid} onChange={(e) => setCid(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+      </div>
+      <div className="soc-kpiset-grid">
+        {FIELDS.map((f) => (
+          <label className="soc-kpiset" key={f.k}>
+            <span>{f.label}{f.hint ? <em> · {f.hint}</em> : null}</span>
+            <input type="number" min="0" value={cur[f.k] ?? ''} placeholder="—" onChange={(e) => set(f.k, e.target.value)} />
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
 function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
@@ -5949,6 +5985,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
       <div className="set-sections">
         {isAdmin && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
         {isAdmin && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
+        {isAdmin && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
         <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
@@ -5964,6 +6001,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
         </div>
       )}
       {isAdmin && section === 'fatigue' && <FatigueSettings />}
+      {isAdmin && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
       {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name }))} />}
       {authEnabled && section === 'account' && (
         <div className="card">
@@ -8629,32 +8667,43 @@ function SocTrends({ client, range, nonce }) {
   const [st, setSt] = useState({ status: 'idle' })
   const [kpi, setKpi] = useState({})
   const [months, setMonths] = useState(6)
-  useEffect(() => { setKpi(loadSocialKpis(client ? client.id : '')) }, [client && client.id, SETTINGS.loaded])
+  const [plat, setPlat] = useState('blended') // blended | ig | fb
+  useEffect(() => { setKpi(loadSocialKpis(client ? client.id : '')) }, [client && client.id, SETTINGS.loaded, nonce])
   useEffect(() => {
     if (!client) { setSt({ status: 'empty' }); return }
     let alive = true; setSt({ status: 'loading' })
-    mrFetch(`scope=socialtrend&client=${encodeURIComponent(client.id)}&months=${months}&${rangeQuery(range)}`)
+    mrFetch(`scope=socialtrend&client=${encodeURIComponent(client.id)}&months=${months}`)
       .then((r) => { if (alive) setSt({ status: 'ok', data: r }) })
       .catch((e) => { if (alive) setSt({ status: 'err', error: String(e.message || e) }) })
     return () => { alive = false }
-  }, [client && client.id, range.to, months, nonce])
+  }, [client && client.id, months, nonce])
   const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
   const signed = (v) => (v == null || isNaN(v) ? '—' : (v >= 0 ? '+' : '') + fmtNumber(Math.round(v)))
   const data = st.status === 'ok' ? st.data : null
-  const rows = (data && data.months) || []
+  const raw = (data && data.months) || []
+  const hasIg = data && data.hasIg, hasFb = data && data.hasFb
+  // Normalise each month to the selected platform so the cards / charts / table
+  // read a single flat shape. Paid vs organic followers only exist for Facebook.
+  const mapMonth = (m) => {
+    if (plat === 'ig') { const g = m.ig || {}; return { month: m.month, label: m.label, followersEnd: g.followersEnd, followersStart: g.followersStart, netFollowers: g.netFollowers, reach: g.reach, views: g.views, impressions: null, engagement: g.engagement, posts: g.posts, er: g.reach ? Math.round((g.engagement / g.reach) * 1000) / 10 : null, paid: null, organic: null } }
+    if (plat === 'fb') { const g = m.fb || {}, fs = g.followerSource; return { month: m.month, label: m.label, followersEnd: g.followersEnd, followersStart: g.followersStart, netFollowers: g.netFollowers, reach: g.reachUnique, views: g.videoViews, impressions: g.impressions, engagement: g.engagements, posts: g.posts, er: g.reachUnique ? Math.round((g.engagements / g.reachUnique) * 1000) / 10 : null, paid: fs ? fs.paid : null, organic: fs ? fs.organic : null } }
+    const fbP = m.fb && m.fb.followerSource ? m.fb.followerSource.paid : null
+    return { month: m.month, label: m.label, followersEnd: m.followersEnd, followersStart: m.followersStart, netFollowers: m.netFollowers, reach: m.reach, views: m.views, impressions: m.impressions, engagement: m.engagement, posts: m.posts, er: m.er, paid: fbP, organic: fbP != null ? Math.max(0, (m.netFollowers || 0) - fbP) : null }
+  }
+  const rows = raw.map(mapMonth)
   const latest = rows.length ? rows[rows.length - 1] : null
   const prev = rows.length > 1 ? rows[rows.length - 2] : null
-  const setTarget = (k, v) => { const nx = { ...kpi }; if (v === '' || v == null) delete nx[k]; else nx[k] = Number(v); setKpi(nx); if (client) saveSocialKpis(client.id, nx) }
+  const platLabel = plat === 'ig' ? 'Instagram' : plat === 'fb' ? 'Facebook' : 'Blended (IG + FB)'
   const METRICS = [
     { k: 'followersEnd', label: 'Total followers', fmt: n0 },
     { k: 'netFollowers', label: 'Net new followers', fmt: signed },
     { k: 'reach', label: 'Organic reach', fmt: n0 },
     { k: 'views', label: 'Views', fmt: n0 },
-    { k: 'impressions', label: 'Impressions (FB)', fmt: n0 },
+    { k: 'impressions', label: 'Impressions (FB)', fmt: n0, fbOnly: true },
     { k: 'engagement', label: 'Engagement', fmt: n0 },
     { k: 'posts', label: 'Posts', fmt: n0 },
     { k: 'er', label: 'Eng. rate %', fmt: (v) => (v == null ? '—' : `${v}%`) },
-  ]
+  ].filter((mt) => !(mt.fbOnly && plat === 'ig'))
   const CHARTS = [
     { k: 'followersEnd', label: 'Total followers', kind: 'line', color: '#0ea5e9' },
     { k: 'netFollowers', label: 'Net new followers', kind: 'bar', color: '#22b07d' },
@@ -8663,14 +8712,25 @@ function SocTrends({ client, range, nonce }) {
     { k: 'engagement', label: 'Engagement', kind: 'line', color: '#f59e0b' },
     { k: 'posts', label: 'Posts published', kind: 'bar', color: '#8a63d2' },
   ]
+  // Paid vs organic new followers (Facebook source; blended attributes IG follows as organic).
+  const paidKnown = plat !== 'ig' && rows.some((r) => r.paid != null)
+  const paidSum = paidKnown ? rows.reduce((a, r) => a + (r.paid || 0), 0) : null
+  const orgSum = paidKnown ? rows.reduce((a, r) => a + (r.organic || 0), 0) : null
+  const paidPct = (paidSum != null && (paidSum + orgSum) > 0) ? Math.round((paidSum / (paidSum + orgSum)) * 100) : null
   if (!client) return <div className="mr-note">Pick a client above.</div>
   return (
     <div className="soc-trends">
       <div className="soc-trend-head no-print">
-        <div><h3>Monthly KPIs &amp; rolling trend <span className="soc-organic-badge">Organic only</span></h3><p className="cap">All figures are <b>organic</b> (paid-boosted reach/impressions excluded). Set monthly targets to measure success; actuals shown for the latest month ({latest ? latest.label : '—'}). Charts roll the last {rows.length || months} months. Saved per client &amp; shared with the team.</p></div>
+        <div><h3>Monthly KPIs &amp; rolling trend <span className="soc-organic-badge">Organic only</span></h3><p className="cap">All figures are <b>organic</b> (paid-boosted reach/impressions excluded). Actuals shown for the latest month ({latest ? latest.label : '—'}); charts roll the last {rows.length || months} months. Targets are managed in <b>Settings → Organic KPIs</b> (per client) and compared on the Blended view.</p></div>
         <label className="soc-trend-months">Months
           <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 9, 12].map((m) => <option key={m} value={m}>{m}</option>)}</select>
         </label>
+      </div>
+      <div className="soc-plat-toggle no-print">
+        <button className={plat === 'blended' ? 'on' : ''} onClick={() => setPlat('blended')}>Blended</button>
+        <button className={plat === 'ig' ? 'on' : ''} onClick={() => setPlat('ig')} disabled={!hasIg}>Instagram</button>
+        <button className={plat === 'fb' ? 'on' : ''} onClick={() => setPlat('fb')} disabled={!hasFb}>Facebook</button>
+        <span className="soc-plat-lab">{platLabel}</span>
       </div>
 
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading monthly trend…" /></div>}
@@ -8678,30 +8738,62 @@ function SocTrends({ client, range, nonce }) {
       {data && !rows.length && <div className="mr-note mr-empty-deep"><div className="big">📈</div><b>No monthly data yet for this client.</b></div>}
 
       {rows.length > 0 && (<>
-        {/* KPI targets vs latest-month actuals */}
+        {/* KPI targets (from Settings) vs latest-month actuals — attainment only on Blended */}
         <div className="soc-kpi-grid">
           {METRICS.map((mt) => {
             const actual = latest ? latest[mt.k] : null
             const pv = prev ? prev[mt.k] : null
-            const target = kpi[mt.k]
+            const target = plat === 'blended' ? kpi[mt.k] : null
             const pct = (target && actual != null && actual !== 0) ? Math.round((actual / target) * 100) : (target ? 0 : null)
             const mom = (pv != null && pv !== 0 && actual != null) ? Math.round(((actual - pv) / Math.abs(pv)) * 100) : null
             return (
               <div className="soc-kpi-card" key={mt.k}>
                 <div className="soc-kpi-h">{mt.label}</div>
                 <div className="soc-kpi-actual"><b>{mt.fmt(actual)}</b>{mom != null && <span className={`soc-kpi-mom ${mom >= 0 ? 'up' : 'down'}`}>{mom >= 0 ? '▲' : '▼'} {Math.abs(mom)}% MoM</span>}</div>
-                <label className="soc-kpi-target">Monthly target<input type="number" value={target ?? ''} placeholder="set…" onChange={(e) => setTarget(mt.k, e.target.value)} /></label>
-                {pct != null && <><div className="soc-kpi-bar"><span style={{ width: Math.min(100, Math.max(0, pct)) + '%', background: pct >= 100 ? 'var(--pos)' : pct >= 70 ? '#f59e0b' : 'var(--neg)' }} /></div><div className="soc-kpi-pct">{pct}% of target</div></>}
+                {plat === 'blended' && (target != null
+                  ? <><div className="soc-kpi-tgt">Target {mt.fmt(target)}</div><div className="soc-kpi-bar"><span style={{ width: Math.min(100, Math.max(0, pct)) + '%', background: pct >= 100 ? 'var(--pos)' : pct >= 70 ? '#f59e0b' : 'var(--neg)' }} /></div><div className="soc-kpi-pct">{pct}% of target</div></>
+                  : <div className="soc-kpi-notgt">No target · set in Settings</div>)}
               </div>
             )
           })}
         </div>
 
-        {/* Rolling trend charts (blended) */}
+        {/* Paid vs organic followers (Facebook / blended) */}
+        {plat !== 'ig' && (
+          <div className="soc-paidorg">
+            <div className="soc-subhead"><h4>New followers — paid vs organic {plat === 'blended' ? '(Facebook ad-driven)' : ''}</h4>{paidPct != null && <span className="soc-dm-note">{paidPct}% of new followers came from paid over the last {rows.length} months</span>}</div>
+            {paidKnown ? (
+              <div className="soc-paidorg-grid">
+                <div className="mr-kpirow">
+                  <MRKpi label="From paid ads" value={n0(paidSum)} sub={`${paidPct}% of new followers`} strong />
+                  <MRKpi label="Organic (direct)" value={n0(orgSum)} sub={paidPct != null ? `${100 - paidPct}% of new followers` : null} />
+                  <MRKpi label="Total net new" value={n0((paidSum || 0) + (orgSum || 0))} sub={`last ${rows.length} months`} />
+                </div>
+                <div className="soc-chart">
+                  <div className="mr-trend-lab">New followers per month — paid vs organic</div>
+                  <ResponsiveContainer width="100%" height={190}>
+                    <BarChart data={rows} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmtCompact(v)} />
+                      <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v) => fmtNumber(v)} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="organic" name="Organic" stackId="f" fill="#22b07d" />
+                      <Bar dataKey="paid" name="Paid ads" stackId="f" fill="#6d5efc" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : <div className="mr-note">Paid vs organic follower split isn't available from the connector for this account{data && data.followerSplitField ? '' : ' (no paid-fan field returned)'}. It appears once the Facebook page has ad-driven follows in the period.</div>}
+          </div>
+        )}
+        {plat === 'ig' && <div className="mr-note">Instagram doesn't expose a paid-vs-organic follower split — new followers here are total net growth. The paid split is available on the Facebook / Blended view.</div>}
+
+        {/* Rolling trend charts */}
         <div className="soc-trend-charts">
           {CHARTS.map((c) => (
             <div className="soc-chart" key={c.k}>
-              <div className="mr-trend-lab">{c.label} · last {rows.length} months</div>
+              <div className="mr-trend-lab">{c.label} · {platLabel} · last {rows.length} months</div>
               <ResponsiveContainer width="100%" height={170}>
                 {c.kind === 'bar' ? (
                   <BarChart data={rows} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
@@ -8726,18 +8818,19 @@ function SocTrends({ client, range, nonce }) {
         </div>
 
         {/* Month-by-month high-level stats */}
-        <div className="soc-subhead"><h4>Month-by-month</h4></div>
+        <div className="soc-subhead"><h4>Month-by-month · {platLabel}</h4></div>
         <div className="mr-tablewrap">
           <table className="mr-table">
-            <thead><tr><th>Month</th><th className="r">Total followers</th><th className="r">Net followers</th><th className="r">Organic reach</th><th className="r">Views</th><th className="r">Impr. (FB)</th><th className="r">Engagement</th><th className="r">Posts</th><th className="r">ER</th></tr></thead>
+            <thead><tr><th>Month</th><th className="r">Total followers</th><th className="r">Net followers</th>{paidKnown && <th className="r">· paid</th>}<th className="r">Organic reach</th><th className="r">Views</th>{plat !== 'ig' && <th className="r">Impr. (FB)</th>}<th className="r">Engagement</th><th className="r">Posts</th><th className="r">ER</th></tr></thead>
             <tbody>{[...rows].reverse().map((m) => (
               <tr key={m.month}>
                 <td><b>{m.label}</b></td>
                 <td className="r"><b>{n0(m.followersEnd)}</b>{m.followersStart != null ? <small className="soc-fol-start"> from {n0(m.followersStart)}</small> : null}</td>
                 <td className="r">{signed(m.netFollowers)}</td>
+                {paidKnown && <td className="r">{m.paid != null ? n0(m.paid) : '—'}</td>}
                 <td className="r">{n0(m.reach)}</td>
                 <td className="r">{n0(m.views)}</td>
-                <td className="r">{n0(m.impressions)}</td>
+                {plat !== 'ig' && <td className="r">{n0(m.impressions)}</td>}
                 <td className="r">{n0(m.engagement)}</td>
                 <td className="r">{n0(m.posts)}</td>
                 <td className="r">{m.er != null ? `${m.er}%` : '—'}</td>
@@ -8745,7 +8838,7 @@ function SocTrends({ client, range, nonce }) {
             ))}</tbody>
           </table>
         </div>
-        <p className="mr-foot-note"><b>Total followers</b> = the audience at each month-end (reconstructed from today's count back through the monthly net gains). <b>Net followers</b> = follows minus unfollows that month. <b>Organic reach / views / engagement</b> are organic only — Facebook paid-boosted reach &amp; impressions are excluded (organic-specific fields); Instagram figures are the account's organic insights. Impressions shown are Facebook organic page impressions (Instagram reports reach &amp; views, not impressions).</p>
+        <p className="mr-foot-note"><b>Total followers</b> = audience at each month-end (reconstructed from today's count back through the monthly net gains). <b>Net followers</b> = follows minus unfollows. <b>Paid</b> = new followers attributed to ad campaigns (Facebook); the rest are organic. Reach / views / engagement are organic only — Facebook paid-boosted reach &amp; impressions are excluded. Instagram reports reach &amp; views (not impressions), so the Impressions column is Facebook only.</p>
       </>)}
     </div>
   )

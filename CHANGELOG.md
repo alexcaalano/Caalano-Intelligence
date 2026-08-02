@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.119.0 — 2026-07-31 · `PENDING`
+- **Organic Social — paid vs organic followers, IG/FB/Blended breakout, KPIs moved to
+  Settings.**
+  - **Paid vs organic new followers.** Backend probes Facebook's paid/non-paid
+    fan-add fields (with a total-minus-paid fallback) and the KPIs & Trends view now
+    shows how many new followers came **from ad campaigns vs organically** — a summary
+    (with "% from ads"), a per-month stacked paid/organic bar chart and a "· paid"
+    column in the table. Instagram has no paid/organic follower split in the API, so
+    it's shown as total net growth with a note; the split is on the Facebook / Blended
+    view.
+  - **Instagram / Facebook / Blended toggle.** Every KPI tile, chart and the
+    month-by-month table can now be viewed **per platform** or blended.
+  - **KPI targets moved to Settings.** Monthly organic targets are now set in
+    **Settings → Organic KPIs** (per client, shared with the team); the dashboard shows
+    them read-only and scores the latest month against them on the Blended view.
+  - Per-platform total-follower reconstruction so the Instagram and Facebook views each
+    show their own audience size over time.
+
 ## v3.118.0 — 2026-07-31 · `PENDING`
 - **Organic Social trend — total followers each month + organic-only stats.** The
   KPIs & Trends view now shows the **total follower count at each month-end** (and

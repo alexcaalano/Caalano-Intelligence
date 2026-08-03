@@ -1838,15 +1838,15 @@ export default async (req) => {
     try {
       let state = reset ? null : await store.get(key, { type: 'json' }).catch(() => null)
       if (!state) {
-        const { tz, leads } = await speedLeadList(cc.ghl, from, to)
-        state = { tz, leads, idx: 0, total: leads.length, status: leads.length ? 'running' : 'done', agg: { manualRaw: [], onlyAuto: 0, noOutbound: 0, srcCounts: {} } }
+        const { tz, leads, outcome } = await speedLeadList(cc.ghl, from, to)
+        state = { tz, leads, outcome, idx: 0, total: leads.length, status: leads.length ? 'running' : 'done', agg: { manualRaw: [], onlyAuto: 0, noOutbound: 0, srcCounts: {}, contact: { messaged: [], userBooked: [], selfBooked: [], booked: [], contacted: [], none: [] }, contactBase: 0 } }
       }
       if (state.status !== 'done') {
         state.idx = await speedScanChunk(cc.ghl, state.leads, state.idx, 18000, state.agg)
         if (state.idx >= state.total) state.status = 'done'
         await store.setJSON(key, state)
       }
-      const out = finalizeSpeed(state.agg, state.total, state.idx, hours, state.tz)
+      const out = finalizeSpeed(state.agg, state.total, state.idx, hours, state.tz, state.outcome)
       return json({ scope: 'speedscan', client, period: { from, to, preset }, status: state.status, processed: state.idx, total: state.total, ...out }, 200)
     } catch (e) { return json({ scope: 'speedscan', client, status: 'err', error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.121.0'
+const APP_VERSION = '3.121.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5043,12 +5043,12 @@ function TimingView({ clientId, range, nonce, currency }) {
         <div className="tm-sc warn"><span className="tm-lab">No outreach</span><b>{d.noOutbound}</b><span className="tm-sub">no outbound at all</span></div>
       </div>
       {(() => {
-        const cr = (st.data && st.data.contactRate) || (d && d.contactRate) || null
+        const cr = (d && d.contactRate) || (st.data && st.data.contactRate) || null
         if (!cr || !cr.base) return null
         const dr = (key, title) => { const list = (cr.deals && cr.deals[key]) || []; if (!list.length) return; setDrill({ kind: key, title, deals: list }) }
         return (
           <div className="card">
-            <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Contact rate <span style={{ fontWeight: 400 }}>· manual messages + appointments booked · of {fmtNumber(cr.base)} sampled lead{cr.base === 1 ? '' : 's'} · click to see the leads</span></div>
+            <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Contact rate <span style={{ fontWeight: 400 }}>· manual messages + appointments booked · of {fmtNumber(cr.base)} {d.full ? 'leads (full scan)' : `sampled lead${cr.base === 1 ? '' : 's'}`} · click to see the leads</span></div>
             <div className="tm-contact">
               <button className="tm-oc rate" onClick={() => dr('contacted', 'Contacted leads (message or appointment)')} disabled={!cr.contacted}><span className="tm-oc-lab">Total contact rate</span><b>{cr.rate == null ? '—' : `${cr.rate}%`}</b><span className="tm-oc-sub">{fmtNumber(cr.contacted)} of {fmtNumber(cr.base)} reached</span></button>
               <button className="tm-oc" onClick={() => dr('messaged', 'Leads reached by a manual message')} disabled={!cr.messaged}><span className="tm-oc-lab">Manual messages</span><b>{fmtNumber(cr.messaged)}</b><span className="tm-oc-sub">human message sent</span></button>
@@ -5061,7 +5061,7 @@ function TimingView({ clientId, range, nonce, currency }) {
         )
       })()}
       {(() => {
-        const oc = (st.data && st.data.outcome) || (d && d.outcome) || null
+        const oc = (d && d.outcome) || (st.data && st.data.outcome) || null
         if (!oc) return null
         const open = (v) => { const g = oc[v]; if (!g || !g.count) return; setDrill({ kind: v, title: v === 'won' ? 'Won leads' : v === 'lost' ? 'Lost leads' : 'Open leads', deals: g.deals || [] }) }
         return (

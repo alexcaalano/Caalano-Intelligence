@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.121.1 — 2026-07-31 · `PENDING`
+- **Contact rate now follows the full scan.** Previously the Contact rate card stayed
+  on the 60-lead sample even after "Scan the whole date range." The whole-range scan
+  now computes the contact-rate breakdown (and Lead outcomes) across every lead it
+  processes, and the card updates live with it — the label switches to "of N leads
+  (full scan)". Both the scan and the initial sample share the same computation.
+
 ## v3.121.0 — 2026-07-31 · `PENDING`
 - **Timing tab — Contact rate section (manual messages + appointments booked).** New
   card on the Timing tab: **total contact rate** (% of sampled leads we made human

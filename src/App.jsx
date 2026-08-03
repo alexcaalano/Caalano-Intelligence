@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.119.0'
+const APP_VERSION = '3.120.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4933,10 +4933,54 @@ function fmtDuration(min) {
   if (min < 1440) { const h = Math.floor(min / 60); const m = Math.round(min % 60); return m ? `${h}h ${m}m` : `${h}h` }
   const d = Math.floor(min / 1440); const h = Math.round((min % 1440) / 60); return h ? `${d}d ${h}h` : `${d}d`
 }
-function TimingView({ clientId, range, nonce }) {
+// Drill popup for the Lead-outcomes tiles: the actual leads behind Open / Won /
+// Lost, with contact info, value (won/open) and the lost reason (lost).
+function TimingDrill({ drill, money, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
+  }, [])
+  const deals = drill.deals || []
+  const isLost = drill.kind === 'lost'
+  const total = deals.reduce((s, d) => s + (d.value || 0), 0)
+  return (
+    <div className="mr-drill-overlay no-print" onClick={onClose}>
+      <div className="mr-drill" onClick={(e) => e.stopPropagation()}>
+        <div className="mr-drill-head">
+          <div><h3>{drill.title}</h3><span>{deals.length} lead(s){total ? ` · ${money(total)} total` : ''}</span></div>
+          <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="mr-drill-body">
+          {deals.length ? (
+            <table className="mr-table">
+              <thead><tr>
+                <th>Contact</th><th>Lead created</th>{isLost ? <th>Lost</th> : <th>{drill.kind === 'won' ? 'Won' : 'Updated'}</th>}
+                <th>Source</th>{isLost ? <th>Lost reason</th> : null}<th>Contact info</th><th className="r">Value</th>
+              </tr></thead>
+              <tbody>{deals.map((d, i) => (
+                <tr key={i}>
+                  <td>{d.name || '—'}</td>
+                  <td>{fmtDate(d.createdAt)}</td>
+                  <td>{fmtDate(d.statusAt)}</td>
+                  <td><span className={`mr-src mr-src-${d.channel || 'other'}`}>{d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : 'Other'}</span></td>
+                  {isLost ? <td>{d.reason || '—'}</td> : null}
+                  <td className="tm-drill-contact">{[d.email, d.phone].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="r">{d.value ? money(d.value) : '—'}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          ) : <div className="mr-empty">No leads to show.</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+function TimingView({ clientId, range, nonce, currency }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [scan, setScan] = useState(null) // { status, processed, total, data }
   const [showDbg, setShowDbg] = useState(false)
+  const [drill, setDrill] = useState(null) // { kind:'open'|'won'|'lost', title, deals }
+  const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
   const scanRef = React.useRef({ alive: false })
   useSettingsSync()
   const hrs = loadHours(clientId)
@@ -4998,6 +5042,22 @@ function TimingView({ clientId, range, nonce }) {
         <div className="tm-sc warn"><span className="tm-lab">Only automation</span><b>{d.onlyAuto}</b><span className="tm-sub">no human message yet</span></div>
         <div className="tm-sc warn"><span className="tm-lab">No outreach</span><b>{d.noOutbound}</b><span className="tm-sub">no outbound at all</span></div>
       </div>
+      {(() => {
+        const oc = (st.data && st.data.outcome) || (d && d.outcome) || null
+        if (!oc) return null
+        const open = (v) => { const g = oc[v]; if (!g || !g.count) return; setDrill({ kind: v, title: v === 'won' ? 'Won leads' : v === 'lost' ? 'Lost leads' : 'Open leads', deals: g.deals || [] }) }
+        return (
+          <div className="card">
+            <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Lead outcomes <span style={{ fontWeight: 400 }}>· all {fmtNumber(d.totalLeads)} leads created in this range · click to see the leads</span></div>
+            <div className="tm-outcome">
+              <button className="tm-oc open" onClick={() => open('open')} disabled={!oc.open.count}><span className="tm-oc-lab">Open</span><b>{fmtNumber(oc.open.count)}</b><span className="tm-oc-sub">{money(oc.open.value)} in pipeline</span></button>
+              <button className="tm-oc won" onClick={() => open('won')} disabled={!oc.won.count}><span className="tm-oc-lab">Won</span><b>{fmtNumber(oc.won.count)}</b><span className="tm-oc-sub">{money(oc.won.value)} revenue</span></button>
+              <button className="tm-oc lost" onClick={() => open('lost')} disabled={!oc.lost.count}><span className="tm-oc-lab">Lost</span><b>{fmtNumber(oc.lost.count)}</b><span className="tm-oc-sub">{money(oc.lost.value)} value lost</span></button>
+            </div>
+          </div>
+        )
+      })()}
+      {drill && <TimingDrill drill={drill} money={money} onClose={() => setDrill(null)} />}
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>How fast leads get a human reply</div>
         <div className="timing-bars">
@@ -5313,7 +5373,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
         {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
-        {curTab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} />}
+        {curTab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
       </div>
     </>
   )

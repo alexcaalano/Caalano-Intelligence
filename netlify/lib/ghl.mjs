@@ -1039,10 +1039,14 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   const toMs = to ? zonedEndMs(to, tz) : null
   // Leads = opportunities created in-period; appointments join for downstream
   // booked/shown per speed bucket.
-  const [opps, appts] = await Promise.all([
+  const [opps, appts, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, from, to, 1500),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map() })),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
   ])
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
+  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' ').trim())) || o.contactName || o.name || '—'
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const seen = new Set(); const leads = []
   for (const o of opps) {
@@ -1057,8 +1061,26 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     const cAdded = Date.parse(o.contact && (o.contact.dateAdded || o.contact.createdAt))
     const leadIn = isFinite(cAdded) ? Math.min(cAdded, created) : created
     const f = apptByContact.get(cid)
-    seen.add(cid); leads.push({ cid, created, leadIn, channel: channelOf(utmOf(o)), won: String(o.status || '').toLowerCase() === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus), staffBookedMs: (f && f.staffBookedMs) || null })
+    const stt = String(o.status || '').toLowerCase()
+    const status = stt === 'won' ? 'won' : (stt === 'lost' || stt === 'abandoned') ? 'lost' : 'open'
+    const statusAt = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || o.dateUpdated || '')
+    seen.add(cid); leads.push({
+      cid, created, leadIn, channel: channelOf(utmOf(o)),
+      won: stt === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus), staffBookedMs: (f && f.staffBookedMs) || null,
+      status, value: num(o.monetaryValue), reason: status === 'lost' ? lostReasonOf(o) : null,
+      name: contactNameOf(o), email: (o.contact && o.contact.email) || null, phone: (o.contact && o.contact.phone) || null,
+      statusAtISO: isFinite(statusAt) ? new Date(statusAt).toISOString() : null,
+    })
   }
+  // Outcome breakdown across the WHOLE cohort (leads created in-period), with the
+  // deal list behind each so the UI can drill Open / Won / Lost.
+  const outcome = { open: { count: 0, value: 0, deals: [] }, won: { count: 0, value: 0, deals: [] }, lost: { count: 0, value: 0, deals: [] } }
+  for (const l of leads) {
+    const g = outcome[l.status] || outcome.open
+    g.count++; g.value += l.value || 0
+    g.deals.push({ name: l.name, value: Math.round(l.value || 0), reason: l.reason, channel: l.channel, createdAt: new Date(l.leadIn).toISOString(), statusAt: l.statusAtISO, email: l.email, phone: l.phone })
+  }
+  for (const k of ['open', 'won', 'lost']) { outcome[k].value = Math.round(outcome[k].value); outcome[k].deals.sort((a, b) => (b.value || 0) - (a.value || 0)).splice(500) }
   leads.sort((a, b) => b.leadIn - a.leadIn)
   const pick = leads.slice(0, sample)
   const srcCounts = {} // key: "<source> · user|no-user" -> { count, kind }
@@ -1141,6 +1163,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   return {
     connected: true, tz,
     totalLeads: leads.length, sampled: pick.length - skipped, skipped,
+    outcome,
     measured, onlyAuto, noOutbound, viaAppt, viaMessage: measured - viaAppt,
     medianMin: median == null ? null : Math.round(median),
     avgMin: avg == null ? null : Math.round(avg),

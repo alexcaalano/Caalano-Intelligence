@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.120.0 — 2026-07-31 · `PENDING`
+- **Timing tab — Open / Won / Lost lead outcomes with drill-downs.** The Timing
+  (Speed to Lead) tab now shows a **Lead outcomes** row for the whole cohort of leads
+  created in the range: **Open** (count + pipeline value), **Won** (count + revenue)
+  and **Lost** (count + value lost). Click any of the three to open a **popup listing
+  the actual leads** — contact name, lead-created date, source, contact info (email /
+  phone) and value; **Won shows the deal value**, **Lost shows the lost reason**.
+  Backend `scope=speed` now returns the per-outcome deal lists (lost reasons resolved
+  from GoHighLevel), computed across the full cohort independent of the speed sample.
+
 ## v3.119.0 — 2026-07-31 · `PENDING`
 - **Organic Social — paid vs organic followers, IG/FB/Blended breakout, KPIs moved to
   Settings.**

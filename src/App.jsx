@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.121.1'
+const APP_VERSION = '3.122.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5020,7 +5020,7 @@ function TimingView({ clientId, range, nonce, currency }) {
     <div className="timing-view">
       <div className="card timing-intro">
         <h3 style={{ margin: '0 0 4px' }}>Speed to Lead</h3>
-        <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message</b> sent to them. Automated workflow / campaign / bulk messages are excluded, so this reflects how fast a person actually reaches out. {d.full ? <>Covers the <b>whole date range</b> — {fmtNumber(d.totalLeads)} leads.</> : <>Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</>}</p>
+        <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message or call</b> made to them. Automated workflow / campaign / bulk sends are excluded, so this reflects how fast a person actually reaches out (an outbound call counts even if the dialer didn't attribute a user). {d.full ? <>Covers the <b>whole date range</b> — {fmtNumber(d.totalLeads)} leads.</> : <>Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</>}</p>
         <div className="tm-scan">
           {!scan && <button className="set-relink" onClick={runScan}>⟳ Scan the whole date range (not just a sample)</button>}
           {scan && <>
@@ -5029,7 +5029,7 @@ function TimingView({ clientId, range, nonce, currency }) {
             <button className="set-relink" onClick={stopScan}>{scan.status === 'running' ? 'Stop' : 'Back to sample'}</button>
           </>}
         </div>
-        {d.viaAppt > 0 && <div className="tm-hours">📌 <b>{fmtNumber(d.viaAppt)} of {fmtNumber(d.measured)}</b> measured leads had <b>no manual message</b>, so their <b>first staff-booked appointment</b> was used as the speed signal instead (automated / self-bookings don't count). Useful for clients who work leads by phone/booking rather than messaging.</div>}
+        {d.viaAppt > 0 && <div className="tm-hours">📌 <b>{fmtNumber(d.viaAppt)} of {fmtNumber(d.measured)}</b> measured leads had <b>no manual message or call</b>, so their <b>first staff-booked appointment</b> was used as the speed signal instead (automated / self-bookings don't count). Useful for clients who work leads by phone/booking rather than messaging.</div>}
         {d.hours
           ? <div className="tm-hours on">🕘 Measured within working hours · <b>{fmtHours(d.hours)}</b> — after-hours gaps don't count against response time. Change in Settings → client → Summary.</div>
           : <div className="tm-hours">🕘 Measuring raw round-the-clock time. Set the team's <b>working hours</b> in Settings → client → Summary so overnight leads aren't counted as slow responses.</div>}
@@ -5056,7 +5056,7 @@ function TimingView({ clientId, range, nonce, currency }) {
               <button className="tm-oc sub" onClick={() => dr('userBooked', 'Leads with a user-booked appointment')} disabled={!cr.userBooked}><span className="tm-oc-lab">↳ User-booked</span><b>{fmtNumber(cr.userBooked)}</b><span className="tm-oc-sub">staff booked the call</span></button>
               <button className="tm-oc sub" onClick={() => dr('selfBooked', 'Leads with a customer self-booked appointment')} disabled={!cr.selfBooked}><span className="tm-oc-lab">↳ Customer-booked</span><b>{fmtNumber(cr.selfBooked)}</b><span className="tm-oc-sub">lead self-booked</span></button>
             </div>
-            <p className="caveat" style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap — the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</p>
+            <p className="caveat" style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message or call</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap — the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</p>
           </div>
         )
       })()}

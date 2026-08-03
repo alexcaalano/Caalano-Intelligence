@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.122.0 — 2026-07-31 · `PENDING`
+- **Outbound calls now count as manual contact (Speed to Lead + Contact rate).** A
+  placed outbound **call / voicemail** is treated as human outreach even when the
+  dialer didn't attribute a GoHighLevel user — so phone-first teams get credited for
+  reaching out, instead of showing as "no manual message." Automated sources
+  (workflow / campaign / bulk / RVM) are still excluded, and messages (SMS / email /
+  DM) still require a human user as before. Copy updated to "first manual message or
+  call." Applies to both the sampled view and the full-range scan.
+
 ## v3.121.1 — 2026-07-31 · `PENDING`
 - **Contact rate now follows the full scan.** Previously the Contact rate card stayed
   on the 60-lead sample even after "Scan the whole date range." The whole-range scan

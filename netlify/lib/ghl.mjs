@@ -969,13 +969,20 @@ export async function attributionCoverage(locationId, from, to) {
 // the manual-vs-automated classification can be sanity-checked.
 const AUTO_SRC_RE = /workflow|campaign|bulk|trigger|automat|api\b|integration|zapier|rule|sequence|reply|auto/i
 function msgUserId(m) { return m.userId || m.user_id || (m.meta && m.meta.userId) || null }
+// An outbound call / voicemail is inherently a human action, so we don't require
+// a userId for it (some dialer integrations log calls without attributing the
+// GHL user). Automated sources are still excluded above.
+function isCallMsg(m) { return /call|voicemail|phone/.test(String(m.messageType || m.type || '').toLowerCase()) }
 function classifyOutbound(m) {
   const src = String(m.source || '').toLowerCase()
   if (AUTO_SRC_RE.test(src)) return 'automated'
-  // Manual requires a human user attribution. A send with no userId - even one
-  // tagged source "app" - is treated as automated, because an instant auto-reply
-  // / integration send carries no user. (This was the Finr false-"under 5 min":
-  // app-sourced auto-sends with no userId were counted as human replies.)
+  // A placed outbound call counts as manual outreach even without a user id.
+  if (isCallMsg(m)) return 'manual'
+  // For messages (SMS / email / DM), manual requires a human user attribution. A
+  // send with no userId - even one tagged source "app" - is treated as automated,
+  // because an instant auto-reply / integration send carries no user. (This was
+  // the Finr false-"under 5 min": app-sourced auto-sends with no userId were
+  // counted as human replies.)
   return msgUserId(m) ? 'manual' : 'automated'
 }
 // Bounded-concurrency map (no external deps) - runs `fn` over items, `n` at once.

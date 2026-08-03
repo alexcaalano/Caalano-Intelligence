@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.121.0 — 2026-07-31 · `PENDING`
+- **Timing tab — Contact rate section (manual messages + appointments booked).** New
+  card on the Timing tab: **total contact rate** (% of sampled leads we made human
+  contact with — a manual message *or* an appointment booked), broken out into
+  **Manual messages**, **Appointments booked**, and the appointment split of
+  **User-booked** (a staff member created the appointment) vs **Customer self-booked**
+  (the lead booked via a calendar link). Every tile drills to the leads behind it
+  (contact info, source, value). Backend now distinguishes self- vs staff-booked
+  appointments per lead and separates the "messaged" signal from the appointment
+  fallback. Same sample basis as Speed to Lead (full scan makes it exact).
+
 ## v3.120.0 — 2026-07-31 · `PENDING`
 - **Timing tab — Open / Won / Lost lead outcomes with drill-downs.** The Timing
   (Speed to Lead) tab now shows a **Lead outcomes** row for the whole cohort of leads

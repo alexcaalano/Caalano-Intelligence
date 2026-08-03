@@ -404,6 +404,12 @@ tbody tr:hover { background: var(--panel-2); }
 .tm-oc.lost:hover:not(:disabled) { border-color: var(--neg); }
 .tm-oc.open:hover:not(:disabled) { border-color: var(--brand); }
 .tm-drill-contact { font-size: 12px; color: var(--muted); }
+.tm-contact { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tm-contact .tm-oc.rate { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, var(--panel)); }
+.tm-contact .tm-oc.rate b { color: var(--brand); }
+.tm-contact .tm-oc.sub { background: var(--panel-2); }
+.tm-contact .tm-oc.sub b { font-size: 22px; }
+.tm-contact .tm-oc.sub .tm-oc-lab { color: var(--faint); }
 .appt-gap-warn { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 12px; padding: 9px 13px; border-radius: 10px; font-size: 13px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); }
 .appt-gap-warn.info { border-color: var(--border); background: var(--panel); }
 .appt-gap-warn .appt-gap-sub { color: var(--muted); }

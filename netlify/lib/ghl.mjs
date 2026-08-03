@@ -323,8 +323,11 @@ async function fetchAppointments(locTok, locationId, from, to) {
         // Earliest STAFF-booked (a user created it) live appointment per contact -
         // used as the manual-contact fallback for Speed to Lead when a client has
         // no messaging channel (the booking is a genuine manual action).
-        if (cid && apptBookedBy(ev) === 'staff' && isFinite(added) && !/invalid|cancel/.test(String(st || '').toLowerCase())) {
-          const e = byContact.get(cid); if (e && (!e.staffBookedMs || added < e.staffBookedMs)) e.staffBookedMs = added
+        if (cid && isFinite(added) && !/invalid|cancel/.test(String(st || '').toLowerCase())) {
+          const by = apptBookedBy(ev)
+          const e = byContact.get(cid)
+          if (e && by === 'staff' && (!e.staffBookedMs || added < e.staffBookedMs)) e.staffBookedMs = added
+          if (e && by === 'self' && (!e.selfBookedMs || added < e.selfBookedMs)) e.selfBookedMs = added
         }
       }
     } catch { /* skip a calendar we cannot read; others still count */ }
@@ -1066,7 +1069,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     const statusAt = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || o.dateUpdated || '')
     seen.add(cid); leads.push({
       cid, created, leadIn, channel: channelOf(utmOf(o)),
-      won: stt === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus), staffBookedMs: (f && f.staffBookedMs) || null,
+      won: stt === 'won', booked: !!(f && f.bookedInPeriod), shown: !!(f && f.shownByStatus), staffBookedMs: (f && f.staffBookedMs) || null, selfBookedMs: (f && f.selfBookedMs) || null,
       status, value: num(o.monetaryValue), reason: status === 'lost' ? lostReasonOf(o) : null,
       name: contactNameOf(o), email: (o.contact && o.contact.email) || null, phone: (o.contact && o.contact.phone) || null,
       statusAtISO: isFinite(statusAt) ? new Date(statusAt).toISOString() : null,
@@ -1112,6 +1115,9 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
         if (kind === 'manual' && (manual == null || ms < manual)) manual = ms
       }
     }
+    // Message-only manual timestamp, before the appointment fallback overwrites it
+    // — so the contact-rate breakdown can separate "messaged" from "booked".
+    const msgMs = manual
     // Fallback for clients with no messaging: if there's no manual MESSAGE, use
     // the first STAFF-booked appointment (a manual action) as the speed signal.
     // Automated/self-booked bookings (no user) don't qualify.
@@ -1127,7 +1133,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
         msgs: outs.slice(0, 5).map((o) => ({ source: o.source, hasUser: o.hasUser, kind: o.kind, type: o.type, minAfterLeadIn: Math.round((o.ms - lead.leadIn) / 60000) })),
       })
     }
-    return { ...lead, manual, any, via }
+    return { ...lead, manual, any, via, msgMs }
   }
   const results = (await mapPool(pick, 6, firstOutbound)).filter(Boolean)
   // Buckets of manual response time (minutes). "No manual yet" = a lead we saw
@@ -1155,6 +1161,29 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     } else if (r.any != null) onlyAuto++
     else noOutbound++
   }
+  // Contact rate: of the sampled leads, how many did we make human contact with —
+  // a manual message OR any appointment booked. Appointments split into
+  // user-booked (a staff member booked it) vs customer self-booked. A lead can be
+  // both messaged and booked, so the breakdowns overlap; the total counts each
+  // contacted lead once. Same sample as the speed metrics (scan for exact).
+  const dealOf = (l) => ({ name: l.name, value: Math.round(l.value || 0), reason: l.reason, channel: l.channel, createdAt: new Date(l.leadIn).toISOString(), statusAt: l.statusAtISO, email: l.email, phone: l.phone })
+  const cr = { messaged: [], userBooked: [], selfBooked: [], booked: [], contacted: [], none: [] }
+  for (const r of results) {
+    if (r.skipped) continue
+    const hasMsg = r.msgMs != null, hasStaff = r.staffBookedMs != null, hasSelf = r.selfBookedMs != null, hasAppt = !!r.booked
+    const d = dealOf(r)
+    if (hasMsg) cr.messaged.push(d)
+    if (hasStaff) cr.userBooked.push(d)
+    if (hasSelf) cr.selfBooked.push(d)
+    if (hasAppt) cr.booked.push(d)
+    if (hasMsg || hasAppt) cr.contacted.push(d); else cr.none.push(d)
+  }
+  const crBase = results.filter((r) => !r.skipped).length
+  const contactRate = {
+    base: crBase, contacted: cr.contacted.length, rate: crBase ? Math.round((cr.contacted.length / crBase) * 100) : null,
+    messaged: cr.messaged.length, booked: cr.booked.length, userBooked: cr.userBooked.length, selfBooked: cr.selfBooked.length, none: cr.none.length,
+    deals: cr,
+  }
   mins.sort((a, b) => a - b)
   const median = mins.length ? mins[Math.floor((mins.length - 1) / 2)] : null
   const avg = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null
@@ -1163,7 +1192,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   return {
     connected: true, tz,
     totalLeads: leads.length, sampled: pick.length - skipped, skipped,
-    outcome,
+    outcome, contactRate,
     measured, onlyAuto, noOutbound, viaAppt, viaMessage: measured - viaAppt,
     medianMin: median == null ? null : Math.round(median),
     avgMin: avg == null ? null : Math.round(avg),

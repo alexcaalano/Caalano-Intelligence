@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.120.0'
+const APP_VERSION = '3.121.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5042,6 +5042,24 @@ function TimingView({ clientId, range, nonce, currency }) {
         <div className="tm-sc warn"><span className="tm-lab">Only automation</span><b>{d.onlyAuto}</b><span className="tm-sub">no human message yet</span></div>
         <div className="tm-sc warn"><span className="tm-lab">No outreach</span><b>{d.noOutbound}</b><span className="tm-sub">no outbound at all</span></div>
       </div>
+      {(() => {
+        const cr = (st.data && st.data.contactRate) || (d && d.contactRate) || null
+        if (!cr || !cr.base) return null
+        const dr = (key, title) => { const list = (cr.deals && cr.deals[key]) || []; if (!list.length) return; setDrill({ kind: key, title, deals: list }) }
+        return (
+          <div className="card">
+            <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Contact rate <span style={{ fontWeight: 400 }}>· manual messages + appointments booked · of {fmtNumber(cr.base)} sampled lead{cr.base === 1 ? '' : 's'} · click to see the leads</span></div>
+            <div className="tm-contact">
+              <button className="tm-oc rate" onClick={() => dr('contacted', 'Contacted leads (message or appointment)')} disabled={!cr.contacted}><span className="tm-oc-lab">Total contact rate</span><b>{cr.rate == null ? '—' : `${cr.rate}%`}</b><span className="tm-oc-sub">{fmtNumber(cr.contacted)} of {fmtNumber(cr.base)} reached</span></button>
+              <button className="tm-oc" onClick={() => dr('messaged', 'Leads reached by a manual message')} disabled={!cr.messaged}><span className="tm-oc-lab">Manual messages</span><b>{fmtNumber(cr.messaged)}</b><span className="tm-oc-sub">human message sent</span></button>
+              <button className="tm-oc" onClick={() => dr('booked', 'Leads with an appointment booked')} disabled={!cr.booked}><span className="tm-oc-lab">Appointments booked</span><b>{fmtNumber(cr.booked)}</b><span className="tm-oc-sub">user + customer booked</span></button>
+              <button className="tm-oc sub" onClick={() => dr('userBooked', 'Leads with a user-booked appointment')} disabled={!cr.userBooked}><span className="tm-oc-lab">↳ User-booked</span><b>{fmtNumber(cr.userBooked)}</b><span className="tm-oc-sub">staff booked the call</span></button>
+              <button className="tm-oc sub" onClick={() => dr('selfBooked', 'Leads with a customer self-booked appointment')} disabled={!cr.selfBooked}><span className="tm-oc-lab">↳ Customer-booked</span><b>{fmtNumber(cr.selfBooked)}</b><span className="tm-oc-sub">lead self-booked</span></button>
+            </div>
+            <p className="caveat" style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap — the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</p>
+          </div>
+        )
+      })()}
       {(() => {
         const oc = (st.data && st.data.outcome) || (d && d.outcome) || null
         if (!oc) return null

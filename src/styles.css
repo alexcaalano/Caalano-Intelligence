@@ -798,10 +798,15 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .mini-table th { position: sticky; top: 0; background: var(--panel); text-align: left; color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; padding: 4px 6px; border-bottom: 1px solid var(--border); }
 .mini-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .mini-table td:nth-child(2), .mini-table td:nth-child(3), .mini-table th:nth-child(2), .mini-table th:nth-child(3) { text-align: right; white-space: nowrap; }
-.ca-name { display: flex; flex-direction: column; max-width: 150px; }
+.ca-name { display: flex; flex-direction: column; gap: 2px; max-width: 150px; }
 .ca-name > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ca-name > :last-child { margin-top: 1px; }
 .ca-cat { font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .03em; }
 .ca-star { color: #12b886; }
+/* Conversion-actions mini-table: Type moved into the action cell (its own row);
+   the two numeric columns share the remaining width evenly. */
+.mini-table.ca-mt td:nth-child(2), .mini-table.ca-mt td:nth-child(3),
+.mini-table.ca-mt th:nth-child(2), .mini-table.ca-mt th:nth-child(3) { width: 25%; }
 .loc-row { display: grid; grid-template-columns: 1fr 70px 44px; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; }
 .loc-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .loc-bar { display: block; height: 12px; background: var(--panel-2); border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--border); }
@@ -1991,6 +1996,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
    visually separate on one slide. */
 .mr-bubble { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
 .mr-bubble + .mr-bubble { margin-top: 16px; }
+.mr-camp-block + .mr-camp-block { margin-top: 14px; }
 .mr-bubble-lab { font-size: 13px; font-weight: 800; letter-spacing: -.01em; margin-bottom: 2px; }
 .mr-bubble-sub { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; line-height: 1.4; }
 .mr-cretbl-thumb { position: relative; width: 44px; height: 44px; }

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.128.1'
+const APP_VERSION = '3.129.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1547,8 +1547,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           </> : <p className="cap">No keyword spend{selLabel ? ` in ${selLabel}` : ''}.</p>}
         </div>
         <div className="card chart-card"><h3>Conversion actions</h3><p className="cap">What Google is counting{selLabel ? ` · in ${selLabel}` : ''} · <span className="ca-star">★</span> = primary (counted in Conversions)</p>
-          {caAgg.length ? <div className="mini-scroll"><table className="mini-table"><thead><tr><th>Action</th><th>Type</th><th>Conv.</th><th>Value</th></tr></thead>
-            <tbody>{caAgg.map((a) => { const primary = a.conversions > 0; return (<tr key={a.name}><td className="ca-name" title={a.name}>{primary ? <span className="ca-star" title="Primary — counted in Conversions">★ </span> : null}{a.name}<span className="ca-cat">{a.category || '-'}</span></td><td>{primary ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>}</td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '-'}</td></tr>) })}</tbody></table></div>
+          {caAgg.length ? <div className="mini-scroll"><table className="mini-table ca-mt"><thead><tr><th>Action</th><th>Conv.</th><th>Value</th></tr></thead>
+            <tbody>{caAgg.map((a) => { const primary = a.conversions > 0; return (<tr key={a.name}><td className="ca-name" title={a.name}><span>{primary ? <span className="ca-star" title="Primary — counted in Conversions">★ </span> : null}{a.name}</span><span className="ca-cat">{a.category || '-'}</span><span>{primary ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>}</span></td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '-'}</td></tr>) })}</tbody></table></div>
             : <p className="cap">No conversion actions{selLabel ? ` in ${selLabel}` : ''}.</p>}
         </div>
         <div className="card chart-card"><h3>Conversion locations</h3><p className="cap">Where conversions are happening{geoDim ? ` · by ${geoDim.replace(/_/g, ' ')}` : ''}</p>
@@ -8271,18 +8271,22 @@ function MRDonut({ data, money }) {
 }
 // Creative performance — visual cards (big thumbnail + all stats + the client's
 // configured key events), with a sort control and pagination (10 per page).
-function MRCreativeSection({ ads, oCre, o360cols, money, n0, currency }) {
+function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, money, n0, currency }) {
   const groups = o360cols ? o360cols.groups : []
   // Enrich each creative: platform metrics + the per-client key-event counts + cash.
+  // Each creative's key events come from the pipeline attached to its campaign
+  // (o360colsFor), so multi-pipeline clients only show that ad's pipeline's events.
   const enriched = ads.map((a) => {
     const o = oCre.get(unorm(a.name))
     const leads = a.results != null ? a.results : a.leads
+    const cols = (o360colsFor ? o360colsFor(a.campaign) : o360cols) || o360cols
     let events = [], won = 0, revenue = 0
-    if (o360cols && o) {
-      const f = o360Fields(o, a.spend, leads, o360cols)
+    const evByLabel = new Map()
+    if (cols && o) {
+      const f = o360Fields(o, a.spend, leads, cols)
       let ci = 0
-      for (const g of groups) {
-        const seg = o360cols.cols.slice(ci, ci + g.span); ci += g.span
+      for (const g of cols.groups) {
+        const seg = cols.cols.slice(ci, ci + g.span); ci += g.span
         const first = seg.find((c) => c.gfirst) || seg[0]
         const count = f[first.key] || 0
         const ev = { label: g.label, count, kind: g.kind, rate: null, shown: null, showRate: null }
@@ -8301,22 +8305,25 @@ function MRCreativeSection({ ads, oCre, o360cols, money, n0, currency }) {
           ev.rate = rrCol ? f[rrCol.key] : null
         }
         events.push(ev)
+        evByLabel.set(g.label, count)
         if (g.kind === 'won') { won = count; revenue = o.revenue || 0 }
       }
     }
     const ctr = a.impressions ? (a.clicks / a.impressions) * 100 : null
-    return { ...a, leads, ctrV: ctr, cpl: leads ? a.spend / leads : null, events, won, revenue, roas: revenue && a.spend ? revenue / a.spend : null, cpw: won && a.spend ? a.spend / won : null }
+    return { ...a, leads, ctrV: ctr, cpl: leads ? a.spend / leads : null, events, evByLabel, won, revenue, roas: revenue && a.spend ? revenue / a.spend : null, cpw: won && a.spend ? a.spend / won : null }
   })
+  // Sort chips span the UNION of every pipeline's key events (shared o360cols); a
+  // creative without that event just sorts as 0.
   const METRICS = [
     { k: 'spend', label: 'Spend' }, { k: 'ctrV', label: 'CTR' }, { k: 'leads', label: 'Leads' }, { k: 'cpl', label: 'CPL', asc: true },
-    ...groups.map((g, i) => ({ k: 'ev' + i, label: g.label, ev: i })),
+    ...groups.map((g, i) => ({ k: 'ev' + i, label: g.label, evLabel: g.label })),
     { k: 'revenue', label: 'Revenue' }, { k: 'roas', label: 'ROAS' },
   ]
   const [sortK, setSortK] = useState('spend')
   const [page, setPage] = useState(0)
   const PER = 10
   const m = METRICS.find((x) => x.k === sortK) || METRICS[0]
-  const valOf = (a) => (m.ev != null ? ((a.events[m.ev] && a.events[m.ev].count) || 0) : (a[m.k] || 0))
+  const valOf = (a) => (m.evLabel != null ? ((a.evByLabel && a.evByLabel.get(m.evLabel)) || 0) : (a[m.k] || 0))
   const sorted = [...enriched].sort((x, y) => (m.asc ? valOf(x) - valOf(y) : valOf(y) - valOf(x)))
   const pages = Math.max(1, Math.ceil(sorted.length / PER))
   const cur = Math.min(page, pages - 1)
@@ -8408,6 +8415,28 @@ function renderMonthlyDeck(rep, h) {
   const o360cols = rep.hasCrm ? buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calNames) : null
   const oCamp = mkOutcomeMap(rep.campOutcomes || [])
   const oCre = mkOutcomeMap(rep.creOutcomes || [])
+  // Per-pipeline key events: multi-pipeline clients show only the key events for
+  // the pipeline attached (in Settings → campaign map) to a creative's / campaign's
+  // campaign. Single-pipeline clients (or unmapped campaigns → "All") keep the full
+  // union set. o360colsFor(campaignName) returns the right green-column descriptor.
+  const multiPipe = rep.hasCrm && pipelines.length > 1
+  const campPipeMap = rep.hasCrm ? loadCampMap(rep.client.id) : {}
+  const rawKeyEvents = rep.hasCrm ? loadKeyEvents(rep.client.id) : []
+  const pipeColsCache = new Map()
+  const pipeOfCampaign = (campName) => {
+    if (!multiPipe || campName == null) return null
+    const t = campPipeMap[campName]
+    return (t && t !== 'all') ? t : null   // null → union (unmapped / "All")
+  }
+  const o360colsFor = (campName) => {
+    if (!o360cols) return null
+    const pid = pipeOfCampaign(campName)
+    if (!pid) return o360cols
+    if (pipeColsCache.has(pid)) return pipeColsCache.get(pid)
+    const c = buildO360Cols(keyEventsForPipe(rawKeyEvents, pid), stagePos, calNames)
+    pipeColsCache.set(pid, c)
+    return c
+  }
 
   // ---- Cover ----
   push(
@@ -8461,7 +8490,7 @@ function renderMonthlyDeck(rep, h) {
     push(
       <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${spendAds.length} creative(s) with spend · sort & page through, 10 at a time`}>
         {spendAds.length
-          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} money={money} n0={n0} currency={currency} />
+          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} money={money} n0={n0} currency={currency} />
           : <div className="mr-empty">No creatives with spend for this period.</div>}
         <p className="mr-foot-note">All creatives that spent this period, sortable by any metric, 10 per page. <b>Leads</b> = Meta results; the key-event chips are the client's configured <b>key events</b> (Settings → Key events) for leads whose ad UTM (utm_content) matches the creative. ▶ plays the Instagram post inline where a permalink is available.</p>
       </MRSlide>
@@ -8487,7 +8516,54 @@ function renderMonthlyDeck(rep, h) {
       .map((c) => ({ name: shortName(c.name), full: c.name, leads: c.leads || 0, event: headKey ? (c[headKey] || 0) : 0 }))
       .sort((a, b2) => (b2.event - a.event) || (b2.leads - a.leads)).slice(0, 8)
     const donutData = barData.filter((d) => d.event > 0).map((d, i) => ({ name: d.name, value: d.event, color: PIEK[i % PIEK.length] }))
-    if ((rep.campOutcomes || []).length && campRows.some((c) => c._has360) && campRows.length) {
+    // A green key-events-by-campaign table for a set of campaigns + a column
+    // descriptor (its pipeline's key events). Returns null if no CRM data matched.
+    const renderCampTable = (rows, cols, label) => {
+      const withF = rows.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
+      if (!cols || !withF.some((c) => c._has360)) return null
+      return (
+        <div key={label || 'all'} className="mr-camp-block">
+          {label ? <div className="mr-section-lab">{label}</div> : null}
+          <div className="mr-tablewrap mr-o360-wrap">
+            <table className="mr-table o360-tbl mr-o360">
+              <colgroup>
+                <col style={{ width: 210 }} /><col style={{ width: 84 }} /><col style={{ width: 60 }} />
+                {cols.cols.map((c) => <col key={c.key} className={o360ColClass(c)} />)}
+              </colgroup>
+              <thead>
+                <C360GrpRow left={3} cols={cols} />
+                <tr><th>Campaign</th><th className="r">Spend</th><th className="r">Leads</th><O360Head cols={cols} /></tr>
+              </thead>
+              <tbody>{withF.map((c, i) => (
+                <tr key={i}>
+                  <td className="mr-o360-name" title={c.name}><span className={`mr-src mr-src-${c.channel}`}>{c.channel === 'meta' ? 'Meta' : 'Google'}</span> {c.name}</td>
+                  <td className="r">{money(c.spend)}</td><td className="r">{n0(c.leads)}</td>
+                  {o360Cells(c, currency, cols)}
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )
+    }
+    // Multi-pipeline: one table per pipeline (campaigns grouped by their mapped
+    // pipeline); unmapped campaigns fall back to a union table. Single-pipeline: one.
+    const campTables = (() => {
+      if (!multiPipe) { const t = renderCampTable(campSrc, o360cols, null); return t ? [t] : [] }
+      const byPipe = new Map()
+      for (const c of campSrc) { const pid = pipeOfCampaign(c.name) || '__all__'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(c) }
+      const pipeName = (pid) => ((pipelines.find((p) => p.id === pid) || {}).name || 'Pipeline')
+      const entries = [...byPipe.entries()].sort((a, b2) => (a[0] === '__all__' ? 1 : 0) - (b2[0] === '__all__' ? 1 : 0))
+      const out = []
+      for (const [pid, rows] of entries) {
+        const cols = pid === '__all__' ? o360cols : o360colsFor(rows[0].name)
+        const label = pid === '__all__' ? 'Unmapped campaigns · all key events' : `Pipeline · ${pipeName(pid)}`
+        const t = renderCampTable(rows, cols, label)
+        if (t) out.push(t)
+      }
+      return out
+    })()
+    if ((rep.campOutcomes || []).length && campTables.length) {
       push(
         <MRSlide key="c360-camp" kicker="Caalano360" title="Key events by campaign" sub="Which campaigns are driving the key events — with the cost of each. CRM outcomes (utm_campaign) matched to paid spend.">
           {barData.length ? (
@@ -8512,26 +8588,8 @@ function renderMonthlyDeck(rep, h) {
               </div>
             </div>
           ) : null}
-          <div className="mr-tablewrap mr-o360-wrap">
-            <table className="mr-table o360-tbl mr-o360">
-              <colgroup>
-                <col style={{ width: 210 }} /><col style={{ width: 84 }} /><col style={{ width: 60 }} />
-                {o360cols.cols.map((c) => <col key={c.key} className={o360ColClass(c)} />)}
-              </colgroup>
-              <thead>
-                <C360GrpRow left={3} cols={o360cols} />
-                <tr><th>Campaign</th><th className="r">Spend</th><th className="r">Leads</th><O360Head cols={o360cols} /></tr>
-              </thead>
-              <tbody>{campRows.map((c, i) => (
-                <tr key={i}>
-                  <td className="mr-o360-name" title={c.name}><span className={`mr-src mr-src-${c.channel}`}>{c.channel === 'meta' ? 'Meta' : 'Google'}</span> {c.name}</td>
-                  <td className="r">{money(c.spend)}</td><td className="r">{n0(c.leads)}</td>
-                  {o360Cells(c, currency, o360cols)}
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-          <p className="mr-foot-note">Green columns are the client's configured <b>key events</b> — the count reached and the cost per each — plus the Won revenue block and ROAS. Scroll right to see every event. Matched by <b>utm_campaign</b>; “-” means no CRM leads carried that campaign's UTM.</p>
+          {campTables}
+          <p className="mr-foot-note">Green columns are the client's configured <b>key events</b> — the count reached and the cost per each — plus the Won revenue block and ROAS. Scroll right to see every event. Matched by <b>utm_campaign</b>; “-” means no CRM leads carried that campaign's UTM.{multiPipe ? ' Each pipeline shows only its own key events (from the campaign→pipeline links in Settings); unmapped campaigns show all events.' : ''}</p>
         </MRSlide>
       )
     }

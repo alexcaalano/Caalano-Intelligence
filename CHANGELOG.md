@@ -17,7 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.128.1 — 2026-08-05 · `PENDING`
+## v3.129.0 — 2026-08-05 · `PENDING`
+- **Monthly Report — per-pipeline key events for multi-pipeline clients.** Each creative's
+  and campaign's key events now follow the **pipeline attached to that campaign** (from the
+  campaign→pipeline links in Settings), so a multi-pipeline client no longer sees an
+  irrelevant pipeline's stages on an ad from another pipeline.
+  - **Creative cards:** each card shows only its campaign's pipeline's key events (one grid;
+    sort chips span the union of all key events).
+  - **Key events by campaign slide:** campaigns are grouped into a table **per pipeline**,
+    each with that pipeline's own green columns; unmapped campaigns (or “All”) fall back to
+    the full union table. Single-pipeline clients are unchanged.
+- **Client dashboard — conversion actions table:** moved the Primary/Secondary marker onto
+  its own row inside the action cell (the extra column was overflowing the narrow card) and
+  set the Conv. / Value columns to equal width.
+
+## v3.128.1 — 2026-08-05 · `519abc5`
 - **Creative cards — no more horizontal scroll.** The key-event table is now truly
   full-width (fixed layout, percentage columns, no min-width), cards are a touch wider so
   every column fits, and the two longest headers were shortened (“Next”, “Cost/ev.”) with

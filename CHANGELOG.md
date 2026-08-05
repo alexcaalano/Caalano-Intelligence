@@ -17,7 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.128.0 — 2026-08-05 · `PENDING`
+## v3.128.1 — 2026-08-05 · `PENDING`
+- **Creative cards — no more horizontal scroll.** The key-event table is now truly
+  full-width (fixed layout, percentage columns, no min-width), cards are a touch wider so
+  every column fits, and the two longest headers were shortened (“Next”, “Cost/ev.”) with
+  the full meaning kept in tooltips.
+
+## v3.128.0 — 2026-08-05 · `53ba155`
 - **Monthly Report — Account summary: paid vs all lead sources.** Under the key-events
   funnel there's a new **“Paid vs all lead sources”** section:
   - A **stacked horizontal bar per key event** — the **paid-attributed** portion (green)

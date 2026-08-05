@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.128.0'
+const APP_VERSION = '3.128.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8152,9 +8152,9 @@ function MRCreative({ a, money, n0 }) {
                 <th>Key event</th>
                 <th className="r">Count</th>
                 <th className="r" title="This event's count ÷ total leads">% leads</th>
-                <th className="r" title="This step ÷ the previous step">Next step</th>
+                <th className="r" title="This step ÷ the previous step">Next</th>
                 <th className="r" title="Calendar events only: shown ÷ booked">Show %</th>
-                <th className="r" title="Ad spend ÷ this event's count">Cost / event</th>
+                <th className="r" title="Ad spend ÷ this event's count">Cost/ev.</th>
               </tr></thead>
               <tbody>
                 {feRows.map((e, i) => {

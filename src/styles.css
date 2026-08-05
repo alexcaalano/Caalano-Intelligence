@@ -1911,7 +1911,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-creative-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Monthly Report — big vertical creative cards with CRM key events + 9:16 playback */
-.mr-cre-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; }
+.mr-cre-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
 /* Card stacks: thumbnail + platform metrics on top, full-width key-event table below. */
 .mr-cre { display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
 .mr-cre-top { display: flex; flex-direction: row; }
@@ -1932,7 +1932,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-cre-ke { border-top: 1px solid var(--border); padding: 9px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .mr-cre-ke-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #12b886; }
 .mr-cre-ke-empty { font-size: 11px; color: var(--faint); border-top: 1px solid var(--border); padding: 9px 12px 12px; }
-.mr-cre-ketbl-wrap { overflow-x: auto; }
+.mr-cre-ketbl-wrap { overflow: hidden; }
 .mr-cre-funnel { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .mr-cre-funnel span { display: inline-flex; flex-direction: column; align-items: center; background: rgba(18,184,134,.10); border-radius: 7px; padding: 4px 8px; min-width: 46px; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
 .mr-cre-funnel span b { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
@@ -1940,12 +1940,12 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 /* Full-width key-events table inside a creative card (replaces the green bubbles).
    Fixed layout so every card's columns line up; event name column flexes, the five
    numeric columns take a fixed slice each and right-align. */
-.mr-cre-ketbl { width: 100%; min-width: 340px; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.mr-cre-ketbl { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
 .mr-cre-ketbl col.ke-name { width: auto; }
-.mr-cre-ketbl col.ke-num { width: 58px; }
-.mr-cre-ketbl th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; padding: 0 6px 3px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.mr-cre-ketbl col.ke-num { width: 15%; }
+.mr-cre-ketbl th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .02em; color: var(--faint); font-weight: 700; padding: 0 5px 3px; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mr-cre-ketbl th.r, .mr-cre-ketbl td.r { text-align: right; }
-.mr-cre-ketbl td { padding: 3px 6px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mr-cre-ketbl td { padding: 3px 5px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mr-cre-ketbl td:first-child { font-weight: 600; color: var(--text); }
 .mr-cre-ketbl td small { color: var(--faint); font-weight: 500; }
 .mr-cre-ketbl tbody tr:last-child td { border-bottom: none; }

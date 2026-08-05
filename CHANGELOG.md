@@ -17,7 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.127.0 — 2026-08-05 · `PENDING`
+## v3.128.0 — 2026-08-05 · `PENDING`
+- **Monthly Report — Account summary: paid vs all lead sources.** Under the key-events
+  funnel there's a new **“Paid vs all lead sources”** section:
+  - A **stacked horizontal bar per key event** — the **paid-attributed** portion (green)
+    sits inside the **total** (grey) for every step (Leads → … → Client Won), so you can
+    see at a glance how much of each stage came from ad spend vs everything else.
+  - A side **“All Caalano Systems vs paid results” table** with All sources / Paid / Paid %
+    columns per key event.
+  - “Paid” = CRM records carrying a Meta/Google campaign UTM, aggregated across every paid
+    campaign and read through the same green-column engine (so paid ⊆ total at each step);
+    “All sources” also includes organic, referral, direct and untracked. Needs a freshly
+    generated snapshot (uses the frozen campaign outcomes).
+
+## v3.127.0 — 2026-08-05 · `ffa803b`
 - **Monthly Report — creative card readability + consistency fixes.**
   - **Creative cards restacked**: thumbnail + platform metrics on top, and the key-event
     table now spans the **full card width** below (it was being clipped in the narrow side

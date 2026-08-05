@@ -17,7 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.125.0 — 2026-08-05 · `PENDING`
+## v3.126.0 — 2026-08-05 · `PENDING`
+- **Monthly Report — creative cards + campaign visuals.**
+  - **Creative preview tiles are now 9:16** to match the actual (vertical) creative.
+  - **Key events on each creative are a compact table** (Key event · Count · Show/conv %)
+    instead of the big green bubbles. Calendar-linked events show the **show rate**
+    (shown ÷ booked) plus the shown count; stage/won events show their conversion vs leads.
+  - **Key events by campaign slide** now leads with **charts**: a horizontal bar of
+    *Leads vs the headline key event* (Won if configured, else the last event) for the top
+    campaigns, and a **donut of that event's share by campaign** — above the full green table.
+
+## v3.125.0 — 2026-08-05 · `e47c8c5`
 - **Monthly Report — refinements from review feedback.**
   - **Creative slide reverted to visual cards** (big thumbnail + preview + all stats),
     with a **sort control** (by any metric) and **pagination** (top 10 per page) —

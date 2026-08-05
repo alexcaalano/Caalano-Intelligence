@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.125.0'
+const APP_VERSION = '3.126.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8137,10 +8137,23 @@ function MRCreative({ a, money, n0 }) {
         {events && events.length ? (
           <div className="mr-cre-ke">
             <div className="mr-cre-ke-lab">📈 Caalano360 · key events</div>
-            <div className="mr-cre-funnel">
-              <span><b>{n0(a.leads)}</b>Leads</span>
-              {events.map((e, i) => <React.Fragment key={i}><i>→</i><span className={e.kind === 'won' ? 'mr-cre-won' : ''}><b>{n0(e.count)}</b>{e.label}</span></React.Fragment>)}
-            </div>
+            <table className="mr-cre-ketbl">
+              <thead><tr><th>Key event</th><th className="r">Count</th><th className="r" title="Calendar events: shown ÷ booked. Other steps: reached ÷ leads.">Show / conv %</th></tr></thead>
+              <tbody>
+                <tr className="mr-ketbl-lead"><td>Leads</td><td className="r">{n0(a.leads)}</td><td className="r">—</td></tr>
+                {events.map((e, i) => {
+                  const isCal = e.kind === 'calendar'
+                  const rate = isCal ? e.showRate : e.rate
+                  return (
+                    <tr key={i} className={e.kind === 'won' ? 'mr-ketbl-won' : ''}>
+                      <td title={e.label}>{e.label}{isCal && e.shown != null ? <small> · {n0(e.shown)} shown</small> : null}</td>
+                      <td className="r">{n0(e.count)}</td>
+                      <td className="r">{rate == null ? '—' : fmtPct(rate, 0)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
             <div className="mr-cre-cash">
               <div><b>{money(revenue)}</b><span>Revenue</span></div>
               <div><b>{cpw == null ? '—' : money(cpw)}</b><span>Cost / won</span></div>
@@ -8233,7 +8246,6 @@ function MRDonut({ data, money }) {
     </div>
   )
 }
-// Compact 6-month leads + spend mini-trend for the account summary.
 // Creative performance — visual cards (big thumbnail + all stats + the client's
 // configured key events), with a sort control and pagination (10 per page).
 function MRCreativeSection({ ads, oCre, o360cols, money, n0, currency }) {
@@ -8250,7 +8262,22 @@ function MRCreativeSection({ ads, oCre, o360cols, money, n0, currency }) {
         const seg = o360cols.cols.slice(ci, ci + g.span); ci += g.span
         const first = seg.find((c) => c.gfirst) || seg[0]
         const count = f[first.key] || 0
-        events.push({ label: g.label, count, kind: g.kind })
+        const ev = { label: g.label, count, kind: g.kind, rate: null, shown: null, showRate: null }
+        if (g.kind === 'calendar') {
+          const shCol = seg.find((c) => c.metric === 'calShown')
+          const srCol = seg.find((c) => c.metric === 'calShowRate')
+          const brCol = seg.find((c) => c.metric === 'calBookRate')
+          ev.shown = shCol ? f[shCol.key] : null
+          ev.showRate = srCol ? f[srCol.key] : null
+          ev.rate = brCol ? f[brCol.key] : null   // book rate (booked ÷ leads)
+        } else if (g.kind === 'won') {
+          const wrCol = seg.find((c) => c.metric === 'wonRate')
+          ev.rate = wrCol ? f[wrCol.key] : null
+        } else {
+          const rrCol = seg.find((c) => c.metric === 'stageRate')
+          ev.rate = rrCol ? f[rrCol.key] : null
+        }
+        events.push(ev)
         if (g.kind === 'won') { won = count; revenue = o.revenue || 0 }
       }
     }
@@ -8424,9 +8451,44 @@ function renderMonthlyDeck(rep, h) {
     for (const c of (meta && meta.campaigns) || []) campSrc.push({ name: c.name, channel: 'meta', spend: c.spend || 0, leads: (c.results != null ? c.results : c.leads) || 0 })
     for (const c of (google && google.campaigns) || []) campSrc.push({ name: c.name, channel: 'google', spend: c.cost || 0, leads: c.conversions || 0 })
     const campRows = campSrc.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
+    // Visual layer: pick the "headline" key event (the Won group if configured,
+    // else the last event) and chart which campaigns drive it, plus its share.
+    const firstCols = o360cols.cols.filter((c) => c.gfirst)
+    const gWonIdx = o360cols.groups.findIndex((g) => g.kind === 'won')
+    const headIdx = gWonIdx >= 0 ? gWonIdx : o360cols.groups.length - 1
+    const headKey = firstCols[headIdx] ? firstCols[headIdx].key : null
+    const headLabel = o360cols.groups[headIdx] ? o360cols.groups[headIdx].label.replace(/^📅 /, '') : 'Key event'
+    const shortName = (s) => (s && s.length > 24 ? s.slice(0, 22) + '…' : (s || '—'))
+    const PIEK = ['#6d5efc', '#12b886', '#e0803a', '#4285f4', '#e1306c', '#f59e0b', '#9b8cff', '#ef4444']
+    const barData = campRows.filter((c) => c._has360)
+      .map((c) => ({ name: shortName(c.name), full: c.name, leads: c.leads || 0, event: headKey ? (c[headKey] || 0) : 0 }))
+      .sort((a, b2) => (b2.event - a.event) || (b2.leads - a.leads)).slice(0, 8)
+    const donutData = barData.filter((d) => d.event > 0).map((d, i) => ({ name: d.name, value: d.event, color: PIEK[i % PIEK.length] }))
     if ((rep.campOutcomes || []).length && campRows.some((c) => c._has360) && campRows.length) {
       push(
         <MRSlide key="c360-camp" kicker="Caalano360" title="Key events by campaign" sub="Which campaigns are driving the key events — with the cost of each. CRM outcomes (utm_campaign) matched to paid spend.">
+          {barData.length ? (
+            <div className="mr-two mr-two-viz">
+              <div>
+                <div className="mr-viz-lab">Leads vs {headLabel} — top campaigns</div>
+                <ResponsiveContainer width="100%" height={Math.max(180, barData.length * 40)}>
+                  <BarChart data={barData} layout="vertical" margin={{ top: 4, right: 18, left: 4, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" width={132} tick={{ fontSize: 9.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, n) => [fmtNumber(v), n]} labelFormatter={(l, p) => (p && p[0] && p[0].payload ? p[0].payload.full : l)} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="leads" name="Leads" fill="#6d5efc" radius={[0, 3, 3, 0]} maxBarSize={13} />
+                    <Bar dataKey="event" name={headLabel} fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={13}><LabelList dataKey="event" position="right" style={{ fontSize: 9, fill: 'var(--muted)' }} /></Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div>
+                <div className="mr-viz-lab">{headLabel} — share by campaign</div>
+                {donutData.length ? <MRDonut data={donutData} money={money} /> : <div className="mr-empty">No {headLabel.toLowerCase()} attributed to a campaign yet.</div>}
+              </div>
+            </div>
+          ) : null}
           <div className="mr-tablewrap mr-o360-wrap">
             <table className="mr-table o360-tbl mr-o360">
               <colgroup>

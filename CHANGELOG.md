@@ -17,7 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.130.1 — 2026-08-05 · `PENDING`
+## v3.131.0 — 2026-08-05 · `PENDING`
+- **New per-client “Optimisation Log” tab — live from Google Sheets.** Paste a client's
+  change-log Google Sheet link in **Settings → (client) → Optimisation Log**, and a new
+  **Optimisation Log** tab appears in that client's view showing the sheet **live** as a
+  **timeline** (newest first) or a **table**, with search and a one-click refresh.
+  - Reads the sheet server-side via a new `optlog` Netlify function (the browser can't
+    fetch Google directly — CORS), so no data is copied or stored; it's always current.
+  - The sheet must be shared **Anyone with the link → Viewer**. First row = column headers;
+    a Date/When column (if present) drives the timeline ordering.
+  - Settings pane has a **Test** button that previews the columns/row count before saving.
+
+## v3.130.1 — 2026-08-05 · `99d32c6`
 - **Key-event ordering fix.** Events we couldn't anchor to a pipeline stage position
   (e.g. a calendar not linked to a stage, or a stage that isn't in that pipeline) were
   dumped to the **end** of the funnel — which is why Booked Discovery Call / Strategy

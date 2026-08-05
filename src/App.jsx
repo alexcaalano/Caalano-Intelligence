@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.130.1'
+const APP_VERSION = '3.131.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1957,6 +1957,7 @@ const CLIENTCTX_KEY = 'caalano_clientctx'        // { clientId: "free-text conte
 const FATIGUE_KEY = 'caalano_fatigue'            // { _global: { freqMed, freqHigh, ctrDropMed, ctrDropHigh, minImpr } } — creative-fatigue thresholds
 const COMPETITORS_KEY = 'caalano_competitors'    // { clientId: [{ id, name, ig, fb, igAccount, fbAccount }] } — organic-social competitors per client
 const SOCIALKPIS_KEY = 'caalano_socialkpis'      // { clientId: { netFollowers, reach, views, engagement, posts, er } } — monthly organic-social KPI targets
+const OPTLOG_KEY = 'caalano_optlog'              // { clientId: 'https://docs.google.com/spreadsheets/d/…' } — per-client Optimisation Log Google Sheet
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -1965,7 +1966,7 @@ const SEED_KEYEVENTS = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -1986,8 +1987,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2080,6 +2081,16 @@ function useDiscoverNames() {
 
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
+// Per-client Optimisation Log Google Sheet URL.
+function loadOptLog(clientId) { return SETTINGS.optlog[clientId] || '' }
+function saveOptLog(clientId, url) { SETTINGS.optlog = { ...SETTINGS.optlog, [clientId]: url }; writeLS(OPTLOG_KEY, SETTINGS.optlog); saveSettingsRemote({ optlog: { [clientId]: url } }); bumpSettings() }
+// Pull the spreadsheet id + tab gid out of a Google Sheets URL (gid defaults to 0).
+function parseSheetRef(url) {
+  const m = String(url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9\-_]+)/)
+  if (!m) return null
+  const g = String(url || '').match(/[#&?]gid=(\d+)/)
+  return { id: m[1], gid: g ? g[1] : '0' }
+}
 
 // Per-form metadata (pipeline link + free-text notes + reviewed flag), keyed by
 // client then form label. Shown in Settings and the Forms view.
@@ -5349,7 +5360,94 @@ function UsersView({ clientId, range, nonce, currency }) {
     </div>
   )
 }
+// Settings pane: paste a client's Optimisation Log Google Sheet link + test it.
+function OptLogSettings({ clientId }) {
+  useSettingsSync()
+  const [url, setUrl] = useState(() => loadOptLog(clientId))
+  const [preview, setPreview] = useState({ status: 'idle' })
+  useEffect(() => { setUrl(loadOptLog(clientId)); setPreview({ status: 'idle' }) }, [clientId])
+  const ref = parseSheetRef(url)
+  const test = () => {
+    if (!ref) { setPreview({ status: 'err', error: "That doesn't look like a Google Sheets URL." }); return }
+    setPreview({ status: 'loading' })
+    fetch(`/.netlify/functions/optlog?id=${encodeURIComponent(ref.id)}&gid=${encodeURIComponent(ref.gid)}`)
+      .then((r) => r.json())
+      .then((j) => setPreview(j.ok ? { status: 'ok', columns: j.columns, rows: j.rows } : { status: 'err', error: j.error }))
+      .catch((e) => setPreview({ status: 'err', error: String(e.message || e) }))
+  }
+  return (
+    <div className="optlog-set">
+      <p className="cap" style={{ marginTop: 0 }}>Paste this client's Optimisation Log Google Sheet link. The sheet must be shared <b>Anyone with the link → Viewer</b>. The client's <b>Optimisation Log</b> tab then reads it live (the first row is treated as column headers).</p>
+      <div className="optlog-set-row">
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…/edit#gid=0" />
+        <button className="set-details-save" onClick={() => saveOptLog(clientId, url.trim())} disabled={url.trim() === loadOptLog(clientId)}>Save</button>
+        <button className="btn-ghost sm" onClick={test} disabled={!ref}>Test</button>
+      </div>
+      {url && !ref && <p className="cap" style={{ color: '#ef4444' }}>Not a valid Google Sheets URL.</p>}
+      {ref && <p className="cap">Sheet <code>{ref.id.slice(0, 14)}…</code> · tab gid <code>{ref.gid}</code></p>}
+      {preview.status === 'loading' && <Spinner label="Reading sheet…" />}
+      {preview.status === 'err' && <p className="cap" style={{ color: '#ef4444' }}>{preview.error}</p>}
+      {preview.status === 'ok' && <p className="cap" style={{ color: '#12b886' }}>✓ Read {preview.rows.length} row(s) · columns: {preview.columns.join(', ')}</p>}
+    </div>
+  )
+}
+// Client tab: the Optimisation Log rendered live from the client's Google Sheet,
+// as a timeline (newest first) or a plain table. First sheet row = headers.
+function OptimisationLog({ clientId }) {
+  useSettingsSync()
+  const url = loadOptLog(clientId)
+  const ref = parseSheetRef(url)
+  const [st, setSt] = useState({ status: 'idle' })
+  const [view, setView] = useState('timeline')
+  const [q, setQ] = useState('')
+  const load = () => {
+    if (!ref) { setSt({ status: 'noconf' }); return }
+    setSt({ status: 'loading' })
+    fetch(`/.netlify/functions/optlog?id=${encodeURIComponent(ref.id)}&gid=${encodeURIComponent(ref.gid)}`)
+      .then((r) => r.json())
+      .then((j) => setSt(j.ok ? { status: 'ok', columns: j.columns, rows: j.rows, fetchedAt: j.fetchedAt } : { status: 'err', error: j.error }))
+      .catch((e) => setSt({ status: 'err', error: String(e.message || e) }))
+  }
+  useEffect(() => { load() }, [clientId, url])
+  if (!ref) return <div className="card empty-deep"><div className="big">🗒️</div><b>No Optimisation Log linked yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add this client's Google Sheet in <b>Settings → this client → Optimisation Log</b>. It then shows here live as a timeline or table.</p></div>
+  if (st.status === 'loading' || st.status === 'idle') return <div className="card"><Spinner label="Loading optimisation log…" /></div>
+  if (st.status === 'err') return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't read the sheet.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>{st.error}</p><button className="set-relink" onClick={load} style={{ marginTop: 10 }}>↻ Retry</button></div>
+  const { columns, rows } = st
+  if (!rows.length) return <div className="card empty-deep"><div className="big">🗒️</div><b>The sheet has no entries yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add rows to the Google Sheet and they'll appear here.</p></div>
+  const dateCol = columns.find((c) => /date|when|day|timestamp/i.test(c)) || columns[0]
+  const otherCols = columns.filter((c) => c !== dateCol)
+  const parseD = (v) => { const t = Date.parse(v); return isNaN(t) ? null : t }
+  const filtered = q ? rows.filter((r) => columns.some((c) => String(r[c] || '').toLowerCase().includes(q.toLowerCase()))) : rows
+  const sorted = [...filtered].sort((a, b) => { const da = parseD(a[dateCol]), db = parseD(b[dateCol]); if (da == null && db == null) return 0; if (da == null) return 1; if (db == null) return -1; return db - da })
+  return (
+    <div className="optlog">
+      <div className="optlog-head">
+        <div><h3 style={{ margin: 0 }}>Optimisation Log</h3><p className="cap" style={{ margin: '2px 0 0' }}>Live from Google Sheets · {rows.length} entr{rows.length === 1 ? 'y' : 'ies'}{st.fetchedAt ? ` · updated ${new Date(st.fetchedAt).toLocaleTimeString()}` : ''}</p></div>
+        <div className="optlog-actions">
+          <input className="optlog-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="optlog-toggle"><button className={view === 'timeline' ? 'on' : ''} onClick={() => setView('timeline')}>Timeline</button><button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button></div>
+          <a className="btn-ghost sm" href={url} target="_blank" rel="noreferrer">Open sheet ↗</a>
+          <button className="btn-ghost sm" onClick={load}>↻ Refresh</button>
+        </div>
+      </div>
+      {!sorted.length ? <div className="card"><p className="cap" style={{ margin: 0 }}>No entries match “{q}”.</p></div>
+        : view === 'table'
+          ? <div className="card table-wrap"><table className="mr-table"><thead><tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr></thead><tbody>{sorted.map((r, i) => <tr key={i}>{columns.map((c) => <td key={c}>{r[c]}</td>)}</tr>)}</tbody></table></div>
+          : <div className="optlog-timeline">{sorted.map((r, i) => {
+            const d = parseD(r[dateCol])
+            return (
+              <div className="optlog-item" key={i}>
+                <div className="optlog-when">{d != null ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : (r[dateCol] || '—')}</div>
+                <div className="optlog-line"><span className="optlog-dot" /></div>
+                <div className="optlog-body">{otherCols.map((c) => (r[c] ? <div className="optlog-fld" key={c}><span className="optlog-k">{c}</span><span className="optlog-v">{r[c]}</span></div> : null))}</div>
+              </div>
+            )
+          })}</div>}
+    </div>
+  )
+}
 function ClientWorkspace({ client, index, data, config, range, nonce, onBack, authUser }) {
+  useSettingsSync()
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
@@ -5362,6 +5460,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
   allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
+  if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
   const channel = curTab === 'meta' ? 'meta' : curTab === 'google' ? 'google' : curTab === 'overall' ? 'blend' : null
@@ -5402,6 +5501,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
+        {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
       </div>
     </>
   )
@@ -6319,6 +6419,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (canLink) tabs.push(['links', 'Campaign links'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
   if (c.ghl) tabs.push(['forms', 'Forms'])
+  tabs.push(['optlog', 'Optimisation Log'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics'])
   const [tab, setTab] = useState('summary')
   return (
@@ -6364,6 +6465,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
+          {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log — Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
           {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>
       </div>
@@ -6567,6 +6669,7 @@ const TAB_OPTIONS = [
   { id: 'overall', label: 'Caalano360' }, { id: 'users', label: 'Users' }, { id: 'meta', label: 'Meta Ads' },
   { id: 'google', label: 'Google Ads' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' },
   { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' },
+  { id: 'optlog', label: 'Optimisation Log' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>

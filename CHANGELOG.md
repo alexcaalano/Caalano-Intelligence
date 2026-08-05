@@ -17,7 +17,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.126.0 — 2026-08-05 · `PENDING`
+## v3.127.0 — 2026-08-05 · `PENDING`
+- **Monthly Report — creative card readability + consistency fixes.**
+  - **Creative cards restacked**: thumbnail + platform metrics on top, and the key-event
+    table now spans the **full card width** below (it was being clipped in the narrow side
+    panel, so the counts weren't visible). The table now shows **every key event with its
+    Count, % of leads, next-step conversion, show % (calendar events) and cost per event**.
+  - **Fixed funnel/table won discrepancy**: the Account-summary key-events funnel showed a
+    different "Client Won" than the created-on KPI/donut (21 vs 20). Both now use the same
+    deal-level created-on count.
+  - **User performance & Lost reasons** are back on one slide but in **two separate bubble
+    panels** so they still read as distinct sections.
+  - Fixed a key-event column bug in the user table where calendar-linked events (e.g. Booked
+    Appointment) always showed 0.
+  - **Google conversion actions**: removed the redundant ★ next to the name (the green
+    “Primary” pill already signals it) and aligned the Type / Category columns.
+- **Client dashboard — Google conversion actions** now mark **Primary vs Secondary** with a
+  green ★ and a Type pill, matching the report.
+
+## v3.126.0 — 2026-08-05 · `ed0dc40`
 - **Monthly Report — creative cards + campaign visuals.**
   - **Creative preview tiles are now 9:16** to match the actual (vertical) creative.
   - **Key events on each creative are a compact table** (Key event · Count · Show/conv %)

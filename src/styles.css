@@ -801,6 +801,7 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .ca-name { display: flex; flex-direction: column; max-width: 150px; }
 .ca-name > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ca-cat { font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .03em; }
+.ca-star { color: #12b886; }
 .loc-row { display: grid; grid-template-columns: 1fr 70px 44px; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; }
 .loc-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .loc-bar { display: block; height: 12px; background: var(--panel-2); border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--border); }
@@ -1910,8 +1911,11 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-creative-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Monthly Report — big vertical creative cards with CRM key events + 9:16 playback */
-.mr-cre-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; }
-.mr-cre { display: flex; flex-direction: row; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.mr-cre-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; }
+/* Card stacks: thumbnail + platform metrics on top, full-width key-event table below. */
+.mr-cre { display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.mr-cre-top { display: flex; flex-direction: row; }
+.mr-cre-head { flex: 1; min-width: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 /* 9:16 to mirror the actual (vertical) creative. */
 .mr-cre-thumb { position: relative; flex: 0 0 124px; width: 124px; aspect-ratio: 9 / 16; background: var(--elev); display: grid; place-items: center; overflow: hidden; }
 .mr-cre-thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -1925,18 +1929,23 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-cre-metrics > div { display: flex; flex-direction: column; min-width: 0; }
 .mr-cre-metrics b { font-size: 14px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .mr-cre-metrics span { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
-.mr-cre-ke { border-top: 1px solid var(--border); padding-top: 9px; display: flex; flex-direction: column; gap: 8px; }
+.mr-cre-ke { border-top: 1px solid var(--border); padding: 9px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .mr-cre-ke-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #12b886; }
-.mr-cre-ke-empty { font-size: 11px; color: var(--faint); border-top: 1px solid var(--border); padding-top: 9px; }
+.mr-cre-ke-empty { font-size: 11px; color: var(--faint); border-top: 1px solid var(--border); padding: 9px 12px 12px; }
+.mr-cre-ketbl-wrap { overflow-x: auto; }
 .mr-cre-funnel { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .mr-cre-funnel span { display: inline-flex; flex-direction: column; align-items: center; background: rgba(18,184,134,.10); border-radius: 7px; padding: 4px 8px; min-width: 46px; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
 .mr-cre-funnel span b { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
 .mr-cre-funnel i { color: var(--faint); font-style: normal; }
-/* Compact key-events table inside a creative card (replaces the green bubbles). */
-.mr-cre-ketbl { width: 100%; border-collapse: collapse; font-size: 11px; }
-.mr-cre-ketbl th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; padding: 0 6px 3px; border-bottom: 1px solid var(--border); }
+/* Full-width key-events table inside a creative card (replaces the green bubbles).
+   Fixed layout so every card's columns line up; event name column flexes, the five
+   numeric columns take a fixed slice each and right-align. */
+.mr-cre-ketbl { width: 100%; min-width: 340px; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
+.mr-cre-ketbl col.ke-name { width: auto; }
+.mr-cre-ketbl col.ke-num { width: 58px; }
+.mr-cre-ketbl th { text-align: left; font-size: 8.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; padding: 0 6px 3px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .mr-cre-ketbl th.r, .mr-cre-ketbl td.r { text-align: right; }
-.mr-cre-ketbl td { padding: 3px 6px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.mr-cre-ketbl td { padding: 3px 6px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mr-cre-ketbl td:first-child { font-weight: 600; color: var(--text); }
 .mr-cre-ketbl td small { color: var(--faint); font-weight: 500; }
 .mr-cre-ketbl tbody tr:last-child td { border-bottom: none; }
@@ -1978,6 +1987,12 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-two-viz { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start; }
 @media (max-width: 900px) { .mr-two-viz { grid-template-columns: 1fr; } }
 .mr-viz-lab { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 2px 0 6px; }
+/* Bubble panels: keep distinct sections (e.g. User performance vs Lost reasons)
+   visually separate on one slide. */
+.mr-bubble { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+.mr-bubble + .mr-bubble { margin-top: 16px; }
+.mr-bubble-lab { font-size: 13px; font-weight: 800; letter-spacing: -.01em; margin-bottom: 2px; }
+.mr-bubble-sub { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; line-height: 1.4; }
 .mr-cretbl-thumb { position: relative; width: 44px; height: 44px; }
 .mr-cretbl-thumb img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; display: block; }
 .mr-noimg.sm { font-size: 16px; opacity: .5; }
@@ -1995,8 +2010,12 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-cre-pager button { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .mr-cre-pager button:disabled { opacity: .4; cursor: default; }
 /* Google conversion-action primary / secondary pills */
-.mr-pill-pri { display: inline-block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #12b886; background: rgba(18,184,134,.12); border: 1px solid rgba(18,184,134,.3); padding: 1px 7px; border-radius: 20px; }
-.mr-pill-sec { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); background: var(--panel-2); border: 1px solid var(--border); padding: 1px 7px; border-radius: 20px; }
+/* Primary/Secondary pills: uniform width + centred so the Type column reads as a
+   clean column and the Category column beside it stays aligned. */
+.mr-pill-pri, .mr-pill-sec { display: inline-block; min-width: 74px; text-align: center; vertical-align: middle; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; padding: 1px 7px; border-radius: 20px; }
+.mr-pill-pri { color: #12b886; background: rgba(18,184,134,.12); border: 1px solid rgba(18,184,134,.3); }
+.mr-pill-sec { color: var(--faint); font-weight: 700; background: var(--panel-2); border: 1px solid var(--border); }
+.mr-ca-cat { vertical-align: middle; }
 .mr-star { color: #12b886; }
 /* Fullscreen present mode */
 .mr-page:fullscreen { background: var(--bg); padding: 22px 28px; overflow-y: auto; }

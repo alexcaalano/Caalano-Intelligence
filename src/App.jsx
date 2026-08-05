@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.126.0'
+const APP_VERSION = '3.127.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1546,9 +1546,9 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
             <div className="legend" style={{ flexWrap: 'wrap', fontSize: 11 }}>{matchAgg.map((x) => <span key={x.type}><i className="swatch" style={{ background: mtColor(x.type) }} /> {x.type} {fmtCurrency(x.cost, currency)}</span>)}</div>
           </> : <p className="cap">No keyword spend{selLabel ? ` in ${selLabel}` : ''}.</p>}
         </div>
-        <div className="card chart-card"><h3>Conversion actions</h3><p className="cap">What Google is counting{selLabel ? ` · in ${selLabel}` : ''}</p>
-          {caAgg.length ? <div className="mini-scroll"><table className="mini-table"><thead><tr><th>Action</th><th>Conv.</th><th>Value</th></tr></thead>
-            <tbody>{caAgg.map((a) => (<tr key={a.name}><td className="ca-name" title={a.name}>{a.name}<span className="ca-cat">{a.category || '-'}</span></td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '-'}</td></tr>))}</tbody></table></div>
+        <div className="card chart-card"><h3>Conversion actions</h3><p className="cap">What Google is counting{selLabel ? ` · in ${selLabel}` : ''} · <span className="ca-star">★</span> = primary (counted in Conversions)</p>
+          {caAgg.length ? <div className="mini-scroll"><table className="mini-table"><thead><tr><th>Action</th><th>Type</th><th>Conv.</th><th>Value</th></tr></thead>
+            <tbody>{caAgg.map((a) => { const primary = a.conversions > 0; return (<tr key={a.name}><td className="ca-name" title={a.name}>{primary ? <span className="ca-star" title="Primary — counted in Conversions">★ </span> : null}{a.name}<span className="ca-cat">{a.category || '-'}</span></td><td>{primary ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>}</td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '-'}</td></tr>) })}</tbody></table></div>
             : <p className="cap">No conversion actions{selLabel ? ` in ${selLabel}` : ''}.</p>}
         </div>
         <div className="card chart-card"><h3>Conversion locations</h3><p className="cap">Where conversions are happening{geoDim ? ` · by ${geoDim.replace(/_/g, ' ')}` : ''}</p>
@@ -8115,53 +8115,76 @@ function MRCreative({ a, money, n0 }) {
     const onKey = (e) => { if (e.key === 'Escape') setPlay(false) }
     document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
   }, [play])
+  // Funnel rows = a Leads anchor + each configured key event, so we can compute
+  // next-step conversion (this step ÷ the previous step) and cost per event.
+  const feRows = [{ label: 'Leads', count: a.leads || 0, kind: 'lead' }, ...(events || [])]
   return (
     <div className="mr-cre">
-      <div className="mr-cre-thumb">
-        {a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" /> : <span className="mr-noimg">{a.type === 'Video' ? '▶' : '🖼'}</span>}
-        {embed
-          ? <button className="mr-cre-play no-print" onClick={() => setPlay(true)} aria-label="Play">▶</button>
-          : (a.igUrl && <a className="mr-cre-play no-print" href={a.igUrl} target="_blank" rel="noreferrer" aria-label="Open on Instagram">▶</a>)}
-        {a.type === 'Video' && <span className="mr-cre-badge">▶ Video</span>}
-      </div>
-      <div className="mr-cre-body">
-        <div className="mr-cre-name" title={a.name}>{a.name}{a.adset ? <small>{a.adset}</small> : null}</div>
-        <div className="mr-cre-metrics">
-          <div><b>{money(a.spend)}</b><span>Spend</span></div>
-          <div><b>{n0(a.impressions)}</b><span>Impr</span></div>
-          <div><b>{ctrV == null ? '—' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
-          <div><b>{freqV != null ? freqV.toFixed(1) + 'x' : '—'}</b><span>Freq</span></div>
-          <div><b>{n0(results)}</b><span>{a.resultType || 'Results'}</span></div>
-          <div><b>{cprV == null ? '—' : money(cprV)}</b><span>Cost/result</span></div>
+      <div className="mr-cre-top">
+        <div className="mr-cre-thumb">
+          {a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" /> : <span className="mr-noimg">{a.type === 'Video' ? '▶' : '🖼'}</span>}
+          {embed
+            ? <button className="mr-cre-play no-print" onClick={() => setPlay(true)} aria-label="Play">▶</button>
+            : (a.igUrl && <a className="mr-cre-play no-print" href={a.igUrl} target="_blank" rel="noreferrer" aria-label="Open on Instagram">▶</a>)}
+          {a.type === 'Video' && <span className="mr-cre-badge">▶ Video</span>}
         </div>
-        {events && events.length ? (
-          <div className="mr-cre-ke">
-            <div className="mr-cre-ke-lab">📈 Caalano360 · key events</div>
+        <div className="mr-cre-head">
+          <div className="mr-cre-name" title={a.name}>{a.name}{a.adset ? <small>{a.adset}</small> : null}</div>
+          <div className="mr-cre-metrics">
+            <div><b>{money(a.spend)}</b><span>Spend</span></div>
+            <div><b>{n0(a.impressions)}</b><span>Impr</span></div>
+            <div><b>{ctrV == null ? '—' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
+            <div><b>{freqV != null ? freqV.toFixed(1) + 'x' : '—'}</b><span>Freq</span></div>
+            <div><b>{n0(results)}</b><span>{a.resultType || 'Results'}</span></div>
+            <div><b>{cprV == null ? '—' : money(cprV)}</b><span>Cost/result</span></div>
+          </div>
+        </div>
+      </div>
+      {events && events.length ? (
+        <div className="mr-cre-ke">
+          <div className="mr-cre-ke-lab">📈 Caalano360 · key events</div>
+          <div className="mr-cre-ketbl-wrap">
             <table className="mr-cre-ketbl">
-              <thead><tr><th>Key event</th><th className="r">Count</th><th className="r" title="Calendar events: shown ÷ booked. Other steps: reached ÷ leads.">Show / conv %</th></tr></thead>
+              <colgroup>
+                <col className="ke-name" /><col className="ke-num" /><col className="ke-num" /><col className="ke-num" /><col className="ke-num" /><col className="ke-num" />
+              </colgroup>
+              <thead><tr>
+                <th>Key event</th>
+                <th className="r">Count</th>
+                <th className="r" title="This event's count ÷ total leads">% leads</th>
+                <th className="r" title="This step ÷ the previous step">Next step</th>
+                <th className="r" title="Calendar events only: shown ÷ booked">Show %</th>
+                <th className="r" title="Ad spend ÷ this event's count">Cost / event</th>
+              </tr></thead>
               <tbody>
-                <tr className="mr-ketbl-lead"><td>Leads</td><td className="r">{n0(a.leads)}</td><td className="r">—</td></tr>
-                {events.map((e, i) => {
+                {feRows.map((e, i) => {
                   const isCal = e.kind === 'calendar'
-                  const rate = isCal ? e.showRate : e.rate
+                  const prev = i > 0 ? feRows[i - 1].count : null
+                  const pctLeads = a.leads && e.count != null ? (e.count / a.leads) * 100 : null
+                  const nextStep = prev && e.count != null ? (e.count / prev) * 100 : null
+                  const costEv = e.count && a.spend ? a.spend / e.count : null
+                  const cls = e.kind === 'won' ? 'mr-ketbl-won' : e.kind === 'lead' ? 'mr-ketbl-lead' : ''
                   return (
-                    <tr key={i} className={e.kind === 'won' ? 'mr-ketbl-won' : ''}>
+                    <tr key={i} className={cls}>
                       <td title={e.label}>{e.label}{isCal && e.shown != null ? <small> · {n0(e.shown)} shown</small> : null}</td>
                       <td className="r">{n0(e.count)}</td>
-                      <td className="r">{rate == null ? '—' : fmtPct(rate, 0)}</td>
+                      <td className="r">{e.kind === 'lead' ? '100%' : pctLeads == null ? '—' : fmtPct(pctLeads, 0)}</td>
+                      <td className="r">{nextStep == null ? '—' : fmtPct(nextStep, 0)}</td>
+                      <td className="r">{isCal && e.showRate != null ? fmtPct(e.showRate, 0) : '—'}</td>
+                      <td className="r">{costEv == null ? '—' : money(costEv)}</td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
-            <div className="mr-cre-cash">
-              <div><b>{money(revenue)}</b><span>Revenue</span></div>
-              <div><b>{cpw == null ? '—' : money(cpw)}</b><span>Cost / won</span></div>
-              <div><b>{roas == null ? '—' : roas.toFixed(1) + 'x'}</b><span>ROAS</span></div>
-            </div>
           </div>
-        ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
-      </div>
+          <div className="mr-cre-cash">
+            <div><b>{money(revenue)}</b><span>Revenue</span></div>
+            <div><b>{cpw == null ? '—' : money(cpw)}</b><span>Cost / won</span></div>
+            <div><b>{roas == null ? '—' : roas.toFixed(1) + 'x'}</b><span>ROAS</span></div>
+          </div>
+        </div>
+      ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
       {play && embed && (
         <div className="mr-play-overlay no-print" onClick={() => setPlay(false)}>
           <div className="mr-play-modal" onClick={(e) => e.stopPropagation()}>
@@ -8546,9 +8569,9 @@ function renderMonthlyDeck(rep, h) {
     // Primary conversion actions are the ones counted in Google's "Conversions"
     // column (conversions > 0); secondary actions only report All-conversions.
     const caCols = [
-      { k: 'name', label: 'Conversion action', render: (r) => <span className="mr-name">{r.conversions > 0 ? <span className="mr-star" title="Primary conversion — counted in Conversions">★ </span> : null}{r.name}</span> },
+      { k: 'name', label: 'Conversion action', render: (r) => <span className="mr-name">{r.name}</span> },
       { k: 'primary', label: 'Type', render: (r) => (r.conversions > 0 ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>) },
-      { k: 'category', label: 'Category' },
+      { k: 'category', label: 'Category', render: (r) => <span className="mr-ca-cat">{r.category || '—'}</span> },
       { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
       { k: 'allConversions', label: 'All conv.', align: 'r', render: (r) => n0(r.allConversions) },
       { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
@@ -8589,7 +8612,7 @@ function renderMonthlyDeck(rep, h) {
           childrenOf={(r) => aggCa(caByCamp[r.name] || [])}
           renderChildren={(kids) => <div className="mr-kids-inner"><div className="mr-kids-lab">Conversion actions attributed to this campaign</div><MRTable cols={caCols} rows={kids} empty="No conversion actions recorded for this campaign." /></div>}
         />
-        <div className="mr-section-lab">Conversion actions <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· ★ / “Primary” = counted in the Conversions column above</span></div>
+        <div className="mr-section-lab">Conversion actions <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· green “Primary” = counted in the Conversions column above</span></div>
         <MRTable cols={caCols} rows={allCa} max={16} empty="No conversion actions recorded for this period." />
       </MRSlide>
     )
@@ -8625,7 +8648,10 @@ function renderMonthlyDeck(rep, h) {
     // Pass the RAW key events to keyEventRows — it resolves internally, and
     // double-resolving drops bare stage events (Won, Shown, …), which is why the
     // funnel previously showed only Leads + the calendar-linked stage.
-    const funnelRows = keyEventRows(loadKeyEvents(rep.client.id), rmap, calMap, stagePos, crm.won || 0)
+    // Use the deal-level created-on won count (coWon) — NOT the blend aggregate
+    // crm.won — so the funnel's "Client Won" matches the "Deals won · created" KPI
+    // and the status donut above (they can differ by a deal at the month boundary).
+    const funnelRows = keyEventRows(loadKeyEvents(rep.client.id), rmap, calMap, stagePos, coWon.count || 0)
     const otherRev = Math.max(0, realisedRev - paidRev)
     const PIE = ['#6d5efc', '#e0803a', '#e1306c', '#4285f4', '#f59e0b', '#12b886', '#9b8cff', '#ef4444']
     const lostPie = (lost.byReason || []).slice(0, 8).map((r, i) => ({ name: r.name, value: r.count, color: PIE[i % PIE.length] }))
@@ -8642,65 +8668,69 @@ function renderMonthlyDeck(rep, h) {
       const sc = (scWon.byUser && scWon.byUser[u.id]) || { count: 0, revenue: 0 }
       const uc = u.crm || {}
       const urmap = reachedByStage(u.pipelines || [])
-      const evReach = {}; for (const k of ke) evReach[k.label] = stageReachOf(urmap, k.pipeline, keRef(k))
+      const evReach = {}; for (const k of ke) evReach[k.ref] = stageReachOf(urmap, k.pipeline, keRef(k))
       return { id: u.id, name: u.name, leads: u.leads || uc.leads || 0, cohortWon: uc.won || 0, evReach, closed: (sc.count != null ? sc.count : (sc.won || 0)), revenue: sc.revenue || 0 }
     }).sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads))
     const topU = urows.find((u) => u.closed > 0) || urows[0]
     const userDeals = (uid) => (scWon.deals || []).filter((d) => d.userId === uid)
     push(
-      <MRSlide key="users" kicker="Caalano360 · Team" title="User performance" sub="Team ranked by revenue closed this month. Leads and key-event columns are each user's created-on cohort; “Closed this mo” is deals they marked won this month.">
-        {topU && topU.closed > 0 && <div className="mr-top">
-          <span className="mr-top-badge">★ Top performer</span>
-          <b>{topU.name}</b>
-          <span className="mr-top-stats">{money(topU.revenue)} closed · {n0(topU.closed)} deal(s) this month · {n0(topU.leads)} new leads</span>
-        </div>}
-        <MRTable
-          cols={[
-            { k: 'name', label: 'User', render: (r) => <span className="mr-name">{r.name}</span> },
-            { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
-            ...ke.map((k) => ({ k: 'ev_' + k.ref, label: k.label, align: 'r', render: (r) => n0(r.evReach[k.ref] || 0) })),
-            { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => n0(r.cohortWon) },
-            { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
-            { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} — closed this month`, deals: userDeals(r.id) })}>{n0(r.closed)}</button> : '—') },
-            { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
-          ]}
-          rows={urows} max={16}
-          empty="No assigned-user data for this period."
-        />
-        <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in — click a number to see the deals.</p>
-      </MRSlide>
-    )
+      <MRSlide key="users" kicker="Caalano360 · Team" title="User performance & lost reasons" sub="Team performance this month, and why this month's closed-lost deals were lost — shown as two separate panels.">
+        <section className="mr-bubble">
+          <div className="mr-bubble-lab">👥 User performance</div>
+          <p className="mr-bubble-sub">Ranked by revenue closed this month. Leads and key-event columns are each user's created-on cohort; “Closed this mo” is deals they marked won this month.</p>
+          {topU && topU.closed > 0 && <div className="mr-top">
+            <span className="mr-top-badge">★ Top performer</span>
+            <b>{topU.name}</b>
+            <span className="mr-top-stats">{money(topU.revenue)} closed · {n0(topU.closed)} deal(s) this month · {n0(topU.leads)} new leads</span>
+          </div>}
+          <MRTable
+            cols={[
+              { k: 'name', label: 'User', render: (r) => <span className="mr-name">{r.name}</span> },
+              { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
+              ...ke.map((k) => ({ k: 'ev_' + k.ref, label: k.label, align: 'r', render: (r) => n0(r.evReach[k.ref] || 0) })),
+              { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => n0(r.cohortWon) },
+              { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
+              { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} — closed this month`, deals: userDeals(r.id) })}>{n0(r.closed)}</button> : '—') },
+              { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
+            ]}
+            rows={urows} max={16}
+            empty="No assigned-user data for this period."
+          />
+          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in — click a number to see the deals.</p>
+        </section>
 
-    push(
-      <MRSlide key="lost" kicker="Caalano360 · Pipeline" title="Lost reasons & pipeline status" sub="Why this month's closed-lost deals were lost, and where this month's leads currently stand.">
-        <div className="mr-kpirow">
-          <MRKpi label="Deals lost" value={n0(lost.total.count)} sub="closed-lost this month" />
-          <MRKpi label="Value lost" value={money(lost.total.value)} />
-          <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ closed this month" />
-          <MRKpi label="Still open" value={n0(crm.open)} sub={`${money(crm.openValue)} in pipeline`} />
-        </div>
-        <div className="mr-two mr-two-viz">
-          <div>
-            <div className="mr-viz-lab">Why deals were lost</div>
-            {lostPie.length ? <MRDonut data={lostPie} money={money} /> : null}
-            {lost.byReason && lost.byReason.length ? (
-              <MRTable
-                cols={[
-                  { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost — ${r.name}`, kind: 'lost', deals: (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
-                  { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
-                  { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                  { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
-                ]}
-                rows={lost.byReason} max={8}
-              />
-            ) : <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>}
+        <section className="mr-bubble">
+          <div className="mr-bubble-lab">📉 Lost reasons &amp; pipeline status</div>
+          <p className="mr-bubble-sub">Why this month's closed-lost deals were lost, and where this month's leads currently stand.</p>
+          <div className="mr-kpirow">
+            <MRKpi label="Deals lost" value={n0(lost.total.count)} sub="closed-lost this month" />
+            <MRKpi label="Value lost" value={money(lost.total.value)} />
+            <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ closed this month" />
+            <MRKpi label="Still open" value={n0(crm.open)} sub={`${money(crm.openValue)} in pipeline`} />
           </div>
-          <div>
-            <div className="mr-viz-lab">This month's leads by status</div>
-            {statusDonut.length ? <MRDonut data={statusDonut} money={money} /> : <div className="mr-empty">No leads this month.</div>}
-            <p className="mr-foot-note" style={{ marginTop: 6 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(lost.total.count)} lost, {n0(crm.open)} still open.</p>
+          <div className="mr-two mr-two-viz">
+            <div>
+              <div className="mr-viz-lab">Why deals were lost</div>
+              {lostPie.length ? <MRDonut data={lostPie} money={money} /> : null}
+              {lost.byReason && lost.byReason.length ? (
+                <MRTable
+                  cols={[
+                    { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost — ${r.name}`, kind: 'lost', deals: (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
+                    { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
+                    { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
+                    { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
+                  ]}
+                  rows={lost.byReason} max={8}
+                />
+              ) : <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>}
+            </div>
+            <div>
+              <div className="mr-viz-lab">This month's leads by status</div>
+              {statusDonut.length ? <MRDonut data={statusDonut} money={money} /> : <div className="mr-empty">No leads this month.</div>}
+              <p className="mr-foot-note" style={{ marginTop: 6 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(lost.total.count)} lost, {n0(crm.open)} still open.</p>
+            </div>
           </div>
-        </div>
+        </section>
       </MRSlide>
     )
 

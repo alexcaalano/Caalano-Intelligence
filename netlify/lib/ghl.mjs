@@ -368,11 +368,23 @@ export async function customClients() {
     const out = {}
     for (const [id, v] of Object.entries(c)) {
       if (!id || !v || typeof v !== 'object') continue
+      if (v._deleted) continue
       if (!v.meta && !v.google && !v.ghl) continue
       out[id] = { name: v.name || id, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null }
     }
     return out
   } catch { return {} }
+}
+// Client ids the team has deleted in Settings (soft-delete flag). The default
+// handler drops these from the CLIENTS registry so they vanish from every scope
+// and agency-wide aggregate, not just the UI list.
+export async function deletedClients() {
+  try {
+    const all = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+    const c = all && all.clients
+    if (!c || typeof c !== 'object') return []
+    return Object.entries(c).filter(([, v]) => v && v._deleted).map(([id]) => id)
+  } catch { return [] }
 }
 // All Caalano Systems (GoHighLevel) sub-accounts under the agency, for the
 // "add client" explorer: id + name so a new client can be mapped to its CRM.

@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.123.0 — 2026-07-31 · `PENDING`
+- **Delete a client (Settings), not just deactivate.** The client Edit modal now has a
+  **Delete client** action (Super Admin, with a confirm). Deleting removes the client
+  from **every** list — dashboard, sidebar switcher, Settings and agency-wide
+  aggregates — for the whole team, whether it's a UI-added client or a built-in one.
+  Its per-client settings (key events, KPIs, notes) are kept so it can be restored. A
+  new **Deleted** filter in Settings → Clients lists deleted clients with a **Restore**
+  button. Backend drops deleted clients from the `CLIENTS` registry across all scopes.
+
 ## v3.122.0 — 2026-07-31 · `PENDING`
 - **Outbound calls now count as manual contact (Speed to Lead + Contact rate).** A
   placed outbound **call / voicemail** is treated as human outreach even when the

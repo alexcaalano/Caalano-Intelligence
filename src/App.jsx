@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.122.0'
+const APP_VERSION = '3.123.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2040,9 +2040,14 @@ function saveFatigueCfg(cfg) {
 
 // UI-added clients (Settings -> Add client), persisted server-side and merged
 // into the dashboard's client list.
-function customClientList() { return Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && (v.meta || v.google || v.ghl)).map(([id, v]) => ({ id, name: v.name || id, industry: v.industry || null, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, metaName: v.metaName || null, googleName: v.googleName || null, ghlName: v.ghlName || null, custom: true })) }
+function customClientList() { return Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && !v._deleted && (v.meta || v.google || v.ghl)).map(([id, v]) => ({ id, name: v.name || id, industry: v.industry || null, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, metaName: v.metaName || null, googleName: v.googleName || null, ghlName: v.ghlName || null, custom: true })) }
 function saveCustomClient(id, mapping) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: mapping }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: mapping } }); bumpSettings() }
 function removeCustomClient(id) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: null }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: null } }); bumpSettings() }
+// True delete: hide a client from every list (base or UI-added). A soft _deleted
+// flag persists to the server; the backend also drops it from agency aggregates.
+function isClientDeleted(id) { const v = SETTINGS.clients && SETTINGS.clients[id]; return !!(v && v._deleted) }
+function deleteClient(id) { const v = { ...((SETTINGS.clients && SETTINGS.clients[id]) || {}), _deleted: true }; SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: v }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: v } }); bumpSettings() }
+function restoreClient(id) { const cur = (SETTINGS.clients && SETTINGS.clients[id]) || {}; const v = { ...cur }; delete v._deleted; const next = Object.keys(v).length ? v : null; SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: next }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: next } }); bumpSettings() }
 // Shared account-discovery fetch (GHL locations + Windsor Meta/Google accounts),
 // cached for the session so the Settings name lookups and the Add/Edit explorer
 // reuse one call.
@@ -5959,7 +5964,7 @@ function HealthStrip({ c }) {
     </div>
   )
 }
-const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']]
+const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive'], ['deleted', 'Deleted']]
 // Global creative-fatigue thresholds — one shared set, applied to every active
 // Meta client's fatigue read (Cockpit badges + the Meta Creative Fatigue tab).
 function FatigueSettings() {
@@ -6050,9 +6055,12 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
   const w = config.availableAccounts?.windsor || {}
   const isOn = (c) => enabled[c.id] !== false
-  const activeCount = config.clients.filter(isOn).length
+  const liveClients = config.clients.filter((c) => !isClientDeleted(c.id))
+  const activeCount = liveClients.filter(isOn).length
+  // Deleted clients (base or UI-added) for the Deleted filter / restore.
+  const deletedList = Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && v._deleted).map(([id, v]) => ({ id, name: (config.clients.find((c) => c.id === id) || {}).name || v.name || id, industry: v.industry || null })).sort((a, b) => String(a.name).localeCompare(String(b.name)))
   const term = q.trim().toLowerCase()
-  const list = config.clients.filter((c) => {
+  const list = (filter === 'deleted' ? [] : liveClients).filter((c) => {
     if (filter === 'active' && !isOn(c)) return false
     if (filter === 'inactive' && isOn(c)) return false
     if (term && !(`${c.name} ${c.industry || ''}`.toLowerCase().includes(term))) return false
@@ -6090,15 +6098,15 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
       )}
       {isAdmin && section === 'clients' && (<>
       <div className="set-stats">
-        <div className="set-stat"><div className="v">{config.clients.length}</div><div className="l">Clients</div></div>
+        <div className="set-stat"><div className="v">{liveClients.length}</div><div className="l">Clients</div></div>
         <div className="set-stat"><div className="v">{activeCount}</div><div className="l">Active</div></div>
-        <div className="set-stat"><div className="v">{config.clients.length - activeCount}</div><div className="l">Inactive</div></div>
+        <div className="set-stat"><div className="v">{liveClients.length - activeCount}</div><div className="l">Inactive</div></div>
         <div className="set-stat"><div className="v">{w.facebook ?? '-'}</div><div className="l">Meta accounts</div></div>
         <div className="set-stat"><div className="v">{w.google_ads ?? '-'}</div><div className="l">Google accounts</div></div>
         <div className="set-stat"><div className="v">{w.gohighlevel ?? '-'}</div><div className="l">Caalano Systems</div></div>
       </div>
       <div className="set-toolbar">
-        <div className="chan-toggle">{SET_FILTERS.map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${config.clients.length - activeCount}` : ''}</button>)}</div>
+        <div className="chan-toggle">{SET_FILTERS.filter(([k]) => k !== 'deleted' || deletedList.length).map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${liveClients.length - activeCount}` : k === 'deleted' ? ` · ${deletedList.length}` : ''}</button>)}</div>
         <input className="set-search" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
         {isSuper && <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>}
         <span className="set-saved">✓ Saved to server · shared across your team</span>
@@ -6108,7 +6116,23 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
         <span className="lg"><img src={FAVICON('meta.com')} alt="" width="14" height="14" /> Meta</span><span className="lg"><img src={FAVICON('ads.google.com')} alt="" width="14" height="14" /> Google</span><span className="lg"><img src={CRM_LOGO} alt="" width="14" height="14" /> CRM</span><span className="lg"><b>🎯</b> Key events</span><span className="lg"><b>📅</b> Calendars</span><span className="lg"><b>📝</b> Forms</span><span className="lg"><b>📊</b> KPIs</span><span className="lg"><b>📡</b> Diagnostics</span>
         <span className="lg-sep">·</span><span className="lg"><span className="sth-mk ok">✓</span> done</span><span className="lg"><span className="sth-mk warn">●</span> attention</span><span className="lg"><span className="sth-mk bad">✗</span> missing</span>
       </div>
-      <div className="set-grid">
+      {filter === 'deleted' && (
+        <div className="set-grid">
+          {deletedList.map((c) => (
+            <div className="set-card is-off" key={c.id}>
+              <div className="set-card-head">
+                <span className="avatar" style={{ background: 'var(--elev)', color: 'var(--faint)' }}>{initials(c.name)}</span>
+                <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">Deleted{c.industry ? ` · ${c.industry}` : ''}</div></div>
+              </div>
+              <div className="set-card-actions">
+                <button className="set-expand" onClick={() => restoreClient(c.id)} title="Restore this client to the dashboard">↩ Restore</button>
+              </div>
+            </div>
+          ))}
+          {!deletedList.length && <div className="card empty-deep"><div className="big">🗑</div><b>No deleted clients.</b></div>}
+        </div>
+      )}
+      {filter !== 'deleted' && <div className="set-grid">
         {list.map((c) => {
           const on = isOn(c)
           return (
@@ -6126,7 +6150,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
           )
         })}
         {!list.length && <div className="card empty-deep"><div className="big">🔍</div><b>No clients match.</b></div>}
-      </div>
+      </div>}
       </>)}
       {editing && <SettingsEditModal client={editing} names={names} currency={currency} canManageAccounts={isSuper} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
       {adding && <AddClientModal existing={config.clients} editClient={typeof adding === 'object' ? adding : null} onClose={() => setAdding(false)} />}
@@ -6269,6 +6293,8 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   const [name, setName] = useState(c.name || '')
   const [industry, setIndustry] = useState(c.industry || '')
   const [savedDetails, setSavedDetails] = useState(false)
+  const [confirmDel, setConfirmDel] = useState(false)
+  const doDelete = () => { deleteClient(c.id); onClose() }
   const dirty = name.trim() !== (c.name || '') || industry !== (c.industry || '')
   const saveDetails = () => {
     if (!name.trim()) return
@@ -6318,6 +6344,15 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
             {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
             {c.ghl && <SalesCycleField clientId={c.id} />}
             {c.ghl && <ActiveHoursField clientId={c.id} />}
+            {canManageAccounts && (
+              <div className="set-danger">
+                <div className="set-sec-t">Delete client</div>
+                <p className="cap" style={{ marginTop: 0 }}>Removes <b>{c.name}</b> from every list — the dashboard, sidebar, Settings and agency aggregates. Its per-client settings (key events, KPIs, notes) are kept in case you re-add it later.{c.custom ? '' : ' This account is defined in the app; deleting hides it everywhere (a Super Admin can restore it).'}</p>
+                {confirmDel
+                  ? <div className="set-danger-confirm"><span>Delete <b>{c.name}</b>?</span><button className="set-del-yes" onClick={doDelete}>Yes, delete</button><button className="btn-ghost sm" onClick={() => setConfirmDel(false)}>Cancel</button></div>
+                  : <button className="set-del-btn" onClick={() => setConfirmDel(true)}>🗑 Delete client</button>}
+              </div>
+            )}
           </div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions — primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
@@ -9365,10 +9400,11 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   }
   const custom = customClientList()
   const extras = custom.filter((cu) => !data.clients.some((c) => c.id === cu.id))
-  const baseClients = [...data.clients.map(applyOv), ...extras]
+  const baseClients = [...data.clients.map(applyOv), ...extras].filter((c) => !isClientDeleted(c.id))
   const visibleClients = baseClients.filter((c) => enabled[c.id] !== false && canSeeClientFE(authUser, c.id)).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
   const rows = computeRows(visibleClients, agency.data)
-  // Config for the Settings page, with overrides applied + UI-added clients.
+  // Config for the Settings page keeps deleted clients (so the Deleted filter can
+  // restore them); the main app's baseClients above already hides them everywhere else.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
   const openClient = (c) => { setPicked(c); setView('clients'); setNavOpen(false) }

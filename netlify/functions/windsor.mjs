@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -379,7 +379,7 @@ async function snapshotClient(clientId, cc, key, date, windowDays = 30) {
 export async function runHealthSnapshots(dates) {
   const key = process.env.WINDSOR_API_KEY
   if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
-  try { Object.assign(CLIENTS, await customClients()) } catch { /* non-fatal */ }
+  try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
   const today = new Date().toISOString().slice(0, 10)
   const targets = (dates && dates.length) ? dates : [today]
   const results = []
@@ -1366,7 +1366,7 @@ export default async (req) => {
   // Merge any UI-added clients (Settings -> Add client) into the registry so
   // they're recognised across every scope. Mutates the shared object; a removed
   // client clears on the next cold start.
-  try { Object.assign(CLIENTS, await customClients()) } catch { /* non-fatal */ }
+  try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
 
   // Access control — only active when the multi-user login system is enabled
   // (AUTH_SECRET set). A signed-in caller is checked against their client

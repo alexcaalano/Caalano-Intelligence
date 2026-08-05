@@ -1973,6 +1973,19 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-cretbl-play:hover { background: rgba(0,0,0,.75); }
 .mr-cretbl td { vertical-align: middle; }
 .mr-funnel-big { transform: none; }
+/* Creative slide — sort control + pager */
+.mr-cre-sort { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.mr-cre-sort > span { font-weight: 800; color: var(--faint); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; margin-right: 2px; }
+.mr-cre-sort button { border: 1px solid var(--border); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mr-cre-sort button:hover { color: var(--text); }
+.mr-cre-sort button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.mr-cre-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.mr-cre-pager button { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.mr-cre-pager button:disabled { opacity: .4; cursor: default; }
+/* Google conversion-action primary / secondary pills */
+.mr-pill-pri { display: inline-block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #12b886; background: rgba(18,184,134,.12); border: 1px solid rgba(18,184,134,.3); padding: 1px 7px; border-radius: 20px; }
+.mr-pill-sec { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); background: var(--panel-2); border: 1px solid var(--border); padding: 1px 7px; border-radius: 20px; }
+.mr-star { color: #12b886; }
 /* Fullscreen present mode */
 .mr-page:fullscreen { background: var(--bg); padding: 22px 28px; overflow-y: auto; }
 .mr-page:-webkit-full-screen { background: var(--bg); padding: 22px 28px; overflow-y: auto; }
@@ -2032,7 +2045,10 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 @media (prefers-color-scheme: dark) { .mr-src-meta { color: #7ea1e0; } .mr-src-google { color: #f08b81; } }
 
 .mr-drill-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 24px; }
-.mr-drill { width: min(920px, 96vw); max-height: 86vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: 0 24px 70px rgba(0,0,0,.45); overflow: hidden; }
+/* Width scales with the column count (~118px/col + chrome) so drills with an Ad
+   column or extra fields get room instead of scrolling — capped at 96vw. */
+.mr-drill { width: min(calc(var(--mr-drill-cols, 8) * 118px + 40px), 96vw); max-width: 96vw; max-height: 86vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: 0 24px 70px rgba(0,0,0,.45); overflow: hidden; }
+.mr-drill-ad { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-drill-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
 .mr-drill-head h3 { margin: 0; font-size: 16px; }
 .mr-drill-head span { font-size: 12px; color: var(--muted); }

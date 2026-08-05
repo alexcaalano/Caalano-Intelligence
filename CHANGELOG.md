@@ -17,7 +17,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.124.0 — 2026-07-31 · `PENDING`
+## v3.125.0 — 2026-08-05 · `PENDING`
+- **Monthly Report — refinements from review feedback.**
+  - **Creative slide reverted to visual cards** (big thumbnail + preview + all stats),
+    with a **sort control** (by any metric) and **pagination** (top 10 per page) —
+    replaces the cramped table that wasn't scrollable in present mode.
+  - **Google Ads:** conversion actions restored to the campaign-performance slide, with
+    a **cost-vs-conversions daily chart** and an account-level conversion-actions table.
+    Each action is tagged **Primary** / **Secondary** so it's clear which are attached to
+    campaign performance.
+  - **Account summary:** removed the leads/spend mini-trend chart (kept the status donut).
+  - **Key-events funnel fixed:** it was double-resolving the configured key events, which
+    silently dropped every bare pipeline-stage event (Appointment shown, Deposit taken,
+    Client won) and left only Leads + the calendar-linked stage. The created-on cohort now
+    passes through **all** configured key events, Won included.
+  - **User performance & Lost reasons split into two clearly-labelled slides** instead of
+    one crowded slide.
+  - **Drill-down popups widen dynamically** to the column count (no more horizontal
+    scrolling) and now show the **Ad / creative** a deal was attributed to (backend deals
+    carry `ad` / `campaign` from the lead's UTM — regenerate a snapshot to backfill).
+
+## v3.124.0 — 2026-07-31 · `723b86b`
 - **Monthly Report — big restructure + fullscreen present.**
   - **⛶ Present** button fullscreens the whole report container for screen-sharing.
   - **Meta:** Campaign & ad set on **one slide** — click a campaign to drill into its

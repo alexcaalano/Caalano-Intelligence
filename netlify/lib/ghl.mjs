@@ -838,12 +838,14 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
   const pInfo = (o) => idx.get(o.pipelineId) || null
   const deal = (o, whenMs) => {
     const p = pInfo(o); const stg = p && p.byId ? p.byId[o.pipelineStageId] : null
+    const u = utmOf(o)
     return {
       name: nameOf(o),
       createdAt: o.createdAt ? String(o.createdAt).slice(0, 10) : null,
       statusAt: isFinite(whenMs) ? new Date(whenMs).toISOString().slice(0, 10) : null,
-      value: num(o.monetaryValue), channel: channelOf(utmOf(o)),
+      value: num(o.monetaryValue), channel: channelOf(u),
       pipeline: p ? p.name : null, stage: stg ? stg.name : null,
+      ad: u.content || null, campaign: u.campaign || null,
       userId: o.assignedTo || 'unassigned', reason: o.lostReasonId ? (reasonName[o.lostReasonId] || 'Other') : null,
     }
   }

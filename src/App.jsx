@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.130.0'
+const APP_VERSION = '3.130.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2213,17 +2213,22 @@ function stagePosMap(pipelines) {
 }
 // Order key events by funnel position: stage events at their stage's position,
 // calendar events just before the stage they're linked to (the booking is what
-// moves the lead into that stage). Unlinked events keep their insertion order,
-// after the positioned ones. Stable within equal positions.
+// moves the lead into that stage). An event we can't anchor to a stage position
+// (e.g. a calendar with no linked stage, or a stage that isn't in this pipeline)
+// inherits the PREVIOUS event's position + a tiny step, so it keeps the order it
+// was configured in — next to its neighbours — instead of being dumped at the end.
 function orderKeyEvents(list, stagePos) {
   if (!stagePos || !stagePos.size) return list
   const posAt = (pipeline, name) => (pipeline && stagePos.has(pipeline + '::' + name) ? stagePos.get(pipeline + '::' + name) : stagePos.get(name))
-  const posOf = (e, i) => {
-    if (e.kind === 'stage') { const p = posAt(e.pipeline, e.ref); return p == null ? 900 + i : p }
+  const resolved = (e) => {
+    if (e.kind === 'stage') { const p = posAt(e.pipeline, e.ref); return p == null ? null : p }
     const p = e.stage ? posAt(e.pipeline, e.stage) : null
-    return p == null ? 900 + i : p - 0.1 // calendar sits just ahead of its linked stage
+    return p == null ? null : p - 0.1 // calendar sits just ahead of its linked stage
   }
-  return list.map((e, i) => ({ e, i, p: posOf(e, i) })).sort((a, b) => a.p - b.p || a.i - b.i).map((x) => x.e)
+  const rows = list.map((e, i) => ({ e, i, p: resolved(e) }))
+  let last = -1
+  for (const r of rows) { if (r.p == null) { r.p = last + 0.001; last = r.p } else last = r.p }
+  return rows.sort((a, b) => a.p - b.p || a.i - b.i).map((x) => x.e)
 }
 // Calendars linked to the SAME pipeline stage collapse into one key event for
 // that stage (bookings/shown summed) - so several calendars that mean the same

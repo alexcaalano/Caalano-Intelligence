@@ -17,7 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.130.0 — 2026-08-05 · `PENDING`
+## v3.130.1 — 2026-08-05 · `PENDING`
+- **Key-event ordering fix.** Events we couldn't anchor to a pipeline stage position
+  (e.g. a calendar not linked to a stage, or a stage that isn't in that pipeline) were
+  dumped to the **end** of the funnel — which is why Booked Discovery Call / Strategy
+  Session Booked sat after Lodged/Settled. They now inherit the previous event's position,
+  so they keep the order they're configured in, next to their neighbours. Applies
+  everywhere key events render (creative cards, campaign tables, funnels, live views).
+
+## v3.130.0 — 2026-08-05 · `0d75666`
 - **Creative cards now name the pipeline & scope key events to it.** Each creative shows a
   **🔗 pipeline pill** for the pipeline its campaign belongs to, and the key-event table
   lists **only that pipeline's key events** — not every pipeline's.

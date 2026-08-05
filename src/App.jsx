@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.129.0'
+const APP_VERSION = '3.130.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8130,6 +8130,7 @@ function MRCreative({ a, money, n0 }) {
         </div>
         <div className="mr-cre-head">
           <div className="mr-cre-name" title={a.name}>{a.name}{a.adset ? <small>{a.adset}</small> : null}</div>
+          {a.pipeName ? <div className="mr-cre-pipe" title={`This creative's campaign is attached to the ${a.pipeName} pipeline`}>🔗 {a.pipeName}</div> : null}
           <div className="mr-cre-metrics">
             <div><b>{money(a.spend)}</b><span>Spend</span></div>
             <div><b>{n0(a.impressions)}</b><span>Impr</span></div>
@@ -8271,7 +8272,7 @@ function MRDonut({ data, money }) {
 }
 // Creative performance — visual cards (big thumbnail + all stats + the client's
 // configured key events), with a sort control and pagination (10 per page).
-function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, money, n0, currency }) {
+function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency }) {
   const groups = o360cols ? o360cols.groups : []
   // Enrich each creative: platform metrics + the per-client key-event counts + cash.
   // Each creative's key events come from the pipeline attached to its campaign
@@ -8310,13 +8311,17 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, money, n0, curren
       }
     }
     const ctr = a.impressions ? (a.clicks / a.impressions) * 100 : null
-    return { ...a, leads, ctrV: ctr, cpl: leads ? a.spend / leads : null, events, evByLabel, won, revenue, roas: revenue && a.spend ? revenue / a.spend : null, cpw: won && a.spend ? a.spend / won : null }
+    const pipeName = pipeLabelFor ? pipeLabelFor(a.campaign) : null
+    return { ...a, leads, ctrV: ctr, cpl: leads ? a.spend / leads : null, events, evByLabel, won, revenue, pipeName, roas: revenue && a.spend ? revenue / a.spend : null, cpw: won && a.spend ? a.spend / won : null }
   })
   // Sort chips span the UNION of every pipeline's key events (shared o360cols); a
   // creative without that event just sorts as 0.
+  // Dedupe event chips by label — the union spans every pipeline, so the same
+  // stage name (e.g. "Booked Discovery Call") can appear in more than one pipeline.
+  const uniqGroups = [...new Map(groups.map((g) => [g.label, g])).values()]
   const METRICS = [
     { k: 'spend', label: 'Spend' }, { k: 'ctrV', label: 'CTR' }, { k: 'leads', label: 'Leads' }, { k: 'cpl', label: 'CPL', asc: true },
-    ...groups.map((g, i) => ({ k: 'ev' + i, label: g.label, evLabel: g.label })),
+    ...uniqGroups.map((g, i) => ({ k: 'ev' + i, label: g.label, evLabel: g.label })),
     { k: 'revenue', label: 'Revenue' }, { k: 'roas', label: 'ROAS' },
   ]
   const [sortK, setSortK] = useState('spend')
@@ -8423,11 +8428,19 @@ function renderMonthlyDeck(rep, h) {
   const campPipeMap = rep.hasCrm ? loadCampMap(rep.client.id) : {}
   const rawKeyEvents = rep.hasCrm ? loadKeyEvents(rep.client.id) : []
   const pipeColsCache = new Map()
+  // Resolve a campaign to a pipeline id: an explicit Settings link wins; "all" keeps
+  // the union; otherwise fall back to a name-token match against the pipeline names
+  // (same matcher the forms use) so campaigns left on "Auto" still resolve. null →
+  // union (truly unmatched).
   const pipeOfCampaign = (campName) => {
     if (!multiPipe || campName == null) return null
     const t = campPipeMap[campName]
-    return (t && t !== 'all') ? t : null   // null → union (unmapped / "All")
+    if (t === 'all') return null
+    if (t) return t
+    return suggestPipeline(campName, pipelines) || null
   }
+  const pipeNameOf = (pid) => ((pipelines.find((p) => p.id === pid) || {}).name || null)
+  const pipeLabelFor = (campName) => pipeNameOf(pipeOfCampaign(campName))
   const o360colsFor = (campName) => {
     if (!o360cols) return null
     const pid = pipeOfCampaign(campName)
@@ -8490,7 +8503,7 @@ function renderMonthlyDeck(rep, h) {
     push(
       <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${spendAds.length} creative(s) with spend · sort & page through, 10 at a time`}>
         {spendAds.length
-          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} money={money} n0={n0} currency={currency} />
+          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} />
           : <div className="mr-empty">No creatives with spend for this period.</div>}
         <p className="mr-foot-note">All creatives that spent this period, sortable by any metric, 10 per page. <b>Leads</b> = Meta results; the key-event chips are the client's configured <b>key events</b> (Settings → Key events) for leads whose ad UTM (utm_content) matches the creative. ▶ plays the Instagram post inline where a permalink is available.</p>
       </MRSlide>

@@ -17,7 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.129.0 — 2026-08-05 · `PENDING`
+## v3.130.0 — 2026-08-05 · `PENDING`
+- **Creative cards now name the pipeline & scope key events to it.** Each creative shows a
+  **🔗 pipeline pill** for the pipeline its campaign belongs to, and the key-event table
+  lists **only that pipeline's key events** — not every pipeline's.
+  - Campaign→pipeline resolution now falls back to a **name-token match** against the
+    pipeline names when a campaign isn't explicitly linked in Settings (previously such
+    campaigns fell back to the full union, which is why every pipeline's events showed).
+    Explicit Settings links still take priority; “All” keeps the union.
+  - Sort chips are **deduped by label** so a stage that exists in more than one pipeline
+    (e.g. “Booked Discovery Call”) no longer appears twice.
+
+## v3.129.0 — 2026-08-05 · `d60dcce`
 - **Monthly Report — per-pipeline key events for multi-pipeline clients.** Each creative's
   and campaign's key events now follow the **pipeline attached to that campaign** (from the
   campaign→pipeline links in Settings), so a multi-pipeline client no longer sees an

@@ -17,6 +17,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.124.0 — 2026-07-31 · `PENDING`
+- **Monthly Report — big restructure + fullscreen present.**
+  - **⛶ Present** button fullscreens the whole report container for screen-sharing.
+  - **Meta:** Campaign & ad set on **one slide** — click a campaign to drill into its
+    ad sets (expanded inline in the PDF).
+  - **Creative:** now a table of **every creative with spend**, with a thumbnail + play
+    per row, and the **client's configured key events** (green columns: Leads → each
+    key event with cost) instead of the fixed Booked/Shown/Won.
+  - **Key events by campaign** moved to **right after the creative slide**.
+  - **Google:** Campaign performance & **conversion actions combined** — click a
+    campaign to see the conversion actions attributed to it, plus a cost-vs-conversions
+    chart. Ad groups, keywords & search terms combined on one slide, with the
+    **campaign / ad group each keyword & search term came from**.
+  - **CRM:** User performance & **Lost reasons combined**, with a **lost-reasons donut**
+    and a **leads-by-status (open / won / lost) donut**. Account summary & ROI filled
+    out with the status donut, a **6-month leads/spend mini-trend** and a bigger
+    key-events funnel.
+  - **PDF export replicates the slides** — all drill-downs render expanded on paper.
+
 ## v3.123.0 — 2026-07-31 · `PENDING`
 - **Delete a client (Settings), not just deactivate.** The client Edit modal now has a
   **Delete client** action (Super Admin, with a confirm). Deleting removes the client

@@ -17,7 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.132.0 — 2026-08-05 · `PENDING`
+## v3.132.1 — 2026-08-05 · `PENDING`
+- **Optimisation Log timeline polish.** Empty / dash (“-”) fields are now hidden in the
+  timeline (an entry that's all dashes is skipped entirely), and dates are parsed as
+  **DD/MM/YYYY** so e.g. 06/12/2026 reads as 6 Dec, not 12 Jun — fixing both the display and
+  the newest-first ordering. The Table view still shows every column/row verbatim.
+
+## v3.132.0 — 2026-08-05 · `4406889`
 - **Optimisation Log sheets pre-filled per client.** Baked in the master client→sheet
   links so the Optimisation Log tab appears automatically for A2Z, Finr Advisory, Healan
   Centre, IDO IDO, Nexia Health Care, Owl PSA, Pool Haus, Swift Emergency, Simchat and The

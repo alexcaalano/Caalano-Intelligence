@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.132.0'
+const APP_VERSION = '3.132.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5431,7 +5431,18 @@ function OptimisationLog({ clientId }) {
   if (!rows.length) return <div className="card empty-deep"><div className="big">🗒️</div><b>The sheet has no entries yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add rows to the Google Sheet and they'll appear here.</p></div>
   const dateCol = columns.find((c) => /date|when|day|timestamp/i.test(c)) || columns[0]
   const otherCols = columns.filter((c) => c !== dateCol)
-  const parseD = (v) => { const t = Date.parse(v); return isNaN(t) ? null : t }
+  // A cell is "blank" when it's empty or just a dash / n/a placeholder — these are
+  // hidden in the timeline.
+  const blank = (v) => { const s = String(v == null ? '' : v).trim(); return s === '' || /^[-–—]+$/.test(s) || /^n\/?a$/i.test(s) }
+  // Dates in these sheets are DD/MM/YYYY (or DD-MM-YYYY); parse them explicitly so
+  // e.g. 06/12/2026 reads as 6 Dec, not 12 Jun. Falls back to native parsing (ISO,
+  // "7 Dec 2026", etc.).
+  const parseD = (v) => {
+    const s = String(v || '').trim(); if (!s) return null
+    const m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/)
+    if (m) { const d = m[1], mo = m[2]; const y = m[3].length === 2 ? '20' + m[3] : m[3]; const t = Date.parse(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00`); if (!isNaN(t)) return t }
+    const t = Date.parse(s); return isNaN(t) ? null : t
+  }
   const filtered = q ? rows.filter((r) => columns.some((c) => String(r[c] || '').toLowerCase().includes(q.toLowerCase()))) : rows
   const sorted = [...filtered].sort((a, b) => { const da = parseD(a[dateCol]), db = parseD(b[dateCol]); if (da == null && db == null) return 0; if (da == null) return 1; if (db == null) return -1; return db - da })
   return (
@@ -5449,12 +5460,14 @@ function OptimisationLog({ clientId }) {
         : view === 'table'
           ? <div className="card table-wrap"><table className="mr-table"><thead><tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr></thead><tbody>{sorted.map((r, i) => <tr key={i}>{columns.map((c) => <td key={c}>{r[c]}</td>)}</tr>)}</tbody></table></div>
           : <div className="optlog-timeline">{sorted.map((r, i) => {
+            const flds = otherCols.filter((c) => !blank(r[c]))
+            if (!flds.length) return null   // nothing but dashes → skip the entry
             const d = parseD(r[dateCol])
             return (
               <div className="optlog-item" key={i}>
                 <div className="optlog-when">{d != null ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : (r[dateCol] || '—')}</div>
                 <div className="optlog-line"><span className="optlog-dot" /></div>
-                <div className="optlog-body">{otherCols.map((c) => (r[c] ? <div className="optlog-fld" key={c}><span className="optlog-k">{c}</span><span className="optlog-v">{r[c]}</span></div> : null))}</div>
+                <div className="optlog-body">{flds.map((c) => <div className="optlog-fld" key={c}><span className="optlog-k">{c}</span><span className="optlog-v">{r[c]}</span></div>)}</div>
               </div>
             )
           })}</div>}

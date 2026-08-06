@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.131.0'
+const APP_VERSION = '3.132.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1964,6 +1964,21 @@ const OPTLOG_KEY = 'caalano_optlog'              // { clientId: 'https://docs.go
 const SEED_KEYEVENTS = {
   'pool-haus': ['New Lead', 'Pool Specialist Booked Call', 'Pool Specialist Call - Shown', 'Site Visit Booked', 'Site Visit Completed', 'Quote/Proposal Sent', 'Client Won'],
 }
+// Default Optimisation Log Google Sheets per client (from the master client→sheet
+// list). loadOptLog falls back to these, so the tab appears without manual setup;
+// a URL saved in Settings overrides its seed.
+const SEED_OPTLOG = {
+  'a2z': 'https://docs.google.com/spreadsheets/d/1kY4VpDQTdotnU7CX6Bm54r4SlYlVrz1lJHn7NdANGRM/edit?gid=0#gid=0',
+  'finr-advisory': 'https://docs.google.com/spreadsheets/d/1rfPd307wLwy7by6mgihCssuFOBIun1mBLn6Oi1qh7Po/edit?gid=0#gid=0',
+  'healan-centre': 'https://docs.google.com/spreadsheets/d/1heLwQD4eejpzCN08X4BFxl8VkvC3Dh_lNrLuhumH97E/edit?gid=0#gid=0',
+  'ido-ido': 'https://docs.google.com/spreadsheets/d/1rFefzL6xvDTEgO6M_5VLxx4zh92jniL9cJtwnkATayk/edit?gid=0#gid=0',
+  'nexia-health': 'https://docs.google.com/spreadsheets/d/1FcjHn_HEgOwZuLipFhzhSROLhJZTc1_EWu9Bux52qwI/edit?gid=0#gid=0',
+  'owl-psa': 'https://docs.google.com/spreadsheets/d/1UhXljKJqthC1LHJLp6urxEpj9F7ff78973cRwPPXPJ8/edit?gid=0#gid=0',
+  'pool-haus': 'https://docs.google.com/spreadsheets/d/131XLUm1-BGn-zOs8rPmcMTrOX5uX_3I9rL27w93ikV0/edit?gid=0#gid=0',
+  'swift-emergency': 'https://docs.google.com/spreadsheets/d/1O77isUez0vPK-0D3uF8V8crYtuuW8vm9GnZ0Zv12VIw/edit?gid=0#gid=0',
+  'simchat': 'https://docs.google.com/spreadsheets/d/1XUvtG8hkVLRkGLt6IS3T0H35vXWHVLHKWOIS-lvq0Ao/edit?gid=0#gid=0',
+  'psychology-hub': 'https://docs.google.com/spreadsheets/d/1vg7Y0KSH7dcIkH1HkFxjarct5SjSzIVmF46MK6h_QDA/edit',
+}
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
 const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), loaded: false }
@@ -2082,7 +2097,7 @@ function useDiscoverNames() {
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
 // Per-client Optimisation Log Google Sheet URL.
-function loadOptLog(clientId) { return SETTINGS.optlog[clientId] || '' }
+function loadOptLog(clientId) { return SETTINGS.optlog[clientId] || SEED_OPTLOG[clientId] || '' }
 function saveOptLog(clientId, url) { SETTINGS.optlog = { ...SETTINGS.optlog, [clientId]: url }; writeLS(OPTLOG_KEY, SETTINGS.optlog); saveSettingsRemote({ optlog: { [clientId]: url } }); bumpSettings() }
 // Pull the spreadsheet id + tab gid out of a Google Sheets URL (gid defaults to 0).
 function parseSheetRef(url) {

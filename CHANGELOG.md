@@ -17,7 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.131.0 — 2026-08-05 · `PENDING`
+## v3.132.0 — 2026-08-05 · `PENDING`
+- **Optimisation Log sheets pre-filled per client.** Baked in the master client→sheet
+  links so the Optimisation Log tab appears automatically for A2Z, Finr Advisory, Healan
+  Centre, IDO IDO, Nexia Health Care, Owl PSA, Pool Haus, Swift Emergency, Simchat and The
+  Psychology Hub — no manual setup. Any URL saved in Settings still overrides its default.
+  (Feel Better Medical, Ratefinder and Total Smart Home Solutions had sheets but aren't
+  clients in the dashboard, so they were skipped.)
+
+## v3.131.0 — 2026-08-05 · `f411522`
 - **New per-client “Optimisation Log” tab — live from Google Sheets.** Paste a client's
   change-log Google Sheet link in **Settings → (client) → Optimisation Log**, and a new
   **Optimisation Log** tab appears in that client's view showing the sheet **live** as a

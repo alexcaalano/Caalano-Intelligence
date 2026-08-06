@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.133.1'
+const APP_VERSION = '3.134.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1119,7 +1119,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const showPrev = (src) => (e) => src && setPreview({ src, x: e.clientX, y: e.clientY })
   const movePrev = (e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))
   const hidePrev = () => setPreview(null)
-  useEffect(() => { setCrePage(0) }, [sel])
+  useEffect(() => { setCrePage(0) }, [sel, selAdset, selCreative, selForm])
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
   const m = deep.meta
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
@@ -1374,7 +1374,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         const lctr = rate(a.linkClicks, a.impressions), cvr = rate(a.leads, a.linkClicks)
         return (
           <div className="cre" key={a.name}>
-            <div className="thumb"><span className="type">{a.type}</span>{a.igUrl && <a className="cre-play" href={a.igUrl} target="_blank" rel="noreferrer" title="View on Instagram">↗</a>}<img src={a.thumb} alt="" loading="lazy" onError={(e) => { e.target.style.display = 'none' }} /></div>
+            <div className="thumb"><span className="type">{a.type}</span>{a.igUrl && <a className="cre-play" href={a.igUrl} target="_blank" rel="noreferrer" title="View on Instagram">↗</a>}{a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" referrerPolicy="no-referrer" onError={(e) => { e.target.closest('.thumb').classList.add('thumb-broken'); e.target.remove() }} /> : null}<span className="thumb-ph">{a.type === 'Video' ? '▶' : '🖼'}</span></div>
             <div className="body">
               <div className="nm" title={a.name}>{a.name}</div>
               <div className="stats">
@@ -1386,18 +1386,32 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
                 <div className="st"><div className="l">{hook != null ? 'Hook rate' : ''}</div><div className={`v ${hook != null ? gb(hook, avgHook) : ''}`}>{hook != null ? fmtPct(hook, 1) : ''}</div></div>
               </div>
               {has360 && (() => {
-                const o = oCre.get(unorm(a.name)); if (!o) return null
-                const roas = a.spend ? o.revenue / a.spend : 0
+                const o = oCre.get(unorm(a.name))
+                if (!o) return <div className="cre-360 cre-360-empty">📈 Caalano360 · no CRM lead carried this creative's UTM (utm_content)</div>
+                const f = o360Fields(o, a.spend, a.leads, o360cols)
+                const evs = []; let ci = 0; let wonCount = 0
+                for (const g of o360cols.groups) {
+                  const seg = o360cols.cols.slice(ci, ci + g.span); ci += g.span
+                  const first = seg.find((c) => c.gfirst) || seg[0]
+                  const count = f[first.key] || 0
+                  const sr = g.kind === 'calendar' ? seg.find((c) => c.metric === 'calShowRate') : null
+                  const sh = g.kind === 'calendar' ? seg.find((c) => c.metric === 'calShown') : null
+                  if (g.kind === 'won') wonCount = count
+                  evs.push({ label: g.label.replace(/^📅 /, ''), count, kind: g.kind, showRate: sr ? f[sr.key] : null, shown: sh ? f[sh.key] : null })
+                }
+                const roas = a.spend ? (o.revenue || 0) / a.spend : null
+                const cpw = wonCount && a.spend ? a.spend / wonCount : null
                 return <div className="cre-360">
-                  <div className="c360-tag">Caalano360</div>
-                  <div className="stats">
-                    <div className="st"><div className="l">Booked</div><div className="v">{fmtNumber(o.booked)}{o.cancelled ? <span className="c360-canc" title={`${o.cancelled} later cancelled`}> ({o.cancelled}c)</span> : null}</div></div>
-                    <div className="st"><div className="l">C/Book</div><div className="v">{o.booked ? fmtCurrency(a.spend / o.booked, currency) : '-'}</div></div>
-                    <div className="st"><div className="l">Shown</div><div className="v">{fmtNumber(o.shown)}{o.shownStage ? <span className="c360-infer" title={`${o.shownStage} from pipeline stage`}> ({o.shownStage}p)</span> : null}</div></div>
-                    <div className="st"><div className="l">Won</div><div className="v">{fmtNumber(o.won)}</div></div>
-                    <div className="st"><div className="l">C/Won</div><div className="v">{o.won ? fmtCurrency(a.spend / o.won, currency) : '-'}</div></div>
-                    <div className="st"><div className="l">Won val</div><div className="v">{fmtCurrency(o.revenue, currency)}</div></div>
-                    <div className="st"><div className="l">ROAS</div><div className="v">{a.spend ? `${roas.toFixed(2)}×` : '-'}</div></div>
+                  <div className="c360-tag">📈 Caalano360 · key events</div>
+                  <table className="cre-360-tbl"><thead><tr><th>Key event</th><th className="r">Count</th><th className="r" title="Calendar events: shown ÷ booked">Show %</th></tr></thead>
+                    <tbody>
+                      <tr className="lead"><td>Leads</td><td className="r">{fmtNumber(a.leads)}</td><td className="r">—</td></tr>
+                      {evs.map((e, i) => <tr key={i} className={e.kind === 'won' ? 'won' : ''}><td title={e.label}>{e.label}{e.kind === 'calendar' && e.shown != null ? <small> · {fmtNumber(e.shown)} shown</small> : null}</td><td className="r">{fmtNumber(e.count)}</td><td className="r">{e.kind === 'calendar' && e.showRate != null ? fmtPct(e.showRate, 0) : '—'}</td></tr>)}
+                    </tbody></table>
+                  <div className="stats c360-cash">
+                    <div className="st"><div className="l">Revenue</div><div className="v">{fmtCurrency(o.revenue || 0, currency)}</div></div>
+                    <div className="st"><div className="l">C/Won</div><div className="v">{cpw == null ? '-' : fmtCurrency(cpw, currency)}</div></div>
+                    <div className="st"><div className="l">ROAS</div><div className="v">{roas == null ? '-' : `${roas.toFixed(2)}×`}</div></div>
                   </div>
                 </div>
               })()}

@@ -17,7 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.133.1 — 2026-08-05 · `PENDING`
+## v3.134.0 — 2026-08-05 · `PENDING`
+- **Meta Ads — richer creative cards + clearer Caalano360.**
+  - Each creative card now shows the **full Caalano360 key-events funnel** (Leads → each
+    configured key event with count + show rate → Revenue / Cost-per-won / ROAS), matching
+    the Monthly Report — instead of the fixed Booked/Shown/Won block.
+  - When a creative has **no CRM match on its UTM (utm_content)** the card now says so
+    explicitly, so an empty green block reads as "not tagged", not "broken".
+  - **Creative preview thumbnails**: added a placeholder tile when Meta returns no
+    thumbnail (or it fails to load), and set crossorigin/no-referrer so more thumbnails
+    load — cards are no longer blank.
+  - Drilling into an **ad set / creative / form** now resets the creative pager to page 1
+    so the filtered creatives are visible immediately.
+
+## v3.133.1 — 2026-08-05 · `10946c2`
 - **Optimisation Log — colour-coded author badges.** Each person's name badge now has its
   own colour so you can spot at a glance who made a change: **Uma = pink, Jye = amber,
   Alex = purple**.

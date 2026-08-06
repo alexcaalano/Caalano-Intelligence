@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.133.0'
+const APP_VERSION = '3.133.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5494,7 +5494,7 @@ function OptimisationLog({ clientId }) {
                   <div className="optlog-top">
                     {platform ? <span className={`optlog-plat optlog-plat-${kind}`}>{kind === 'meta' ? 'Meta' : kind === 'google' ? 'Google' : platform}</span> : null}
                     {type ? <span className="optlog-type">{type}</span> : null}
-                    {author ? <span className="optlog-author" title={`Logged by ${author}`}>{author}</span> : null}
+                    {author ? <span className={`optlog-author optlog-author-${author.toLowerCase()}`} title={`Logged by ${author}`}>{author}</span> : null}
                   </div>
                   {camp ? <div className="optlog-camp"><span className="optlog-k">Campaign / ad set</span><span className="optlog-v">{camp}</span></div> : null}
                   {note ? <div className="optlog-note">{note}</div> : null}

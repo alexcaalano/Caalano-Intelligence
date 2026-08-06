@@ -17,7 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.133.0 — 2026-08-05 · `PENDING`
+## v3.133.1 — 2026-08-05 · `PENDING`
+- **Optimisation Log — colour-coded author badges.** Each person's name badge now has its
+  own colour so you can spot at a glance who made a change: **Uma = pink, Jye = amber,
+  Alex = purple**.
+
+## v3.133.0 — 2026-08-05 · `3b82b24`
 - **Optimisation Log timeline — richer, only real optimisations.**
   - Entries that are **just a platform (Meta/Google) with no other detail are hidden** — a
     row needs a platform *plus* an optimisation type / campaign / note to plot.

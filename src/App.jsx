@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.132.1'
+const APP_VERSION = '3.133.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5443,6 +5443,20 @@ function OptimisationLog({ clientId }) {
     if (m) { const d = m[1], mo = m[2]; const y = m[3].length === 2 ? '20' + m[3] : m[3]; const t = Date.parse(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00`); if (!isNaN(t)) return t }
     const t = Date.parse(s); return isNaN(t) ? null : t
   }
+  // Semantic columns (best-effort by header name) so the timeline can render a rich
+  // card — platform badge, optimisation type, campaign, author and notes.
+  const platCol = columns.find((c) => /platform|channel/i.test(c))
+  const typeCol = columns.find((c) => c !== dateCol && /optimi|type|action|change|task/i.test(c))
+  const campCol = columns.find((c) => /campaign|ad ?set|adset|audience/i.test(c))
+  const noteCol = columns.find((c) => /note|comment|detail|summary|desc/i.test(c))
+  const known = new Set([dateCol, platCol, typeCol, campCol, noteCol].filter(Boolean))
+  const extraCols = otherCols.filter((c) => !known.has(c))
+  const platKind = (v) => (/meta|face|insta/i.test(v) ? 'meta' : /google|goog|ppc|search|pmax|youtube/i.test(v) ? 'google' : 'other')
+  // Author initials → name. A leading "U -", "JA –", "AS —" prefix on the notes marks
+  // who made the change.
+  const PEOPLE = { u: 'Uma', uma: 'Uma', j: 'Jye', ja: 'Jye', jye: 'Jye', a: 'Alex', as: 'Alex', alex: 'Alex' }
+  const authorOf = (note) => { const m = String(note || '').match(/^\s*([A-Za-z]{1,4})\s*[-–—]\s+/); return m ? (PEOPLE[m[1].toLowerCase()] || null) : null }
+  const stripAuthor = (note) => (authorOf(note) ? String(note).replace(/^\s*[A-Za-z]{1,4}\s*[-–—]\s+/, '') : String(note || ''))
   const filtered = q ? rows.filter((r) => columns.some((c) => String(r[c] || '').toLowerCase().includes(q.toLowerCase()))) : rows
   const sorted = [...filtered].sort((a, b) => { const da = parseD(a[dateCol]), db = parseD(b[dateCol]); if (da == null && db == null) return 0; if (da == null) return 1; if (db == null) return -1; return db - da })
   return (
@@ -5460,14 +5474,32 @@ function OptimisationLog({ clientId }) {
         : view === 'table'
           ? <div className="card table-wrap"><table className="mr-table"><thead><tr>{columns.map((c) => <th key={c}>{c}</th>)}</tr></thead><tbody>{sorted.map((r, i) => <tr key={i}>{columns.map((c) => <td key={c}>{r[c]}</td>)}</tr>)}</tbody></table></div>
           : <div className="optlog-timeline">{sorted.map((r, i) => {
-            const flds = otherCols.filter((c) => !blank(r[c]))
-            if (!flds.length) return null   // nothing but dashes → skip the entry
+            const platform = platCol ? String(r[platCol] || '').trim() : ''
+            const type = typeCol && !blank(r[typeCol]) ? r[typeCol] : ''
+            const camp = campCol && !blank(r[campCol]) ? r[campCol] : ''
+            const rawNote = noteCol ? r[noteCol] : ''
+            const author = authorOf(rawNote)
+            const note = blank(rawNote) ? '' : stripAuthor(rawNote)
+            const extras = extraCols.filter((c) => !blank(r[c]))
+            // Needs a platform PLUS something else to plot — skip "just Meta/Google" rows.
+            const hasContent = !!type || !!camp || !!note || extras.length > 0
+            if (!hasContent) return null
+            const kind = platKind(platform)
             const d = parseD(r[dateCol])
             return (
               <div className="optlog-item" key={i}>
                 <div className="optlog-when">{d != null ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : (r[dateCol] || '—')}</div>
-                <div className="optlog-line"><span className="optlog-dot" /></div>
-                <div className="optlog-body">{flds.map((c) => <div className="optlog-fld" key={c}><span className="optlog-k">{c}</span><span className="optlog-v">{r[c]}</span></div>)}</div>
+                <div className="optlog-line"><span className={`optlog-dot optlog-dot-${kind}`} /></div>
+                <div className={`optlog-body optlog-b-${kind}`}>
+                  <div className="optlog-top">
+                    {platform ? <span className={`optlog-plat optlog-plat-${kind}`}>{kind === 'meta' ? 'Meta' : kind === 'google' ? 'Google' : platform}</span> : null}
+                    {type ? <span className="optlog-type">{type}</span> : null}
+                    {author ? <span className="optlog-author" title={`Logged by ${author}`}>{author}</span> : null}
+                  </div>
+                  {camp ? <div className="optlog-camp"><span className="optlog-k">Campaign / ad set</span><span className="optlog-v">{camp}</span></div> : null}
+                  {note ? <div className="optlog-note">{note}</div> : null}
+                  {extras.map((c) => <div className="optlog-fld" key={c}><span className="optlog-k">{c}</span><span className="optlog-v">{r[c]}</span></div>)}
+                </div>
               </div>
             )
           })}</div>}

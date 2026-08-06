@@ -17,7 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.132.1 — 2026-08-05 · `PENDING`
+## v3.133.0 — 2026-08-05 · `PENDING`
+- **Optimisation Log timeline — richer, only real optimisations.**
+  - Entries that are **just a platform (Meta/Google) with no other detail are hidden** — a
+    row needs a platform *plus* an optimisation type / campaign / note to plot.
+  - **Meta vs Google** are now instantly distinguishable: a coloured platform badge (Meta
+    blue, Google green), a matching timeline dot and a coloured left border on each card.
+  - **Who made the change** is shown as a name badge, parsed from the note's leading
+    initials — **U/Uma → Uma, J/JA → Jye, A/AS → Alex** — and that prefix is stripped from
+    the note text so it reads cleanly.
+  - Optimisation type is the card headline; campaign/ad set and the note render beneath.
+
+## v3.132.1 — 2026-08-05 · `7182bd5`
 - **Optimisation Log timeline polish.** Empty / dash (“-”) fields are now hidden in the
   timeline (an entry that's all dashes is skipped entirely), and dates are parsed as
   **DD/MM/YYYY** so e.g. 06/12/2026 reads as 6 Dec, not 12 Jun — fixing both the display and

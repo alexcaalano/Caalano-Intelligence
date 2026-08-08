@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1707,6 +1707,21 @@ export default async (req) => {
       const trend = [...buckets.values()].map((b) => ({ month: b.month, label: b.label, spend: Math.round(b.spend), leads: Math.round(b.leads), cpl: b.leads ? Math.round(b.spend / b.leads) : null }))
       return json({ trend }, 200)
     } catch (e) { return json({ trend: [], error: String(e.message || e) }, 200) }
+  }
+
+  // Business profile (website + uploaded logo) per mapped client, for real brand
+  // logos as avatars. Batched across every GHL client so the frontend can sync
+  // them all in one call and cache the result.
+  if (url.searchParams.get('scope') === 'logos') {
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'logos', connected: false, logos: {} })
+    try {
+      const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && (!restrictTo || restrictTo.has(id)))
+      const results = await Promise.all(entries.map(async ([id, cc]) => {
+        try { const p = await locationProfile(cc.ghl); return [id, { website: p.website || null, logoUrl: p.logoUrl || null }] }
+        catch { return [id, { website: null, logoUrl: null }] }
+      }))
+      return json({ scope: 'logos', connected: true, logos: Object.fromEntries(results) }, 200, !restrictTo)
+    } catch (e) { return json({ scope: 'logos', error: String((e && e.message) || e).slice(0, 160), logos: {} }, 200) }
   }
 
   // Agency-wide Caalano Systems access/scope audit across every mapped client.

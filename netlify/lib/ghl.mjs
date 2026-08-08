@@ -86,6 +86,29 @@ export async function locationTimezone(locationId) {
   locTzCache.set(locationId, tz)
   return tz
 }
+// --- business profile (name / website / uploaded logo) ---
+// The Caalano Systems location object also carries the business website and,
+// where the client uploaded one, a brand logo. We read these to show a real
+// logo as the client avatar (favicon fallback derived on the frontend from the
+// website). Cached per location - these change rarely.
+const locProfileCache = new Map()
+export async function locationProfile(locationId) {
+  if (locProfileCache.has(locationId)) return locProfileCache.get(locationId)
+  let out = { name: null, website: null, logoUrl: null }
+  try {
+    const locTok = await locationToken(locationId)
+    const j = await ghlGet(locTok, `/locations/${locationId}`, {})
+    const L = (j && j.location) || j || {}
+    out = {
+      name: L.name || L.businessName || L.business?.name || null,
+      website: L.website || L.business?.website || null,
+      logoUrl: L.logoUrl || L.logo || L.business?.logoUrl || null,
+    }
+  } catch { /* leave nulls - frontend falls back to initials */ }
+  locProfileCache.set(locationId, out)
+  return out
+}
+
 // Offset (tz local - UTC) in ms at a given instant, DST-aware.
 function tzOffsetMs(tz, atMs) {
   const dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })

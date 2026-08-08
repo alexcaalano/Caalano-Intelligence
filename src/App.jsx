@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.141.0'
+const APP_VERSION = '3.142.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -21,7 +21,48 @@ function fmtBuildTime(iso) {
 }
 const AVATAR = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#8b5cf6']
 const acolor = (i) => AVATAR[i % AVATAR.length]
-const initials = (n) => n.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+const initials = (n) => String(n || '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+// Google's favicon service — a reliable logo source for any domain.
+const FAVICON = (domain, sz = 64) => `https://www.google.com/s2/favicons?domain=${domain}&sz=${sz}`
+// Bare hostname (no scheme / www / path) from a possibly-messy website string.
+const domainOf = (url) => { try { return new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url).hostname.replace(/^www\./, '') } catch { return null } }
+// Resolve a client's brand-logo image URL, in priority order:
+//   1. manual override (Settings) · 2. GHL uploaded logo · 3. website favicon.
+// Returns null when there's nothing to show, so the avatar falls back to initials.
+function clientLogoSrc(id, sz = 64) {
+  const rec = (id && SETTINGS.logos && SETTINGS.logos[id]) || null
+  if (!rec) return null
+  if (rec.logo) return rec.logo
+  if (rec.logoUrl) return rec.logoUrl
+  const d = rec.website ? domainOf(rec.website) : null
+  return d ? FAVICON(d, sz) : null
+}
+// Shared client avatar: real brand logo when we have one, else coloured initials.
+// `id` drives the logo lookup; `i` the fallback colour; `name` the initials.
+function Avatar({ id, name, i = 0, sm = false, className = '' }) {
+  const [failed, setFailed] = React.useState(false)
+  const src = failed ? null : clientLogoSrc(id, sm ? 48 : 64)
+  const cls = `avatar${sm ? ' sm' : ''}${className ? ' ' + className : ''}`
+  if (src) return <span className={`${cls} avatar-img`}><img src={src} alt="" loading="lazy" onError={() => setFailed(true)} /></span>
+  return <span className={cls} style={{ background: acolor(i) }}>{initials(name)}</span>
+}
+// Logo store helpers (Settings → business logos). Manual override + auto-synced
+// website/logoUrl from Caalano Systems live under SETTINGS.logos[clientId].
+function loadLogo(clientId) { return (SETTINGS.logos && SETTINGS.logos[clientId]) || {} }
+function saveLogo(clientId, patch) {
+  const next = { ...loadLogo(clientId), ...patch }
+  SETTINGS.logos = { ...(SETTINGS.logos || {}), [clientId]: next }
+  writeLS(LOGOS_KEY, SETTINGS.logos); saveSettingsRemote({ logos: { [clientId]: next } }); bumpSettings()
+}
+// Merge a batch of synced { clientId: { website, logoUrl } } profiles, preserving
+// any manual override already stored, and persist in one write.
+function mergeLogos(map) {
+  if (!map || !Object.keys(map).length) return
+  const next = { ...(SETTINGS.logos || {}) }
+  for (const id in map) next[id] = { ...(next[id] || {}), website: map[id].website || (next[id] && next[id].website) || null, logoUrl: map[id].logoUrl || (next[id] && next[id].logoUrl) || null }
+  SETTINGS.logos = next
+  writeLS(LOGOS_KEY, next); saveSettingsRemote({ logos: next }); bumpSettings()
+}
 const TRACK = {
   full: { label: 'Full tracking', cls: 'tk-full' },
   wins_no_value: { label: 'Wins, no value', cls: 'tk-wins' },
@@ -301,6 +342,28 @@ function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat, onClick }) {
 }
 
 /* ============ Agency live rollup ============ */
+// Fetch business logos (website + uploaded logo) from Caalano Systems and merge
+// them into Settings. Skipped once cached unless force=true (the Settings sync
+// button). Manual per-client overrides are preserved by mergeLogos.
+function syncLogos({ force = false } = {}) {
+  if (!force && SETTINGS.logos && Object.keys(SETTINGS.logos).length) return Promise.resolve(false)
+  return fetch(`/.netlify/functions/windsor?scope=logos${force ? `&_r=${Date.now()}` : ''}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => { if (j && j.logos) { mergeLogos(j.logos); return true } return false })
+    .catch(() => false)
+}
+// One-time logo sync once settings have hydrated, so avatars show real brand
+// marks. No-op on later loads because the result is persisted in Settings.
+function useClientLogos() {
+  useSettingsSync()
+  const done = React.useRef(false)
+  useEffect(() => {
+    if (done.current || !SETTINGS.loaded) return
+    done.current = true
+    syncLogos()
+  })
+}
+
 function useAgencyLive(range, nonce = 0) {
   const [state, setState] = useState({ status: 'idle', data: null })
   const q = rangeQuery(range)
@@ -446,7 +509,7 @@ function ClientTable({ rows, currency, coverage, onPick }) {
         const cp = covPct(r.id); const cvCls = cp == null ? '' : cp >= 80 ? 'good' : cp >= 50 ? 'warn' : 'bad'
         return (
           <tr key={r.id} onClick={() => onPick(r.c)}>
-            <td><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div>{r.name}<small>{r.industry}</small></div></div></td>
+            <td><div className="client-cell"><Avatar id={r.id} name={r.name} i={r.i} /><div>{r.name}<small>{r.industry}</small></div></div></td>
             <td>{fmtCurrency(r.spend, currency)}</td>
             <td>{has ? fmtNumber(r.conversions) : '-'}</td>
             <td>{has ? fmtCurrency(r.cpl, currency) : '-'}</td>
@@ -728,7 +791,7 @@ function AgencyComparison({ rows, currency, range, onPick, ov }) {
           const pRoas = prev && pSpendF ? prev.revenue / pSpendF : null
           return (
             <tr key={r.id} onClick={() => onPick(r.c)}>
-              <td className="ov-name"><div className="client-cell"><span className="avatar" style={{ background: acolor(r.i) }}>{initials(r.name)}</span><div><span className="ov-name-row">{r.name}<MaturityBadge clientId={r.id} crmAvg={ok ? o.cur.avgCloseDays : null} sample={ok ? o.cur.avgCloseSample : 0} range={range} size="sm" /></span><small>{r.industry}</small></div></div></td>
+              <td className="ov-name"><div className="client-cell"><Avatar id={r.id} name={r.name} i={r.i} /><div><span className="ov-name-row">{r.name}<MaturityBadge clientId={r.id} crmAvg={ok ? o.cur.avgCloseDays : null} sample={ok ? o.cur.avgCloseSample : 0} range={range} size="sm" /></span><small>{r.industry}</small></div></div></td>
               <Cell v={paidView ? <SpendPop r={r} currency={currency}>{money(spendF)}</SpendPop> : '-'} cur={paidView ? spendF : null} prev={paidView ? pSpendF : null} neutral dash={!paidView} />
               <Cell v={paidView ? <ResultsPop r={r} currency={currency}>{fmtNumber(resF)}</ResultsPop> : '-'} cur={paidView ? resF : null} prev={paidView ? pResF : null} dash={!paidView} />
               <Cell v={paidView && resF ? <ResultsPop r={r} currency={currency}>{money(spendF / resF)}</ResultsPop> : '-'} cur={paidView && resF ? spendF / resF : null} prev={paidView && pResF ? pSpendF / pResF : null} gd dash={!paidView || !resF} />
@@ -1993,6 +2056,7 @@ const SOCIALKPIS_KEY = 'caalano_socialkpis'      // { clientId: { netFollowers, 
 const OPTLOG_KEY = 'caalano_optlog'              // { clientId: 'https://docs.google.com/spreadsheets/d/…' } — per-client Optimisation Log Google Sheet
 const QUALSTAGE_KEY = 'caalano_qualstage'        // { clientId: { [pipelineId]: stageName } } — the stage that marks a lead "qualified", per pipeline
 const ALIASES_KEY = 'caalano_aliases'            // { clientId: { campaign|medium|content: { oldUtmName: currentName } } } — old-UTM → current-name links (renames)
+const LOGOS_KEY = 'caalano_logos'                // { clientId: { website, logoUrl, logo? } } — business logo (GHL logoUrl / website favicon, + optional manual override) for avatars
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -2016,7 +2080,7 @@ const SEED_OPTLOG = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2037,8 +2101,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -5697,7 +5761,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
       <div className="cw-head">
         {onBack && <button className="back" onClick={onBack}>← All clients</button>}
         <div className="cw-top">
-          <span className="avatar" style={{ background: acolor(index) }}>{initials(client.name)}</span>
+          <Avatar id={client.id} name={client.name} i={index} />
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span> <MaturityBadge clientId={client.id} crmAvg={crmAvgClose} range={range} /></h2><div className="meta">{client.industry}</div></div>
         </div>
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
@@ -6400,9 +6464,6 @@ function clientHealth(c) {
     { ic: '📡', short: 'Diag', label: 'Tracking diagnostics ready', state: (c.ghl && (c.meta || c.google)) ? 'ok' : (c.ghl ? 'warn' : 'bad') },
   ]
 }
-// Real brand logos via each site's favicon (Google's favicon service is a
-// reliable source that works for any domain).
-const FAVICON = (domain) => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`
 const CRM_LOGO = 'https://assets.cdn.filesafe.space/4iJNxErzfROlH5M5akcm/media/694b2a2bd573507fc6f55bd6.png'
 const STATE_TXT = { ok: 'connected / done', warn: 'needs attention', bad: 'not connected' }
 function HealthIcon({ h }) {
@@ -6421,6 +6482,14 @@ function HealthStrip({ c }) {
       ))}
     </div>
   )
+}
+// Settings toolbar button: re-pull each business's website + uploaded logo from
+// Caalano Systems and cache them as avatars (manual overrides are preserved).
+function LogoSyncButton() {
+  const [state, setState] = useState('idle') // idle | syncing | done | err
+  const go = () => { setState('syncing'); syncLogos({ force: true }).then((ok) => setState(ok ? 'done' : 'err')).catch(() => setState('err')) }
+  const label = state === 'syncing' ? '⟳ Syncing logos…' : state === 'done' ? '✓ Logos synced' : state === 'err' ? '⚠ Retry logos' : '🖼 Sync logos'
+  return <button className="set-add ghost" onClick={go} disabled={state === 'syncing'} title="Pull each business's website + logo from Caalano Systems and use it as their avatar everywhere">{label}</button>
 }
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive'], ['deleted', 'Deleted']]
 // Global creative-fatigue thresholds — one shared set, applied to every active
@@ -6567,6 +6636,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
         <div className="chan-toggle">{SET_FILTERS.filter(([k]) => k !== 'deleted' || deletedList.length).map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${liveClients.length - activeCount}` : k === 'deleted' ? ` · ${deletedList.length}` : ''}</button>)}</div>
         <input className="set-search" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
         {isSuper && <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>}
+        <LogoSyncButton />
         <span className="set-saved">✓ Saved to server · shared across your team</span>
       </div>
       <div className="set-legend">
@@ -6579,7 +6649,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
           {deletedList.map((c) => (
             <div className="set-card is-off" key={c.id}>
               <div className="set-card-head">
-                <span className="avatar" style={{ background: 'var(--elev)', color: 'var(--faint)' }}>{initials(c.name)}</span>
+                <Avatar id={c.id} name={c.name} i={config.clients.indexOf(c)} className="is-muted" />
                 <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">Deleted{c.industry ? ` · ${c.industry}` : ''}</div></div>
               </div>
               <div className="set-card-actions">
@@ -6596,7 +6666,7 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
           return (
             <div className={`set-card ${on ? '' : 'is-off'}`} key={c.id}>
               <div className="set-card-head">
-                <span className="avatar" style={{ background: acolor(config.clients.indexOf(c)) }}>{initials(c.name)}</span>
+                <Avatar id={c.id} name={c.name} i={config.clients.indexOf(c)} />
                 <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
                 <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
               </div>
@@ -6621,6 +6691,30 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
 // Sales-cycle / data-maturity control. Shows the CRM's calculated average time
 // to close a deal and lets you override it. Everything downstream (the "Still
 // maturing" badges) adds a 20% buffer on top of whichever value applies.
+// Per-client brand-logo control: shows the resolved avatar, where it came from
+// (manual / Caalano Systems logo / website favicon), and lets you paste a manual
+// override URL or clear it back to the auto-detected source.
+function LogoField({ clientId, name }) {
+  useSettingsSync()
+  const rec = loadLogo(clientId)
+  const [val, setVal] = useState(rec.logo || '')
+  useEffect(() => { setVal(loadLogo(clientId).logo || '') }, [clientId, SETTINGS.loaded])
+  const src = clientLogoSrc(clientId, 64)
+  const source = rec.logo ? 'Manual override' : rec.logoUrl ? 'Caalano Systems logo' : rec.website ? `Favicon · ${domainOf(rec.website)}` : 'None found — showing initials'
+  const save = () => saveLogo(clientId, { logo: val.trim() || null })
+  return (
+    <div className="set-cycle">
+      <div className="set-sec-t">Business logo</div>
+      <div className="set-logo-row">
+        {src ? <span className="avatar avatar-img"><img src={src} alt="" /></span> : <span className="avatar" style={{ background: acolor(0) }}>{initials(name)}</span>}
+        <div className="set-logo-meta"><span className="cap">{source}</span>{rec.website ? <a className="cap" href={/^https?:/i.test(rec.website) ? rec.website : 'https://' + rec.website} target="_blank" rel="noreferrer">{rec.website}</a> : null}</div>
+      </div>
+      <div className="set-field"><label>Override logo URL <span className="cap">· optional — paste a direct image link to force a specific logo</span></label>
+        <div className="set-logo-in"><input value={val} onChange={(e) => setVal(e.target.value)} placeholder="https://…/logo.png" /><button className="btn-ghost sm" onClick={save} disabled={val === (rec.logo || '')}>Save</button>{rec.logo ? <button className="btn-ghost sm" onClick={() => { setVal(''); saveLogo(clientId, { logo: null }) }}>Clear</button> : null}</div>
+      </div>
+    </div>
+  )
+}
 function SalesCycleField({ clientId }) {
   const [crm, setCrm] = useState(undefined) // undefined = loading, null = none
   const [ov, setOv] = useState(() => { const v = loadCloseOverride(clientId); return v == null ? '' : String(v) })
@@ -6781,7 +6875,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
         <div className="m-head">
-          <div className="set-modal-title"><span className="avatar sm" style={{ background: acolor(0) }}>{initials(name || c.name)}</span><div><h3>{name || c.name}</h3><span className="cap">{industry || (c.custom ? 'Added client' : 'Configuration')}</span></div></div>
+          <div className="set-modal-title"><Avatar id={c.id} name={name || c.name} i={0} sm /><div><h3>{name || c.name}</h3><span className="cap">{industry || (c.custom ? 'Added client' : 'Configuration')}</span></div></div>
           <div className="set-modal-actions">
             <button className="set-open" onClick={onOpen} title="Open this client's performance workspace">Open Client View ↗</button>
             <button className="icon-btn" onClick={onClose}>✕</button>
@@ -6805,6 +6899,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
             {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
             {c.ghl && <SalesCycleField clientId={c.id} />}
             {c.ghl && <ActiveHoursField clientId={c.id} />}
+            <LogoField clientId={c.id} name={name || c.name} />
             {canManageAccounts && (
               <div className="set-danger">
                 <div className="set-sec-t">Delete client</div>
@@ -10190,7 +10285,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
     <div className={`csw ${open ? 'open' : ''}`} ref={ref}>
       <button className="csw-trigger" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open} title="Switch client">
         {active
-          ? <span className="avatar sm" style={{ background: acolor(idxOf(active)) }}>{initials(active.name)}</span>
+          ? <Avatar id={active.id} name={active.name} i={idxOf(active)} sm />
           : <span className="avatar sm csw-ph">◎</span>}
         <span className="csw-txt">
           <b>{active ? active.name : 'Select a client'}</b>
@@ -10206,7 +10301,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
               const sel = active && active.id === c.id
               return (
                 <button key={c.id} className={`csw-item ${sel ? 'sel' : ''}`} role="option" aria-selected={sel} onClick={() => pick(c)}>
-                  <span className="avatar sm" style={{ background: acolor(idxOf(c)) }}>{initials(c.name)}</span>
+                  <Avatar id={c.id} name={c.name} i={idxOf(c)} sm />
                   <span className="csw-txt"><b>{c.name}</b><small>{c.industry || '—'}</small></span>
                   {sel && <span className="csw-tick">✓</span>}
                 </button>
@@ -10236,6 +10331,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // starts off so it can never be left on by accident.
   const [present, setPresent] = useState(false)
   const agency = useAgencyLive(range, refreshKey)
+  useClientLogos() // one-time brand-logo sync from Caalano Systems (avatars)
   // Server-backed settings: re-render on hydrate/change; enabled is a derived
   // write-through value so client on/off persists to the server like the rest.
   useSettingsSync()

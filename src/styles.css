@@ -197,6 +197,18 @@ tbody tr:last-child { border-bottom: 0; }
 tbody tr:hover { background: var(--panel-2); }
 .client-cell { display: flex; align-items: center; gap: 11px; }
 .avatar { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #fff; flex-shrink: 0; }
+/* Real brand-logo avatar: white tile so favicons/logos with transparency read
+   cleanly against any background, image contained within the rounded tile. */
+.avatar.avatar-img { background: #fff; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.avatar.avatar-img img { width: 100%; height: 100%; object-fit: contain; display: block; padding: 3px; }
+.avatar.is-muted { opacity: .55; filter: grayscale(1); }
+.set-logo-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.set-logo-row .avatar { width: 46px; height: 46px; border-radius: 11px; }
+.set-logo-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.set-logo-meta a { color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-logo-in { display: flex; gap: 6px; align-items: center; }
+.set-logo-in input { flex: 1; min-width: 0; }
+.set-add.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
 .client-cell small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
 .chip { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
 .chip.up { color: var(--pos); background: rgba(23,178,106,.13); }

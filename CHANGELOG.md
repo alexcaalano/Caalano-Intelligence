@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.142.0 — 2026-08-08 · `PENDING`
+- **Real business logos as client avatars, app-wide.** Each client's website and
+  uploaded logo are now pulled from their Caalano Systems (GoHighLevel) location and shown
+  as the avatar everywhere one appears — agency leaderboard, client switcher, client header,
+  Settings cards + modal. Resolution cascade: **manual override → GHL uploaded logo →
+  website favicon → coloured initials** (graceful fallback on any load error, so nothing
+  ever breaks). Logos sync once and cache in shared Settings; a **Sync logos** button in
+  Settings → Clients re-pulls on demand, and each client's Settings modal has a logo preview
+  + optional **override URL** to force a specific image. New non-gated `logos` settings
+  section + `scope=logos` backend endpoint (`locationProfile` reads website/logoUrl).
+
 ## v3.141.0 — 2026-08-08 · `PENDING`
 - **Agency Overview headline now reconciles with the leaderboard.** The top "Revenue
   Generated" and "ROAS" KPIs used to pull from a *separate* agency feed (Windsor's bulk

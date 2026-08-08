@@ -17,7 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.137.0 — 2026-08-05 · `PENDING`
+## v3.138.0 — 2026-08-05 · `PENDING`
+- **Qualified lead — per-pipeline stage (Settings) + Caalano360 KPI.** New
+  **Settings → (client) → Qualified lead** tab: pick the stage that marks a lead qualified
+  for each pipeline (typically just after the discovery call). A lead is qualified once it
+  **reaches that stage or beyond**, and any **won** deal always counts (won reaches every
+  stage). The **Caalano360 command centre** now shows a **Qualified** KPI + qual-rate — but
+  **only when a qualified stage is set** for the client; otherwise it stays hidden.
+  (Meta/Google green columns and the Monthly Report get Qualified in the next update.)
+
+## v3.137.0 — 2026-08-05 · `8e75870`
 - **Booked appointments: Occurred added + Show rate fixed to occurred-only.** Booked
   appointments now expose **Occurred** (appointments whose date has passed) alongside
   Booked and Shown, and **Show rate = Shown ÷ Occurred** — so upcoming/future bookings no

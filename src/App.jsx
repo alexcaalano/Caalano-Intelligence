@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.137.0'
+const APP_VERSION = '3.138.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1977,6 +1977,7 @@ const FATIGUE_KEY = 'caalano_fatigue'            // { _global: { freqMed, freqHi
 const COMPETITORS_KEY = 'caalano_competitors'    // { clientId: [{ id, name, ig, fb, igAccount, fbAccount }] } — organic-social competitors per client
 const SOCIALKPIS_KEY = 'caalano_socialkpis'      // { clientId: { netFollowers, reach, views, engagement, posts, er } } — monthly organic-social KPI targets
 const OPTLOG_KEY = 'caalano_optlog'              // { clientId: 'https://docs.google.com/spreadsheets/d/…' } — per-client Optimisation Log Google Sheet
+const QUALSTAGE_KEY = 'caalano_qualstage'        // { clientId: { [pipelineId]: stageName } } — the stage that marks a lead "qualified", per pipeline
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -2000,7 +2001,7 @@ const SEED_OPTLOG = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2021,8 +2022,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2118,6 +2119,41 @@ function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, 
 // Per-client Optimisation Log Google Sheet URL.
 function loadOptLog(clientId) { return SETTINGS.optlog[clientId] || SEED_OPTLOG[clientId] || '' }
 function saveOptLog(clientId, url) { SETTINGS.optlog = { ...SETTINGS.optlog, [clientId]: url }; writeLS(OPTLOG_KEY, SETTINGS.optlog); saveSettingsRemote({ optlog: { [clientId]: url } }); bumpSettings() }
+// Per-pipeline "qualified lead" stage: { [pipelineId]: stageName }. A lead is
+// qualified once it reaches that stage or beyond (won deals reach every stage, so
+// they always count). Empty = qualified is not defined for the client → hidden.
+function loadQualStage(clientId) { return (SETTINGS.qualstage && SETTINGS.qualstage[clientId]) || {} }
+function saveQualStage(clientId, map) { SETTINGS.qualstage = { ...SETTINGS.qualstage, [clientId]: map }; writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); saveSettingsRemote({ qualstage: { [clientId]: map } }); bumpSettings() }
+function hasQualStage(clientId) { const m = loadQualStage(clientId); return !!m && Object.values(m).some((v) => v) }
+// Qualified count from reached-by-stage: sum, over each pipeline that has a
+// qualified stage set, of the leads that reached that stage or beyond (rmap is
+// pipeline-scoped as pipelineId::stageName; won deals reach all stages). Returns
+// null when no qualified stage is configured (so callers can hide the metric).
+function qualifiedFromReach(clientId, rmap, pipelines) {
+  const qm = loadQualStage(clientId)
+  if (!qm || !Object.keys(qm).length || !rmap || !rmap.m) return null
+  let any = false, total = 0
+  for (const p of (pipelines || [])) {
+    const st = qm[p.id]
+    if (!st) continue
+    any = true
+    total += stageReachOf(rmap, p.id, st)
+  }
+  return any ? total : null
+}
+// Qualified count for one attributed outcome `o` (per creative / campaign): sum of
+// reached at each pipeline's qualified stage, read from o.stages[pid::stage].
+function qualifiedFromOutcome(clientId, o, pipelines) {
+  const qm = loadQualStage(clientId)
+  if (!o || !o.stages || !qm || !Object.keys(qm).length) return null
+  let any = false, total = 0
+  for (const p of (pipelines || [])) {
+    const st = qm[p.id]; if (!st) continue
+    any = true
+    total += (o.stages[p.id + '::' + st] != null ? o.stages[p.id + '::' + st] : (o.stages[st] || 0))
+  }
+  return any ? total : null
+}
 // Pull the spreadsheet id + tab gid out of a Google Sheets URL (gid defaults to 0).
 function parseSheetRef(url) {
   const m = String(url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9\-_]+)/)
@@ -3125,6 +3161,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         // the funnel numerators) in both all and channel views.
         const kefTot = (cc && cc.totals) || null
         const kef = ccKeyEventFunnel(cc, clientId, kefTot ? kefTot.won : k.won, kefTot ? kefTot.leads : k.leads)
+        // Qualified = leads that reached the per-pipeline qualified stage or beyond
+        // (won always counts). Only shown when a qualified stage is set in Settings.
+        const qual = (cc && cc.pipelinesFunnel) ? qualifiedFromReach(clientId, reachedByStage(cc.pipelinesFunnel), cc.pipelinesFunnel) : null
         return <div className="exec-cc">
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
@@ -3142,6 +3181,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
             <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
             <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
+            {qual != null && <Kpi label="Qualified" value={fmtNumber(qual)} flat={oppsV ? `${pctOf(qual, oppsV)} qual rate` : ' '} />}
             <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} flat={oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
             <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
             <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '—'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
@@ -5972,6 +6012,40 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
     </div>
   )
 }
+// Settings pane: pick the "qualified lead" stage per pipeline.
+function QualStageEditor({ clientId, nonce }) {
+  useSettingsSync()
+  const [st, setSt] = useState({ status: 'idle', blend: null })
+  useEffect(() => {
+    if (st.status !== 'idle') return
+    setSt({ status: 'loading', blend: null })
+    const r = presetRange('last_30d')
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+      .then((j) => setSt({ status: 'ok', blend: j.blend }))
+      .catch(() => setSt({ status: 'err', blend: null }))
+  }, [st.status, clientId])
+  const pipes = ((st.blend && st.blend.pipelines) || []).filter((p) => (p.stages || []).length)
+  const map = loadQualStage(clientId)
+  const setStage = (pid, stage) => { const nx = { ...loadQualStage(clientId) }; if (stage) nx[pid] = stage; else delete nx[pid]; saveQualStage(clientId, nx) }
+  return (
+    <div className="linker">
+      <p className="cap" style={{ marginTop: 0 }}>Pick the stage that marks a lead <b>qualified</b> for each pipeline — typically just after the discovery call. A lead counts as qualified once it <b>reaches that stage or beyond</b>, and any won deal always counts. Leave a pipeline on “Not set” to keep Qualified off for it. <b>Qualified only appears on the dashboards when at least one pipeline has a stage set here.</b></p>
+      {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
+        : pipes.length ? pipes.map((p) => (
+          <div className="camp-row" key={p.id}>
+            <span className="camp-nm" title={p.name}>{p.name}</span>
+            <select className="camp-lnk" value={map[p.id] || ''} onChange={(e) => setStage(p.id, e.target.value)}>
+              <option value="">Not set — no qualified metric</option>
+              {(p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+            </select>
+          </div>
+        ))
+          : st.status === 'ok' ? <p className="cap">No pipeline stages found for this client.</p>
+            : <p className="cap">Couldn’t load pipeline stages.</p>}
+    </div>
+  )
+}
 function CampaignLinker({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
@@ -6589,6 +6663,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (canLink) tabs.push(['links', 'Campaign links'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
   if (c.ghl) tabs.push(['forms', 'Forms'])
+  if (c.ghl) tabs.push(['qualstage', 'Qualified lead'])
   tabs.push(['optlog', 'Optimisation Log'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics'])
   const [tab, setTab] = useState('summary')
@@ -6635,6 +6710,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
+          {tab === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead — stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
           {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log — Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
           {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.143.0'
+const APP_VERSION = '3.144.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6177,26 +6177,42 @@ function AliasEditor({ clientId, nonce }) {
     for (const c of candidates) { let s = 0; for (const x of tok(c)) if (w.has(x)) s++; if (s > score) { score = s; best = c } }
     return score >= 1 ? best : ''
   }
+  // The reliable ad identity is its number code (CD_62 / CDa_72 / CDas_06), not
+  // the descriptive wording. Extract it so we can match old→current by number.
+  const adCode = (s) => { const m = String(s || '').match(/\bcd[a-z]*[_-]?(\d+)/i); return m ? m[0].toLowerCase().replace(/[^a-z0-9]/g, '') : null }
+  // Suggest a current name for an old UTM: prefer an exact ad-number match (high
+  // confidence); fall back to wording only when no code matches (verify).
+  const suggestFor = (name, candidates) => {
+    const code = adCode(name)
+    if (code) {
+      const same = candidates.filter((c) => adCode(c) === code)
+      if (same.length === 1) return { value: same[0], by: 'code' }
+      if (same.length > 1) return { value: bestMatch(name, same) || same[0], by: 'code' }
+    }
+    const w = bestMatch(name, candidates)
+    return { value: w, by: w ? 'words' : null }
+  }
+  // utm values that are organic traffic sources, not ads — never offer them for
+  // ad-set / creative aliasing.
+  const NONAD = new Set(['social', 'organic', 'manual', 'calendar', 'email', 'referral', 'direct', 'none', 'sms', 'whatsapp', 'qr', 'link', 'bio', 'link_in_bio', 'linktree', 'linkinbio', 'profile'])
+  const isNonAd = (name) => { const s = String(name || '').trim().toLowerCase(); return NONAD.has(s) || /link.?in.?bio|linktree/.test(s) }
   const curList = st.names || { campaign: [], medium: [], content: [] }
   const curSet = { campaign: new Set(curList.campaign.map(unorm)), medium: new Set(curList.medium.map(unorm)), content: new Set(curList.content.map(unorm)) }
   // Did the current-name lists actually load? If not, we can't tell which UTMs
   // are unmatched (everything would look unmatched), so we warn instead of dumping.
   const namesLoaded = !!st.names && (curList.campaign.length + curList.medium.length + curList.content.length) > 0
   const outcomes = { campaign: (A && A.byCampaign) || [], medium: (A && A.byMedium) || [], content: (A && A.byCreative) || [] }
-  // utm_medium values that are traffic sources, not ad sets - they'll never match
-  // an ad-set name and shouldn't be offered for ad-set aliasing.
-  const NONPAID_MEDIUM = new Set(['social', 'organic', 'manual', 'calendar', 'email', 'referral', 'direct', 'none', 'sms', 'whatsapp', 'qr', 'link', 'bio'])
   const unmatched = (lvl) => {
     if (!namesLoaded) return [] // no reference set - don't mislead by listing everything
     return (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && o.name !== '(not set)'
       && !curSet[lvl].has(unorm(o.name))
-      && !(lvl === 'medium' && NONPAID_MEDIUM.has(String(o.name).trim().toLowerCase()))
+      && !((lvl === 'medium' || lvl === 'content') && isNonAd(o.name))
       && !(aliases[lvl] && aliases[lvl][o.name])).sort((a, b) => b.leads - a.leads).slice(0, 40)
   }
   const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
   return (
     <div className="linker">
-      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with — so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). Suggested matches are pre-filled; confirm or change them.</p>
+      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with — so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown.</p>
       {st.status === 'loading' ? <Spinner label="Scanning for unmatched UTMs (last 90 days)…" />
         : st.status === 'err' ? <p className="cap">Couldn't load campaign / CRM data for this client.</p>
         : !namesLoaded ? <div className="alias-warn"><b>⚠ Couldn't load the current campaign / ad-set / ad names</b> from the ad account, so we can't tell which UTMs are unmatched (everything would look unmatched). This is usually a temporary load issue on a large account.<button className="btn-ghost sm" style={{ marginLeft: 8 }} onClick={() => setSt({ status: 'idle' })}>↻ Retry</button></div>
@@ -6211,15 +6227,20 @@ function AliasEditor({ clientId, nonce }) {
                 ))}</div>}
                 {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs — everything ties to a current name.'}</p>
                   : un.map((o) => {
-                    const sug = bestMatch(o.name, curList[lvl])
+                    const oc = adCode(o.name)
+                    const sug = suggestFor(o.name, curList[lvl])
+                    const sc = sug.value ? adCode(sug.value) : null
                     return (
                       <div className="alias-row" key={o.name}>
-                        <span className="alias-old" title={o.name}>{o.name} <span className="alias-leads">· {fmtNumber(o.leads)} lead{o.leads === 1 ? '' : 's'}{o.won ? `, ${fmtNumber(o.won)} won` : ''}</span></span>
+                        <span className="alias-old" title={o.name}>{oc ? <span className="alias-code">{oc.toUpperCase()}</span> : null}{o.name} <span className="alias-leads">· {fmtNumber(o.leads)} lead{o.leads === 1 ? '' : 's'}{o.won ? `, ${fmtNumber(o.won)} won` : ''}</span></span>
                         <span className="alias-arrow">→</span>
-                        <select className="camp-lnk alias-sel" defaultValue={sug || ''} onChange={(e) => e.target.value && setAlias(clientId, lvl, o.name, e.target.value)}>
-                          <option value="">Link to current {label.slice(0, -1).toLowerCase()}…</option>
-                          {curList[lvl].map((n) => <option key={n} value={n}>{n === sug ? `${n}  (suggested)` : n}</option>)}
-                        </select>
+                        <div className="alias-pick">
+                          <select className="camp-lnk alias-sel" value={sug.value || ''} onChange={(e) => setAlias(clientId, lvl, o.name, e.target.value)}>
+                            <option value="">Link to current {label.slice(0, -1).toLowerCase()}…</option>
+                            {curList[lvl].map((n) => { const cc = adCode(n); return <option key={n} value={n}>{cc ? cc.toUpperCase() + ' · ' : ''}{n}</option> })}
+                          </select>
+                          {sug.value ? <button className={`alias-ok ${sug.by === 'code' ? 'by-code' : 'by-words'}`} title={sug.by === 'code' ? `Ad-number match (${(sc || '').toUpperCase()}) — click to approve` : 'Best wording guess — verify the ad number before approving'} onClick={() => setAlias(clientId, lvl, o.name, sug.value)}>✓ {sug.by === 'code' ? `#${(sc || '').toUpperCase()}` : 'Approve'}</button> : null}
+                        </div>
                       </div>
                     )
                   })}

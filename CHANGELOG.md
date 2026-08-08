@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.144.0 — 2026-08-08 · `PENDING`
+- **UTM-alias editor now matches on the ad number, with explicit approve.** The suggestion
+  engine used to match on wording (`Single_Video`, `Free Training`), which mis-linked ads
+  (e.g. `CDa_72…` → `CDa_62…`) and piled many old UTMs onto whichever current ad shared
+  generic words. It now keys off the **ad-number code** (`CD_62` / `CDa_72` / `CDas_06`),
+  shown as a badge on each row: a green **✓ #CODE** button = the numbers match (high
+  confidence), an amber **✓ Approve** = a wording guess to verify first. Every option in the
+  dropdown is prefixed with its code, and organic sources (`link_in_bio`, `linktree`, …) are
+  filtered out of the ad-set/creative lists. Nothing links until you approve or pick.
+
 ## v3.143.0 — 2026-08-08 · `PENDING`
 - **Meta "Results" cell no longer truncates to "77…".** The campaigns / ad-sets tables are
   fixed-layout, so packing the count + conversion-action label + "+N" badge into one narrow

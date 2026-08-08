@@ -17,7 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.134.0 — 2026-08-05 · `PENDING`
+## v3.135.0 — 2026-08-05 · `PENDING`
+- **Multi-pipeline key events no longer merge same-named stages.** The Key Events editor
+  was storing a ticked pipeline stage as a bare name with no pipeline, so a stage that
+  exists in two pipelines (e.g. FINR's "Booked Discovery Call") became one unscoped event
+  whose reach was **summed across both pipelines**. Stages are now stored **scoped to their
+  pipeline** for multi-pipeline clients, so each pipeline's stage is counted independently
+  (the pipeline filter then shows only that pipeline's, and “All pipelines” shows each on
+  its own). Existing bare entries are auto-migrated to scoped ones when the editor loads.
+
+## v3.134.0 — 2026-08-05 · `d1e2327`
 - **Meta Ads — richer creative cards + clearer Caalano360.**
   - Each creative card now shows the **full Caalano360 key-events funnel** (Leads → each
     configured key event with count + show rate → Revenue / Cost-per-won / ROAS), matching

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.134.0'
+const APP_VERSION = '3.135.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5816,12 +5816,40 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
   // A stage entry is a bare name (or {stage} with no cal); a calendar entry is
   // {cal, label, stage?} where `stage` is the pipeline stage it's linked to - so
   // matching stage checkboxes must exclude calendar entries.
-  const hasStage = (n) => sel.some((e) => (typeof e === 'string' ? e === n : e && e.cal == null && e.stage === n))
+  // A stage checkbox is per (pipeline, name) for multi-pipeline clients so a
+  // same-named stage in two pipelines is two independent key events (each scoped to
+  // its own pipeline), never one merged/summed event.
+  const hasStage = (n, pid) => sel.some((e) => {
+    if (typeof e === 'string') return e === n            // legacy bare = every pipeline
+    if (!e || e.cal != null || e.stage !== n) return false
+    if (!multi || pid == null) return true
+    return e.pipeline == null || e.pipeline === pid       // scoped = only its pipeline
+  })
   const hasCal = (id) => sel.some((e) => e && typeof e === 'object' && e.cal === id)
   const calStageOf = (id) => { const e = sel.find((x) => x && x.cal === id); return (e && e.stage) || '' }
   const calPipeOf = (id) => { const e = sel.find((x) => x && x.cal === id); return (e && e.pipeline) || '' }
   const persist = (nx) => { saveKeyEvents(clientId, nx); return nx }
-  const toggleStage = (n) => setSel((prev) => persist(hasStage(n) ? prev.filter((e) => !(e === n || (e && e.cal == null && e.stage === n))) : [...prev, n]))
+  // Expand legacy bare stage names into pipeline-scoped entries (one per pipeline
+  // that owns the stage) so counts stop merging across same-named stages.
+  const expandLegacy = (list) => {
+    if (!multi) return list
+    const out = []
+    for (const e of list) {
+      if (typeof e === 'string') {
+        const owners = withStages.filter((p) => (p.stages || []).some((s) => s.name === e))
+        if (owners.length) for (const p of owners) out.push({ stage: e, pipeline: p.id })
+        else out.push(e)
+      } else out.push(e)
+    }
+    return out
+  }
+  const toggleStage = (n, pid) => setSel((prev) => {
+    if (!multi) return persist(hasStage(n) ? prev.filter((e) => !(e === n || (e && e.cal == null && e.stage === n))) : [...prev, n])
+    const base = expandLegacy(prev)
+    const on = base.some((e) => e && e.cal == null && e.stage === n && e.pipeline === pid)
+    const nx = on ? base.filter((e) => !(e && e.cal == null && e.stage === n && e.pipeline === pid)) : [...base, { stage: n, pipeline: pid }]
+    return persist(nx)
+  })
   const toggleCal = (cal) => setSel((prev) => persist(hasCal(cal.id) ? prev.filter((e) => !(e && e.cal === cal.id)) : [...prev, { cal: cal.id, label: cal.name }]))
   // Link a calendar to a pipeline (resets the stage) then to a stage within it.
   // Single-pipeline clients auto-fill the pipeline so the link is still scoped.
@@ -5829,6 +5857,14 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
   const linkCalStage = (id, stage) => setSel((prev) => persist(prev.map((e) => (e && e.cal === id ? { ...e, stage: stage || undefined, pipeline: (multi ? e.pipeline : (withStages[0] && withStages[0].id)) || e.pipeline || undefined } : e))))
   const stagesOfPipe = (pid) => { const p = withStages.find((x) => x.id === pid); return p ? (p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => s.name) : [] }
   const allStages = (() => { const m = new Map(); for (const p of withStages) for (const s of (p.stages || [])) if (!m.has(s.name)) m.set(s.name, s.pos == null ? 999 : s.pos); return [...m.entries()].sort((a, b) => a[1] - b[1]).map(([n]) => n) })()
+  // One-time migration: once the pipelines load for a multi-pipeline client, expand
+  // any legacy bare stage-name key events into pipeline-scoped ones so same-named
+  // stages across pipelines stop being counted together.
+  useEffect(() => {
+    if (!multi || st.status !== 'ok') return
+    const hasBare = sel.some((e) => typeof e === 'string' && withStages.some((p) => (p.stages || []).some((s) => s.name === e)))
+    if (hasBare) { const nx = expandLegacy(sel); saveKeyEvents(clientId, nx); setSel(nx) }
+  }, [multi, st.status]) // eslint-disable-line
   return (
     <div className="linker">
       {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>}
@@ -5866,7 +5902,7 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
             <div className="kev-group" key={p.id}>
               {multi && <div className="kev-pipe">{p.name}</div>}
               <div className="kev-list">{(p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => (
-                <label className={`kev-item ${hasStage(s.name) ? 'on' : ''}`} key={s.name}><input type="checkbox" checked={hasStage(s.name)} onChange={() => toggleStage(s.name)} /><span title={s.name}>{s.name}</span></label>
+                <label className={`kev-item ${hasStage(s.name, p.id) ? 'on' : ''}`} key={s.name}><input type="checkbox" checked={hasStage(s.name, p.id)} onChange={() => toggleStage(s.name, p.id)} /><span title={s.name}>{s.name}</span></label>
               ))}</div>
             </div>
           ))

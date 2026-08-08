@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.140.0'
+const APP_VERSION = '3.141.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -391,7 +391,21 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onP
   const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks, conversions: a.conversions + r.conversions, metaSpend: a.metaSpend + r.metaSpend, googleSpend: a.googleSpend + r.googleSpend }), { spend: 0, impressions: 0, clicks: 0, conversions: 0, metaSpend: 0, googleSpend: 0 })
   const cpl = t.conversions ? t.spend / t.conversions : 0
   const ctr = t.impressions ? (t.clicks / t.impressions) * 100 : 0
-  const totalRev = rows.reduce((a, r) => a + (r.revenue || 0), 0)
+  // Headline Revenue / ROAS now reconcile with the leaderboard below: both sum
+  // the exact same per-client CRM revenue (the leaderboard's live "all"-channel
+  // figure from the ovrow feed), so the top total always equals the sum of the
+  // rows. The old headline pulled from a separate agency feed with a different
+  // won-revenue basis, so a finance client's loan-sized deal value could make
+  // the two disagree by millions. `ov` is shared down to AgencyComparison so
+  // there's a single fetch.
+  const ov = useOvRows(rows, range, nonce)
+  const crmIds = rows.filter((r) => r.c.ghl).map((r) => r.id)
+  let totalRev = 0, crmReady = 0
+  for (const id of crmIds) {
+    const o = ov[id]
+    if (o && o.status === 'ok' && o.cur && o.cur.all) { totalRev += o.cur.all.revenue || 0; crmReady++ }
+  }
+  const crmPending = crmIds.length - crmReady
   const roas = t.spend ? totalRev / t.spend : 0
   return (
     <>
@@ -401,8 +415,8 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onP
         <Kpi label="Leads & Conversions" tag="ADS" value={fmtNumber(t.conversions)} />
         <Kpi label="Blended Cost / Result" tag="ADS" value={fmtCurrency(cpl, currency)} />
         <Kpi label="Blended CTR" tag="ADS" value={fmtPct(ctr, 2)} />
-        <Kpi label="Revenue Generated" tag="CRM" value={fmtCurrency(totalRev, currency)} />
-        <Kpi label="ROAS" tag="CRM" value={totalRev && t.spend ? `${roas.toFixed(2)}×` : '-'} />
+        <Kpi label="Revenue Generated" tag="CRM" value={crmIds.length ? (crmReady ? fmtCurrency(totalRev, currency) : '…') : '-'} flat={crmPending > 0 ? `${crmReady}/${crmIds.length} clients loaded` : undefined} />
+        <Kpi label="ROAS" tag="CRM" value={crmReady && t.spend ? `${roas.toFixed(2)}×` : '-'} flat={crmPending > 0 ? 'loading CRM…' : undefined} />
       </div>
       {alerts && (alerts.meta || alerts.google) && <>
         <div className="section-title">Account health <span className="sub">· $0 spend yesterday with an active prior week - likely paused / failed payment</span></div>
@@ -413,7 +427,7 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onP
         </div>
       </>}
       <div className="section-title">Client leaderboard <span className="sub">· results, funnel &amp; revenue per client vs the previous period · click a row to open the client</span></div>
-      <AgencyComparison rows={rows} currency={currency} range={range} nonce={nonce} onPick={onPick} />
+      <AgencyComparison rows={rows} currency={currency} range={range} nonce={nonce} onPick={onPick} ov={ov} />
     </>
   )
 }
@@ -626,10 +640,9 @@ function ResultsPop({ children, r, currency }) {
   )
 }
 const OV_FILTERS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid']]
-function AgencyComparison({ rows, currency, range, nonce, onPick }) {
+function AgencyComparison({ rows, currency, range, onPick, ov }) {
   const [f, setF] = useState('all')
   const [sort, setSort] = useState({ key: 'spend', dir: -1 })
-  const ov = useOvRows(rows, range, nonce)
   const money = (v) => fmtCurrency(v, currency)
   const chanKey = f === 'all' ? 'all' : f === 'paid' ? 'paid' : 'other'
   const paidView = f !== 'nonpaid' // ad spend/results only exist for paid

@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.141.0 — 2026-08-08 · `PENDING`
+- **Agency Overview headline now reconciles with the leaderboard.** The top "Revenue
+  Generated" and "ROAS" KPIs used to pull from a *separate* agency feed (Windsor's bulk
+  GHL blend) while the client leaderboard below pulled per-client attribution — two
+  different won-revenue bases, so a single finance deal with a loan-sized value could push
+  the headline millions above the sum of the rows. The headline now **sums the exact same
+  per-client "all"-channel CRM revenue the leaderboard shows**, so the top total always
+  equals the sum of the rows beneath it. Both share a single fetch (no extra load), and
+  while CRM data streams in the KPI shows an `n/N clients loaded` progress line so a
+  half-loaded total is never mistaken for the final figure.
+
 ## v3.140.0 — 2026-08-05 · `PENDING`
 - **UTM aliases — fix attribution after a rename.** When a campaign, ad set or creative is
   renamed, historical CRM leads keep the **old** UTM they were stamped with, so their

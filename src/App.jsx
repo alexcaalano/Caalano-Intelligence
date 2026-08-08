@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.138.0'
+const APP_VERSION = '3.139.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2124,36 +2124,6 @@ function saveOptLog(clientId, url) { SETTINGS.optlog = { ...SETTINGS.optlog, [cl
 // they always count). Empty = qualified is not defined for the client → hidden.
 function loadQualStage(clientId) { return (SETTINGS.qualstage && SETTINGS.qualstage[clientId]) || {} }
 function saveQualStage(clientId, map) { SETTINGS.qualstage = { ...SETTINGS.qualstage, [clientId]: map }; writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); saveSettingsRemote({ qualstage: { [clientId]: map } }); bumpSettings() }
-function hasQualStage(clientId) { const m = loadQualStage(clientId); return !!m && Object.values(m).some((v) => v) }
-// Qualified count from reached-by-stage: sum, over each pipeline that has a
-// qualified stage set, of the leads that reached that stage or beyond (rmap is
-// pipeline-scoped as pipelineId::stageName; won deals reach all stages). Returns
-// null when no qualified stage is configured (so callers can hide the metric).
-function qualifiedFromReach(clientId, rmap, pipelines) {
-  const qm = loadQualStage(clientId)
-  if (!qm || !Object.keys(qm).length || !rmap || !rmap.m) return null
-  let any = false, total = 0
-  for (const p of (pipelines || [])) {
-    const st = qm[p.id]
-    if (!st) continue
-    any = true
-    total += stageReachOf(rmap, p.id, st)
-  }
-  return any ? total : null
-}
-// Qualified count for one attributed outcome `o` (per creative / campaign): sum of
-// reached at each pipeline's qualified stage, read from o.stages[pid::stage].
-function qualifiedFromOutcome(clientId, o, pipelines) {
-  const qm = loadQualStage(clientId)
-  if (!o || !o.stages || !qm || !Object.keys(qm).length) return null
-  let any = false, total = 0
-  for (const p of (pipelines || [])) {
-    const st = qm[p.id]; if (!st) continue
-    any = true
-    total += (o.stages[p.id + '::' + st] != null ? o.stages[p.id + '::' + st] : (o.stages[st] || 0))
-  }
-  return any ? total : null
-}
 // Pull the spreadsheet id + tab gid out of a Google Sheets URL (gid defaults to 0).
 function parseSheetRef(url) {
   const m = String(url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9\-_]+)/)
@@ -2230,7 +2200,25 @@ function kpiClass(actual, target, goodWhenUnder) { if (target == null || target 
    to the pipeline stage it represents so it sits in the right funnel order. They
    drive the Caalano360 / Meta / Google cost-per-event funnel and green columns.
    Unset = seeded defaults where known, else leads→booked→shown→won. */
-function loadKeyEvents(clientId) { const v = SETTINGS.keyevents[clientId]; if (v !== undefined) return v; return SEED_KEYEVENTS[clientId] || [] }
+function loadKeyEventsRaw(clientId) { const v = SETTINGS.keyevents[clientId]; if (v !== undefined) return v; return SEED_KEYEVENTS[clientId] || [] }
+// Key events for RENDERING (funnels, green columns, reach) = the configured key
+// events PLUS a synthetic "Qualified" stage event for every pipeline that has a
+// qualified stage set (Settings → Qualified lead). It slots into the funnel at its
+// stage position and behaves like any other key event. The editor + config checks
+// use loadKeyEventsRaw so the synthetic event never round-trips into storage.
+function loadKeyEvents(clientId) {
+  const base = loadKeyEventsRaw(clientId)
+  const qm = (SETTINGS.qualstage && SETTINGS.qualstage[clientId]) || null
+  if (!qm || !Object.keys(qm).length) return base
+  const nz = (s) => String(s || '').trim().toLowerCase()
+  const out = base.slice()
+  for (const pid in qm) {
+    const stage = qm[pid]; if (!stage) continue
+    const dup = base.some((e) => e && typeof e === 'object' && e.cal == null && nz(e.stage) === nz(stage) && (e.pipeline || null) === (pid || null))
+    if (!dup) out.push({ stage, pipeline: pid, label: 'Qualified' })
+  }
+  return out
+}
 function saveKeyEvents(clientId, arr) { SETTINGS.keyevents = { ...SETTINGS.keyevents, [clientId]: arr }; writeLS(KEV_KEY, SETTINGS.keyevents); saveSettingsRemote({ keyevents: { [clientId]: arr } }); bumpSettings() }
 // Organic-social competitors assigned to a client (name + IG/FB handle). Handles
 // are stored bare (no @, no URL); the tab derives profile links + Windsor lookups.
@@ -3161,9 +3149,6 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         // the funnel numerators) in both all and channel views.
         const kefTot = (cc && cc.totals) || null
         const kef = ccKeyEventFunnel(cc, clientId, kefTot ? kefTot.won : k.won, kefTot ? kefTot.leads : k.leads)
-        // Qualified = leads that reached the per-pipeline qualified stage or beyond
-        // (won always counts). Only shown when a qualified stage is set in Settings.
-        const qual = (cc && cc.pipelinesFunnel) ? qualifiedFromReach(clientId, reachedByStage(cc.pipelinesFunnel), cc.pipelinesFunnel) : null
         return <div className="exec-cc">
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
@@ -3181,7 +3166,6 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
             <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
             <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
-            {qual != null && <Kpi label="Qualified" value={fmtNumber(qual)} flat={oppsV ? `${pctOf(qual, oppsV)} qual rate` : ' '} />}
             <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} flat={oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
             <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
             <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '—'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
@@ -5890,7 +5874,7 @@ function ClientTrackingDiagnostics({ clientId, currency, embedded, nonce }) {
 
 function KeyEventsEditor({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
-  const [sel, setSel] = useState(() => loadKeyEvents(clientId))
+  const [sel, setSel] = useState(() => loadKeyEventsRaw(clientId))
   const [st, setSt] = useState({ status: 'idle', blend: null })
   const [cals, setCals] = useState({ status: 'idle', list: [] })
   useEffect(() => {

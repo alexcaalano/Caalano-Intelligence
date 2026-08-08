@@ -17,7 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.138.0 — 2026-08-05 · `PENDING`
+## v3.139.0 — 2026-08-05 · `PENDING`
+- **Qualified lead now behaves as a key event, at its pipeline position.** Setting a
+  qualified stage (Settings → Qualified lead) injects a synthetic **“Qualified”** key event
+  scoped to that pipeline, so it slots into the funnel at the stage's position and flows
+  automatically into **everywhere key events render** — the Caalano360 funnel, the
+  key-event reach cards, the revenue bottleneck, the **Meta/Google green columns**, and the
+  **Monthly Report** — with its reached count, % of leads, next-step and cost per event. It
+  only appears when a qualified stage is set (and is hidden if that stage is already one of
+  your key events, to avoid a duplicate). Replaces the standalone Qualified KPI from the
+  previous build. The Settings editor still edits only your real key events (the synthetic
+  Qualified event never round-trips into storage).
+
+## v3.138.0 — 2026-08-05 · `22a2ace`
 - **Qualified lead — per-pipeline stage (Settings) + Caalano360 KPI.** New
   **Settings → (client) → Qualified lead** tab: pick the stage that marks a lead qualified
   for each pipeline (typically just after the discovery call). A lead is qualified once it

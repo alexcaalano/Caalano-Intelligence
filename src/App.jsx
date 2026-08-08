@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.144.0'
+const APP_VERSION = '3.145.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2209,7 +2209,10 @@ function saveQualStage(clientId, map) { SETTINGS.qualstage = { ...SETTINGS.quals
 const ALIAS_LEVELS = ['campaign', 'medium', 'content']
 function loadAliases(clientId) { const a = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}; return { campaign: a.campaign || {}, medium: a.medium || {}, content: a.content || {} } }
 function saveAliases(clientId, level, map) {
-  const cur = loadAliases(clientId); const nx = { ...cur, [level]: map }
+  // Preserve any sibling keys (other levels + the _keep dismissals) - build from
+  // the raw stored object, not loadAliases which only returns the fold maps.
+  const raw = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}
+  const nx = { ...raw, [level]: map }
   SETTINGS.aliases = { ...SETTINGS.aliases, [clientId]: nx }
   writeLS(ALIASES_KEY, SETTINGS.aliases); saveSettingsRemote({ aliases: { [clientId]: nx } }); bumpSettings()
 }
@@ -2217,6 +2220,19 @@ function setAlias(clientId, level, oldName, currentName) {
   const cur = loadAliases(clientId); const m = { ...(cur[level] || {}) }
   if (currentName) m[oldName] = currentName; else delete m[oldName]
   saveAliases(clientId, level, m)
+}
+// "Keep separate" — mark an unmatched UTM as an intentional standalone (a legit
+// paused/other campaign, NOT a rename). It's hidden from the unmatched list and
+// its data stays under its own name — nothing is merged. Stored alongside the
+// fold maps under a reserved _keep key so applyAliases never touches it.
+function loadKeep(clientId) { const k = ((SETTINGS.aliases && SETTINGS.aliases[clientId]) || {})._keep || {}; return { campaign: k.campaign || {}, medium: k.medium || {}, content: k.content || {} } }
+function setKeep(clientId, level, name, on) {
+  const raw = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}
+  const keep = loadKeep(clientId); const lvlMap = { ...keep[level] }
+  if (on) lvlMap[name] = 1; else delete lvlMap[name]
+  const nx = { ...raw, _keep: { ...keep, [level]: lvlMap } }
+  SETTINGS.aliases = { ...SETTINGS.aliases, [clientId]: nx }
+  writeLS(ALIASES_KEY, SETTINGS.aliases); saveSettingsRemote({ aliases: { [clientId]: nx } }); bumpSettings()
 }
 // Fold old-UTM outcome rows into their current-name row using an alias map
 // { oldName: currentName }. Sums numeric fields and merges the stage/calendar maps.
@@ -6202,28 +6218,34 @@ function AliasEditor({ clientId, nonce }) {
   // are unmatched (everything would look unmatched), so we warn instead of dumping.
   const namesLoaded = !!st.names && (curList.campaign.length + curList.medium.length + curList.content.length) > 0
   const outcomes = { campaign: (A && A.byCampaign) || [], medium: (A && A.byMedium) || [], content: (A && A.byCreative) || [] }
+  const keep = loadKeep(clientId)
   const unmatched = (lvl) => {
     if (!namesLoaded) return [] // no reference set - don't mislead by listing everything
     return (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && o.name !== '(not set)'
       && !curSet[lvl].has(unorm(o.name))
       && !((lvl === 'medium' || lvl === 'content') && isNonAd(o.name))
+      && !(keep[lvl] && keep[lvl][o.name])
       && !(aliases[lvl] && aliases[lvl][o.name])).sort((a, b) => b.leads - a.leads).slice(0, 40)
   }
   const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
   return (
     <div className="linker">
-      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with — so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown.</p>
+      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with — so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown — <b>ignore a row and it keeps its own identity, untouched.</b> If a row is a legit standalone (e.g. a paused campaign) and not a rename, hit <b>Keep separate</b> to clear it from the list without merging anything.</p>
       {st.status === 'loading' ? <Spinner label="Scanning for unmatched UTMs (last 90 days)…" />
         : st.status === 'err' ? <p className="cap">Couldn't load campaign / CRM data for this client.</p>
         : !namesLoaded ? <div className="alias-warn"><b>⚠ Couldn't load the current campaign / ad-set / ad names</b> from the ad account, so we can't tell which UTMs are unmatched (everything would look unmatched). This is usually a temporary load issue on a large account.<button className="btn-ghost sm" style={{ marginLeft: 8 }} onClick={() => setSt({ status: 'idle' })}>↻ Retry</button></div>
           : LEVELS.map(([lvl, label, utm]) => {
             const un = unmatched(lvl)
             const existing = Object.entries(aliases[lvl] || {})
+            const keptList = Object.keys(keep[lvl] || {})
             return (
               <div className="kev-group" key={lvl}>
                 <div className="kev-pipe">{label} <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {utm}</span></div>
                 {existing.length > 0 && <div className="alias-existing">{existing.map(([oldN, cur]) => (
                   <div className="alias-row alias-set" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-arrow">→</span><span className="alias-cur" title={cur}>{cur}</span><button className="alias-x" title="Remove link" onClick={() => setAlias(clientId, lvl, oldN, '')}>✕</button></div>
+                ))}</div>}
+                {keptList.length > 0 && <div className="alias-existing">{keptList.map((oldN) => (
+                  <div className="alias-row alias-kept" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-kept-tag">kept separate</span><button className="alias-x" title="Undo — show this UTM in the unmatched list again" onClick={() => setKeep(clientId, lvl, oldN, false)}>✕</button></div>
                 ))}</div>}
                 {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs — everything ties to a current name.'}</p>
                   : un.map((o) => {
@@ -6235,11 +6257,12 @@ function AliasEditor({ clientId, nonce }) {
                         <span className="alias-old" title={o.name}>{oc ? <span className="alias-code">{oc.toUpperCase()}</span> : null}{o.name} <span className="alias-leads">· {fmtNumber(o.leads)} lead{o.leads === 1 ? '' : 's'}{o.won ? `, ${fmtNumber(o.won)} won` : ''}</span></span>
                         <span className="alias-arrow">→</span>
                         <div className="alias-pick">
-                          <select className="camp-lnk alias-sel" value={sug.value || ''} onChange={(e) => setAlias(clientId, lvl, o.name, e.target.value)}>
-                            <option value="">Link to current {label.slice(0, -1).toLowerCase()}…</option>
+                          <select className="camp-lnk alias-sel" value="" onChange={(e) => e.target.value && setAlias(clientId, lvl, o.name, e.target.value)}>
+                            <option value="">Not linked — leave as is</option>
                             {curList[lvl].map((n) => { const cc = adCode(n); return <option key={n} value={n}>{cc ? cc.toUpperCase() + ' · ' : ''}{n}</option> })}
                           </select>
-                          {sug.value ? <button className={`alias-ok ${sug.by === 'code' ? 'by-code' : 'by-words'}`} title={sug.by === 'code' ? `Ad-number match (${(sc || '').toUpperCase()}) — click to approve` : 'Best wording guess — verify the ad number before approving'} onClick={() => setAlias(clientId, lvl, o.name, sug.value)}>✓ {sug.by === 'code' ? `#${(sc || '').toUpperCase()}` : 'Approve'}</button> : null}
+                          {sug.value ? <button className={`alias-ok ${sug.by === 'code' ? 'by-code' : 'by-words'}`} title={`Approve: ${o.name} → ${sug.value}${sug.by === 'code' ? ` (ad-number match ${(sc || '').toUpperCase()})` : ' (wording guess — verify the ad number first)'}`} onClick={() => setAlias(clientId, lvl, o.name, sug.value)}>✓ {sug.by === 'code' ? `#${(sc || '').toUpperCase()}` : 'Approve'} <span className="alias-ok-tgt">{sug.value}</span></button> : null}
+                          <button className="alias-keep" title="Not a rename — this is a legit standalone (e.g. a paused campaign). Hide it and keep its data under its own name." onClick={() => setKeep(clientId, lvl, o.name, true)}>Keep separate</button>
                         </div>
                       </div>
                     )

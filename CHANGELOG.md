@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.145.0 — 2026-08-08 · `PENDING`
+- **UTM aliases: clearer "leave as is" default + "Keep separate" for legit standalones.**
+  Not every unmatched UTM is a rename — a paused-but-legit campaign shows as unmatched
+  simply because it isn't in the live names list, and it should NOT be merged into another
+  campaign. The dropdown now defaults to **"Not linked — leave as is"** (nothing is applied
+  unless you approve or pick), the approve button shows the target it would link to, and a
+  new **Keep separate** button marks a UTM as an intentional standalone — it's hidden from
+  the unmatched list and its data stays under its own name, with an undo in a "kept separate"
+  strip. Stored under a reserved `_keep` key so it never affects aggregation.
+
 ## v3.144.0 — 2026-08-08 · `PENDING`
 - **UTM-alias editor now matches on the ad number, with explicit approve.** The suggestion
   engine used to match on wording (`Single_Video`, `Free Training`), which mis-linked ads

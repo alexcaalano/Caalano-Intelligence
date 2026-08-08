@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.136.0'
+const APP_VERSION = '3.137.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -69,13 +69,14 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
   const groups = [], cols = []
   ke.forEach((k, i) => {
     if (k.kind === 'calendar') {
-      groups.push({ label: '📅 ' + k.label, kind: 'calendar', span: 5 })
+      groups.push({ label: '📅 ' + k.label, kind: 'calendar', span: 6 })
       const ctx = { g: i, refs: k.refs || [k.ref], stage: k.stage, pipeline: k.pipeline, names: calNames, event: k.label }
       cols.push({ key: `e${i}b`, sub: 'Booked', ty: 'count', metric: 'calBooked', gfirst: true, title: `Bookings for ${k.label}`, ...ctx })
       cols.push({ key: `e${i}br`, sub: 'Book Rate', ty: 'rate', metric: 'calBookRate', title: 'Booked ÷ leads', ...ctx })
       cols.push({ key: `e${i}cb`, sub: 'Cost / Booked', ty: 'cost', metric: 'calCost', title: `Spend ÷ ${k.label} bookings`, ...ctx })
+      cols.push({ key: `e${i}o`, sub: 'Occurred', ty: 'count', metric: 'calOccurred', title: `Appointments whose date has passed (occurred) for ${k.label}`, ...ctx })
       cols.push({ key: `e${i}s`, sub: 'Shown', ty: 'count', metric: 'calShown', title: `Showed for ${k.label}`, ...ctx })
-      cols.push({ key: `e${i}sr`, sub: 'Show Rate', ty: 'rate', metric: 'calShowRate', title: 'Shown ÷ booked', ...ctx })
+      cols.push({ key: `e${i}sr`, sub: 'Show Rate', ty: 'rate', metric: 'calShowRate', title: 'Shown ÷ occurred (past-date appointments only)', ...ctx })
     } else if (WON_RE.test(k.label)) {
       // Won event: revenue-truth group from the won opportunity STATUS/value
       // (not the pipeline stage) - Won, Win Rate, Cost/Won, Won Val, Avg Deal, ROAS.
@@ -114,16 +115,18 @@ function o360Fields(o, spend, leads, desc) {
     if (m && m.slice(0, 3) === 'cal') {
       let g = agg[c.g]
       if (!g) {
-        const b = calSum(c.refs, 'cals'), sh = calSum(c.refs, 'calsShown')
+        const b = calSum(c.refs, 'cals'), sh = calSum(c.refs, 'calsShown'), oc = calSum(c.refs, 'calsOccurred')
         const stageN = stg(c.stage, c.pipeline)
         const fromStage = Math.max(0, stageN - b.t)
-        g = agg[c.g] = { booked: b.t + fromStage, fromCal: b.t, fromStage, bookedPer: b.per, shown: sh.t, shownPer: sh.per }
+        g = agg[c.g] = { booked: b.t + fromStage, fromCal: b.t, fromStage, bookedPer: b.per, occurred: oc.t, occurredPer: oc.per, shown: sh.t, shownPer: sh.per }
       }
       if (m === 'calBooked') { f[c.key] = g.booked; f[c.key + 'B'] = { per: g.bookedPer, fromStage: g.fromStage } }
       else if (m === 'calBookRate') { f[c.key] = L ? (g.booked / L) * 100 : null }
       else if (m === 'calCost') { f[c.key] = g.booked && spend ? spend / g.booked : null; f[c.key + 'N'] = g.booked }
+      else if (m === 'calOccurred') { f[c.key] = g.occurred; f[c.key + 'B'] = { per: g.occurredPer } }
       else if (m === 'calShown') { f[c.key] = g.shown; f[c.key + 'B'] = { per: g.shownPer } }
-      else if (m === 'calShowRate') { f[c.key] = g.booked ? (g.shown / g.booked) * 100 : null }
+      // Show rate on OCCURRED appointments only (past their date), not all bookings.
+      else if (m === 'calShowRate') { f[c.key] = g.occurred ? (g.shown / g.occurred) * 100 : null }
     } else if (m === 'stageReached') { f[c.key] = stg(c.ref, c.pipeline) }
     else if (m === 'stageRate') { const n = stg(c.ref, c.pipeline); f[c.key] = L ? (n / L) * 100 : null }
     else if (m === 'stageCost') { const n = stg(c.ref, c.pipeline); f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
@@ -1237,9 +1240,11 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
     let oc = null
     for (const x of rs) {
       const o = oCre.get(unorm(x.name)); if (!o) continue
-      oc = oc || { booked: 0, shown: 0, shownStage: 0, cancelled: 0, won: 0, revenue: 0, cals: {}, stages: {} }
+      oc = oc || { booked: 0, shown: 0, shownStage: 0, cancelled: 0, won: 0, revenue: 0, cals: {}, calsShown: {}, calsOccurred: {}, stages: {} }
       oc.booked += o.booked; oc.shown += o.shown; oc.shownStage += o.shownStage || 0; oc.cancelled += o.cancelled || 0; oc.won += o.won; oc.revenue += o.revenue
       if (o.cals) for (const k in o.cals) oc.cals[k] = (oc.cals[k] || 0) + o.cals[k]
+      if (o.calsShown) for (const k in o.calsShown) oc.calsShown[k] = (oc.calsShown[k] || 0) + o.calsShown[k]
+      if (o.calsOccurred) for (const k in o.calsOccurred) oc.calsOccurred[k] = (oc.calsOccurred[k] || 0) + o.calsOccurred[k]
       if (o.stages) for (const k in o.stages) oc.stages[k] = (oc.stages[k] || 0) + o.stages[k]
     }
     return { type, count: rs.length, ...s, ...o360Fields(oc, s.spend, s.leads, o360cols) }
@@ -2324,7 +2329,7 @@ function calCountMap(attribData, chan) {
   if (Array.isArray(list)) {
     for (const cal of list) {
       const src = (chan && chan !== 'all' && cal.ch && cal.ch[chan]) ? cal.ch[chan] : cal
-      m.set(cal.id, { name: cal.name, count: src.booked || 0, shown: src.shown || 0, cancelled: src.cancelled || 0 })
+      m.set(cal.id, { name: cal.name, count: src.booked || 0, occurred: src.occurred || 0, shown: src.shown || 0, cancelled: src.cancelled || 0 })
     }
   }
   return m
@@ -2337,14 +2342,14 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
   const rows = []
   for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
-      let cal = 0, shown = 0, cancelled = 0, any = false
-      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; shown += c.shown; cancelled += c.cancelled } }
+      let cal = 0, occurred = 0, shown = 0, cancelled = 0, any = false
+      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; occurred += (c.occurred || 0); shown += c.shown; cancelled += c.cancelled } }
       // Linked stage acts as a fallback: leads that reached the stage but we have
       // no calendar booking for. Approximated as stageReached - calendar bookings.
       const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
       const fromStage = Math.max(0, stageReached - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, shown, cancelled, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, occurred, shown, cancelled, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -2387,7 +2392,8 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
           const pct = total ? (s.count / total) * 100 : 0
           const prev = i > 0 ? full[i - 1].count : null
           const step = prev == null ? null : (prev ? (s.count / prev) * 100 : 0)
-          const showR = s.kind === 'calendar' && s.count ? (s.shown / s.count) * 100 : null
+          // Show rate on OCCURRED appointments (past their date), not all bookings.
+          const showR = s.kind === 'calendar' && s.occurred ? (s.shown / s.occurred) * 100 : null
           const hue = 210 + Math.round((i / Math.max(1, full.length - 1)) * -70)
           const isLead = s.kind === 'lead'
           const barTip = s.fromStage ? `${fmtNumber(s.count)} total · ${fmtNumber(s.fromCal)} via calendar booking · ${fmtNumber(s.fromStage)} via pipeline-stage fallback` : undefined
@@ -2397,7 +2403,7 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
               <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
               <span className="kef-num">{isLead ? '100%' : fmtPct(pct, 0)}</span>
               <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`}>{step == null ? '—' : fmtPct(step, 0)}</span>
-              {anyCal ? <span className="kef-num">{showR == null ? '—' : fmtPct(showR, 0)}</span> : null}
+              {anyCal ? <span className="kef-num" title={s.kind === 'calendar' ? `${fmtNumber(s.shown || 0)} shown of ${fmtNumber(s.occurred || 0)} occurred · ${fmtNumber(s.count)} booked` : undefined}>{showR == null ? '—' : fmtPct(showR, 0)}</span> : null}
               <span className="kef-num kef-cost">{isLead ? (spend && s.count ? money(spend / s.count) : '—') : (spend && s.count ? money(spend / s.count) : '—')}</span>
             </div>
           )
@@ -9000,13 +9006,14 @@ function renderMonthlyDeck(rep, h) {
     // to a real Meta/Google campaign — aggregated across every paid campaign, then
     // read through the same green-column engine so paid ⊆ total at each step.
     const aggOutcome = (arr) => {
-      const o = { booked: 0, cancelled: 0, shown: 0, shownStage: 0, won: 0, revenue: 0, wonNoVal: 0, leads: 0, stages: {}, cals: {}, calsShown: {} }
+      const o = { booked: 0, cancelled: 0, shown: 0, shownStage: 0, won: 0, revenue: 0, wonNoVal: 0, leads: 0, stages: {}, cals: {}, calsShown: {}, calsOccurred: {} }
       for (const e of arr || []) {
         o.booked += e.booked || 0; o.cancelled += e.cancelled || 0; o.shown += e.shown || 0; o.shownStage += e.shownStage || 0
         o.won += e.won || 0; o.revenue += e.revenue || 0; o.wonNoVal += e.wonNoVal || 0; o.leads += e.leads || 0
         for (const k in (e.stages || {})) o.stages[k] = (o.stages[k] || 0) + e.stages[k]
         for (const k in (e.cals || {})) o.cals[k] = (o.cals[k] || 0) + e.cals[k]
         for (const k in (e.calsShown || {})) o.calsShown[k] = (o.calsShown[k] || 0) + e.calsShown[k]
+        for (const k in (e.calsOccurred || {})) o.calsOccurred[k] = (o.calsOccurred[k] || 0) + e.calsOccurred[k]
       }
       return o
     }

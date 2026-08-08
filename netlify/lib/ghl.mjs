@@ -2190,12 +2190,12 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   // one booking per (contact × calendar) upstream in fetchAppointments.
   const byCalendar = []
   if (useAppts && appts.perCalendar instanceof Map) {
-    const mkCh = () => ({ booked: 0, shown: 0, cancelled: 0 })
+    const mkCh = () => ({ booked: 0, occurred: 0, shown: 0, cancelled: 0 })
     for (const [calId, rec] of appts.perCalendar) {
-      const cal = { id: calId, name: rec.name, booked: 0, shown: 0, cancelled: 0, ch: { meta: mkCh(), google: mkCh(), other: mkCh() } }
+      const cal = { id: calId, name: rec.name, booked: 0, occurred: 0, shown: 0, cancelled: 0, ch: { meta: mkCh(), google: mkCh(), other: mkCh() } }
       for (const [cid, f] of rec.byContact) {
         f.cancelledInPeriod = f._cancelled && !f._live
-        if (!f.bookedInPeriod && !f.shownByStatus && !f.cancelledInPeriod) continue
+        if (!f.bookedInPeriod && !f.shownByStatus && !f.cancelledInPeriod && !f.hasCallInPeriod) continue
         const o = contactUtm.get(cid); if (!o) continue // only attributable leads
         const u = utmOf(o); const ch = channelOf(u)
         if (f.bookedInPeriod) {
@@ -2205,6 +2205,15 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(ent(dim.medium, u.medium), 'cals', calId)
           bumpKey(ent(dim.content, u.content), 'cals', calId)
           bumpKey(ent(dim.term, u.term), 'cals', calId)
+        }
+        // Occurred = the appointment's date has passed (call happened in-period),
+        // so it's the correct denominator for show rate (upcoming bookings excluded).
+        if (f.hasCallInPeriod) {
+          cal.occurred++; cal.ch[ch].occurred++
+          bumpKey(ent(dim.campaign, u.campaign), 'calsOccurred', calId)
+          bumpKey(ent(dim.medium, u.medium), 'calsOccurred', calId)
+          bumpKey(ent(dim.content, u.content), 'calsOccurred', calId)
+          bumpKey(ent(dim.term, u.term), 'calsOccurred', calId)
         }
         if (f.shownByStatus) {
           cal.shown++; cal.ch[ch].shown++
@@ -2216,7 +2225,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
         }
         if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
       }
-      if (cal.booked || cal.shown || cal.cancelled) byCalendar.push(cal)
+      if (cal.booked || cal.occurred || cal.shown || cal.cancelled) byCalendar.push(cal)
     }
     byCalendar.sort((a, b) => b.booked - a.booked)
   }

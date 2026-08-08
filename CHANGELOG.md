@@ -17,7 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.136.0 — 2026-08-05 · `PENDING`
+## v3.137.0 — 2026-08-05 · `PENDING`
+- **Booked appointments: Occurred added + Show rate fixed to occurred-only.** Booked
+  appointments now expose **Occurred** (appointments whose date has passed) alongside
+  Booked and Shown, and **Show rate = Shown ÷ Occurred** — so upcoming/future bookings no
+  longer drag the show rate down. Applies to the Caalano360 green columns (new **Occurred**
+  column per booked-calendar key event) and the Key Events funnel (Show % now over
+  occurred, with a tooltip breaking down shown / occurred / booked). Backend now tracks
+  occurred per calendar and per creative/campaign/ad-set. (Needs a fresh data pull /
+  regenerated snapshot to populate on frozen reports.)
+
+## v3.136.0 — 2026-08-05 · `60222d0`
 - **Multi-pipeline funnels are now scored per pipeline, not against total leads.** For a
   multi-pipeline client viewing "All pipelines":
   - **Key event reach** cards divide each `[FIN]` / `[BA]` event by **its own pipeline's**

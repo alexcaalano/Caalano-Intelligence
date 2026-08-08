@@ -17,7 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.135.0 — 2026-08-05 · `PENDING`
+## v3.135.1 — 2026-08-05 · `PENDING`
+- **Settings modal — mobile optimised.** On phones the config modal now: scrolls the tab
+  strip cleanly (no cut-off tabs), stacks the name/description inputs and Save full-width,
+  and — the big one — **stacks each booked-calendar's pipeline/stage link selects under the
+  calendar name** instead of the cramped wrap you saw. Campaign→pipeline linker rows,
+  pipeline pickers and the Optimisation Log URL row also go full-width and stop overflowing.
+
+## v3.135.0 — 2026-08-05 · `e2bc1dd`
 - **Multi-pipeline key events no longer merge same-named stages.** The Key Events editor
   was storing a ticked pipeline stage as a bare name with no pipeline, so a stage that
   exists in two pipelines (e.g. FINR's "Booked Discovery Call") became one unscoped event

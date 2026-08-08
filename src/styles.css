@@ -1311,6 +1311,40 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .tm-sc b { font-size: 19px; }
 }
 
+/* ===== Settings config modal — mobile ===== */
+@media (max-width: 640px) {
+  .modal .m-head { padding: 14px 16px; gap: 8px; }
+  .modal .m-body, .set-tabbody, .m-body.set-tabbody { padding: 14px 16px; }
+  .set-modal-title { gap: 8px; min-width: 0; }
+  .set-modal-title h3 { font-size: 15px; }
+  .set-modal-title .cap { font-size: 11px; }
+  .set-modal-actions { gap: 6px; }
+  .set-open { padding: 7px 9px; font-size: 11.5px; }
+  /* Tab strip: comfortable horizontal scroll, no visible scrollbar, aligned edges */
+  .set-tabs { padding: 0 12px; gap: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .set-tabs::-webkit-scrollbar { display: none; }
+  .set-tabs button { padding: 11px 11px; font-size: 12.5px; }
+  /* Details: name/description inputs each take a full row */
+  .set-details { gap: 10px; }
+  .set-field { flex: 1 1 100%; }
+  .set-details-save { width: 100%; }
+  /* Booked-calendar rows: stack the pipeline / stage link selects under the name
+     instead of wrapping into a cramped mess */
+  .kev-cal { flex-direction: column; align-items: stretch; gap: 6px; }
+  .kev-cal .kev-item { max-width: 100%; }
+  .kev-link { width: 100%; }
+  .kev-link .kev-stage { flex: 1 1 100%; max-width: 100%; }
+  /* Campaign→pipeline linker rows: drop the select to its own full-width line */
+  .camp-row { flex-wrap: wrap; row-gap: 6px; }
+  .camp-nm { flex: 1 1 100%; }
+  .camp-lnk { flex: 1 1 100%; max-width: 100%; }
+  /* Pipeline picker (KPIs / key events) select goes full width */
+  .kpi-pipe-sel { gap: 8px; }
+  .kpi-pipe-sel select, .optlog-set-row input { flex: 1 1 100%; width: 100%; }
+  .optlog-set-row { flex-wrap: wrap; }
+  .optlog-set-row .set-details-save, .optlog-set-row .btn-ghost { flex: 1 1 auto; }
+}
+
 /* Client chatbot dock (Caalano360) */
 .cc-dock { position: fixed; right: 20px; bottom: 20px; z-index: 60; }
 .cc-launch { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #6d5efc, #9b8cff); color: #fff; border: none; border-radius: 999px; padding: 12px 18px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 8px 26px rgba(109,94,252,.4); }

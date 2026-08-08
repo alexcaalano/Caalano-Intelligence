@@ -17,7 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.135.2 — 2026-08-05 · `PENDING`
+## v3.136.0 — 2026-08-05 · `PENDING`
+- **Multi-pipeline funnels are now scored per pipeline, not against total leads.** For a
+  multi-pipeline client viewing "All pipelines":
+  - **Key event reach** cards divide each `[FIN]` / `[BA]` event by **its own pipeline's**
+    leads (was dividing everything by the combined lead total).
+  - **Revenue bottleneck** and the **Key events** funnel now render **one funnel per
+    pipeline**, each with its own Leads anchor and step conversions — fixing the nonsense
+    cross-pipeline percentages (e.g. 170% / 120%) that came from dividing one pipeline's
+    step by another's. `keyEventRows` now tags each row with its pipeline to make this work.
+
+## v3.135.2 — 2026-08-05 · `5ca2006`
 - **Settings top tab bar scrolls within its frame on mobile.** The section pill (Clients /
   Team & access / Your account / Appearance / …) was overflowing and dragging the whole
   page sideways to reach the last tab; it now scrolls horizontally inside its own pill.

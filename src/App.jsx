@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.135.2'
+const APP_VERSION = '3.136.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2344,15 +2344,15 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
       const fromStage = Math.max(0, stageReached - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, shown, cancelled, kind: 'calendar' })
+      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, shown, cancelled, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
-      rows.push({ label: k.label, count: n, kind: 'won' })
+      rows.push({ label: k.label, count: n, kind: 'won', pipeline: k.pipeline || null })
     } else {
       const has = rmap && (rmap.m.has(k.ref) || (k.pipeline && rmap.m.has(k.pipeline + '::' + k.ref)))
       if (!has) continue
-      rows.push({ label: k.label, count: stageReachOf(rmap, k.pipeline, k.ref), kind: 'stage' })
+      rows.push({ label: k.label, count: stageReachOf(rmap, k.pipeline, k.ref), kind: 'stage', pipeline: k.pipeline || null })
     }
   }
   return rows
@@ -2642,7 +2642,13 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, cancelled: 0 }]))
   const rows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, wonTotal) : []
   const leadTotal = leadsFallback || rmap.total || 0
-  return { rows, leadTotal, usingKe: rows.length > 0 }
+  // Per-pipeline lead totals so a pipeline-scoped key event (multi-pipeline client)
+  // divides by ITS OWN pipeline's leads, not the grand total across all pipelines.
+  const multi = pipes.length > 1
+  const pipeLeads = new Map()
+  for (const p of pipes) if (p.id) pipeLeads.set(p.id, (p.stages || []).reduce((s, x) => s + (x.count || 0), 0))
+  for (const r of rows) r.leadBase = (multi && r.pipeline && pipeLeads.get(r.pipeline)) ? pipeLeads.get(r.pipeline) : leadTotal
+  return { rows, leadTotal, usingKe: rows.length > 0, multi }
 }
 const sourceDotChan = (ch) => ch === 'meta' ? '#4f7cff' : ch === 'google' ? '#12b886' : ch === 'other' ? '#e8a13a' : '#9aa1ac'
 
@@ -2694,6 +2700,15 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   const kef = ccKeyEventFunnel(cc, clientId, chanWon, ccTot ? ccTot.leads : kpis.leads)
   const usingKe = kef.usingKe
   const leadTotal = kef.leadTotal
+  // Build a funnel (rows + step conversions + worst drop-off) from a [{label,v}] list.
+  const makeFunnel = (arr) => {
+    const top = arr[0].v || 1
+    const rows = arr.map((s, i) => { const prev = i > 0 ? arr[i - 1].v : null; return { ...s, prev, conv: prev ? s.v / prev : null, drop: prev != null ? prev - s.v : 0 } })
+    rows.forEach((r, i) => { r.next = (i < rows.length - 1 && r.v) ? rows[i + 1].v / r.v : null })
+    const cands = rows.filter((r) => r.conv != null && r.prev > 0)
+    const worst = cands.length ? cands.reduce((a, b) => (b.conv < a.conv ? b : a)) : null
+    return { rows, top, worst }
+  }
   const raw = usingKe
     ? [{ label: 'Leads', v: leadTotal }, ...kef.rows.map((r) => ({ label: r.label, v: r.count }))]
     : chActiveBn
@@ -2710,14 +2725,48 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   // All-channel with no leads hides the card (as before); a channel view always
   // renders so the filter visibly reads 0 rather than vanishing silently.
   if (!raw[0].v && !chActiveBn) return null
-  const top = raw[0].v || 1
-  const rows = raw.map((s, i) => { const prev = i > 0 ? raw[i - 1].v : null; return { ...s, prev, conv: prev ? s.v / prev : null, drop: prev != null ? prev - s.v : 0 } })
-  rows.forEach((r, i) => { r.next = (i < rows.length - 1 && r.v) ? rows[i + 1].v / r.v : null })
-  const cands = rows.filter((r) => r.conv != null && r.prev > 0)
-  const worst = cands.length ? cands.reduce((a, b) => (b.conv < a.conv ? b : a)) : null
+  // Multi-pipeline "all" view: one funnel per pipeline, each with its own Leads
+  // denominator, so step conversions never divide one pipeline's step by another's.
+  const nameOf = new Map(((cc && cc.pipelinesFunnel) || []).map((p) => [p.id, p.name]))
+  const bnGroups = (usingKe && kef.multi) ? (() => {
+    const byPipe = new Map()
+    for (const r of kef.rows) { const k = r.pipeline || '__x'; if (!byPipe.has(k)) byPipe.set(k, []); byPipe.get(k).push(r) }
+    if (byPipe.size < 2) return null
+    const out = []
+    for (const [k, rs] of byPipe) {
+      const lt = rs[0].leadBase || leadTotal
+      out.push({ id: k, name: k === '__x' ? 'Unscoped' : (nameOf.get(k) || 'Pipeline'), ...makeFunnel([{ label: 'Leads', v: lt }, ...rs.map((r) => ({ label: r.label, v: r.count }))]) })
+    }
+    return out
+  })() : null
+  const single = makeFunnel(raw)
+  const rows = single.rows, top = single.top, worst = single.worst
   // Paid channel view → show cost per stage + forward (next-step) conversion.
   const paidMode = (chan === 'paid' || chan === 'meta' || chan === 'google') && stageSpend > 0
   const chanLbl = chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : 'paid'
+  // Render one funnel's bars (shared by the single and per-pipeline layouts).
+  const funnelBlock = (fnl) => (
+    <div className={`bn-funnel${paidMode ? ' bn-paid' : ''}`}>
+      {paidMode ? <div className="bn-row bn-head">
+        <span className="bn-lab" /><span className="bn-track" /><span className="bn-count">Reached</span>
+        <span className="bn-conv">Step</span><span className="bn-cost">Cost</span><span className="bn-next">→ Next</span>
+      </div> : null}
+      {fnl.rows.map((r, i) => {
+        const isWorst = fnl.worst && r === fnl.worst
+        const cost = (stageSpend && r.v) ? stageSpend / r.v : null
+        return (
+          <div className={`bn-row${paidMode ? ' bn-row-paid' : ''} ${isWorst ? 'bn-worst' : ''}`} key={i}>
+            <span className="bn-lab">{r.label}</span>
+            <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, (r.v / fnl.top) * 100)}%` }} /></span>
+            <span className="bn-count">{fmtNumber(r.v)}</span>
+            <span className="bn-conv">{r.conv == null ? '' : `${Math.round(r.conv * 100)}%`}</span>
+            {paidMode ? <span className="bn-cost" title={`${chanLbl} spend ÷ ${r.label} reached`}>{cost != null ? money(Math.round(cost)) : '—'}</span> : null}
+            {paidMode ? <span className="bn-next" title="Conversion into the next step">{r.next == null ? '—' : `→ ${Math.round(r.next * 100)}%`}</span> : null}
+          </div>
+        )
+      })}
+    </div>
+  )
   // Calendar show-rate bars — shown / occurred per calendar (own card).
   const showCals = ((cc && cc.bookingByCalendar) || []).filter((c) => c.occurred > 0)
   // Open pipeline by stage — who's still in play, and where they came from.
@@ -2728,31 +2777,15 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   return (
     <>
     <div className="card exec-bottleneck">
-      <div className="exec-panel-h">Revenue bottleneck {worst ? <span className="sub">· biggest drop-off: <b>{worst.prev != null ? rows[rows.indexOf(worst) - 1].label : ''} → {worst.label}</b> ({Math.round(worst.conv * 100)}% through, {fmtNumber(worst.drop)} lost)</span> : <span className="sub">· {usingKe ? 'your key events' : 'default funnel'}</span>}{paidMode ? <span className="sub"> · {chanLbl} cost view</span> : null}</div>
-      <div className={`bn-funnel${paidMode ? ' bn-paid' : ''}`}>
-        {paidMode ? <div className="bn-row bn-head">
-          <span className="bn-lab" />
-          <span className="bn-track" />
-          <span className="bn-count">Reached</span>
-          <span className="bn-conv">Step</span>
-          <span className="bn-cost">Cost</span>
-          <span className="bn-next">→ Next</span>
-        </div> : null}
-        {rows.map((r, i) => {
-          const isWorst = worst && r === worst
-          const cost = (stageSpend && r.v) ? stageSpend / r.v : null
-          return (
-            <div className={`bn-row${paidMode ? ' bn-row-paid' : ''} ${isWorst ? 'bn-worst' : ''}`} key={i}>
-              <span className="bn-lab">{r.label}</span>
-              <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, (r.v / top) * 100)}%` }} /></span>
-              <span className="bn-count">{fmtNumber(r.v)}</span>
-              <span className="bn-conv">{r.conv == null ? '' : `${Math.round(r.conv * 100)}%`}</span>
-              {paidMode ? <span className="bn-cost" title={`${chanLbl} spend ÷ ${r.label} reached`}>{cost != null ? money(Math.round(cost)) : '—'}</span> : null}
-              {paidMode ? <span className="bn-next" title="Conversion into the next step">{r.next == null ? '—' : `→ ${Math.round(r.next * 100)}%`}</span> : null}
-            </div>
-          )
-        })}
-      </div>
+      <div className="exec-panel-h">Revenue bottleneck {bnGroups ? <span className="sub">· one funnel per pipeline</span> : worst ? <span className="sub">· biggest drop-off: <b>{worst.prev != null ? rows[rows.indexOf(worst) - 1].label : ''} → {worst.label}</b> ({Math.round(worst.conv * 100)}% through, {fmtNumber(worst.drop)} lost)</span> : <span className="sub">· {usingKe ? 'your key events' : 'default funnel'}</span>}{paidMode ? <span className="sub"> · {chanLbl} cost view</span> : null}</div>
+      {bnGroups
+        ? bnGroups.map((g) => (
+          <div className="bn-pipe-grp" key={g.id}>
+            <div className="bn-pipe-lab">{g.name} <span className="sub">· {fmtNumber(g.rows[0].v)} leads{g.worst ? ` · biggest drop: ${g.rows[g.rows.indexOf(g.worst) - 1].label} → ${g.worst.label} (${Math.round(g.worst.conv * 100)}%)` : ''}</span></div>
+            {funnelBlock(g)}
+          </div>
+        ))
+        : funnelBlock(single)}
       {openStages.length ? <div className="bn-open">
         <div className="bn-open-h">Open pipeline by stage <span className="sub">· {fmtNumber(totOpen)} live · {money(totOpenVal)} · click a stage to see who’s in it · click a lead for their notes</span></div>
         {openStages.map((s) => {
@@ -3110,9 +3143,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} flat="won ÷ closed" onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
           </div>
           {kef.usingKe && kef.rows.length ? <>
-            <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· share of {fmtNumber(kef.leadTotal)} {chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}</span></div>
+            <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· {kef.multi ? "share of each event's pipeline leads" : `share of ${fmtNumber(kef.leadTotal)} ${chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}`}</span></div>
             <div className="scorecard exec-kpis">
-              {kef.rows.map((r, i) => <Kpi key={i} label={r.label} value={kef.leadTotal ? `${Math.round((r.count / kef.leadTotal) * 100)}%` : '—'} flat={`${fmtNumber(r.count)} of ${fmtNumber(kef.leadTotal)}`} />)}
+              {kef.rows.map((r, i) => { const base = r.leadBase || kef.leadTotal; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '—'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
             </div>
           </> : null}
         </div>
@@ -3290,6 +3323,18 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
     : (pipesSrc.length === 1 ? pipesSrc[0].stages : null)
   const stageMax = activeStages ? Math.max(1, ...activeStages.map((s) => s.count)) : 1
   const stageName = pid !== 'all' ? pipesSrc.find((x) => x.id === pid)?.name : (pipesSrc.length === 1 ? pipesSrc[0].name : null)
+  // Multi-pipeline "all" view: split the key-events funnel per pipeline so each has
+  // its OWN Leads denominator and step-conversions. Otherwise a [BA] event divided
+  // by the previous [FIN] step gives nonsense (e.g. 170% / 120%).
+  const kePerPipe = (pid === 'all' && pipesSrc.length > 1 && keConfigured.length) ? (() => {
+    const byPipe = new Map()
+    for (const r of keRows) { const k = r.pipeline || '__x'; if (!byPipe.has(k)) byPipe.set(k, []); byPipe.get(k).push(r) }
+    const pipeLeads = (id) => { const p = pipesSrc.find((x) => x.id === id); return p ? Math.max(1, (p.stages || []).reduce((s, x) => s + (x.count || 0), 0)) : keTotal }
+    const out = []
+    for (const p of pipesSrc) { const rows = byPipe.get(p.id); if (rows && rows.length) out.push({ id: p.id, name: p.name, rows, total: pipeLeads(p.id) }) }
+    const un = byPipe.get('__x'); if (un && un.length) out.push({ id: '__x', name: 'Unscoped', rows: un, total: keTotal })
+    return out.length > 1 ? out : null
+  })() : null
   const genInsights = async () => {
     if (aiLoading) return
     setAiLoading(true); setAiErr(null)
@@ -3650,12 +3695,21 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         )
       })()}
       <div className="grid two" style={{ marginTop: 14 }}>
-        <KeyEventsFunnel
-          rows={keRows} total={keTotal} spend={spend} currency={currency}
-          title="Key events"
-          sub={`${keConfigured.length ? 'Your key events' : 'Default: leads → booked → shown → won'} · reached · % of leads${keRows.some((r) => r.kind === 'calendar') ? ' · show %' : ''} · cost per event${chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}`}
-          caveat={<>{keConfigured.length ? 'Key events are the pipeline stages and booked calendars you selected in Settings.' : 'Set a client’s key events in Settings (pipeline stages and/or booked calendars) to replace the default stages.'} 📅 = a booked calendar appointment (cost per booked call); other rows = opportunities that reached that pipeline stage or beyond. Cost / event = attributed spend ({money(spend)}) ÷ count.</>}
-        />
+        {kePerPipe
+          ? <div className="ke-pipe-stack">{kePerPipe.map((g) => (
+              <KeyEventsFunnel
+                key={g.id} rows={g.rows} total={g.total} spend={spend} currency={currency}
+                title={`Key events · ${g.name}`}
+                sub={`${g.name} · reached · % of this pipeline's ${fmtNumber(g.total)} leads${g.rows.some((r) => r.kind === 'calendar') ? ' · show %' : ''} · cost per event${chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}`}
+                caveat={<>Each pipeline's key events are scored against <b>its own</b> leads. 📅 = a booked calendar appointment; other rows = opportunities that reached that stage or beyond.</>}
+              />
+            ))}</div>
+          : <KeyEventsFunnel
+              rows={keRows} total={keTotal} spend={spend} currency={currency}
+              title="Key events"
+              sub={`${keConfigured.length ? 'Your key events' : 'Default: leads → booked → shown → won'} · reached · % of leads${keRows.some((r) => r.kind === 'calendar') ? ' · show %' : ''} · cost per event${chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}`}
+              caveat={<>{keConfigured.length ? 'Key events are the pipeline stages and booked calendars you selected in Settings.' : 'Set a client’s key events in Settings (pipeline stages and/or booked calendars) to replace the default stages.'} 📅 = a booked calendar appointment (cost per booked call); other rows = opportunities that reached that pipeline stage or beyond. Cost / event = attributed spend ({money(spend)}) ÷ count.</>}
+            />}
         <div className="card chart-card"><h3>Ad spend by channel</h3><p className="cap">{pid === 'all' ? 'Meta + Google split across the account' : 'Attributed to this pipeline'}</p>
           {chanPie.length ? <>
             <ResponsiveContainer width="100%" height={190}>

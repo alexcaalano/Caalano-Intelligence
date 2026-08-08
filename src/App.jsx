@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.139.0'
+const APP_VERSION = '3.140.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1134,11 +1134,12 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
-  const oCamp = mkOutcomeMap(A && A.byCampaign)
+  const oCamp = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign)
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
-  // not utm_term - so match ad-set rows against byMedium.
-  const oAdset = mkOutcomeMap(A && A.byMedium)
-  const oCre = mkOutcomeMap(A && A.byCreative)
+  // not utm_term - so match ad-set rows against byMedium. Aliases fold renamed
+  // ad sets' old-UTM leads into the current name.
+  const oAdset = aliasedOutcomeMap(clientId, 'medium', A && A.byMedium)
+  const oCre = aliasedOutcomeMap(clientId, 'content', A && A.byCreative)
   // Account totals - the fixed baseline for creative "vs account average" colour
   // coding, regardless of any drill-in.
   const acct = m.totals || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, reach: 0 }
@@ -1478,7 +1479,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
-  const oCampG = mkOutcomeMap(A && A.byCampaign)
+  const oCampG = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign)
   const oAgG = mkOutcomeMap(A && A.byTerm)
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   const costPerConv = t.conversions ? t.cost / t.conversions : 0
@@ -1978,6 +1979,7 @@ const COMPETITORS_KEY = 'caalano_competitors'    // { clientId: [{ id, name, ig,
 const SOCIALKPIS_KEY = 'caalano_socialkpis'      // { clientId: { netFollowers, reach, views, engagement, posts, er } } — monthly organic-social KPI targets
 const OPTLOG_KEY = 'caalano_optlog'              // { clientId: 'https://docs.google.com/spreadsheets/d/…' } — per-client Optimisation Log Google Sheet
 const QUALSTAGE_KEY = 'caalano_qualstage'        // { clientId: { [pipelineId]: stageName } } — the stage that marks a lead "qualified", per pipeline
+const ALIASES_KEY = 'caalano_aliases'            // { clientId: { campaign|medium|content: { oldUtmName: currentName } } } — old-UTM → current-name links (renames)
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -2001,7 +2003,7 @@ const SEED_OPTLOG = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2022,8 +2024,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2124,6 +2126,44 @@ function saveOptLog(clientId, url) { SETTINGS.optlog = { ...SETTINGS.optlog, [cl
 // they always count). Empty = qualified is not defined for the client → hidden.
 function loadQualStage(clientId) { return (SETTINGS.qualstage && SETTINGS.qualstage[clientId]) || {} }
 function saveQualStage(clientId, map) { SETTINGS.qualstage = { ...SETTINGS.qualstage, [clientId]: map }; writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); saveSettingsRemote({ qualstage: { [clientId]: map } }); bumpSettings() }
+// UTM aliases: old-UTM value → current entity name, per level. Handles renamed
+// campaigns / ad sets / creatives whose historical CRM leads were stamped with the
+// old name — so old + new outcomes aggregate under the current name.
+const ALIAS_LEVELS = ['campaign', 'medium', 'content']
+function loadAliases(clientId) { const a = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}; return { campaign: a.campaign || {}, medium: a.medium || {}, content: a.content || {} } }
+function saveAliases(clientId, level, map) {
+  const cur = loadAliases(clientId); const nx = { ...cur, [level]: map }
+  SETTINGS.aliases = { ...SETTINGS.aliases, [clientId]: nx }
+  writeLS(ALIASES_KEY, SETTINGS.aliases); saveSettingsRemote({ aliases: { [clientId]: nx } }); bumpSettings()
+}
+function setAlias(clientId, level, oldName, currentName) {
+  const cur = loadAliases(clientId); const m = { ...(cur[level] || {}) }
+  if (currentName) m[oldName] = currentName; else delete m[oldName]
+  saveAliases(clientId, level, m)
+}
+// Fold old-UTM outcome rows into their current-name row using an alias map
+// { oldName: currentName }. Sums numeric fields and merges the stage/calendar maps.
+function applyAliases(arr, aliasMap) {
+  if (!Array.isArray(arr) || !arr.length || !aliasMap || !Object.keys(aliasMap).length) return arr || []
+  const norm = new Map(); for (const k in aliasMap) if (aliasMap[k]) norm.set(unorm(k), aliasMap[k])
+  if (!norm.size) return arr
+  const MAPS = ['stages', 'cals', 'calsShown', 'calsOccurred']
+  const byCanon = new Map(); const order = []
+  for (const e of arr) {
+    const canon = norm.get(unorm(e.name)) || e.name
+    const key = unorm(canon)
+    let g = byCanon.get(key)
+    if (!g) { g = { ...e, name: canon }; for (const mp of MAPS) if (e[mp]) g[mp] = { ...e[mp] }; byCanon.set(key, g); order.push(key); continue }
+    for (const k in e) {
+      if (k === 'name') continue
+      if (MAPS.includes(k)) { g[k] = g[k] || {}; for (const kk in e[k]) g[k][kk] = (g[k][kk] || 0) + e[k][kk]; continue }
+      if (typeof e[k] === 'number') g[k] = (g[k] || 0) + e[k]
+    }
+  }
+  return order.map((k) => byCanon.get(k))
+}
+// mkOutcomeMap with a client's aliases for a level applied first.
+function aliasedOutcomeMap(clientId, level, arr) { return mkOutcomeMap(applyAliases(arr, loadAliases(clientId)[level])) }
 // Pull the spreadsheet id + tab gid out of a Google Sheets URL (gid defaults to 0).
 function parseSheetRef(url) {
   const m = String(url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9\-_]+)/)
@@ -3610,7 +3650,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         )
       })()}
       {b.hasCrm && attribData && camps.length > 0 && (() => {
-        const oCamp = mkOutcomeMap(attribData.byCampaign)
+        const oCamp = aliasedOutcomeMap(client.id, 'campaign', attribData.byCampaign)
         const src = chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : null
         const rows = camps
           .filter((cc) => cc.spend > 0 && (!src || cc.source === src))
@@ -6030,6 +6070,78 @@ function QualStageEditor({ clientId, nonce }) {
     </div>
   )
 }
+// Settings pane: link old UTM values (from a rename) to the current campaign / ad
+// set / creative so historical CRM leads aggregate under the current name.
+function AliasEditor({ clientId, nonce }) {
+  useSettingsSync()
+  const [st, setSt] = useState({ status: 'idle' })
+  useEffect(() => {
+    if (st.status !== 'idle') return
+    setSt({ status: 'loading' })
+    // Wide 90-day window so pre-rename (old-UTM) leads still show up to be linked.
+    const now = new Date(); now.setHours(12, 0, 0, 0)
+    const from = new Date(now); from.setDate(from.getDate() - 90)
+    const r = { from: iso(from), to: iso(now) }
+    const q = `client=${clientId}&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`
+    Promise.all([
+      fetch(`/.netlify/functions/windsor?channel=attribution&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      fetch(`/.netlify/functions/windsor?channel=meta&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      fetch(`/.netlify/functions/windsor?channel=google&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+    ]).then(([a, m, g]) => setSt({ status: 'ok', attr: a && a.attribution, meta: m && m.meta, google: g && g.google }))
+      .catch(() => setSt({ status: 'err' }))
+  }, [st.status, clientId])
+  const A = st.attr, M = st.meta, G = st.google
+  const aliases = loadAliases(clientId)
+  const tok = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w.length > 2)
+  const bestMatch = (name, candidates) => {
+    const w = new Set(tok(name)); if (!w.size) return ''
+    let best = '', score = 0
+    for (const c of candidates) { let s = 0; for (const x of tok(c)) if (w.has(x)) s++; if (s > score) { score = s; best = c } }
+    return score >= 1 ? best : ''
+  }
+  const curList = {
+    campaign: [...new Set([...(M && M.campaigns || []).map((c) => c.name), ...(G && G.campaigns || []).map((c) => c.name)])].filter(Boolean).sort(),
+    medium: [...new Set((M && M.adsets || []).map((a) => a.name))].filter(Boolean).sort(),
+    content: [...new Set((M && M.ads || []).map((a) => a.name))].filter(Boolean).sort(),
+  }
+  const curSet = { campaign: new Set(curList.campaign.map(unorm)), medium: new Set(curList.medium.map(unorm)), content: new Set(curList.content.map(unorm)) }
+  const outcomes = { campaign: (A && A.byCampaign) || [], medium: (A && A.byMedium) || [], content: (A && A.byCreative) || [] }
+  const unmatched = (lvl) => (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && o.name !== '(not set)' && !curSet[lvl].has(unorm(o.name)) && !(aliases[lvl] && aliases[lvl][o.name])).sort((a, b) => b.leads - a.leads).slice(0, 40)
+  const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
+  return (
+    <div className="linker">
+      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with — so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). Suggested matches are pre-filled; confirm or change them.</p>
+      {st.status === 'loading' ? <Spinner label="Scanning for unmatched UTMs (last 90 days)…" />
+        : st.status === 'err' ? <p className="cap">Couldn't load campaign / CRM data for this client.</p>
+          : LEVELS.map(([lvl, label, utm]) => {
+            const un = unmatched(lvl)
+            const existing = Object.entries(aliases[lvl] || {})
+            return (
+              <div className="kev-group" key={lvl}>
+                <div className="kev-pipe">{label} <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· {utm}</span></div>
+                {existing.length > 0 && <div className="alias-existing">{existing.map(([oldN, cur]) => (
+                  <div className="alias-row alias-set" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-arrow">→</span><span className="alias-cur" title={cur}>{cur}</span><button className="alias-x" title="Remove link" onClick={() => setAlias(clientId, lvl, oldN, '')}>✕</button></div>
+                ))}</div>}
+                {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs — everything ties to a current name.'}</p>
+                  : un.map((o) => {
+                    const sug = bestMatch(o.name, curList[lvl])
+                    return (
+                      <div className="alias-row" key={o.name}>
+                        <span className="alias-old" title={o.name}>{o.name} <span className="alias-leads">· {fmtNumber(o.leads)} lead{o.leads === 1 ? '' : 's'}{o.won ? `, ${fmtNumber(o.won)} won` : ''}</span></span>
+                        <span className="alias-arrow">→</span>
+                        <select className="camp-lnk alias-sel" defaultValue={sug || ''} onChange={(e) => e.target.value && setAlias(clientId, lvl, o.name, e.target.value)}>
+                          <option value="">Link to current {label.slice(0, -1).toLowerCase()}…</option>
+                          {curList[lvl].map((n) => <option key={n} value={n}>{n === sug ? `${n}  (suggested)` : n}</option>)}
+                        </select>
+                      </div>
+                    )
+                  })}
+              </div>
+            )
+          })}
+    </div>
+  )
+}
 function CampaignLinker({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
@@ -6645,6 +6757,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (c.ghl) tabs.push(['keyevents', 'Key events'])
   if (c.meta) tabs.push(['metaconv', 'Meta conversions'])
   if (canLink) tabs.push(['links', 'Campaign links'])
+  if (canLink) tabs.push(['aliases', 'UTM aliases'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
   if (c.ghl) tabs.push(['forms', 'Forms'])
   if (c.ghl) tabs.push(['qualstage', 'Qualified lead'])
@@ -6694,6 +6807,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
+          {tab === 'aliases' && <div className="set-tabpane"><div className="set-sec-t">UTM aliases — link renamed campaigns / ad sets / creatives</div><AliasEditor clientId={c.id} nonce={sig} /></div>}
           {tab === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead — stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
           {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log — Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
           {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
@@ -8756,8 +8870,8 @@ function renderMonthlyDeck(rep, h) {
   const stagePos = stagePosMap(pipelines)
   const calNames = new Map(((attribution && attribution.appointments && attribution.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = rep.hasCrm ? buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calNames) : null
-  const oCamp = mkOutcomeMap(rep.campOutcomes || [])
-  const oCre = mkOutcomeMap(rep.creOutcomes || [])
+  const oCamp = aliasedOutcomeMap(rep.client.id, 'campaign', rep.campOutcomes || [])
+  const oCre = aliasedOutcomeMap(rep.client.id, 'content', rep.creOutcomes || [])
   // Per-pipeline key events: multi-pipeline clients show only the key events for
   // the pipeline attached (in Settings → campaign map) to a creative's / campaign's
   // campaign. Single-pipeline clients (or unmapped campaigns → "All") keep the full

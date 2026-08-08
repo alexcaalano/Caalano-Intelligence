@@ -2051,6 +2051,18 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-bubble + .mr-bubble { margin-top: 16px; }
 .mr-camp-block + .mr-camp-block { margin-top: 14px; }
 .ke-pipe-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* UTM alias editor rows */
+.alias-existing { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+.alias-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12.5px; }
+.alias-old { flex: 1 1 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.alias-leads { font-weight: 400; color: var(--faint); }
+.alias-arrow { color: var(--faint); flex: 0 0 auto; }
+.alias-cur { flex: 1 1 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #12b886; font-weight: 700; }
+.alias-sel { flex: 1 1 45%; min-width: 0; max-width: 100%; }
+.alias-set { background: rgba(18,184,134,.06); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; }
+.alias-x { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 12px; flex: 0 0 auto; }
+.alias-x:hover { color: var(--neg); }
+@media (max-width: 640px) { .alias-row { flex-wrap: wrap; } .alias-old, .alias-cur, .alias-sel { flex: 1 1 100%; } .alias-arrow { display: none; } }
 .bn-pipe-grp + .bn-pipe-grp { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .bn-pipe-lab { font-size: 13px; font-weight: 800; margin-bottom: 8px; }
 .bn-pipe-lab .sub { font-weight: 500; }

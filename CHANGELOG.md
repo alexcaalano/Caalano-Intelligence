@@ -17,7 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.139.0 — 2026-08-05 · `PENDING`
+## v3.140.0 — 2026-08-05 · `PENDING`
+- **UTM aliases — fix attribution after a rename.** When a campaign, ad set or creative is
+  renamed, historical CRM leads keep the **old** UTM they were stamped with, so their
+  results stop rolling into the new name. New **Settings → (client) → UTM aliases** tab
+  scans the last 90 days for UTM values that have CRM leads but match no current ad name,
+  **auto-suggests** the closest current name, and lets you confirm/override the link (per
+  level: campaign / ad set / creative). Linked old + new UTMs then **aggregate under the
+  current name everywhere** — Meta & Google green columns, the Caalano360 revenue-by-campaign,
+  and the Monthly Report (applied live at view time, so it re-merges existing reports too;
+  regenerate a snapshot if an old UTM had been truncated out of the frozen data).
+
+## v3.139.0 — 2026-08-05 · `442c91a`
 - **Qualified lead now behaves as a key event, at its pipeline position.** Setting a
   qualified stage (Settings → Qualified lead) injects a synthetic **“Qualified”** key event
   scoped to that pipeline, so it slots into the funnel at the stage's position and flows

@@ -17,7 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.135.1 — 2026-08-05 · `PENDING`
+## v3.135.2 — 2026-08-05 · `PENDING`
+- **Settings top tab bar scrolls within its frame on mobile.** The section pill (Clients /
+  Team & access / Your account / Appearance / …) was overflowing and dragging the whole
+  page sideways to reach the last tab; it now scrolls horizontally inside its own pill.
+
+## v3.135.1 — 2026-08-05 · `2b448cb`
 - **Settings modal — mobile optimised.** On phones the config modal now: scrolls the tab
   strip cleanly (no cut-off tabs), stacks the name/description inputs and Save full-width,
   and — the big one — **stacks each booked-calendar's pipeline/stage link selects under the

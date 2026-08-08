@@ -1313,6 +1313,11 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 
 /* ===== Settings config modal — mobile ===== */
 @media (max-width: 640px) {
+  /* Top-level Settings tab pill: scroll WITHIN its frame instead of pushing the
+     whole page sideways to reach the last tab. */
+  .set-sections { display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .set-sections::-webkit-scrollbar { display: none; }
+  .set-sections button { flex: 0 0 auto; white-space: nowrap; padding: 7px 12px; }
   .modal .m-head { padding: 14px 16px; gap: 8px; }
   .modal .m-body, .set-tabbody, .m-body.set-tabbody { padding: 14px 16px; }
   .set-modal-title { gap: 8px; min-width: 0; }

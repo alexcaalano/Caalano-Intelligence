@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.143.0 — 2026-08-08 · `PENDING`
+- **Meta "Results" cell no longer truncates to "77…".** The campaigns / ad-sets tables are
+  fixed-layout, so packing the count + conversion-action label + "+N" badge into one narrow
+  column clipped it to an unreadable "77…". The cell now **stacks**: the count sits on top
+  (never clipped) with the conversion-action label wrapping beneath it. The full
+  all-conversion-actions breakdown on hover is unchanged.
+- **UTM-alias editor fixed — it was showing every UTM, matched or not.** It scanned for
+  current campaign / ad-set / ad names via the heavy `buildMeta` pull, which times out on
+  large accounts (e.g. FINR) and returned no names — so with nothing to match against,
+  *every* UTM looked "unmatched" and the link dropdowns were empty. Now it uses a new
+  lightweight `scope=adnames` endpoint (name dimensions only) that loads reliably; when
+  names genuinely can't load it shows a **warning + retry** instead of dumping everything;
+  and non-ad-set traffic sources (`social`, `organic`, `manual`, `calendar`, …) are filtered
+  out of the ad-set list so only real renamed-ad-set candidates appear.
+
 ## v3.142.0 — 2026-08-08 · `PENDING`
 - **Real business logos as client avatars, app-wide.** Each client's website and
   uploaded logo are now pulled from their Caalano Systems (GoHighLevel) location and shown

@@ -1580,8 +1580,12 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mconv-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 
 /* Auto-detected Meta result type chip (next to the Results count) */
-.res-ty { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; letter-spacing: .01em; color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); padding: 1px 6px; border-radius: 5px; vertical-align: middle; white-space: nowrap; }
-.res-cell { cursor: help; }
+.res-ty { display: inline-block; margin: 2px 0 0; font-size: 10px; font-weight: 700; letter-spacing: .01em; color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); padding: 1px 6px; border-radius: 5px; white-space: normal; word-break: break-word; line-height: 1.2; }
+/* Results cell stacks: count on top (never clipped), conversion-action label
+   wraps beneath it instead of truncating to "77…" in the fixed-width column. */
+.res-cell { cursor: help; overflow: visible; text-overflow: clip; white-space: normal; line-height: 1.25; }
+.res-n { display: block; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.alias-warn { font-size: 12.5px; line-height: 1.5; color: var(--text); background: color-mix(in srgb, #f5a524 12%, transparent); border: 1px solid color-mix(in srgb, #f5a524 40%, transparent); border-radius: 10px; padding: 10px 12px; margin: 6px 0; }
 .res-more { display: inline-block; margin-left: 4px; font-size: 9.5px; font-weight: 700; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-2); padding: 0 4px; border-radius: 5px; vertical-align: middle; }
 
 /* ============ Caalano 360 Executive Dashboard ============ */

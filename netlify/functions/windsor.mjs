@@ -2372,6 +2372,29 @@ export default async (req) => {
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 
+  // Lightweight current-name lists (campaign / ad set / ad) for the UTM-alias
+  // editor. Just the name dimensions - no metrics, no daily rows - so it stays
+  // fast and complete even for large accounts where the full buildMeta pull can
+  // time out and leave the alias editor with no names to match against.
+  if (url.searchParams.get('scope') === 'adnames') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ error: `unknown client ${client}` }, 404)
+    const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+    try {
+      const [fb, gg] = await Promise.all([
+        cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+        cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name'], from, to, preset, key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
+      ])
+      const uniq = (arr) => [...new Set(arr.filter(Boolean).map((s) => String(s).trim()).filter(Boolean))].sort()
+      return json({
+        scope: 'adnames', client,
+        campaigns: uniq([...fb.map((r) => r.campaign), ...gg.map((r) => r.campaign)]),
+        adsets: uniq([...fb.map((r) => r.adset_name), ...gg.map((r) => r.ad_group_name)]),
+        ads: uniq(fb.map((r) => r.ad_name)),
+      }, 200, true)
+    } catch (e) { return json({ scope: 'adnames', client, error: String((e && e.message) || e).slice(0, 160), campaigns: [], adsets: [], ads: [] }, 200) }
+  }
+
   const c = CLIENTS[client]
   if (!c) return json({ error: `unknown client ${client}` }, 404)
 

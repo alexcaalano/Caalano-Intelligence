@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.142.0'
+const APP_VERSION = '3.143.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1407,10 +1407,10 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
       </div>
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="linkCtr" sort={campSort} on={onCampSort}>Link CTR</SortTh><SortTh k="hook" sort={campSort} on={onCampSort}>Hook</SortTh><SortTh k="results" sort={campSort} on={onCampSort}>Results</SortTh><SortTh k="cvr" sort={campSort} on={onCampSort}>CVR</SortTh><SortTh k="cpr" sort={campSort} on={onCampSort}>Cost/result</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} cols={o360cols} />}</tr></thead>
-        <tbody>{sortRows(m.campaigns.filter((c) => !fCamp || fCamp.has(unorm(c.name))).map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, results: c.results != null ? c.results : c.leads, resType: c.resultType, cvr: rate(c.results != null ? c.results : c.leads, c.linkClicks), cpr: c.costPerResult != null ? c.costPerResult : (c.leads ? c.spend / c.leads : null), ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCampaign(c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td className="res-cell" title={c.breakdown && c.breakdown.length ? `All conversion actions (primary shown = ${c.resType}):\n` + c.breakdown.map((b) => `• ${b.label}: ${fmtNumber(b.count)}`).join('\n') : undefined}>{fmtNumber(c.results)}{c.resType ? <span className="res-ty">{c.resType}</span> : null}{c.breakdown && c.breakdown.length > 1 ? <span className="res-more">+{c.breakdown.length - 1}</span> : null}</td><td className={c.results ? gb(c.cvr, avgCvr) : ''}>{c.results ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpr != null ? (c.cpr <= cpl ? 'good' : 'bad') : ''}>{c.cpr != null ? fmtCurrency(c.cpr, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+        <tbody>{sortRows(m.campaigns.filter((c) => !fCamp || fCamp.has(unorm(c.name))).map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, results: c.results != null ? c.results : c.leads, resType: c.resultType, cvr: rate(c.results != null ? c.results : c.leads, c.linkClicks), cpr: c.costPerResult != null ? c.costPerResult : (c.leads ? c.spend / c.leads : null), ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCampaign(c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td className="res-cell" title={c.breakdown && c.breakdown.length ? `All conversion actions (primary shown = ${c.resType}):\n` + c.breakdown.map((b) => `• ${b.label}: ${fmtNumber(b.count)}`).join('\n') : undefined}><span className="res-n">{fmtNumber(c.results)}{c.breakdown && c.breakdown.length > 1 ? <span className="res-more">+{c.breakdown.length - 1}</span> : null}</span>{c.resType ? <span className="res-ty">{c.resType}</span> : null}</td><td className={c.results ? gb(c.cvr, avgCvr) : ''}>{c.results ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpr != null ? (c.cpr <= cpl ? 'good' : 'bad') : ''}>{c.cpr != null ? fmtCurrency(c.cpr, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
       <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''} · click a row to drill into its creatives &amp; forms</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={adsetSort} on={onAdsetSort}>Ad set</SortTh><SortTh k="spend" sort={adsetSort} on={onAdsetSort}>Spend</SortTh><SortTh k="impressions" sort={adsetSort} on={onAdsetSort}>Impr.</SortTh><SortTh k="linkCtr" sort={adsetSort} on={onAdsetSort}>Link CTR</SortTh><SortTh k="hook" sort={adsetSort} on={onAdsetSort}>Hook</SortTh><SortTh k="results" sort={adsetSort} on={onAdsetSort}>Results</SortTh><SortTh k="cvr" sort={adsetSort} on={onAdsetSort}>CVR</SortTh><SortTh k="cpr" sort={adsetSort} on={onAdsetSort}>Cost/result</SortTh>{has360 && <O360Head sort={adsetSort} on={onAdsetSort} cols={o360cols} />}</tr></thead>
-        <tbody>{sortRows(adsets.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, results: c.results != null ? c.results : c.leads, resType: c.resultType, cvr: rate(c.results != null ? c.results : c.leads, c.linkClicks), cpr: c.costPerResult != null ? c.costPerResult : (c.leads ? c.spend / c.leads : null), ...o360Fields(oAdset.get(unorm(c.name)), c.spend, c.leads, o360cols) })), adsetSort).map((c) => (<tr key={c.name} className={selAdset === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAdset(c)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td className="res-cell" title={c.breakdown && c.breakdown.length ? `All conversion actions (primary shown = ${c.resType}):\n` + c.breakdown.map((b) => `• ${b.label}: ${fmtNumber(b.count)}`).join('\n') : undefined}>{fmtNumber(c.results)}{c.resType ? <span className="res-ty">{c.resType}</span> : null}{c.breakdown && c.breakdown.length > 1 ? <span className="res-more">+{c.breakdown.length - 1}</span> : null}</td><td className={c.results ? gb(c.cvr, avgCvr) : ''}>{c.results ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpr != null ? (c.cpr <= cpl ? 'good' : 'bad') : ''}>{c.cpr != null ? fmtCurrency(c.cpr, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+        <tbody>{sortRows(adsets.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, results: c.results != null ? c.results : c.leads, resType: c.resultType, cvr: rate(c.results != null ? c.results : c.leads, c.linkClicks), cpr: c.costPerResult != null ? c.costPerResult : (c.leads ? c.spend / c.leads : null), ...o360Fields(oAdset.get(unorm(c.name)), c.spend, c.leads, o360cols) })), adsetSort).map((c) => (<tr key={c.name} className={selAdset === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAdset(c)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td className="res-cell" title={c.breakdown && c.breakdown.length ? `All conversion actions (primary shown = ${c.resType}):\n` + c.breakdown.map((b) => `• ${b.label}: ${fmtNumber(b.count)}`).join('\n') : undefined}><span className="res-n">{fmtNumber(c.results)}{c.breakdown && c.breakdown.length > 1 ? <span className="res-more">+{c.breakdown.length - 1}</span> : null}</span>{c.resType ? <span className="res-ty">{c.resType}</span> : null}</td><td className={c.results ? gb(c.cvr, avgCvr) : ''}>{c.results ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpr != null ? (c.cpr <= cpl ? 'good' : 'bad') : ''}>{c.cpr != null ? fmtCurrency(c.cpr, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
       {formats.length > 0 && <>
         <div className="lvl-title">Performance by format <span className="sub">· image vs video</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Hook</th><th>Leads</th><th>CVR</th><th>CPL</th>{has360 && <O360Head cols={o360cols} />}</tr></thead>
@@ -6162,12 +6162,13 @@ function AliasEditor({ clientId, nonce }) {
     const q = `client=${clientId}&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`
     Promise.all([
       fetch(`/.netlify/functions/windsor?channel=attribution&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-      fetch(`/.netlify/functions/windsor?channel=meta&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-      fetch(`/.netlify/functions/windsor?channel=google&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-    ]).then(([a, m, g]) => setSt({ status: 'ok', attr: a && a.attribution, meta: m && m.meta, google: g && g.google }))
+      // Lightweight name-only endpoint (not the heavy buildMeta) so the current
+      // campaign / ad-set / ad names load reliably even for large accounts.
+      fetch(`/.netlify/functions/windsor?scope=adnames&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+    ]).then(([a, n]) => setSt({ status: 'ok', attr: a && a.attribution, names: (n && !n.error) ? { campaign: n.campaigns || [], medium: n.adsets || [], content: n.ads || [] } : null }))
       .catch(() => setSt({ status: 'err' }))
   }, [st.status, clientId])
-  const A = st.attr, M = st.meta, G = st.google
+  const A = st.attr
   const aliases = loadAliases(clientId)
   const tok = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((w) => w.length > 2)
   const bestMatch = (name, candidates) => {
@@ -6176,20 +6177,29 @@ function AliasEditor({ clientId, nonce }) {
     for (const c of candidates) { let s = 0; for (const x of tok(c)) if (w.has(x)) s++; if (s > score) { score = s; best = c } }
     return score >= 1 ? best : ''
   }
-  const curList = {
-    campaign: [...new Set([...(M && M.campaigns || []).map((c) => c.name), ...(G && G.campaigns || []).map((c) => c.name)])].filter(Boolean).sort(),
-    medium: [...new Set((M && M.adsets || []).map((a) => a.name))].filter(Boolean).sort(),
-    content: [...new Set((M && M.ads || []).map((a) => a.name))].filter(Boolean).sort(),
-  }
+  const curList = st.names || { campaign: [], medium: [], content: [] }
   const curSet = { campaign: new Set(curList.campaign.map(unorm)), medium: new Set(curList.medium.map(unorm)), content: new Set(curList.content.map(unorm)) }
+  // Did the current-name lists actually load? If not, we can't tell which UTMs
+  // are unmatched (everything would look unmatched), so we warn instead of dumping.
+  const namesLoaded = !!st.names && (curList.campaign.length + curList.medium.length + curList.content.length) > 0
   const outcomes = { campaign: (A && A.byCampaign) || [], medium: (A && A.byMedium) || [], content: (A && A.byCreative) || [] }
-  const unmatched = (lvl) => (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && o.name !== '(not set)' && !curSet[lvl].has(unorm(o.name)) && !(aliases[lvl] && aliases[lvl][o.name])).sort((a, b) => b.leads - a.leads).slice(0, 40)
+  // utm_medium values that are traffic sources, not ad sets - they'll never match
+  // an ad-set name and shouldn't be offered for ad-set aliasing.
+  const NONPAID_MEDIUM = new Set(['social', 'organic', 'manual', 'calendar', 'email', 'referral', 'direct', 'none', 'sms', 'whatsapp', 'qr', 'link', 'bio'])
+  const unmatched = (lvl) => {
+    if (!namesLoaded) return [] // no reference set - don't mislead by listing everything
+    return (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && o.name !== '(not set)'
+      && !curSet[lvl].has(unorm(o.name))
+      && !(lvl === 'medium' && NONPAID_MEDIUM.has(String(o.name).trim().toLowerCase()))
+      && !(aliases[lvl] && aliases[lvl][o.name])).sort((a, b) => b.leads - a.leads).slice(0, 40)
+  }
   const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
   return (
     <div className="linker">
       <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with — so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). Suggested matches are pre-filled; confirm or change them.</p>
       {st.status === 'loading' ? <Spinner label="Scanning for unmatched UTMs (last 90 days)…" />
         : st.status === 'err' ? <p className="cap">Couldn't load campaign / CRM data for this client.</p>
+        : !namesLoaded ? <div className="alias-warn"><b>⚠ Couldn't load the current campaign / ad-set / ad names</b> from the ad account, so we can't tell which UTMs are unmatched (everything would look unmatched). This is usually a temporary load issue on a large account.<button className="btn-ghost sm" style={{ marginLeft: 8 }} onClick={() => setSt({ status: 'idle' })}>↻ Retry</button></div>
           : LEVELS.map(([lvl, label, utm]) => {
             const un = unmatched(lvl)
             const existing = Object.entries(aliases[lvl] || {})

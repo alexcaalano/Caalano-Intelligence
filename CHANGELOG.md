@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.146.0 — 2026-08-08 · `PENDING`
+- **Meta Ads: the pipeline selector now scopes the whole ad side, not just the green
+  columns.** Picking a pipeline used to leave Cost / Impressions / Reach / the campaign,
+  ad-set and creative tables and the daily trend at whole-account (the old "ad spend is
+  unchanged" note). Now they all scope to that pipeline's **linked campaigns** — an explicit
+  Settings campaign→pipeline link first, else a name match (the same matcher forms use) — so
+  the ad numbers line up with the CRM funnel. Reach & frequency are summed across the scoped
+  campaigns (a mild over-count vs a true de-duplicated account reach), and that's flagged in
+  the note. If no campaigns resolve to the pipeline, a hint points to Settings → Campaign
+  links. (Google Ads mirrors this next.)
+
 ## v3.145.0 — 2026-08-08 · `PENDING`
 - **UTM aliases: clearer "leave as is" default + "Keep separate" for legit standalones.**
   Not every unmatched UTM is a rename — a paused-but-legit campaign shows as unmatched

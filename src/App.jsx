@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.145.0'
+const APP_VERSION = '3.146.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1200,7 +1200,13 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const hidePrev = () => setPreview(null)
   useEffect(() => { setCrePage(0) }, [sel, selAdset, selCreative, selForm])
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
-  const m = deep.meta
+  // When a pipeline is picked, scope the whole ad side (Cost / Impr / Reach /
+  // campaigns / ad sets / creatives / daily) to that pipeline's linked campaigns
+  // — a Settings campaign→pipeline link first, else a name match — so the ad
+  // numbers match the green CRM columns instead of staying whole-account.
+  const inPipe = (campName) => pipe === 'all' || pipeOfCampaign(clientId, campName, allPipes) === pipe
+  const m = pipe === 'all' ? deep.meta : scopeMetaToPipe(deep.meta, inPipe)
+  const scopedEmpty = pipe !== 'all' && !(m.campaigns || []).length
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
   const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
@@ -1343,7 +1349,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   return (
     <div ref={scrollRootRef}>
       <AttrDiag attr={attr} />
-      {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Caalano360 green columns, key events &amp; funnel are scoped to this pipeline · ad spend is unchanged</span>}</div>}
+      {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · reach &amp; frequency are approximate (summed across campaigns) · link campaigns in Settings → Campaign links</span>}</div>}
+      {scopedEmpty && <div className="alias-warn" style={{ marginTop: 8 }}><b>No campaigns are linked to this pipeline.</b> Link this pipeline's campaigns in <b>Settings → this client → Campaign links</b> (or rename them to match) so their spend and results show here. The green CRM columns above still reflect the pipeline.</div>}
       {(sel || selAdset || selCreative || selForm) && (
         <div className="drill-bar">
           <span className="drill-lab">Drilled into</span>
@@ -1381,7 +1388,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
       </div>
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
-          <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : ' · whole account'}</p>
+          <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : pipe !== 'all' ? ' · this pipeline' : ' · whole account'}</p>
           <div className="meta-chart-fill">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
@@ -2305,6 +2312,44 @@ function suggestPipeline(formName, pipes) {
     if (score > bestScore) { bestScore = score; best = p.id }
   }
   return bestScore > 0 ? best : ''
+}
+// Resolve which pipeline a campaign belongs to: an explicit Settings link wins;
+// "all" / unmatched fall back to a name-token match (same matcher forms use).
+// null = belongs to no specific pipeline.
+function pipeOfCampaign(clientId, campName, pipes) {
+  if (campName == null) return null
+  const t = loadCampMap(clientId)[campName]
+  if (t === 'all') return null
+  if (t) return t
+  return suggestPipeline(campName, pipes) || null
+}
+// Scope a Meta rollup to the campaigns matching keep(name): filter campaigns /
+// ad sets / creatives / ad-daily to that subset and recompute account totals,
+// results breakdown, daily series and prev from it. Reach is summed across
+// campaigns (a mild over-count vs true dedup'd account reach) — flagged in UI.
+function scopeMetaToPipe(m, keep) {
+  const campaigns = (m.campaigns || []).filter((c) => keep(c.name))
+  const ok = new Set(campaigns.map((c) => c.name))
+  const adsets = (m.adsets || []).filter((a) => ok.has(a.campaign))
+  const ads = (m.ads || []).filter((a) => ok.has(a.campaign))
+  const adDaily = (m.adDaily || []).filter((r) => ok.has(r.campaign))
+  const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x && x[k]) || 0), 0)
+  const totals = {
+    spend: sum(campaigns, 'spend'), impressions: sum(campaigns, 'impressions'), clicks: sum(campaigns, 'clicks'),
+    linkClicks: sum(campaigns, 'linkClicks'), leads: sum(campaigns, 'leads'), videoViews: sum(campaigns, 'videoViews'),
+    reach: sum(campaigns, 'reach'), reachApprox: true,
+  }
+  const bd = {}
+  for (const c of campaigns) { if (c.results && c.resultType) bd[c.resultType] = (bd[c.resultType] || 0) + c.results }
+  totals.resultBreakdown = Object.entries(bd).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
+  totals.results = totals.resultBreakdown.reduce((s, x) => s + x.count, 0)
+  totals.costPerResult = totals.results ? Math.round((totals.spend / totals.results) * 100) / 100 : null
+  const dm = new Map()
+  for (const r of adDaily) { const e = dm.get(r.date) || { date: r.date, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0 }; e.spend += r.spend; e.impressions += r.impressions; e.clicks += r.clicks; e.linkClicks += r.linkClicks; e.leads += r.leads; dm.set(r.date, e) }
+  const daily = [...dm.values()].sort((a, b) => a.date.localeCompare(b.date))
+  const pc = campaigns.map((c) => c.prev).filter(Boolean)
+  const prev = pc.length ? { spend: sum(pc, 'spend'), impressions: sum(pc, 'impressions'), clicks: sum(pc, 'clicks'), linkClicks: sum(pc, 'linkClicks'), leads: sum(pc, 'leads'), videoViews: sum(pc, 'videoViews'), reach: sum(pc, 'reach') } : null
+  return { ...m, campaigns, adsets, ads, adDaily, totals, daily, prev }
 }
 
 /* Per-client KPI targets - { metaCpl, googleCostConv, stages: { [stageName]:

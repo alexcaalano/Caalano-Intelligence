@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.147.0 — 2026-08-08 · `PENDING`
+- **Meta Ads creative cards — richer Caalano360 funnel (like the Monthly Report).** Each
+  visual-preview card's key-events funnel now shows **Count · Next-step conversion · Cost per
+  event · Show %** per stage (Leads row carries CPL), and the cards are wider to fit it.
+- **Meta Ads creatives paginated 10 per page.** The creatives **table and cards now share one
+  sorted, paged list** (default sort **Spend**, click any header to re-sort) so they always
+  show the same 10 — much easier to read than the old full table.
+- **Forms track the pipeline filter.** With a pipeline selected, the "Performance by form"
+  table now only shows forms whose ads belong to that pipeline's campaigns (it was showing
+  every form regardless).
+- **Styled "conversion actions" popup.** The campaigns / ad-sets **Results** cell now shows a
+  formatted hover card — every conversion action (primary starred) with a **Total actions**
+  line — instead of the plain grey browser tooltip.
+
 ## v3.146.0 — 2026-08-08 · `PENDING`
 - **Meta Ads: the pipeline selector now scopes the whole ad side, not just the green
   columns.** Picking a pipeline used to leave Cost / Impressions / Reach / the campaign,

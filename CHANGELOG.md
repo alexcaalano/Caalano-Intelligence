@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.153.0 — 2026-08-08 · `PENDING`
+- **Show rate on appointment-linked key-event tiles (shown ÷ occurred).** In the per-pipeline
+  Caalano360 metrics (Meta + Google), any key event tied to a booked calendar now shows its
+  **show rate beneath the count** — computed as **shown ÷ occurred** (appointments whose date
+  has passed), not shown ÷ total booked, so upcoming bookings don't drag it down. Matches the
+  funnel's Show % column.
+
 ## v3.152.0 — 2026-08-08 · `PENDING`
 - **Google Ads view gets the Meta treatment.** The improvements that make sense on the search
   side are now live in Google Ads: the **pipeline selector scopes the whole ad side** to its

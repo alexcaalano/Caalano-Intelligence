@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.152.0'
+const APP_VERSION = '3.153.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1476,7 +1476,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat="100%" />
                 <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={[pct(booked), booked && spendP ? `${fmtCurrency(spendP / booked, currency)} / appt` : null].filter(Boolean).join(' · ')} />
-                {rowsP.map((r, i) => <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count)].filter(Boolean).join(' · ')} />)}
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count), showR].filter(Boolean).join(' · ')} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={cpw == null ? pct(won) : `${pct(won) ? pct(won) + ' · ' : ''}${fmtCurrency(cpw, currency)} / won`} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
@@ -1777,7 +1777,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat="100%" />
                 <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={[pct(booked), booked && spendP ? `${fmtCurrency(spendP / booked, currency)} / appt` : null].filter(Boolean).join(' · ')} />
-                {rowsP.map((r, i) => <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count)].filter(Boolean).join(' · ')} />)}
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count), showR].filter(Boolean).join(' · ')} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={cpw == null ? pct(won) : `${pct(won) ? pct(won) + ' · ' : ''}${fmtCurrency(cpw, currency)} / won`} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>

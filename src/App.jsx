@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.155.0'
+const APP_VERSION = '3.156.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2711,12 +2711,22 @@ function stagePosMap(pipelines) {
 // (e.g. a calendar with no linked stage, or a stage that isn't in this pipeline)
 // inherits the PREVIOUS event's position + a tiny step, so it keeps the order it
 // was configured in — next to its neighbours — instead of being dumped at the end.
+// Strip a leading pipeline tag like "[FIN] " / "[BA] " (and any 📅) from a label,
+// so a calendar named "[FIN] Booked Discovery Call" can be matched to the real
+// "Booked Discovery Call" pipeline stage for ordering / merging.
+const stripPipeTag = (s) => String(s || '').replace(/^\s*📅\s*/, '').replace(/^\s*\[[^\]]+\]\s*/, '').trim()
+const hasPipeTag = (s) => /^\s*(?:📅\s*)?\[[^\]]+\]/.test(String(s || ''))
 function orderKeyEvents(list, stagePos) {
   if (!stagePos || !stagePos.size) return list
-  const posAt = (pipeline, name) => (pipeline && stagePos.has(pipeline + '::' + name) ? stagePos.get(pipeline + '::' + name) : stagePos.get(name))
+  const posAt = (pipeline, name) => (name && pipeline && stagePos.has(pipeline + '::' + name) ? stagePos.get(pipeline + '::' + name) : (name ? stagePos.get(name) : undefined))
   const resolved = (e) => {
-    if (e.kind === 'stage') { const p = posAt(e.pipeline, e.ref); return p == null ? null : p }
-    const p = e.stage ? posAt(e.pipeline, e.stage) : null
+    if (e.kind === 'stage') { let p = posAt(e.pipeline, e.ref); if (p == null) p = posAt(e.pipeline, stripPipeTag(e.ref)); return p == null ? null : p }
+    // Calendar: anchor to its linked stage; if that name doesn't resolve (renamed,
+    // or the label only carries a [PIPE] tag) fall back to the de-tagged stage,
+    // then to the de-tagged label (e.g. "[FIN] Booked Discovery Call").
+    let p = e.stage ? posAt(e.pipeline, e.stage) : null
+    if (p == null && e.stage) p = posAt(e.pipeline, stripPipeTag(e.stage))
+    if (p == null) p = posAt(e.pipeline, stripPipeTag(e.label))
     return p == null ? null : p - 0.1 // calendar sits just ahead of its linked stage
   }
   const rows = list.map((e, i) => ({ e, i, p: resolved(e) }))
@@ -2735,7 +2745,18 @@ function mergeCalKeyEvents(list) {
   // Stage names present as their own key-event, so a calendar named exactly like
   // a stage (but not formally linked) still merges into it.
   const stageNames = new Set(list.filter((e) => e.kind === 'stage').map((e) => nzStage(e.ref)))
-  const norm = list.map((e) => (e.kind === 'calendar' && !e.stage && stageNames.has(nzStage(e.label)) ? { ...e, stage: e.label } : e))
+  const norm = list.map((e) => {
+    if (e.kind !== 'calendar') return e
+    // Keep an already-valid linked stage.
+    if (e.stage && stageNames.has(nzStage(e.stage))) return e
+    // Otherwise infer the stage from the (de-tagged) label or stale stage name so
+    // the calendar merges into / orders with the real pipeline stage.
+    const bareLabel = stripPipeTag(e.label)
+    if (bareLabel && stageNames.has(nzStage(bareLabel))) return { ...e, stage: bareLabel }
+    const bareStage = stripPipeTag(e.stage || '')
+    if (bareStage && stageNames.has(nzStage(bareStage))) return { ...e, stage: bareStage }
+    return e
+  })
   const out = []; const byStage = new Map()
   for (const e of norm) {
     if (e.kind !== 'calendar') { out.push(e); continue }
@@ -2754,7 +2775,7 @@ function mergeCalKeyEvents(list) {
   // the stage shows twice (once as the calendar, once as the stage). The kept
   // calendar event already combines calendar bookings + pipeline-stage reach,
   // split as "via calendar" / "via pipeline" in the number + tooltip.
-  for (const e of out) if (e.kind === 'calendar' && e.stage) e.label = e.stage
+  for (const e of out) if (e.kind === 'calendar' && e.stage && !hasPipeTag(e.label)) e.label = e.stage
   const coveredName = new Set(), coveredPipe = new Set()
   for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(nzStage(e.stage)); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + nzStage(e.stage)) }
   return out.filter((e) => {
@@ -3673,6 +3694,8 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const [chan, setChan] = useState('all')
   const [wonBasis, setWonBasis] = useState('created') // 'created' (marketing) | 'closed' (revenue)
   const [trendMetric, setTrendMetric] = useState('money') // 'money' | 'funnel'
+  const [kePipe, setKePipe] = useState(null) // Key-events funnel pipeline pick (null = highest ad-spend)
+  const [fnPipe, setFnPipe] = useState(null) // Full-funnel pass-through pipeline pick (null = highest ad-spend)
   const trend = useWeeklyBlend(client.id, 13, nonce)
   const kpis = loadKpis(client.id)
   const [ai, setAi] = useState(() => loadInsights(client.id + ':360'))
@@ -3681,6 +3704,7 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   useEffect(() => { setAi(loadInsights(client.id + ':360')); setAiErr(null) }, [client.id])
   useEffect(() => { setPid('all'); setChan('all'); setUid('all'); setWonBasis('created') }, [client.id])
   useEffect(() => { setPid('all') }, [chan, uid])
+  useEffect(() => { setKePipe(null); setFnPipe(null) }, [client.id, chan, uid])
   // User + channel are separate filters over the same CRM feed; only one at a
   // time (the channel split has no per-user breakdown).
   useEffect(() => { if (uid !== 'all') setChan('all') }, [uid])
@@ -3720,6 +3744,9 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
     ? { adSpend: p.adSpend, metaSpend: p.metaSpend, googleSpend: p.googleSpend, adConversions: p.adConversions, campaigns: camps.map((x) => ({ ...x, target: effTarget(x.name) })) }
     : attrFor(pid)
   const spend = chan === 'meta' ? attr.metaSpend : chan === 'google' ? attr.googleSpend : attr.adSpend
+  // Ad spend attributed to one pipeline (channel-aware) — used to default the
+  // per-funnel pipeline selectors to the highest ad-spend pipeline.
+  const pipeSpendOf = (id) => { const a = attrFor(id); return chan === 'meta' ? a.metaSpend : chan === 'google' ? a.googleSpend : a.adSpend }
   const lostReasons = chSel ? chSel.lostReasons : (channels && channels.all ? channels.all.lostReasons : null)
   // Won/revenue lens: 'created' (leads created in period, marketing cohort) or
   // 'closed' (deals marked Won in period, any created date, from wonInPeriod).
@@ -3773,23 +3800,40 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
   const keRows = keConfigured.length
     ? keConfigured
     : [{ label: 'Leads', count: c.leads, kind: 'stage' }, { label: 'Bookings', count: c.booked, kind: 'stage' }, { label: 'Shown', count: c.shown, kind: 'stage' }, { label: 'Won', count: c.won, kind: 'stage' }]
-  const activeStages = pid !== 'all'
-    ? (pipesSrc.find((x) => x.id === pid)?.stages || [])
-    : (pipesSrc.length === 1 ? pipesSrc[0].stages : null)
+  // Full-funnel pass-through pipeline: the top pipeline filter if set, else a
+  // local pick, defaulting to the highest ad-spend pipeline (single-pipeline
+  // clients just use their one pipeline). This lets a multi-pipeline client see
+  // one pipeline's pass-through without changing the whole page's pid filter.
+  const fnTopSpendPipe = (pid === 'all' && pipesSrc.length > 1)
+    ? ([...pipesSrc].sort((a, b) => pipeSpendOf(b.id) - pipeSpendOf(a.id))[0] || {}).id || pipesSrc[0].id
+    : null
+  const fnPipeSel = pid !== 'all'
+    ? pid
+    : (pipesSrc.length === 1 ? pipesSrc[0].id : (fnPipe != null && pipesSrc.some((x) => x.id === fnPipe) ? fnPipe : fnTopSpendPipe))
+  const activeStages = fnPipeSel ? (pipesSrc.find((x) => x.id === fnPipeSel)?.stages || []) : null
   const stageMax = activeStages ? Math.max(1, ...activeStages.map((s) => s.count)) : 1
-  const stageName = pid !== 'all' ? pipesSrc.find((x) => x.id === pid)?.name : (pipesSrc.length === 1 ? pipesSrc[0].name : null)
-  // Multi-pipeline "all" view: split the key-events funnel per pipeline so each has
-  // its OWN Leads denominator and step-conversions. Otherwise a [BA] event divided
-  // by the previous [FIN] step gives nonsense (e.g. 170% / 120%).
-  const kePerPipe = (pid === 'all' && pipesSrc.length > 1 && keConfigured.length) ? (() => {
-    const byPipe = new Map()
-    for (const r of keRows) { const k = r.pipeline || '__x'; if (!byPipe.has(k)) byPipe.set(k, []); byPipe.get(k).push(r) }
-    const pipeLeads = (id) => { const p = pipesSrc.find((x) => x.id === id); return p ? Math.max(1, (p.stages || []).reduce((s, x) => s + (x.count || 0), 0)) : keTotal }
-    const out = []
-    for (const p of pipesSrc) { const rows = byPipe.get(p.id); if (rows && rows.length) out.push({ id: p.id, name: p.name, rows, total: pipeLeads(p.id) }) }
-    const un = byPipe.get('__x'); if (un && un.length) out.push({ id: '__x', name: 'Unscoped', rows: un, total: keTotal })
-    return out.length > 1 ? out : null
+  const stageName = fnPipeSel ? (pipesSrc.find((x) => x.id === fnPipeSel)?.name || null) : null
+  const fnSpend = fnPipeSel && pid === 'all' && pipesSrc.length > 1 ? pipeSpendOf(fnPipeSel) : spend
+  // Multi-pipeline "all" view: show ONE pipeline's key-events funnel at a time with
+  // a selector (default = the highest ad-spend pipeline), re-resolving the client's
+  // key events SCOPED to that pipeline — so each pipeline shows its OWN full ordered
+  // funnel (bare stages + that pipeline's calendars, combined into the linked stage
+  // and in stage order) against its OWN leads. Mirrors the Meta/Google Key Events
+  // funnels; grouping the pre-resolved rows can't do this because bare (unscoped)
+  // stages carry no pipeline and would all land in a single "unscoped" bucket.
+  const keMultiPipe = pid === 'all' && pipesSrc.length > 1 && keConfigured.length > 0
+  const keTopSpendPipe = keMultiPipe
+    ? (([...pipesSrc].sort((a, b) => pipeSpendOf(b.id) - pipeSpendOf(a.id))[0] || pipesSrc[0]).id)
+    : null
+  const kePipeSel = keMultiPipe ? (kePipe != null && pipesSrc.some((x) => x.id === kePipe) ? kePipe : keTopSpendPipe) : null
+  const keActive = kePipeSel ? (() => {
+    const selPipes = pipesSrc.filter((x) => x.id === kePipeSel)
+    const sel = selPipes[0] || null
+    const rows = keyEventRows(keyEventsForPipe(keyEvents, kePipeSel), reachedByStage(selPipes), keCalMap, stagePosMap(selPipes), (sel && sel.crm ? sel.crm.won : 0))
+    const total = Math.max(1, (sel && sel.stages ? sel.stages.reduce((s, x) => s + (x.count || 0), 0) : keTotal))
+    return { id: kePipeSel, name: sel ? sel.name : 'Pipeline', rows, total }
   })() : null
+  const keActiveSpend = keActive ? pipeSpendOf(keActive.id) : spend
   const genInsights = async () => {
     if (aiLoading) return
     setAiLoading(true); setAiErr(null)
@@ -4150,15 +4194,16 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         )
       })()}
       <div className="grid two" style={{ marginTop: 14 }}>
-        {kePerPipe
-          ? <div className="ke-pipe-stack">{kePerPipe.map((g) => (
-              <KeyEventsFunnel
-                key={g.id} rows={g.rows} total={g.total} spend={spend} currency={currency}
-                title={`Key events · ${g.name}`}
-                sub={`${g.name} · reached · % of this pipeline's ${fmtNumber(g.total)} leads${g.rows.some((r) => r.kind === 'calendar') ? ' · show %' : ''} · cost per event${chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}`}
-                caveat={<>Each pipeline's key events are scored against <b>its own</b> leads. 📅 = a booked calendar appointment; other rows = opportunities that reached that stage or beyond.</>}
-              />
-            ))}</div>
+        {keActive && keActive.rows.length
+          ? <KeyEventsFunnel
+              rows={keActive.rows.map((r) => ({ ...r, label: stripPipeTag(r.label) }))} total={keActive.total} spend={keActiveSpend} currency={currency}
+              title="Key events"
+              headerRight={<select className="kef-pipe-sel" value={kePipeSel} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
+                {pipesSrc.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>}
+              sub={`${keActive.name} · reached · % of this pipeline's ${fmtNumber(keActive.total)} leads${keActive.rows.some((r) => r.kind === 'calendar') ? ' · show %' : ''} · cost per event${chan !== 'all' ? ` · ${chan === 'meta' ? 'Meta' : 'Google'} only` : ''}`}
+              caveat={<>Each pipeline's key events are scored against <b>its own</b> leads — the dropdown switches pipeline (defaults to the highest ad-spend one). 📅 = a booked calendar appointment; other rows = opportunities that reached that stage or beyond. Cost / event = this pipeline's attributed spend ({money(keActiveSpend)}) ÷ count.</>}
+            />
           : <KeyEventsFunnel
               rows={keRows} total={keTotal} spend={spend} currency={currency}
               title="Key events"
@@ -4185,7 +4230,12 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
         const total = reached[0] || 1
         return (
           <div className="card chart-card" style={{ marginTop: 14 }}>
-            <h3>Full funnel pass-through</h3><p className="cap">{stageName} · reached · % of leads · step conversion · cost per stage (attributed spend {money(spend)})</p>
+            <div className="kef-title-row"><h3>Full funnel pass-through</h3>
+              {pid === 'all' && pipesSrc.length > 1 && <select className="kef-pipe-sel" value={fnPipeSel} onChange={(e) => setFnPipe(e.target.value)} title="Show the full funnel for one pipeline">
+                {pipesSrc.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>}
+            </div>
+            <p className="cap">{stageName} · reached · % of leads · step conversion · cost per stage (attributed spend {money(fnSpend)})</p>
             <div className="pfunnel">
               <div className="pf-row pf-head"><span className="pf-stage">Stage</span><span className="pf-bar">Reached</span><span className="pf-num">% leads</span><span className="pf-num">Step conv</span><span className="pf-num">Cost / stage</span></div>
               {activeStages.map((s, i) => {
@@ -4198,12 +4248,12 @@ function Caalano360({ blend, client, currency, range, nonce, utmAttr }) {
                     <span className="pf-bar"><span className="pf-fill" style={{ width: `${Math.max(4, pctLeads)}%`, background: `hsl(${hue} 70% 55%)` }}>{fmtNumber(val)}</span></span>
                     <span className="pf-num">{fmtPct(pctLeads, 1)}</span>
                     <span className={`pf-num ${stepConv == null ? '' : stepConv >= 60 ? 'good' : stepConv < 30 ? 'bad' : ''}`}>{stepConv == null ? '-' : fmtPct(stepConv, 0)}</span>
-                    <span className="pf-num">{val ? money(spend / val) : '-'}</span>
+                    <span className="pf-num">{val ? money(fnSpend / val) : '-'}</span>
                   </div>
                 )
               })}
             </div>
-            <p className="caveat">Reached = opportunities currently at that stage or beyond (so they passed through it). Step conv = % who moved from the previous stage into this one. Cost / stage = attributed ad spend ÷ reached.</p>
+            <p className="caveat">Reached = opportunities currently at that stage or beyond (so they passed through it). Step conv = % who moved from the previous stage into this one. Cost / stage = attributed ad spend ÷ reached{pid === 'all' && pipesSrc.length > 1 ? ' (this pipeline defaults to the highest ad-spend one — switch with the dropdown)' : ''}.</p>
           </div>
         )
       })() : (b.hasCrm && pipesSrc.length > 1 && <p className="caveat" style={{ marginTop: 12 }}>Pick a pipeline above to see the full funnel pass-through.</p>)}

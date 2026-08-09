@@ -17,6 +17,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.156.0 — 2026-08-09 · `PENDING`
+- **Key events now render in correct pipeline order, with calendars combined into their linked
+  stage.** The ordering engine (`orderKeyEvents`) now anchors a pipeline-tagged calendar
+  (`[FIN] Booked Discovery Call`) to its stage position by matching the **de-tagged label** when
+  the stored stage link is stale/renamed — so calendars sit at their real funnel position
+  instead of being dumped at the top. The merge engine (`mergeCalKeyEvents`) infers the linked
+  stage the same way, so a tagged calendar **collapses into the matching pipeline stage** (one
+  "Cost per Booked Discovery Call" row combining calendar bookings + stage reach) rather than
+  showing twice; pipeline tags are preserved where two pipelines share a stage name. This flows
+  through **every** key-events surface (Caalano360, Monthly Report funnels, Forms drill,
+  Meta/Google funnels, creative cards).
+- **Caalano360 Key events funnel: per-pipeline selector (highest ad-spend default).** For
+  multi-pipeline clients the section now shows **one pipeline's funnel at a time** with a
+  dropdown to switch — defaulting to the pipeline with the most ad spend, exactly like the
+  Meta/Google Key Events funnels — instead of stacking every pipeline. Each pipeline's key
+  events are re-resolved scoped to that pipeline (its own bare stages + its own calendars,
+  combined and ordered) and scored against **its own** leads, with cost/event on that
+  pipeline's attributed spend. Single-pipeline clients default straight to their one pipeline.
+- **Caalano360 Full funnel pass-through: per-pipeline selector (highest ad-spend default).**
+  The pipeline pass-through now carries the same dropdown, so a multi-pipeline client sees one
+  pipeline's stage-by-stage funnel (defaulting to highest ad-spend) without changing the whole
+  page's pipeline filter; cost/stage divides that pipeline's attributed spend.
+
 ## v3.155.0 — 2026-08-08 · `PENDING`
 - **Cost efficiency in the per-pipeline Caalano360 metrics (Meta + Google).** Every tile now
   carries a **cost-per-unit with its own up/down chip** vs the previous period (green when it

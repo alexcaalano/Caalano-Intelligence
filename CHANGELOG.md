@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.158.0 — 2026-08-09 · `PENDING`
+- **Monthly Report Creative Performance now has a data table too (like the Meta ads view).**
+  Above the creative cards, the report now shows a **sortable green Caalano360 creatives table**
+  (Creative · Type · Spend · Impr. · CTR · Freq · Results · Cost/res + a green column per key
+  event) — the same `o360-tbl` used on the Meta client view. Click any header to sort. The table
+  uses the union key-event columns so they line up across pipelines, while the cards below stay
+  scoped to each creative's own campaign pipeline. The Meta client view keeps its own existing
+  Creatives table (the report table is gated to the report only, so there's no duplicate).
+
 ## v3.157.0 — 2026-08-09 · `PENDING`
 - **Meta client view: Creative performance now uses the Monthly Report card exactly.** The old
   "Visual previews" mini-cards are replaced with the **same rich creative cards as the Monthly

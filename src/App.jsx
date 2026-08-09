@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.157.0'
+const APP_VERSION = '3.158.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9178,7 +9178,7 @@ function MRDonut({ data, money }) {
 }
 // Creative performance — visual cards (big thumbnail + all stats + the client's
 // configured key events), with a sort control and pagination (10 per page).
-function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency }) {
+function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency, showTable = false }) {
   const groups = o360cols ? o360cols.groups : []
   // Enrich each creative: platform metrics + the per-client key-event counts + cash.
   // Each creative's key events come from the pipeline attached to its campaign
@@ -9239,8 +9239,50 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
   const pages = Math.max(1, Math.ceil(sorted.length / PER))
   const cur = Math.min(page, pages - 1)
   const pageAds = sorted.slice(cur * PER, cur * PER + PER)
+  // Data-table view (same sortable green Caalano360 table as the Meta ads view).
+  // The table uses the UNION key-event columns (o360cols) for every creative, so
+  // the columns line up across pipelines; the cards below stay pipeline-scoped.
+  const [tsort, onTsort] = useSort('spend')
+  const tableRows = sortRows(enriched.map((a) => ({
+    ...a, freqV: a.reach ? a.impressions / a.reach : null,
+    ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads, o360cols),
+  })), tsort)
   return (
     <>
+      {showTable && <>
+        <div className="mr-section-lab">Creative table</div>
+        <div className="table-wrap"><table className="o360-tbl">
+          <O360ColGroup left={8} green={!!o360cols} cols={o360cols} />
+          <thead>
+            {o360cols && <C360GrpRow left={8} cols={o360cols} />}
+            <tr>
+              <SortTh k="name" sort={tsort} on={onTsort}>Creative</SortTh>
+              <SortTh k="type" sort={tsort} on={onTsort}>Type</SortTh>
+              <SortTh k="spend" sort={tsort} on={onTsort}>Spend</SortTh>
+              <SortTh k="impressions" sort={tsort} on={onTsort}>Impr.</SortTh>
+              <SortTh k="ctrV" sort={tsort} on={onTsort}>CTR</SortTh>
+              <SortTh k="freqV" sort={tsort} on={onTsort}>Freq</SortTh>
+              <SortTh k="leads" sort={tsort} on={onTsort}>{tableRows[0] && tableRows[0].resultType ? tableRows[0].resultType : 'Results'}</SortTh>
+              <SortTh k="cpl" sort={tsort} on={onTsort}>Cost/res</SortTh>
+              {o360cols && <O360Head sort={tsort} on={onTsort} cols={o360cols} />}
+            </tr>
+          </thead>
+          <tbody>{tableRows.map((a) => (
+            <tr key={a.name}>
+              <td title={a.name}><div className="cre-cell">{a.thumb ? <img className="cre-th" src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none' }} /> : <span className="cre-th cre-th-none" />}<span className="cre-cell-nm">{a.name}</span></div></td>
+              <td>{a.type}</td>
+              <td>{money(a.spend)}</td>
+              <td>{n0(a.impressions)}</td>
+              <td>{a.ctrV == null ? '—' : fmtPct(a.ctrV, 2)}</td>
+              <td>{a.freqV == null ? '—' : a.freqV.toFixed(1) + 'x'}</td>
+              <td>{n0(a.leads)}</td>
+              <td>{a.cpl == null ? '—' : money(a.cpl)}</td>
+              {o360cols && o360Cells(a, currency, o360cols)}
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <div className="mr-section-lab" style={{ marginTop: 14 }}>Creative cards</div>
+      </>}
       <div className="mr-cre-sort no-print">
         <span>Sort by</span>
         {METRICS.map((x) => <button key={x.k} className={sortK === x.k ? 'on' : ''} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
@@ -9409,7 +9451,7 @@ function renderMonthlyDeck(rep, h) {
     push(
       <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${spendAds.length} creative(s) with spend · sort & page through, 10 at a time`}>
         {spendAds.length
-          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} />
+          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} showTable />
           : <div className="mr-empty">No creatives with spend for this period.</div>}
         <p className="mr-foot-note">All creatives that spent this period, sortable by any metric, 10 per page. <b>Leads</b> = Meta results; the key-event chips are the client's configured <b>key events</b> (Settings → Key events) for leads whose ad UTM (utm_content) matches the creative. ▶ plays the Instagram post inline where a permalink is available.</p>
       </MRSlide>

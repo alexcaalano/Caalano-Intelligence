@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.147.0'
+const APP_VERSION = '3.148.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1181,8 +1181,8 @@ function ScDelta({ cur, prev, goodWhenDown }) {
   const up = pct >= 0; const good = goodWhenDown ? !up : up
   return <div className={`sc-d ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))} <span className="sc-vs">vs prev</span></div>
 }
-function Sc({ label, value, cur, prev, goodWhenDown, kpi }) {
-  return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
+function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat }) {
+  return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{flat ? <div className="sc-flat">{flat}</div> : null}{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
 }
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
@@ -1200,6 +1200,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [selAdset, setSelAdset] = useState(null) // drill into one ad set
   const [selCreative, setSelCreative] = useState(null) // drill into one creative
   const [selForm, setSelForm] = useState(null) // filter the tables to one CRM form's ads
+  const [kePipe, setKePipe] = useState(null) // local pipeline pick for the Key events funnel (null = follow default)
+  useEffect(() => { setKePipe(null) }, [pipe]) // reset to default when the top filter changes
   const [formSort, onFormSort] = useSort('adSpend')
   const formsSt = useForms(clientId, range, nonce)
   const [day, setDay] = useState(null)
@@ -1225,6 +1227,14 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
   const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
+  // Per-pipeline ad spend (whole account) → the Key events funnel defaults to the
+  // highest-spend pipeline; a local dropdown on the panel switches it. When the
+  // top filter is on a pipeline, the funnel follows it.
+  const pipeSpend = {}
+  for (const c of (deep.meta.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.spend || 0) }
+  const topSpendPipe = Object.keys(pipeSpend).sort((a, b) => pipeSpend[b] - pipeSpend[a])[0] || null
+  const kePipeEff = kePipe != null ? kePipe : (pipe !== 'all' ? pipe : (topSpendPipe || 'all'))
+  const keListFunnel = keyEventsForPipe(loadKeyEvents(clientId), kePipeEff)
   // Green Caalano360 columns: the client's key events (cost per each) when
   // configured, else the legacy Booked/Shown/Won block. Ordered by where each
   // event sits in the pipeline (calendars via their linked stage).
@@ -1360,13 +1370,16 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const meCh = A && A.channels && A.channels.meta
   const meRows = (() => {
     const rmap = reachedByStage(meCh ? (meCh.pipelines || []) : [])
-    const cfg = keyEventRows(keList, rmap, calCountMap(A, 'meta'), stagePos, meCh ? meCh.totals.won : 0)
+    const cfg = keyEventRows(keListFunnel, rmap, calCountMap(A, 'meta'), stagePos, meCh ? meCh.totals.won : 0)
     if (cfg.length) return cfg
     if (!meCh) return []
     const tt = meCh.totals
     return [{ label: 'Leads', count: tt.leads, kind: 'stage' }, { label: 'Bookings', count: tt.booked, kind: 'stage' }, { label: 'Shown', count: tt.shown, kind: 'stage' }, { label: 'Won', count: tt.won, kind: 'stage' }]
   })()
-  const meTotal = Math.max(1, meCh ? meCh.totals.leads : 0)
+  // Denominator = the funnel pipeline's own Meta leads (so % leads is per-pipeline),
+  // or account Meta leads when showing all.
+  const mePipeLeads = kePipeEff !== 'all' && meCh ? ((meCh.pipelines || []).find((p) => p.id === kePipeEff) || {}).leads : null
+  const meTotal = Math.max(1, mePipeLeads != null ? mePipeLeads : (meCh ? meCh.totals.leads : 0))
   return (
     <div ref={scrollRootRef}>
       <AttrDiag attr={attr} />
@@ -1382,7 +1395,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
           <button className="drill-clear" onClick={clearDrill}>Clear all</button>
         </div>
       )}
-      <div className="scorecard">
+      <div className="sc-sec-lab"><span className="sc-sec-t"><img src={FAVICON('meta.com')} alt="" width="13" height="13" /> Meta metrics</span><span className="sc-sec-sub">delivery &amp; cost from the ad platform</span></div>
+      <div className="scorecard sc-fit">
         <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown />
         <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
         <Sc label="Reach" value={fmtNumber(t.reach)} cur={t.reach} prev={D((x) => x.reach)} />
@@ -1404,9 +1418,28 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
             <Sc label="CVR" value={fmtPct(rate(tRes, t.linkClicks), 2)} cur={rate(tRes, t.linkClicks)} prev={bd.length ? null : D((x) => rate(x.leads, x.linkClicks))} />
           </>
         })()}
-        {crmTot && <Sc label="Scheduled Appts" value={<>{fmtNumber(crmTot.booked)}{crmTot.cancelled ? <span className="c360-canc" title={`${crmTot.cancelled} later cancelled`}> ({crmTot.cancelled}c)</span> : null}</>} />}
-        {crmTot && <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} />}
       </div>
+      {has360 && crmTot && (() => {
+        // Caalano360 (blended) metrics: CRM outcomes vs Meta spend, plus cost per
+        // each key-event stage from the funnel. Divides the whole Meta spend (same
+        // basis as the funnel), scoped to the funnel's pipeline.
+        const mspend = m.totals ? m.totals.spend : t.spend
+        const evCost = meRows.filter((r) => r.kind !== 'lead' && r.count > 0)
+        const cpw = crmTot.won && mspend ? mspend / crmTot.won : null
+        const roas = mspend ? (crmTot.revenue || 0) / mspend : null
+        return <>
+          <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> Caalano360 metrics</span><span className="sc-sec-sub">blended CRM outcomes vs Meta spend{allPipes.length > 1 ? ` · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}` : ''}</span></div>
+          <div className="scorecard sc-fit">
+            <Sc label="Scheduled Appts" value={<>{fmtNumber(crmTot.booked)}{crmTot.cancelled ? <span className="c360-canc" title={`${crmTot.cancelled} later cancelled`}> ({crmTot.cancelled}c)</span> : null}</>} />
+            <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} goodWhenDown />
+            {evCost.map((r, i) => <Sc key={i} label={`Cost / ${r.label.replace(/^📅 /, '')}`} value={fmtCurrency(mspend / r.count, currency)} flat={`${fmtNumber(r.count)} reached`} goodWhenDown />)}
+            <Sc label="Won" value={fmtNumber(crmTot.won)} />
+            <Sc label="Cost / Won" value={cpw == null ? '-' : fmtCurrency(cpw, currency)} goodWhenDown />
+            <Sc label="Revenue" value={fmtCurrency(crmTot.revenue || 0, currency)} />
+            <Sc label="ROAS" value={roas == null ? '-' : `${roas.toFixed(2)}×`} />
+          </div>
+        </>
+      })()}
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
           <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : pipe !== 'all' ? ' · this pipeline' : ' · whole account'}</p>
@@ -1429,8 +1462,12 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
           rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
           title="Key events · Meta" style={{ marginTop: 0 }} className="meta-split-col"
-          sub="Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · account level"
-          caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend, so it stays account-level even when you filter a campaign above. Configure which stages and calendars count in Settings → Key events.</>}
+          headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
+            <option value="all">All pipelines</option>
+            {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}{pipeSpend[p.id] ? ` · ${fmtCurrency(pipeSpend[p.id], currency)}` : ''}</option>)}
+          </select> : null}
+          sub={`Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}`}
+          caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline — it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
         />}
       </div>
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
@@ -2596,7 +2633,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
 // Used in Caalano360 and the Meta / Google screens so key events read the same
 // everywhere. A leading "Leads" row anchors the funnel so the first key event
 // gets a meaningful next-step conversion.
-function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style, className = '' }) {
+function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style, className = '', headerRight }) {
   if (!rows || !rows.length) return null
   const money = (v) => fmtCurrency(v, currency)
   const anyCal = rows.some((r) => r.kind === 'calendar')
@@ -2606,7 +2643,7 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
   const full = hasLeads ? rows : [{ label: 'Leads', count: total || 0, kind: 'lead' }, ...rows]
   const max = Math.max(1, ...full.map((r) => r.count))
   return (
-    <div className={`card chart-card ${className}`} style={style}><h3>{title}</h3>{sub ? <p className="cap">{sub}</p> : null}
+    <div className={`card chart-card ${className}`} style={style}>{headerRight ? <div className="kef-title-row"><h3>{title}</h3>{headerRight}</div> : <h3>{title}</h3>}{sub ? <p className="cap">{sub}</p> : null}
       <div className={`kef ${anyCal ? 'kef-show' : ''}`}>
         <div className="kef-row kef-head">
           <span className="kef-step">Step</span>

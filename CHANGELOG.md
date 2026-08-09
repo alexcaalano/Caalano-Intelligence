@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.148.0 — 2026-08-08 · `PENDING`
+- **Key events · Meta funnel is now per-pipeline.** For multi-pipeline clients the funnel no
+  longer mixes every pipeline's stages together (which produced duplicate rows and nonsense
+  next-step %). A **pipeline dropdown** on the panel shows one pipeline at a time — defaulting
+  to the **highest ad-spend** pipeline — and "% leads" now uses that pipeline's own Meta leads
+  as the denominator. Pick "All pipelines" to see the combined view. When the top filter is
+  set to a pipeline, the funnel follows it.
+- **Meta Ads scorecards split into "Meta metrics" and "Caalano360 metrics".** The top KPIs are
+  now two labelled, full-width rows that stretch to fill the screen (auto-fit). The Caalano360
+  row adds the blended CRM metrics — Scheduled Appts, Cost/Appt, **cost per key-event stage**
+  (per booked call, qualified, etc.), Won, Cost/Won, Revenue and ROAS — scoped to the funnel's
+  pipeline.
+
 ## v3.147.0 — 2026-08-08 · `PENDING`
 - **Meta Ads creative cards — richer Caalano360 funnel (like the Monthly Report).** Each
   visual-preview card's key-events funnel now shows **Count · Next-step conversion · Cost per

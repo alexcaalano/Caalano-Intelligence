@@ -1360,7 +1360,14 @@ export default async (req) => {
   const key = process.env.WINDSOR_API_KEY
   // Only cache successful, non-debug responses. Errors and debug must never be
   // cached, or a transient failure gets replayed by the CDN.
-  const json = (obj, status = 200, cache = false) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? 'public, max-age=600' : 'no-store' } })
+  // SECURITY: when the multi-user login system is active (AUTH_SECRET set), the
+  // per-caller access checks below (canSeeClient / restrictTo) run INSIDE this
+  // function — a shared-CDN cache hit would skip them and could replay one
+  // caller's authorised payload to another (cross-client leak). So cache only in
+  // the browser (`private`) when auth is on; keep shared-CDN caching (`public`)
+  // only in single-user mode where every caller has identical access.
+  const cacheScope = process.env.AUTH_SECRET ? 'private' : 'public'
+  const json = (obj, status = 200, cache = false) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
 
   if (!key) return json({ error: 'WINDSOR_API_KEY not set' }, 500)
   // Merge any UI-added clients (Settings -> Add client) into the registry so

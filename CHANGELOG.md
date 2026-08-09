@@ -17,6 +17,30 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.159.0 — 2026-08-09 · `PENDING` — Trust & correctness batch
+- **Security (cross-client leak): authorised API responses are no longer shared-CDN cached when
+  multi-user login is on.** `windsor.mjs` set `cache-control: public` on cached responses, but the
+  per-caller access checks (`canSeeClient` / `restrictTo`) run *inside* the function — a shared-CDN
+  cache hit skipped them and could replay one viewer's authorised payload to another. Cached
+  responses are now `private` (browser-only) whenever `AUTH_SECRET` is set; `public` is kept only in
+  single-user mode where every caller has identical access.
+- **Show % / % leads tooltips now match the maths.** The creative-card key-events table said
+  "shown ÷ booked" but rendered shown ÷ **occurred**; corrected to "shown ÷ occurred (appointments
+  whose date has passed)". The "% leads" tooltip now says "÷ this creative's leads" (it was
+  "÷ total leads").
+- **Green rate columns are labelled honestly.** Book Rate / Win Rate / Conv % divide by the row's
+  **ad-reported** leads/results, not CRM leads — the tooltips now say so ("÷ this row's ad-reported
+  leads (not CRM leads)") so they're not mistaken for the CRM funnel's rates.
+- **Monthly Report: "Paid leads" → "Paid results".** The figure sums Meta *results* + Google
+  conversions (each campaign's optimised objective — not necessarily leads), so it's relabelled
+  "Paid results" and "Blended CPL" → "Cost / result", with subs clarifying they're ad results, not
+  CRM leads.
+- **Revenue-basis note on Meta/Google Caalano360 metrics.** Those green Revenue/ROAS tiles use the
+  lead-created basis; the subtitle now says so and points out the monthly report uses deal-won, so
+  the two can be reconciled.
+- **Fix: creative cards keyed by name.** `MRCreative` used positional keys, so the inline-play state
+  could stick to the wrong creative after sorting/paging; now keyed by creative name.
+
 ## v3.158.0 — 2026-08-09 · `PENDING`
 - **Monthly Report Creative Performance now has a data table too (like the Meta ads view).**
   Above the creative cards, the report now shows a **sortable green Caalano360 creatives table**

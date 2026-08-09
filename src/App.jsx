@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.158.0'
+const APP_VERSION = '3.159.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -113,7 +113,7 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
       groups.push({ label: '📅 ' + k.label, kind: 'calendar', span: 6 })
       const ctx = { g: i, refs: k.refs || [k.ref], stage: k.stage, pipeline: k.pipeline, names: calNames, event: k.label }
       cols.push({ key: `e${i}b`, sub: 'Booked', ty: 'count', metric: 'calBooked', gfirst: true, title: `Bookings for ${k.label}`, ...ctx })
-      cols.push({ key: `e${i}br`, sub: 'Book Rate', ty: 'rate', metric: 'calBookRate', title: 'Booked ÷ leads', ...ctx })
+      cols.push({ key: `e${i}br`, sub: 'Book Rate', ty: 'rate', metric: 'calBookRate', title: "Booked ÷ this row's ad-reported leads (not CRM leads)", ...ctx })
       cols.push({ key: `e${i}cb`, sub: 'Cost / Booked', ty: 'cost', metric: 'calCost', title: `Spend ÷ ${k.label} bookings`, ...ctx })
       cols.push({ key: `e${i}o`, sub: 'Occurred', ty: 'count', metric: 'calOccurred', title: `Appointments whose date has passed (occurred) for ${k.label}`, ...ctx })
       cols.push({ key: `e${i}s`, sub: 'Shown', ty: 'count', metric: 'calShown', title: `Showed for ${k.label}`, ...ctx })
@@ -124,7 +124,7 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
       groups.push({ label: k.label, kind: 'won', span: 6 })
       const ctx = { g: i, ref: k.ref, event: k.label }
       cols.push({ key: `e${i}w`, sub: 'Won', ty: 'count', metric: 'wonCount', gfirst: true, title: `Deals won${''}`, ...ctx })
-      cols.push({ key: `e${i}wr`, sub: 'Win Rate', ty: 'rate', metric: 'wonRate', title: 'Won ÷ leads', ...ctx })
+      cols.push({ key: `e${i}wr`, sub: 'Win Rate', ty: 'rate', metric: 'wonRate', title: "Won ÷ this row's ad-reported leads (not CRM leads)", ...ctx })
       cols.push({ key: `e${i}wc`, sub: 'Cost / Won', ty: 'cost', metric: 'wonCost', title: 'Spend ÷ won', ...ctx })
       cols.push({ key: `e${i}wv`, sub: 'Won Val', ty: 'money', metric: 'wonVal', title: 'Revenue from won deals', ...ctx })
       cols.push({ key: `e${i}wa`, sub: 'Avg Deal', ty: 'money', metric: 'wonAvg', title: 'Revenue ÷ won deals', ...ctx })
@@ -133,7 +133,7 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
       groups.push({ label: k.label, kind: 'stage', span: 3 })
       const ctx = { g: i, ref: k.ref, pipeline: k.pipeline, event: k.label }
       cols.push({ key: `e${i}r`, sub: 'Reached', ty: 'count', metric: 'stageReached', gfirst: true, title: `Reached ${k.label}`, ...ctx })
-      cols.push({ key: `e${i}rr`, sub: 'Conv %', ty: 'rate', metric: 'stageRate', title: `Reached ÷ leads`, ...ctx })
+      cols.push({ key: `e${i}rr`, sub: 'Conv %', ty: 'rate', metric: 'stageRate', title: "Reached ÷ this row's ad-reported leads (not CRM leads)", ...ctx })
       cols.push({ key: `e${i}c`, sub: 'Cost / Reach', ty: 'cost', metric: 'stageCost', title: `Spend ÷ ${k.label}`, ...ctx })
     }
   })
@@ -1507,7 +1507,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
           const pids = allPipes.map((p) => p.id).filter((pid) => (pipeSpend[pid] || 0) > 0 || crmOf(pid)).sort((a, b) => (pipeSpend[b] || 0) - (pipeSpend[a] || 0))
           if (pids.length) return pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, pipeSpendPrev[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Meta spend · count · vs prev · cost/event`) })
         }
-        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, totalSpendPrev, crmTot, meCh ? meCh.totals.leads : 0, 'blended CRM outcomes vs Meta spend · count · vs prev · cost/event')
+        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, totalSpendPrev, crmTot, meCh ? meCh.totals.leads : 0, 'blended CRM outcomes vs Meta spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
       })()}
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
@@ -1769,7 +1769,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           const groups = pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, pipeSpendPrev[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Google spend · count · vs prev · cost/event`) }).filter(Boolean)
           if (groups.length) return groups
         }
-        return groupFor(null, 'Caalano360 metrics', t.cost, totalSpendPrev, totalsCrm, gCh ? gCh.totals.leads : 0, 'blended CRM outcomes vs Google spend · count · vs prev · cost/event')
+        return groupFor(null, 'Caalano360 metrics', t.cost, totalSpendPrev, totalsCrm, gCh ? gCh.totals.leads : 0, 'blended CRM outcomes vs Google spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
       })()}
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={t.cost} currency={currency}
@@ -9058,9 +9058,9 @@ function MRCreative({ a, money, n0 }) {
               <thead><tr>
                 <th>Key event</th>
                 <th className="r">Count</th>
-                <th className="r" title="This event's count ÷ total leads">% leads</th>
+                <th className="r" title="This event's count ÷ this creative's leads">% leads</th>
                 <th className="r" title="This step ÷ the previous step">Next</th>
-                <th className="r" title="Calendar events only: shown ÷ booked">Show %</th>
+                <th className="r" title="Appointment events only: shown ÷ occurred (appointments whose date has passed)">Show %</th>
                 <th className="r" title="This creative's ad-level spend ÷ this event's count">Cost / stage</th>
               </tr></thead>
               <tbody>
@@ -9287,7 +9287,7 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
         <span>Sort by</span>
         {METRICS.map((x) => <button key={x.k} className={sortK === x.k ? 'on' : ''} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
       </div>
-      <div className="mr-cre-grid">{pageAds.map((a, i) => <MRCreative key={cur + '-' + i} a={a} money={money} n0={n0} />)}</div>
+      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} />)}</div>
       {pages > 1 && (
         <div className="mr-cre-pager no-print">
           <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
@@ -9805,8 +9805,8 @@ function renderMonthlyDeck(rep, h) {
       <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub="Ad platform + CRM. Spend & leads are this month's; ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM — never total business.">
         <div className="mr-kpirow mr-kpirow-wide">
           <MRKpi label="Total ad spend" value={money(totalSpend)} />
-          <MRKpi label="Paid leads" value={n0(paidLeads)} sub="ad results" />
-          <MRKpi label="Blended CPL" value={paidLeads ? money(totalSpend / paidLeads) : '—'} />
+          <MRKpi label="Paid results" value={n0(paidLeads)} sub="Meta results + Google conv · not CRM leads" />
+          <MRKpi label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '—'} sub="spend ÷ ad results" />
           <MRKpi label="Deals won · created" value={n0(coWon.count)} sub="this month's leads" />
           <MRKpi label="Deals won · closed" value={n0(dealsWon)} sub="closed this month" />
           <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />

@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.155.0 — 2026-08-08 · `PENDING`
+- **Cost efficiency in the per-pipeline Caalano360 metrics (Meta + Google).** Every tile now
+  carries a **cost-per-unit with its own up/down chip** vs the previous period (green when it
+  gets cheaper) — so "Scheduled Appts ▲26%" now reads "…$117/appt ▼12%", giving the volume
+  change real efficiency context. The **Leads tile shows cost-per-lead**, appts show
+  cost/appt, each key event shows cost/event, Won shows cost/won — each with its vs-prev
+  chip. Needs the prior period's ad spend per pipeline (now computed from campaign-level prev).
+- **Monthly Report:** the creative funnel's cost column is relabelled **"Cost / stage"** (it
+  already computed the creative's ad-level spend ÷ each key event's count).
+
 ## v3.154.0 — 2026-08-08 · `PENDING`
 - **Creative cards only show their own campaign's key events.** Each creative card's Caalano360
   funnel is now scoped to the **pipeline of the campaign that creative ran in** — so a BA

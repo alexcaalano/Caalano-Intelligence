@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.154.0'
+const APP_VERSION = '3.155.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1469,25 +1469,35 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         const prevPipeMeta = (prevMeCh && prevMeCh.pipelines) || []
         const prevCrmOf = (pid) => pid ? (((prevPipeMeta.find((p) => p.id === pid) || {}).crm) || null) : (prevMeCh ? prevMeCh.totals : null)
         const evMap = (rows) => { const m = {}; for (const r of rows) if (r.kind !== 'lead') m[r.label] = r.count; return m }
-        const groupFor = (pid, label, spendP, crmP, leadsP, sub) => {
+        // Previous-period ad spend per pipeline, so cost-per-event can show a
+        // vs-prev efficiency chip (cost down = green) alongside the volume delta.
+        const pipeSpendPrev = {}
+        for (const c of (deep.meta.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid && c.prev) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (c.prev.spend || 0) }
+        const totalSpendPrev = (deep.meta.prev && deep.meta.prev.spend) || Object.values(pipeSpendPrev).reduce((s, v) => s + v, 0)
+        const flatLine = (parts) => { const ps = parts.filter(Boolean); return ps.length ? <span className="sc-flat-line">{ps.map((p, i) => <React.Fragment key={i}>{i ? <span className="sc-flat-sep">·</span> : null}{p}</React.Fragment>)}</span> : null }
+        const groupFor = (pid, label, spendP, spendPrevP, crmP, leadsP, sub) => {
           const keListP = keyEventsForPipe(loadKeyEvents(clientId), pid || 'all')
           const rowsP = keyEventRows(keListP, rmap, calMap, stagePos, crmP ? crmP.won : (meCh ? meCh.totals.won : 0)).filter((r) => r.kind !== 'lead' && r.count > 0)
           const pCrm = prevCrmOf(pid) || {}
           const pEv = prevMeCh ? evMap(keyEventRows(keListP, prevRmap, prevCalMap, stagePos, pCrm.won || 0)) : {}
           const booked = crmP ? crmP.booked : 0, won = crmP ? crmP.won : 0, rev = (crmP ? crmP.revenue : 0) || 0
-          const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% of leads` : null
-          const perEv = (n) => spendP && n ? `${fmtCurrency(spendP / n, currency)} / event` : null
-          const cpw = won && spendP ? spendP / won : null
-          const roas = spendP ? rev / spendP : null
           const hasPrev = !!prevMeCh
+          const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% leads` : null
+          // "$X / unit" + a vs-prev efficiency chip (cheaper = green).
+          const perUnit = (unit, count, prevCount) => {
+            if (!spendP || !count) return null
+            const cur = spendP / count, prev = (spendPrevP && prevCount) ? spendPrevP / prevCount : null
+            return <span className="sc-cost">{fmtCurrency(cur, currency)}/{unit}{(hasPrev && prev) ? <MiniDelta cur={cur} prev={prev} goodWhenDown /> : null}</span>
+          }
+          const roas = spendP ? rev / spendP : null
           return (
             <React.Fragment key={label}>
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
-                <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat="100%" />
-                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={[pct(booked), booked && spendP ? `${fmtCurrency(spendP / booked, currency)} / appt` : null].filter(Boolean).join(' · ')} />
-                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count), showR].filter(Boolean).join(' · ')} /> })}
-                <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={cpw == null ? pct(won) : `${pct(won) ? pct(won) + ' · ' : ''}${fmtCurrency(cpw, currency)} / won`} />
+                <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
+                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={flatLine([pct(booked), perUnit('appt', booked, pCrm.booked)])} />
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
+                <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
             </React.Fragment>
@@ -1495,9 +1505,9 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         }
         if (allPipes.length > 1) {
           const pids = allPipes.map((p) => p.id).filter((pid) => (pipeSpend[pid] || 0) > 0 || crmOf(pid)).sort((a, b) => (pipeSpend[b] || 0) - (pipeSpend[a] || 0))
-          if (pids.length) return pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Meta spend · count · vs prev · % of leads`) })
+          if (pids.length) return pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, pipeSpendPrev[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Meta spend · count · vs prev · cost/event`) })
         }
-        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, crmTot, meCh ? meCh.totals.leads : 0, 'blended CRM outcomes vs Meta spend · count · vs prev · % of leads')
+        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, totalSpendPrev, crmTot, meCh ? meCh.totals.leads : 0, 'blended CRM outcomes vs Meta spend · count · vs prev · cost/event')
       })()}
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
@@ -1772,26 +1782,33 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         const prevCrmOf = (pid) => pid ? (((prevPipeMeta.find((p) => p.id === pid) || {}).crm) || null) : (prevGCh ? prevGCh.totals : null)
         const evMap = (rows) => { const mm = {}; for (const r of rows) if (r.kind !== 'lead') mm[r.label] = r.count; return mm }
         const totalsCrm = gCh ? { leads: gCh.totals.leads, booked: gCh.totals.booked, won: gCh.totals.won, revenue: gCh.totals.revenue } : null
-        const groupFor = (pid, label, spendP, crmP, leadsP, sub) => {
+        const pipeSpendPrev = {}
+        for (const c of (deep.google.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid && c.prev) pipeSpendPrev[pid] = (pipeSpendPrev[pid] || 0) + (c.prev.cost || 0) }
+        const totalSpendPrev = (deep.google.prev && deep.google.prev.cost) || Object.values(pipeSpendPrev).reduce((s, v) => s + v, 0)
+        const flatLine = (parts) => { const ps = parts.filter(Boolean); return ps.length ? <span className="sc-flat-line">{ps.map((p, i) => <React.Fragment key={i}>{i ? <span className="sc-flat-sep">·</span> : null}{p}</React.Fragment>)}</span> : null }
+        const groupFor = (pid, label, spendP, spendPrevP, crmP, leadsP, sub) => {
           if (!crmP) return null
           const keListP = keyEventsForPipe(loadKeyEvents(clientId), pid || 'all')
           const rowsP = keyEventRows(keListP, rmap, calMap, stagePos, crmP.won || 0).filter((r) => r.kind !== 'lead' && r.count > 0)
           const pCrm = prevCrmOf(pid) || {}
           const pEv = prevGCh ? evMap(keyEventRows(keListP, prevRmap, prevCalMap, stagePos, pCrm.won || 0)) : {}
           const booked = crmP.booked || 0, won = crmP.won || 0, rev = crmP.revenue || 0
-          const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% of leads` : null
-          const perEv = (n) => spendP && n ? `${fmtCurrency(spendP / n, currency)} / event` : null
-          const cpw = won && spendP ? spendP / won : null
-          const roas = spendP ? rev / spendP : null
           const hasPrev = !!prevGCh
+          const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% leads` : null
+          const perUnit = (unit, count, prevCount) => {
+            if (!spendP || !count) return null
+            const cur = spendP / count, prev = (spendPrevP && prevCount) ? spendPrevP / prevCount : null
+            return <span className="sc-cost">{fmtCurrency(cur, currency)}/{unit}{(hasPrev && prev) ? <MiniDelta cur={cur} prev={prev} goodWhenDown /> : null}</span>
+          }
+          const roas = spendP ? rev / spendP : null
           return (
             <React.Fragment key={label}>
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
-                <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat="100%" />
-                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={[pct(booked), booked && spendP ? `${fmtCurrency(spendP / booked, currency)} / appt` : null].filter(Boolean).join(' · ')} />
-                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count), showR].filter(Boolean).join(' · ')} /> })}
-                <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={cpw == null ? pct(won) : `${pct(won) ? pct(won) + ' · ' : ''}${fmtCurrency(cpw, currency)} / won`} />
+                <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
+                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={flatLine([pct(booked), perUnit('appt', booked, pCrm.booked)])} />
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
+                <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
             </React.Fragment>
@@ -1799,10 +1816,10 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         }
         if (allPipes.length > 1) {
           const pids = allPipes.map((p) => p.id).filter((pid) => (pipeSpend[pid] || 0) > 0 || crmOf(pid)).sort((a, b) => (pipeSpend[b] || 0) - (pipeSpend[a] || 0))
-          const groups = pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Google spend · count · vs prev · % of leads`) }).filter(Boolean)
+          const groups = pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, pipeSpendPrev[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Google spend · count · vs prev · cost/event`) }).filter(Boolean)
           if (groups.length) return groups
         }
-        return groupFor(null, 'Caalano360 metrics', t.cost, totalsCrm, gCh ? gCh.totals.leads : 0, 'blended CRM outcomes vs Google spend · count · vs prev · % of leads')
+        return groupFor(null, 'Caalano360 metrics', t.cost, totalSpendPrev, totalsCrm, gCh ? gCh.totals.leads : 0, 'blended CRM outcomes vs Google spend · count · vs prev · cost/event')
       })()}
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={t.cost} currency={currency}
@@ -9044,7 +9061,7 @@ function MRCreative({ a, money, n0 }) {
                 <th className="r" title="This event's count ÷ total leads">% leads</th>
                 <th className="r" title="This step ÷ the previous step">Next</th>
                 <th className="r" title="Calendar events only: shown ÷ booked">Show %</th>
-                <th className="r" title="Ad spend ÷ this event's count">Cost/ev.</th>
+                <th className="r" title="This creative's ad-level spend ÷ this event's count">Cost / stage</th>
               </tr></thead>
               <tbody>
                 {feRows.map((e, i) => {

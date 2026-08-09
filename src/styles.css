@@ -1956,6 +1956,15 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-deck.mr-exporting { overflow: visible; }
 .mr-deck.mr-exporting .mr-track { flex-direction: column !important; gap: 20px !important; transform: none !important; }
 .mr-deck.mr-exporting .mr-track > .mr-slide { flex: 1 1 auto !important; width: 100% !important; min-height: 0; }
+/* Wide Caalano360 green tables (union key-event columns) must fit the page for
+   export/print, not clip inside their scroll container — drop the fixed layout
+   + fixed column widths and shrink type so every column is captured. Shared by
+   the html2canvas export (.mr-exporting) and native print (@media print). */
+.mr-exporting .table-wrap, .mr-exporting .tbl-scroll { overflow: visible !important; }
+.mr-exporting .o360-tbl { table-layout: auto !important; width: 100% !important; font-size: 8px !important; }
+.mr-exporting .o360-tbl col { width: auto !important; }
+.mr-exporting .o360-tbl th, .mr-exporting .o360-tbl td { padding: 3px 4px !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+.mr-exporting .o360-tbl .cre-th { width: 18px !important; height: 18px !important; }
 /* Slide navigation (Slides mode) */
 .mr-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .mr-nav-arrow { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 20px; line-height: 1; cursor: pointer; flex: 0 0 auto; }
@@ -2230,6 +2239,12 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .mr-slide { page: mrdeck; break-inside: avoid; page-break-inside: avoid; page-break-after: always; box-shadow: none !important; border: 1px solid #e5e7eb !important; border-radius: 0; min-height: auto !important; }
   .mr-slide:last-child { page-break-after: auto; }
   .mr-trend, .mr-creative-grid, .mr-two, .mr-tablewrap, .recharts-responsive-container { break-inside: avoid; }
+  /* Wide green tables fit the page instead of clipping in their scroll box. */
+  .mr-slide .table-wrap, .mr-slide .tbl-scroll { overflow: visible !important; }
+  .mr-slide .o360-tbl { table-layout: auto !important; width: 100% !important; font-size: 8px !important; }
+  .mr-slide .o360-tbl col { width: auto !important; }
+  .mr-slide .o360-tbl th, .mr-slide .o360-tbl td { padding: 3px 4px !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+  .mr-slide .o360-tbl .cre-th { width: 18px !important; height: 18px !important; }
   /* Landscape only for the monthly deck — leaves the Caalano360 export portrait. */
   @page mrdeck { size: A4 landscape; margin: 8mm; }
 }

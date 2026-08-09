@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.163.0 — 2026-08-09 · `PENDING`
+- **Monthly Report: wide Caalano360 green tables no longer clip when exported or printed.** The
+  creatives table (and any `o360-tbl` with the union key-event columns) is fixed-width and, for a
+  multi-pipeline client, can be wider than an A4-landscape page — so both the native **Print**
+  (`window.print()`) and the **Download PDF** (html2canvas) paths were cutting off the rightmost
+  green columns (often Won / Revenue). For export/print only, those tables now drop the fixed layout
+  and fixed column widths, wrap their cells, and shrink to 8px so **every column fits the page**;
+  their scroll containers are set to `overflow: visible` so nothing is clipped before capture. The
+  two export buttons now produce the same complete output. On-screen behaviour is unchanged (the
+  tables still scroll horizontally inside their card).
+
 ## v3.162.0 — 2026-08-09 · `PENDING` — Backend resilience
 - **Every connector call now has a timeout and retries transient failures.** A new shared
   `resilientFetch` (in `ghl.mjs`, used by `windsorFetch` and the GHL token/GET/POST helpers) bounds

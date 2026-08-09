@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.165.0'
+const APP_VERSION = '3.166.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1176,7 +1176,12 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   // Green Caalano360 columns: the client's key events (cost per each) when
   // configured, else the legacy Booked/Shown/Won block. Ordered by where each
   // event sits in the pipeline (calendars via their linked stage).
-  const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
+  // Order key events by pipeline position. Build the position map from the FULL
+  // pipeline registry (allPipelines — every stage with its position, always
+  // present) rather than only the channel funnel pipelines, which are derived
+  // from opportunity activity and can omit low/no-activity stages — leaving the
+  // funnel/green-columns/creative-cards to fall back to config order.
+  const stagePos = stagePosMap([...(allPipes || []), ...((A && A.channels && A.channels.all && A.channels.all.pipelines) || [])])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
   // Per-creative key-event columns: each creative card's funnel is scoped to the
@@ -1570,7 +1575,10 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const topSpendPipe = Object.keys(pipeSpend).sort((a, b) => pipeSpend[b] - pipeSpend[a])[0] || null
   const kePipeEff = kePipe != null ? kePipe : (pipe !== 'all' ? pipe : (topSpendPipe || 'all'))
   const keListFunnel = keyEventsForPipe(loadKeyEvents(clientId), kePipeEff)
-  const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
+  // Full pipeline registry (allPipelines) drives the stage-position map so every
+  // key event resolves to its real funnel position (the channel funnel pipelines
+  // are activity-derived and can omit stages → config-order fallback).
+  const stagePos = stagePosMap([...(allPipes || []), ...((A && A.channels && A.channels.all && A.channels.all.pipelines) || [])])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
   const oCampG = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign)
@@ -2000,6 +2008,7 @@ const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
 const ENABLED_KEY = 'caalano_enabled'
+const RESTRICTED_KEY = 'caalano_restricted'       // { clientId: true } — client is visible to Super Admins only
 const CLIENTS_KEY = 'caalano_clients' // UI-added clients { id: { name, meta, google, ghl } }
 const FORMMETA_KEY = 'caalano_formmeta' // { clientId: { formLabel: { pipeline, notes } } }
 const METACONV_KEY = 'caalano_metaconv' // { clientId: { primary: fieldId, secondary: [fieldId] } }
@@ -2036,7 +2045,7 @@ const SEED_OPTLOG = {
 }
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2055,10 +2064,10 @@ async function hydrateSettings() {
     const serverEmpty = !d || !['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv'].some((s) => d[s] && Object.keys(d[s]).length)
     if (serverEmpty) {
       // First run: migrate whatever this browser holds up to the server.
-      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
+      saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -6018,7 +6027,7 @@ function SocialKpiSettings({ clients }) {
     </div>
   )
 }
-function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEnabled, theme, setTheme, onPick }) {
+function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState(null) // client being configured (modal)
@@ -6032,7 +6041,10 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
   const w = config.availableAccounts?.windsor || {}
   const isOn = (c) => enabled[c.id] !== false
-  const liveClients = config.clients.filter((c) => !isClientDeleted(c.id))
+  const isRestr = (c) => !!(restricted && restricted[c.id])
+  const toggleRestr = (c) => setRestricted && setRestricted((s) => ({ ...(s || {}), [c.id]: !((s || {})[c.id]) }))
+  // Non-super admins never see Super-Admin-only clients in the Settings list either.
+  const liveClients = config.clients.filter((c) => !isClientDeleted(c.id) && (isSuper || !isRestr(c)))
   const activeCount = liveClients.filter(isOn).length
   // Deleted clients (base or UI-added) for the Deleted filter / restore.
   const deletedList = Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && v._deleted).map(([id, v]) => ({ id, name: (config.clients.find((c) => c.id === id) || {}).name || v.name || id, industry: v.industry || null })).sort((a, b) => String(a.name).localeCompare(String(b.name)))
@@ -6114,15 +6126,16 @@ function SettingsPage({ config, enabled, setEnabled, currency, authUser, authEna
         {list.map((c) => {
           const on = isOn(c)
           return (
-            <div className={`set-card ${on ? '' : 'is-off'}`} key={c.id}>
+            <div className={`set-card ${on ? '' : 'is-off'} ${isRestr(c) ? 'is-restr' : ''}`} key={c.id}>
               <div className="set-card-head">
                 <Avatar id={c.id} name={c.name} i={config.clients.indexOf(c)} />
-                <div className="sc-id"><div className="nm">{c.name}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
+                <div className="sc-id"><div className="nm">{c.name}{isRestr(c) ? <span className="restr-badge" title="Super-Admin only — hidden from the rest of the team">🔒</span> : null}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
                 <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
               </div>
               <HealthStrip c={c} />
               <div className="set-card-actions">
                 <button className="set-expand" onClick={() => setEditing(c)}>✎ Edit</button>
+                {isSuper && <button className={`set-restr-btn ${isRestr(c) ? 'on' : ''}`} onClick={() => toggleRestr(c)} title={isRestr(c) ? 'Visible to Super Admins only — click to show the whole team' : 'Restrict to Super Admins only'}>{isRestr(c) ? '🔒 Super-Admin only' : '🔓 Visible to team'}</button>}
               </div>
             </div>
           )
@@ -8466,8 +8479,10 @@ function renderMonthlyDeck(rep, h) {
   ]
 
   // Caalano360 green key-event setup — shared by the creative table, the
-  // key-events-by-campaign slide and the CRM slides.
-  const stagePos = stagePosMap(pipelines)
+  // key-events-by-campaign slide and the CRM slides. Position map comes from the
+  // full pipeline registry (allPipelines) so every key event orders by its real
+  // funnel position; the blend pipelines are activity-derived and can omit stages.
+  const stagePos = stagePosMap([...((attribution && attribution.allPipelines) || []), ...pipelines])
   const calNames = new Map(((attribution && attribution.appointments && attribution.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = rep.hasCrm ? buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calNames) : null
   const oCamp = aliasedOutcomeMap(rep.client.id, 'campaign', rep.campOutcomes || [])
@@ -9832,6 +9847,15 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
     const next = typeof updater === 'function' ? updater(SETTINGS.enabled) : updater
     SETTINGS.enabled = next; writeLS(ENABLED_KEY, next); saveSettingsRemote({ enabled: next }); bumpSettings()
   }
+  // Super-Admin-only clients: hidden from everyone who isn't a superadmin (the
+  // backend enforces the same; this is the UI half). Legacy/basic mode = owner,
+  // so nothing is hidden there.
+  const restricted = SETTINGS.restricted || {}
+  const setRestricted = (updater) => {
+    const next = typeof updater === 'function' ? updater(SETTINGS.restricted || {}) : updater
+    SETTINGS.restricted = next; writeLS(RESTRICTED_KEY, next); saveSettingsRemote({ restricted: next }); bumpSettings()
+  }
+  const seeRestricted = !authEnabled || (authUser && authUser.role === 'superadmin')
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); try { localStorage.setItem('caalano_theme', theme) } catch {} }, [theme])
   useEffect(() => {
@@ -9860,7 +9884,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const custom = customClientList()
   const extras = custom.filter((cu) => !data.clients.some((c) => c.id === cu.id))
   const baseClients = [...data.clients.map(applyOv), ...extras].filter((c) => !isClientDeleted(c.id))
-  const visibleClients = baseClients.filter((c) => enabled[c.id] !== false && canSeeClientFE(authUser, c.id)).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
+  const visibleClients = baseClients.filter((c) => enabled[c.id] !== false && canSeeClientFE(authUser, c.id) && (seeRestricted || !restricted[c.id])).map((c) => (c.ghl || !ghlById[c.id] ? c : { ...c, ghl: ghlById[c.id] }))
   const rows = computeRows(visibleClients, agency.data)
   // Config for the Settings page keeps deleted clients (so the Deleted filter can
   // restore them); the main app's baseClients above already hides them everywhere else.
@@ -9874,7 +9898,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const myClients = visibleClients
   const curView = isViewer ? (view === 'settings' ? 'settings' : 'clients') : view
   const curPicked = curView === 'clients'
-    ? ((picked && baseClients.some((c) => c.id === picked.id) && canSeeClientFE(authUser, picked.id)) ? picked : (isViewer ? myClients[0] : picked))
+    ? ((picked && baseClients.some((c) => c.id === picked.id) && canSeeClientFE(authUser, picked.id) && (seeRestricted || !restricted[picked.id])) ? picked : (isViewer ? myClients[0] : picked))
     : picked
   const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0
 
@@ -9934,7 +9958,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
-          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
+          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}
         </ErrorBoundary>

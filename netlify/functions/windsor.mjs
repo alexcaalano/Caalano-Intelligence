@@ -1382,16 +1382,31 @@ export default async (req) => {
   // account; agency-wide requests are off-limits to client (viewer) accounts.
   const AUTH_SECRET = process.env.AUTH_SECRET
   const me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET).catch(() => null) : null
+  // Clients marked "Super-Admin only" in Settings are hidden from everyone who
+  // isn't a superadmin. A null caller is the trusted Basic-Auth / legacy path
+  // (owner) and a superadmin both see everything, so we only load + apply the
+  // set for a non-super signed-in caller.
+  let restrictedSet = new Set()
+  if (me && me.role !== 'superadmin') {
+    try {
+      const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+      if (s && s.restricted) for (const id in s.restricted) if (s.restricted[id]) restrictedSet.add(id)
+    } catch { /* fail open to the OTHER checks below; a restricted client still needs canSeeClient */ }
+  }
   if (me) {
     if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
+    if (client && restrictedSet.has(client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (!client && me.role === 'viewer') return json({ error: 'No access to agency-wide data.' }, 403)
   }
   // Restricted staff (a User limited to specific accounts) only ever see their
   // own accounts inside agency-wide aggregates — enforced server-side so the
   // raw response can't leak other clients. null = no restriction (admin / staff
-  // with all-accounts / the trusted Basic-Auth path).
+  // with all-accounts / the trusted Basic-Auth path). `canView` also drops any
+  // Super-Admin-only client for a non-super caller.
   const restrictTo = me && me.role === 'user' && me.allClients === false ? new Set(me.clients || []) : null
-  const pickAllowed = (obj) => restrictTo ? Object.fromEntries(Object.entries(obj || {}).filter(([id]) => restrictTo.has(id))) : (obj || {})
+  const canView = (id) => (!restrictTo || restrictTo.has(id)) && !restrictedSet.has(id)
+  const filtered = !!restrictTo || restrictedSet.size > 0
+  const pickAllowed = (obj) => filtered ? Object.fromEntries(Object.entries(obj || {}).filter(([id]) => canView(id))) : (obj || {})
 
   // ---- Monthly Report ------------------------------------------------------
   // Frozen monthly client reports. The deck itself is assembled on the client
@@ -1447,7 +1462,7 @@ export default async (req) => {
       // Windsor right now — so removing a connector drops it from the dropdown.
       // A light probe (followers / page fans) per client; falls back to the full
       // set if every probe fails (transient), so the dropdown never goes empty.
-      const ids = Object.keys(SOCIAL).filter((id) => !restrictTo || restrictTo.has(id))
+      const ids = Object.keys(SOCIAL).filter((id) => canView(id))
       const live = async (soc) => {
         const jobs = []
         if (soc.ig) jobs.push(windsorFetch('instagram', ['account_id', 'followers_count', 'media_count'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.ig))).catch(() => []))
@@ -1722,12 +1737,12 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'logos') {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'logos', connected: false, logos: {} })
     try {
-      const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && (!restrictTo || restrictTo.has(id)))
+      const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && canView(id))
       const results = await Promise.all(entries.map(async ([id, cc]) => {
         try { const p = await locationProfile(cc.ghl); return [id, { website: p.website || null, logoUrl: p.logoUrl || null }] }
         catch { return [id, { website: null, logoUrl: null }] }
       }))
-      return json({ scope: 'logos', connected: true, logos: Object.fromEntries(results) }, 200, !restrictTo)
+      return json({ scope: 'logos', connected: true, logos: Object.fromEntries(results) }, 200, !filtered)
     } catch (e) { return json({ scope: 'logos', error: String((e && e.message) || e).slice(0, 160), logos: {} }, 200) }
   }
 
@@ -1735,7 +1750,7 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'ghlaudit') {
     if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
     try {
-      const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && (!restrictTo || restrictTo.has(id)))
+      const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && canView(id))
       const audit = await Promise.all(entries.map(async ([id, cc]) => ({ client: id, location: cc.ghl, ...(await auditLocation(cc.ghl)) })))
       return json({ audit }, 200)
     } catch (e) { return json({ error: String(e.message || e) }, 502) }
@@ -1784,27 +1799,27 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'agency') {
     try {
       const ov = await buildOverview(from, to, preset, key)
-      if (restrictTo) {
+      if (filtered) {
         ov.clients = pickAllowed(ov.clients)
-        if (ov.alerts) { ov.alerts.meta = (ov.alerts.meta || []).filter((a) => restrictTo.has(a.id)); ov.alerts.google = (ov.alerts.google || []).filter((a) => restrictTo.has(a.id)) }
+        if (ov.alerts) { ov.alerts.meta = (ov.alerts.meta || []).filter((a) => canView(a.id)); ov.alerts.google = (ov.alerts.google || []).filter((a) => canView(a.id)) }
       }
-      return json({ scope: 'agency', period: { from, to, preset }, ...ov }, 200, !restrictTo)
+      return json({ scope: 'agency', period: { from, to, preset }, ...ov }, 200, !filtered)
     } catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 
   // Rolling-window performance trends across all clients (own date logic).
   if (url.searchParams.get('scope') === 'trends') {
-    try { const tr = await buildTrends(key); if (restrictTo) tr.clients = pickAllowed(tr.clients); return json({ scope: 'trends', ...tr }, 200, !restrictTo) }
+    try { const tr = await buildTrends(key); if (filtered) tr.clients = pickAllowed(tr.clients); return json({ scope: 'trends', ...tr }, 200, !filtered) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 
   // Agency-wide UTM source-tag coverage per client (lazy-loaded for the leaderboard).
   if (url.searchParams.get('scope') === 'coverage') {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'coverage', connected: false, coverage: {} })
-    const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && (!restrictTo || restrictTo.has(id)))
+    const entries = Object.entries(CLIENTS).filter(([id, cc]) => cc.ghl && canView(id))
     const out = {}
     await Promise.all(entries.map(async ([id, cc]) => { try { out[id] = await attributionCoverage(cc.ghl, from, to) } catch { out[id] = null } }))
-    return json({ scope: 'coverage', connected: true, coverage: out }, 200, !restrictTo)
+    return json({ scope: 'coverage', connected: true, coverage: out }, 200, !filtered)
   }
 
   // Weekly (Mon–Sun) traffic-light board for one client.

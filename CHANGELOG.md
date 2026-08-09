@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.166.0 — 2026-08-09 · `PENDING`
+- **Super-Admin-only clients.** You can now restrict a client so it's visible **only to Super
+  Admins** — hidden from every other Admin, User and Viewer. Toggle it per client in Settings →
+  Clients ("🔒 Super-Admin only" on each card; a lock badge marks restricted ones). Enforced
+  **server-side** (windsor.mjs): a non-super caller is 403'd on a restricted client and it's stripped
+  from every agency aggregate (overview, trends, leaderboard, coverage, logos, social), not just
+  hidden in the UI. Legacy/basic (single-owner) mode sees everything. Stored as a new `restricted`
+  settings section that syncs across the team like the rest.
+- **Fix: creative-card / green-column / funnel key events were showing in config order, not pipeline
+  order** (e.g. Lodged/Settled appearing before Booked Discovery Call). The stage-position map was
+  built from the channel funnel pipelines, which are derived from opportunity activity and can omit
+  low/no-activity stages — so `orderKeyEvents` couldn't place them and fell back to configuration
+  order. It now builds the position map from the **full pipeline registry (`allPipelines`)**, so
+  every key event orders by its real funnel position across the Meta view, Google view and Monthly
+  Report. **Regenerate frozen monthly reports** to pick this up.
+
 ## v3.165.0 — 2026-08-09 · `PENDING`
 - **Security: the GoHighLevel OAuth connect endpoint is now admin-only and CSRF-protected.** The
   `caalano-connect` function is excluded from the site gate (so the OAuth redirect is always

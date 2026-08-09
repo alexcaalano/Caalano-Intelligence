@@ -562,6 +562,13 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .set-card { border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; background: var(--panel); transition: border-color .15s; }
 .set-card.open { grid-column: 1 / -1; border-color: var(--border-2); }
 .set-card.is-off { opacity: .58; }
+/* Super-Admin-only client (restricted): amber accent + lock badge + toggle button */
+.set-card.is-restr { border-color: color-mix(in srgb, #f5a524 45%, var(--border)); }
+.restr-badge { margin-left: 6px; font-size: 11px; vertical-align: middle; }
+.set-restr-btn { background: var(--panel-2); border: 1px solid var(--border-2); color: var(--muted); font-size: 11.5px; font-weight: 700; padding: 6px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
+.set-restr-btn:hover { color: var(--text); border-color: var(--border-2); }
+.set-restr-btn.on { color: #b26a00; background: color-mix(in srgb, #f5a524 16%, var(--panel)); border-color: color-mix(in srgb, #f5a524 40%, var(--border)); }
+:root:not([data-theme="light"]) .set-restr-btn.on { color: #f5a524; }
 .set-card-head { display: flex; align-items: center; gap: 11px; }
 .set-card .sc-id { min-width: 0; }
 .set-card .nm { font-weight: 700; font-size: 14px; }

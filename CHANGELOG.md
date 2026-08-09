@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.154.0 — 2026-08-08 · `PENDING`
+- **Creative cards only show their own campaign's key events.** Each creative card's Caalano360
+  funnel is now scoped to the **pipeline of the campaign that creative ran in** — so a BA
+  creative shows only the [BA] key events, not the [FIN] ones too (no more mixed lists or
+  duplicate stage rows). The card header names that pipeline. Each key event still shows its
+  **count · next-step conversion · cost per event**, and appointment-linked events show the
+  **show rate (shown ÷ occurred)**.
+
 ## v3.153.0 — 2026-08-08 · `PENDING`
 - **Show rate on appointment-linked key-event tiles (shown ÷ occurred).** In the per-pipeline
   Caalano360 metrics (Meta + Google), any key event tied to a booked calendar now shows its

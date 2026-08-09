@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.153.0'
+const APP_VERSION = '3.154.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1265,6 +1265,16 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
+  // Per-creative key-event columns: each creative card's funnel is scoped to the
+  // pipeline of the campaign that creative ran in, so it only shows that campaign's
+  // key events (not every pipeline's). Memoized per pipeline.
+  const creColsCache = {}
+  const creColsFor = (campName) => {
+    const pid = pipeOfCampaign(clientId, campName, allPipes)
+    const k = pid || '_all'
+    if (!creColsCache[k]) creColsCache[k] = buildO360Cols(keyEventsForPipe(loadKeyEvents(clientId), pid || 'all'), stagePos, calNames)
+    return { cols: creColsCache[k], pid }
+  }
   const oCamp = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign)
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
   // not utm_term - so match ad-set rows against byMedium. Aliases fold renamed
@@ -1584,10 +1594,13 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
               {has360 && (() => {
                 const o = oCre.get(unorm(a.name))
                 if (!o) return <div className="cre-360 cre-360-empty">📈 Caalano360 · no CRM lead carried this creative's UTM (utm_content)</div>
-                const f = o360Fields(o, a.spend, a.leads, o360cols)
+                // Scope this card's key events to the creative's campaign's pipeline.
+                const { cols: creCols, pid: crePid } = creColsFor(a.campaign)
+                const crePipeName = crePid ? ((allPipes.find((p) => p.id === crePid) || {}).name || '') : ''
+                const f = o360Fields(o, a.spend, a.leads, creCols)
                 const evs = []; let ci = 0; let wonCount = 0; let prevCount = a.leads
-                for (const g of o360cols.groups) {
-                  const seg = o360cols.cols.slice(ci, ci + g.span); ci += g.span
+                for (const g of creCols.groups) {
+                  const seg = creCols.cols.slice(ci, ci + g.span); ci += g.span
                   const first = seg.find((c) => c.gfirst) || seg[0]
                   const count = f[first.key] || 0
                   const sr = g.kind === 'calendar' ? seg.find((c) => c.metric === 'calShowRate') : null
@@ -1603,7 +1616,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
                 const roas = a.spend ? (o.revenue || 0) / a.spend : null
                 const cpw = wonCount && a.spend ? a.spend / wonCount : null
                 return <div className="cre-360">
-                  <div className="c360-tag">📈 Caalano360 · key events</div>
+                  <div className="c360-tag">📈 Caalano360 · key events{crePipeName ? ` · ${crePipeName}` : ''}</div>
                   <table className="cre-360-tbl"><thead><tr><th>Key event</th><th className="r">Count</th><th className="r" title="Conversion from the previous step">Next</th><th className="r" title="Creative spend ÷ count">Cost/ev</th><th className="r" title="Calendar events: shown ÷ occurred">Show %</th></tr></thead>
                     <tbody>
                       <tr className="lead"><td>Leads</td><td className="r">{fmtNumber(a.leads)}</td><td className="r">—</td><td className="r">{a.leads ? fmtCurrency(acpl, currency) : '—'}</td><td className="r">—</td></tr>

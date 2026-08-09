@@ -320,15 +320,18 @@ tbody tr:hover { background: var(--panel-2); }
 .cre-sub span { font-size: 13px; font-weight: 700; color: var(--text); }
 .cre-sub small { font-size: 11.5px; color: var(--faint); }
 
-.cre-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
-.cre { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
-.cre .thumb { position: relative; width: 100%; aspect-ratio: 1/1; background: var(--panel-2); overflow: hidden; }
+/* Creative cards: media on the LEFT, all stats + key-events funnel on the RIGHT
+   (like the monthly report). Wide cards, 1-2 per row. */
+.cre-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 14px; }
+.cre { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: row; align-items: stretch; }
+.cre .thumb { position: relative; width: 200px; flex-shrink: 0; align-self: stretch; min-height: 260px; background: var(--panel-2); overflow: hidden; }
 .cre .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; position: relative; z-index: 1; }
 .cre .thumb-ph { position: absolute; inset: 0; z-index: 0; display: grid; place-items: center; font-size: 34px; color: var(--faint); }
 .cre .type { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 800; padding: 3px 7px; border-radius: 6px; background: rgba(0,0,0,.6); color: #fff; backdrop-filter: blur(4px); }
-.cre .body { padding: 12px; }
-.cre .nm { font-size: 11.5px; font-weight: 600; line-height: 1.3; height: 2.6em; overflow: hidden; margin-bottom: 9px; }
-.cre .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.cre .body { padding: 13px 15px; flex: 1; min-width: 0; }
+.cre .nm { font-size: 12.5px; font-weight: 700; line-height: 1.3; margin-bottom: 10px; word-break: break-word; }
+.cre .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 12px; }
+@media (max-width: 560px) { .cre-grid { grid-template-columns: 1fr; } .cre { flex-direction: column; } .cre .thumb { width: 100%; align-self: auto; aspect-ratio: 9/16; min-height: 0; } }
 .cre .st .l { font-size: 9.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .cre .st .v { font-size: 13px; font-weight: 700; }
 .cre .st .v.good { color: var(--pos); } .cre .st .v.bad { color: var(--neg); }

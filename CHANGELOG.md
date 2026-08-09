@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.149.0 — 2026-08-08 · `PENDING`
+- **Meta Ads creative cards go horizontal — media left, all stats right (monthly-report
+  style).** Each card now puts the creative preview on the left and the full read-out on the
+  right: spend/leads/CPL/CTR/CVR/hook plus the Caalano360 key-events funnel (Count · Next-step
+  · Cost/event · Show %, with booked & shown appointments) and Revenue/Cost-per-won/ROAS.
+  Cards are wider (1–2 per row) and stack back to vertical on narrow screens.
+
 ## v3.148.0 — 2026-08-08 · `PENDING`
 - **Key events · Meta funnel is now per-pipeline.** For multi-pipeline clients the funnel no
   longer mixes every pipeline's stages together (which produced duplicate rows and nonsense

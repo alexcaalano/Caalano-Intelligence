@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.152.0 — 2026-08-08 · `PENDING`
+- **Google Ads view gets the Meta treatment.** The improvements that make sense on the search
+  side are now live in Google Ads: the **pipeline selector scopes the whole ad side** to its
+  linked campaigns (cost / clicks / conversions / campaign / ad-group / keyword / search-term
+  tables), a **"Google metrics" + per-pipeline "Caalano360 metrics"** split (Leads first,
+  count · vs-previous · % of leads, cost-per-event/appt/won combined), and the **Key events ·
+  Google funnel now has the per-pipeline dropdown** defaulting to the highest ad-spend pipeline.
+  The styled green-cell popups already applied everywhere (shared component). Creative cards /
+  10-per-page pagination don't apply to Google (no image/video creatives there).
+
 ## v3.151.0 — 2026-08-08 · `PENDING`
 - **Per-pipeline Caalano360 metrics: Leads first, % of leads, vs-previous, and combined
   cost tiles.** Each pipeline group now opens with a **Leads** tile, every tile shows its

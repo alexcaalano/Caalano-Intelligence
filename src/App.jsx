@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.151.0'
+const APP_VERSION = '3.152.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1664,13 +1664,25 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [aSort, onASort] = useSort('cost')
   const [kSort, onKSort] = useSort('cost')
   const [sSort, onSSort] = useSort('cost')
+  const [kePipe, setKePipe] = useState(null)
+  useEffect(() => { setKePipe(null) }, [pipe])
+  const prevAttr = usePrevAttr(clientId, range, nonce)
   const scrollRootRef = React.useRef(null)
   useSyncedTableScroll(scrollRootRef)
   if (!deep?.google) return <EmptyDeep channel="Google Ads" />
-  const g = deep.google
+  // Scope the whole Google ad side to the selected pipeline's linked campaigns.
+  const inPipe = (campName) => pipe === 'all' || pipeOfCampaign(clientId, campName, allPipes) === pipe
+  const g = pipe === 'all' ? deep.google : scopeGoogleToPipe(deep.google, inPipe)
+  const scopedEmpty = pipe !== 'all' && !(g.campaigns || []).length
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
   const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
+  // Per-pipeline Google spend → the key-events funnel defaults to the highest-spend one.
+  const pipeSpend = {}
+  for (const c of (deep.google.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.cost || 0) }
+  const topSpendPipe = Object.keys(pipeSpend).sort((a, b) => pipeSpend[b] - pipeSpend[a])[0] || null
+  const kePipeEff = kePipe != null ? kePipe : (pipe !== 'all' ? pipe : (topSpendPipe || 'all'))
+  const keListFunnel = keyEventsForPipe(loadKeyEvents(clientId), kePipeEff)
   const stagePos = stagePosMap(A && A.channels && A.channels.all ? A.channels.all.pipelines : [])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
@@ -1707,18 +1719,21 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const gCh = A && A.channels && A.channels.google
   const gRows = (() => {
     const rmap = reachedByStage(gCh ? (gCh.pipelines || []) : [])
-    const cfg = keyEventRows(keList, rmap, calCountMap(A, 'google'), stagePos, gCh ? gCh.totals.won : 0)
+    const cfg = keyEventRows(keListFunnel, rmap, calCountMap(A, 'google'), stagePos, gCh ? gCh.totals.won : 0)
     if (cfg.length) return cfg
     if (!gCh) return []
     const tt = gCh.totals
     return [{ label: 'Leads', count: tt.leads, kind: 'stage' }, { label: 'Bookings', count: tt.booked, kind: 'stage' }, { label: 'Shown', count: tt.shown, kind: 'stage' }, { label: 'Won', count: tt.won, kind: 'stage' }]
   })()
-  const gTotal = Math.max(1, gCh ? gCh.totals.leads : 0)
+  const gPipeLeads = kePipeEff !== 'all' && gCh ? ((gCh.pipelines || []).find((p) => p.id === kePipeEff) || {}).leads : null
+  const gTotal = Math.max(1, gPipeLeads != null ? gPipeLeads : (gCh ? gCh.totals.leads : 0))
   return (
     <div ref={scrollRootRef}>
       <AttrDiag attr={attr} />
-      {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Caalano360 green columns, key events &amp; funnel are scoped to this pipeline · ad spend is unchanged</span>}</div>}
-      <div className="scorecard">
+      {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · link campaigns in Settings → Campaign links</span>}</div>}
+      {scopedEmpty && <div className="alias-warn" style={{ marginTop: 8 }}><b>No campaigns are linked to this pipeline.</b> Link this pipeline's campaigns in <b>Settings → this client → Campaign links</b> (or rename them to match). The green CRM columns still reflect the pipeline.</div>}
+      <div className="sc-sec-lab"><span className="sc-sec-t"><img src={FAVICON('ads.google.com')} alt="" width="13" height="13" /> Google metrics</span><span className="sc-sec-sub">delivery &amp; cost from the ad platform</span></div>
+      <div className="scorecard sc-fit">
         <Sc label="Cost" value={fmtCurrency(t.cost, currency)} cur={t.cost} prev={D((x) => x.cost)} goodWhenDown />
         <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
         <Sc label="Clicks" value={fmtNumber(t.clicks)} cur={t.clicks} prev={D((x) => x.clicks)} />
@@ -1730,14 +1745,64 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
       </div>
+      {has360 && (() => {
+        // Per-pipeline Caalano360 metrics — same treatment as Meta (Leads first,
+        // count · vs-prev · % of leads, combined cost tiles), for Google.
+        const rmap = reachedByStage(gCh ? (gCh.pipelines || []) : [])
+        const calMap = calCountMap(A, 'google')
+        const pipeMeta = (gCh && gCh.pipelines) || []
+        const crmOf = (pid) => (pipeMeta.find((p) => p.id === pid) || {}).crm || null
+        const prevGCh = prevAttr && prevAttr.channels && prevAttr.channels.google
+        const prevRmap = reachedByStage(prevGCh ? (prevGCh.pipelines || []) : [])
+        const prevCalMap = prevAttr ? calCountMap(prevAttr, 'google') : null
+        const prevPipeMeta = (prevGCh && prevGCh.pipelines) || []
+        const prevCrmOf = (pid) => pid ? (((prevPipeMeta.find((p) => p.id === pid) || {}).crm) || null) : (prevGCh ? prevGCh.totals : null)
+        const evMap = (rows) => { const mm = {}; for (const r of rows) if (r.kind !== 'lead') mm[r.label] = r.count; return mm }
+        const totalsCrm = gCh ? { leads: gCh.totals.leads, booked: gCh.totals.booked, won: gCh.totals.won, revenue: gCh.totals.revenue } : null
+        const groupFor = (pid, label, spendP, crmP, leadsP, sub) => {
+          if (!crmP) return null
+          const keListP = keyEventsForPipe(loadKeyEvents(clientId), pid || 'all')
+          const rowsP = keyEventRows(keListP, rmap, calMap, stagePos, crmP.won || 0).filter((r) => r.kind !== 'lead' && r.count > 0)
+          const pCrm = prevCrmOf(pid) || {}
+          const pEv = prevGCh ? evMap(keyEventRows(keListP, prevRmap, prevCalMap, stagePos, pCrm.won || 0)) : {}
+          const booked = crmP.booked || 0, won = crmP.won || 0, rev = crmP.revenue || 0
+          const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% of leads` : null
+          const perEv = (n) => spendP && n ? `${fmtCurrency(spendP / n, currency)} / event` : null
+          const cpw = won && spendP ? spendP / won : null
+          const roas = spendP ? rev / spendP : null
+          const hasPrev = !!prevGCh
+          return (
+            <React.Fragment key={label}>
+              <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
+              <div className="scorecard sc-fit">
+                <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat="100%" />
+                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={[pct(booked), booked && spendP ? `${fmtCurrency(spendP / booked, currency)} / appt` : null].filter(Boolean).join(' · ')} />
+                {rowsP.map((r, i) => <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count)].filter(Boolean).join(' · ')} />)}
+                <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={cpw == null ? pct(won) : `${pct(won) ? pct(won) + ' · ' : ''}${fmtCurrency(cpw, currency)} / won`} />
+                <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
+              </div>
+            </React.Fragment>
+          )
+        }
+        if (allPipes.length > 1) {
+          const pids = allPipes.map((p) => p.id).filter((pid) => (pipeSpend[pid] || 0) > 0 || crmOf(pid)).sort((a, b) => (pipeSpend[b] || 0) - (pipeSpend[a] || 0))
+          const groups = pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Google spend · count · vs prev · % of leads`) }).filter(Boolean)
+          if (groups.length) return groups
+        }
+        return groupFor(null, 'Caalano360 metrics', t.cost, totalsCrm, gCh ? gCh.totals.leads : 0, 'blended CRM outcomes vs Google spend · count · vs prev · % of leads')
+      })()}
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={t.cost} currency={currency}
         title="Key events · Google" style={{ marginTop: 14 }}
-        sub="Google-attributed leads through your key pipeline stages and booked calendars · cost per event = Google spend ÷ count"
-        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google; cost per event divides the Google spend in this range. Configure which stages and calendars count in Settings → Key events.</>}
+        headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
+          <option value="all">All pipelines</option>
+          {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}{pipeSpend[p.id] ? ` · ${fmtCurrency(pipeSpend[p.id], currency)}` : ''}</option>)}
+        </select> : null}
+        sub={`Google-attributed leads through your key pipeline stages and booked calendars · cost per event = Google spend ÷ count · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}`}
+        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google; cost per event divides the Google spend in this range. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline — it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
       />}
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
-        <h3>Daily trend</h3><p className="cap">Spend, Conversions and Cost / Conversion by day</p>
+        <h3>Daily trend</h3><p className="cap">Spend, Conversions and Cost / Conversion by day{pipe !== 'all' ? ' · whole account' : ''}</p>
         <ResponsiveContainer width="100%" height={250}>
           <ComposedChart data={daily} margin={{ left: -8, right: 6, top: 6 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -2487,6 +2552,21 @@ function scopeMetaToPipe(m, keep) {
   const pc = campaigns.map((c) => c.prev).filter(Boolean)
   const prev = pc.length ? { spend: sum(pc, 'spend'), impressions: sum(pc, 'impressions'), clicks: sum(pc, 'clicks'), linkClicks: sum(pc, 'linkClicks'), leads: sum(pc, 'leads'), videoViews: sum(pc, 'videoViews'), reach: sum(pc, 'reach') } : null
   return { ...m, campaigns, adsets, ads, adDaily, totals, daily, prev }
+}
+// Google equivalent: scope a Google rollup to the campaigns matching keep(name)
+// and recompute totals + prev from that subset.
+function scopeGoogleToPipe(g, keep) {
+  const campaigns = (g.campaigns || []).filter((c) => keep(c.name))
+  const ok = new Set(campaigns.map((c) => c.name))
+  const adGroups = (g.adGroups || []).filter((a) => ok.has(a.campaign))
+  const keywords = (g.keywords || []).filter((k) => ok.has(k.campaign))
+  const searchTerms = (g.searchTerms || []).filter((s) => ok.has(s.campaign))
+  const conversionActions = (g.conversionActions || []).filter((r) => !r.campaign || ok.has(r.campaign))
+  const sum = (arr, k) => arr.reduce((s, x) => s + (Number(x && x[k]) || 0), 0)
+  const totals = { cost: sum(campaigns, 'cost'), impressions: sum(campaigns, 'impressions'), clicks: sum(campaigns, 'clicks'), conversions: sum(campaigns, 'conversions') }
+  const pc = campaigns.map((c) => c.prev).filter(Boolean)
+  const prev = pc.length ? { cost: sum(pc, 'cost'), impressions: sum(pc, 'impressions'), clicks: sum(pc, 'clicks'), conversions: sum(pc, 'conversions') } : null
+  return { ...g, campaigns, adGroups, keywords, searchTerms, conversionActions, totals, prev, keywordsTotal: keywords.length, searchTermsTotal: searchTerms.length }
 }
 
 /* Per-client KPI targets - { metaCpl, googleCostConv, stages: { [stageName]:

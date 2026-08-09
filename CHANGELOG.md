@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.164.0 — 2026-08-09 · `PENDING`
+- **Fix: Meta "Results" auto-detection was silently disabled by a field-name typo.** The ad-set
+  optimisation-goal field was requested and read as `adsset_optimization_goal` (double-s), but
+  Windsor's real field is `adset_optimization_goal` (single-s, matching its sibling
+  `adset_destination_type` / `adset_promoted_object`). Windsor ignores unknown field names, so the
+  query returned nothing for it and every ad set's result type fell back to the client's default
+  (usually Leads) — so "Results" and "Cost / result" across the Meta views were the fallback, not
+  each ad set's actual optimised objective (purchases, landing-page views, etc.). Corrected all
+  occurrences. Live Meta views pick this up on the next fetch; **regenerate any frozen monthly
+  reports** built before this to refresh their Results figures. (No regression risk: the field was
+  already returning nothing, so requesting the correct name can only improve or match the old
+  behaviour.)
+
 ## v3.163.0 — 2026-08-09 · `PENDING`
 - **Monthly Report: wide Caalano360 green tables no longer clip when exported or printed.** The
   creatives table (and any `o360-tbl` with the union key-event columns) is fixed-width and, for a

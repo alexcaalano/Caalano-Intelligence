@@ -135,7 +135,7 @@ const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 // be resolved (e.g. a custom conversion), so the caller falls back to the
 // client's configured primary.
 function resolveMetaResult(row) {
-  const goal = String(row.adsset_optimization_goal || '').toUpperCase()
+  const goal = String(row.adset_optimization_goal || '').toUpperCase()
   const dest = String(row.adset_destination_type || '').toUpperCase()
   let promoted = {}
   try { promoted = row.adset_promoted_object ? (typeof row.adset_promoted_object === 'string' ? JSON.parse(row.adset_promoted_object) : row.adset_promoted_object) : {} } catch { promoted = {} }
@@ -155,7 +155,7 @@ function resolveMetaResult(row) {
 // Resolve a row's result using auto-detect first, then the client's configured
 // primary conversion, then leads as the last resort. Returns {field,label,auto}.
 function rowResult(entity, fallback) {
-  const auto = resolveMetaResult({ adsset_optimization_goal: entity.optGoal, adset_destination_type: entity.destType, adset_promoted_object: entity.promoted })
+  const auto = resolveMetaResult({ adset_optimization_goal: entity.optGoal, adset_destination_type: entity.destType, adset_promoted_object: entity.promoted })
   if (auto) return { field: auto.field, label: auto.label, auto: true }
   if (fallback && fallback.field) return { field: fallback.field, label: cap1(prettyField(fallback.field)), auto: false }
   return { field: null, label: 'Leads', auto: false }
@@ -220,7 +220,7 @@ function aggMeta(rows, keyField) {
     e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks)
     e.linkClicks += num(r.inline_link_clicks); e.leads += fbLeads(r); e.videoViews += num(r.actions_video_view); e.reach += num(r.reach)
     for (const f of META_RESULT_FIELDS) e._rf[f] = (e._rf[f] || 0) + num(r[f])
-    if (!e.optGoal && r.adsset_optimization_goal) e.optGoal = r.adsset_optimization_goal
+    if (!e.optGoal && r.adset_optimization_goal) e.optGoal = r.adset_optimization_goal
     if (!e.destType && r.adset_destination_type) e.destType = r.adset_destination_type
     if (!e.promoted && r.adset_promoted_object) e.promoted = r.adset_promoted_object
   }
@@ -400,7 +400,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   const campFields = ['account_id', 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
   // Ad-set query carries the optimisation goal + promoted object so results
   // auto-detect per ad set.
-  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
@@ -1696,7 +1696,7 @@ export default async (req) => {
         // windowed conversions per day and under-counts results — the bug that made
         // the trend disagree with the headline. One fetch per month, in parallel.
         const fallback = await readMetaPrimary(client).catch(() => null)
-        const adsetFields = ['account_id', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+        const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
         const monthList = [...buckets.keys()]
         const lastDay = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10) }
         const perMonth = await Promise.all(monthList.map((k) =>

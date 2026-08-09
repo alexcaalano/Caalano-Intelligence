@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.150.0'
+const APP_VERSION = '3.151.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -269,6 +269,27 @@ function keBreakTip(label, total, B, names) {
   if (B && B.fromStage) parts.push(`Pipeline stage (fallback): ${fmtNumber(B.fromStage)}`)
   return `${label} ${fmtNumber(total || 0)}${parts.length ? ' — ' + parts.join(' · ') : ''}`
 }
+// Structured breakdown rows for a calendar Booked / Shown cell (styled popup).
+function keBreakRows(B, names) {
+  const rows = []
+  if (B && B.per) for (const id in B.per) rows.push({ label: (names && names.get && names.get(id)) || 'Calendar', value: B.per[id] })
+  if (B && B.fromStage) rows.push({ label: 'Pipeline stage (fallback)', value: B.fromStage, muted: true })
+  return rows
+}
+// Styled hover popup for a Caalano360 count cell — replaces the plain browser
+// tooltip with the same card look used across the app (header · per-source rows).
+function KeCellPop({ children, title, total, rows, note }) {
+  if ((!rows || !rows.length) && !note) return children
+  return (
+    <HoverPop className="ke-hp" render={() => (
+      <span className="hp-body">
+        <span className="hp-t">{title} · {fmtNumber(total || 0)}</span>
+        {(rows || []).map((r, i) => <span className="hp-r" key={i}><span className={`hp-lbl${r.muted ? '' : ' primary'}`}>{r.label}</span><span className="hp-val">{fmtNumber(r.value)}</span></span>)}
+        {note ? <span className="hp-note">{note}</span> : null}
+      </span>
+    )}>{children}</HoverPop>
+  )
+}
 // Renders the green Caalano360 cells for a row, driven by the column descriptor.
 function o360Cells(r, currency, cols) {
   const D = cols || LEGACY_DESC; const C = D.cols
@@ -277,21 +298,23 @@ function o360Cells(r, currency, cols) {
   return <>{C.map((c, i) => {
     const cn = `c360-col${i === 0 ? ' c360-first' : ''}${c.gfirst && i > 0 ? ' c360-gfirst' : ''}`
     const v = r[c.key]; const m = c.metric
-    // Calendar Booked: number + (Np) fallback marker + full hover breakdown.
+    // Calendar Booked: number + (Np) fallback marker + styled hover breakdown.
     if (m === 'calBooked') {
       const B = r[c.key + 'B'] || {}
-      const tip = keBreakTip('Booked', v, B, c.names)
-      return <td key={c.key} className={cn} title={tip}>{fmtNumber(v || 0)}{B.fromStage ? <span className="c360-infer" title={tip}> ({fmtNumber(B.fromStage)}p)</span> : null}</td>
+      const rows = keBreakRows(B, c.names)
+      const inner = <>{fmtNumber(v || 0)}{B.fromStage ? <span className="c360-infer"> ({fmtNumber(B.fromStage)}p)</span> : null}</>
+      return <td key={c.key} className={cn}>{rows.length ? <KeCellPop title="Booked" total={v} rows={rows}>{inner}</KeCellPop> : inner}</td>
     }
     if (m === 'calShown') {
       const B = r[c.key + 'B'] || {}
-      return <td key={c.key} className={cn} title={keBreakTip('Shown', v, B, c.names)}>{fmtNumber(v || 0)}</td>
+      const rows = keBreakRows(B, c.names)
+      return <td key={c.key} className={cn}>{rows.length ? <KeCellPop title="Shown" total={v} rows={rows}>{fmtNumber(v || 0)}</KeCellPop> : fmtNumber(v || 0)}</td>
     }
     // Won count: flag deals marked won with no value so the team can fix them.
     if (m === 'wonCount') {
       const B = r[c.key + 'B'] || {}; const nv = (B.noVal && B.noVal.length) || 0
-      const tip = nv ? `${fmtNumber(v || 0)} won · ${nv} with NO deal value: ${B.noVal.slice(0, 12).join(', ')}${B.noVal.length > 12 ? '…' : ''}` : `${fmtNumber(v || 0)} won`
-      return <td key={c.key} className={cn} title={tip}>{fmtNumber(v || 0)}{nv ? <span className="c360-warn" title={tip}> ({nv}⚠)</span> : null}</td>
+      const inner = <>{fmtNumber(v || 0)}{nv ? <span className="c360-warn"> ({nv}⚠)</span> : null}</>
+      return <td key={c.key} className={cn}>{nv ? <KeCellPop title="Won" total={v} rows={[{ label: 'With deal value', value: (v || 0) - nv }, { label: '⚠ No deal value', value: nv, muted: true }]} note={`No value: ${B.noVal.slice(0, 12).join(', ')}${B.noVal.length > 12 ? '…' : ''}`}>{inner}</KeCellPop> : inner}</td>
     }
     if (m === 'stageReached') return <td key={c.key} className={cn} title={`${fmtNumber(v || 0)} reached ${c.event}`}>{fmtNumber(v || 0)}</td>
     if (c.ty === 'cost') {
@@ -1202,6 +1225,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [selForm, setSelForm] = useState(null) // filter the tables to one CRM form's ads
   const [kePipe, setKePipe] = useState(null) // local pipeline pick for the Key events funnel (null = follow default)
   useEffect(() => { setKePipe(null) }, [pipe]) // reset to default when the top filter changes
+  const prevAttr = usePrevAttr(clientId, range, nonce) // previous-period attribution for vs-prev deltas
   const [formSort, onFormSort] = useSort('adSpend')
   const formsSt = useForms(clientId, range, nonce)
   const [day, setDay] = useState(null)
@@ -1420,40 +1444,50 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         })()}
       </div>
       {has360 && crmTot && (() => {
-        // Caalano360 (blended) metrics: per key event, its reached count + cost per
-        // event, plus appts / won / revenue / ROAS. Multi-pipeline clients are two
-        // (near-independent) business units, so these break out one group PER
+        // Caalano360 (blended) metrics. Each tile: count · vs-prev delta · % of the
+        // pipeline's leads + cost beneath. Multi-pipeline clients are two
+        // near-independent business units, so these break out one group PER
         // pipeline by default (highest ad-spend first); single-pipeline shows one.
         const rmap = reachedByStage(meCh ? (meCh.pipelines || []) : [])
         const calMap = calCountMap(A, 'meta')
         const pipeMeta = (meCh && meCh.pipelines) || []
         const crmOf = (pid) => (pipeMeta.find((p) => p.id === pid) || {}).crm || null
-        const groupFor = (pid, label, spendP, crmP, sub) => {
+        // Previous period equivalents (from the prev-attribution fetch).
+        const prevMeCh = prevAttr && prevAttr.channels && prevAttr.channels.meta
+        const prevRmap = reachedByStage(prevMeCh ? (prevMeCh.pipelines || []) : [])
+        const prevCalMap = prevAttr ? calCountMap(prevAttr, 'meta') : null
+        const prevPipeMeta = (prevMeCh && prevMeCh.pipelines) || []
+        const prevCrmOf = (pid) => pid ? (((prevPipeMeta.find((p) => p.id === pid) || {}).crm) || null) : (prevMeCh ? prevMeCh.totals : null)
+        const evMap = (rows) => { const m = {}; for (const r of rows) if (r.kind !== 'lead') m[r.label] = r.count; return m }
+        const groupFor = (pid, label, spendP, crmP, leadsP, sub) => {
           const keListP = keyEventsForPipe(loadKeyEvents(clientId), pid || 'all')
           const rowsP = keyEventRows(keListP, rmap, calMap, stagePos, crmP ? crmP.won : (meCh ? meCh.totals.won : 0)).filter((r) => r.kind !== 'lead' && r.count > 0)
+          const pCrm = prevCrmOf(pid) || {}
+          const pEv = prevMeCh ? evMap(keyEventRows(keListP, prevRmap, prevCalMap, stagePos, pCrm.won || 0)) : {}
           const booked = crmP ? crmP.booked : 0, won = crmP ? crmP.won : 0, rev = (crmP ? crmP.revenue : 0) || 0
+          const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% of leads` : null
+          const perEv = (n) => spendP && n ? `${fmtCurrency(spendP / n, currency)} / event` : null
           const cpw = won && spendP ? spendP / won : null
           const roas = spendP ? rev / spendP : null
+          const hasPrev = !!prevMeCh
           return (
             <React.Fragment key={label}>
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
-                <Sc label="Scheduled Appts" value={fmtNumber(booked)} />
-                <Sc label="Cost / Appt" value={booked && spendP ? fmtCurrency(spendP / booked, currency) : '-'} goodWhenDown />
-                {rowsP.map((r, i) => <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} flat={spendP && r.count ? `${fmtCurrency(spendP / r.count, currency)} / event` : null} />)}
-                <Sc label="Won" value={fmtNumber(won)} />
-                <Sc label="Cost / Won" value={cpw == null ? '-' : fmtCurrency(cpw, currency)} goodWhenDown />
-                <Sc label="Revenue" value={fmtCurrency(rev, currency)} />
-                <Sc label="ROAS" value={roas == null ? '-' : `${roas.toFixed(2)}×`} />
+                <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat="100%" />
+                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={[pct(booked), booked && spendP ? `${fmtCurrency(spendP / booked, currency)} / appt` : null].filter(Boolean).join(' · ')} />
+                {rowsP.map((r, i) => <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={[pct(r.count), perEv(r.count)].filter(Boolean).join(' · ')} />)}
+                <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={cpw == null ? pct(won) : `${pct(won) ? pct(won) + ' · ' : ''}${fmtCurrency(cpw, currency)} / won`} />
+                <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
             </React.Fragment>
           )
         }
         if (allPipes.length > 1) {
           const pids = allPipes.map((p) => p.id).filter((pid) => (pipeSpend[pid] || 0) > 0 || crmOf(pid)).sort((a, b) => (pipeSpend[b] || 0) - (pipeSpend[a] || 0))
-          if (pids.length) return pids.map((pid) => groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, crmOf(pid), `${fmtCurrency(pipeSpend[pid] || 0, currency)} Meta spend · count + cost per key event`))
+          if (pids.length) return pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Meta spend · count · vs prev · % of leads`) })
         }
-        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, crmTot, 'blended CRM outcomes vs Meta spend · count + cost per key event')
+        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, crmTot, meCh ? meCh.totals.leads : 0, 'blended CRM outcomes vs Meta spend · count · vs prev · % of leads')
       })()}
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
@@ -1992,6 +2026,31 @@ function usePipelineAttr(clientId, range, nonce, pipe, fallback) {
     return () => { alive = false }
   }, [clientId, q, nonce, pipe]) // eslint-disable-line
   return active ? state : fallback
+}
+// Previous equal-length period ending the day before `range.from`.
+function prevRangeOf(range) {
+  const a = Date.parse(range && range.from), b = Date.parse(range && range.to)
+  if (!isFinite(a) || !isFinite(b)) return null
+  const days = Math.round((b - a) / 86400000) + 1
+  const pb = new Date(a - 86400000)
+  const pa = new Date(pb.getTime() - (days - 1) * 86400000)
+  const iso = (d) => d.toISOString().slice(0, 10)
+  return { from: iso(pa), to: iso(pb) }
+}
+// Account-wide attribution for the PREVIOUS period, so the Caalano360 metrics can
+// show vs-prev deltas. Returns the attribution payload or null.
+function usePrevAttr(clientId, range, nonce) {
+  const [state, setState] = useState(null)
+  const pr = prevRangeOf(range)
+  const q = pr ? rangeQuery(pr) : null
+  useEffect(() => {
+    if (!q) { setState(null); return }
+    let alive = true
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setState(j && j.attribution ? j.attribution : null) }).catch(() => { if (alive) setState(null) })
+    return () => { alive = false }
+  }, [clientId, q, nonce]) // eslint-disable-line
+  return state
 }
 // The pipeline a key event belongs to (null = unscoped / applies to every pipeline).
 function pipeOfKeyEvent(e) { if (typeof e === 'string') return null; if (e && (e.cal || e.stage)) return e.pipeline || null; return null }

@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.151.0 — 2026-08-08 · `PENDING`
+- **Per-pipeline Caalano360 metrics: Leads first, % of leads, vs-previous, and combined
+  cost tiles.** Each pipeline group now opens with a **Leads** tile, every tile shows its
+  **▲/▼ change vs the previous period** (new prior-period attribution fetch) and its **% of
+  that pipeline's leads** beneath the count, and the cost pairs are combined to save space —
+  **Won** carries cost-per-won, **Revenue** carries ROAS, appts/key-events carry cost-per-event.
+- **Styled hover popups for the green Caalano360 cells.** The Booked / Shown / Won cells in the
+  campaign, ad-set and creative tables now show the same clean popup card as the rest of the
+  app (header + per-calendar / pipeline-stage breakdown) instead of the plain grey browser
+  tooltip. Already-styled popups were left untouched.
+
 ## v3.150.0 — 2026-08-08 · `PENDING`
 - **Caalano360 metrics now break out by pipeline (business unit).** Each key event shows its
   **count** with the **cost per event** beneath it, alongside Scheduled Appts, Cost/Appt, Won,

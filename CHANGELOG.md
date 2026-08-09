@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.165.0 — 2026-08-09 · `PENDING`
+- **Security: the GoHighLevel OAuth connect endpoint is now admin-only and CSRF-protected.** The
+  `caalano-connect` function is excluded from the site gate (so the OAuth redirect is always
+  reachable), which left it fully public — anyone could hit the callback and overwrite the stored
+  agency GHL token, and `?status=1` leaked connection state. Now: **(1)** `?start=1`, the callback,
+  `?status=1` and the connect page all require an **admin session** (multi-user mode) or the shared
+  **Basic-Auth password** (legacy mode); **(2)** `?start=1` mints a **signed, 15-minute `state`**
+  (HMAC-SHA256, round-tripped through GoHighLevel) that the callback must present and validate before
+  any token exchange — so a forged or cross-site callback can't replace the agency credentials. The
+  SameSite=Lax session cookie is sent on GoHighLevel's top-level redirect back, so a legitimate admin
+  reconnect is unchanged.
+
 ## v3.164.0 — 2026-08-09 · `PENDING`
 - **Fix: Meta "Results" auto-detection was silently disabled by a field-name typo.** The ad-set
   optimisation-goal field was requested and read as `adsset_optimization_goal` (double-s), but

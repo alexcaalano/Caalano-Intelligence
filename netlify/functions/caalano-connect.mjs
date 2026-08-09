@@ -5,6 +5,7 @@
 // Scopes requested are read-only. The redirect URI is derived from this
 // function's own URL, so it works on any domain without hard-coding.
 import { exchangeCode, isConnected, loadTokens } from '../lib/ghl.mjs'
+import { currentUser, isAdminish, signSession, verifySession } from '../lib/auth.mjs'
 
 // Exactly the read scopes the dashboard uses. locations.readonly is the one
 // that works at agency level (to mint sub-account tokens); opportunities +
@@ -32,12 +33,43 @@ const page = (title, body) => new Response(
   { headers: { 'content-type': 'text/html', 'cache-control': 'no-store' } },
 )
 
+// Basic-Auth check for the legacy (shared-password) mode — mirrors the edge gate.
+function basicOk(req) {
+  const pass = process.env.SITE_PASSWORD
+  if (!pass) return false
+  const user = process.env.SITE_USER || 'caalano'
+  return (req.headers.get('authorization') || '') === 'Basic ' + btoa(`${user}:${pass}`)
+}
+// Who's calling, and may they administer the GHL connection? This function is
+// excluded from the edge gate (so the OAuth redirect is always reachable), so it
+// must authorise itself. Multi-user mode → require an admin session; legacy mode
+// → require the shared Basic-Auth password; neither configured → open (no auth
+// set up on the site at all). A GHL redirect back is a top-level GET, so the
+// SameSite=Lax session cookie / cached Basic creds are sent with it.
+async function gate(req) {
+  const secret = process.env.AUTH_SECRET
+  if (secret) { const u = await currentUser(req, secret).catch(() => null); return { ok: !!(u && isAdminish(u.role)), mode: 'session' } }
+  if (process.env.SITE_PASSWORD) return { ok: basicOk(req), mode: 'basic' }
+  return { ok: true, mode: 'open' }
+}
+// HMAC key for the CSRF `state` nonce. Prefer AUTH_SECRET, then the shared
+// password, then the GHL client secret (always present when OAuth is set up),
+// so a signed state is always possible regardless of auth mode.
+const stateSecret = () => process.env.AUTH_SECRET || process.env.SITE_PASSWORD || process.env.GHL_CLIENT_SECRET || ''
+const STATE_KIND = 'ghl-oauth'
+
 export default async (req) => {
   const url = new URL(req.url)
   const redirectUri = `${url.origin}/.netlify/functions/caalano-connect`
   const clientId = process.env.GHL_CLIENT_ID
+  const g = await gate(req)
+  const denied = (extra) => {
+    if (g.mode === 'basic') return new Response('Authentication required.', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="Caalano 360", charset="UTF-8"', 'cache-control': 'no-store' } })
+    return page('Admin sign-in required', `<p>Connecting Caalano Systems is an admin-only action. Sign in to the dashboard as an admin, then reopen this page.</p>${extra || ''}<p><a style="color:#9b8cff" href="/">Go to the dashboard</a></p>`)
+  }
 
   if (url.searchParams.get('status') === '1') {
+    if (!g.ok) return new Response(JSON.stringify({ error: 'Not authorised' }), { status: 401, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
     const t = await loadTokens().catch(() => null)
     return new Response(JSON.stringify({
       connected: !!t, hasClientId: !!clientId,
@@ -49,17 +81,30 @@ export default async (req) => {
 
   if (!clientId) return page('Not configured', '<p>Set <code>GHL_CLIENT_ID</code> and <code>GHL_CLIENT_SECRET</code> in Netlify, then reload.</p>')
 
+  if (!g.ok) return denied()
+
   if (url.searchParams.get('start') === '1') {
+    // Signed, short-lived CSRF token round-tripped through GoHighLevel.
+    const state = await signSession({ k: STATE_KIND, exp: Date.now() + 15 * 60 * 1000 }, stateSecret())
     const a = new URL(AUTH)
     a.searchParams.set('response_type', 'code')
     a.searchParams.set('redirect_uri', redirectUri)
     a.searchParams.set('client_id', clientId)
     a.searchParams.set('scope', SCOPES.join(' '))
+    a.searchParams.set('state', state)
     return Response.redirect(a.toString(), 302)
   }
 
   const code = url.searchParams.get('code')
   if (code) {
+    // Reject any callback whose state we didn't mint (or that has expired) — this
+    // is what stops a forged/CSRF callback from overwriting the agency token. The
+    // admin session was already required above.
+    const st = url.searchParams.get('state')
+    const okState = st ? await verifySession(st, stateSecret()).catch(() => null) : null
+    if (!okState || okState.k !== STATE_KIND) {
+      return page('Connection blocked', '<p style="color:#f0435b">This authorisation link is invalid or has expired. For security, start the connection again from the dashboard.</p><p><a style="color:#9b8cff" href="/.netlify/functions/caalano-connect?start=1">Start over</a></p>')
+    }
     try {
       const t = await exchangeCode(code, redirectUri)
       const isCompany = String(t.userType || '').toLowerCase() === 'company' && !!t.companyId

@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.149.0'
+const APP_VERSION = '3.150.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1420,25 +1420,40 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         })()}
       </div>
       {has360 && crmTot && (() => {
-        // Caalano360 (blended) metrics: CRM outcomes vs Meta spend, plus cost per
-        // each key-event stage from the funnel. Divides the whole Meta spend (same
-        // basis as the funnel), scoped to the funnel's pipeline.
-        const mspend = m.totals ? m.totals.spend : t.spend
-        const evCost = meRows.filter((r) => r.kind !== 'lead' && r.count > 0)
-        const cpw = crmTot.won && mspend ? mspend / crmTot.won : null
-        const roas = mspend ? (crmTot.revenue || 0) / mspend : null
-        return <>
-          <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> Caalano360 metrics</span><span className="sc-sec-sub">blended CRM outcomes vs Meta spend{allPipes.length > 1 ? ` · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}` : ''}</span></div>
-          <div className="scorecard sc-fit">
-            <Sc label="Scheduled Appts" value={<>{fmtNumber(crmTot.booked)}{crmTot.cancelled ? <span className="c360-canc" title={`${crmTot.cancelled} later cancelled`}> ({crmTot.cancelled}c)</span> : null}</>} />
-            <Sc label="Cost / Appt" value={crmTot.booked ? fmtCurrency(t.spend / crmTot.booked, currency) : '-'} goodWhenDown />
-            {evCost.map((r, i) => <Sc key={i} label={`Cost / ${r.label.replace(/^📅 /, '')}`} value={fmtCurrency(mspend / r.count, currency)} flat={`${fmtNumber(r.count)} reached`} goodWhenDown />)}
-            <Sc label="Won" value={fmtNumber(crmTot.won)} />
-            <Sc label="Cost / Won" value={cpw == null ? '-' : fmtCurrency(cpw, currency)} goodWhenDown />
-            <Sc label="Revenue" value={fmtCurrency(crmTot.revenue || 0, currency)} />
-            <Sc label="ROAS" value={roas == null ? '-' : `${roas.toFixed(2)}×`} />
-          </div>
-        </>
+        // Caalano360 (blended) metrics: per key event, its reached count + cost per
+        // event, plus appts / won / revenue / ROAS. Multi-pipeline clients are two
+        // (near-independent) business units, so these break out one group PER
+        // pipeline by default (highest ad-spend first); single-pipeline shows one.
+        const rmap = reachedByStage(meCh ? (meCh.pipelines || []) : [])
+        const calMap = calCountMap(A, 'meta')
+        const pipeMeta = (meCh && meCh.pipelines) || []
+        const crmOf = (pid) => (pipeMeta.find((p) => p.id === pid) || {}).crm || null
+        const groupFor = (pid, label, spendP, crmP, sub) => {
+          const keListP = keyEventsForPipe(loadKeyEvents(clientId), pid || 'all')
+          const rowsP = keyEventRows(keListP, rmap, calMap, stagePos, crmP ? crmP.won : (meCh ? meCh.totals.won : 0)).filter((r) => r.kind !== 'lead' && r.count > 0)
+          const booked = crmP ? crmP.booked : 0, won = crmP ? crmP.won : 0, rev = (crmP ? crmP.revenue : 0) || 0
+          const cpw = won && spendP ? spendP / won : null
+          const roas = spendP ? rev / spendP : null
+          return (
+            <React.Fragment key={label}>
+              <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
+              <div className="scorecard sc-fit">
+                <Sc label="Scheduled Appts" value={fmtNumber(booked)} />
+                <Sc label="Cost / Appt" value={booked && spendP ? fmtCurrency(spendP / booked, currency) : '-'} goodWhenDown />
+                {rowsP.map((r, i) => <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} flat={spendP && r.count ? `${fmtCurrency(spendP / r.count, currency)} / event` : null} />)}
+                <Sc label="Won" value={fmtNumber(won)} />
+                <Sc label="Cost / Won" value={cpw == null ? '-' : fmtCurrency(cpw, currency)} goodWhenDown />
+                <Sc label="Revenue" value={fmtCurrency(rev, currency)} />
+                <Sc label="ROAS" value={roas == null ? '-' : `${roas.toFixed(2)}×`} />
+              </div>
+            </React.Fragment>
+          )
+        }
+        if (allPipes.length > 1) {
+          const pids = allPipes.map((p) => p.id).filter((pid) => (pipeSpend[pid] || 0) > 0 || crmOf(pid)).sort((a, b) => (pipeSpend[b] || 0) - (pipeSpend[a] || 0))
+          if (pids.length) return pids.map((pid) => groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, crmOf(pid), `${fmtCurrency(pipeSpend[pid] || 0, currency)} Meta spend · count + cost per key event`))
+        }
+        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, crmTot, 'blended CRM outcomes vs Meta spend · count + cost per key event')
       })()}
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">

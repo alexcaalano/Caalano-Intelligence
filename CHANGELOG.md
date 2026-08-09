@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.150.0 — 2026-08-08 · `PENDING`
+- **Caalano360 metrics now break out by pipeline (business unit).** Each key event shows its
+  **count** with the **cost per event** beneath it, alongside Scheduled Appts, Cost/Appt, Won,
+  Cost/Won, Revenue and ROAS. For multi-pipeline clients these render as **one labelled group
+  per pipeline by default** (highest ad-spend first), since two pipelines are typically two
+  near-independent business units — each group divides that pipeline's own Meta spend by its
+  own counts. Single-pipeline clients keep the one combined group.
+
 ## v3.149.0 — 2026-08-08 · `PENDING`
 - **Meta Ads creative cards go horizontal — media left, all stats right (monthly-report
   style).** Each card now puts the creative preview on the left and the full read-out on the

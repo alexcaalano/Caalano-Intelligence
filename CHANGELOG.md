@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.161.0 — 2026-08-09 · `PENDING`
+- **Fix: unscoped key events no longer leak cross-pipeline totals into a per-pipeline view.** A
+  key event configured as a bare stage name (or a Won/calendar with no pipeline link) carried no
+  pipeline, so in a pipeline-scoped funnel, tile, green column, creative card or monthly-report
+  column its reach resolved to the **summed count across every pipeline** — inflating rates (they
+  could exceed 100%) and double-counting reach for multi-pipeline clients. `keyEventsForPipe` now
+  **stamps the scoped pipeline onto unscoped events** when scoping to a specific pipeline, so their
+  reach reads that pipeline's stage counts (`pipelineId::name`). Events already scoped to another
+  pipeline are dropped; the "All pipelines" view is unchanged (bare events there still correctly
+  read the cross-pipeline total). This flows through every scoped surface via the one shared helper
+  (Meta/Google Key Events funnels + per-pipeline metric tiles, creative cards, Monthly Report
+  per-campaign columns, Forms drill, Timing matrix).
+
 ## v3.160.0 — 2026-08-09 · `PENDING`
 - **Caalano360 tab: the Revenue bottleneck funnel gets a pipeline selector.** For multi-pipeline
   clients the funnel (in `ExecutiveDashboard` → `BottleneckPanel`) previously stacked every

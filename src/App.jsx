@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.160.0'
+const APP_VERSION = '3.161.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1849,8 +1849,25 @@ function usePrevAttr(clientId, range, nonce) {
 }
 // The pipeline a key event belongs to (null = unscoped / applies to every pipeline).
 function pipeOfKeyEvent(e) { if (typeof e === 'string') return null; if (e && (e.cal || e.stage)) return e.pipeline || null; return null }
-// Filter a client's key-event list to one pipeline (keeping unscoped events like Won).
-function keyEventsForPipe(list, pipe) { if (!pipe || pipe === 'all') return list; return (list || []).filter((e) => { const p = pipeOfKeyEvent(e); return p == null || p === pipe }) }
+// Filter a client's key-event list to one pipeline. Events already scoped to
+// ANOTHER pipeline are dropped; events scoped to THIS pipeline are kept as-is.
+// Unscoped events (bare stage strings, or a Won/calendar with no pipeline) are
+// kept but STAMPED with this pipeline, so their reach resolves against this
+// pipeline's stage counts (pipelineId::name) rather than the cross-pipeline
+// total — otherwise a bare stage in a per-pipeline funnel/tile/green column
+// leaks the summed count across every pipeline. The 'all' view is left untouched
+// (bare events there correctly read the cross-pipeline total).
+function keyEventsForPipe(list, pipe) {
+  if (!pipe || pipe === 'all') return list
+  const out = []
+  for (const e of (list || [])) {
+    const p = pipeOfKeyEvent(e)
+    if (p != null && p !== pipe) continue
+    if (p === pipe) { out.push(e); continue }
+    out.push(typeof e === 'string' ? { stage: e, label: e, pipeline: pipe } : { ...e, pipeline: pipe })
+  }
+  return out
+}
 // A reusable pipeline picker (All + each pipeline) for the Meta / Google views.
 function PipelineFilter({ pipelines, value, onChange, loading }) {
   if (!pipelines || pipelines.length < 2) return null

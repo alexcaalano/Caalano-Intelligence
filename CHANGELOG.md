@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.160.0 — 2026-08-09 · `PENDING`
+- **Caalano360 tab: the Revenue bottleneck funnel gets a pipeline selector.** For multi-pipeline
+  clients the funnel (in `ExecutiveDashboard` → `BottleneckPanel`) previously stacked every
+  pipeline; it now shows **one pipeline at a time** with a dropdown that defaults to the **biggest
+  pipeline by leads**, plus an **"All pipelines"** option that keeps the stacked view. Single-pipeline
+  clients are unchanged. This matches the Meta / Google Key Events funnel pattern. (Note: this view
+  doesn't carry per-pipeline ad spend, so the default is biggest-by-leads rather than biggest-by-spend
+  — a faithful proxy.)
+- **Removed ~975 lines of dead code.** The `Caalano360` component (its named tab actually renders
+  `ExecutiveDashboard`) was never mounted; it and its exclusively-used helpers are deleted:
+  `Caalano360`, `useWeeklyBlend`, `buildChatContext`, `ClientChat`, plus the orphaned `OverallTab`,
+  `CrmTab`, `CrmLive`, `CrmGhl`, `keBreakTip`, and the now-unused `clientTotals` / `agencyTotals`
+  (the latter carried a latent crash on UI-added clients). No behaviour change — everything removed
+  was unreachable. Any future key-events / funnel edits now have exactly one live implementation.
+
 ## v3.159.0 — 2026-08-09 · `PENDING` — Trust & correctness batch
 - **Security (cross-client leak): authorised API responses are no longer shared-CDN cached when
   multi-user login is on.** `windsor.mjs` set `cache-control: public` on cached responses, but the

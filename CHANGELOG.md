@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.157.0 — 2026-08-09 · `PENDING`
+- **Meta client view: Creative performance now uses the Monthly Report card exactly.** The old
+  "Visual previews" mini-cards are replaced with the **same rich creative cards as the Monthly
+  Report** (`MRCreativeSection`) — a large 9:16 thumbnail with inline Instagram play, a header
+  block with Spend / Impr / CTR / Freq / Results / Cost-per-result, the full **key-events table
+  (Key event · Count · % leads · Next · Show % · Cost / stage)** with a Leads anchor row and a
+  highlighted Won row, and a Revenue / Cost-per-won / ROAS cash strip. It keeps the **sort chips**
+  (spend, CTR, leads, CPL, each key event, revenue, ROAS) and **10-per-page pagination**. Each
+  card's key events are still scoped to the **pipeline of that creative's campaign**, and the
+  pipeline is named on the card for multi-pipeline clients. The sortable "Creatives" data table
+  above it is unchanged.
+
 ## v3.156.0 — 2026-08-09 · `PENDING`
 - **Key events now render in correct pipeline order, with calendars combined into their linked
   stage.** The ordering engine (`orderKeyEvents`) now anchors a pipeline-tagged calendar

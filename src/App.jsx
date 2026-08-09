@@ -11,7 +11,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.156.0'
+const APP_VERSION = '3.157.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1583,71 +1583,21 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
           <td>{fmtNumber(a.leads)}</td><td className={a.leads ? gb(a.cvr, avgCvr) : ''}>{a.leads ? fmtPct(a.cvr, 1) : '-'}</td>
           <td className={a.cpl != null ? (a.cpl <= cpl ? 'good' : 'bad') : ''}>{a.cpl != null ? fmtCurrency(a.cpl, currency) : '-'}</td>
           {has360 && o360Cells(a, currency, o360cols)}</tr>))}</tbody></table></div>
-      <div className="cre-sub"><span>Visual previews</span><small>hover a thumbnail in the table above to enlarge, or browse the cards below</small></div>
-      <div className="cre-grid">{adsPage.map((a) => {
-        const acpl = a.leads ? a.spend / a.leads : 0
-        const hook = a.type === 'Video' ? rate(a.videoViews, a.impressions) : null
-        const lctr = rate(a.linkClicks, a.impressions), cvr = rate(a.leads, a.linkClicks)
-        return (
-          <div className="cre" key={a.name}>
-            <div className="thumb"><span className="type">{a.type}</span>{a.igUrl && <a className="cre-play" href={a.igUrl} target="_blank" rel="noreferrer" title="View on Instagram">↗</a>}{a.thumb ? <img src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" referrerPolicy="no-referrer" onError={(e) => { e.target.closest('.thumb').classList.add('thumb-broken'); e.target.remove() }} /> : null}<span className="thumb-ph">{a.type === 'Video' ? '▶' : '🖼'}</span></div>
-            <div className="body">
-              <div className="nm" title={a.name}>{a.name}</div>
-              <div className="stats">
-                <div className="st"><div className="l">Spend</div><div className="v">{fmtCurrency(a.spend, currency)}</div></div>
-                <div className="st"><div className="l">Leads</div><div className="v">{fmtNumber(a.leads)}</div></div>
-                <div className="st"><div className="l">CPL</div><div className={`v ${a.leads ? (acpl <= cpl ? 'good' : 'bad') : ''}`}>{a.leads ? fmtCurrency(acpl, currency) : '-'}</div></div>
-                <div className="st"><div className="l">Link CTR</div><div className={`v ${gb(lctr, avgLinkCtr)}`}>{fmtPct(lctr, 2)}</div></div>
-                <div className="st"><div className="l">CVR</div><div className={`v ${a.leads ? gb(cvr, avgCvr) : ''}`}>{fmtPct(cvr, 1)}</div></div>
-                <div className="st"><div className="l">{hook != null ? 'Hook rate' : ''}</div><div className={`v ${hook != null ? gb(hook, avgHook) : ''}`}>{hook != null ? fmtPct(hook, 1) : ''}</div></div>
-              </div>
-              {has360 && (() => {
-                const o = oCre.get(unorm(a.name))
-                if (!o) return <div className="cre-360 cre-360-empty">📈 Caalano360 · no CRM lead carried this creative's UTM (utm_content)</div>
-                // Scope this card's key events to the creative's campaign's pipeline.
-                const { cols: creCols, pid: crePid } = creColsFor(a.campaign)
-                const crePipeName = crePid ? ((allPipes.find((p) => p.id === crePid) || {}).name || '') : ''
-                const f = o360Fields(o, a.spend, a.leads, creCols)
-                const evs = []; let ci = 0; let wonCount = 0; let prevCount = a.leads
-                for (const g of creCols.groups) {
-                  const seg = creCols.cols.slice(ci, ci + g.span); ci += g.span
-                  const first = seg.find((c) => c.gfirst) || seg[0]
-                  const count = f[first.key] || 0
-                  const sr = g.kind === 'calendar' ? seg.find((c) => c.metric === 'calShowRate') : null
-                  const sh = g.kind === 'calendar' ? seg.find((c) => c.metric === 'calShown') : null
-                  if (g.kind === 'won') wonCount = count
-                  // Next-step = this stage's count ÷ the previous stage's; cost/event
-                  // = this creative's spend ÷ count.
-                  const next = prevCount ? (count / prevCount) * 100 : null
-                  const cost = count && a.spend ? a.spend / count : null
-                  evs.push({ label: g.label.replace(/^📅 /, ''), count, kind: g.kind, showRate: sr ? f[sr.key] : null, shown: sh ? f[sh.key] : null, next, cost })
-                  prevCount = count
-                }
-                const roas = a.spend ? (o.revenue || 0) / a.spend : null
-                const cpw = wonCount && a.spend ? a.spend / wonCount : null
-                return <div className="cre-360">
-                  <div className="c360-tag">📈 Caalano360 · key events{crePipeName ? ` · ${crePipeName}` : ''}</div>
-                  <table className="cre-360-tbl"><thead><tr><th>Key event</th><th className="r">Count</th><th className="r" title="Conversion from the previous step">Next</th><th className="r" title="Creative spend ÷ count">Cost/ev</th><th className="r" title="Calendar events: shown ÷ occurred">Show %</th></tr></thead>
-                    <tbody>
-                      <tr className="lead"><td>Leads</td><td className="r">{fmtNumber(a.leads)}</td><td className="r">—</td><td className="r">{a.leads ? fmtCurrency(acpl, currency) : '—'}</td><td className="r">—</td></tr>
-                      {evs.map((e, i) => <tr key={i} className={e.kind === 'won' ? 'won' : ''}><td title={e.label}>{e.label}{e.kind === 'calendar' && e.shown != null ? <small> · {fmtNumber(e.shown)} shown</small> : null}</td><td className="r">{fmtNumber(e.count)}</td><td className="r">{e.next == null ? '—' : fmtPct(e.next, 0)}</td><td className="r">{e.cost == null ? '—' : fmtCurrency(e.cost, currency)}</td><td className="r">{e.kind === 'calendar' && e.showRate != null ? fmtPct(e.showRate, 0) : '—'}</td></tr>)}
-                    </tbody></table>
-                  <div className="stats c360-cash">
-                    <div className="st"><div className="l">Revenue</div><div className="v">{fmtCurrency(o.revenue || 0, currency)}</div></div>
-                    <div className="st"><div className="l">C/Won</div><div className="v">{cpw == null ? '-' : fmtCurrency(cpw, currency)}</div></div>
-                    <div className="st"><div className="l">ROAS</div><div className="v">{roas == null ? '-' : `${roas.toFixed(2)}×`}</div></div>
-                  </div>
-                </div>
-              })()}
-            </div>
-          </div>
-        )
-      })}</div>
       {creTotalPages > 1 && <div className="pager">
         <button className="pg-btn" disabled={crePageC === 0} onClick={() => setCrePage(crePageC - 1)}>‹ Prev</button>
         <span className="pg-info">Page {crePageC + 1} of {creTotalPages} · {adsFull.length} creatives</span>
         <button className="pg-btn" disabled={crePageC >= creTotalPages - 1} onClick={() => setCrePage(crePageC + 1)}>Next ›</button>
       </div>}
+      <div className="lvl-title" style={{ marginTop: 14 }}>Creative performance <span className="sub">· big previews · sortable · 10 per page · green = Caalano360 key events for leads whose ad UTM (utm_content) matches · ▶ plays the Instagram post inline where available</span></div>
+      {adsFull.some((a) => (a.spend || 0) > 0)
+        ? <MRCreativeSection
+            ads={adsFull.filter((a) => (a.spend || 0) > 0)}
+            oCre={oCre} o360cols={o360cols}
+            o360colsFor={(campName) => creColsFor(campName).cols}
+            pipeLabelFor={allPipes.length > 1 ? (campName) => { const { pid } = creColsFor(campName); return pid ? ((allPipes.find((p) => p.id === pid) || {}).name || null) : null } : null}
+            money={(v) => fmtCurrency(v, currency)} n0={fmtNumber} currency={currency}
+          />
+        : <div className="card" style={{ padding: 14 }}><p className="cap" style={{ margin: 0 }}>No creatives with spend in this range.</p></div>}
       <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{m.adDaily ? ' · click a day to break it down' : ''}</span></div>
       <div className="table-wrap"><table><thead><tr><th>Day</th><th>Spend</th><th>CPM</th><th>CTR</th><th>CPC</th><th>Leads</th><th>CPL</th></tr></thead>
         <tbody>{[...daily].reverse().map((d) => (<tr key={d.date} className={day === d.date ? 'row-sel' : ''} style={{ cursor: m.adDaily ? 'pointer' : 'default' }} onClick={() => m.adDaily && setDay(day === d.date ? null : d.date)}><td>{d.label}</td><td>{fmtCurrency(d.spend, currency)}</td><td>{fmtCurrency(d.cpm, currency)}</td><td>{fmtPct(d.ctr, 2)}</td><td>{fmtCurrency(d.cpc, currency)}</td><td>{fmtNumber(d.leads)}</td><td>{d.leads ? <span className="cpl-cell" style={{ background: cplColor(d.cpl, cpl) }}>{fmtCurrency(d.cpl, currency)}</span> : '-'}</td></tr>))}</tbody></table></div>

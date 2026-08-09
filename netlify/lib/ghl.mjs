@@ -8,6 +8,38 @@ const API = 'https://services.leadconnectorhq.com'
 const VER = '2021-07-28'
 const store = () => getStore({ name: 'ghl-auth', consistency: 'strong' })
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+
+// Resilient fetch: bounds every outbound call with a timeout so a hung upstream
+// can't stall the whole function, and retries transient failures (429 / 5xx /
+// network resets) a couple of times with a short backoff. A 429 with a
+// Retry-After header waits that long (capped). Timeouts (AbortError) are NOT
+// retried — they're already slow, so we fail fast rather than burn another full
+// timeout. Non-retryable 4xx responses are returned as-is for the caller's
+// r.ok check. Shared by the GHL helpers here and by windsor.mjs.
+export async function resilientFetch(url, opts = {}, { timeoutMs = 9000, retries = 2, label = 'fetch' } = {}) {
+  let lastErr
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+      const r = await fetch(url, { ...opts, signal: ctrl.signal })
+      clearTimeout(timer)
+      if ((r.status === 429 || r.status >= 500) && attempt < retries) {
+        const ra = Number(r.headers.get('retry-after'))
+        await sleep(Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 5000) : 400 * (attempt + 1))
+        continue
+      }
+      return r
+    } catch (e) {
+      clearTimeout(timer)
+      lastErr = e
+      if (e.name !== 'AbortError' && attempt < retries) { await sleep(400 * (attempt + 1)); continue }
+      throw e
+    }
+  }
+  throw lastErr || new Error(`${label} failed`)
+}
 
 export async function loadTokens() { try { return await store().get('agency', { type: 'json' }) } catch { return null } }
 export async function saveTokens(t) { await store().setJSON('agency', t) }
@@ -15,7 +47,7 @@ export async function isConnected() { return !!(await loadTokens()) }
 
 async function tokenRequest(params) {
   const body = new URLSearchParams({ client_id: process.env.GHL_CLIENT_ID, client_secret: process.env.GHL_CLIENT_SECRET, ...params })
-  const r = await fetch(`${API}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body })
+  const r = await resilientFetch(`${API}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body }, { label: 'ghl token' })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl token ${r.status}: ${txt.slice(0, 300)}`)
   return JSON.parse(txt)
@@ -43,7 +75,7 @@ async function locationToken(locationId) {
   if (c && Date.now() < c.exp) return c.tok
   const t = await agencyToken()
   const body = new URLSearchParams({ companyId: t.companyId, locationId })
-  const r = await fetch(`${API}/oauth/locationToken`, { method: 'POST', headers: { Authorization: `Bearer ${t.access_token}`, Version: VER, Accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body })
+  const r = await resilientFetch(`${API}/oauth/locationToken`, { method: 'POST', headers: { Authorization: `Bearer ${t.access_token}`, Version: VER, Accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body }, { label: 'ghl locationToken' })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl locationToken ${r.status}: ${txt.slice(0, 300)}`)
   const j = JSON.parse(txt)
@@ -55,13 +87,13 @@ async function locationToken(locationId) {
 async function ghlGet(locTok, path, query) {
   const url = new URL(API + path)
   for (const [k, v] of Object.entries(query || {})) if (v != null) url.searchParams.set(k, v)
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json' } })
+  const r = await resilientFetch(url, { headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json' } }, { label: `ghl GET ${path}` })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl GET ${path} ${r.status}: ${txt.slice(0, 200)}`)
   return JSON.parse(txt)
 }
 async function ghlPost(locTok, path, bodyObj) {
-  const r = await fetch(API + path, { method: 'POST', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) })
+  const r = await resilientFetch(API + path, { method: 'POST', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) }, { label: `ghl POST ${path}` })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl POST ${path} ${r.status}: ${txt.slice(0, 200)}`)
   return JSON.parse(txt)

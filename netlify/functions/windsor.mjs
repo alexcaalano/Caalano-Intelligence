@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -203,7 +203,7 @@ async function windsorFetch(connector, fields, from, to, preset, key) {
   if (from && to) { p.set('date_from', from); p.set('date_to', to) }
   else { p.set('date_preset', preset || 'last_30d') }
   const url = `https://connectors.windsor.ai/${connector}?${p.toString()}`
-  const r = await fetch(url)
+  const r = await resilientFetch(url, {}, { label: `Windsor ${connector}` })
   if (!r.ok) throw new Error(`Windsor ${connector} ${r.status}: ${(await r.text()).slice(0, 200)}`)
   const j = await r.json()
   return j.data || j.result || []
@@ -403,13 +403,13 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   const adsetFields = ['account_id', 'campaign', 'adset_name', 'adsset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
-    windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
-    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
-    windsorFetch('facebook', ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
+    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
+    windsorFetch('facebook', ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', campFields, from, to, preset, key).then(filt),
     windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt),
-    pr.from ? windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
+    pr.from ? windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
   ])
   const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback)
   roll.prev = metaTotals(prevRows)
@@ -477,7 +477,7 @@ async function buildFatigue(accountId, from, to, preset, key, cfg) {
   const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
   const [adRows, dayRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'impressions', 'clicks', 'spend', 'actions_video_view'], from, to, preset, key).then(filt),
-    windsorFetch('facebook', ['account_id', 'date', 'ad_name', 'impressions', 'clicks'], from, to, preset, key).then(filt),
+    windsorFetch('facebook', ['account_id', 'date', 'ad_name', 'impressions', 'clicks'], from, to, preset, key).then(filt).catch(() => []),
   ])
   const ads = adRows.map((r) => ({ name: r.ad_name, campaign: r.campaign, adset: r.adset_name, thumb: r.thumbnail_url, type: num(r.actions_video_view) > 0 ? 'Video' : 'Image', quality: r.quality_ranking, reach: num(r.reach), impressions: num(r.impressions), clicks: num(r.clicks), spend: num(r.spend) }))
   return metaFatigue(ads, dayRows, cfg)
@@ -502,8 +502,8 @@ async function buildAnomalies(accountId, from, to, preset, key) {
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
   const [curRows, prevRows, adRows] = await Promise.all([
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
-    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt),
+    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
   ])
   const cur = metaTotals(curRows), prev = metaTotals(prevRows)
   const met = (t) => ({ spend: t.spend, leads: t.leads, impressions: t.impressions, clicks: t.clicks, reach: t.reach, cpl: t.leads ? t.spend / t.leads : null, ctr: t.impressions ? t.clicks / t.impressions : null, freq: t.reach ? t.impressions / t.reach : null })
@@ -875,13 +875,13 @@ async function buildGoogle(accountId, from, to, preset, key) {
   const pr = prevRange(from, to)
   const [cg, kw, st, dy, prev, agDay, stDay, ca, geo] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key).then(filt) : Promise.resolve([]),
-    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key).then(filt),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
+    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key).then(filt).catch(() => []),
     fetchGeo(accountId, from, to, preset, key).catch(() => ({ dim: null, locations: [] })),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))

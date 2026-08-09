@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.162.0 — 2026-08-09 · `PENDING` — Backend resilience
+- **Every connector call now has a timeout and retries transient failures.** A new shared
+  `resilientFetch` (in `ghl.mjs`, used by `windsorFetch` and the GHL token/GET/POST helpers) bounds
+  each outbound request with a ~9s timeout so a hung upstream can't stall the whole function, and
+  retries 429 / 5xx / network-reset responses twice with a short backoff (honouring `Retry-After`
+  on 429). Timeouts themselves aren't retried (they're already slow), and non-retryable 4xx pass
+  straight through. Previously a single transient Windsor/GHL blip hard-failed the request.
+- **One connector hiccup no longer blanks a whole view.** The core Meta and Google builds fired
+  several parallel fetches with no per-fetch error handling, so any one failing rejected the entire
+  response (502). Enrichment fetches — daily charts, previous-period deltas, day-drill breakdowns,
+  Google keywords / search terms / conversion-action rows — now degrade to empty on failure, while
+  the primary data (ads, account totals, campaigns, ad sets) still surfaces an honest error if it
+  genuinely can't load rather than showing silently-empty numbers. (The blend / trends / snapshot
+  builds already had this per-fetch tolerance and now also gain the timeout + retry.)
+
 ## v3.161.0 — 2026-08-09 · `PENDING`
 - **Fix: unscoped key events no longer leak cross-pipeline totals into a per-pipeline view.** A
   key event configured as a bare stage name (or a Won/calendar with no pipeline link) carried no

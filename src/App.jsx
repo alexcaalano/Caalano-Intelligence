@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.173.0'
+const APP_VERSION = '3.174.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2756,6 +2756,119 @@ function PillarRow({ pk, pillar, open, onToggle, money }) {
 
 // Revenue at risk — aged, still-open deals ranked by value (reuses the Users
 // open-deal drill, so each row expands to the client's notes for "why stuck").
+// Per-rep performance summary for Caalano360 — leads → won → revenue per rep, plus
+// each rep's open pipeline, expandable to the open deals (and their CRM notes) so
+// you can see where each person's deals are held up. One scope=users fetch (the
+// same feed AtRiskPanel uses; cached server-side).
+function TeamPerformance({ clientId, range, nonce, money }) {
+  const [st, setSt] = useState({ status: 'loading', users: [] })
+  const [open, setOpen] = useState(null)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', users: [] })
+    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', users: j.users || [] }) })
+      .catch(() => { if (alive) setSt({ status: 'err', users: [] }) })
+    return () => { alive = false }
+  }, [clientId, range.from, range.to, nonce])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading team performance…" /></div>
+  if (st.status === 'err' || !st.users.length) return null
+  const users = [...st.users].sort((a, b) => (b.won - a.won) || (b.revenue - a.revenue) || (b.leads - a.leads))
+  const shown = users.slice(0, 10)
+  return (
+    <div className="card">
+      <div className="exec-panel-h">Team performance <span className="sub">· leads → won → revenue per rep · click a rep to see their open deals &amp; where they’re held up</span></div>
+      <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+        <thead><tr><th className="lft">Rep</th><th>Leads</th><th>Booked</th><th>Won</th><th>Win %</th><th>Revenue</th><th>Open</th><th>Open value</th><th>Avg close</th></tr></thead>
+        <tbody>{shown.map((u) => {
+          const isOpen = open === u.id
+          const deals = (u.openDeals || []).slice().sort((a, b) => (b.value - a.value) || ((b.ageDays || 0) - (a.ageDays || 0)))
+          return (
+            <React.Fragment key={u.id || u.name}>
+              <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: deals.length ? 'pointer' : 'default' }} onClick={deals.length ? () => setOpen(isOpen ? null : u.id) : undefined}>
+                <td className="lft">{deals.length ? <span className="u-chev">{isOpen ? '▾' : '▸'}</span> : null} {u.name}</td>
+                <td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{fmtNumber(u.won)}</td>
+                <td>{u.winRate == null ? '—' : `${u.winRate}%`}</td><td>{money(u.revenue || 0)}</td>
+                <td>{fmtNumber(u.open || 0)}</td><td>{u.openValue ? money(u.openValue) : '—'}</td>
+                <td>{u.avgCloseDays == null ? '—' : `${u.avgCloseDays}d`}</td>
+              </tr>
+              {isOpen && deals.length ? <tr className="u-notes-row"><td colSpan={9}>
+                <div className="tbl-scroll"><table className="mini-tbl users-tbl u-drill-tbl"><colgroup><col className="c-opp" /><col className="c-con" /><col className="c-val" /><col className="c-days" /></colgroup>
+                  <thead><tr><th className="lft">Deal</th><th className="lft">Contact</th><th>Value</th><th>Age</th></tr></thead>
+                  <tbody>{deals.slice(0, 12).map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe />)}</tbody>
+                </table></div>
+              </td></tr> : null}
+            </React.Fragment>
+          )
+        })}</tbody>
+      </table></div>
+    </div>
+  )
+}
+
+// Compact speed-to-lead summary for Caalano360 (scope=speed). Renders only when
+// there are measured leads; links out to the full Timing tab.
+function TimingSummary({ clientId, range, nonce, onNav }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && !j.error ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, range.from, range.to, nonce])
+  if (st.status === 'loading') return null
+  const d = st.data
+  if (st.status === 'err' || !d || d.connected === false || !d.measured) return null
+  return (
+    <div className="card">
+      <div className="exec-panel-h">Speed to lead <span className="sub">· how fast leads get a human reply — one of the strongest conversion predictors</span></div>
+      <div className="timing-scards">
+        <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
+        <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
+        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '—' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
+        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{fmtNumber(d.measured)}</b><span className="tm-sub">of {fmtNumber(d.sampled)} sampled</span></div>
+        {d.noOutbound ? <div className="tm-sc warn"><span className="tm-lab">No outreach yet</span><b>{fmtNumber(d.noOutbound)}</b><span className="tm-sub">no outbound at all</span></div> : null}
+      </div>
+      {onNav ? <div className="exec-nav"><button className="link-btn" onClick={() => onNav('timing')}>Open the Timing tab →</button></div> : null}
+    </div>
+  )
+}
+
+// Compact lead-location summary for Caalano360 — a map preview + top places, from
+// the forms feed (postcode / suburb answers). Renders only when leads carried a
+// location; links out to the full Location tab.
+function LocationSummary({ clientId, range, nonce, onNav }) {
+  const st = useForms(clientId, range, nonce)
+  const db = useAuDb()
+  const locs = useMemo(() => {
+    const forms = (st.data && st.data.forms) || []
+    const all = forms.flatMap((f) => f.locations || [])
+    if (!all.length) return []
+    return mergeLocations(groupAnswers(all), db)
+  }, [st.data, db])
+  if (st.status === 'loading' || !locs.length) return null
+  const tot = locs.reduce((a, l) => ({ leads: a.leads + (l.leads || 0), booked: a.booked + (l.booked || 0), won: a.won + (l.won || 0) }), { leads: 0, booked: 0, won: 0 })
+  const max = Math.max(1, ...locs.map((l) => l.leads))
+  return (
+    <div className="card">
+      <div className="exec-panel-h">Lead locations <span className="sub">· {fmtNumber(locs.length)} places · {fmtNumber(tot.leads)} leads mapped · {fmtNumber(tot.won)} won</span></div>
+      <LeadMap locs={locs} />
+      <div className="fm-loc-list" style={{ marginTop: 8 }}>
+        {locs.slice(0, 8).map((l) => (
+          <div className="fm-loc" key={l.value} title={`${l.leads} leads · ${l.booked || 0} booked · ${l.won || 0} won`}>
+            <span className="fm-loc-nm">{l.value}</span>
+            <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
+            <span className="fm-loc-n">{l.leads}{l.won ? ` · ${l.won}w` : ''}</span>
+          </div>
+        ))}
+      </div>
+      {onNav ? <div className="exec-nav"><button className="link-btn" onClick={() => onNav('location')}>Open the Location tab →</button></div> : null}
+    </div>
+  )
+}
+
 function AtRiskPanel({ clientId, range, nonce, money }) {
   const [st, setSt] = useState({ status: 'loading', deals: [] })
   useEffect(() => {
@@ -3473,8 +3586,17 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         <div className="exec-nav"><button className="link-btn" onClick={() => onNav && onNav('users')}>Open the Users tab →</button></div>
       </div>
 
-      {/* Revenue at risk */}
+      {/* Team performance — per-rep leaders + each rep's held-up open deals (→ notes) */}
+      <TeamPerformance clientId={clientId} range={range} nonce={nonce} money={money} />
+
+      {/* Revenue at risk — account-wide biggest open deals still to chase */}
       <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
+
+      {/* Lead locations — map preview (only shows if leads carried a location) */}
+      <LocationSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />
+
+      {/* Speed to lead — response-timing summary (only shows if measured) */}
+      <TimingSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />
 
       <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only — clients may reply on channels outside Caalano Systems.</div>
 

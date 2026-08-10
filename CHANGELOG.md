@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.174.0 — 2026-08-10 · `PENDING` — Caalano360: team performance, locations & timing summary
+- **Team performance** card: per-rep leaderboard (leads → booked → won → win % → revenue → open value
+  → avg close). Click a rep to expand their open deals and see where each one is held up — every deal
+  drills into that contact's Caalano Systems **notes** ("why is this stuck?").
+- **Lead locations** card: a map preview + top places, drawn from the leads' postcode / suburb answers.
+  Only appears when leads actually carried a location; links out to the full Location tab.
+- **Speed to lead** card: median + average human response time, % contacted under 5 minutes, and how
+  many leads had no outreach — the headline timing signals, with a link to the full Timing tab.
+- Together with the existing command centre, Pipeline performance, bottleneck funnel, lost reasons and
+  revenue-at-risk, the Caalano360 tab now reads as a top-line summary of every client tab. (Team,
+  locations and timing reuse the existing per-tab feeds — no new backend.)
+
 ## v3.173.0 — 2026-08-10 · `PENDING` — Caalano360: Pipeline performance + channel contribution
 - **New "Pipeline performance" card on the Caalano360 tab.** For each pipeline it shows the top-line
   outcomes (leads, won, revenue, open + open value, lost) and a **Meta vs Google vs Other** contribution

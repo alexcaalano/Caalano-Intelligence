@@ -17,6 +17,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.172.0 — 2026-08-10 · `PENDING` — Large-window Meta/Google pulls no longer hard-fail
+- **Root cause fixed:** the Windsor fetch timeouts (22s / 16s for big windows) were set for a
+  26s function budget that was never granted — the functions actually hard-stop at ~10s, so a
+  large window (e.g. *This year*) was killed mid-pull and the browser got a raw 502. The Meta/Google
+  tab then showed the misleading **"deep breakdown not pulled yet — build this client"** placeholder,
+  as if the client had never been set up.
+- **Every attempt now fits inside the function budget:** per-attempt timeout capped under the limit
+  (8.5s / 8s / 7.5s by window size) with the retry dropped on larger windows. buildMeta/buildGoogle
+  already fire their Windsor calls in parallel, so the wall-clock is ~one attempt. A window that's
+  genuinely too big to return in time now aborts cleanly instead of hanging.
+- **Partial-success on big windows:** the heaviest essential query (per-creative rows) degrades to an
+  empty creative section on windows over ~90 days rather than failing the whole tab — the campaign /
+  ad-set tables + totals still render.
+- **Honest error state:** when a live pull really does fail, the Meta/Google tab now shows a clear
+  *"couldn't load for this range — it's large and ran out of time, try a shorter range"* card with a
+  **Retry** button, instead of the "never built" placeholder. The retry re-runs just that pull.
+
 ## v3.171.0 — 2026-08-10 · `PENDING` — Per-calendar breakdown on hover
 - **Calendar key events now show their per-calendar split on hover.** When several calendars are
   linked to the same pipeline stage they merge into one key event (e.g. three reps' Discovery

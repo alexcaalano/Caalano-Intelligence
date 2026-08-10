@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.171.0'
+const APP_VERSION = '3.172.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1813,6 +1813,22 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
 
 function EmptyDeep({ channel }) {
   return <div className="card empty-deep"><div className="big">📊</div><b>{channel} deep breakdown not pulled yet for this client.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Campaign, ad-set and creative level data pulls on demand via Reporting Ninja. Nexia Health Care is built out as the first full example. Ask me to build this client next, or connect the live API to populate every client automatically.</p></div>
+}
+
+// Shown when the LIVE deep pull actually failed (vs. a client that was never
+// built). A big window (e.g. This year) is the usual cause — the pull can exceed
+// the serverless time limit. Tell the truth and give a way forward, instead of
+// the misleading "not pulled yet" placeholder.
+function DeepError({ channel, error, range, onRetry }) {
+  const big = range && (range.preset === 'this_year' || (range.from && range.to && (new Date(range.to) - new Date(range.from)) / 86400000 > 120))
+  return <div className="card empty-deep"><div className="big">⏳</div>
+    <b>Couldn’t load the {channel} breakdown for {range ? rangeLabel(range) : 'this range'}.</b>
+    <p style={{ maxWidth: 520, margin: '8px auto 0' }}>{big
+      ? 'This is a large window, and the campaign / ad-set / creative pull ran out of time before it finished. Try a shorter range (a month or quarter loads reliably), then retry.'
+      : 'The pull didn’t complete — this is usually a temporary timeout. Retry, or try a shorter range.'}</p>
+    {error ? <p className="cap" style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12, opacity: .8 }}>{String(error)}</p> : null}
+    {onRetry ? <button className="set-relink" style={{ marginTop: 12 }} onClick={onRetry}>↻ Retry this pull</button> : null}
+  </div>
 }
 
 /* ============ Client workspace ============ */
@@ -5208,7 +5224,11 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
   const channel = curTab === 'meta' ? 'meta' : curTab === 'google' ? 'google' : curTab === 'overall' ? 'blend' : null
-  const live = useLiveDeep(client.id, channel, range, nonce)
+  // Local retry bump so a failed deep pull (e.g. a large window that timed out)
+  // can be re-attempted without a full-app Refresh. Combined with the app nonce.
+  const [deepRetry, setDeepRetry] = useState(0)
+  useEffect(() => { setDeepRetry(0) }, [client.id, channel, range.from, range.to])
+  const live = useLiveDeep(client.id, channel, range, `${nonce}.${deepRetry}`)
   // Capture the CRM's average sales-cycle length whenever the blend loads, so the
   // maturity badge stays put as the user moves between tabs.
   useEffect(() => {
@@ -5238,8 +5258,12 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
       <div style={{ marginTop: 16 }}>
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
-        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div> : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
-        {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div> : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div>
+          : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
+            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+        {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div>
+          : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
+            : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}

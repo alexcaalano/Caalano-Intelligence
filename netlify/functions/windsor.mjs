@@ -211,13 +211,19 @@ async function windsorFetch(connector, fields, from, to, preset, key) {
   if (from && to) { p.set('date_from', from); p.set('date_to', to) }
   else { p.set('date_preset', preset || 'last_30d') }
   const url = `https://connectors.windsor.ai/${connector}?${p.toString()}`
-  // Bigger windows return far more rows and take longer, so give them a longer
-  // timeout — a year-to-date pull shouldn't be aborted at the small-window
-  // default. Capped so it still fits inside the function's execution budget
-  // (raise the Netlify function timeout to 26s on Pro to use the full range).
+  // The Netlify function is hard-stopped at ~10s, so EVERY attempt must finish
+  // inside that budget — otherwise the whole function is killed mid-flight and the
+  // browser gets a raw 502 it can't explain (looks like "nothing loads"). So cap
+  // the per-attempt timeout under the limit and skip the retry on larger windows,
+  // where there's no time for a second try. buildMeta / buildGoogle fire their
+  // Windsor calls in parallel, so the wall-clock is ~one attempt, not the sum —
+  // and the heavy optional queries each .catch to []. A window too big to return
+  // in time aborts cleanly and the caller surfaces a real "try a smaller range"
+  // message instead of hanging.
   const days = windowDays(from, to, preset)
-  const timeoutMs = days > 180 ? 22000 : days > 60 ? 16000 : 11000
-  const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries: 1 })
+  const timeoutMs = days > 120 ? 8500 : days > 60 ? 8000 : 7500
+  const retries = days > 60 ? 0 : 1
+  const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries })
   if (!r.ok) throw new Error(`Windsor ${connector} ${r.status}: ${(await r.text()).slice(0, 200)}`)
   const j = await r.json()
   return j.data || j.result || []
@@ -424,8 +430,15 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   const adDayFields = bigWin
     ? ['account_id', 'date', 'campaign', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS]
     : ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS]
+  // On a big window the per-creative pull is the heaviest essential query. Let it
+  // degrade to [] (empty creative section) rather than abort the whole Meta tab —
+  // the campaign / ad-set tables + totals come from the lighter campRows/adsetRows
+  // and still render. Small windows are cheap, so this rarely triggers there.
+  const adCatch = windowDays(from, to, preset) > 90
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
+    (adCatch
+      ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt).catch(() => [])
+      : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt)),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),

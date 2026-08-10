@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.182.0 — 2026-08-10 · `PENDING` — Key Events funnel is mobile-friendly
+- **The Key Events funnel no longer spills off the right edge on phones.** The 6-column table (Step /
+  Reached / % leads / Next step / Show % / Cost per event) couldn't fit a phone width, so the Cost per
+  event column was cut off. On screens ≤600px each step now reflows into a **self-labelled card**: the
+  step name and the reached bar on top, then the metrics as chips (`% leads: 43%`, `Next step: 43%`,
+  `Show %: 54%`, `Cost / event: $149.96`) that wrap — everything visible, nothing clipped. Tablet and
+  desktop keep the table layout.
+
 ## v3.181.0 — 2026-08-10 · `PENDING` — Large Meta windows (YTD) now load by chunking into months
 - **Year-to-date and other large Meta windows now actually load.** A full year of campaign / ad-set /
   creative data can't finish inside the serverless time limit in one call, so the Meta Ads view now

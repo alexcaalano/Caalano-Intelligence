@@ -1156,9 +1156,20 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kef-head .kef-bar { background: transparent; }
 .kef-fill { display: block; padding: 4px 9px; color: #04140d; font-weight: 800; font-size: 12px; border-radius: 6px; white-space: nowrap; text-align: right; min-width: 30px; box-sizing: border-box; }
 :root[data-theme='light'] .kef-fill { color: #04140d; }
-@media (max-width: 720px) {
+@media (max-width: 720px) and (min-width: 601px) {
   .kef-row { grid-template-columns: minmax(96px, 1.3fr) minmax(70px, 1.6fr) 44px 52px 62px; gap: 7px; font-size: 11.5px; }
   .kef.kef-show .kef-row { grid-template-columns: minmax(84px, 1.2fr) minmax(60px, 1.4fr) 40px 48px 40px 56px; gap: 5px; }
+}
+/* Phones: the 6-column funnel can't fit — reflow each step into a self-labelled
+   card (name + bar on top, metric chips below) so nothing gets cut off. */
+@media (max-width: 600px) {
+  .kef-row.kef-head { display: none; }
+  .kef-row, .kef.kef-show .kef-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 14px; padding: 11px 2px; }
+  .kef-step { flex: 1 1 100%; font-size: 13.5px; }
+  .kef-bar { flex: 1 1 100%; margin: 3px 0 5px; min-height: 24px; }
+  .kef-num { flex: 0 0 auto; text-align: left; font-size: 12px; font-weight: 700; color: var(--text); }
+  .kef-num::before { content: attr(data-l) ": "; color: var(--faint); font-weight: 500; }
+  .kef-num[data-l]:empty { display: none; }
 }
 @media (max-width: 720px) { .pf-row { grid-template-columns: 120px 1fr 50px 56px 70px; gap: 6px; font-size: 11px; } .pfunnel.pf4 .pf-row { grid-template-columns: 100px 1fr 46px 52px; } .pfunnel.pf5 .pf-row { grid-template-columns: 108px 1fr 44px 44px 60px; } }
 

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.181.0'
+const APP_VERSION = '3.182.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2690,10 +2690,10 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
             <div className={`kef-row${isLead ? ' kef-lead' : ''}`} key={s.label + i}>
               <span className="kef-step">{cp ? <KeCellPop title={cp.title} total={cp.total} rows={cp.rows}><span className="kef-step-tip">{stepInner}</span></KeCellPop> : stepInner}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
               <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
-              <span className="kef-num">{isLead ? '100%' : fmtPct(pct, 0)}</span>
-              <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`}>{step == null ? '—' : fmtPct(step, 0)}</span>
-              {anyCal ? <span className="kef-num" title={s.kind === 'calendar' ? `${fmtNumber(s.shown || 0)} shown of ${fmtNumber(s.occurred || 0)} occurred · ${fmtNumber(s.count)} booked` : undefined}>{showR == null ? '—' : fmtPct(showR, 0)}</span> : null}
-              <span className="kef-num kef-cost">{isLead ? (spend && s.count ? money(spend / s.count) : '—') : (spend && s.count ? money(spend / s.count) : '—')}</span>
+              <span className="kef-num" data-l="% leads">{isLead ? '100%' : fmtPct(pct, 0)}</span>
+              <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`} data-l="Next step">{step == null ? '—' : fmtPct(step, 0)}</span>
+              {anyCal ? <span className="kef-num" data-l="Show %" title={s.kind === 'calendar' ? `${fmtNumber(s.shown || 0)} shown of ${fmtNumber(s.occurred || 0)} occurred · ${fmtNumber(s.count)} booked` : undefined}>{showR == null ? '—' : fmtPct(showR, 0)}</span> : null}
+              <span className="kef-num kef-cost" data-l="Cost / event">{isLead ? (spend && s.count ? money(spend / s.count) : '—') : (spend && s.count ? money(spend / s.count) : '—')}</span>
             </div>
           )
         })}

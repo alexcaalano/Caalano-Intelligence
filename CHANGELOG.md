@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.167.0 — 2026-08-09 · `PENDING`
+- **Add/Edit client: link an account by ID even before discovery lists it.** The Meta / Google /
+  Caalano Systems pickers only showed accounts Windsor had synced data for (any account with
+  activity in the last 12 months), so a just-connected Windsor account — which Windsor hasn't
+  backfilled yet — never appeared, no matter how many times you hit Refresh accounts. Each column
+  now has a **"paste an account ID"** box: enter the ID and it links immediately. A selected ID
+  that isn't in the discovered list is also shown pinned at the top of its column (so an existing
+  link whose account has gone quiet still shows as selected in Edit). Clarified the footnote:
+  Windsor lists an account only once it has data for it; a new account can take a while to backfill.
+
 ## v3.166.0 — 2026-08-09 · `PENDING`
 - **Super-Admin-only clients.** You can now restrict a client so it's visible **only to Super
   Admins** — hidden from every other Admin, User and Viewer. Toggle it per client in Settings →

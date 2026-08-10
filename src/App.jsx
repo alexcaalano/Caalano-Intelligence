@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.166.0'
+const APP_VERSION = '3.167.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5856,19 +5856,36 @@ function AddClientModal({ existing, editClient, onClose }) {
   const pickGhl = (id) => { setGhl(id); fillName(nameOf(d.ghl, id)) }
   const pickMeta = (id) => { setMeta(id); fillName(nameOf(d.meta, id)) }
   const pickGoogle = (id) => { setGoogle(id); fillName(nameOf(d.google, id)) }
-  const Col = ({ title, items, sel, onSel, empty }) => (
-    <div className="addcl-col">
-      <div className="addcl-col-h">{title} <span className="addcl-count">{items ? items.length : 0}</span></div>
-      <div className="addcl-list">
-        {!items || !items.length ? <div className="cap" style={{ padding: 8 }}>{empty}</div> : items.map((it) => (
-          <button key={it.id} className={`addcl-item ${normId(sel) === normId(it.id) ? 'on' : ''}`} onClick={() => onSel(normId(sel) === normId(it.id) ? '' : it.id)} title={it.id}>
-            <span className="addcl-nm">{it.name}</span>
-            <span className="addcl-meta">{it.mapped ? <span className="addcl-mapped">in use</span> : <span className="addcl-free">available</span>} · <code>{String(it.id).slice(0, 14)}</code></span>
-          </button>
-        ))}
+  // A selected id that isn't in the discovered list (e.g. a brand-new Windsor
+  // account not yet backfilled, or an existing link whose account has no recent
+  // activity) still needs to show as selected + be linkable — so the picker also
+  // takes a manual ID entry and surfaces any off-list selection at the top.
+  const Col = ({ title, items, sel, onSel, empty }) => {
+    const inList = !!sel && (items || []).some((it) => normId(it.id) === normId(sel))
+    return (
+      <div className="addcl-col">
+        <div className="addcl-col-h">{title} <span className="addcl-count">{items ? items.length : 0}</span></div>
+        <div className="addcl-list">
+          {sel && !inList ? (
+            <button className="addcl-item on" onClick={() => onSel('')} title={String(sel)}>
+              <span className="addcl-nm">Manually linked</span>
+              <span className="addcl-meta"><span className="addcl-mapped">selected</span> · <code>{String(sel).slice(0, 20)}</code></span>
+            </button>
+          ) : null}
+          {!items || !items.length ? (sel && !inList ? null : <div className="cap" style={{ padding: 8 }}>{empty}</div>) : items.map((it) => (
+            <button key={it.id} className={`addcl-item ${normId(sel) === normId(it.id) ? 'on' : ''}`} onClick={() => onSel(normId(sel) === normId(it.id) ? '' : it.id)} title={it.id}>
+              <span className="addcl-nm">{it.name}</span>
+              <span className="addcl-meta">{it.mapped ? <span className="addcl-mapped">in use</span> : <span className="addcl-free">available</span>} · <code>{String(it.id).slice(0, 14)}</code></span>
+            </button>
+          ))}
+        </div>
+        <input className="addcl-manual" placeholder="or paste an account ID + Enter"
+          defaultValue=""
+          onKeyDown={(e) => { if (e.key === 'Enter') { const v = e.target.value.trim(); if (v) { onSel(v); e.target.value = '' } } }}
+          onBlur={(e) => { const v = e.target.value.trim(); if (v) { onSel(v); e.target.value = '' } }} />
       </div>
-    </div>
-  )
+    )
+  }
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
@@ -5890,7 +5907,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
                   <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
-                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked — a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (accounts with activity in the last 90 days); Caalano Systems locations from the GoHighLevel agency connection. New account not showing? Hit <b>Refresh accounts</b>.</p>
+                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked — a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the GoHighLevel agency connection. <b>New account not showing?</b> Windsor only lists it once it has synced some data for it — a just-connected account can take a while to backfill. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
               </>}
         </div>
       </div>

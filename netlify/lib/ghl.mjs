@@ -1827,16 +1827,34 @@ export async function buildCcDrill(locationId, from, to, channel) {
   let revenueTotal = 0, openValueTotal = 0, openCount = 0, wonCount = 0, lostCount = 0, leadCount = 0
   let paidWon = 0, metaWon = 0, googleWon = 0
   const stageAt = new Map() // pipelineId -> Map(stageId -> count), for the key-events funnel
+  const stageAtChan = new Map() // pipelineId -> Map(stageId -> {meta,google,other}) for the per-channel funnel
+  const chBucket = (ch) => (ch === 'meta' ? 'meta' : ch === 'google' ? 'google' : 'other')
+  // Per-pipeline top-line contribution + Meta/Google/other split — so Caalano360
+  // can show how much each channel drives each pipeline without extra fetches.
+  const pipeAgg = new Map() // pipelineId -> aggregate
   for (const o of opps) {
     const st = String(o.status || '').toLowerCase()
     const val = num(o.monetaryValue)
-    const u = utmOf(o); const ch = channelOf(u)
+    const u = utmOf(o); const ch = channelOf(u); const cb = chBucket(ch)
     const label = sourceLabel(u, ch); const kind = kindOf(ch, label)
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null
     const name = contactNameOf(o)
-    if (o.pipelineId && o.pipelineStageId) { let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1) }
+    if (o.pipelineId && o.pipelineStageId) {
+      let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1)
+      let smc = stageAtChan.get(o.pipelineId); if (!smc) { smc = new Map(); stageAtChan.set(o.pipelineId, smc) }
+      let cobj = smc.get(o.pipelineStageId); if (!cobj) { cobj = { meta: 0, google: 0, other: 0 }; smc.set(o.pipelineStageId, cobj) }
+      cobj[cb]++
+    }
     const isWon = st === 'won', isLost = st === 'lost' || st === 'abandoned'
     leadCount++; if (isWon) wonCount++; if (isLost) lostCount++
+    if (o.pipelineId) {
+      let pa = pipeAgg.get(o.pipelineId)
+      if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, chan: { meta: { leads: 0, won: 0, revenue: 0 }, google: { leads: 0, won: 0, revenue: 0 }, other: { leads: 0, won: 0, revenue: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
+      pa.leads++; pa.chan[cb].leads++
+      if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val }
+      else if (isLost) pa.lost++
+      else { pa.open++; pa.openValue += val }
+    }
     let bs = bySource.get(label); if (!bs) { bs = { source: label, channel: ch, kind, count: 0, value: 0, opps: [] }; bySource.set(label, bs) }
     bs.count++; bs.value += val
     if (bs.opps.length < 100) bs.opps.push({ name, status: isWon ? 'won' : isLost ? 'lost' : 'open', stage: stg ? stg.name : null, value: Math.round(val), channel: ch })
@@ -1888,10 +1906,11 @@ export async function buildCcDrill(locationId, from, to, channel) {
   // Per-pipeline stage AT-counts (funnel order) so the frontend key-events
   // funnel can compute cumulative reach via reachedByStage().
   const pipelinesFunnel = pipelines.map((p) => {
-    const pi = idx.get(p.id); const sm = stageAt.get(p.id) || new Map()
-    const stages = (pi ? pi.stages : []).map((s) => ({ id: s.id, name: s.name, pos: s.pos, count: sm.get(s.id) || 0 }))
+    const pi = idx.get(p.id); const sm = stageAt.get(p.id) || new Map(); const smc = stageAtChan.get(p.id) || new Map()
+    const stages = (pi ? pi.stages : []).map((s) => { const cc = smc.get(s.id) || { meta: 0, google: 0, other: 0 }; return { id: s.id, name: s.name, pos: s.pos, count: sm.get(s.id) || 0, meta: cc.meta, google: cc.google, other: cc.other } })
     return { id: p.id, name: p.name, stages }
   }).filter((p) => p.stages.some((s) => s.count > 0))
+  const pipeContribution = [...pipeAgg.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue), openValue: Math.round(p.openValue), chan: { meta: { ...p.chan.meta, revenue: Math.round(p.chan.meta.revenue) }, google: { ...p.chan.google, revenue: Math.round(p.chan.google.revenue) }, other: { ...p.chan.other, revenue: Math.round(p.chan.other.revenue) } } })).sort((a, b) => b.leads - a.leads)
   return {
     connected: true, tz, channel: chan || 'all',
     totals: { leads: leadCount, won: wonCount, lost: lostCount, open: openCount },

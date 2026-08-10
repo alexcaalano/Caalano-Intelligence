@@ -1956,6 +1956,35 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .exec-cc .scorecard { margin-bottom: 8px; }
 .exec-cc .scorecard:last-child { margin-bottom: 0; }
 
+/* Channel-contribution bar (Meta / Google / Other) */
+.chanbar { display: inline-flex; height: 8px; width: 100%; min-width: 70px; border-radius: 4px; overflow: hidden; background: var(--border); vertical-align: middle; }
+.chanbar-empty { opacity: .5; }
+.chanbar-seg { height: 100%; }
+.cb-meta { background: #4f7cff; } .cb-google { background: #12b886; } .cb-other { background: #e8a13a; }
+.cb-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+/* Pipeline performance */
+.pp-list { display: flex; flex-direction: column; gap: 8px; }
+.pp-row { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.pp-row.is-open { border-color: var(--accent, #4f7cff); }
+.pp-head { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(220px, 2fr) minmax(150px, 1fr); gap: 12px; align-items: center; width: 100%; background: none; border: none; text-align: left; padding: 10px 12px; cursor: pointer; color: inherit; }
+.pp-head:hover { background: var(--hover, rgba(127,127,127,.06)); }
+.pp-name { font-weight: 680; font-size: 13px; }
+.pp-kpis { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--muted); }
+.pp-kpi b { color: var(--ink, inherit); font-weight: 700; }
+.pp-kpi.pp-lost b { color: var(--neg, #e0566c); }
+.pp-contrib { display: flex; flex-direction: column; gap: 5px; min-width: 150px; }
+.pp-cb { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 6px; }
+.pp-cb-lab { font-size: 10px; text-transform: uppercase; letter-spacing: .3px; color: var(--muted); }
+.pp-events { padding: 2px 12px 10px; }
+.pp-ev-tbl { width: 100%; }
+.pp-ev-tbl th.pp-m, .pp-ev-tbl td.pp-m { color: #4f7cff; }
+.pp-ev-tbl th.pp-g, .pp-ev-tbl td.pp-g { color: #12b886; }
+.pp-ev-tbl td.pp-o { color: var(--muted); }
+.pp-pct { font-size: 10px; opacity: .7; margin-left: 4px; }
+.pp-ev-note { margin-top: 6px; }
+.pp-legend { display: flex; gap: 14px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+@media (max-width: 720px) { .pp-head { grid-template-columns: 1fr; gap: 6px; } }
+
 /* ============ Monthly Report (slide deck) ============ */
 .mr-page { display: flex; flex-direction: column; gap: 16px; }
 .mr-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: sticky; top: 0; z-index: 40; padding: 10px 0; background: var(--bg, var(--panel-2)); }

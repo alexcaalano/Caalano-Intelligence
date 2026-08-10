@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.172.0'
+const APP_VERSION = '3.173.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3219,6 +3219,73 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   )
 }
 
+// Channel-contribution mini-bar: Meta / Google / Other as proportions of a total.
+function ChanBar({ meta = 0, google = 0, other = 0 }) {
+  const tot = meta + google + other
+  if (!tot) return <span className="chanbar chanbar-empty" title="No attributed opportunities" />
+  const seg = (v, cls, nm) => v > 0 ? <span className={`chanbar-seg ${cls}`} style={{ width: `${(v / tot) * 100}%` }} title={`${nm}: ${fmtNumber(v)} · ${Math.round((v / tot) * 100)}%`} /> : null
+  return <span className="chanbar">{seg(meta, 'cb-meta', 'Meta')}{seg(google, 'cb-google', 'Google')}{seg(other, 'cb-other', 'Other / direct')}</span>
+}
+
+// Per-pipeline performance for Caalano360 — top-line outcomes + how much each
+// channel (Meta / Google / other) drives each pipeline, and key-event reach split
+// by channel. Built entirely from the ccdrill payload (pipeContribution +
+// per-channel stage counts), so no extra fetch.
+function PipelinePerformance({ cc, clientId, currency, money }) {
+  const pipes = (cc && cc.pipeContribution) || []
+  const funnels = (cc && cc.pipelinesFunnel) || []
+  const [open, setOpen] = useState(null)
+  useEffect(() => { setOpen(pipes.length === 1 ? pipes[0].id : null) }, [clientId])
+  if (!pipes.length) return null
+  const stagePos = stagePosMap(funnels)
+  const keList = loadKeyEvents(clientId)
+  const calMap = new Map((cc.bookingByCalendar || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, cancelled: 0 }]))
+  const asChan = (chan) => reachedByStage(funnels.map((p) => ({ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: chan === 'meta' ? (s.meta || 0) : chan === 'google' ? (s.google || 0) : (s.other || 0) })) })))
+  const rmapAll = reachedByStage(funnels), rmapMeta = asChan('meta'), rmapGoogle = asChan('google')
+  const evRowsFor = (p) => keyEventRows(keyEventsForPipe(keList, p.id), rmapAll, calMap, stagePos, p.won)
+    .filter((r) => r.kind !== 'lead')
+    .map((r) => {
+      if (r.kind === 'won') return { label: r.label, kind: r.kind, total: p.won, meta: p.chan.meta.won, google: p.chan.google.won, other: p.chan.other.won }
+      const meta = stageReachOf(rmapMeta, r.pipeline, r.label), google = stageReachOf(rmapGoogle, r.pipeline, r.label), total = stageReachOf(rmapAll, r.pipeline, r.label)
+      return { label: r.label, kind: r.kind, total, meta, google, other: Math.max(0, total - meta - google) }
+    }).filter((r) => r.total > 0)
+  return (
+    <div className="card">
+      <div className="exec-panel-h">Pipeline performance <span className="sub">· outcomes + how much Meta vs Google drives each pipeline{keList.length ? ' · click a pipeline for its key events by channel' : ''}</span></div>
+      <div className="pp-list">
+        {pipes.map((p) => {
+          const isOpen = open === p.id
+          const rows = isOpen ? evRowsFor(p) : []
+          return (
+            <div className={`pp-row${isOpen ? ' is-open' : ''}`} key={p.id}>
+              <button className="pp-head" onClick={() => setOpen(isOpen ? null : p.id)}>
+                <span className="pp-name"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {p.name}</span>
+                <span className="pp-kpis">
+                  <span className="pp-kpi"><b>{fmtNumber(p.leads)}</b> leads</span>
+                  <span className="pp-kpi"><b>{fmtNumber(p.won)}</b> won</span>
+                  <span className="pp-kpi"><b>{money(p.revenue)}</b> rev</span>
+                  <span className="pp-kpi"><b>{fmtNumber(p.open)}</b> open{p.openValue ? ` · ${money(p.openValue)}` : ''}</span>
+                  <span className="pp-kpi pp-lost"><b>{fmtNumber(p.lost)}</b> lost</span>
+                </span>
+                <span className="pp-contrib">
+                  <span className="pp-cb"><span className="pp-cb-lab">Leads</span><ChanBar meta={p.chan.meta.leads} google={p.chan.google.leads} other={p.chan.other.leads} /></span>
+                  <span className="pp-cb"><span className="pp-cb-lab">Won</span><ChanBar meta={p.chan.meta.won} google={p.chan.google.won} other={p.chan.other.won} /></span>
+                </span>
+              </button>
+              {isOpen && (rows.length ? <div className="pp-events">
+                <table className="mini-tbl users-tbl pp-ev-tbl"><thead><tr><th className="lft">Key event reached</th><th>Total</th><th className="pp-m">Meta</th><th className="pp-g">Google</th><th className="pp-o">Other</th></tr></thead>
+                  <tbody>{rows.map((r, i) => <tr key={i}><td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}</td><td><b>{fmtNumber(r.total)}</b></td><td className="pp-m">{fmtNumber(r.meta)}{r.total ? <span className="pp-pct">{Math.round((r.meta / r.total) * 100)}%</span> : null}</td><td className="pp-g">{fmtNumber(r.google)}{r.total ? <span className="pp-pct">{Math.round((r.google / r.total) * 100)}%</span> : null}</td><td className="pp-o">{fmtNumber(r.other)}</td></tr>)}</tbody></table>
+                <div className="cap pp-ev-note">Channel = first-touch attribution of the opportunities that reached each key stage. Won splits by the deal's channel; calendar-only events with no linked stage aren’t shown here.</div>
+              </div> : <div className="cap" style={{ padding: '4px 12px 12px' }}>No key events configured for this pipeline — set them in Settings → Key events.</div>)}
+            </div>
+          )
+        })}
+      </div>
+      <div className="pp-legend"><span><i className="cb-dot cb-meta" /> Meta</span><span><i className="cb-dot cb-google" /> Google</span><span><i className="cb-dot cb-other" /> Other / direct</span></div>
+    </div>
+  )
+}
+
 const CC_CHANS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['google', 'Google'], ['meta', 'Meta']]
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser }) {
   const [reload, setReload] = useState(0)
@@ -3353,6 +3420,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         </div>
       })()}
 
+      {/* Pipeline performance — per-pipeline outcomes + Meta/Google contribution +
+          key events by channel. Staff-only (needs the ccdrill payload). */}
+      {cc ? <PipelinePerformance cc={cc} clientId={clientId} currency={currency} money={money} /> : null}
+
       {/* Revenue bottleneck funnel — client key events + calendar show-rate.
           Passes the selected channel's spend so a paid view shows cost/stage. */}
       {(() => { const chn = h.channels || {}; const bnSpend = chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : chan === 'all' ? (k.adSpend || 0) : 0
@@ -3384,8 +3455,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         })()}
       </div>
 
-      {/* Per-pipeline breakdown — only when the client runs more than one */}
-      {h.pipelines && h.pipelines.length > 1 && <div className="card">
+      {/* Per-pipeline breakdown — fallback table when the richer per-channel
+          Pipeline performance card isn't available (e.g. viewer without ccdrill). */}
+      {!cc && h.pipelines && h.pipelines.length > 1 && <div className="card">
         <div className="exec-panel-h">By pipeline <span className="sub">· dive deeper in the CRM tab</span></div>
         <div className="tbl-scroll"><table className="mini-tbl users-tbl">
           <thead><tr><th className="lft">Pipeline</th><th>Opps</th><th>Booked</th><th>Won</th><th>Lost</th><th>Open</th><th>Revenue</th><th>Open value</th></tr></thead>

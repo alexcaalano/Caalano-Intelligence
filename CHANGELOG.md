@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.173.0 — 2026-08-10 · `PENDING` — Caalano360: Pipeline performance + channel contribution
+- **New "Pipeline performance" card on the Caalano360 tab.** For each pipeline it shows the top-line
+  outcomes (leads, won, revenue, open + open value, lost) and a **Meta vs Google vs Other** contribution
+  bar for both leads and won — so you can see at a glance how much each channel drives each pipeline.
+- **Key events per pipeline, split by channel.** Expand a pipeline to see each configured key event's
+  reach with a Meta / Google / Other breakdown (first-touch attribution of the opportunities that
+  reached that stage; won splits by the deal's own channel). Calendar-linked events read against their
+  linked stage.
+- Backend: `buildCcDrill` now computes a per-pipeline × per-channel breakdown (`pipeContribution`) and
+  per-channel stage counts in the **same** single opportunity pass — no extra fetches, so it stays
+  inside the function time budget. (This is the first slice of the broader Caalano360 "summary of every
+  tab" — user performance, held-up deals, locations and a timing summary follow.)
+
 ## v3.172.0 — 2026-08-10 · `PENDING` — Large-window Meta/Google pulls no longer hard-fail
 - **Root cause fixed:** the Windsor fetch timeouts (22s / 16s for big windows) were set for a
   26s function budget that was never granted — the functions actually hard-stop at ~10s, so a

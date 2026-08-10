@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.170.0 — 2026-08-10 · `PENDING` — Meta/Google Caalano360 tile + calendar label tidy
+- **Removed the standalone "Scheduled Appts" tile** from the per-pipeline Caalano360 metrics on the
+  Meta and Google ad views. It was a blanket CRM booked-count that isn't a configured key event and
+  duplicated the linked-calendar key event beside it. Only the key events you actually configure in
+  Settings → Key events now appear (plus Leads / Won / Revenue).
+- **Calendar-linked key events now read as their pipeline STAGE name.** The 📅 icon still marks a
+  key event as calendar-linked, but the label shows the pipeline stage it's linked to (e.g. the
+  stage name) instead of the calendar's own name — including when the calendar was deliberately
+  `[PIPE]`-tagged. This makes the Key Events pipeline/funnel view consistent with the funnel stages.
+
 ## v3.169.0 — 2026-08-09 · `PENDING` — Large-window (YTD) reliability + load status
 - **Big windows no longer time out or truncate.** Three fixes to the Meta + CRM pulls:
   - **Window-aware fetch timeouts:** each Windsor call now gets more time for a larger window

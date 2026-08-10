@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.169.0'
+const APP_VERSION = '3.170.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1426,7 +1426,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
           const rowsP = keyEventRows(keListP, rmap, calMap, stagePos, crmP ? crmP.won : (meCh ? meCh.totals.won : 0)).filter((r) => r.kind !== 'lead' && r.count > 0)
           const pCrm = prevCrmOf(pid) || {}
           const pEv = prevMeCh ? evMap(keyEventRows(keListP, prevRmap, prevCalMap, stagePos, pCrm.won || 0)) : {}
-          const booked = crmP ? crmP.booked : 0, won = crmP ? crmP.won : 0, rev = (crmP ? crmP.revenue : 0) || 0
+          const won = crmP ? crmP.won : 0, rev = (crmP ? crmP.revenue : 0) || 0
           const hasPrev = !!prevMeCh
           const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% leads` : null
           // "$X / unit" + a vs-prev efficiency chip (cheaper = green).
@@ -1441,7 +1441,6 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
-                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={flatLine([pct(booked), perUnit('appt', booked, pCrm.booked)])} />
                 {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
@@ -1692,7 +1691,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           const rowsP = keyEventRows(keListP, rmap, calMap, stagePos, crmP.won || 0).filter((r) => r.kind !== 'lead' && r.count > 0)
           const pCrm = prevCrmOf(pid) || {}
           const pEv = prevGCh ? evMap(keyEventRows(keListP, prevRmap, prevCalMap, stagePos, pCrm.won || 0)) : {}
-          const booked = crmP.booked || 0, won = crmP.won || 0, rev = crmP.revenue || 0
+          const won = crmP.won || 0, rev = crmP.revenue || 0
           const hasPrev = !!prevGCh
           const pct = (n) => leadsP ? `${Math.round((n / leadsP) * 100)}% leads` : null
           const perUnit = (unit, count, prevCount) => {
@@ -1706,7 +1705,6 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
-                <Sc label="Scheduled Appts" value={fmtNumber(booked)} cur={hasPrev ? booked : null} prev={hasPrev ? (pCrm.booked || 0) : null} flat={flatLine([pct(booked), perUnit('appt', booked, pCrm.booked)])} />
                 {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
@@ -2469,7 +2467,6 @@ function stagePosMap(pipelines) {
 // so a calendar named "[FIN] Booked Discovery Call" can be matched to the real
 // "Booked Discovery Call" pipeline stage for ordering / merging.
 const stripPipeTag = (s) => String(s || '').replace(/^\s*📅\s*/, '').replace(/^\s*\[[^\]]+\]\s*/, '').trim()
-const hasPipeTag = (s) => /^\s*(?:📅\s*)?\[[^\]]+\]/.test(String(s || ''))
 function orderKeyEvents(list, stagePos) {
   if (!stagePos || !stagePos.size) return list
   const posAt = (pipeline, name) => (name && pipeline && stagePos.has(pipeline + '::' + name) ? stagePos.get(pipeline + '::' + name) : (name ? stagePos.get(name) : undefined))
@@ -2529,7 +2526,10 @@ function mergeCalKeyEvents(list) {
   // the stage shows twice (once as the calendar, once as the stage). The kept
   // calendar event already combines calendar bookings + pipeline-stage reach,
   // split as "via calendar" / "via pipeline" in the number + tooltip.
-  for (const e of out) if (e.kind === 'calendar' && e.stage && !hasPipeTag(e.label)) e.label = e.stage
+  // A calendar linked to a pipeline stage IS that funnel step, so always show the
+  // pipeline STAGE name (the 📅 icon still marks it as calendar-linked) rather than
+  // the calendar's own name — even when the calendar was deliberately [PIPE]-tagged.
+  for (const e of out) if (e.kind === 'calendar' && e.stage) e.label = stripPipeTag(e.stage) || e.stage
   const coveredName = new Set(), coveredPipe = new Set()
   for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(nzStage(e.stage)); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + nzStage(e.stage)) }
   return out.filter((e) => {

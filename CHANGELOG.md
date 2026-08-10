@@ -17,6 +17,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.169.0 — 2026-08-09 · `PENDING` — Large-window (YTD) reliability + load status
+- **Big windows no longer time out or truncate.** Three fixes to the Meta + CRM pulls:
+  - **Window-aware fetch timeouts:** each Windsor call now gets more time for a larger window
+    (up to ~22s for a year) instead of the small-window default that was aborting YTD pulls.
+  - **Lighter Meta payload for long ranges:** the per-ad-per-day breakdown (the heaviest query —
+    ~#ads × 365 rows for a year) drops to **campaign × day** for windows over ~4 months, cutting
+    that payload 10–50×. The campaign daily chart and the day drill's campaign split still work;
+    only the per-creative day drill is coarser over long ranges. The campaign / ad-set / creative
+    tables and totals are unaffected and now load for YTD.
+  - **CRM not truncated at 1500:** the GoHighLevel opportunity paging now scales its row + page
+    budget to the window (up to ~5,000 for a year) so a busy client's YTD attribution isn't cut
+    off — which is what left the green Caalano360 columns half-loaded.
+- **New two-part load indicator on the Meta & Google views.** A bar at the top shows the ad
+  platform data loaded → **Caalano360 (CRM) loading… → all data in**, so you can tell when the
+  *whole* page is complete (not just the ad half). If the CRM side genuinely can't load for a huge
+  window it says so with a clear message instead of leaving the columns silently blank. It tidies
+  to a small "All data loaded ✓" once everything's in.
+- Meta campaigns / ad sets are **not status-filtered**, so any campaign or ad set with spend in the
+  window shows even if it's now paused — the slimmer, higher-budget pulls make sure they actually
+  come back rather than being lost to truncation.
+- **Action for you:** on Netlify (Pro), raise **Site configuration → Functions → Function timeout**
+  toward **26s** so the largest pulls have the full runway; the code now uses it when available.
+
 ## v3.168.0 — 2026-08-09 · `PENDING` — Viewer access lock-down
 - **Client (viewer) accounts are now confined to exactly what they're assigned — enforced
   server-side, not just hidden in the UI.** Previously a viewer was limited to their allocated

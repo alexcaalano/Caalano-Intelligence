@@ -198,12 +198,26 @@ function prevRange(from, to) {
   return { from: isod(pf), to: isod(pt) }
 }
 
+// Rough span of the requested window in days (for preset windows we approximate).
+function windowDays(from, to, preset) {
+  if (from && to) { const d = Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1; return Number.isFinite(d) && d > 0 ? d : 30 }
+  if (preset === 'this_year' || preset === 'last_year') return 365
+  if (preset === 'last_90d' || preset === 'this_quarter') return 90
+  if (String(preset || '').includes('month')) return 31
+  return 30
+}
 async function windsorFetch(connector, fields, from, to, preset, key) {
   const p = new URLSearchParams({ api_key: key, fields: fields.join(',') })
   if (from && to) { p.set('date_from', from); p.set('date_to', to) }
   else { p.set('date_preset', preset || 'last_30d') }
   const url = `https://connectors.windsor.ai/${connector}?${p.toString()}`
-  const r = await resilientFetch(url, {}, { label: `Windsor ${connector}` })
+  // Bigger windows return far more rows and take longer, so give them a longer
+  // timeout — a year-to-date pull shouldn't be aborted at the small-window
+  // default. Capped so it still fits inside the function's execution budget
+  // (raise the Netlify function timeout to 26s on Pro to use the full range).
+  const days = windowDays(from, to, preset)
+  const timeoutMs = days > 180 ? 22000 : days > 60 ? 16000 : 11000
+  const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries: 1 })
   if (!r.ok) throw new Error(`Windsor ${connector} ${r.status}: ${(await r.text()).slice(0, 200)}`)
   const j = await r.json()
   return j.data || j.result || []
@@ -401,19 +415,29 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   // Ad-set query carries the optimisation goal + promoted object so results
   // auto-detect per ad set.
   const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+  // The per-ad-per-day breakdown (adDaily) is by far the heaviest query — for a
+  // year that's (#ads x 365) rows, which blows the payload and the time budget.
+  // For big windows drop it to campaign x day (10-50x smaller); the campaign
+  // daily chart and the day drill's campaign split still work — only the
+  // per-creative day drill is coarser over long ranges.
+  const bigWin = windowDays(from, to, preset) > 120
+  const adDayFields = bigWin
+    ? ['account_id', 'date', 'campaign', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS]
+    : ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS]
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
-    windsorFetch('facebook', ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('facebook', adDayFields, from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', campFields, from, to, preset, key).then(filt),
     windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
   ])
   const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback)
   roll.prev = metaTotals(prevRows)
-  roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name, ad: r.ad_name, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && r.ad)
+  roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name || null, ad: r.ad_name || null, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && (r.ad || r.campaign))
+  roll.adDailyLevel = bigWin ? 'campaign' : 'ad'
   return roll
 }
 

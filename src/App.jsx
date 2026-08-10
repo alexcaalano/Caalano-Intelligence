@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.168.0'
+const APP_VERSION = '3.169.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1125,6 +1125,32 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
 const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg; return r <= 0.85 ? 'rgba(23,178,106,.28)' : r <= 1.15 ? 'rgba(245,165,36,.28)' : 'rgba(240,67,91,.28)' }
 
+// A two-part load indicator for the Meta / Google views: the ad platform data
+// loads first, then the (heavier, GHL-backed) Caalano360 attribution. Shows the
+// live state of each so it's clear when EVERYTHING has arrived — and flags when
+// the CRM side couldn't load (e.g. a very large window) rather than silently
+// leaving the green columns blank. Auto-tidies to a small ✓ once all is in.
+function DataLoadBar({ label = 'Meta ads', has360, status, pipeLoading }) {
+  const crmDone = !!has360
+  const crmErr = !has360 && status === 'err'
+  const crmLoading = !crmDone && !crmErr
+  const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    if (crmDone) { const t = setTimeout(() => setCollapsed(true), 2200); return () => clearTimeout(t) }
+    setCollapsed(false)
+  }, [crmDone])
+  if (crmDone && collapsed) return <div className="load-bar done mini" title="All data loaded"><span className="load-dot ok" /> All data loaded</div>
+  return (
+    <div className={`load-bar ${crmDone ? 'done' : crmErr ? 'err' : 'busy'}`}>
+      <span className="load-seg"><span className="load-dot ok" /> {label} loaded</span>
+      <span className="load-arrow">→</span>
+      {crmLoading ? <span className="load-seg"><span className="load-spin" /> Loading Caalano360 (CRM outcomes)…{pipeLoading ? ' scoping to pipeline…' : ''}</span>
+        : crmErr ? <span className="load-seg err"><span className="load-dot bad" /> Caalano360 CRM didn’t load for this window — it may be too large. Try a smaller range, or reload.</span>
+          : <span className="load-seg"><span className="load-dot ok" /> Caalano360 loaded — all data in</span>}
+    </div>
+  )
+}
+
 function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [pipe, setPipe] = useState('all')
   const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr)
@@ -1335,6 +1361,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const meTotal = Math.max(1, mePipeLeads != null ? mePipeLeads : (meCh ? meCh.totals.leads : 0))
   return (
     <div ref={scrollRootRef}>
+      <DataLoadBar label="Meta ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · reach &amp; frequency are approximate (summed across campaigns) · link campaigns in Settings → Campaign links</span>}</div>}
       {scopedEmpty && <div className="alias-warn" style={{ marginTop: 8 }}><b>No campaigns are linked to this pipeline.</b> Link this pipeline's campaigns in <b>Settings → this client → Campaign links</b> (or rename them to match) so their spend and results show here. The green CRM columns above still reflect the pipeline.</div>}
@@ -1624,6 +1651,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const gTotal = Math.max(1, gPipeLeads != null ? gPipeLeads : (gCh ? gCh.totals.leads : 0))
   return (
     <div ref={scrollRootRef}>
+      <DataLoadBar label="Google ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · link campaigns in Settings → Campaign links</span>}</div>}
       {scopedEmpty && <div className="alias-warn" style={{ marginTop: 8 }}><b>No campaigns are linked to this pipeline.</b> Link this pipeline's campaigns in <b>Settings → this client → Campaign links</b> (or rename them to match). The green CRM columns still reflect the pipeline.</div>}

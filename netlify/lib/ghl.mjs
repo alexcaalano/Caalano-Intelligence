@@ -188,7 +188,13 @@ async function allOpportunities(locTok, locationId, from, to, cap = 1500) {
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
-  while (guard++ < 25 && out.length < cap) {
+  // Scale the row + page budget to the window span so a large window (e.g. YTD)
+  // isn't silently truncated at the small-window default. Only the real data
+  // pulls (cap >= 1000) are inflated; small sample calls keep their tight cap.
+  const spanDays = (fromMs != null && toMs != null) ? Math.max(1, Math.round((toMs - fromMs) / 86400000)) : 30
+  const effCap = (cap >= 1000 && spanDays > 120) ? Math.min(5000, spanDays > 300 ? 5000 : 3500) : cap
+  const maxPages = Math.min(55, Math.max(25, Math.ceil(effCap / 100) + 3))
+  while (guard++ < maxPages && out.length < effCap) {
     const q = { location_id: locationId, limit: 100, order: 'added_desc' }
     if (startAfter != null) { q.startAfter = startAfter; q.startAfterId = startAfterId }
     const j = await ghlGet(locTok, '/opportunities/search', q)

@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.171.0 — 2026-08-10 · `PENDING` — Per-calendar breakdown on hover
+- **Calendar key events now show their per-calendar split on hover.** When several calendars are
+  linked to the same pipeline stage they merge into one key event (e.g. three reps' Discovery
+  Calls → one "Discovery Call" number). Hovering that key event — in the Meta/Google Caalano360
+  tiles and in the Key Events funnel — now lists each calendar and how many bookings it
+  contributed to the total (plus shown/occurred where known), and notes any reached-the-stage
+  count that came in without a calendar booking. A dotted underline marks the hoverable labels.
+
 ## v3.170.0 — 2026-08-10 · `PENDING` — Meta/Google Caalano360 tile + calendar label tidy
 - **Removed the standalone "Scheduled Appts" tile** from the per-pipeline Caalano360 metrics on the
   Meta and Google ad views. It was a blanket CRM booked-count that isn't a configured key event and

@@ -699,6 +699,7 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .scorecard.sc-2 { grid-template-columns: 1fr 1fr; margin: 6px 0 4px; }
 .sc { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow); }
 .sc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; margin-bottom: 6px; }
+.sc-l-tip { cursor: help; text-decoration: underline dotted var(--border); text-underline-offset: 2px; }
 .sc-v { font-size: 19px; font-weight: 750; letter-spacing: -.01em; }
 .sc-d { font-size: 11px; font-weight: 700; margin-top: 5px; display: flex; align-items: center; gap: 4px; }
 .sc-d.up { color: var(--pos); } .sc-d.down { color: var(--neg); } .sc-d.flat { color: var(--faint); font-weight: 500; }
@@ -1139,6 +1140,8 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kef-row:last-child { border-bottom: none; }
 .kef-row.kef-lead { opacity: .82; }
 .kef-step { font-weight: 650; line-height: 1.2; word-break: break-word; }
+.kef-step-tip { cursor: help; }
+.kef-step-tip .ke-cal { text-decoration: underline dotted var(--border); text-underline-offset: 2px; }
 .kef-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
 .kef-num.good { color: var(--pos); } .kef-num.bad { color: var(--neg); }
 .kef-cost { color: var(--text); }

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.170.0'
+const APP_VERSION = '3.171.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1118,8 +1118,8 @@ function ScDelta({ cur, prev, goodWhenDown }) {
   const up = pct >= 0; const good = goodWhenDown ? !up : up
   return <div className={`sc-d ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))} <span className="sc-vs">vs prev</span></div>
 }
-function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat }) {
-  return <div className="sc"><div className="sc-l">{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{flat ? <div className="sc-flat">{flat}</div> : null}{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
+function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat, tip }) {
+  return <div className="sc"><div className={`sc-l${tip ? ' sc-l-tip' : ''}`} title={tip || undefined}>{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{flat ? <div className="sc-flat">{flat}</div> : null}{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
 }
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
@@ -1441,7 +1441,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
-                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} tip={calBreakdownTip(r)} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
@@ -1705,7 +1705,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
-                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} tip={calBreakdownTip(r)} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
@@ -2567,13 +2567,17 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
   for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
       let cal = 0, occurred = 0, shown = 0, cancelled = 0, any = false
-      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; occurred += (c.occurred || 0); shown += c.shown; cancelled += c.cancelled } }
+      // Per-calendar split so the merged key event can show which calendars (and how
+      // many bookings each) make up its total on hover.
+      const perCal = []
+      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; occurred += (c.occurred || 0); shown += c.shown; cancelled += c.cancelled; if (c.count) perCal.push({ name: c.name || 'Calendar', count: c.count, shown: c.shown || 0, occurred: c.occurred || 0 }) } }
+      perCal.sort((a, b) => b.count - a.count)
       // Linked stage acts as a fallback: leads that reached the stage but we have
       // no calendar booking for. Approximated as stageReached - calendar bookings.
       const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
       const fromStage = Math.max(0, stageReached - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, occurred, shown, cancelled, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, occurred, shown, cancelled, perCal, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -2585,6 +2589,21 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
     }
   }
   return rows
+}
+// Hover text for a calendar-linked key event: lists each calendar merged into the
+// pipeline stage and how many bookings it contributed to the total. Returns
+// undefined for non-calendar rows (or ones with nothing to break down).
+function calBreakdownTip(r) {
+  if (!r || r.kind !== 'calendar') return undefined
+  const parts = r.perCal || []
+  if (!parts.length && !r.fromStage) return undefined
+  const lines = []
+  if (parts.length) {
+    lines.push(parts.length > 1 ? `${fmtNumber(r.fromCal)} booked across ${parts.length} calendars:` : 'Booked via calendar:')
+    for (const p of parts) lines.push(`• ${p.name}: ${fmtNumber(p.count)}${p.occurred ? ` (${fmtNumber(p.shown)}/${fmtNumber(p.occurred)} shown)` : ''}`)
+  }
+  if (r.fromStage) lines.push(`• Reached the pipeline stage (no calendar booking): ${fmtNumber(r.fromStage)}`)
+  return lines.join('\n')
 }
 // Reusable Key Events funnel card - the readable full picture of a client's key
 // events: full step name, count reached (bar), % of leads, next-step conversion
@@ -2621,9 +2640,10 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
           const hue = 210 + Math.round((i / Math.max(1, full.length - 1)) * -70)
           const isLead = s.kind === 'lead'
           const barTip = s.fromStage ? `${fmtNumber(s.count)} total · ${fmtNumber(s.fromCal)} via calendar booking · ${fmtNumber(s.fromStage)} via pipeline-stage fallback` : undefined
+          const calTip = calBreakdownTip(s)
           return (
             <div className={`kef-row${isLead ? ' kef-lead' : ''}`} key={s.label + i}>
-              <span className="kef-step">{s.kind === 'calendar' ? <span className="ke-cal" title="Booked calendar appointment">📅 </span> : null}{s.label}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
+              <span className={`kef-step${calTip ? ' kef-step-tip' : ''}`} title={calTip || undefined}>{s.kind === 'calendar' ? <span className="ke-cal" title={calTip || 'Booked calendar appointment'}>📅 </span> : null}{s.label}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
               <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
               <span className="kef-num">{isLead ? '100%' : fmtPct(pct, 0)}</span>
               <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`}>{step == null ? '—' : fmtPct(step, 0)}</span>

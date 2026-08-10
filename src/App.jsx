@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.180.0'
+const APP_VERSION = '3.181.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3709,19 +3709,108 @@ const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
 const rangeLabel = (r) => r.label || `${r.from} → ${r.to}`
 
 // Fetch live deep data for the active channel from the Windsor.ai Netlify function.
+// Split a date range into ≤maxDays sub-windows (used to beat the serverless time
+// limit on a big Meta/Google pull — each month loads well inside the budget).
+function splitRange(range, maxDays = 31) {
+  const a = Date.parse(range && range.from), b = Date.parse(range && range.to)
+  if (!isFinite(a) || !isFinite(b)) return [{ from: range.from, to: range.to }]
+  const days = Math.round((b - a) / 86400000) + 1
+  if (days <= maxDays) return [{ from: range.from, to: range.to }]
+  const isoU = (ms) => new Date(ms).toISOString().slice(0, 10) // UTC-consistent with Date.parse above
+  const out = []; let cur = a
+  while (cur <= b) { const end = Math.min(b, cur + (maxDays - 1) * 86400000); out.push({ from: isoU(cur), to: isoU(end) }); cur = end + 86400000 }
+  return out
+}
+const windowDaysFE = (range) => { const a = Date.parse(range && range.from), b = Date.parse(range && range.to); return (isFinite(a) && isFinite(b)) ? Math.round((b - a) / 86400000) + 1 : 30 }
+// Concurrency-limited map that preserves order (keeps us under Windsor's rate cap
+// while still fanning out the monthly chunks).
+async function poolMap(items, concurrency, fn) {
+  const results = new Array(items.length); let i = 0
+  const worker = async () => { while (i < items.length) { const idx = i++; results[idx] = await fn(items[idx], idx) } }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker))
+  return results
+}
+// Merge several buildMeta chunks (one per month) back into a single meta payload.
+// Entity lists are summed by name; daily series concatenate (no date overlap).
+function mergeMetaParts(parts) {
+  const metas = parts.map((p) => p && p.meta).filter(Boolean)
+  if (!metas.length) return null
+  const SUM = ['spend', 'impressions', 'clicks', 'linkClicks', 'leads', 'videoViews', 'reach', 'results']
+  const KEEP = ['campaign', 'adset', 'type', 'quality', 'thumb', 'igUrl', 'resultType', 'resultField']
+  const mergeList = (getList, keyOf) => {
+    const m = new Map()
+    for (const meta of metas) for (const r of (getList(meta) || [])) {
+      const k = keyOf(r); if (k == null) continue
+      let e = m.get(k)
+      if (!e) { e = { ...r }; m.set(k, e); continue }
+      for (const f of SUM) if (typeof r[f] === 'number') e[f] = (e[f] || 0) + r[f]
+      for (const f of KEEP) if (e[f] == null && r[f] != null) e[f] = r[f]
+    }
+    const arr = [...m.values()]
+    // breakdown / prev are per-chunk (would reflect only the first month), so drop
+    // them — the merged count is a true year total, the sub-splits aren't.
+    for (const e of arr) { e.costPerResult = e.results ? Math.round((e.spend / e.results) * 100) / 100 : null; delete e.breakdown; delete e.prev }
+    return arr.sort((a, b) => (b.spend || 0) - (a.spend || 0))
+  }
+  const totals = { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0 }
+  const bd = {}
+  for (const x of metas) {
+    const t = x.totals || {}
+    for (const f of ['spend', 'impressions', 'clicks', 'linkClicks', 'leads', 'videoViews', 'reach']) totals[f] += (t[f] || 0)
+    for (const b of (t.resultBreakdown || [])) bd[b.label] = (bd[b.label] || 0) + b.count
+  }
+  totals.resultBreakdown = Object.entries(bd).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
+  totals.results = totals.resultBreakdown.reduce((s, x) => s + x.count, 0)
+  totals.costPerResult = totals.results ? Math.round((totals.spend / totals.results) * 100) / 100 : null
+  return {
+    campaigns: mergeList((x) => x.campaigns, (r) => r.name),
+    adsets: mergeList((x) => x.adsets, (r) => r.name),
+    ads: mergeList((x) => x.ads, (r) => r.name),
+    daily: metas.flatMap((x) => x.daily || []).sort((a, b) => a.date.localeCompare(b.date)),
+    adDaily: metas.flatMap((x) => x.adDaily || []),
+    adDailyLevel: 'ad', totals, prev: null, chunked: true,
+  }
+}
 function useLiveDeep(clientId, channel, range, nonce = 0) {
-  const [state, setState] = useState({ status: 'idle', data: null })
+  const [state, setState] = useState({ status: 'idle', data: null, progress: null })
   const q = rangeQuery(range)
+  // Big Meta windows can't finish in one serverless call, so fan them out into
+  // monthly chunks and merge. (Google keeps the single-call path for now.)
+  const chunky = channel === 'meta' && windowDaysFE(range) > 92
   useEffect(() => {
-    if (!channel) { setState({ status: 'idle', data: null }); return }
+    if (!channel) { setState({ status: 'idle', data: null, progress: null }); return }
     let alive = true
-    setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => r.json().catch(() => ({ error: `Server returned HTTP ${r.status} (the pull may have timed out).` })))
-      .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j || null }) })
-      .catch(() => { if (alive) setState({ status: 'err', data: { error: 'Network error reaching the data function.' } }) })
+    if (!chunky) {
+      setState({ status: 'loading', data: null, progress: null })
+      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+        .then((r) => r.json().catch(() => ({ error: `Server returned HTTP ${r.status} (the pull may have timed out).` })))
+        .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j || null, progress: null }) })
+        .catch(() => { if (alive) setState({ status: 'err', data: { error: 'Network error reaching the data function.' }, progress: null }) })
+      return () => { alive = false }
+    }
+    const chunks = splitRange(range, 31)
+    setState({ status: 'loading', data: null, progress: { done: 0, total: chunks.length } })
+    let done = 0
+    const bump = () => { done++; if (alive) setState((s) => (s.status === 'loading' ? { ...s, progress: { done, total: chunks.length } } : s)) }
+    const fetchChunk = async (c, attempt = 0) => {
+      try {
+        const r = await fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&from=${c.from}&to=${c.to}${nonce ? `&_r=${nonce}` : ''}`)
+        const j = await r.json().catch(() => null)
+        if (!j || j.error) throw new Error((j && j.error) || 'chunk failed')
+        bump(); return j
+      } catch (e) {
+        if (attempt < 1) return fetchChunk(c, attempt + 1)
+        bump(); return null
+      }
+    }
+    poolMap(chunks, 4, (c) => fetchChunk(c)).then((parts) => {
+      if (!alive) return
+      const ok = parts.filter(Boolean)
+      if (!ok.length) { setState({ status: 'err', data: { error: 'The year pull failed for every month — try again, or a shorter range.' }, progress: null }); return }
+      setState({ status: 'ok', progress: null, data: { meta: mergeMetaParts(ok), chunked: true, partial: ok.length < chunks.length, monthsLoaded: ok.length, monthsTotal: chunks.length } })
+    })
     return () => { alive = false }
-  }, [clientId, channel, q, nonce])
+  }, [clientId, channel, q, nonce, chunky])
   return state
 }
 
@@ -5521,9 +5610,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
       <div style={{ marginTop: 16 }}>
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
-        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Meta data…" /></div>
+        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={live.progress ? `Loading ${rangeLabel(range)} Meta data… ${live.progress.done}/${live.progress.total} months` : 'Loading live Meta data…'} /></div>
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
-            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months — ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div>
           : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}

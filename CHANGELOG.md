@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.181.0 — 2026-08-10 · `PENDING` — Large Meta windows (YTD) now load by chunking into months
+- **Year-to-date and other large Meta windows now actually load.** A full year of campaign / ad-set /
+  creative data can't finish inside the serverless time limit in one call, so the Meta Ads view now
+  **splits a window over ~3 months into monthly pulls, fetches them 4 at a time (with one retry each),
+  and merges the result** client-side. Each month loads well inside the budget, so the whole year
+  assembles reliably instead of timing out. A progress line shows *"Loading This year Meta data…
+  6/12 months"* while it runs.
+- **Bonus: richer data on long ranges.** Because each chunk is a normal ≤1-month pull, the per-ad-per-day
+  breakdown stays at **ad level** across the whole year (the old single big pull had to drop to
+  campaign level), so the day-drill keeps its creative detail even for YTD.
+- If a month or two still times out, the view loads the rest and shows a clear *"loaded N of M months —
+  totals are undercounted, hit Refresh to retry"* note rather than failing outright. Period-over-period
+  deltas are omitted on these long chunked windows (noted under the header).
+- Google Ads keeps the single-call path for now — same chunking for Google is the next step.
+
 ## v3.180.0 — 2026-08-10 · `PENDING` — Account discovery shows connector status + errors
 - **The Add-client "Refresh accounts" flow now shows whether Windsor is actually live.** The discover
   endpoint was already fully uncached (`no-store`) — every refresh re-queries Windsor directly — but a

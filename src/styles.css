@@ -661,6 +661,7 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .addcl-meta code { font-family: ui-monospace, monospace; }
 .addcl-mapped { color: var(--warn); font-weight: 700; }
 .addcl-free { color: var(--pos); font-weight: 700; }
+.chunk-note { margin: 0 0 10px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2, rgba(127,127,127,.05)); }
 .addcl-status { margin-top: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
 .addcl-stat-ok { color: #12b886; font-weight: 700; }
 .addcl-stat-bad { color: var(--neg, #e0566c); font-weight: 700; }

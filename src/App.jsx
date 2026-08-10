@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.175.0'
+const APP_VERSION = '3.176.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1118,8 +1118,11 @@ function ScDelta({ cur, prev, goodWhenDown }) {
   const up = pct >= 0; const good = goodWhenDown ? !up : up
   return <div className={`sc-d ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))} <span className="sc-vs">vs prev</span></div>
 }
-function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat, tip }) {
-  return <div className="sc"><div className={`sc-l${tip ? ' sc-l-tip' : ''}`} title={tip || undefined}>{label}</div><div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{flat ? <div className="sc-flat">{flat}</div> : null}{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
+function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat, tip, pop }) {
+  const labelEl = (pop && pop.rows && pop.rows.length)
+    ? <div className="sc-l"><KeCellPop title={pop.title} total={pop.total} rows={pop.rows}><span className="sc-l-tip">{label}</span></KeCellPop></div>
+    : <div className={`sc-l${tip ? ' sc-l-tip' : ''}`} title={tip || undefined}>{label}</div>
+  return <div className="sc">{labelEl}<div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{flat ? <div className="sc-flat">{flat}</div> : null}{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
 }
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
@@ -1441,7 +1444,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
-                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} tip={calBreakdownTip(r)} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} pop={calPopRows(r)} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
@@ -1705,7 +1708,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit">
                 <Sc label="Leads" value={fmtNumber(leadsP)} cur={hasPrev ? leadsP : null} prev={hasPrev ? (pCrm.leads || 0) : null} flat={flatLine(['100%', perUnit('lead', leadsP, pCrm.leads)])} />
-                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} tip={calBreakdownTip(r)} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
+                {rowsP.map((r, i) => { const showR = r.kind === 'calendar' && r.occurred ? `${Math.round((r.shown / r.occurred) * 100)}% show` : null; return <Sc key={i} label={r.label.replace(/^📅 /, '')} value={fmtNumber(r.count)} cur={hasPrev ? r.count : null} prev={hasPrev ? (pEv[r.label] || 0) : null} pop={calPopRows(r)} flat={flatLine([pct(r.count), perUnit('event', r.count, pEv[r.label]), showR])} /> })}
                 <Sc label="Won" value={fmtNumber(won)} cur={hasPrev ? won : null} prev={hasPrev ? (pCrm.won || 0) : null} flat={flatLine([pct(won), perUnit('won', won, pCrm.won)])} />
                 <Sc label="Revenue" value={fmtCurrency(rev, currency)} cur={hasPrev ? rev : null} prev={hasPrev ? (pCrm.revenue || 0) : null} flat={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
               </div>
@@ -2613,20 +2616,18 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
   }
   return rows
 }
-// Hover text for a calendar-linked key event: lists each calendar merged into the
-// pipeline stage and how many bookings it contributed to the total. Returns
-// undefined for non-calendar rows (or ones with nothing to break down).
-function calBreakdownTip(r) {
-  if (!r || r.kind !== 'calendar') return undefined
+// Styled hover-card data for a calendar-linked key event: each calendar merged
+// into the pipeline stage with its booking count (and shown/occurred), plus any
+// reached-the-stage count that had no calendar booking. Feeds KeCellPop so the
+// breakdown reads as the same card look used across the app (not a raw browser
+// tooltip). Returns null for non-calendar rows or ones with nothing to break down.
+function calPopRows(r) {
+  if (!r || r.kind !== 'calendar') return null
   const parts = r.perCal || []
-  if (!parts.length && !r.fromStage) return undefined
-  const lines = []
-  if (parts.length) {
-    lines.push(parts.length > 1 ? `${fmtNumber(r.fromCal)} booked across ${parts.length} calendars:` : 'Booked via calendar:')
-    for (const p of parts) lines.push(`• ${p.name}: ${fmtNumber(p.count)}${p.occurred ? ` (${fmtNumber(p.shown)}/${fmtNumber(p.occurred)} shown)` : ''}`)
-  }
-  if (r.fromStage) lines.push(`• Reached the pipeline stage (no calendar booking): ${fmtNumber(r.fromStage)}`)
-  return lines.join('\n')
+  if (!parts.length && !r.fromStage) return null
+  const rows = parts.map((p) => ({ label: p.occurred ? `${p.name} · ${fmtNumber(p.shown)}/${fmtNumber(p.occurred)} shown` : p.name, value: p.count }))
+  if (r.fromStage) rows.push({ label: 'Reached the stage — no calendar booking', value: r.fromStage, muted: true })
+  return { title: parts.length > 1 ? `Booked · ${parts.length} calendars` : 'Booked', total: r.fromCal || r.count, rows }
 }
 // Reusable Key Events funnel card - the readable full picture of a client's key
 // events: full step name, count reached (bar), % of leads, next-step conversion
@@ -2663,10 +2664,11 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
           const hue = 210 + Math.round((i / Math.max(1, full.length - 1)) * -70)
           const isLead = s.kind === 'lead'
           const barTip = s.fromStage ? `${fmtNumber(s.count)} total · ${fmtNumber(s.fromCal)} via calendar booking · ${fmtNumber(s.fromStage)} via pipeline-stage fallback` : undefined
-          const calTip = calBreakdownTip(s)
+          const cp = calPopRows(s)
+          const stepInner = <>{s.kind === 'calendar' ? <span className="ke-cal">📅 </span> : null}{s.label}</>
           return (
             <div className={`kef-row${isLead ? ' kef-lead' : ''}`} key={s.label + i}>
-              <span className={`kef-step${calTip ? ' kef-step-tip' : ''}`} title={calTip || undefined}>{s.kind === 'calendar' ? <span className="ke-cal" title={calTip || 'Booked calendar appointment'}>📅 </span> : null}{s.label}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
+              <span className="kef-step">{cp ? <KeCellPop title={cp.title} total={cp.total} rows={cp.rows}><span className="kef-step-tip">{stepInner}</span></KeCellPop> : stepInner}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
               <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
               <span className="kef-num">{isLead ? '100%' : fmtPct(pct, 0)}</span>
               <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`}>{step == null ? '—' : fmtPct(step, 0)}</span>

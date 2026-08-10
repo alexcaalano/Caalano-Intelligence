@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.176.0 — 2026-08-10 · `PENDING` — Fix "linked but empty" Meta accounts + styled key-event hover
+- **Root-cause fix for a Meta account that's linked but shows no data.** The account-id match was
+  exact-after-normalising, so a stored id like `1234` never matched Windsor's `act_1234` (or vice
+  versa) — every row got filtered out and the Meta deep pull, agency spend rollups and weekly board
+  all came back empty even though the account was correctly connected. Matching is now tolerant of
+  Meta's `act_` prefix everywhere an ad account is filtered or rolled up. (This is almost certainly
+  why IDO IDO's Meta tab was empty across every date range.)
+- **The per-calendar key-event breakdown is now a styled hover card**, matching the rest of the app
+  (header + per-row list) instead of a plain browser tooltip — on both the Meta/Google Caalano360
+  tiles and the Key Events funnel. It lists each calendar's bookings (with shown/occurred) and any
+  reached-the-stage count with no calendar booking.
+
 ## v3.175.0 — 2026-08-10 · `PENDING` — Meta/Google tab only shows when connected + honest empty states
 - **The Meta Ads tab now only appears when the client actually has a Meta account connected** (same as
   Google always has). Previously it was added for *every* client, so a CRM-only or Google-only client

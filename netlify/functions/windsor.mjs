@@ -70,6 +70,13 @@ const FIELDS = {
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
 const norm = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
+// Match an ad-account id tolerant of Meta's "act_" prefix — Windsor may return
+// "act_1234" while the stored/linked id is just "1234" (or the reverse). Without
+// this the account filter drops every row and the deep pull comes back empty even
+// though the account is correctly linked. Ad-account ids are numeric, so stripping
+// a leading "act" after normalising is safe and can't collide two real accounts.
+const acctKey = (s) => norm(s).replace(/^act/i, '')
+const acctEq = (a, b) => { const na = acctKey(a); return na !== '' && na === acctKey(b) }
 // Meta "Leads" that matches Ads Manager. The bare `actions_lead` field is a
 // superset (native Facebook leads + off-Facebook website-pixel leads) and
 // double-counts, over-reporting. Ads Manager's Leads result is the native
@@ -414,7 +421,7 @@ export async function runHealthSnapshots(dates) {
 }
 
 async function buildMeta(accountId, from, to, preset, key, fallback) {
-  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
   const campFields = ['account_id', 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
@@ -511,7 +518,7 @@ function metaFatigue(ads, daily, cfg) {
 }
 // Light fetch for the agency fatigue tab (ads + daily only, no CRM/campaign roll-up).
 async function buildFatigue(accountId, from, to, preset, key, cfg) {
-  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const [adRows, dayRows] = await Promise.all([
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'impressions', 'clicks', 'spend', 'actions_video_view'], from, to, preset, key).then(filt),
     windsorFetch('facebook', ['account_id', 'date', 'ad_name', 'impressions', 'clicks'], from, to, preset, key).then(filt).catch(() => []),
@@ -534,7 +541,7 @@ async function readFatigueConfig() {
 // and flags material moves (CPL, CTR, frequency, spend/leads) plus delivery
 // stalls and high-spend zero-lead ads. Pure Windsor data — no Meta App needed.
 async function buildAnomalies(accountId, from, to, preset, key) {
-  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
   const [curRows, prevRows, adRows] = await Promise.all([
@@ -648,7 +655,7 @@ function reachedInChannel(chanObj, stageName) {
 }
 async function buildOverview(from, to, preset, key) {
   const metaRev = {}, googleRev = {}, ghlRev = {}
-  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[norm(c.meta)] = id; if (c.google) googleRev[norm(c.google)] = id; if (c.ghl) ghlRev[norm(c.ghl)] = id }
+  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[acctKey(c.meta)] = id; if (c.google) googleRev[acctKey(c.google)] = id; if (c.ghl) ghlRev[norm(c.ghl)] = id }
   // last-8-day daily spend (yesterday + prior week) for zero-spend alerts
   const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
@@ -669,22 +676,22 @@ async function buildOverview(from, to, preset, key) {
   const clients = {}
   const ensure = (id) => (clients[id] = clients[id] || {})
   for (const r of fb) {
-    const id = metaRev[norm(r.account_id)]; if (!id) continue
+    const id = metaRev[acctKey(r.account_id)]; if (!id) continue
     const e = ensure(id); e.meta = e.meta || { spend: 0, impressions: 0, clicks: 0, leads: 0 }
     e.meta.spend += num(r.spend); e.meta.impressions += num(r.impressions); e.meta.clicks += num(r.clicks); e.meta.leads += fbLeads(r)
   }
   for (const r of gg) {
-    const id = googleRev[norm(r.account_id)]; if (!id) continue
+    const id = googleRev[acctKey(r.account_id)]; if (!id) continue
     const e = ensure(id); e.google = e.google || { cost: 0, impressions: 0, clicks: 0, conversions: 0 }
     e.google.cost += num(r.spend); e.google.impressions += num(r.impressions); e.google.clicks += num(r.clicks); e.google.conversions += num(r.conversions)
   }
   for (const r of pFb) {
-    const id = metaRev[norm(r.account_id)]; if (!id) continue
+    const id = metaRev[acctKey(r.account_id)]; if (!id) continue
     const e = ensure(id); e.metaPrev = e.metaPrev || { spend: 0, leads: 0 }
     e.metaPrev.spend += num(r.spend); e.metaPrev.leads += fbLeads(r)
   }
   for (const r of pGg) {
-    const id = googleRev[norm(r.account_id)]; if (!id) continue
+    const id = googleRev[acctKey(r.account_id)]; if (!id) continue
     const e = ensure(id); e.googlePrev = e.googlePrev || { cost: 0, conversions: 0 }
     e.googlePrev.cost += num(r.spend); e.googlePrev.conversions += num(r.conversions)
   }
@@ -698,7 +705,7 @@ async function buildOverview(from, to, preset, key) {
   const yStr = dstr(yest)
   const daySplit = (rows, revMap) => {
     const per = {}
-    for (const r of rows) { const id = revMap[norm(r.account_id)]; if (!id) continue; const d = String(r.date || '').slice(0, 10); const e = per[id] = per[id] || { yest: 0, base: 0 }; if (d === yStr) e.yest += num(r.spend); else e.base += num(r.spend) }
+    for (const r of rows) { const id = revMap[acctKey(r.account_id)]; if (!id) continue; const d = String(r.date || '').slice(0, 10); const e = per[id] = per[id] || { yest: 0, base: 0 }; if (d === yStr) e.yest += num(r.spend); else e.base += num(r.spend) }
     return per
   }
   const perMeta = daySplit(fbD, metaRev), perGoogle = daySplit(ggD, googleRev)
@@ -715,7 +722,7 @@ async function buildOverview(from, to, preset, key) {
 // booked calls over the last 3/7/14/21/28 days, each vs the equal prior window.
 async function buildTrends(key) {
   const metaId = {}, googleId = {}, ghlId = {}
-  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaId[norm(c.meta)] = id; if (c.google) googleId[norm(c.google)] = id; if (c.ghl) ghlId[norm(c.ghl)] = id }
+  for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaId[acctKey(c.meta)] = id; if (c.google) googleId[acctKey(c.google)] = id; if (c.ghl) ghlId[norm(c.ghl)] = id }
   const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
   const start = new Date(today); start.setUTCDate(start.getUTCDate() - 55)
@@ -730,8 +737,8 @@ async function buildTrends(key) {
   const mk = () => new Float64Array(56)
   const cl = {}
   const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false })
-  for (const r of fb) { const id = metaId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.metaSpend[di] += num(r.spend); e.metaLeads[di] += fbLeads(r) }
-  for (const r of gg) { const id = googleId[norm(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.gSpend[di] += num(r.spend); e.gConv[di] += num(r.conversions) }
+  for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.metaSpend[di] += num(r.spend); e.metaLeads[di] += fbLeads(r) }
+  for (const r of gg) { const id = googleId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.gSpend[di] += num(r.spend); e.gConv[di] += num(r.conversions) }
   // Windsor blended booked (fallback when the GHL app isn't connected / a client's fetch fails)
   const idxByAcct = {}; { const byAcct = {}; for (const p of pipes) { const id = ghlId[norm(p.account_id)]; if (!id) continue; (byAcct[id] = byAcct[id] || []).push(p) } for (const [id, arr] of Object.entries(byAcct)) idxByAcct[id] = stageIndex(arr) }
   for (const r of opps) {
@@ -808,7 +815,7 @@ async function buildCohortsView(c, weeks, key) {
   const wkIndex = new Map(weekStarts.map((w, i) => [w, i]))
   const start = weekStarts[0]; const end = dstr(today)
   const weekIndexOf = (localDate) => { const i = wkIndex.get(mondayOf(localDate)); return i == null ? null : i }
-  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
   const [fb, gg, crm] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
@@ -846,7 +853,7 @@ async function buildWeekly(c, weeks, key) {
   const start = weekStarts[0]
   const endSun = new Date(anchorMon); endSun.setUTCDate(endSun.getUTCDate() + 6) // last completed Sunday
   const end = dstr(endSun)
-  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
   const [fb, gg, opps, pipes] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
@@ -889,7 +896,7 @@ async function buildWeekly(c, weeks, key) {
 // populated, conversion-bearing rows. Returns {dim, locations:[{name,conversions,cost}]}.
 async function fetchGeo(accountId, from, to, preset, key) {
   const cands = ['city', 'geo_target_city', 'region_name', 'region', 'country']
-  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   for (const dim of cands) {
     try {
       const rows = filt(await windsorFetch('google_ads', ['account_id', dim, 'conversions', 'spend'], from, to, preset, key))
@@ -908,7 +915,7 @@ async function fetchGeo(accountId, from, to, preset, key) {
 }
 
 async function buildGoogle(accountId, from, to, preset, key) {
-  const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+  const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
   const [cg, kw, st, dy, prev, agDay, stDay, ca, geo] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
@@ -1023,7 +1030,7 @@ function campAgg(rows, source, convField) {
   return [...m.values()]
 }
 async function buildBlend(c, from, to, preset, key) {
-  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+  const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
   const pr = prevRange(from, to)
   const [fb, gg, oppsRaw, pipes, userRows, pFb, pGg, pOppsRaw] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
@@ -1296,7 +1303,7 @@ async function buildSocial(soc, from, to, key) {
 
   let ig = null
   if (igId) {
-    const igFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(igId))
+    const igFilt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,igId))
     const [dtv, dins, prof, media, gender, age, country] = await Promise.all([
       F('instagram', ['account_id', 'date', 'views', 'accounts_engaged', 'likes', 'comments', 'shares', 'saves', 'replies', 'profile_links_taps', 'total_interactions']).then(igFilt),
       F('instagram', ['account_id', 'date', 'reach', 'follower_count']).then(igFilt),
@@ -1327,7 +1334,7 @@ async function buildSocial(soc, from, to, key) {
 
   let fb = null
   if (fbo) {
-    const fbFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(fbo))
+    const fbFilt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,fbo))
     const [pageRows, postRows] = await Promise.all([
       F('facebook_organic', ['account_id', 'date', 'page_fans', 'page_follows', 'page_impressions', 'page_impressions_organic', 'page_impressions_paid', 'page_impressions_unique', 'page_post_engagements', 'page_views_total', 'page_video_views', 'page_daily_follows', 'page_daily_unfollows']).then(fbFilt),
       F('facebook_organic', ['account_id', 'post_id', 'post_created_time', 'post_message_oneline', 'permalink_url', 'full_picture', 'post_impressions', 'post_impressions_organic', 'post_engagements', 'post_reactions_total', 'post_comments_total', 'post_clicks', 'post_activity_by_action_type_share']).then(fbFilt),
@@ -1353,7 +1360,7 @@ async function socialMonth(soc, from, to, key) {
   const sum = (rows, k) => rows.reduce((a, r) => a + num(r[k]), 0)
   let ig = null, fb = null
   if (soc.ig) {
-    const igFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.ig))
+    const igFilt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.ig))
     const [dtv, dins, media] = await Promise.all([
       F('instagram', ['account_id', 'date', 'views', 'accounts_engaged', 'likes', 'comments', 'shares', 'saves', 'replies', 'profile_links_taps', 'total_interactions']).then(igFilt),
       F('instagram', ['account_id', 'date', 'reach', 'follower_count']).then(igFilt),
@@ -1363,7 +1370,7 @@ async function socialMonth(soc, from, to, key) {
     ig = { reach: sum(dins, 'reach'), views: sum(dtv, 'views'), engaged: sum(dtv, 'accounts_engaged'), likes, comments, shares, saves, replies: sum(dtv, 'replies'), linkTaps: sum(dtv, 'profile_links_taps'), interactions: sum(dtv, 'total_interactions'), engagement: likes + comments + shares + saves, netFollowers: sum(dins, 'follower_count'), posts: media.filter((m) => m.media_id).length }
   }
   if (soc.fbo) {
-    const fbFilt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.fbo))
+    const fbFilt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.fbo))
     // ORGANIC-only fields (page_impressions_organic / _organic_unique / video
     // views organic) so paid-boosted impressions & reach are never counted. The
     // organic-reach + organic-video pulls are isolated so, if a field is
@@ -1542,8 +1549,8 @@ export default async (req) => {
       const ids = Object.keys(SOCIAL).filter((id) => canView(id))
       const live = async (soc) => {
         const jobs = []
-        if (soc.ig) jobs.push(windsorFetch('instagram', ['account_id', 'followers_count', 'media_count'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.ig))).catch(() => []))
-        if (soc.fbo) jobs.push(windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(soc.fbo))).catch(() => []))
+        if (soc.ig) jobs.push(windsorFetch('instagram', ['account_id', 'followers_count', 'media_count'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.ig))).catch(() => []))
+        if (soc.fbo) jobs.push(windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.fbo))).catch(() => []))
         const res = await Promise.all(jobs)
         return res.some((rows) => rows && rows.some((r) => num(r.followers_count) || num(r.media_count) || num(r.page_fans)))
       }
@@ -1660,7 +1667,7 @@ export default async (req) => {
     const connector = url.searchParams.get('connector') || 'instagram_public'
     const account = url.searchParams.get('account')
     if (!account) return json({ error: 'account required' }, 400)
-    const filt = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(account))
+    const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,account))
     const safe = async (variants, pre) => { for (const ff of variants) { try { const rows = await windsorFetch(connector, ff, pre ? null : from, pre ? null : to, pre || null, key); return filt(rows) } catch { /* try simpler field set */ } } return [] }
     try {
       // Public IG connector field names differ from the owned `instagram` one:
@@ -1751,7 +1758,7 @@ export default async (req) => {
     try {
       const [md, usersRows] = await Promise.all([
         monthlyDeals(cc.ghl, from, to),
-        windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(cc.ghl))).catch(() => []),
+        windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,cc.ghl))).catch(() => []),
       ])
       const uName = {}; for (const u of usersRows) if (u.user_id) uName[u.user_id] = u.user_name
       const nm = (id) => uName[id] || (id === 'unassigned' ? 'Unassigned' : 'User ' + String(id).slice(-4))
@@ -1793,7 +1800,7 @@ export default async (req) => {
         const lastDay = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10) }
         const perMonth = await Promise.all(monthList.map((k) =>
           windsorFetch('facebook', adsetFields, `${k}-01`, lastDay(k), null, key)
-            .then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta)))
+            .then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,cc.meta)))
             .catch(() => [])
         ))
         monthList.forEach((k, i) => {
@@ -2035,7 +2042,7 @@ export default async (req) => {
     const pipeline = url.searchParams.get('pipeline') || null
     const channel = url.searchParams.get('channel') || 'all'
     try {
-      const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+      const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
       const [perf, fb, gg] = await Promise.all([
         buildUserPerformance(cc.ghl, from, to, { pipeline, channel }),
         cc.meta ? windsorFetch('facebook', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
@@ -2168,7 +2175,7 @@ export default async (req) => {
     const t0 = new Date().toISOString().slice(0, 10)
     const ids = META_CONV_CANDIDATES.map(([id]) => id)
     try {
-      const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...ids], f90, t0, null, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+      const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...ids], f90, t0, null, key)).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
       let spend = 0; const sums = {}
       for (const r of rows) { spend += num(r.spend); for (const id of ids) sums[id] = (sums[id] || 0) + num(r[id]) }
       const actions = ids.map((id) => ({ id, label: META_CONV_LABEL[id] || id, count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
@@ -2186,7 +2193,7 @@ export default async (req) => {
     if (!cc || !cc.meta) return json({ scope: 'creatives', client, meta: false, creatives: [] })
     try {
       const fallback = await readMetaPrimary(client)
-      const filt2 = (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+      const filt2 = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
       const [meta, perf, creRows] = await Promise.all([
         buildMeta(cc.meta, from, to, preset, key, fallback),
         (cc.ghl && (await isConnected().catch(() => false))) ? buildCreativePerf(cc.ghl, from, to).catch(() => ({ byContent: {} })) : Promise.resolve({ byContent: {} }),
@@ -2282,7 +2289,7 @@ export default async (req) => {
       // Best-effort join ad_id → name/thumbnail via Windsor (field may be absent).
       let nameById = {}
       try {
-        const rows = (await windsorFetch('facebook', ['account_id', 'ad_id', 'ad_name', 'thumbnail_url'], from, to, preset, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+        const rows = (await windsorFetch('facebook', ['account_id', 'ad_id', 'ad_name', 'thumbnail_url'], from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
         for (const r of rows) if (r.ad_id) nameById[String(r.ad_id)] = { name: r.ad_name, thumb: r.thumbnail_url }
       } catch { /* names optional */ }
       const norml = (l) => /high/i.test(l) ? 'High' : /med/i.test(l) ? 'Medium' : /low/i.test(l) ? 'Low' : l
@@ -2410,7 +2417,7 @@ export default async (req) => {
     const out = {}
     for (const f of cand) {
       try {
-        const rows = (await windsorFetch('facebook', ['account_id', 'ad_name', f], from, to, preset, key)).filter((r) => !r.account_id || norm(r.account_id) === norm(cc.meta))
+        const rows = (await windsorFetch('facebook', ['account_id', 'ad_name', f], from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
         const populated = rows.filter((r) => r[f] !== null && r[f] !== undefined && r[f] !== '').length
         out[f] = { recognised: true, populated, sample: (rows.find((r) => r[f]) || {})[f] || null }
       } catch (e) { out[f] = { recognised: false, error: String(e.message || e).slice(0, 80) } }
@@ -2478,7 +2485,7 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'adnames') {
     const cc = CLIENTS[client]
     if (!cc) return json({ error: `unknown client ${client}` }, 404)
-    const filt = (id) => (rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(id))
+    const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
     try {
       const [fb, gg] = await Promise.all([
         cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
@@ -2507,7 +2514,7 @@ export default async (req) => {
       // Pull CRM + user-name lookup + won-in-period (realised revenue) in parallel.
       const [crm, usersRows, wonClosed] = await Promise.all([
         buildCrm(c.ghl, from, to),
-        windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || norm(r.account_id) === norm(c.ghl))).catch(() => []),
+        windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,c.ghl))).catch(() => []),
         (from && to) ? wonInPeriod(c.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
       crm.wonClosed = wonClosed
@@ -2560,7 +2567,7 @@ export default async (req) => {
     const cand = ['campaign', 'ad_group_name', 'keyword', 'criteria', 'keyword_text', 'search_keyword', 'search_term', 'search_query', 'query', 'search_keyword_match_type', 'keyword_match_type', 'match_type', 'quality_score', 'historical_quality_score', 'spend', 'clicks', 'conversions']
     try {
       const rows = await windsorFetch('google_ads', ['account_id', ...cand], from, to, preset, key)
-      const mine = rows.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+      const mine = rows.filter((r) => !r.account_id || acctEq(r.account_id,accountId))
       const recognised = mine[0] ? Object.keys(mine[0]) : []
       const populated = {}
       for (const f of cand) populated[f] = mine.filter((r) => r[f] !== null && r[f] !== undefined && r[f] !== '').length
@@ -2580,7 +2587,7 @@ export default async (req) => {
     }
     const fields = [...spec.dims, ...spec.metrics]
     const rowsAll = await windsorFetch(spec.connector, fields, from, to, preset, key)
-    const rows = rowsAll.filter((r) => !r.account_id || norm(r.account_id) === norm(accountId))
+    const rows = rowsAll.filter((r) => !r.account_id || acctEq(r.account_id,accountId))
     if (debug) return json({ channel, accountId, fieldsRequested: fields, rowCount: rows.length, sample: rows.slice(0, 3), sampleKeys: rows[0] ? Object.keys(rows[0]) : [] })
     return json({ client, channel, period: { from, to, preset }, ghl: rollupGhl(rows) }, 200, true)
   } catch (e) {

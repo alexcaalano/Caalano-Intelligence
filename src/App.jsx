@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.178.0'
+const APP_VERSION = '3.179.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2574,7 +2574,22 @@ function mergeCalKeyEvents(list) {
 }
 // Normalise -> merge same-stage calendars -> order by funnel position.
 function resolveKeyEvents(keyEvents, stagePos) {
-  return orderKeyEvents(mergeCalKeyEvents(normKeyEvents(keyEvents)), stagePos)
+  const merged = orderKeyEvents(mergeCalKeyEvents(normKeyEvents(keyEvents)), stagePos)
+  // Drop stale / renamed key events: a configured pipeline-stage event whose name
+  // no longer matches any CURRENT pipeline stage (so it can't resolve a position
+  // and always reads 0). These pile up at the end of every funnel + as empty green
+  // column groups. Won events count on status (not a stage) and calendars carry
+  // their own booking data, so both are always kept. Only filter once we actually
+  // have the stage registry loaded, so nothing is hidden while it's still loading.
+  if (!stagePos || !stagePos.size) return merged
+  const posAt = (pipeline, name) => (name && pipeline && stagePos.has(pipeline + '::' + name) ? stagePos.get(pipeline + '::' + name) : (name ? stagePos.get(name) : undefined))
+  return merged.filter((e) => {
+    if (e.kind === 'calendar') return true
+    if (WON_RE.test(e.label || e.ref || '')) return true
+    let p = posAt(e.pipeline, e.ref)
+    if (p == null) p = posAt(e.pipeline, stripPipeTag(e.ref))
+    return p != null
+  })
 }
 // Per-calendar booked / shown for a channel ('all' | 'meta' | 'google'), keyed
 // by calendar id, from the attribution feed's appointments.byCalendar.

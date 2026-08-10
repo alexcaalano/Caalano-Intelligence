@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.179.0 — 2026-08-10 · `PENDING` — Hide stale / renamed key events everywhere
+- **Configured key events that no longer match a current pipeline stage are now hidden** across every
+  view — the creative key-event funnels, the green Caalano360 column groups (campaigns / ad sets /
+  formats / creatives), and the per-pipeline scorecards. Previously a renamed or removed stage stayed
+  in a client's key-event config and showed up as an empty **0 / 0.0%** row or column group at the end
+  of the funnel (e.g. a duplicate "Booked Discovery Call" alongside its calendar, or an old
+  "Disc. Call - Qualified" / "Arrived / Converted" stage).
+- The fix lives in `resolveKeyEvents`, so it applies uniformly. Won events (they count on deal status,
+  not a stage) and calendar events (their own booking data) are always kept; only pipeline-stage
+  entries that don't resolve to a real, current stage are dropped, and only once the pipeline registry
+  has loaded (nothing is hidden while data is still loading). Clean up the entries permanently any time
+  in Settings → Key events; until then they just won't clutter the reports.
+
 ## v3.178.0 — 2026-08-10 · `PENDING` — Bigger multi-line key-event scorecards on Meta & Google too
 - The Meta and Google per-pipeline Caalano360 tiles now use the same **bigger multi-line scorecard** as
   the Caalano360 tab: the count (large, +vs-prev arrow) with **% of leads**, **cost per event**, and

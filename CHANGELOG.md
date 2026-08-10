@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.180.0 — 2026-08-10 · `PENDING` — Account discovery shows connector status + errors
+- **The Add-client "Refresh accounts" flow now shows whether Windsor is actually live.** The discover
+  endpoint was already fully uncached (`no-store`) — every refresh re-queries Windsor directly — but a
+  failing Windsor connector (e.g. expired auth) was silently swallowed and shown as "No accounts found".
+  Now a connector error is surfaced: the Meta / Google column says *"⚠ Windsor connector error — may
+  need re-authorising in Windsor"* with the reason, and a status line under the columns shows *● Live
+  from Windsor · refreshed HH:MM · N Meta · N Google · N CRM accounts visible* (or flags the erroring
+  connector). This makes it clear whether a missing account is a Windsor auth problem vs. still syncing.
+- Reminder (unchanged): a just-connected account only appears once Windsor has ingested some data for
+  it; until then, paste its account ID into the box under the column to link it immediately.
+
 ## v3.179.0 — 2026-08-10 · `PENDING` — Hide stale / renamed key events everywhere
 - **Configured key events that no longer match a current pipeline stage are now hidden** across every
   view — the creative key-event funnels, the green Caalano360 column groups (campaigns / ad sets /

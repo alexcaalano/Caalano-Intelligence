@@ -2150,17 +2150,20 @@ export default async (req) => {
     const usedGhl = new Set(), usedMeta = new Set(), usedGoogle = new Set()
     for (const c of Object.values(CLIENTS)) { if (c.ghl) usedGhl.add(norm(c.ghl)); if (c.meta) usedMeta.add(norm(c.meta)); if (c.google) usedGoogle.add(norm(c.google)) }
     const nameById = (rows) => { const m = new Map(); for (const r of (rows || [])) { const id = r.account_id; if (id == null) continue; const k = String(id); if (!m.has(k) || (!m.get(k) && r.account_name)) m.set(k, r.account_name || '') } return m }
+    // Capture (not swallow) Windsor connector errors so the UI can tell a broken /
+    // unauthorised connector apart from a connector that simply has no accounts yet.
+    let metaErr = null, googleErr = null
     const [locs, fbRows, ggRows] = await Promise.all([
       (isConnected().then((ok) => (ok ? listLocations() : [])).catch((e) => ({ error: String(e.message || e).slice(0, 160) }))),
-      windsorFetch('facebook', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch(() => []),
-      windsorFetch('google_ads', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch(() => []),
+      windsorFetch('facebook', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch((e) => { metaErr = String(e.message || e).slice(0, 200); return [] }),
+      windsorFetch('google_ads', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch((e) => { googleErr = String(e.message || e).slice(0, 200); return [] }),
     ])
     const ghlErr = locs && locs.error ? locs.error : null
     const ghl = Array.isArray(locs) ? locs.map((l) => ({ id: l.id, name: l.name, mapped: usedGhl.has(norm(l.id)) })) : []
     const metaMap = nameById(fbRows), googleMap = nameById(ggRows)
     const meta = [...metaMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedMeta.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const google = [...googleMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGoogle.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    return json({ scope: 'discover', ghl, meta, google, ghlErr, connected: await isConnected().catch(() => false) }, 200)
+    return json({ scope: 'discover', ghl, meta, google, ghlErr, metaErr, googleErr, metaCount: meta.length, googleCount: google.length, fetchedAt: new Date().toISOString(), connected: await isConnected().catch(() => false) }, 200)
   }
 
   // Meta conversion actions that actually fired for a client's ad account, for

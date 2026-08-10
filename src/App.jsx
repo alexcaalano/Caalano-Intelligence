@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.179.0'
+const APP_VERSION = '3.180.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6235,8 +6235,14 @@ function AddClientModal({ existing, editClient, onClose }) {
                 </div>
                 <div className="addcl-cols">
                   <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={pickGhl} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
-                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty="No Meta accounts found — try Refresh accounts." />
-                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty="No Google accounts found — try Refresh accounts." />
+                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty={d.metaErr ? `⚠ Windsor Meta connector error — it may need re-authorising in Windsor: ${d.metaErr}` : 'No Meta accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
+                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty={d.googleErr ? `⚠ Windsor Google connector error — it may need re-authorising in Windsor: ${d.googleErr}` : 'No Google accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
+                </div>
+                <div className="addcl-status cap">
+                  {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems (GHL) not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
+                  {d.fetchedAt ? <> · refreshed {new Date(d.fetchedAt).toLocaleTimeString()}</> : null}
+                  {' · '}{fmtNumber((d.meta || []).length)} Meta · {fmtNumber((d.google || []).length)} Google · {fmtNumber((d.ghl || []).length)} CRM accounts visible
+                  {d.metaErr || d.googleErr ? <span className="addcl-stat-bad"> · a connector is erroring (see above)</span> : null}
                 </div>
                 <div className="addcl-foot">
                   {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account (any one is fine).'}</span>}

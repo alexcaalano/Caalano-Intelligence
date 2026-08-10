@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.178.0 — 2026-08-10 · `PENDING` — Bigger multi-line key-event scorecards on Meta & Google too
+- The Meta and Google per-pipeline Caalano360 tiles now use the same **bigger multi-line scorecard** as
+  the Caalano360 tab: the count (large, +vs-prev arrow) with **% of leads**, **cost per event**, and
+  (calendar events) **show rate with shown / occurred** each on their own line with a vs-prev arrow —
+  instead of the single cramped stat line. The per-calendar hover breakdown and ROAS (on Revenue) are
+  preserved. Cost per event here still uses the real per-pipeline Meta / Google spend (not blended).
+- The Meta / Google platform-metric tiles (Cost, Impressions, CPM, …) stay as the compact cards.
+
 ## v3.177.0 — 2026-08-10 · `PENDING` — Caalano360: Meta-style key-event scorecards (all channels)
 - **The Pipeline performance card now uses the Meta view's per-pipeline scorecard layout, but counting
   ALL channels** (not just Meta-attributed). Each pipeline shows a Meta/Google/Other contribution bar

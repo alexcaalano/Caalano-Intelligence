@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.176.0'
+const APP_VERSION = '3.177.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3349,61 +3349,84 @@ function ChanBar({ meta = 0, google = 0, other = 0 }) {
   return <span className="chanbar">{seg(meta, 'cb-meta', 'Meta')}{seg(google, 'cb-google', 'Google')}{seg(other, 'cb-other', 'Other / direct')}</span>
 }
 
-// Per-pipeline performance for Caalano360 — top-line outcomes + how much each
-// channel (Meta / Google / other) drives each pipeline, and key-event reach split
-// by channel. Built entirely from the ccdrill payload (pipeContribution +
-// per-channel stage counts), so no extra fetch.
-function PipelinePerformance({ cc, clientId, currency, money }) {
+// Bigger multi-line key-event scorecard for Caalano360 — mirrors the Meta view's
+// per-pipeline tiles but reads ALL-channel CRM: the count (with vs-prev arrow),
+// then stacked sub-lines — % of leads, blended cost per event, and (calendar
+// events) show rate with shown/occurred — each with its own vs-prev delta.
+function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctLeads, cost, prevCost, show }) {
+  const money = (v) => fmtCurrency(v, currency)
+  return (
+    <div className="kesc">
+      <div className="kesc-l">{label}</div>
+      <div className="kesc-v">{isMoney ? money(value) : fmtNumber(value)}{prev != null ? <MiniDelta cur={value} prev={prev} /> : null}</div>
+      {pctLeads != null ? <div className="kesc-line"><span>{Math.round(pctLeads)}% of leads</span>{prevPctLeads != null ? <MiniDelta cur={pctLeads} prev={prevPctLeads} /> : null}</div> : null}
+      {cost != null && isFinite(cost) ? <div className="kesc-line"><span>{money(Math.round(cost))}/event</span>{prevCost != null && isFinite(prevCost) ? <MiniDelta cur={cost} prev={prevCost} goodWhenDown /> : null}</div> : null}
+      {show ? <div className="kesc-line"><span>{show.rate == null ? '—' : `${Math.round(show.rate)}% show`} · {fmtNumber(show.shown)}/{fmtNumber(show.occurred)} occurred</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
+    </div>
+  )
+}
+
+// Per-pipeline performance for Caalano360 — the same per-pipeline key-event
+// scorecards as the Meta view, but counting ALL channels (not just Meta-attributed)
+// from the ccdrill payload, with a Meta/Google/Other contribution bar per pipeline
+// and vs-prev deltas from the previous-period ccdrill. `spend` = { cur, prev } total
+// ad spend for the active channel scope; it's allocated across pipelines by each
+// pipeline's share of leads to give a blended cost-per-event.
+function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   const pipes = (cc && cc.pipeContribution) || []
   const funnels = (cc && cc.pipelinesFunnel) || []
-  const [open, setOpen] = useState(null)
-  useEffect(() => { setOpen(pipes.length === 1 ? pipes[0].id : null) }, [clientId])
   if (!pipes.length) return null
+  const money = (v) => fmtCurrency(v, currency)
   const stagePos = stagePosMap(funnels)
   const keList = loadKeyEvents(clientId)
-  const calMap = new Map((cc.bookingByCalendar || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, cancelled: 0 }]))
-  const asChan = (chan) => reachedByStage(funnels.map((p) => ({ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: chan === 'meta' ? (s.meta || 0) : chan === 'google' ? (s.google || 0) : (s.other || 0) })) })))
-  const rmapAll = reachedByStage(funnels), rmapMeta = asChan('meta'), rmapGoogle = asChan('google')
-  const evRowsFor = (p) => keyEventRows(keyEventsForPipe(keList, p.id), rmapAll, calMap, stagePos, p.won)
-    .filter((r) => r.kind !== 'lead')
-    .map((r) => {
-      if (r.kind === 'won') return { label: r.label, kind: r.kind, total: p.won, meta: p.chan.meta.won, google: p.chan.google.won, other: p.chan.other.won }
-      const meta = stageReachOf(rmapMeta, r.pipeline, r.label), google = stageReachOf(rmapGoogle, r.pipeline, r.label), total = stageReachOf(rmapAll, r.pipeline, r.label)
-      return { label: r.label, kind: r.kind, total, meta, google, other: Math.max(0, total - meta - google) }
-    }).filter((r) => r.total > 0)
+  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, cancelled: 0 }]))
+  const rmap = reachedByStage(funnels), calMap = mkCalMap(cc)
+  const pRmap = reachedByStage((pcc && pcc.pipelinesFunnel) || []), pCalMap = mkCalMap(pcc)
+  const pPipes = {}; for (const p of ((pcc && pcc.pipeContribution) || [])) pPipes[p.id] = p
+  // Blended cost per event: allocate the active scope's ad spend across pipelines
+  // by each pipeline's share of leads (paid spend ÷ all leads = blended CAC).
+  const totalLeads = pipes.reduce((s, p) => s + (p.leads || 0), 0)
+  const totalLeadsPrev = Object.values(pPipes).reduce((s, p) => s + (p.leads || 0), 0)
+  const spendCur = (spend && spend.cur) || 0, spendPrev = (spend && spend.prev) || 0
   return (
     <div className="card">
-      <div className="exec-panel-h">Pipeline performance <span className="sub">· outcomes + how much Meta vs Google drives each pipeline{keList.length ? ' · click a pipeline for its key events by channel' : ''}</span></div>
-      <div className="pp-list">
-        {pipes.map((p) => {
-          const isOpen = open === p.id
-          const rows = isOpen ? evRowsFor(p) : []
-          return (
-            <div className={`pp-row${isOpen ? ' is-open' : ''}`} key={p.id}>
-              <button className="pp-head" onClick={() => setOpen(isOpen ? null : p.id)}>
-                <span className="pp-name"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {p.name}</span>
-                <span className="pp-kpis">
-                  <span className="pp-kpi"><b>{fmtNumber(p.leads)}</b> leads</span>
-                  <span className="pp-kpi"><b>{fmtNumber(p.won)}</b> won</span>
-                  <span className="pp-kpi"><b>{money(p.revenue)}</b> rev</span>
-                  <span className="pp-kpi"><b>{fmtNumber(p.open)}</b> open{p.openValue ? ` · ${money(p.openValue)}` : ''}</span>
-                  <span className="pp-kpi pp-lost"><b>{fmtNumber(p.lost)}</b> lost</span>
-                </span>
-                <span className="pp-contrib">
-                  <span className="pp-cb"><span className="pp-cb-lab">Leads</span><ChanBar meta={p.chan.meta.leads} google={p.chan.google.leads} other={p.chan.other.leads} /></span>
-                  <span className="pp-cb"><span className="pp-cb-lab">Won</span><ChanBar meta={p.chan.meta.won} google={p.chan.google.won} other={p.chan.other.won} /></span>
-                </span>
-              </button>
-              {isOpen && (rows.length ? <div className="pp-events">
-                <table className="mini-tbl users-tbl pp-ev-tbl"><thead><tr><th className="lft">Key event reached</th><th>Total</th><th className="pp-m">Meta</th><th className="pp-g">Google</th><th className="pp-o">Other</th></tr></thead>
-                  <tbody>{rows.map((r, i) => <tr key={i}><td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}</td><td><b>{fmtNumber(r.total)}</b></td><td className="pp-m">{fmtNumber(r.meta)}{r.total ? <span className="pp-pct">{Math.round((r.meta / r.total) * 100)}%</span> : null}</td><td className="pp-g">{fmtNumber(r.google)}{r.total ? <span className="pp-pct">{Math.round((r.google / r.total) * 100)}%</span> : null}</td><td className="pp-o">{fmtNumber(r.other)}</td></tr>)}</tbody></table>
-                <div className="cap pp-ev-note">Channel = first-touch attribution of the opportunities that reached each key stage. Won splits by the deal's channel; calendar-only events with no linked stage aren’t shown here.</div>
-              </div> : <div className="cap" style={{ padding: '4px 12px 12px' }}>No key events configured for this pipeline — set them in Settings → Key events.</div>)}
+      <div className="exec-panel-h">Pipeline performance <span className="sub">· overall key events per pipeline (all channels) · count · vs prev · % of leads · blended cost/event · show rate</span></div>
+      {pipes.map((p) => {
+        const pp = pPipes[p.id]
+        const pipeSpend = totalLeads ? spendCur * ((p.leads || 0) / totalLeads) : 0
+        const pipeSpendPrev = (pp && totalLeadsPrev) ? spendPrev * ((pp.leads || 0) / totalLeadsPrev) : 0
+        const rows = keyEventRows(keyEventsForPipe(keList, p.id), rmap, calMap, stagePos, p.won).filter((r) => r.kind !== 'lead' && r.count > 0)
+        const pByLabel = {}; for (const r of keyEventRows(keyEventsForPipe(keList, p.id), pRmap, pCalMap, stagePos, pp ? pp.won : 0)) pByLabel[r.label] = r
+        const leadsP = p.leads || 0, prevLeadsP = pp ? (pp.leads || 0) : null
+        const costOf = (spd, n) => (spd && n) ? spd / n : null
+        return (
+          <div className="pp-block" key={p.id}>
+            <div className="pp-block-h">
+              <span className="pp-block-t"><span className="c360-dot" /> {p.name}</span>
+              <span className="pp-block-meta">{fmtNumber(p.leads)} leads · {fmtNumber(p.won)} won · {money(p.revenue)} · {fmtNumber(p.open)} open{p.lost ? ` · ${fmtNumber(p.lost)} lost` : ''}</span>
+              <span className="pp-contrib">
+                <span className="pp-cb"><span className="pp-cb-lab">Leads</span><ChanBar meta={p.chan.meta.leads} google={p.chan.google.leads} other={p.chan.other.leads} /></span>
+                <span className="pp-cb"><span className="pp-cb-lab">Won</span><ChanBar meta={p.chan.meta.won} google={p.chan.google.won} other={p.chan.other.won} /></span>
+              </span>
             </div>
-          )
-        })}
-      </div>
-      <div className="pp-legend"><span><i className="cb-dot cb-meta" /> Meta</span><span><i className="cb-dot cb-google" /> Google</span><span><i className="cb-dot cb-other" /> Other / direct</span></div>
+            <div className="scorecard sc-fit kesc-row">
+              <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} cost={costOf(pipeSpend, leadsP)} prevCost={costOf(pipeSpendPrev, prevLeadsP)} />
+              {rows.map((r, i) => {
+                const pr = pByLabel[r.label]; const prevCount = pr ? pr.count : 0
+                const show = r.kind === 'calendar' && r.occurred ? { rate: (r.shown / r.occurred) * 100, shown: r.shown, occurred: r.occurred, prevRate: (pr && pr.occurred) ? (pr.shown / pr.occurred) * 100 : null } : null
+                return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={r.count} prev={pp ? prevCount : null} currency={currency}
+                  pctLeads={leadsP ? (r.count / leadsP) * 100 : null} prevPctLeads={prevLeadsP ? (prevCount / prevLeadsP) * 100 : null}
+                  cost={costOf(pipeSpend, r.count)} prevCost={costOf(pipeSpendPrev, prevCount)} show={show} />
+              })}
+              <KeScorecard label="Won" value={p.won} prev={pp ? pp.won : null} currency={currency}
+                pctLeads={leadsP ? (p.won / leadsP) * 100 : null} prevPctLeads={prevLeadsP ? ((pp.won || 0) / prevLeadsP) * 100 : null}
+                cost={costOf(pipeSpend, p.won)} prevCost={costOf(pipeSpendPrev, pp ? pp.won : 0)} />
+              <KeScorecard label="Revenue" value={p.revenue} prev={pp ? pp.revenue : null} isMoney currency={currency} />
+            </div>
+          </div>
+        )
+      })}
+      <div className="pp-legend"><span><i className="cb-dot cb-meta" /> Meta</span><span><i className="cb-dot cb-google" /> Google</span><span><i className="cb-dot cb-other" /> Other / direct</span><span className="pp-legend-note">Cost/event = ad spend allocated across pipelines by lead share (blended). Counts are all channels.</span></div>
     </div>
   )
 }
@@ -3417,6 +3440,11 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const crmAgg = useCrmAgg(clientId, range, nonce, chan)
   const ccDrill = useCcDrill(clientId, range, nonce, chan)
   const cc = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
+  // Previous-period CRM drill, so the per-pipeline key-event scorecards can show
+  // vs-prev deltas (same shape, one period back).
+  const prevRange = prevRangeOf(range)
+  const prevCcDrill = useCcDrill(clientId, prevRange || range, nonce, chan)
+  const pcc = (prevRange && prevCcDrill.status === 'ok' && prevCcDrill.data && prevCcDrill.data.oppsBySource) ? prevCcDrill.data : null
   const [drill, setDrill] = useState(null)
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
@@ -3542,9 +3570,14 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         </div>
       })()}
 
-      {/* Pipeline performance — per-pipeline outcomes + Meta/Google contribution +
-          key events by channel. Staff-only (needs the ccdrill payload). */}
-      {cc ? <PipelinePerformance cc={cc} clientId={clientId} currency={currency} money={money} /> : null}
+      {/* Pipeline performance — per-pipeline overall key-event scorecards (all
+          channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
+      {cc ? (() => {
+        const chn = h.channels || {}
+        const curSpend = chan === 'all' ? (k.adSpend || 0) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : 0
+        const prevSpend = chan === 'all' ? (pv.adSpend || 0) : null // channel-split prev spend isn't available
+        return <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />
+      })() : null}
 
       {/* Revenue bottleneck funnel — client key events + calendar show-rate.
           Passes the selected channel's spend so a paid view shows cost/stage. */}

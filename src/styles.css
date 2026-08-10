@@ -1982,8 +1982,24 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .pp-ev-tbl td.pp-o { color: var(--muted); }
 .pp-pct { font-size: 10px; opacity: .7; margin-left: 4px; }
 .pp-ev-note { margin-top: 6px; }
-.pp-legend { display: flex; gap: 14px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+.pp-legend { display: flex; gap: 14px; margin-top: 10px; font-size: 11px; color: var(--muted); flex-wrap: wrap; align-items: center; }
+.pp-legend-note { opacity: .8; }
 @media (max-width: 720px) { .pp-head { grid-template-columns: 1fr; gap: 6px; } }
+/* Per-pipeline block with all-channel key-event scorecards */
+.pp-block { margin-top: 14px; }
+.pp-block:first-of-type { margin-top: 6px; }
+.pp-block-h { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.pp-block-t { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; letter-spacing: .03em; }
+.pp-block-t .c360-dot { width: 9px; height: 9px; border-radius: 3px; background: #12b886; display: inline-block; }
+.pp-block-meta { font-size: 11.5px; color: var(--muted); }
+.pp-block-h .pp-contrib { margin-left: auto; flex-direction: row; gap: 12px; }
+.pp-block-h .pp-cb { min-width: 120px; }
+.kesc-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.kesc { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 3px; }
+.kesc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.kesc-v { font-size: 23px; font-weight: 780; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 6px; }
+.kesc-line { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.kesc-line .mini-delta { font-size: 9.5px; }
 
 /* ============ Monthly Report (slide deck) ============ */
 .mr-page { display: flex; flex-direction: column; gap: 16px; }

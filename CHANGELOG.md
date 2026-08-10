@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.177.0 — 2026-08-10 · `PENDING` — Caalano360: Meta-style key-event scorecards (all channels)
+- **The Pipeline performance card now uses the Meta view's per-pipeline scorecard layout, but counting
+  ALL channels** (not just Meta-attributed). Each pipeline shows a Meta/Google/Other contribution bar
+  plus a row of key-event scorecards: Leads → each configured key event → Won → Revenue.
+- **Bigger, multi-line scorecards** as requested — each tile stacks the detail on its own line:
+  - the **count**, large, with a vs-previous-period arrow;
+  - **% of leads** (with vs-prev arrow);
+  - **blended cost per event** (with vs-prev arrow, cheaper = green);
+  - for calendar events, **show rate** with *shown / occurred* (with vs-prev arrow).
+- Comparisons come from a new **previous-period CRM pull**, so every line has an up/down vs the prior
+  period. Cost per event is the active channel's ad spend **allocated across pipelines by lead share**
+  (a blended CAC, since CRM outcomes aren't tied to one channel's spend) — noted under the card.
+- The section follows the command-centre channel toggle, so All / Paid / Meta / Google re-scope every
+  scorecard.
+
 ## v3.176.0 — 2026-08-10 · `PENDING` — Fix "linked but empty" Meta accounts + styled key-event hover
 - **Root-cause fix for a Meta account that's linked but shows no data.** The account-id match was
   exact-after-normalising, so a stored id like `1234` never matched Windsor's `act_1234` (or vice

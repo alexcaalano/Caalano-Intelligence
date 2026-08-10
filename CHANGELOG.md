@@ -17,6 +17,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.168.0 — 2026-08-09 · `PENDING` — Viewer access lock-down
+- **Client (viewer) accounts are now confined to exactly what they're assigned — enforced
+  server-side, not just hidden in the UI.** Previously a viewer was limited to their allocated
+  *clients* (`canSeeClient`) but, for a client they could see, could reach any data scope or agency
+  tool by crafting a direct API call — including tabs they weren't given, the creative cockpit,
+  report generation and diagnostics. `windsor.mjs` now maps every scope/channel to the tab(s) that
+  legitimately fetch it and **allows a viewer only the requests their assigned tabs use** (attribution
+  loads on every client view; overall→blend/health/users/ccdrill; meta→meta+forms; google→google;
+  cohorts/forms/location/appts/timing→their own scope; contact-notes drill allowed for any). Every
+  other request (agency scopes, unassigned tabs) returns 403.
+- **Scoped settings for viewers.** The shared settings blob GET returned every client's config
+  (key events, KPI targets, campaign maps, and which clients are Super-Admin-restricted) to any
+  signed-in user. A viewer now receives only their **own** clients' client-keyed sections and none
+  of the agency/sensitive sections (restricted map, AI context, insights, optlog, competitors).
+- Together with the earlier per-caller `private` caching and the Super-Admin-only-clients feature,
+  a client can now only ever see the clients, views and configuration explicitly allocated to them.
+
 ## v3.167.0 — 2026-08-09 · `PENDING`
 - **Add/Edit client: link an account by ID even before discovery lists it.** The Meta / Google /
   Caalano Systems pickers only showed accounts Windsor had synced data for (any account with

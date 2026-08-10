@@ -16,8 +16,28 @@ const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
 export default async (req) => {
   try {
     if (req.method === 'GET') {
-      const data = await store().get(KEY, { type: 'json' }).catch(() => null)
-      return json({ ok: true, data: data || {} })
+      const data = (await store().get(KEY, { type: 'json' }).catch(() => null)) || {}
+      // A viewer (client) only gets the settings for their OWN allocated clients,
+      // and never the agency-only / sensitive sections (which clients are hidden,
+      // AI context, insights, optlog, competitors, etc.) — so the shared blob can't
+      // leak other clients' key events, KPI targets or configuration.
+      const secret = process.env.AUTH_SECRET
+      if (secret) {
+        const me = await currentUser(req, secret).catch(() => null)
+        if (me && me.role === 'viewer') {
+          const allow = new Set(me.clients || [])
+          const pick = (obj) => { const o = {}; for (const k in (obj || {})) { if (allow.has(String(k).split(':')[0])) o[k] = obj[k] } return o }
+          const scoped = {}
+          // Client-keyed sections the viewer UI reads, filtered to their clients.
+          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv']) scoped[s] = pick(data[s])
+          // campmap is campaign-name-keyed (needed for spend attribution) and fatigue
+          // is global thresholds — neither is per-client-sensitive; pass as-is.
+          scoped.campmap = data.campmap || {}
+          scoped.fatigue = data.fatigue || {}
+          return json({ ok: true, data: scoped })
+        }
+      }
+      return json({ ok: true, data })
     }
     if (req.method === 'POST') {
       // When multi-user login is enabled, only admins may change shared settings,

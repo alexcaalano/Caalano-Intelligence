@@ -1351,9 +1351,44 @@ async function socialMonth(soc, from, to, key) {
   return { ig, fb, blend }
 }
 
+// Viewer (client) tab enforcement. A viewer may only reach the windsor requests
+// that the tabs allocated to them actually fetch — every other scope/channel
+// (agency tools, report generation, diagnostics, and tabs they weren't given) is
+// denied even for a client they can otherwise see. Keyed `scope:<x>` (the scope
+// endpoints) or `channel:<x>` (the bare channel fetches: blend/meta/google). The
+// value is the set of tabs that legitimately issue it — a viewer passes if they
+// hold at least one. Anything not listed here is admin/agency-only for viewers.
+const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'optlog']
+const VIEWER_REQ_TABS = {
+  'channel:blend': ['overall'],
+  'channel:meta': ['meta'],
+  'channel:google': ['google'],
+  'scope:health': ['overall'],
+  'scope:ccdrill': ['overall'],
+  'scope:users': ['overall', 'users'],
+  'scope:forms': ['meta', 'forms', 'location'],
+  'scope:cohorts': ['cohorts'],
+  'scope:appts': ['appts'],
+  'scope:speed': ['timing'],
+  'scope:speedscan': ['timing'],
+  // Contact-notes drill — reachable from several tabs' drill-downs; allow for any.
+  'scope:oppnotes': VIEWER_TABS_ALL,
+}
+function viewerAllowed(me, scope, channel) {
+  // Attribution loads at the workspace shell on every tab, so it's always allowed
+  // for a client the viewer can see (the client check runs separately).
+  if (channel === 'attribution') return true
+  const kkey = scope ? 'scope:' + scope : (channel ? 'channel:' + channel : null)
+  const permit = kkey && VIEWER_REQ_TABS[kkey]
+  if (!permit) return false // agency/admin scope, or an unmapped request → deny
+  const myTabs = Array.isArray(me.tabs) ? me.tabs : VIEWER_TABS_ALL
+  return permit.some((t) => myTabs.includes(t))
+}
+
 export default async (req) => {
   const url = new URL(req.url)
   const client = url.searchParams.get('client')
+  const scope = url.searchParams.get('scope')
   const channel = url.searchParams.get('channel') || 'meta'
   const from = url.searchParams.get('from'); const to = url.searchParams.get('to'); const preset = url.searchParams.get('preset')
   const debug = url.searchParams.get('debug')
@@ -1397,6 +1432,11 @@ export default async (req) => {
     if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (client && restrictedSet.has(client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (!client && me.role === 'viewer') return json({ error: 'No access to agency-wide data.' }, 403)
+    // Viewers are further limited to the exact scopes their allocated tabs fetch —
+    // so a client can never reach an unassigned view, an agency tool (creative
+    // cockpit, report generation, diagnostics) or another view's data by crafting
+    // a direct request, even for a client they're allowed to see.
+    if (client && me.role === 'viewer' && !viewerAllowed(me, scope, channel)) return json({ error: 'This view isn’t available on your account.' }, 403)
   }
   // Restricted staff (a User limited to specific accounts) only ever see their
   // own accounts inside agency-wide aggregates — enforced server-side so the

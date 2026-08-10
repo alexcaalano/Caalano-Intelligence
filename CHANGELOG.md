@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.175.0 — 2026-08-10 · `PENDING` — Meta/Google tab only shows when connected + honest empty states
+- **The Meta Ads tab now only appears when the client actually has a Meta account connected** (same as
+  Google always has). Previously it was added for *every* client, so a CRM-only or Google-only client
+  (e.g. IDO IDO) showed an empty Meta tab — which is where the confusing placeholder came from.
+- **Removed the stale placeholder copy.** The old "not pulled yet — Nexia Health Care is built out as
+  the first example, pulls via Reporting Ninja, ask me to build this client next" text (leftover from
+  the very first build, and it named an unrelated client) is gone. The empty state now reads honestly:
+  *"No Meta activity in this period — the account is connected but returned no campaigns or spend for
+  this range; widen the range or check the account is still spending."*
+- **A genuinely unlinked account** (backend returns "no Meta account") now shows a clear *"No Meta
+  account connected for this client"* message with connect guidance, not a timeout-style error.
+
 ## v3.174.0 — 2026-08-10 · `PENDING` — Caalano360: team performance, locations & timing summary
 - **Team performance** card: per-rep leaderboard (leads → booked → won → win % → revenue → open value
   → avg close). Click a rep to expand their open deals and see where each one is held up — every deal

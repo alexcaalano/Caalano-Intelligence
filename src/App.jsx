@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.174.0'
+const APP_VERSION = '3.175.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1180,7 +1180,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const movePrev = (e) => setPreview((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))
   const hidePrev = () => setPreview(null)
   useEffect(() => { setCrePage(0) }, [sel, selAdset, selCreative, selForm, creSort, pipe])
-  if (!deep?.meta) return <EmptyDeep channel="Meta Ads" />
+  if (!deep?.meta) return <EmptyDeep channel="Meta Ads" range={range} />
   // When a pipeline is picked, scope the whole ad side (Cost / Impr / Reach /
   // campaigns / ad sets / creatives / daily) to that pipeline's linked campaigns
   // — a Settings campaign→pipeline link first, else a name match — so the ad
@@ -1587,7 +1587,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const prevAttr = usePrevAttr(clientId, range, nonce)
   const scrollRootRef = React.useRef(null)
   useSyncedTableScroll(scrollRootRef)
-  if (!deep?.google) return <EmptyDeep channel="Google Ads" />
+  if (!deep?.google) return <EmptyDeep channel="Google Ads" range={range} />
   // Scope the whole Google ad side to the selected pipeline's linked campaigns.
   const inPipe = (campName) => pipe === 'all' || pipeOfCampaign(clientId, campName, allPipes) === pipe
   const g = pipe === 'all' ? deep.google : scopeGoogleToPipe(deep.google, inPipe)
@@ -1811,8 +1811,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   )
 }
 
-function EmptyDeep({ channel }) {
-  return <div className="card empty-deep"><div className="big">📊</div><b>{channel} deep breakdown not pulled yet for this client.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Campaign, ad-set and creative level data pulls on demand via Reporting Ninja. Nexia Health Care is built out as the first full example. Ask me to build this client next, or connect the live API to populate every client automatically.</p></div>
+function EmptyDeep({ channel, range }) {
+  return <div className="card empty-deep"><div className="big">📊</div><b>No {channel} activity in {range ? rangeLabel(range) : 'this period'}.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>The {channel} account is connected but returned no campaigns or spend for this date range. Widen the range, or check the account is still active and spending — data appears here as soon as there’s activity in the selected period.</p></div>
 }
 
 // Shown when the LIVE deep pull actually failed (vs. a client that was never
@@ -1820,6 +1820,13 @@ function EmptyDeep({ channel }) {
 // the serverless time limit. Tell the truth and give a way forward, instead of
 // the misleading "not pulled yet" placeholder.
 function DeepError({ channel, error, range, onRetry }) {
+  // A "no <channel> account for <client>" response isn't a timeout — it means the
+  // ad account isn't linked. Show a connect-oriented message with no retry.
+  const noAccount = /no\s+\w+\s+account/i.test(String(error || ''))
+  if (noAccount) return <div className="card empty-deep"><div className="big">🔌</div>
+    <b>No {channel} account connected for this client.</b>
+    <p style={{ maxWidth: 480, margin: '8px auto 0' }}>Link a {channel} ad account to this client (Settings → the client → connections) and it’ll appear here. If you only run CRM or the other channel for this client, you can ignore this tab.</p>
+  </div>
   const big = range && (range.preset === 'this_year' || (range.from && range.to && (new Date(range.to) - new Date(range.from)) / 86400000 > 120))
   return <div className="card empty-deep"><div className="big">⏳</div>
     <b>Couldn’t load the {channel} breakdown for {range ? rangeLabel(range) : 'this range'}.</b>
@@ -5411,7 +5418,10 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
   const allTabs = [{ id: 'overall', label: 'Caalano360' }]
   if (cfg.ghl) allTabs.push({ id: 'users', label: 'Users' })
-  allTabs.push({ id: 'meta', label: 'Meta Ads' })
+  // Only offer a Meta / Google tab when the client actually has that ad account
+  // connected — otherwise a CRM-only client shows an empty ad tab. (Meta was
+  // previously added unconditionally, which is why it appeared with no data.)
+  if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })

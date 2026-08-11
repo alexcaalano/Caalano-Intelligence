@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1417,6 +1417,8 @@ const VIEWER_REQ_TABS = {
   'scope:speedscan': ['timing'],
   // Contact-notes drill — reachable from several tabs' drill-downs; allow for any.
   'scope:oppnotes': VIEWER_TABS_ALL,
+  // Key-event people drill — reachable from the Meta/Google/Caalano360 funnels.
+  'scope:keypeople': VIEWER_TABS_ALL,
 }
 function viewerAllowed(me, scope, channel) {
   // Attribution loads at the workspace shell on every tab, so it's always allowed
@@ -2107,6 +2109,21 @@ export default async (req) => {
     if (!contactId) return json({ scope: 'oppnotes', notes: [] })
     try { return json({ scope: 'oppnotes', client, ...(await fetchOppNotes(cc.ghl, { contactId })) }, 200) }
     catch (e) { return json({ scope: 'oppnotes', client, error: String(e.message || e).slice(0, 200), notes: [] }, 200) }
+  }
+
+  // The people behind ONE key event (funnel/scorecard click-through). Channel-
+  // scoped so a Meta key event lists only Meta-attributed people.
+  if (url.searchParams.get('scope') === 'keypeople') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'keypeople', client, people: [] })
+    if (me && me.role === 'viewer' && !viewerAllowed(me, 'keypeople', channel)) return json({ scope: 'keypeople', client, error: 'Not allowed.' }, 403)
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'keypeople', client, connected: false, people: [] })
+    const kind = url.searchParams.get('kind') || 'stage'
+    const stage = url.searchParams.get('stage') || null
+    const pipeline = url.searchParams.get('pipeline') || null
+    const cals = (url.searchParams.get('cals') || '').split(',').filter(Boolean)
+    try { return json({ scope: 'keypeople', client, ...(await buildKeyPeople(cc.ghl, from, to, { channel: channel === 'attribution' || channel === 'blend' ? 'all' : channel, pipeline, stage, kind, cals })) }, 200, true) }
+    catch (e) { return json({ scope: 'keypeople', client, error: String(e.message || e).slice(0, 200), people: [] }, 200) }
   }
 
   // Appointment insights: booking lead time, self vs staff booked, downstream

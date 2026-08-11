@@ -1144,6 +1144,10 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kef-row:last-child { border-bottom: none; }
 .kef-row.kef-lead { opacity: .82; }
 .kef-step { font-weight: 650; line-height: 1.2; word-break: break-word; }
+.kef-clickable { cursor: pointer; border-radius: 7px; transition: background .12s; }
+.kef-clickable:hover { background: var(--hover, rgba(79,124,255,.07)); }
+.kef-drill-ind { color: var(--muted); font-weight: 800; opacity: 0; }
+.kef-clickable:hover .kef-drill-ind { opacity: .65; }
 .kef-step-tip { cursor: help; }
 .kef-step-tip .ke-cal { text-decoration: underline dotted var(--border); text-underline-offset: 2px; }
 .kef-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }

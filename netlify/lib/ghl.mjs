@@ -1926,6 +1926,77 @@ export async function buildCcDrill(locationId, from, to, channel) {
   }
 }
 
+// The actual people behind ONE key event, for the funnel/scorecard click-through.
+// Given a key event descriptor (a pipeline stage, a won event, or a set of booked
+// calendars linked to a stage) + a channel, return every opportunity/contact that
+// makes up that count, with the details a rep needs to work them.
+export async function buildKeyPeople(locationId, from, to, { channel, pipeline, stage, kind, cals }) {
+  const locTok = await locationToken(locationId)
+  const tz = await locationTimezone(locationId)
+  const DAY = 86400000
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  const calIds = (cals || []).map(String).filter(Boolean)
+  const needAppts = kind === 'calendar' && calIds.length
+  const [wideOpps, pipelines, appts] = await Promise.all([
+    allOpportunities(locTok, locationId, wideFrom, to, 2500),
+    fetchPipelines(locTok, locationId),
+    needAppts ? fetchAppointments(locTok, locationId, from, to).catch(() => null) : Promise.resolve(null),
+  ])
+  const idx = stageIndexFrom(pipelines)
+  const nz = (s) => String(s || '').trim().toLowerCase()
+  const chan = channel && channel !== 'all' ? channel : null
+  const inWin = (o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) }
+  let opps = wideOpps.filter(inWin)
+  if (chan) opps = opps.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
+  const nameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
+  const emailOf = (o) => (o.contact && o.contact.email) || o.email || null
+  const phoneOf = (o) => (o.contact && o.contact.phone) || o.phone || null
+  const srcOf = (o) => { const u = utmOf(o); const c = channelOf(u); return c === 'meta' ? 'Meta' : c === 'google' ? 'Google' : (u.source ? String(u.source).slice(0, 30) : 'Direct') }
+  const nowMs = Date.now()
+  // Resolve the target stage position (for stage / calendar-linked events).
+  let targetPos = null, targetPid = pipeline || null
+  if (kind !== 'won' && stage) {
+    for (const [pid, pi] of idx) {
+      if (pipeline && pid !== pipeline) continue
+      const s = pi.stages.find((x) => nz(x.name) === nz(stage))
+      if (s) { targetPos = s.pos; targetPid = pid; break }
+    }
+  }
+  // Contacts who booked one of the linked calendars in-period.
+  const bookedCids = new Set()
+  if (needAppts && appts && appts.perCalendar instanceof Map) {
+    for (const cid of calIds) { const rec = appts.perCalendar.get(cid); if (!rec) continue; for (const [c, f] of rec.byContact) if (f && f.bookedInPeriod) bookedCids.add(c) }
+  }
+  const seen = new Set(); const people = []
+  for (const o of opps) {
+    const st = String(o.status || '').toLowerCase(); const isWon = st === 'won'
+    const cid = contactIdOf(o)
+    let via = null
+    if (kind === 'won') { if (isWon) via = 'won' }
+    else {
+      const booked = needAppts && cid && bookedCids.has(cid)
+      const reached = targetPos != null && (!targetPid || o.pipelineId === targetPid) && (() => { const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1; return isWon || pos >= targetPos })()
+      if (booked) via = 'calendar'; else if (reached) via = 'stage'
+    }
+    if (!via) continue
+    const key = cid || o.id; if (seen.has(key)) continue; seen.add(key)
+    const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null
+    const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
+    people.push({
+      contactId: cid, name: nameOf(o), email: emailOf(o), phone: phoneOf(o),
+      status: isWon ? 'won' : (st === 'lost' || st === 'abandoned') ? 'lost' : 'open',
+      stage: stg ? stg.name : null, pipeline: (pi && pi.name) || null,
+      value: Math.round(num(o.monetaryValue)), source: srcOf(o), channel: channelOf(utmOf(o)),
+      createdAt: o.createdAt || null, ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null, via,
+    })
+  }
+  const rank = { won: 0, open: 1, lost: 2 }
+  people.sort((a, b) => (rank[a.status] - rank[b.status]) || (b.value - a.value))
+  return { connected: true, count: people.length, people: people.slice(0, 400) }
+}
+
 // Per-creative CRM performance for the Creative Cockpit: group every
 // opportunity by the creative that brought it in (first-touch utm_content) and
 // compute the real funnel — leads, qualified, booked, won, revenue — so each ad

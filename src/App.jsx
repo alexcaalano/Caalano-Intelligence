@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.183.0'
+const APP_VERSION = '3.184.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1486,6 +1486,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         </div>}
         {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
           rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
+          drill={{ clientId, channel: 'meta', range }}
           title="Key events · Meta" style={{ marginTop: 0 }} className="meta-split-col"
           headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
             <option value="all">All pipelines</option>
@@ -1735,6 +1736,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
       })()}
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={t.cost} currency={currency}
+        drill={{ clientId, channel: 'google', range }}
         title="Key events · Google" style={{ marginTop: 14 }}
         headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
           <option value="all">All pipelines</option>
@@ -2629,7 +2631,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
       const fromStage = Math.max(0, stageReached - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, occurred, shown, cancelled, perCal, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, occurred, shown, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -2655,13 +2657,76 @@ function calPopRows(r) {
   if (r.fromStage) rows.push({ label: 'Reached the stage — no calendar booking', value: r.fromStage, muted: true })
   return { title: parts.length > 1 ? `Booked · ${parts.length} calendars` : 'Booked', total: r.fromCal || r.count, rows }
 }
+// One person behind a key event (the drill-down list). Expands to that contact's
+// Caalano Systems notes on click — same pattern as OpenDealRow.
+function KeyPersonRow({ p, clientId, money }) {
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const load = () => { setLoading(true); const q = new URLSearchParams({ scope: 'oppnotes', client: clientId }); if (p.contactId) q.set('contact', p.contactId); fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false)) }
+  const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && p.contactId) load() }
+  const viaLabel = p.via === 'calendar' ? 'booked' : p.via === 'won' ? 'won' : 'reached stage'
+  return (
+    <React.Fragment>
+      <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
+        <td className="lft">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
+        <td className="lft">{statusChip(p.status)}</td>
+        <td className="lft">{p.stage || '—'}{p.pipeline && p.pipeline !== 'Pipeline' ? <span className="cap"> · {p.pipeline}</span> : null}</td>
+        <td className="lft"><span className={`mr-src mr-src-${p.channel || 'other'}`}>{p.source}</span> <span className="cap">· {viaLabel}</span></td>
+        <td>{p.value ? money(p.value) : '—'}</td>
+        <td className={p.ageDays != null && p.ageDays > 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '—'}</td>
+      </tr>
+      {open && <tr className="u-notes-row"><td colSpan={6}>
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>{[p.email, p.phone].filter(Boolean).join(' · ') || 'No notes on this contact in Caalano Systems.'}</div>}
+      </td></tr>}
+    </React.Fragment>
+  )
+}
+// Click-through list of the people that make up ONE key event, channel-scoped.
+function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const money = (v) => fmtCurrency(v, currency)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    const stageName = event.kind === 'calendar' ? (event.stage || event.label) : event.label
+    const q = new URLSearchParams({ scope: 'keypeople', client: clientId, channel: channel || 'all', from: range.from, to: range.to, kind: event.kind })
+    if (stageName && event.kind !== 'won') q.set('stage', String(stageName).replace(/^📅 /, ''))
+    if (event.pipeline) q.set('pipeline', event.pipeline)
+    if (event.refs && event.refs.length) q.set('cals', event.refs.join(','))
+    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && !j.error ? 'ok' : 'err', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [event, clientId, channel, range.from, range.to])
+  useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') onClose() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
+  const d = st.data || {}
+  const people = d.people || []
+  const chanLbl = channel === 'meta' ? 'Meta-attributed ' : channel === 'google' ? 'Google-attributed ' : ''
+  const label = String(event.label || '').replace(/^📅 /, '')
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 880 }}>
+        <div className="m-head"><div><h3 style={{ margin: 0 }}>{event.kind === 'calendar' ? '📅 ' : ''}{label}</h3><span className="cap">{st.status === 'loading' ? 'Loading…' : `${fmtNumber(d.count || people.length)} ${chanLbl}${(d.count || people.length) === 1 ? 'person' : 'people'} · click a row for their notes`}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-body">
+          {st.status === 'loading' ? <Spinner label="Loading people…" />
+            : st.status === 'err' ? <div className="cap">Couldn’t load the list — try again.</div>
+              : !people.length ? <div className="cap">No people found for this event in the selected range.</div>
+                : <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+                  <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Current stage</th><th className="lft">Source</th><th>Value</th><th>Age</th></tr></thead>
+                  <tbody>{people.map((p, i) => <KeyPersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</tbody>
+                </table></div>}
+        </div>
+      </div>
+    </div>
+  )
+}
 // Reusable Key Events funnel card - the readable full picture of a client's key
 // events: full step name, count reached (bar), % of leads, next-step conversion
 // (this step ÷ the previous step), show % (calendar events) and cost per event.
 // Used in Caalano360 and the Meta / Google screens so key events read the same
 // everywhere. A leading "Leads" row anchors the funnel so the first key event
-// gets a meaningful next-step conversion.
-function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style, className = '', headerRight }) {
+// gets a meaningful next-step conversion. Pass `drill={{clientId,channel,range}}`
+// to make each step click through to the people behind it.
+function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, style, className = '', headerRight, drill }) {
+  const [drillEvent, setDrillEvent] = useState(null)
   if (!rows || !rows.length) return null
   const money = (v) => fmtCurrency(v, currency)
   const anyCal = rows.some((r) => r.kind === 'calendar')
@@ -2692,9 +2757,10 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
           const barTip = s.fromStage ? `${fmtNumber(s.count)} total · ${fmtNumber(s.fromCal)} via calendar booking · ${fmtNumber(s.fromStage)} via pipeline-stage fallback` : undefined
           const cp = calPopRows(s)
           const stepInner = <>{s.kind === 'calendar' ? <span className="ke-cal">📅 </span> : null}{s.label}</>
+          const canDrill = !!drill && !isLead && s.count > 0
           return (
-            <div className={`kef-row${isLead ? ' kef-lead' : ''}`} key={s.label + i}>
-              <span className="kef-step">{cp ? <KeCellPop title={cp.title} total={cp.total} rows={cp.rows}><span className="kef-step-tip">{stepInner}</span></KeCellPop> : stepInner}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}</span>
+            <div className={`kef-row${isLead ? ' kef-lead' : ''}${canDrill ? ' kef-clickable' : ''}`} key={s.label + i} onClick={canDrill ? () => setDrillEvent(s) : undefined} title={canDrill ? 'Click to see the people behind this' : undefined}>
+              <span className="kef-step">{cp ? <KeCellPop title={cp.title} total={cp.total} rows={cp.rows}><span className="kef-step-tip">{stepInner}</span></KeCellPop> : stepInner}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}{canDrill ? <span className="kef-drill-ind"> ›</span> : null}</span>
               <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
               <span className="kef-num" data-l="% leads">{isLead ? '100%' : fmtPct(pct, 0)}</span>
               <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`} data-l="Next step">{step == null ? '—' : fmtPct(step, 0)}</span>
@@ -2705,6 +2771,7 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
         })}
       </div>
       {caveat ? <p className="caveat">{caveat}</p> : null}
+      {drill && drillEvent ? <KeyPeopleModal event={drillEvent} clientId={drill.clientId} channel={drill.channel} range={drill.range} currency={currency} onClose={() => setDrillEvent(null)} /> : null}
     </div>
   )
 }

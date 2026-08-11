@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.184.0 — 2026-08-10 · `PENDING` — Click any key event to see the people behind it
+- **Every step in the Key Events funnel (Meta & Google) is now clickable** and opens the list of the
+  actual people that make up that number — channel-scoped, so a Meta key event shows only the
+  Meta-attributed people. Each row shows the person's **name, status (won / open / lost), current
+  pipeline stage, source + how they qualified for this event (booked / reached stage / won), deal
+  value, and age**; click a row to expand their **Caalano Systems notes** (and contact email / phone).
+- New backend `scope=keypeople` builder resolves the people for a pipeline-stage event, a won event, or
+  a set of booked calendars linked to a stage — from a single on-demand opportunity pull (only fires
+  when you click, so it adds no load to the main view). Viewer-safe.
+- This is the fastest way to sanity-check a number (e.g. "why does the CRM show more Meta leads than
+  Meta's pixel?") — you can now read the exact opportunities behind each step.
+
 ## v3.183.0 — 2026-08-10 · `PENDING` — Meta Ads Caalano360 metrics are Meta-attributed only (not blended)
 - **Fixed: the Caalano360 metrics on the Meta Ads view were blending in other channels.** The aggregate
   Won / Revenue / Booked / Shown summed **every** utm_campaign's CRM outcomes — including Google and

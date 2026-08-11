@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.191.0'
+const APP_VERSION = '3.192.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8940,16 +8940,22 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
     { k: 'revenue', label: 'Revenue' }, { k: 'roas', label: 'ROAS' },
     ...costMetrics,
   ]
+  // Natural direction for a metric: cost / CPL metrics read best cheapest-first
+  // (asc), everything else biggest-first (desc). Picking a metric resets to its
+  // natural direction; the arrow toggle then flips it either way.
+  const natDir = (mm) => (mm && (mm.asc || mm.costEvLabel != null) ? 'asc' : 'desc')
   const [sortK, setSortK] = useState('spend')
+  const [dir, setDir] = useState('desc')
   const [page, setPage] = useState(0)
   const PER = 10
   const m = METRICS.find((x) => x.k === sortK) || METRICS[0]
+  const pickMetric = (k) => { setSortK(k); setPage(0); setDir(natDir(METRICS.find((x) => x.k === k))) }
   const valOf = (a) => {
     if (m.evLabel != null) return (a.evByLabel && a.evByLabel.get(m.evLabel)) || 0
     if (m.costEvLabel != null) { const c = (a.evByLabel && a.evByLabel.get(m.costEvLabel)) || 0; return c > 0 && a.spend ? a.spend / c : NOCOST }
     return a[m.k] || 0
   }
-  const sorted = [...enriched].sort((x, y) => (m.asc ? valOf(x) - valOf(y) : valOf(y) - valOf(x)))
+  const sorted = [...enriched].sort((x, y) => (dir === 'asc' ? valOf(x) - valOf(y) : valOf(y) - valOf(x)))
   const pages = Math.max(1, Math.ceil(sorted.length / PER))
   const cur = Math.min(page, pages - 1)
   const pageAds = sorted.slice(cur * PER, cur * PER + PER)
@@ -8999,11 +9005,18 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
       </>}
       <div className="mr-cre-sort no-print">
         <span>Sort by</span>
-        {METRICS.filter((x) => !x.costEvLabel).map((x) => <button key={x.k} className={sortK === x.k ? 'on' : ''} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
-        {costMetrics.length ? <>
-          <span className="mr-cre-sort-sep" title="Rank creatives by the cheapest cost per that event (spend ÷ people who reached it). Creatives that never reached it sort last.">💲 Cheapest cost /</span>
-          {costMetrics.map((x) => <button key={x.k} className={`mr-cre-sort-cost${sortK === x.k ? ' on' : ''}`} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
-        </> : null}
+        <select className="mr-cre-sort-sel" value={sortK} onChange={(e) => pickMetric(e.target.value)}>
+          <optgroup label="Performance">
+            {METRICS.filter((x) => x.evLabel == null && x.costEvLabel == null).map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
+          </optgroup>
+          {evMetrics.length ? <optgroup label="Key event — volume reached">
+            {evMetrics.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
+          </optgroup> : null}
+          {costMetrics.length ? <optgroup label="Cheapest cost per event">
+            {costMetrics.map((x) => <option key={x.k} value={x.k}>Cost / {x.label}</option>)}
+          </optgroup> : null}
+        </select>
+        <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) — click for highest first' : 'Descending (highest first) — click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
       </div>
       <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
       {pages > 1 && (

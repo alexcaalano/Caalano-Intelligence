@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.192.0 — 2026-08-11 · `PENDING` — Creative sort: dropdown + asc/desc toggle
+- Replaced the long row of Creative-performance sort chips with a compact **dropdown** (grouped:
+  Performance · Key event volume · Cheapest cost per event) plus an **↑/↓ direction toggle**. Picking
+  a metric defaults to its natural direction (cost metrics low→high, everything else high→low); the
+  arrow flips it either way.
+
 ## v3.191.0 — 2026-08-11 · `PENDING` — Click a creative's key events to see the people (+ appointment detail)
 - **Every key-event row on a creative card is now clickable** — Leads, each stage, each booked
   calendar and Won open the list of the actual people behind that number, **scoped to that creative**

@@ -1148,6 +1148,12 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kef-clickable:hover { background: var(--hover, rgba(79,124,255,.07)); }
 .kef-drill-ind { color: var(--muted); font-weight: 800; opacity: 0; }
 .kef-clickable:hover .kef-drill-ind { opacity: .65; }
+/* Key-event people drill modal — wide enough that nothing scrolls sideways */
+.kp-modal { max-width: 1120px; width: 94vw; }
+.kp-tbl { width: 100%; table-layout: auto; }
+.kp-tbl th, .kp-tbl td { white-space: nowrap; }
+.kp-tbl td.kp-stage { white-space: normal; min-width: 220px; }
+.kp-lost { color: var(--neg, #e0566c); margin-top: 2px; font-weight: 600; }
 .kef-step-tip { cursor: help; }
 .kef-step-tip .ke-cal { text-decoration: underline dotted var(--border); text-underline-offset: 2px; }
 .kef-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
@@ -2015,6 +2021,8 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .pp-block-h .pp-cb { min-width: 120px; }
 .kesc-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .kesc { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 3px; }
+.kesc-clickable { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
+.kesc-clickable:hover { border-color: var(--brand, #4f7cff); box-shadow: 0 3px 12px rgba(79,124,255,.14); }
 .kesc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .kesc-v { font-size: 23px; font-weight: 780; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 6px; }
 .kesc-line { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }

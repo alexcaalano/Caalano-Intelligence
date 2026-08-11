@@ -1939,12 +1939,15 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
   const calIds = (cals || []).map(String).filter(Boolean)
   const needAppts = kind === 'calendar' && calIds.length
-  const [wideOpps, pipelines, appts] = await Promise.all([
+  const [wideOpps, pipelines, appts, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 2500),
     fetchPipelines(locTok, locationId),
     needAppts ? fetchAppointments(locTok, locationId, from, to).catch(() => null) : Promise.resolve(null),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
   ])
   const idx = stageIndexFrom(pipelines)
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const nz = (s) => String(s || '').trim().toLowerCase()
   const chan = channel && channel !== 'all' ? channel : null
   const inWin = (o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) }
@@ -1973,8 +1976,10 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   for (const o of opps) {
     const st = String(o.status || '').toLowerCase(); const isWon = st === 'won'
     const cid = contactIdOf(o)
+    const isLost = st === 'lost' || st === 'abandoned'
     let via = null
     if (kind === 'won') { if (isWon) via = 'won' }
+    else if (kind === 'lead' || kind === 'leads') { if (!pipeline || o.pipelineId === pipeline) via = 'lead' }
     else {
       const booked = needAppts && cid && bookedCids.has(cid)
       const reached = targetPos != null && (!targetPid || o.pipelineId === targetPid) && (() => { const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1; return isWon || pos >= targetPos })()
@@ -1986,7 +1991,8 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
     const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
     people.push({
       contactId: cid, name: nameOf(o), email: emailOf(o), phone: phoneOf(o),
-      status: isWon ? 'won' : (st === 'lost' || st === 'abandoned') ? 'lost' : 'open',
+      status: isWon ? 'won' : isLost ? 'lost' : 'open',
+      lostReason: isLost ? lostReasonOf(o) : null,
       stage: stg ? stg.name : null, pipeline: (pi && pi.name) || null,
       value: Math.round(num(o.monetaryValue)), source: srcOf(o), channel: channelOf(utmOf(o)),
       createdAt: o.createdAt || null, ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null, via,

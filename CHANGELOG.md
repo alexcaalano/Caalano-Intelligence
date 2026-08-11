@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.185.0 — 2026-08-10 · `PENDING` — Key-event people drill: scorecards, Leads, lost reasons, wider modal
+- **The per-pipeline scorecard tiles are now clickable too** (Meta & Google) — Leads, each key event,
+  Won and Revenue open the same people list as the funnel steps.
+- **The Leads row/tile is now clickable** — it opens the full lead cohort (channel-scoped), which
+  wasn't drillable before.
+- **Lost opportunities now show their lost reason** in the drill (under the red "Lost" chip).
+- **The drill modal is wider (94vw, up to 1120px) and no longer scrolls sideways** — the current-stage
+  column wraps instead, so every column (name, status, stage, source, value, age) is visible at once.
+
 ## v3.184.0 — 2026-08-10 · `PENDING` — Click any key event to see the people behind it
 - **Every step in the Key Events funnel (Meta & Google) is now clickable** and opens the list of the
   actual people that make up that number — channel-scoped, so a Meta key event shows only the

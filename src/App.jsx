@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.184.0'
+const APP_VERSION = '3.185.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1168,6 +1168,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [selForm, setSelForm] = useState(null) // filter the tables to one CRM form's ads
   const [kePipe, setKePipe] = useState(null) // local pipeline pick for the Key events funnel (null = follow default)
   useEffect(() => { setKePipe(null) }, [pipe]) // reset to default when the top filter changes
+  const [keyDrill, setKeyDrill] = useState(null) // scorecard-tile → people drill
   const prevAttr = usePrevAttr(clientId, range, nonce) // previous-period attribution for vs-prev deltas
   const [formSort, onFormSort] = useSort('adSpend')
   const formsSt = useForms(clientId, range, nonce)
@@ -1370,6 +1371,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const meTotal = Math.max(1, mePipeLeads != null ? mePipeLeads : (meCh ? meCh.totals.leads : 0))
   return (
     <div ref={scrollRootRef}>
+      {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="meta" range={range} currency={currency} onClose={() => setKeyDrill(null)} /> : null}
       <DataLoadBar label="Meta ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · reach &amp; frequency are approximate (summed across campaigns) · link campaigns in Settings → Campaign links</span>}</div>}
@@ -1443,18 +1445,19 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
             <React.Fragment key={label}>
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit kesc-row">
-                <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} />
+                <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} onClick={leadsP ? () => setKeyDrill({ kind: 'lead', label: 'Leads', pipeline: pid || null }) : undefined} />
                 {rowsP.map((r, i) => {
                   const pr = pByLabel[r.label]; const prevCount = pr ? pr.count : 0
                   const show = r.kind === 'calendar' && r.occurred ? { rate: (r.shown / r.occurred) * 100, shown: r.shown, occurred: r.occurred, prevRate: (pr && pr.occurred) ? (pr.shown / pr.occurred) * 100 : null } : null
                   return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={r.count} prev={hasPrev ? prevCount : null} currency={currency} pop={calPopRows(r)}
                     pctLeads={pctOf(r.count, leadsP)} prevPctLeads={hasPrev ? pctOf(prevCount, pCrm.leads) : null}
-                    cost={costOf(spendP, r.count)} prevCost={costOf(spendPrevP, prevCount)} show={show} />
+                    cost={costOf(spendP, r.count)} prevCost={costOf(spendPrevP, prevCount)} show={show}
+                    onClick={r.count ? () => setKeyDrill({ ...r, pipeline: r.pipeline || pid || null }) : undefined} />
                 })}
                 <KeScorecard label="Won" value={won} prev={hasPrev ? (pCrm.won || 0) : null} currency={currency} costUnit="won"
                   pctLeads={pctOf(won, leadsP)} prevPctLeads={hasPrev ? pctOf(pCrm.won || 0, pCrm.leads) : null}
-                  cost={costOf(spendP, won)} prevCost={costOf(spendPrevP, pCrm.won)} />
-                <KeScorecard label="Revenue" value={rev} prev={hasPrev ? (pCrm.revenue || 0) : null} isMoney currency={currency} note={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
+                  cost={costOf(spendP, won)} prevCost={costOf(spendPrevP, pCrm.won)} onClick={won ? () => setKeyDrill({ kind: 'won', label: 'Won', pipeline: pid || null }) : undefined} />
+                <KeScorecard label="Revenue" value={rev} prev={hasPrev ? (pCrm.revenue || 0) : null} isMoney currency={currency} note={roas == null ? null : `${roas.toFixed(2)}× ROAS`} onClick={won ? () => setKeyDrill({ kind: 'won', label: 'Revenue', pipeline: pid || null }) : undefined} />
               </div>
             </React.Fragment>
           )
@@ -1486,7 +1489,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         </div>}
         {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
           rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
-          drill={{ clientId, channel: 'meta', range }}
+          drill={{ clientId, channel: 'meta', range, pipeline: kePipeEff !== 'all' ? kePipeEff : null }}
           title="Key events · Meta" style={{ marginTop: 0 }} className="meta-split-col"
           headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
             <option value="all">All pipelines</option>
@@ -1596,6 +1599,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [sSort, onSSort] = useSort('cost')
   const [kePipe, setKePipe] = useState(null)
   useEffect(() => { setKePipe(null) }, [pipe])
+  const [keyDrill, setKeyDrill] = useState(null)
   const prevAttr = usePrevAttr(clientId, range, nonce)
   const scrollRootRef = React.useRef(null)
   useSyncedTableScroll(scrollRootRef)
@@ -1662,6 +1666,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const gTotal = Math.max(1, gPipeLeads != null ? gPipeLeads : (gCh ? gCh.totals.leads : 0))
   return (
     <div ref={scrollRootRef}>
+      {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="google" range={range} currency={currency} onClose={() => setKeyDrill(null)} /> : null}
       <DataLoadBar label="Google ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · link campaigns in Settings → Campaign links</span>}</div>}
@@ -1711,18 +1716,19 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
             <React.Fragment key={label}>
               <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit kesc-row">
-                <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} />
+                <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} onClick={leadsP ? () => setKeyDrill({ kind: 'lead', label: 'Leads', pipeline: pid || null }) : undefined} />
                 {rowsP.map((r, i) => {
                   const pr = pByLabel[r.label]; const prevCount = pr ? pr.count : 0
                   const show = r.kind === 'calendar' && r.occurred ? { rate: (r.shown / r.occurred) * 100, shown: r.shown, occurred: r.occurred, prevRate: (pr && pr.occurred) ? (pr.shown / pr.occurred) * 100 : null } : null
                   return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={r.count} prev={hasPrev ? prevCount : null} currency={currency} pop={calPopRows(r)}
                     pctLeads={pctOf(r.count, leadsP)} prevPctLeads={hasPrev ? pctOf(prevCount, pCrm.leads) : null}
-                    cost={costOf(spendP, r.count)} prevCost={costOf(spendPrevP, prevCount)} show={show} />
+                    cost={costOf(spendP, r.count)} prevCost={costOf(spendPrevP, prevCount)} show={show}
+                    onClick={r.count ? () => setKeyDrill({ ...r, pipeline: r.pipeline || pid || null }) : undefined} />
                 })}
                 <KeScorecard label="Won" value={won} prev={hasPrev ? (pCrm.won || 0) : null} currency={currency} costUnit="won"
                   pctLeads={pctOf(won, leadsP)} prevPctLeads={hasPrev ? pctOf(pCrm.won || 0, pCrm.leads) : null}
-                  cost={costOf(spendP, won)} prevCost={costOf(spendPrevP, pCrm.won)} />
-                <KeScorecard label="Revenue" value={rev} prev={hasPrev ? (pCrm.revenue || 0) : null} isMoney currency={currency} note={roas == null ? null : `${roas.toFixed(2)}× ROAS`} />
+                  cost={costOf(spendP, won)} prevCost={costOf(spendPrevP, pCrm.won)} onClick={won ? () => setKeyDrill({ kind: 'won', label: 'Won', pipeline: pid || null }) : undefined} />
+                <KeScorecard label="Revenue" value={rev} prev={hasPrev ? (pCrm.revenue || 0) : null} isMoney currency={currency} note={roas == null ? null : `${roas.toFixed(2)}× ROAS`} onClick={won ? () => setKeyDrill({ kind: 'won', label: 'Revenue', pipeline: pid || null }) : undefined} />
               </div>
             </React.Fragment>
           )
@@ -1736,7 +1742,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
       })()}
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={t.cost} currency={currency}
-        drill={{ clientId, channel: 'google', range }}
+        drill={{ clientId, channel: 'google', range, pipeline: kePipeEff !== 'all' ? kePipeEff : null }}
         title="Key events · Google" style={{ marginTop: 14 }}
         headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
           <option value="all">All pipelines</option>
@@ -2670,8 +2676,8 @@ function KeyPersonRow({ p, clientId, money }) {
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
         <td className="lft">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
-        <td className="lft">{statusChip(p.status)}</td>
-        <td className="lft">{p.stage || '—'}{p.pipeline && p.pipeline !== 'Pipeline' ? <span className="cap"> · {p.pipeline}</span> : null}</td>
+        <td className="lft">{statusChip(p.status)}{p.status === 'lost' && p.lostReason ? <div className="kp-lost cap">✕ {p.lostReason}</div> : null}</td>
+        <td className="lft kp-stage">{p.stage || '—'}{p.pipeline && p.pipeline !== 'Pipeline' ? <span className="cap"> · {p.pipeline}</span> : null}</td>
         <td className="lft"><span className={`mr-src mr-src-${p.channel || 'other'}`}>{p.source}</span> <span className="cap">· {viaLabel}</span></td>
         <td>{p.value ? money(p.value) : '—'}</td>
         <td className={p.ageDays != null && p.ageDays > 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '—'}</td>
@@ -2690,7 +2696,7 @@ function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) 
     let alive = true; setSt({ status: 'loading', data: null })
     const stageName = event.kind === 'calendar' ? (event.stage || event.label) : event.label
     const q = new URLSearchParams({ scope: 'keypeople', client: clientId, channel: channel || 'all', from: range.from, to: range.to, kind: event.kind })
-    if (stageName && event.kind !== 'won') q.set('stage', String(stageName).replace(/^📅 /, ''))
+    if (stageName && (event.kind === 'stage' || event.kind === 'calendar')) q.set('stage', String(stageName).replace(/^📅 /, ''))
     if (event.pipeline) q.set('pipeline', event.pipeline)
     if (event.refs && event.refs.length) q.set('cals', event.refs.join(','))
     fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && !j.error ? 'ok' : 'err', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
@@ -2703,16 +2709,16 @@ function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) 
   const label = String(event.label || '').replace(/^📅 /, '')
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 880 }}>
+      <div className="modal kp-modal" onClick={(e) => e.stopPropagation()}>
         <div className="m-head"><div><h3 style={{ margin: 0 }}>{event.kind === 'calendar' ? '📅 ' : ''}{label}</h3><span className="cap">{st.status === 'loading' ? 'Loading…' : `${fmtNumber(d.count || people.length)} ${chanLbl}${(d.count || people.length) === 1 ? 'person' : 'people'} · click a row for their notes`}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Loading people…" />
             : st.status === 'err' ? <div className="cap">Couldn’t load the list — try again.</div>
               : !people.length ? <div className="cap">No people found for this event in the selected range.</div>
-                : <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+                : <table className="mini-tbl users-tbl kp-tbl">
                   <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Current stage</th><th className="lft">Source</th><th>Value</th><th>Age</th></tr></thead>
                   <tbody>{people.map((p, i) => <KeyPersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</tbody>
-                </table></div>}
+                </table>}
         </div>
       </div>
     </div>
@@ -2757,9 +2763,9 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
           const barTip = s.fromStage ? `${fmtNumber(s.count)} total · ${fmtNumber(s.fromCal)} via calendar booking · ${fmtNumber(s.fromStage)} via pipeline-stage fallback` : undefined
           const cp = calPopRows(s)
           const stepInner = <>{s.kind === 'calendar' ? <span className="ke-cal">📅 </span> : null}{s.label}</>
-          const canDrill = !!drill && !isLead && s.count > 0
+          const canDrill = !!drill && s.count > 0
           return (
-            <div className={`kef-row${isLead ? ' kef-lead' : ''}${canDrill ? ' kef-clickable' : ''}`} key={s.label + i} onClick={canDrill ? () => setDrillEvent(s) : undefined} title={canDrill ? 'Click to see the people behind this' : undefined}>
+            <div className={`kef-row${isLead ? ' kef-lead' : ''}${canDrill ? ' kef-clickable' : ''}`} key={s.label + i} onClick={canDrill ? () => setDrillEvent({ ...s, pipeline: s.pipeline || (drill && drill.pipeline) || null }) : undefined} title={canDrill ? 'Click to see the people behind this' : undefined}>
               <span className="kef-step">{cp ? <KeCellPop title={cp.title} total={cp.total} rows={cp.rows}><span className="kef-step-tip">{stepInner}</span></KeCellPop> : stepInner}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}{canDrill ? <span className="kef-drill-ind"> ›</span> : null}</span>
               <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
               <span className="kef-num" data-l="% leads">{isLead ? '100%' : fmtPct(pct, 0)}</span>
@@ -3446,13 +3452,13 @@ function ChanBar({ meta = 0, google = 0, other = 0 }) {
 // per-pipeline tiles but reads ALL-channel CRM: the count (with vs-prev arrow),
 // then stacked sub-lines — % of leads, blended cost per event, and (calendar
 // events) show rate with shown/occurred — each with its own vs-prev delta.
-function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctLeads, cost, prevCost, costUnit = 'event', show, note, pop }) {
+function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctLeads, cost, prevCost, costUnit = 'event', show, note, pop, onClick }) {
   const money = (v) => fmtCurrency(v, currency)
   const labelEl = (pop && pop.rows && pop.rows.length)
     ? <div className="kesc-l"><KeCellPop title={pop.title} total={pop.total} rows={pop.rows}><span className="sc-l-tip">{label}</span></KeCellPop></div>
     : <div className="kesc-l">{label}</div>
   return (
-    <div className="kesc">
+    <div className={`kesc${onClick ? ' kesc-clickable' : ''}`} onClick={onClick} title={onClick ? 'Click to see the people behind this' : undefined}>
       {labelEl}
       <div className="kesc-v">{isMoney ? money(value) : fmtNumber(value)}{prev != null ? <MiniDelta cur={value} prev={prev} /> : null}</div>
       {pctLeads != null ? <div className="kesc-line"><span>{Math.round(pctLeads)}% of leads</span>{prevPctLeads != null ? <MiniDelta cur={pctLeads} prev={prevPctLeads} /> : null}</div> : null}

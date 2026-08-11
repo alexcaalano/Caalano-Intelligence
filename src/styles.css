@@ -340,7 +340,10 @@ tbody tr:hover { background: var(--panel-2); }
 .settings-btn { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; }
 .settings-btn:hover { background: var(--panel-2); color: var(--text); }
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 100; padding: 20px; }
-.modal { background: var(--panel); border: 1px solid var(--border-2); border-radius: 18px; box-shadow: var(--shadow); width: min(860px, 100%); max-height: 88vh; overflow: auto; }
+.modal { background: var(--panel); border: 1px solid var(--border-2); border-radius: 18px; box-shadow: var(--shadow); width: min(1040px, 96vw); max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
+/* Settings modal carries many tabs + wide content, so give it the most room —
+   wide enough that the tab strip never has to scroll sideways. */
+.set-modal { width: min(1240px, 96vw); }
 .modal .m-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
 .modal .m-head h3 { margin: 0; font-size: 16px; }
 .modal .m-body { padding: 18px 22px; }
@@ -2161,7 +2164,10 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-cre-ke { border-top: 1px solid var(--border); padding: 9px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .mr-cre-ke-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #12b886; }
 .mr-cre-ke-empty { font-size: 11px; color: var(--faint); border-top: 1px solid var(--border); padding: 9px 12px 12px; }
-.mr-cre-ketbl-wrap { overflow: hidden; }
+/* Never clip the right-hand columns (Show % / Cost per). The table is fixed-layout
+   at 100% width so it normally fits; overflow-x:auto is a safety net that lets the
+   last columns scroll into view instead of being hidden if a card is ever narrow. */
+.mr-cre-ketbl-wrap { overflow-x: auto; }
 .mr-cre-funnel { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .mr-cre-funnel span { display: inline-flex; flex-direction: column; align-items: center; background: rgba(18,184,134,.10); border-radius: 7px; padding: 4px 8px; min-width: 46px; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
 .mr-cre-funnel span b { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }

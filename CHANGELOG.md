@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.188.0 — 2026-08-11 · `PENDING` — Wider popups, no sideways scroll
+- **All modal windows are now wider** (up to 1040px, 96vw) and no longer scroll horizontally as a
+  whole — the window grows to fit instead.
+- **The Settings modal is wider still** (up to 1240px) so its full tab strip (Versions → Campaign
+  links → UTM aliases → KPI targets → Forms → Qualified lead → Optimisation Log → Diagnostics) and
+  every tab's content fit without the sideways scroll that was clipping the first tabs.
+- Genuinely wide data tables inside a popup still get their own contained scrollbar, so nothing is
+  ever lost — only the whole-window horizontal scroll is gone.
+- **Creative cards: the key-events table can no longer clip its right-hand columns.** The "Show %"
+  and "Cost per" columns were being hidden by an `overflow: hidden` wrapper on narrower cards; the
+  wrapper now lets them scroll into view instead, so the Cost-per-stage figure is always reachable.
+
 ## v3.187.0 — 2026-08-11 · `PENDING` — Creative cards: clearer "Cost per" stage column
 - **The Caalano360 key-events table on each creative card now has a clearly-labelled "Cost per"
   column** — the creative's total ad spend ÷ the number of people who reached that stage (e.g.

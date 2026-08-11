@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.183.0 — 2026-08-10 · `PENDING` — Meta Ads Caalano360 metrics are Meta-attributed only (not blended)
+- **Fixed: the Caalano360 metrics on the Meta Ads view were blending in other channels.** The aggregate
+  Won / Revenue / Booked / Shown summed **every** utm_campaign's CRM outcomes — including Google and
+  other-channel deals — so a client running both Meta and Google saw inflated Won / Revenue / ROAS on
+  the Meta tab (e.g. "19 won / $1.55M" when only the Meta-attributed slice was much smaller). It now
+  uses the **Meta channel totals** (`channels.meta`), the same source the Key Events funnel and the
+  per-event tiles already use — so the whole Meta tab reconciles.
+- This is also the true cause of the earlier "scorecard says 19 won, funnel says 4" mismatch: the
+  scorecard was all-channels-blended (19) and the funnel was Meta-only (4). They now agree.
+- Relabelled both headers from "blended CRM outcomes" to **"Meta-attributed / Google-attributed CRM
+  outcomes"** (Google's aggregate was already channel-scoped correctly — only its label was wrong).
+
 ## v3.182.0 — 2026-08-10 · `PENDING` — Key Events funnel is mobile-friendly
 - **The Key Events funnel no longer spills off the right edge on phones.** The 6-column table (Step /
   Reached / % leads / Next step / Show % / Cost per event) couldn't fit a phone width, so the Cost per

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.182.0'
+const APP_VERSION = '3.183.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1286,10 +1286,16 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   // Caalano360 outcomes: the selected campaign's UTM-matched row, or every
   // campaign summed (each opp lands in exactly one utm_campaign bucket).
   const selOc = selCamp ? oCamp.get(unorm(sel)) : null
+  // Aggregate Caalano360 outcomes for the whole Meta tab. Must be META-ATTRIBUTED
+  // only — the funnel + key-event tiles use the Meta channel (channels.meta), so
+  // the headline Won / Revenue have to as well. (Previously this summed EVERY
+  // utm_campaign, which folded in Google + other-channel deals and inflated Won /
+  // Revenue on a client that also runs Google.)
+  const metaTotals = (A && A.channels && A.channels.meta && A.channels.meta.totals) || null
   const crmTot = A
     ? (selCamp
       ? { booked: selOc ? selOc.booked : 0, shown: selOc ? selOc.shown : 0, won: selOc ? selOc.won : 0, revenue: selOc ? selOc.revenue : 0, cancelled: selOc ? (selOc.cancelled || 0) : 0 }
-      : (A.byCampaign || []).reduce((a, x) => ({ booked: a.booked + x.booked, shown: a.shown + x.shown, won: a.won + x.won, revenue: a.revenue + x.revenue, cancelled: a.cancelled + (x.cancelled || 0) }), { booked: 0, shown: 0, won: 0, revenue: 0, cancelled: 0 }))
+      : (metaTotals ? { booked: metaTotals.booked || 0, shown: metaTotals.shown || 0, won: metaTotals.won || 0, revenue: metaTotals.revenue || 0, cancelled: metaTotals.cancelled || 0 } : { booked: 0, shown: 0, won: 0, revenue: 0, cancelled: 0 }))
     : null
   const cpm = t.impressions ? t.spend / t.impressions * 1000 : 0
   const cpl = t.leads ? t.spend / t.leads : 0
@@ -1457,7 +1463,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
           const pids = allPipes.map((p) => p.id).filter((pid) => (pipeSpend[pid] || 0) > 0 || crmOf(pid)).sort((a, b) => (pipeSpend[b] || 0) - (pipeSpend[a] || 0))
           if (pids.length) return pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, pipeSpendPrev[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Meta spend · count · vs prev · cost/event`) })
         }
-        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, totalSpendPrev, crmTot, meCh ? meCh.totals.leads : 0, 'blended CRM outcomes vs Meta spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
+        return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, totalSpendPrev, crmTot, meCh ? meCh.totals.leads : 0, 'Meta-attributed CRM outcomes vs Meta spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
       })()}
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
@@ -1725,7 +1731,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           const groups = pids.map((pid) => { const cp = crmOf(pid); return groupFor(pid, (allPipes.find((p) => p.id === pid) || {}).name || 'Pipeline', pipeSpend[pid] || 0, pipeSpendPrev[pid] || 0, cp, cp ? cp.leads : 0, `${fmtCurrency(pipeSpend[pid] || 0, currency)} Google spend · count · vs prev · cost/event`) }).filter(Boolean)
           if (groups.length) return groups
         }
-        return groupFor(null, 'Caalano360 metrics', t.cost, totalSpendPrev, totalsCrm, gCh ? gCh.totals.leads : 0, 'blended CRM outcomes vs Google spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
+        return groupFor(null, 'Caalano360 metrics', t.cost, totalSpendPrev, totalsCrm, gCh ? gCh.totals.leads : 0, 'Google-attributed CRM outcomes vs Google spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
       })()}
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={t.cost} currency={currency}

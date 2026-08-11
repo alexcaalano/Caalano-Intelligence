@@ -17,7 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.185.0 — 2026-08-10 · `PENDING` — Key-event people drill: scorecards, Leads, lost reasons, wider modal
+## v3.186.0 — 2026-08-11 · `PENDING` — Status filter in the people drill + longer date-range presets
+- **The people drill now has a status filter** (Open / Won / Lost / Abandoned / All) at the top of the
+  modal. It **defaults to Open** so you land on the deals still in play; each chip shows its count and
+  disables when empty. Opening a Won-only tile (or any group with no open deals) auto-selects All so the
+  list is never blank. Abandoned is now distinguished from Lost.
+- **New date-range presets:** Last 60 days, Last 90 days, Last 6 months, Last 12 months and Maximum
+  (last 2 years) join the existing options in the period picker. The preset list scrolls if it runs long.
 - **The per-pipeline scorecard tiles are now clickable too** (Meta & Google) — Leads, each key event,
   Won and Revenue open the same people list as the funnel steps.
 - **The Leads row/tile is now clickable** — it opens the full lead cohort (channel-scoped), which

@@ -1991,7 +1991,7 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
     const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
     people.push({
       contactId: cid, name: nameOf(o), email: emailOf(o), phone: phoneOf(o),
-      status: isWon ? 'won' : isLost ? 'lost' : 'open',
+      status: isWon ? 'won' : st === 'abandoned' ? 'abandoned' : st === 'lost' ? 'lost' : 'open',
       lostReason: isLost ? lostReasonOf(o) : null,
       stage: stg ? stg.name : null, pipeline: (pi && pi.name) || null,
       value: Math.round(num(o.monetaryValue)), source: srcOf(o), channel: channelOf(utmOf(o)),

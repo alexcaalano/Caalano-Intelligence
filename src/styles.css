@@ -280,7 +280,7 @@ tbody tr:hover { background: var(--panel-2); }
 .dr-btn:hover { background: var(--panel-2); }
 .dr-backdrop { position: fixed; inset: 0; z-index: 40; }
 .dr-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 41; display: flex; background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; min-width: 340px; }
-.dr-presets { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-right: 1px solid var(--border); min-width: 148px; }
+.dr-presets { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-right: 1px solid var(--border); min-width: 148px; max-height: 420px; overflow-y: auto; scrollbar-width: thin; }
 .dr-presets button { text-align: left; border: 0; background: transparent; color: var(--muted); padding: 8px 11px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .dr-presets button:hover { background: var(--panel-2); color: var(--text); }
 .dr-presets button.active { background: var(--brand); color: #fff; }
@@ -1154,6 +1154,13 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kp-tbl th, .kp-tbl td { white-space: nowrap; }
 .kp-tbl td.kp-stage { white-space: normal; min-width: 220px; }
 .kp-lost { color: var(--neg, #e0566c); margin-top: 2px; font-weight: 600; }
+.kp-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 0; }
+.kp-filter { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
+.kp-filter:hover:not(:disabled) { color: var(--text); }
+.kp-filter.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+.kp-filter:disabled { opacity: .4; cursor: default; }
+.kp-filter-n { font-size: 11px; font-weight: 800; background: rgba(0,0,0,.12); border-radius: 20px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
+.kp-filter.on .kp-filter-n { background: rgba(255,255,255,.22); }
 .kef-step-tip { cursor: help; }
 .kef-step-tip .ke-cal { text-decoration: underline dotted var(--border); text-underline-offset: 2px; }
 .kef-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }

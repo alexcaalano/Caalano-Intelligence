@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.185.0'
+const APP_VERSION = '3.186.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2689,8 +2689,10 @@ function KeyPersonRow({ p, clientId, money }) {
   )
 }
 // Click-through list of the people that make up ONE key event, channel-scoped.
+const KP_STATUSES = [['open', 'Open'], ['won', 'Won'], ['lost', 'Lost'], ['abandoned', 'Abandoned'], ['all', 'All']]
 function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
+  const [filter, setFilter] = useState('open')
   const money = (v) => fmtCurrency(v, currency)
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
@@ -2699,26 +2701,44 @@ function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) 
     if (stageName && (event.kind === 'stage' || event.kind === 'calendar')) q.set('stage', String(stageName).replace(/^📅 /, ''))
     if (event.pipeline) q.set('pipeline', event.pipeline)
     if (event.refs && event.refs.length) q.set('cals', event.refs.join(','))
-    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && !j.error ? 'ok' : 'err', data: j }) }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => {
+      if (!alive) return
+      setSt({ status: j && !j.error ? 'ok' : 'err', data: j })
+      // Default to Open, but if the clicked event has no open people (e.g. a Won
+      // tile, or a lost-reason drill) fall back to All so the modal isn't empty.
+      const ppl = (j && j.people) || []
+      setFilter(ppl.some((p) => p.status === 'open') ? 'open' : 'all')
+    }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
   }, [event, clientId, channel, range.from, range.to])
   useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') onClose() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
   const d = st.data || {}
   const people = d.people || []
+  const counts = people.reduce((a, p) => { a[p.status] = (a[p.status] || 0) + 1; a.all += 1; return a }, { all: 0 })
+  const shown = filter === 'all' ? people : people.filter((p) => p.status === filter)
   const chanLbl = channel === 'meta' ? 'Meta-attributed ' : channel === 'google' ? 'Google-attributed ' : ''
   const label = String(event.label || '').replace(/^📅 /, '')
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal kp-modal" onClick={(e) => e.stopPropagation()}>
         <div className="m-head"><div><h3 style={{ margin: 0 }}>{event.kind === 'calendar' ? '📅 ' : ''}{label}</h3><span className="cap">{st.status === 'loading' ? 'Loading…' : `${fmtNumber(d.count || people.length)} ${chanLbl}${(d.count || people.length) === 1 ? 'person' : 'people'} · click a row for their notes`}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        {st.status === 'ok' && people.length ? (
+          <div className="kp-filters">
+            {KP_STATUSES.map(([k, lbl]) => {
+              const n = k === 'all' ? counts.all : (counts[k] || 0)
+              return <button key={k} className={`kp-filter${filter === k ? ' on' : ''}`} onClick={() => setFilter(k)} disabled={n === 0}>{lbl}<span className="kp-filter-n">{fmtNumber(n)}</span></button>
+            })}
+          </div>
+        ) : null}
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Loading people…" />
             : st.status === 'err' ? <div className="cap">Couldn’t load the list — try again.</div>
               : !people.length ? <div className="cap">No people found for this event in the selected range.</div>
-                : <table className="mini-tbl users-tbl kp-tbl">
-                  <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Current stage</th><th className="lft">Source</th><th>Value</th><th>Age</th></tr></thead>
-                  <tbody>{people.map((p, i) => <KeyPersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</tbody>
-                </table>}
+                : !shown.length ? <div className="cap">No {filter} deals in this group.</div>
+                  : <table className="mini-tbl users-tbl kp-tbl">
+                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Current stage</th><th className="lft">Source</th><th>Value</th><th>Age</th></tr></thead>
+                    <tbody>{shown.map((p, i) => <KeyPersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</tbody>
+                  </table>}
         </div>
       </div>
     </div>
@@ -3758,11 +3778,16 @@ const PRESETS = [
   { id: 'last_7d', label: 'Last 7 days' },
   { id: 'last_14d', label: 'Last 14 days' },
   { id: 'last_30d', label: 'Last 30 days' },
+  { id: 'last_60d', label: 'Last 60 days' },
+  { id: 'last_90d', label: 'Last 90 days' },
   { id: 'this_week', label: 'This week' },
   { id: 'last_week', label: 'Last week' },
   { id: 'this_month', label: 'This month' },
   { id: 'last_month', label: 'Last month' },
   { id: 'this_year', label: 'This year' },
+  { id: 'last_6m', label: 'Last 6 months' },
+  { id: 'last_12m', label: 'Last 12 months' },
+  { id: 'max', label: 'Maximum' },
 ]
 function presetRange(id) {
   const now = new Date(); now.setHours(12, 0, 0, 0)
@@ -3776,11 +3801,16 @@ function presetRange(id) {
     case 'last_7d': return mk(shift(7), shift(1))
     case 'last_14d': return mk(shift(14), shift(1))
     case 'last_30d': return mk(shift(30), shift(1))
+    case 'last_60d': return mk(shift(60), shift(1))
+    case 'last_90d': return mk(shift(90), shift(1))
     case 'this_week': return mk(monday(now), now)
     case 'last_week': { const s = monday(shift(7)); const e = new Date(s); e.setDate(e.getDate() + 6); return mk(s, e) }
     case 'this_month': return mk(new Date(now.getFullYear(), now.getMonth(), 1), now)
     case 'last_month': return mk(new Date(now.getFullYear(), now.getMonth() - 1, 1), new Date(now.getFullYear(), now.getMonth(), 0))
     case 'this_year': return mk(new Date(now.getFullYear(), 0, 1), now)
+    case 'last_6m': { const s = new Date(now); s.setMonth(s.getMonth() - 6); s.setDate(s.getDate() + 1); return mk(s, now) }
+    case 'last_12m': { const s = new Date(now); s.setFullYear(s.getFullYear() - 1); s.setDate(s.getDate() + 1); return mk(s, now) }
+    case 'max': { const s = new Date(now); s.setFullYear(s.getFullYear() - 2); return mk(s, now) }
     default: return mk(shift(30), shift(1))
   }
 }

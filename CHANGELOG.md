@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.187.0 — 2026-08-11 · `PENDING` — Creative cards: clearer "Cost per" stage column
+- **The Caalano360 key-events table on each creative card now has a clearly-labelled "Cost per"
+  column** — the creative's total ad spend ÷ the number of people who reached that stage (e.g.
+  $2,652 ÷ 6 Site Visits Booked = $442 per site visit). This is the cost-efficiency read per key
+  event, right beside the count and % of leads. (The figure was already computed under the old
+  "Cost / stage" heading; this makes it explicit and matches the funnel language.)
+
 ## v3.186.0 — 2026-08-11 · `PENDING` — Status filter in the people drill + longer date-range presets
 - **The people drill now has a status filter** (Open / Won / Lost / Abandoned / All) at the top of the
   modal. It **defaults to Open** so you land on the deals still in play; each chip shows its count and

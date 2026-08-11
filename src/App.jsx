@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.189.0'
+const APP_VERSION = '3.190.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8898,16 +8898,28 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
   // Dedupe event chips by label — the union spans every pipeline, so the same
   // stage name (e.g. "Booked Discovery Call") can appear in more than one pipeline.
   const uniqGroups = [...new Map(groups.map((g) => [g.label, g])).values()]
+  // Volume sort chips (by count, high→low) + a parallel set of "cheapest cost per
+  // event" chips (spend ÷ that event's count, low→high) so you can rank creatives
+  // by the best cost per booked call / quote / etc. Creatives that never reached
+  // an event sort last on the cost view (sentinel below).
+  const NOCOST = 9e15
+  const evMetrics = uniqGroups.map((g, i) => ({ k: 'ev' + i, label: g.label, evLabel: g.label }))
+  const costMetrics = uniqGroups.map((g, i) => ({ k: 'cpe' + i, label: g.label, costEvLabel: g.label, asc: true }))
   const METRICS = [
     { k: 'spend', label: 'Spend' }, { k: 'ctrV', label: 'CTR' }, { k: 'leads', label: 'Leads' }, { k: 'cpl', label: 'CPL', asc: true },
-    ...uniqGroups.map((g, i) => ({ k: 'ev' + i, label: g.label, evLabel: g.label })),
+    ...evMetrics,
     { k: 'revenue', label: 'Revenue' }, { k: 'roas', label: 'ROAS' },
+    ...costMetrics,
   ]
   const [sortK, setSortK] = useState('spend')
   const [page, setPage] = useState(0)
   const PER = 10
   const m = METRICS.find((x) => x.k === sortK) || METRICS[0]
-  const valOf = (a) => (m.evLabel != null ? ((a.evByLabel && a.evByLabel.get(m.evLabel)) || 0) : (a[m.k] || 0))
+  const valOf = (a) => {
+    if (m.evLabel != null) return (a.evByLabel && a.evByLabel.get(m.evLabel)) || 0
+    if (m.costEvLabel != null) { const c = (a.evByLabel && a.evByLabel.get(m.costEvLabel)) || 0; return c > 0 && a.spend ? a.spend / c : NOCOST }
+    return a[m.k] || 0
+  }
   const sorted = [...enriched].sort((x, y) => (m.asc ? valOf(x) - valOf(y) : valOf(y) - valOf(x)))
   const pages = Math.max(1, Math.ceil(sorted.length / PER))
   const cur = Math.min(page, pages - 1)
@@ -8958,7 +8970,11 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
       </>}
       <div className="mr-cre-sort no-print">
         <span>Sort by</span>
-        {METRICS.map((x) => <button key={x.k} className={sortK === x.k ? 'on' : ''} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
+        {METRICS.filter((x) => !x.costEvLabel).map((x) => <button key={x.k} className={sortK === x.k ? 'on' : ''} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
+        {costMetrics.length ? <>
+          <span className="mr-cre-sort-sep" title="Rank creatives by the cheapest cost per that event (spend ÷ people who reached it). Creatives that never reached it sort last.">💲 Cheapest cost /</span>
+          {costMetrics.map((x) => <button key={x.k} className={`mr-cre-sort-cost${sortK === x.k ? ' on' : ''}`} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
+        </> : null}
       </div>
       <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} />)}</div>
       {pages > 1 && (

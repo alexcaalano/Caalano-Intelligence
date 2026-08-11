@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.190.0 — 2026-08-11 · `PENDING` — Frozen key-event name column + "cheapest cost per event" sort
+- **The Key Event name column now stays frozen** while the metric columns (Count → % leads → Next →
+  Show % → Cost per) scroll sideways on the creative cards — so you always know which row you're
+  reading.
+- **New "Cheapest cost /" sort group** in Creative performance. Alongside the existing volume sorts,
+  there's now a chip per key event that ranks creatives by the **cheapest cost per that event**
+  (spend ÷ people who reached it, low→high) — e.g. cheapest cost per Quote, per Booked Discovery
+  Call, per Site Visit. Creatives that never reached the event sort to the bottom.
+
 ## v3.189.0 — 2026-08-11 · `PENDING` — Creative key-events header cue for the Cost-per column
 - Added a small header cue on each creative card's key-events table — **"Cost per" = spend ÷ reached** —
   so the (already-present) Show % and Cost per columns are obviously there. Doubles as a fresh-bundle

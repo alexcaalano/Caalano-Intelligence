@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.190.0'
+const APP_VERSION = '3.191.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1556,6 +1556,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
             o360colsFor={(campName) => creColsFor(campName).cols}
             pipeLabelFor={allPipes.length > 1 ? (campName) => { const { pid } = creColsFor(campName); return pid ? ((allPipes.find((p) => p.id === pid) || {}).name || null) : null } : null}
             money={(v) => fmtCurrency(v, currency)} n0={fmtNumber} currency={currency}
+            clientId={clientId} range={range} channel="meta"
           />
         : <div className="card" style={{ padding: 14 }}><p className="cap" style={{ margin: 0 }}>No creatives with spend in this range.</p></div>}
       <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{m.adDaily ? ' · click a day to break it down' : ''}</span></div>
@@ -2663,9 +2664,25 @@ function calPopRows(r) {
   if (r.fromStage) rows.push({ label: 'Reached the stage — no calendar booking', value: r.fromStage, muted: true })
   return { title: parts.length > 1 ? `Booked · ${parts.length} calendars` : 'Booked', total: r.fromCal || r.count, rows }
 }
+// Appointment detail for a calendar-linked key-event drill: which calendar the
+// person booked, whether the meeting has occurred (date passed) and whether they
+// showed. Shown as its own column when the drill is a calendar event.
+function CalCell({ cals }) {
+  if (!cals || !cals.length) return <span className="cap">—</span>
+  return (
+    <div className="kp-cals">
+      {cals.map((c, i) => {
+        const badge = c.cancelled ? { cls: 'canc', txt: '🚫 Cancelled' }
+          : !c.occurred ? { cls: 'up', txt: '⏳ Upcoming' }
+            : c.shown ? { cls: 'shown', txt: '✅ Showed' } : { cls: 'noshow', txt: '❌ No-show' }
+        return <div className="kp-cal" key={i}><span className="kp-cal-nm">📅 {c.name}</span> <span className={`kp-cal-badge ${badge.cls}`}>{badge.txt}</span></div>
+      })}
+    </div>
+  )
+}
 // One person behind a key event (the drill-down list). Expands to that contact's
 // Caalano Systems notes on click — same pattern as OpenDealRow.
-function KeyPersonRow({ p, clientId, money }) {
+function KeyPersonRow({ p, clientId, money, showCal = false }) {
   const [open, setOpen] = useState(false)
   const [notes, setNotes] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2678,11 +2695,12 @@ function KeyPersonRow({ p, clientId, money }) {
         <td className="lft">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
         <td className="lft">{statusChip(p.status)}{p.status === 'lost' && p.lostReason ? <div className="kp-lost cap">✕ {p.lostReason}</div> : null}</td>
         <td className="lft kp-stage">{p.stage || '—'}{p.pipeline && p.pipeline !== 'Pipeline' ? <span className="cap"> · {p.pipeline}</span> : null}</td>
+        {showCal ? <td className="lft kp-appt"><CalCell cals={p.calendars} /></td> : null}
         <td className="lft"><span className={`mr-src mr-src-${p.channel || 'other'}`}>{p.source}</span> <span className="cap">· {viaLabel}</span></td>
         <td>{p.value ? money(p.value) : '—'}</td>
         <td className={p.ageDays != null && p.ageDays > 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '—'}</td>
       </tr>
-      {open && <tr className="u-notes-row"><td colSpan={6}>
+      {open && <tr className="u-notes-row"><td colSpan={showCal ? 7 : 6}>
         {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>{[p.email, p.phone].filter(Boolean).join(' · ') || 'No notes on this contact in Caalano Systems.'}</div>}
       </td></tr>}
     </React.Fragment>
@@ -2690,10 +2708,11 @@ function KeyPersonRow({ p, clientId, money }) {
 }
 // Click-through list of the people that make up ONE key event, channel-scoped.
 const KP_STATUSES = [['open', 'Open'], ['won', 'Won'], ['lost', 'Lost'], ['abandoned', 'Abandoned'], ['all', 'All']]
-function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) {
+function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [filter, setFilter] = useState('open')
   const money = (v) => fmtCurrency(v, currency)
+  const isCal = event.kind === 'calendar'
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const stageName = event.kind === 'calendar' ? (event.stage || event.label) : event.label
@@ -2701,6 +2720,7 @@ function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) 
     if (stageName && (event.kind === 'stage' || event.kind === 'calendar')) q.set('stage', String(stageName).replace(/^📅 /, ''))
     if (event.pipeline) q.set('pipeline', event.pipeline)
     if (event.refs && event.refs.length) q.set('cals', event.refs.join(','))
+    if (ad) q.set('ad', ad)
     fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => {
       if (!alive) return
       setSt({ status: j && !j.error ? 'ok' : 'err', data: j })
@@ -2710,13 +2730,13 @@ function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) 
       setFilter(ppl.some((p) => p.status === 'open') ? 'open' : 'all')
     }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [event, clientId, channel, range.from, range.to])
+  }, [event, clientId, channel, ad, range.from, range.to])
   useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') onClose() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
   const d = st.data || {}
   const people = d.people || []
   const counts = people.reduce((a, p) => { a[p.status] = (a[p.status] || 0) + 1; a.all += 1; return a }, { all: 0 })
   const shown = filter === 'all' ? people : people.filter((p) => p.status === filter)
-  const chanLbl = channel === 'meta' ? 'Meta-attributed ' : channel === 'google' ? 'Google-attributed ' : ''
+  const chanLbl = ad ? 'this creative’s ' : channel === 'meta' ? 'Meta-attributed ' : channel === 'google' ? 'Google-attributed ' : ''
   const label = String(event.label || '').replace(/^📅 /, '')
   return (
     <div className="modal-bg" onClick={onClose}>
@@ -2736,8 +2756,8 @@ function KeyPeopleModal({ event, clientId, channel, range, currency, onClose }) 
               : !people.length ? <div className="cap">No people found for this event in the selected range.</div>
                 : !shown.length ? <div className="cap">No {filter} deals in this group.</div>
                   : <table className="mini-tbl users-tbl kp-tbl">
-                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Current stage</th><th className="lft">Source</th><th>Value</th><th>Age</th></tr></thead>
-                    <tbody>{shown.map((p, i) => <KeyPersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</tbody>
+                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Current stage</th>{isCal ? <th className="lft">Appointment</th> : null}<th className="lft">Source</th><th>Value</th><th>Age</th></tr></thead>
+                    <tbody>{shown.map((p, i) => <KeyPersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} showCal={isCal} />)}</tbody>
                   </table>}
         </div>
       </div>
@@ -8678,8 +8698,10 @@ function MRDrill({ drill, currency, onClose }) {
 // One large creative card for the Monthly Report: Meta stats + the Caalano360
 // CRM key-event funnel (Leads → Booked → Shown → Won → Revenue) attributed to
 // this creative's UTM, plus inline Instagram playback via the ad's permalink.
-function MRCreative({ a, money, n0 }) {
+function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
   const [play, setPlay] = useState(false)
+  const [drill, setDrill] = useState(null)
+  const canDrill = !!(clientId && range)
   const ctrV = a.impressions ? (a.clicks / a.impressions) * 100 : null
   const results = a.results != null ? a.results : a.leads
   const cprV = results ? a.spend / results : null
@@ -8731,10 +8753,10 @@ function MRCreative({ a, money, n0 }) {
               <thead><tr>
                 <th>Key event</th>
                 <th className="r">Count</th>
+                <th className="r" title="This creative's total ad spend ÷ the number of people who reached this stage (e.g. spend ÷ Site Visits Booked)">Cost per</th>
                 <th className="r" title="This event's count ÷ this creative's leads">% leads</th>
                 <th className="r" title="This step ÷ the previous step">Next</th>
                 <th className="r" title="Appointment events only: shown ÷ occurred (appointments whose date has passed)">Show %</th>
-                <th className="r" title="This creative's total ad spend ÷ the number of people who reached this stage (e.g. spend ÷ Site Visits Booked)">Cost per</th>
               </tr></thead>
               <tbody>
                 {feRows.map((e, i) => {
@@ -8744,14 +8766,16 @@ function MRCreative({ a, money, n0 }) {
                   const nextStep = prev && e.count != null ? (e.count / prev) * 100 : null
                   const costEv = e.count && a.spend ? a.spend / e.count : null
                   const cls = e.kind === 'won' ? 'mr-ketbl-won' : e.kind === 'lead' ? 'mr-ketbl-lead' : ''
+                  const rowDrill = canDrill && e.count > 0
+                  const openDrill = rowDrill ? () => setDrill({ kind: e.kind, label: e.label, stage: e.stage || null, pipeline: e.kind === 'lead' ? null : (e.pipeline || null), refs: e.kind === 'calendar' ? (e.refs || null) : null, ad: a.name }) : undefined
                   return (
-                    <tr key={i} className={cls}>
-                      <td title={e.label}>{e.label}{isCal && e.shown != null ? <small> · {n0(e.shown)} shown</small> : null}</td>
+                    <tr key={i} className={`${cls}${rowDrill ? ' mr-ketbl-clickable' : ''}`} onClick={openDrill} title={rowDrill ? 'Click to see the people behind this' : undefined}>
+                      <td title={e.label}>{e.label}{isCal && e.shown != null ? <small> · {n0(e.shown)} shown</small> : null}{rowDrill ? <span className="mr-ketbl-chev"> ›</span> : null}</td>
                       <td className="r">{n0(e.count)}</td>
+                      <td className="r">{costEv == null ? '—' : money(costEv)}</td>
                       <td className="r">{e.kind === 'lead' ? '100%' : pctLeads == null ? '—' : fmtPct(pctLeads, 0)}</td>
                       <td className="r">{nextStep == null ? '—' : fmtPct(nextStep, 0)}</td>
                       <td className="r">{isCal && e.showRate != null ? fmtPct(e.showRate, 0) : '—'}</td>
-                      <td className="r">{costEv == null ? '—' : money(costEv)}</td>
                     </tr>
                   )
                 })}
@@ -8774,6 +8798,7 @@ function MRCreative({ a, money, n0 }) {
           </div>
         </div>
       )}
+      {drill ? <KeyPeopleModal event={drill} clientId={clientId} channel={channel || 'meta'} ad={drill.ad} range={range} currency={currency} onClose={() => setDrill(null)} /> : null}
     </div>
   )
 }
@@ -8851,7 +8876,7 @@ function MRDonut({ data, money }) {
 }
 // Creative performance — visual cards (big thumbnail + all stats + the client's
 // configured key events), with a sort control and pagination (10 per page).
-function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency, showTable = false }) {
+function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency, showTable = false, clientId, range, channel }) {
   const groups = o360cols ? o360cols.groups : []
   // Enrich each creative: platform metrics + the per-client key-event counts + cash.
   // Each creative's key events come from the pipeline attached to its campaign
@@ -8869,13 +8894,17 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
         const seg = cols.cols.slice(ci, ci + g.span); ci += g.span
         const first = seg.find((c) => c.gfirst) || seg[0]
         const count = f[first.key] || 0
-        const ev = { label: g.label, count, kind: g.kind, rate: null, shown: null, showRate: null }
+        // Carry the drill context (calendar ids / linked stage / pipeline) so a
+        // click on this event can open the people behind it, scoped to this ad.
+        const ev = { label: g.label, count, kind: g.kind, rate: null, shown: null, showRate: null, occurred: null, stage: first.stage || null, pipeline: first.pipeline || null, refs: first.refs || (first.ref ? [first.ref] : null) }
         if (g.kind === 'calendar') {
           const shCol = seg.find((c) => c.metric === 'calShown')
           const srCol = seg.find((c) => c.metric === 'calShowRate')
           const brCol = seg.find((c) => c.metric === 'calBookRate')
+          const ocCol = seg.find((c) => c.metric === 'calOccurred')
           ev.shown = shCol ? f[shCol.key] : null
           ev.showRate = srCol ? f[srCol.key] : null
+          ev.occurred = ocCol ? f[ocCol.key] : null
           ev.rate = brCol ? f[brCol.key] : null   // book rate (booked ÷ leads)
         } else if (g.kind === 'won') {
           const wrCol = seg.find((c) => c.metric === 'wonRate')
@@ -8976,7 +9005,7 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
           {costMetrics.map((x) => <button key={x.k} className={`mr-cre-sort-cost${sortK === x.k ? ' on' : ''}`} onClick={() => { setSortK(x.k); setPage(0) }}>{x.label}</button>)}
         </> : null}
       </div>
-      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} />)}</div>
+      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
       {pages > 1 && (
         <div className="mr-cre-pager no-print">
           <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>

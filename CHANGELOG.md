@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.191.0 — 2026-08-11 · `PENDING` — Click a creative's key events to see the people (+ appointment detail)
+- **Every key-event row on a creative card is now clickable** — Leads, each stage, each booked
+  calendar and Won open the list of the actual people behind that number, **scoped to that creative**
+  (matched on the lead's utm_content). Same drill-down as the scorecards at the top: name, status
+  (with lost reason), current stage, source, value, age, and click a person for their Caalano Systems
+  notes. Includes the Open/Won/Lost/Abandoned/All status filter.
+- **Calendar key events now show appointment detail in the pop-up** — a new "Appointment" column lists
+  **which calendar** each person booked and whether the meeting **✅ Showed / ❌ No-show / ⏳ Upcoming /
+  🚫 Cancelled**. This appears on any calendar-event drill (creative cards and the scorecards).
+- **Column order tidied** on the creative key-events table: Key event · Count · Cost per · % leads ·
+  Next · Show %.
+
 ## v3.190.0 — 2026-08-11 · `PENDING` — Frozen key-event name column + "cheapest cost per event" sort
 - **The Key Event name column now stays frozen** while the metric columns (Count → % leads → Next →
   Show % → Cost per) scroll sideways on the creative cards — so you always know which row you're

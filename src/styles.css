@@ -1157,6 +1157,15 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kp-tbl th, .kp-tbl td { white-space: nowrap; }
 .kp-tbl td.kp-stage { white-space: normal; min-width: 220px; }
 .kp-lost { color: var(--neg, #e0566c); margin-top: 2px; font-weight: 600; }
+.kp-tbl td.kp-appt { white-space: normal; min-width: 180px; }
+.kp-cals { display: flex; flex-direction: column; gap: 3px; }
+.kp-cal { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kp-cal-nm { font-weight: 600; }
+.kp-cal-badge { font-size: 10.5px; font-weight: 700; border-radius: 20px; padding: 1px 8px; white-space: nowrap; }
+.kp-cal-badge.shown { background: rgba(18,184,134,.15); color: #0f9e6e; }
+.kp-cal-badge.noshow { background: rgba(224,86,108,.16); color: var(--neg, #e0566c); }
+.kp-cal-badge.up { background: rgba(109,94,252,.14); color: #6d5efc; }
+.kp-cal-badge.canc { background: var(--panel-2); color: var(--faint); border: 1px solid var(--border); }
 .kp-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 0; }
 .kp-filter { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
 .kp-filter:hover:not(:disabled) { color: var(--text); }
@@ -2193,6 +2202,11 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
    of shadow so the scrolling numbers pass cleanly underneath. Declared after the
    row-colour rules so the first cell always paints solid (no bleed-through). */
 .mr-cre-ketbl th:first-child, .mr-cre-ketbl td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel-2); box-shadow: 1px 0 0 var(--border); }
+/* Clickable key-event rows open the people behind that number for this creative. */
+.mr-cre-ketbl tbody tr.mr-ketbl-clickable { cursor: pointer; }
+.mr-cre-ketbl tbody tr.mr-ketbl-clickable:hover td { background: var(--elev); }
+.mr-cre-ketbl tbody tr.mr-ketbl-clickable:hover td:first-child { background: var(--elev); }
+.mr-ketbl-chev { color: var(--faint); font-weight: 800; }
 .mr-cre-won { background: rgba(18,184,134,.22) !important; }
 .mr-cre-cash { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .mr-cre-cash > div { display: flex; flex-direction: column; }

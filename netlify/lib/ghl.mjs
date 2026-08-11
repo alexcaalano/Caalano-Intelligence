@@ -1930,7 +1930,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
 // Given a key event descriptor (a pipeline stage, a won event, or a set of booked
 // calendars linked to a stage) + a channel, return every opportunity/contact that
 // makes up that count, with the details a rep needs to work them.
-export async function buildKeyPeople(locationId, from, to, { channel, pipeline, stage, kind, cals }) {
+export async function buildKeyPeople(locationId, from, to, { channel, pipeline, stage, kind, cals, ad }) {
   const locTok = await locationToken(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
@@ -1939,6 +1939,10 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
   const calIds = (cals || []).map(String).filter(Boolean)
   const needAppts = kind === 'calendar' && calIds.length
+  // Scope to one creative: match the lead's first-touch utm_content to the ad
+  // name the same way the dashboard does (lower-case, strip non-alphanumerics).
+  const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const adKey = ad ? unorm(ad) : null
   const [wideOpps, pipelines, appts, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 2500),
     fetchPipelines(locTok, locationId),
@@ -1952,7 +1956,10 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   const chan = channel && channel !== 'all' ? channel : null
   const inWin = (o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) }
   let opps = wideOpps.filter(inWin)
-  if (chan) opps = opps.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
+  // A creative filter (utm_content) is more specific than the channel filter and
+  // matches exactly what the creative card counted, so it takes precedence.
+  if (adKey) opps = opps.filter((o) => unorm(utmOf(o).content) === adKey)
+  else if (chan) opps = opps.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
   const nameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
   const emailOf = (o) => (o.contact && o.contact.email) || o.email || null
   const phoneOf = (o) => (o.contact && o.contact.phone) || o.phone || null
@@ -1971,6 +1978,18 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   const bookedCids = new Set()
   if (needAppts && appts && appts.perCalendar instanceof Map) {
     for (const cid of calIds) { const rec = appts.perCalendar.get(cid); if (!rec) continue; for (const [c, f] of rec.byContact) if (f && f.bookedInPeriod) bookedCids.add(c) }
+  }
+  // Per-person appointment detail for calendar drills: which linked calendar(s)
+  // they booked, whether the meeting has occurred (date passed) and whether they
+  // showed. Pulled from the merged byContact.calendars the appts fetch builds.
+  const apptByContact = (needAppts && appts && appts.byContact instanceof Map) ? appts.byContact : null
+  const calSet = new Set(calIds)
+  const calDetailOf = (cid) => {
+    if (!apptByContact || !cid) return null
+    const e = apptByContact.get(cid)
+    if (!e || !e.calendars) return null
+    const list = e.calendars.filter((c) => !calSet.size || (c.id && calSet.has(String(c.id)))).map((c) => ({ name: c.name, occurred: !!c.occurred, shown: !!c.shown, cancelled: !!c.cancelled }))
+    return list.length ? list : null
   }
   const seen = new Set(); const people = []
   for (const o of opps) {
@@ -1996,10 +2015,11 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
       stage: stg ? stg.name : null, pipeline: (pi && pi.name) || null,
       value: Math.round(num(o.monetaryValue)), source: srcOf(o), channel: channelOf(utmOf(o)),
       createdAt: o.createdAt || null, ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null, via,
+      calendars: via === 'calendar' ? calDetailOf(cid) : null,
     })
   }
-  const rank = { won: 0, open: 1, lost: 2 }
-  people.sort((a, b) => (rank[a.status] - rank[b.status]) || (b.value - a.value))
+  const rank = { won: 0, open: 1, lost: 2, abandoned: 3 }
+  people.sort((a, b) => ((rank[a.status] ?? 9) - (rank[b.status] ?? 9)) || (b.value - a.value))
   return { connected: true, count: people.length, people: people.slice(0, 400) }
 }
 

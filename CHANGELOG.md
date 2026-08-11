@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.189.0 — 2026-08-11 · `PENDING` — Creative key-events header cue for the Cost-per column
+- Added a small header cue on each creative card's key-events table — **"Cost per" = spend ÷ reached** —
+  so the (already-present) Show % and Cost per columns are obviously there. Doubles as a fresh-bundle
+  "tell": if you can see this cue, you're on the current deploy and the Cost-per column is rendering.
+
 ## v3.188.0 — 2026-08-11 · `PENDING` — Wider popups, no sideways scroll
 - **All modal windows are now wider** (up to 1040px, 96vw) and no longer scroll horizontally as a
   whole — the window grows to fit instead.

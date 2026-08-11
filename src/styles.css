@@ -2163,6 +2163,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-cre-metrics span { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
 .mr-cre-ke { border-top: 1px solid var(--border); padding: 9px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .mr-cre-ke-lab { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #12b886; }
+.mr-cre-ke-hint { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--faint); }
 .mr-cre-ke-empty { font-size: 11px; color: var(--faint); border-top: 1px solid var(--border); padding: 9px 12px 12px; }
 /* Never clip the right-hand columns (Show % / Cost per). The table is fixed-layout
    at 100% width so it normally fits; overflow-x:auto is a safety net that lets the

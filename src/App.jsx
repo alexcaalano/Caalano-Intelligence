@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.210.0'
+const APP_VERSION = '3.211.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -938,6 +938,9 @@ function TrendSource({ w28, row, money }) {
 // Google (with cost per result), then every configured key event in that window with
 // its count and blended cost per event (total ad spend ÷ people who reached it) — the
 // same key-event engine (keyEventRows) the Caalano360 funnel + Monthly Report use.
+// Key-event source segments for the breakdown: which lead source each key event was
+// attributed to. Paid = Meta+Google, Non-paid = organic/referral/direct, All = total CRM.
+const KE_SRC = [['all', 'All CRM'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['meta', 'Meta'], ['google', 'Google']]
 function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   const money = (v) => fmtCurrency(v, currency)
   const b = w.blended || {}
@@ -946,15 +949,26 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   if (w.meta && (w.meta.spend || w.meta.results)) srcRows.push({ label: 'Meta', spend: w.meta.spend || 0, results: w.meta.results || 0 })
   if (w.google && (w.google.spend || w.google.results)) srcRows.push({ label: 'Google', spend: w.google.spend || 0, results: w.google.results || 0 })
   const cpr = (s, r) => (r ? money(s / r) : '—')
-  // Key events for this window (blended, CRM), resolved exactly like every other view.
-  let keRows = []
   const crm = w.crm
+  // Key events split by lead-source channel. `src` picks the segment; reach/leads/won
+  // are read from that segment (Paid = Meta+Google merged) and resolved with the same
+  // keyEventRows engine as every other view.
+  const [src, setSrc] = useState('all')
+  const pickN = (obj) => { if (!obj) return 0; if (src === 'paid') return (obj.meta || 0) + (obj.google || 0); if (src === 'nonpaid') return obj.other || 0; return obj[src] || 0 }
+  const mergeReach = (...maps) => { const o = {}; for (const m of maps) for (const k in (m || {})) o[k] = (o[k] || 0) + m[k]; return o }
+  const reachFor = () => { if (!crm) return {}; const R = crm.reach || {}; if (src === 'paid') return mergeReach(R.meta, R.google); if (src === 'nonpaid') return R.other || {}; return R[src] || {} }
+  const leads = crm ? pickN(crm.leads) : 0
+  const won = crm ? pickN(crm.won) : 0
+  let keRows = []
   if (crm) {
-    const rmap = { m: new Map(Object.entries(crm.reach || {})), total: crm.leads || 0 }
+    const rmap = { m: new Map(Object.entries(reachFor())), total: leads }
     const sp = new Map(Object.entries(stagePos || {}))
-    keRows = keyEventRows(keyEventsForPipe(loadKeyEvents(clientId), pipeId || 'all'), rmap, new Map(), sp, crm.won || 0)
+    keRows = keyEventRows(keyEventsForPipe(loadKeyEvents(clientId), pipeId || 'all'), rmap, new Map(), sp, won).filter((r) => r.kind !== 'lead')
   }
-  const cpe = (n) => (n && totalSpend ? money(totalSpend / n) : '—')
+  // Cost per event uses the SELECTED source's ad spend (Non-paid has none → no cost).
+  const srcSpend = src === 'meta' ? (w.meta ? w.meta.spend : 0) : src === 'google' ? (w.google ? w.google.spend : 0) : src === 'nonpaid' ? 0 : totalSpend
+  const cpe = (n) => (n && srcSpend ? money(srcSpend / n) : '—')
+  const srcLabel = (KE_SRC.find(([k]) => k === src) || [])[1] || 'All CRM'
   return (
     <div className="tr-brk">
       <div className="tr-brk-grid">
@@ -970,20 +984,21 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
           </table>
         </div>
         <div>
-          <div className="tr-brk-lab">Key events · cost per event {crm ? '' : '(no CRM for this segment)'}</div>
-          {crm ? (
+          <div className="tr-brk-lab">Key events by source{crm ? '' : ' (no CRM for this segment)'}</div>
+          {crm ? (<>
+            <div className="chan-toggle sm tr-brk-src">{KE_SRC.map(([k, l]) => <button key={k} className={src === k ? 'on' : ''} onClick={() => setSrc(k)}>{l}</button>)}</div>
             <table className="mini-tbl tr-brk-tbl">
-              <thead><tr><th className="lft">Key event</th><th>Count</th><th>% leads</th><th>Cost / event</th></tr></thead>
+              <thead><tr><th className="lft">Key event · {srcLabel}</th><th>Count</th><th>% leads</th><th>Cost / event</th></tr></thead>
               <tbody>
-                <tr><td className="lft">Leads</td><td>{fmtNumber(crm.leads || 0)}</td><td>100%</td><td>{cpe(crm.leads || 0)}</td></tr>
-                {keRows.filter((r) => r.kind !== 'lead').map((r, i) => (
-                  <tr key={r.label + i}><td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}</td><td>{fmtNumber(r.count || 0)}</td><td>{crm.leads ? fmtPct((r.count / crm.leads) * 100, 0) : '—'}</td><td>{cpe(r.count || 0)}</td></tr>
+                <tr><td className="lft">Leads</td><td>{fmtNumber(leads)}</td><td>{leads ? '100%' : '—'}</td><td>{cpe(leads)}</td></tr>
+                {keRows.map((r, i) => (
+                  <tr key={r.label + i}><td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}</td><td>{fmtNumber(r.count || 0)}</td><td>{leads ? fmtPct((r.count / leads) * 100, 0) : '—'}</td><td>{cpe(r.count || 0)}</td></tr>
                 ))}
-                {!keRows.filter((r) => r.kind !== 'lead').length ? <tr><td className="lft" colSpan={4}><span className="cap">No key events configured — set them in Settings → Key events.</span></td></tr> : null}
+                {!keRows.length ? <tr><td className="lft" colSpan={4}><span className="cap">No key events {leads ? 'reached from this source' : 'configured'} in this window.</span></td></tr> : null}
               </tbody>
             </table>
-          ) : <p className="cap" style={{ margin: '4px 0 0' }}>Unlinked ad spend isn't tied to a pipeline, so it has no CRM key events.</p>}
-          {crm ? <p className="tr-brk-note cap">Cost per event = total ad spend ({money(totalSpend)}) ÷ people who reached that event (blended, all sources — a guide, not paid-only CAC).</p> : null}
+            <p className="tr-brk-note cap">{src === 'nonpaid' ? 'Non-paid = organic / referral / direct leads (no ad spend, so no cost per event).' : `Cost / event = ${srcLabel === 'All CRM' ? 'total' : srcLabel} ad spend ÷ people who reached that event.`} Source = the lead's Caalano Systems source.</p>
+          </>) : <p className="cap" style={{ margin: '4px 0 0' }}>Unlinked ad spend isn't tied to a pipeline, so it has no CRM key events.</p>}
         </div>
       </div>
     </div>

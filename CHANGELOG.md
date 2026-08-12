@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.211.0 — 2026-08-12 · `PENDING` — Daily Performance: key-events breakdown split by lead source
+- The window breakdown popup's **Key events** section now has an **All CRM / Paid / Non-paid / Meta / Google**
+  toggle, so you can see which key events were attributed to each channel (Paid = Meta + Google, Non-paid =
+  organic / referral / direct). Counts, % of leads and cost per event all re-scope to the chosen source
+  (Non-paid shows no cost, since those leads carry no ad spend).
+- The scorecards, graph and ad-source table are unchanged — the split is purely for the key-events view.
+- Backend: `buildTrends` now classifies each CRM opportunity by its Caalano Systems lead source and tracks
+  per-window stage reach + leads/won per channel.
+
 ## v3.210.0 — 2026-08-12 · `PENDING` — Settings: new “Daily performance” tab (per-client + per-pipeline visibility)
 - **New Settings → Daily performance tab.** Toggle, per client, whether it appears on the Daily
   Performance tab — and, for clients running more than one pipeline, which pipeline tiles show. Everything

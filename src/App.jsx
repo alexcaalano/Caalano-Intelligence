@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.208.0'
+const APP_VERSION = '3.209.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -859,13 +859,13 @@ function useTrends(nonce = 0) {
 }
 const WLABEL = { 3: 'Last 3 days', 7: 'Last 7 days', 14: 'Last 14 days', 21: 'Last 21 days', 28: 'Last 28 days' }
 // One scorecard: value + % change vs the prior equal window (lower cost = good).
-function TrendCell({ label, value, cur, prev, goodWhenDown = true, sub }) {
+function TrendCell({ label, value, cur, prev, goodWhenDown = true, sub, onClick, active }) {
   const has = prev != null && prev > 0 && cur != null
   const pct = has ? ((cur - prev) / prev) * 100 : null
   const dir = pct == null ? 'flat' : (goodWhenDown ? (pct <= 0 ? 'up' : 'down') : (pct >= 0 ? 'up' : 'down'))
   return (
-    <div className="tr-sc">
-      <div className="tr-lab">{label}</div>
+    <div className={`tr-sc${onClick ? ' tr-sc-click' : ''}${active ? ' tr-sc-active' : ''}`} onClick={onClick} title={onClick ? 'Click for the spend, results & key-event breakdown' : undefined}>
+      <div className="tr-lab">{label}{onClick ? <span className="tr-sc-more">{active ? '▾' : '▸'}</span> : null}</div>
       <div className="tr-val">{value}</div>
       {pct != null ? <div className={`tr-d ${dir}`}>{pct > 0 ? '▲' : pct < 0 ? '▼' : '■'} {Math.abs(pct).toFixed(0)}%</div> : <div className="tr-d flat">no prior</div>}
       {sub ? <div className="tr-sub">{sub}</div> : null}
@@ -934,25 +934,83 @@ function TrendSource({ w28, row, money }) {
     </table>
   )
 }
-function ClientTrend({ row, tr, currency, onPick, domId }) {
+// Click-to-open breakdown for one window tile: ad spend → results split by Meta /
+// Google (with cost per result), then every configured key event in that window with
+// its count and blended cost per event (total ad spend ÷ people who reached it) — the
+// same key-event engine (keyEventRows) the Caalano360 funnel + Monthly Report use.
+function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
+  const money = (v) => fmtCurrency(v, currency)
+  const b = w.blended || {}
+  const totalSpend = b.spend || 0
+  const srcRows = []
+  if (w.meta && (w.meta.spend || w.meta.results)) srcRows.push({ label: 'Meta', spend: w.meta.spend || 0, results: w.meta.results || 0 })
+  if (w.google && (w.google.spend || w.google.results)) srcRows.push({ label: 'Google', spend: w.google.spend || 0, results: w.google.results || 0 })
+  const cpr = (s, r) => (r ? money(s / r) : '—')
+  // Key events for this window (blended, CRM), resolved exactly like every other view.
+  let keRows = []
+  const crm = w.crm
+  if (crm) {
+    const rmap = { m: new Map(Object.entries(crm.reach || {})), total: crm.leads || 0 }
+    const sp = new Map(Object.entries(stagePos || {}))
+    keRows = keyEventRows(keyEventsForPipe(loadKeyEvents(clientId), pipeId || 'all'), rmap, new Map(), sp, crm.won || 0)
+  }
+  const cpe = (n) => (n && totalSpend ? money(totalSpend / n) : '—')
+  return (
+    <div className="tr-brk">
+      <div className="tr-brk-grid">
+        <div>
+          <div className="tr-brk-lab">Ad spend → results · last {w.n} days</div>
+          <table className="mini-tbl tr-brk-tbl">
+            <thead><tr><th className="lft">Source</th><th>Spend</th><th>Results</th><th>Cost / result</th></tr></thead>
+            <tbody>
+              {srcRows.length ? srcRows.map((r) => <tr key={r.label}><td className="lft">{r.label}</td><td>{money(r.spend)}</td><td>{fmtNumber(r.results)}</td><td>{cpr(r.spend, r.results)}</td></tr>)
+                : <tr><td className="lft" colSpan={4}><span className="cap">No ad spend in this window.</span></td></tr>}
+              <tr className="tr-src-tot"><td className="lft">Total</td><td>{money(totalSpend)}</td><td>{fmtNumber(b.results || 0)}</td><td>{cpr(totalSpend, b.results || 0)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div className="tr-brk-lab">Key events · cost per event {crm ? '' : '(no CRM for this segment)'}</div>
+          {crm ? (
+            <table className="mini-tbl tr-brk-tbl">
+              <thead><tr><th className="lft">Key event</th><th>Count</th><th>% leads</th><th>Cost / event</th></tr></thead>
+              <tbody>
+                <tr><td className="lft">Leads</td><td>{fmtNumber(crm.leads || 0)}</td><td>100%</td><td>{cpe(crm.leads || 0)}</td></tr>
+                {keRows.filter((r) => r.kind !== 'lead').map((r, i) => (
+                  <tr key={r.label + i}><td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}</td><td>{fmtNumber(r.count || 0)}</td><td>{crm.leads ? fmtPct((r.count / crm.leads) * 100, 0) : '—'}</td><td>{cpe(r.count || 0)}</td></tr>
+                ))}
+                {!keRows.filter((r) => r.kind !== 'lead').length ? <tr><td className="lft" colSpan={4}><span className="cap">No key events configured — set them in Settings → Key events.</span></td></tr> : null}
+              </tbody>
+            </table>
+          ) : <p className="cap" style={{ margin: '4px 0 0' }}>Unlinked ad spend isn't tied to a pipeline, so it has no CRM key events.</p>}
+          {crm ? <p className="tr-brk-note cap">Cost per event = total ad spend ({money(totalSpend)}) ÷ people who reached that event (blended, all sources — a guide, not paid-only CAC).</p> : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+function ClientTrend({ row, tr, currency, onPick, domId, clientId, pipeId, stagePos }) {
   // Channels this client runs, plus a blended view when they run both. Shown as
   // a toggle so Google-only (and Meta-only) clients can still filter to theirs.
   const chanOpts = [['blended', 'Blended']]
   if (row.hasMeta) chanOpts.push(['meta', 'Meta'])
   if (row.hasGoogle) chanOpts.push(['google', 'Google'])
   const [chan, setChan] = useState(row.hasMeta && row.hasGoogle ? 'blended' : (row.hasGoogle && !row.hasMeta) ? 'google' : (row.hasMeta && !row.hasGoogle) ? 'meta' : 'blended')
+  const [openWin, setOpenWin] = useState(null)
   const eff = chan
   const money = (v) => fmtCurrency(v, currency)
   const wins = tr.windows || []
   const resultLabel = eff === 'google' ? 'Cost / Conversion' : eff === 'meta' ? 'Cost / Lead' : 'Cost / Result (blended)'
+  const openW = openWin != null ? wins.find((w) => w.n === openWin) : null
   return (
     <div className="card tr-card" id={domId}>
       <div className="tr-head">
         <button className="tr-name" onClick={() => onPick(row.c)} title="Open client workspace">{row.name} <span className="tr-open">↗</span></button>
         {chanOpts.length > 1 && <div className="chan-toggle sm">{chanOpts.map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
       </div>
-      <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period{tr.hasCrm ? ' · % = booking rate (booked ÷ leads)' : ''}</span></div>
-      <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} sub={tr.hasCrm && br != null ? `${br.toFixed(1)}% booked` : null} /> })}</div>
+      <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period{tr.hasCrm ? ' · % = booking rate (booked ÷ leads)' : ''} · click a tile for the full breakdown</span></div>
+      <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} sub={tr.hasCrm && br != null ? `${br.toFixed(1)}% booked` : null} onClick={() => setOpenWin(openWin === w.n ? null : w.n)} active={openWin === w.n} /> })}</div>
+      {openW ? <WindowBreakdown w={openW} clientId={clientId} pipeId={pipeId} stagePos={stagePos} currency={currency} /> : null}
       {(() => {
         const mv = clientMovers(row, tr, 7).filter((m) => Math.abs(m.cplPct) >= 8)
         if (!mv.length) return null
@@ -1130,10 +1188,10 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
         if (t.pipelines && t.pipelines.length > 1) {
           return pipeOrder(t.pipelines).map((p) => {
             const prow = { ...r, name: `${r.name} · ${p.name}`, hasMeta: !!p.hasMeta, hasGoogle: !!p.hasGoogle }
-            return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} domId={trCardId(r.id, p.id)} />
+            return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} domId={trCardId(r.id, p.id)} clientId={r.id} pipeId={p.unlinked ? '_unlinked' : p.id} stagePos={t.stagePos} />
           })
         }
-        return [<ClientTrend key={r.id} row={r} tr={t} currency={currency} onPick={onPick} domId={trCardId(r.id)} />]
+        return [<ClientTrend key={r.id} row={r} tr={t} currency={currency} onPick={onPick} domId={trCardId(r.id)} clientId={r.id} pipeId="all" stagePos={t.stagePos} />]
       })}
       {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
       <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages; where UTM attribution is connected they're split by first-touch channel, so Meta / Google cost-per-booked uses that channel's own bookings. Otherwise the toggle divides that channel's spend by total booked calls.</p>

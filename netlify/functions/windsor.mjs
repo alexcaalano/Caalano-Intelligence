@@ -741,7 +741,8 @@ async function buildTrends(key) {
   const cl = {}
   // Per-client: account daily arrays + per-pipeline daily (leads/booked/won) + raw
   // per-campaign daily spend (resolved to pipelines at the end).
-  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), wonAll: mk(), bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false, pipe: new Map(), campMeta: new Map(), campMetaLeads: new Map(), campGoogle: new Map(), campGoogleConv: new Map() })
+  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), wonAll: mk(), leadsAll: mk(), bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false, pipe: new Map(), campMeta: new Map(), campMetaLeads: new Map(), campGoogle: new Map(), campGoogleConv: new Map(), reach: new Map() })
+  const ensureReach = (e, key) => { let a = e.reach.get(key); if (!a) { a = mk(); e.reach.set(key, a) } return a }
   const ensurePipe = (e, pid, name) => { let p = e.pipe.get(pid); if (!p) { p = { id: pid, name: name || 'Pipeline', leads: mk(), booked: mk(), won: mk() }; e.pipe.set(pid, p) } else if (name && (!p.name || p.name === 'Pipeline')) p.name = name; return p }
   const ensureCamp = (m, name) => { let a = m.get(name); if (!a) { a = mk(); m.set(name, a) } return a }
   for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const ld = fbLeads(r); e.metaSpend[di] += sp; e.metaLeads[di] += ld; if (r.campaign) { ensureCamp(e.campMeta, r.campaign)[di] += sp; ensureCamp(e.campMetaLeads, r.campaign)[di] += ld } }
@@ -757,9 +758,15 @@ async function buildTrends(key) {
     const isWon = st === 'won'; const isBooked = isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)
     if (isBooked) e.wBooked[di]++
     if (isWon) e.wonAll[di]++
+    e.leadsAll[di]++
     // Per-pipeline daily CRM (created-on): every opp is a lead for its pipeline.
     const pid = r.opportunity_pipeline_id || 'none'
     const pp = ensurePipe(e, pid, (pipeNameByAcct[id] || {})[pid]); pp.leads[di]++; if (isBooked) pp.booked[di]++; if (isWon) pp.won[di]++
+    // Cumulative stage reach (for the per-window key-events breakdown): an opp at
+    // position P reached every stage with pos ≤ P; a won opp reached them all. Keyed
+    // by bare name (aggregated across pipelines) AND pipeline-scoped name, mirroring
+    // the frontend reachedByStage so keyEventRows can resolve either.
+    if (pi && pi.byId) for (const sid in pi.byId) { const s = pi.byId[sid]; if (isWon || (pos >= 0 && s.pos <= pos)) { ensureReach(e, s.name)[di]++; ensureReach(e, pid + '::' + s.name)[di]++ } }
   }
   // GHL direct API: UTM-split booked calls per channel (meta / google / other).
   const ghlOK = await isConnected().catch(() => false)
@@ -780,6 +787,15 @@ async function buildTrends(key) {
     if (!c.meta && !c.google && !c.ghl) continue
     const E = ensure(id)
     const blendedBooked = E.ghlBooked ? E.bAll : E.wBooked
+    // Per-window stage reach (for the key-events breakdown popup). filterPid limits to
+    // one pipeline's scoped keys; null returns every key (account tile).
+    const reachWin = (a, b, filterPid) => { const o = {}; for (const [k, arr] of E.reach) { if (filterPid && !k.startsWith(filterPid + '::')) continue; const v = Math.round(sumR(arr, a, b)); if (v) o[k] = v } return o }
+    const crmWin = (n, leadsArr, wonArr, filterPid) => ({ leads: Math.round(sumR(leadsArr, 0, n)), leadsPrev: Math.round(sumR(leadsArr, n, 2 * n)), won: Math.round(sumR(wonArr, 0, n)), wonPrev: Math.round(sumR(wonArr, n, 2 * n)), reach: reachWin(0, n, filterPid), reachPrev: reachWin(n, 2 * n, filterPid) })
+    // stage name → funnel position (bare + pipeline-scoped) so the frontend can order
+    // and resolve the configured key events, same as everywhere else.
+    const stagePos = {}
+    const info0 = idxByAcct[id]
+    if (info0) for (const [pid, pinfo] of info0) for (const sid in pinfo.byId) { const s = pinfo.byId[sid]; if (stagePos[s.name] == null || s.pos < stagePos[s.name]) stagePos[s.name] = s.pos; stagePos[pid + '::' + s.name] = s.pos }
     const windows = WINDOWS.map((n) => {
       const ms = sumR(E.metaSpend, 0, n), msp = sumR(E.metaSpend, n, 2 * n)
       const ml = sumR(E.metaLeads, 0, n), mlp = sumR(E.metaLeads, n, 2 * n)
@@ -790,6 +806,7 @@ async function buildTrends(key) {
         meta: { spend: ms, spendPrev: msp, results: ml, resultsPrev: mlp, booked: sumR(E.bMeta, 0, n), bookedPrev: sumR(E.bMeta, n, 2 * n) },
         google: { spend: gs, spendPrev: gsp, results: gc, resultsPrev: gcp, booked: sumR(E.bGoogle, 0, n), bookedPrev: sumR(E.bGoogle, n, 2 * n) },
         blended: { spend: ms + gs, spendPrev: msp + gsp, results: ml + gc, resultsPrev: mlp + gcp, booked: sumR(blendedBooked, 0, n), bookedPrev: sumR(blendedBooked, n, 2 * n) },
+        crm: crmWin(n, E.leadsAll, E.wonAll, null),
       }
     })
     // Last 28 days, chronological (oldest first), per channel: ad spend + ad-reported
@@ -836,7 +853,7 @@ async function buildTrends(key) {
       // pipeline's own CRM (blended across channels — used only for the booking-rate
       // sub-stat, matching how the client tile reads booked ÷ results).
       const r2 = (v) => Math.round(v * 100) / 100
-      const tileWindows = (mS, mL, gS, gC, booked) => WINDOWS.map((n) => {
+      const tileWindows = (mS, mL, gS, gC, booked, leadsArr, wonArr, filterPid) => WINDOWS.map((n) => {
         const ms = sumR(mS, 0, n), msp = sumR(mS, n, 2 * n), ml = sumR(mL, 0, n), mlp = sumR(mL, n, 2 * n)
         const gs = sumR(gS, 0, n), gsp = sumR(gS, n, 2 * n), gc = sumR(gC, 0, n), gcp = sumR(gC, n, 2 * n)
         const bk = sumR(booked, 0, n), bkp = sumR(booked, n, 2 * n)
@@ -845,6 +862,7 @@ async function buildTrends(key) {
           meta: { spend: r2(ms), spendPrev: r2(msp), results: ml, resultsPrev: mlp, booked: bk, bookedPrev: bkp },
           google: { spend: r2(gs), spendPrev: r2(gsp), results: gc, resultsPrev: gcp, booked: bk, bookedPrev: bkp },
           blended: { spend: r2(ms + gs), spendPrev: r2(msp + gsp), results: ml + gc, resultsPrev: mlp + gcp, booked: bk, bookedPrev: bkp },
+          crm: leadsArr ? crmWin(n, leadsArr, wonArr, filterPid) : null,
         }
       })
       const tileDaily = (mS, mL, gS, gC, booked, won) => { const d = []; for (let i = 27; i >= 0; i--) d.push({ date: days[i], metaSpend: r2(mS[i]), metaLeads: Math.round(mL[i]), gSpend: r2(gS[i]), gConv: Math.round(gC[i]), booked: Math.round(booked[i]), won: Math.round(won[i]) }); return d }
@@ -855,7 +873,7 @@ async function buildTrends(key) {
             id: p.id, name: p.name, hasCrm: true,
             hasMeta: sumR(mS, 0, 56) > 0.5, hasGoogle: sumR(gS, 0, 56) > 0.5,
             leads28: sumR(p.leads, 0, 28), spend28: sumR(mS, 0, 28) + sumR(gS, 0, 28),
-            windows: tileWindows(mS, mL, gS, gC, p.booked), daily: tileDaily(mS, mL, gS, gC, p.booked, p.won),
+            windows: tileWindows(mS, mL, gS, gC, p.booked, p.leads, p.won, p.id), daily: tileDaily(mS, mL, gS, gC, p.booked, p.won),
           }
         })
         .filter((po) => po.leads28 > 0 || po.spend28 > 0.5)
@@ -878,7 +896,7 @@ async function buildTrends(key) {
         }
       }
     }
-    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily, pipelines: pipelinesOut }
+    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily, pipelines: pipelinesOut, stagePos }
   }
   return { clients: out }
 }

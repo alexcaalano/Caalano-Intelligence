@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.209.0 — 2026-08-12 · `PENDING` — Daily Performance: click a window tile for a full breakdown
+- **Each window scorecard (Last 3 / 7 / 14 / 21 / 28 days) is now clickable** and opens a breakdown for
+  that period:
+  - **Ad spend → results split by Meta and Google**, with cost per result per channel + a total row.
+  - **Every configured key event in that window** (Booked, Qualified, Won, …, resolved with the same
+    engine as the Caalano360 funnel), each with its count, % of leads, and **cost per event** (total ad
+    spend ÷ people who reached it).
+- Scoped correctly per tile — a pipeline tile's breakdown shows that pipeline's key events; the account
+  tile shows the whole client. Backend now sends per-window per-stage reach + CRM leads/won so the
+  breakdown reuses the shared key-event resolver.
+
 ## v3.208.0 — 2026-08-12 · `PENDING` — Daily Performance: alphabetical tiles, per-pipeline movers, scroll-to-tile
 - **Client tiles are now in alphabetical order** (multi-pipeline tiles group under their client, pipelines
   alphabetical with "Unlinked campaigns" last).

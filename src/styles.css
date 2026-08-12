@@ -2683,3 +2683,17 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .tr-gtip { background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 10px; font-size: 11.5px; line-height: 1.55; box-shadow: 0 6px 20px rgba(0,0,0,.14); }
 .tr-gtip-d { font-weight: 800; margin-bottom: 3px; }
 .tr-gtip-ke { margin-top: 3px; padding-top: 3px; border-top: 1px dashed var(--border); color: var(--text); }
+/* Clickable window tile + its breakdown panel */
+.tr-sc-click { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.tr-sc-click:hover { border-color: #4f7cff; }
+.tr-sc-active { border-color: #4f7cff; box-shadow: 0 0 0 1px #4f7cff inset; }
+.tr-sc-more { font-size: 9px; color: var(--faint); margin-left: 4px; vertical-align: middle; }
+.tr-brk { margin: 4px 0 10px; padding: 12px 14px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--panel-2, var(--panel)); }
+.tr-brk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.tr-brk-lab { font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); margin-bottom: 6px; }
+.tr-brk-tbl { width: 100%; font-size: 12px; }
+.tr-brk-tbl th, .tr-brk-tbl td { padding: 5px 8px; }
+.tr-brk-tbl td:not(.lft), .tr-brk-tbl th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
+.tr-brk-tbl thead th { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); border-bottom: 1px solid var(--border); }
+.tr-brk-tbl tbody tr + tr td { border-top: 1px solid var(--border); }
+.tr-brk-note { margin: 6px 0 0; font-size: 10.5px; }

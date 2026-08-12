@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -779,16 +779,33 @@ async function buildTrends(key) {
     // Non-paid.
     if (pi && pi.byId) for (const sid in pi.byId) { const s = pi.byId[sid]; if (isWon || (pos >= 0 && s.pos <= pos)) { ensureReach(e, s.name)[di]++; ensureReach(e, pid + '::' + s.name)[di]++; const cm = e.reachCh[chan]; ensureReachIn(cm, s.name)[di]++; ensureReachIn(cm, pid + '::' + s.name)[di]++ } }
   }
-  // GHL direct API: UTM-split booked calls per channel (meta / google / other).
+  // GHL direct API: booked calls per channel + the accurate UTM-based per-channel key
+  // event split (dc). Replaces the crude Windsor opportunity_source classification when
+  // the app is connected; opportunity_source stays as the fallback for the rest.
   const ghlOK = await isConnected().catch(() => false)
   if (ghlOK) {
     const ghlClients = Object.entries(CLIENTS).filter(([, c]) => c.ghl)
     await Promise.all(ghlClients.map(async ([id, c]) => {
       try {
-        const rows = await bookedTrends(c.ghl, dstr(start), dstr(today))
+        const rows = await crmTrends(c.ghl, dstr(start), dstr(today))
         const e = ensure(id); e.ghlBooked = true
-        for (const r of rows) { const di = dayIndex.get(r.date); if (di == null) continue; e.bAll[di]++; if (r.channel === 'meta') e.bMeta[di]++; else if (r.channel === 'google') e.bGoogle[di]++ }
-      } catch { /* keep Windsor blended fallback */ }
+        const dc = { ok: true, leads: { all: mk(), meta: mk(), google: mk(), other: mk() }, won: { all: mk(), meta: mk(), google: mk(), other: mk() }, reach: { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }, pipe: new Map() }
+        const dEnsurePipe = (pid) => { let p = dc.pipe.get(pid); if (!p) { p = { leads: { all: mk(), meta: mk(), google: mk(), other: mk() }, won: { all: mk(), meta: mk(), google: mk(), other: mk() } }; dc.pipe.set(pid, p) } return p }
+        for (const r of rows) {
+          const di = dayIndex.get(r.date); if (di == null) continue
+          const ch = r.channel === 'meta' ? 'meta' : r.channel === 'google' ? 'google' : 'other'
+          // Booked-calls split (was bookedTrends).
+          if (r.booked) { e.bAll[di]++; if (ch === 'meta') e.bMeta[di]++; else if (ch === 'google') e.bGoogle[di]++ }
+          dc.leads.all[di]++; dc.leads[ch][di]++
+          if (r.won) { dc.won.all[di]++; dc.won[ch][di]++ }
+          const pp = dEnsurePipe(r.pipelineId); pp.leads.all[di]++; pp.leads[ch][di]++; if (r.won) { pp.won.all[di]++; pp.won[ch][di]++ }
+          for (const nm of r.reached) {
+            ensureReachIn(dc.reach.all, nm)[di]++; ensureReachIn(dc.reach.all, r.pipelineId + '::' + nm)[di]++
+            ensureReachIn(dc.reach[ch], nm)[di]++; ensureReachIn(dc.reach[ch], r.pipelineId + '::' + nm)[di]++
+          }
+        }
+        e.dc = dc
+      } catch { /* keep Windsor opportunity_source fallback */ }
     }))
   }
   const WINDOWS = [3, 7, 14, 21, 28]
@@ -803,14 +820,25 @@ async function buildTrends(key) {
     const reachWinFrom = (m, n, filterPid) => { const o = {}; for (const [k, arr] of m) { if (filterPid && !k.startsWith(filterPid + '::')) continue; const v = Math.round(sumR(arr, 0, n)); if (v) o[k] = v } return o }
     // CRM breakdown for one window, split by lead-source channel (all / meta / google /
     // other=non-paid) for the key-events popup. L / W are {all, meta, google, other}
-    // daily-array bundles for leads / won.
-    const crmWin = (n, L, W, filterPid) => ({
+    // daily-array bundles for leads / won; RM is the matching {all, meta, google, other}
+    // reach Maps. When the GHL app is connected we use the accurate UTM-based split
+    // (E.dc); otherwise the Windsor opportunity_source classification.
+    const crmWin = (n, L, W, RM, filterPid) => ({
       leads: { all: Math.round(sumR(L.all, 0, n)), meta: Math.round(sumR(L.meta, 0, n)), google: Math.round(sumR(L.google, 0, n)), other: Math.round(sumR(L.other, 0, n)) },
       won: { all: Math.round(sumR(W.all, 0, n)), meta: Math.round(sumR(W.meta, 0, n)), google: Math.round(sumR(W.google, 0, n)), other: Math.round(sumR(W.other, 0, n)) },
-      reach: { all: reachWinFrom(E.reach, n, filterPid), meta: reachWinFrom(E.reachCh.meta, n, filterPid), google: reachWinFrom(E.reachCh.google, n, filterPid), other: reachWinFrom(E.reachCh.other, n, filterPid) },
+      reach: { all: reachWinFrom(RM.all, n, filterPid), meta: reachWinFrom(RM.meta, n, filterPid), google: reachWinFrom(RM.google, n, filterPid), other: reachWinFrom(RM.other, n, filterPid) },
+      utm: !!(E.dc && E.dc.ok),
     })
-    const acctL = { all: E.leadsAll, meta: E.leadsCh.meta, google: E.leadsCh.google, other: E.leadsCh.other }
-    const acctW = { all: E.wonAll, meta: E.wonCh.meta, google: E.wonCh.google, other: E.wonCh.other }
+    const dcOK = !!(E.dc && E.dc.ok)
+    const wsReach = { all: E.reach, meta: E.reachCh.meta, google: E.reachCh.google, other: E.reachCh.other }
+    const acctReach = dcOK ? E.dc.reach : wsReach
+    const acctL = dcOK ? E.dc.leads : { all: E.leadsAll, meta: E.leadsCh.meta, google: E.leadsCh.google, other: E.leadsCh.other }
+    const acctW = dcOK ? E.dc.won : { all: E.wonAll, meta: E.wonCh.meta, google: E.wonCh.google, other: E.wonCh.other }
+    const ZBUN = { all: mk(), meta: mk(), google: mk(), other: mk() }
+    // Per-pipeline CRM source bundle (direct API when connected, else Windsor).
+    const pipeCrmSrc = (p) => (dcOK
+      ? { L: (E.dc.pipe.get(p.id) || { leads: ZBUN }).leads, W: (E.dc.pipe.get(p.id) || { won: ZBUN }).won, RM: E.dc.reach }
+      : { L: { all: p.leads, meta: p.leadsCh.meta, google: p.leadsCh.google, other: p.leadsCh.other }, W: { all: p.won, meta: p.wonCh.meta, google: p.wonCh.google, other: p.wonCh.other }, RM: wsReach })
     // stage name → funnel position (bare + pipeline-scoped) so the frontend can order
     // and resolve the configured key events, same as everywhere else.
     const stagePos = {}
@@ -826,7 +854,7 @@ async function buildTrends(key) {
         meta: { spend: ms, spendPrev: msp, results: ml, resultsPrev: mlp, booked: sumR(E.bMeta, 0, n), bookedPrev: sumR(E.bMeta, n, 2 * n) },
         google: { spend: gs, spendPrev: gsp, results: gc, resultsPrev: gcp, booked: sumR(E.bGoogle, 0, n), bookedPrev: sumR(E.bGoogle, n, 2 * n) },
         blended: { spend: ms + gs, spendPrev: msp + gsp, results: ml + gc, resultsPrev: mlp + gcp, booked: sumR(blendedBooked, 0, n), bookedPrev: sumR(blendedBooked, n, 2 * n) },
-        crm: crmWin(n, acctL, acctW, null),
+        crm: crmWin(n, acctL, acctW, acctReach, null),
       }
     })
     // Last 28 days, chronological (oldest first), per channel: ad spend + ad-reported
@@ -873,20 +901,21 @@ async function buildTrends(key) {
       // pipeline's own CRM (blended across channels — used only for the booking-rate
       // sub-stat, matching how the client tile reads booked ÷ results).
       const r2 = (v) => Math.round(v * 100) / 100
-      const tileWindows = (mS, mL, gS, gC, booked, pipeObj) => WINDOWS.map((n) => {
-        const ms = sumR(mS, 0, n), msp = sumR(mS, n, 2 * n), ml = sumR(mL, 0, n), mlp = sumR(mL, n, 2 * n)
-        const gs = sumR(gS, 0, n), gsp = sumR(gS, n, 2 * n), gc = sumR(gC, 0, n), gcp = sumR(gC, n, 2 * n)
-        const bk = sumR(booked, 0, n), bkp = sumR(booked, n, 2 * n)
-        const L = pipeObj && { all: pipeObj.leads, meta: pipeObj.leadsCh.meta, google: pipeObj.leadsCh.google, other: pipeObj.leadsCh.other }
-        const W = pipeObj && { all: pipeObj.won, meta: pipeObj.wonCh.meta, google: pipeObj.wonCh.google, other: pipeObj.wonCh.other }
-        return {
-          n,
-          meta: { spend: r2(ms), spendPrev: r2(msp), results: ml, resultsPrev: mlp, booked: bk, bookedPrev: bkp },
-          google: { spend: r2(gs), spendPrev: r2(gsp), results: gc, resultsPrev: gcp, booked: bk, bookedPrev: bkp },
-          blended: { spend: r2(ms + gs), spendPrev: r2(msp + gsp), results: ml + gc, resultsPrev: mlp + gcp, booked: bk, bookedPrev: bkp },
-          crm: pipeObj ? crmWin(n, L, W, pipeObj.id) : null,
-        }
-      })
+      const tileWindows = (mS, mL, gS, gC, booked, pipeObj) => {
+        const src = pipeObj ? pipeCrmSrc(pipeObj) : null
+        return WINDOWS.map((n) => {
+          const ms = sumR(mS, 0, n), msp = sumR(mS, n, 2 * n), ml = sumR(mL, 0, n), mlp = sumR(mL, n, 2 * n)
+          const gs = sumR(gS, 0, n), gsp = sumR(gS, n, 2 * n), gc = sumR(gC, 0, n), gcp = sumR(gC, n, 2 * n)
+          const bk = sumR(booked, 0, n), bkp = sumR(booked, n, 2 * n)
+          return {
+            n,
+            meta: { spend: r2(ms), spendPrev: r2(msp), results: ml, resultsPrev: mlp, booked: bk, bookedPrev: bkp },
+            google: { spend: r2(gs), spendPrev: r2(gsp), results: gc, resultsPrev: gcp, booked: bk, bookedPrev: bkp },
+            blended: { spend: r2(ms + gs), spendPrev: r2(msp + gsp), results: ml + gc, resultsPrev: mlp + gcp, booked: bk, bookedPrev: bkp },
+            crm: src ? crmWin(n, src.L, src.W, src.RM, pipeObj.id) : null,
+          }
+        })
+      }
       const tileDaily = (mS, mL, gS, gC, booked, won) => { const d = []; for (let i = 27; i >= 0; i--) d.push({ date: days[i], metaSpend: r2(mS[i]), metaLeads: Math.round(mL[i]), gSpend: r2(gS[i]), gConv: Math.round(gC[i]), booked: Math.round(booked[i]), won: Math.round(won[i]) }); return d }
       const realTiles = pipeList
         .map((p) => {

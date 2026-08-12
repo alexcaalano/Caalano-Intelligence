@@ -831,6 +831,35 @@ export async function bookedTrends(locationId, from, to) {
   return out
 }
 
+// Richer CRM trends (direct API) for the Daily Performance key-events breakdown:
+// per opportunity, the created date, its first-touch UTM channel (meta / google /
+// other=non-paid), pipeline, and the pipeline STAGE NAMES it has reached (cumulative;
+// a won opp reached them all). This is the accurate, UTM-based channel split — the
+// Windsor `opportunity_source` classification is only a fallback when the app isn't
+// connected. Returns one record per opp so the caller can bucket into 56-day windows.
+export async function crmTrends(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const [opps, idx] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to),
+    pipelineStageIndex(locTok, locationId),
+  ])
+  const out = []
+  for (const o of opps) {
+    const date = String(o.createdAt || '').slice(0, 10)
+    if (!date) continue
+    const pi = idx.get(o.pipelineId)
+    const st = String(o.status || '').toLowerCase()
+    const stg = pi ? pi.byId[o.pipelineStageId] : null
+    const pos = stg ? stg.pos : -1
+    const isWon = st === 'won'
+    const booked = isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)
+    const reached = []
+    if (pi && pi.stages) for (const s of pi.stages) { if (isWon || (pos >= 0 && s.pos <= pos)) reached.push(s.name) }
+    out.push({ date, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked })
+  }
+  return out
+}
+
 // Deals WON during [from,to] by status-change date, regardless of when the lead
 // was created (the "realised revenue" lens). Split by pipeline / paid channel /
 // assigned user so the Caalano360 + CRM filters can pivot it too. Looks back so

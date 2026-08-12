@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.211.0'
+const APP_VERSION = '3.212.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -997,7 +997,7 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
                 {!keRows.length ? <tr><td className="lft" colSpan={4}><span className="cap">No key events {leads ? 'reached from this source' : 'configured'} in this window.</span></td></tr> : null}
               </tbody>
             </table>
-            <p className="tr-brk-note cap">{src === 'nonpaid' ? 'Non-paid = organic / referral / direct leads (no ad spend, so no cost per event).' : `Cost / event = ${srcLabel === 'All CRM' ? 'total' : srcLabel} ad spend ÷ people who reached that event.`} Source = the lead's Caalano Systems source.</p>
+            <p className="tr-brk-note cap">{src === 'nonpaid' ? 'Non-paid = organic / referral / direct leads (no ad spend, so no cost per event).' : `Cost / event = ${srcLabel === 'All CRM' ? 'total' : srcLabel} ad spend ÷ people who reached that event.`} Source = {crm.utm ? 'first-touch UTM attribution on each opportunity' : "the lead's Caalano Systems source"}.</p>
           </>) : <p className="cap" style={{ margin: '4px 0 0' }}>Unlinked ad spend isn't tied to a pipeline, so it has no CRM key events.</p>}
         </div>
       </div>

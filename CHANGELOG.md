@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.212.0 — 2026-08-12 · `PENDING` — Key-events source split now uses UTM attribution (not lead-source)
+- The Key events by source breakdown now classifies each key event by the opportunity's **first-touch UTM
+  attribution** (the same Meta / Google / non-paid model the rest of Caalano360 uses), pulled from the GHL
+  direct API — so "Paid" key events genuinely match ad-attributed opportunities, giving true visibility on
+  overall business vs paid key-event performance. The Windsor lead-source classification remains only as a
+  fallback when the app isn't connected (the popup footnote says which is in use).
+- No extra API calls — the direct-API opportunities already fetched for booked-call splits are reused.
+
 ## v3.211.0 — 2026-08-12 · `PENDING` — Daily Performance: key-events breakdown split by lead source
 - The window breakdown popup's **Key events** section now has an **All CRM / Paid / Non-paid / Meta / Google**
   toggle, so you can see which key events were attributed to each channel (Paid = Meta + Google, Non-paid =

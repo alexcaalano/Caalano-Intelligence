@@ -17,6 +17,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.206.0 — 2026-08-12 · `PENDING` — Monthly Report per-pipeline split + Daily Performance Phase 2 & 3
+- **Monthly Report — key-event consolidation fixed.** Calendar-linked key events now merge cleanly with
+  their pipeline stage even when the calendar carries a `[PIPE]` tag, so the "leads → key events" funnel
+  no longer shows the same step twice (once as 📅 calendar, once as the plain stage). Hardened the shared
+  `mergeCalKeyEvents` normaliser (tag-stripped matching) so every view benefits.
+- **Monthly Report — two-pipeline clients now split by pipeline.** For clients running two pipelines
+  (FINR = BA + Finance, Nexia = ADHD + Allied Health):
+  - the **key-events funnel renders once per pipeline** (each scoped so its calendars merge correctly),
+  - **User performance** is shown as a separate table per pipeline (leads, key-event reach, cohort win %,
+    closed & revenue scoped to that pipeline),
+  - **Lost reasons** are broken out per pipeline (each with its own reason table + deal drill-down).
+- **Daily Performance — Phase 2: per-pipeline sub-tables.** Multi-pipeline clients now show a performance
+  table per pipeline under the graph — spend **split by the saved campaign→pipeline links** (auto-matched
+  where unlinked; anything unattributable is flagged as "Unassigned spend"), with CRM leads / booked / won
+  by the pipeline each opp sits in, across the 3/7/14/21/28-day windows.
+- **Daily Performance — Phase 3: key-events overlay on the 28-day graph.** Booked calls (and deals won)
+  are now plotted by their fired date as markers on the daily graph, and the hover card shows that day's
+  booked + won alongside spend / results / cost-per-result.
+
 ## v3.205.0 — 2026-08-11 · `PENDING` — Daily Performance: 28-day daily graph per client (Looker-style)
 - **Each client now shows a 28-day daily graph** of ad Spend (line), Results (bars) and Cost per Result
   (line), plus a **Source table** (Google / Facebook cost, results, cost-per-result over 28 days) — a

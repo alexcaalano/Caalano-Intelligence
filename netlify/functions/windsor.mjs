@@ -726,9 +726,12 @@ async function buildTrends(key) {
   const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
   const start = new Date(today); start.setUTCDate(start.getUTCDate() - 55)
+  // Saved campaign→pipeline links, so per-pipeline spend can be split by the actual
+  // Settings mapping (Phase 2) rather than a blunt lead-share allocation.
+  const savedCampmap = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).then((s) => (s && s.campmap) || {}).catch(() => ({}))
   const [fb, gg, opps, pipes] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], dstr(start), dstr(today), null, key).catch(() => []),
-    windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('facebook', ['account_id', 'campaign', 'date', 'spend', ...FB_LEAD_FIELDS], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
   ])
@@ -736,17 +739,27 @@ async function buildTrends(key) {
   const dayIndex = new Map(days.map((d, i) => [d, i])) // 0 = today, larger = older
   const mk = () => new Float64Array(56)
   const cl = {}
-  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false })
-  for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.metaSpend[di] += num(r.spend); e.metaLeads[di] += fbLeads(r) }
-  for (const r of gg) { const id = googleId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); e.gSpend[di] += num(r.spend); e.gConv[di] += num(r.conversions) }
+  // Per-client: account daily arrays + per-pipeline daily (leads/booked/won) + raw
+  // per-campaign daily spend (resolved to pipelines at the end).
+  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), wonAll: mk(), bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false, pipe: new Map(), campMeta: new Map(), campGoogle: new Map() })
+  const ensurePipe = (e, pid, name) => { let p = e.pipe.get(pid); if (!p) { p = { id: pid, name: name || 'Pipeline', leads: mk(), booked: mk(), won: mk() }; e.pipe.set(pid, p) } else if (name && (!p.name || p.name === 'Pipeline')) p.name = name; return p }
+  const ensureCamp = (m, name) => { let a = m.get(name); if (!a) { a = mk(); m.set(name, a) } return a }
+  for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); e.metaSpend[di] += sp; e.metaLeads[di] += fbLeads(r); if (r.campaign) ensureCamp(e.campMeta, r.campaign)[di] += sp }
+  for (const r of gg) { const id = googleId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); e.gSpend[di] += sp; e.gConv[di] += num(r.conversions); if (r.campaign) ensureCamp(e.campGoogle, r.campaign)[di] += sp }
   // Windsor blended booked (fallback when the GHL app isn't connected / a client's fetch fails)
-  const idxByAcct = {}; { const byAcct = {}; for (const p of pipes) { const id = ghlId[norm(p.account_id)]; if (!id) continue; (byAcct[id] = byAcct[id] || []).push(p) } for (const [id, arr] of Object.entries(byAcct)) idxByAcct[id] = stageIndex(arr) }
+  const idxByAcct = {}; const pipeNameByAcct = {}
+  { const byAcct = {}; for (const p of pipes) { const id = ghlId[norm(p.account_id)]; if (!id) continue; (byAcct[id] = byAcct[id] || []).push(p); (pipeNameByAcct[id] = pipeNameByAcct[id] || {})[p.pipeline_id] = p.pipeline_name || 'Pipeline' } for (const [id, arr] of Object.entries(byAcct)) idxByAcct[id] = stageIndex(arr) }
   for (const r of opps) {
     const id = ghlId[norm(r.account_id)]; if (!id) continue
     const di = dayIndex.get(String(r.opportunity_created_at || '').slice(0, 10)); if (di == null) continue
     const e = ensure(id); const idx = idxByAcct[id]; const pi = idx && idx.get(r.opportunity_pipeline_id)
     const st = String(r.opportunity_status || '').toLowerCase(); const stg = pi ? pi.byId[r.opportunity_pipeline_stage_id] : null; const pos = stg ? stg.pos : -1
-    if (st === 'won' || (pi && pi.bookPos != null && pos >= pi.bookPos)) e.wBooked[di]++
+    const isWon = st === 'won'; const isBooked = isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)
+    if (isBooked) e.wBooked[di]++
+    if (isWon) e.wonAll[di]++
+    // Per-pipeline daily CRM (created-on): every opp is a lead for its pipeline.
+    const pid = r.opportunity_pipeline_id || 'none'
+    const pp = ensurePipe(e, pid, (pipeNameByAcct[id] || {})[pid]); pp.leads[di]++; if (isBooked) pp.booked[di]++; if (isWon) pp.won[di]++
   }
   // GHL direct API: UTM-split booked calls per channel (meta / google / other).
   const ghlOK = await isConnected().catch(() => false)
@@ -780,10 +793,52 @@ async function buildTrends(key) {
       }
     })
     // Last 28 days, chronological (oldest first), per channel: ad spend + ad-reported
-    // results (Meta leads / Google conversions) + booked calls — for the daily graph.
+    // results (Meta leads / Google conversions) + booked calls + deals won — for the
+    // daily graph and its key-event overlay (Phase 3: booked / won markers by day).
     const daily = []
-    for (let i = 27; i >= 0; i--) daily.push({ date: days[i], metaSpend: Math.round(E.metaSpend[i] * 100) / 100, metaLeads: Math.round(E.metaLeads[i]), gSpend: Math.round(E.gSpend[i] * 100) / 100, gConv: Math.round(E.gConv[i]), booked: Math.round(blendedBooked[i]) })
-    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily }
+    for (let i = 27; i >= 0; i--) daily.push({ date: days[i], metaSpend: Math.round(E.metaSpend[i] * 100) / 100, metaLeads: Math.round(E.metaLeads[i]), gSpend: Math.round(E.gSpend[i] * 100) / 100, gConv: Math.round(E.gConv[i]), booked: Math.round(blendedBooked[i]), won: Math.round(E.wonAll[i]) })
+
+    // ---- Per-pipeline split (Phase 2) ----
+    // Spend is split by the saved campaign→pipeline map (a campaign explicitly linked
+    // to a pipeline, or auto-matched by name); campaigns that resolve to nothing land
+    // in an "Unassigned" bucket. CRM leads/booked/won come from the pipeline the opp
+    // actually sits in. Emitted for every client; the UI only fans it out into
+    // sub-tables when a client runs more than one pipeline.
+    const pipeList = [...E.pipe.values()].filter((p) => p.id !== 'none' || sumR(p.leads, 0, 28) > 0)
+    let pipelinesOut = null, unassignedOut = null
+    if (pipeList.length) {
+      // Lead totals per pipeline (28d) drive the auto-matcher's tie-breaks.
+      const pArr = pipeList.map((p) => ({ id: p.id, name: p.name, crm: { leads: sumR(p.leads, 0, 28) } }))
+      const validPid = new Set(pArr.map((p) => p.id))
+      const allCampNames = [...new Set([...E.campMeta.keys(), ...E.campGoogle.keys()])].map((name) => ({ name }))
+      const auto = autoMatch(pArr, allCampNames)
+      // Resolve a campaign to a pipeline id: explicit Settings link wins (unless "all"),
+      // else the name auto-match, else null → Unassigned.
+      const resolvePid = (name) => {
+        const saved = savedCampmap[name]
+        if (saved && saved !== 'all' && validPid.has(saved)) return saved
+        const a = auto.get(name)
+        return (a && a !== 'all' && validPid.has(a)) ? a : null
+      }
+      const pSpend = new Map(); for (const p of pipeList) pSpend.set(p.id, mk())
+      const unSpend = mk()
+      const routeSpend = (m) => { for (const [name, arr] of m) { const pid = resolvePid(name); const tgt = pid ? pSpend.get(pid) : unSpend; for (let i = 0; i < 56; i++) tgt[i] += arr[i] } }
+      routeSpend(E.campMeta); routeSpend(E.campGoogle)
+      const pipeWindows = (leads, booked, won, spend) => WINDOWS.map((n) => ({
+        n,
+        spend: Math.round(sumR(spend, 0, n) * 100) / 100, spendPrev: Math.round(sumR(spend, n, 2 * n) * 100) / 100,
+        leads: sumR(leads, 0, n), leadsPrev: sumR(leads, n, 2 * n),
+        booked: sumR(booked, 0, n), bookedPrev: sumR(booked, n, 2 * n),
+        won: sumR(won, 0, n), wonPrev: sumR(won, n, 2 * n),
+      }))
+      const pipeDaily = (leads, booked, won, spend) => { const d = []; for (let i = 27; i >= 0; i--) d.push({ date: days[i], spend: Math.round(spend[i] * 100) / 100, leads: Math.round(leads[i]), booked: Math.round(booked[i]), won: Math.round(won[i]) }); return d }
+      pipelinesOut = pipeList
+        .map((p) => ({ id: p.id, name: p.name, windows: pipeWindows(p.leads, p.booked, p.won, pSpend.get(p.id)), daily: pipeDaily(p.leads, p.booked, p.won, pSpend.get(p.id)) }))
+        .filter((po) => po.windows[4].leads > 0 || po.windows[4].spend > 0.5)
+        .sort((a, b) => (b.windows[4].leads - a.windows[4].leads) || (b.windows[4].spend - a.windows[4].spend))
+      if (sumR(unSpend, 0, 28) > 0.5) unassignedOut = { windows: pipeWindows(mk(), mk(), mk(), unSpend) }
+    }
+    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily, pipelines: pipelinesOut, unassigned: unassignedOut }
   }
   return { clients: out }
 }

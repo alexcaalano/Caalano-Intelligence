@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.205.0'
+const APP_VERSION = '3.206.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -880,9 +880,27 @@ function TrendGraph({ daily, eff, currency }) {
     const spend = eff === 'meta' ? d.metaSpend : eff === 'google' ? d.gSpend : (d.metaSpend + d.gSpend)
     const results = eff === 'meta' ? d.metaLeads : eff === 'google' ? d.gConv : (d.metaLeads + d.gConv)
     const dt = new Date(d.date + 'T12:00')
-    return { label: dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), spend: Math.round(spend * 100) / 100, results, cpl: results ? Math.round((spend / results) * 100) / 100 : null }
+    return { label: dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), spend: Math.round(spend * 100) / 100, results, cpl: results ? Math.round((spend / results) * 100) / 100 : null, booked: d.booked || 0, won: d.won || 0 }
   })
   if (!data.some((d) => d.spend > 0 || d.results > 0)) return <div className="cap" style={{ padding: '10px 0' }}>No spend or results in the last 28 days for this channel.</div>
+  // Phase 3: key events (booked calls / deals won) plotted by their fired date. A
+  // marker (dot) shows only on days something fired; the hover card lists the day's
+  // booked + won so the graph doubles as a key-events timeline.
+  const anyKe = data.some((d) => d.booked > 0 || d.won > 0)
+  const keDot = (props) => { const { cx, cy, payload, index } = props; if (cx == null || cy == null || !payload || !payload.booked) return null; return <circle key={index} cx={cx} cy={cy} r={3.5} fill="#f59e0b" stroke="var(--panel, #fff)" strokeWidth={1.2} /> }
+  const gTip = ({ active, payload, label }) => {
+    if (!active || !payload || !payload.length) return null
+    const p = payload[0] && payload[0].payload; if (!p) return null
+    return (
+      <div className="tr-gtip">
+        <div className="tr-gtip-d">{label}</div>
+        <div>Results: <b>{fmtNumber(p.results)}</b></div>
+        <div>Spend: <b>{fmtCurrency(p.spend, currency)}</b></div>
+        {p.cpl != null ? <div>Cost / result: <b>{fmtCurrency(p.cpl, currency)}</b></div> : null}
+        {(p.booked > 0 || p.won > 0) ? <div className="tr-gtip-ke">📅 Booked: <b>{fmtNumber(p.booked)}</b>{p.won > 0 ? <> · 🏆 Won: <b>{fmtNumber(p.won)}</b></> : null}</div> : null}
+      </div>
+    )
+  }
   return (
     <div className="tr-graph">
       <ResponsiveContainer width="100%" height={180}>
@@ -891,13 +909,52 @@ function TrendGraph({ daily, eff, currency }) {
           <XAxis dataKey="label" fontSize={9.5} stroke="var(--muted)" interval="preserveStartEnd" minTickGap={18} />
           <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" allowDecimals={false} />
           <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
-          <Tooltip formatter={(v, n) => (n === 'Results' ? fmtNumber(v) : fmtCurrency(v, currency))} />
+          <Tooltip content={gTip} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           <Bar yAxisId="l" dataKey="results" name="Results" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={16} />
           <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#12b886" strokeWidth={2} dot={false} />
           <Line yAxisId="r" dataKey="cpl" name="Cost / result" stroke="#ec4899" strokeWidth={2} dot={false} />
+          {anyKe ? <Line yAxisId="l" dataKey="booked" name="Booked (key event)" stroke="transparent" legendType="circle" isAnimationActive={false} activeDot={false} dot={keDot} /> : null}
         </ComposedChart>
       </ResponsiveContainer>
+    </div>
+  )
+}
+// One multi-pipeline client's per-pipeline performance table (Phase 2): spend split
+// by campaign→pipeline links, CRM leads/booked/won by the pipeline the opp sits in.
+function PipeTrendTable({ p, currency }) {
+  const money = (v) => fmtCurrency(v, currency)
+  const wins = p.windows || []
+  const dtag = (cur, prev) => {
+    if (prev == null || prev <= 0 || cur == null) return null
+    const pct = ((cur - prev) / prev) * 100
+    if (Math.abs(pct) < 1) return null
+    return <span className={`tr-dtag ${pct <= 0 ? 'good' : 'bad'}`}>{pct > 0 ? '▲' : '▼'}{Math.abs(pct).toFixed(0)}%</span>
+  }
+  return (
+    <div className="tr-pipe">
+      <div className="tr-pipe-h"><span className="c360-dot" /> {p.name}</div>
+      <div className="tr-pipe-scroll">
+        <table className="mini-tbl tr-pipe-tbl">
+          <thead><tr><th className="lft">Window</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Won</th><th>Cost / Lead</th><th>Cost / Booked</th></tr></thead>
+          <tbody>{wins.map((w) => {
+            const cpl = w.leads ? w.spend / w.leads : null
+            const cplP = w.leadsPrev ? w.spendPrev / w.leadsPrev : null
+            const cpb = w.booked ? w.spend / w.booked : null
+            return (
+              <tr key={w.n}>
+                <td className="lft">{WLABEL[w.n]}</td>
+                <td>{money(w.spend)}</td>
+                <td>{fmtNumber(w.leads)}</td>
+                <td>{fmtNumber(w.booked)}</td>
+                <td>{fmtNumber(w.won)}</td>
+                <td>{cpl != null ? <>{money(cpl)} {dtag(cpl, cplP)}</> : '-'}</td>
+                <td>{cpb != null ? money(cpb) : '-'}</td>
+              </tr>
+            )
+          })}</tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -939,9 +996,16 @@ function ClientTrend({ row, tr, currency, onPick }) {
         if (!mv.length) return null
         return <div className="tr-movers"><span className="tr-movers-lab">What moved · 7d</span>{mv.map((m, i) => <div className="tr-mover" key={i}><span className={`mov-badge sm ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span> <b>{m.channel}</b> cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}: {moverReason(m)}</div>)}</div>
       })()}
-      <div className="tr-row-lab" style={{ marginTop: 12 }}>28-day daily · Spend, Results &amp; Cost per Result <span className="sub">· {eff === 'blended' ? 'Meta + Google' : eff === 'meta' ? 'Meta' : 'Google'} · ad-reported</span></div>
+      <div className="tr-row-lab" style={{ marginTop: 12 }}>28-day daily · Spend, Results &amp; Cost per Result <span className="sub">· {eff === 'blended' ? 'Meta + Google' : eff === 'meta' ? 'Meta' : 'Google'} · ad-reported{tr.hasCrm ? ' · 🟠 key events (booked) marked by day' : ''}</span></div>
       <TrendGraph daily={tr.daily} eff={eff} currency={currency} />
       <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} />
+      {tr.pipelines && tr.pipelines.length > 1 ? (
+        <div className="tr-pipes">
+          <div className="tr-row-lab" style={{ marginTop: 12 }}>Per-pipeline performance <span className="sub">· spend split by campaign→pipeline links · CRM leads / booked / won by pipeline</span></div>
+          {tr.pipelines.map((p) => <PipeTrendTable key={p.id} p={p} currency={currency} />)}
+          {tr.unassigned ? (() => { const w = (tr.unassigned.windows || []).find((x) => x.n === 28); return w && w.spend ? <div className="tr-unassigned cap">⚠ {money(w.spend)} of spend over 28d isn't linked to a pipeline — link those campaigns in Settings → Campaign map to attribute it.</div> : null })() : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -2779,19 +2843,25 @@ function orderKeyEvents(list, stagePos) {
 // on their own.
 const nzStage = (s) => String(s || '').trim().toLowerCase()
 function mergeCalKeyEvents(list) {
+  // Normalise stage/label strings for matching: lower-case + trim AND strip any
+  // leading 📅 / [PIPE] tag, so a calendar's linked stage ("[FIN] Booked Discovery
+  // Call") still dedupes against the real "Booked Discovery Call" pipeline stage.
+  // Without the tag-strip a tagged stage slips past the covered-set filter and the
+  // step shows twice (once as 📅 calendar, once as the plain stage).
+  const nzz = (s) => nzStage(stripPipeTag(s))
   // Stage names present as their own key-event, so a calendar named exactly like
   // a stage (but not formally linked) still merges into it.
-  const stageNames = new Set(list.filter((e) => e.kind === 'stage').map((e) => nzStage(e.ref)))
+  const stageNames = new Set(list.filter((e) => e.kind === 'stage').map((e) => nzz(e.ref)))
   const norm = list.map((e) => {
     if (e.kind !== 'calendar') return e
     // Keep an already-valid linked stage.
-    if (e.stage && stageNames.has(nzStage(e.stage))) return e
+    if (e.stage && stageNames.has(nzz(e.stage))) return e
     // Otherwise infer the stage from the (de-tagged) label or stale stage name so
     // the calendar merges into / orders with the real pipeline stage.
     const bareLabel = stripPipeTag(e.label)
-    if (bareLabel && stageNames.has(nzStage(bareLabel))) return { ...e, stage: bareLabel }
+    if (bareLabel && stageNames.has(nzz(bareLabel))) return { ...e, stage: bareLabel }
     const bareStage = stripPipeTag(e.stage || '')
-    if (bareStage && stageNames.has(nzStage(bareStage))) return { ...e, stage: bareStage }
+    if (bareStage && stageNames.has(nzz(bareStage))) return { ...e, stage: bareStage }
     return e
   })
   const out = []; const byStage = new Map()
@@ -2800,7 +2870,7 @@ function mergeCalKeyEvents(list) {
     if (e.stage) {
       // Merge calendars linked to the SAME pipeline stage (pipeline-scoped, so a
       // same-named stage in a different pipeline stays separate).
-      const gk = (e.pipeline || '') + '::' + nzStage(e.stage)
+      const gk = (e.pipeline || '') + '::' + nzz(e.stage)
       const g = byStage.get(gk)
       if (g) { g.refs.push(e.ref); continue }
       const merged = { kind: 'calendar', refs: [e.ref], label: e.label, stage: e.stage, pipeline: e.pipeline || null }
@@ -2817,14 +2887,14 @@ function mergeCalKeyEvents(list) {
   // the calendar's own name — even when the calendar was deliberately [PIPE]-tagged.
   for (const e of out) if (e.kind === 'calendar' && e.stage) e.label = stripPipeTag(e.stage) || e.stage
   const coveredName = new Set(), coveredPipe = new Set()
-  for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(nzStage(e.stage)); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + nzStage(e.stage)) }
+  for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(nzz(e.stage)); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + nzz(e.stage)) }
   return out.filter((e) => {
     if (e.kind !== 'stage') return true
     // Pipeline-scoped events dedupe on their pipeline; bare stage strings by name
-    // (normalised for case / whitespace). A pipelined stage also dedupes by name
-    // so a bare-named linked calendar still removes it.
-    if (e.pipeline && coveredPipe.has(e.pipeline + '::' + nzStage(e.ref))) return false
-    return !coveredName.has(nzStage(e.ref))
+    // (normalised for case / whitespace / tag). A pipelined stage also dedupes by
+    // name so a bare-named linked calendar still removes it.
+    if (e.pipeline && coveredPipe.has(e.pipeline + '::' + nzz(e.ref))) return false
+    return !coveredName.has(nzz(e.ref))
   })
 }
 // Normalise -> merge same-stage calendars -> order by funnel position.
@@ -9920,6 +9990,24 @@ function renderMonthlyDeck(rep, h) {
     // crm.won — so the funnel's "Client Won" matches the "Deals won · created" KPI
     // and the status donut above (they can differ by a deal at the month boundary).
     const funnelRows = keyEventRows(loadKeyEvents(rep.client.id), rmap, calMap, stagePos, coWon.count || 0)
+    // Per-pipeline funnels: for multi-pipeline clients (FINR = BA + Finance, Nexia =
+    // ADHD + Allied Health, …) render ONE funnel per pipeline. Scoping the key events
+    // via keyEventsForPipe means each calendar merges cleanly with its own pipeline's
+    // stage (the union view otherwise showed the same step twice — 📅 calendar AND
+    // plain stage). Single-pipeline clients keep the one account-level funnel.
+    const funnelPipeSpec = multiPipe ? pipelines : [null]
+    const funnelPipes = funnelPipeSpec.map((p) => {
+      const kev = p ? keyEventsForPipe(rawKeyEvents, p.id) : rawKeyEvents
+      const prmap = p ? reachedByStage([p]) : rmap
+      const wt = p ? ((p.crm && p.crm.won) || p.won || 0) : (coWon.count || 0)
+      const rows = keyEventRows(kev, prmap, calMap, stagePos, wt)
+      const leads = p ? ((p.crm && p.crm.leads) || p.leads || 0) : (crm.leads || 0)
+      return { pipe: p, rows, leads }
+    }).filter((f) => f.rows.length)
+    // Blended spend allocated across pipelines by lead share (same basis the live
+    // pipeline-performance view uses) so each funnel's "cost / event" reads sensibly.
+    const funnelLeadTotal = funnelPipes.reduce((s, f) => s + f.leads, 0)
+    const funnelSpendOf = (f) => (funnelPipes.length > 1 && funnelLeadTotal ? totalSpend * (f.leads / funnelLeadTotal) : totalSpend)
     // Paid vs all-sources per key event. "All" = the total funnel above (every lead
     // source in Caalano Systems). "Paid" = CRM outcomes attributed (via utm_campaign)
     // to a real Meta/Google campaign — aggregated across every paid campaign, then
@@ -9982,6 +10070,63 @@ function renderMonthlyDeck(rep, h) {
     }).sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads))
     const topU = urows.find((u) => u.closed > 0) || urows[0]
     const userDeals = (uid) => (scWon.deals || []).filter((d) => d.userId === uid)
+    // ---- Per-pipeline breakdowns (multi-pipeline clients only) ----
+    // Each pipeline gets its own User-performance table and Lost-reasons panel, so a
+    // FINR (BA + Finance) / Nexia (ADHD + Allied Health) report reads pipeline by
+    // pipeline instead of blending two books of business into one.
+    const keFor = (pid) => (pid ? resolveKeyEvents(keyEventsForPipe(rawKeyEvents, pid), stagePos) : keyEventsRaw)
+      .filter((k) => k.kind === 'stage' || (k.kind === 'calendar' && k.stage)).slice(0, 5)
+    // Closed-this-month deals for a user, optionally scoped to a pipeline by name.
+    const userDealsPipe = (uid, pname) => (scWon.deals || []).filter((d) => d.userId === uid && (pname == null || d.pipeline === pname))
+    const buildUrows = (P) => {
+      const kelist = P ? keFor(P.id) : ke
+      const rows = users.map((u) => {
+        const up = P ? (u.pipelines || []).find((p) => p.id === P.id) : null
+        if (P && !up) return null
+        const uc = P ? (up.crm || {}) : (u.crm || {})
+        const urmap = reachedByStage(P ? [up] : (u.pipelines || []))
+        const evReach = {}; for (const k of kelist) evReach[k.ref] = stageReachOf(urmap, k.pipeline, keRef(k))
+        const deals = P ? userDealsPipe(u.id, P.name) : null
+        const closed = P ? deals.length : (() => { const sc = (scWon.byUser && scWon.byUser[u.id]) || {}; return sc.count != null ? sc.count : (sc.won || 0) })()
+        const revenue = P ? deals.reduce((s, d) => s + (d.value || 0), 0) : (((scWon.byUser && scWon.byUser[u.id]) || {}).revenue || 0)
+        const leads = P ? (uc.leads || 0) : (u.leads || uc.leads || 0)
+        return { id: u.id, name: u.name, leads, cohortWon: uc.won || 0, evReach, closed, revenue }
+      }).filter(Boolean).filter((r) => !P || r.leads || r.closed || r.cohortWon)
+      return { ke: kelist, rows: rows.sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads)) }
+    }
+    // Lost reasons grouped by pipeline (from the capped closed-lost deal list, which
+    // is the only feed carrying each deal's pipeline).
+    const lostByPipe = () => {
+      const m = new Map()
+      for (const d of (lost.deals || [])) {
+        const pn = d.pipeline || 'Unassigned'
+        let g = m.get(pn); if (!g) { g = { name: pn, deals: [], byReason: new Map(), count: 0, value: 0 }; m.set(pn, g) }
+        g.deals.push(d); g.count++; g.value += d.value || 0
+        const rn = d.reason || 'Not set'; const rr = g.byReason.get(rn) || { count: 0, value: 0 }; rr.count++; rr.value += d.value || 0; g.byReason.set(rn, rr)
+      }
+      // Order by the account pipeline order, then any extras.
+      const order = new Map(pipelines.map((p, i) => [p.name, i]))
+      return [...m.values()].map((g) => ({
+        name: g.name, count: g.count, value: g.value, deals: g.deals,
+        byReason: [...g.byReason.entries()].map(([name, v]) => ({ name, count: v.count, value: v.value })).sort((a, b2) => b2.count - a.count),
+      })).sort((a, b2) => (order.has(a.name) ? order.get(a.name) : 99) - (order.has(b2.name) ? order.get(b2.name) : 99) || b2.count - a.count)
+    }
+    // Render one user-performance MRTable for a given {ke, rows} bundle + drill scope.
+    const UserPerfTable = ({ bundle, pname }) => (
+      <MRTable
+        cols={[
+          { k: 'name', label: 'User', render: (r) => <span className="mr-name">{r.name}</span> },
+          { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
+          ...bundle.ke.map((k) => ({ k: 'ev_' + k.ref, label: k.label, align: 'r', render: (r) => n0(r.evReach[k.ref] || 0) })),
+          { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => n0(r.cohortWon) },
+          { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
+          { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} — closed this month${pname ? ` · ${pname}` : ''}`, deals: userDealsPipe(r.id, pname) })}>{n0(r.closed)}</button> : '—') },
+          { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
+        ]}
+        rows={bundle.rows} max={16}
+        empty="No assigned-user data for this pipeline."
+      />
+    )
     push(
       <MRSlide key="users" kicker="Caalano360 · Team" title="User performance & lost reasons" sub="Team performance this month, and why this month's closed-lost deals were lost — shown as two separate panels.">
         <section className="mr-bubble">
@@ -9992,20 +10137,19 @@ function renderMonthlyDeck(rep, h) {
             <b>{topU.name}</b>
             <span className="mr-top-stats">{money(topU.revenue)} closed · {n0(topU.closed)} deal(s) this month · {n0(topU.leads)} new leads</span>
           </div>}
-          <MRTable
-            cols={[
-              { k: 'name', label: 'User', render: (r) => <span className="mr-name">{r.name}</span> },
-              { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
-              ...ke.map((k) => ({ k: 'ev_' + k.ref, label: k.label, align: 'r', render: (r) => n0(r.evReach[k.ref] || 0) })),
-              { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => n0(r.cohortWon) },
-              { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
-              { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} — closed this month`, deals: userDeals(r.id) })}>{n0(r.closed)}</button> : '—') },
-              { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
-            ]}
-            rows={urows} max={16}
-            empty="No assigned-user data for this period."
-          />
-          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in — click a number to see the deals.</p>
+          {multiPipe
+            ? pipelines.map((P) => {
+              const bundle = buildUrows(P)
+              if (!bundle.rows.length) return null
+              return (
+                <div className="mr-pipe-block" key={P.id}>
+                  <div className="mr-pipe-head"><span className="c360-dot" /> {P.name}</div>
+                  <UserPerfTable bundle={bundle} pname={P.name} />
+                </div>
+              )
+            })
+            : <UserPerfTable bundle={{ ke, rows: urows }} pname={null} />}
+          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in — click a number to see the deals.{multiPipe ? ' Each table is scoped to that pipeline.' : ''}</p>
         </section>
 
         <section className="mr-bubble">
@@ -10019,19 +10163,40 @@ function renderMonthlyDeck(rep, h) {
           </div>
           <div className="mr-two mr-two-viz">
             <div>
-              <div className="mr-viz-lab">Why deals were lost</div>
-              {lostPie.length ? <MRDonut data={lostPie} money={money} /> : null}
-              {lost.byReason && lost.byReason.length ? (
-                <MRTable
-                  cols={[
-                    { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost — ${r.name}`, kind: 'lost', deals: (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
-                    { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
-                    { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                    { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
-                  ]}
-                  rows={lost.byReason} max={8}
-                />
-              ) : <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>}
+              <div className="mr-viz-lab">Why deals were lost{multiPipe ? ' · by pipeline' : ''}</div>
+              {multiPipe
+                ? (() => {
+                  const groups = lostByPipe()
+                  if (!groups.length) return <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>
+                  return groups.map((g) => (
+                    <div className="mr-pipe-block" key={g.name}>
+                      <div className="mr-pipe-head"><span className="c360-dot" /> {g.name} <span className="cap">· {n0(g.count)} lost · {money(g.value)}</span></div>
+                      <MRTable
+                        cols={[
+                          { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost — ${r.name} · ${g.name}`, kind: 'lost', deals: g.deals.filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
+                          { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
+                          { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
+                          { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, g.count) },
+                        ]}
+                        rows={g.byReason} max={6}
+                      />
+                    </div>
+                  ))
+                })()
+                : (<>
+                  {lostPie.length ? <MRDonut data={lostPie} money={money} /> : null}
+                  {lost.byReason && lost.byReason.length ? (
+                    <MRTable
+                      cols={[
+                        { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost — ${r.name}`, kind: 'lost', deals: (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
+                        { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
+                        { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
+                        { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
+                      ]}
+                      rows={lost.byReason} max={8}
+                    />
+                  ) : <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>}
+                </>)}
             </div>
             <div>
               <div className="mr-viz-lab">This month's leads by status</div>
@@ -10091,9 +10256,19 @@ function renderMonthlyDeck(rep, h) {
           </div>
         </div>
         <p className="mr-foot-note">Status change = deals marked won this month (cash banked, any lead date). Created on = deals whose lead came in this month and are won. Total business closed this month was {money(realisedRev)} across {n0(dealsWon)} deal(s){otherRev > 0 ? `, of which ${money(otherRev)} came from organic / referral / untracked sources (excluded from paid ROAS)` : ''}.</p>
-        <div className="mr-section-lab">This month's leads → key events (created-on cohort)</div>
-        {funnelRows.length
-          ? <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelRows} total={crm.leads || 0} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." /></div>
+        <div className="mr-section-lab">This month's leads → key events (created-on cohort){multiPipe && funnelPipes.length > 1 ? ' · one funnel per pipeline' : ''}</div>
+        {funnelPipes.length
+          ? (multiPipe && funnelPipes.length > 1
+            ? <div className="mr-funnel-split">
+              {funnelPipes.map((f) => (
+                <div className="mr-funnel-big" key={f.pipe.id}>
+                  <KeyEventsFunnel rows={f.rows} total={f.leads} spend={funnelSpendOf(f)} currency={currency}
+                    title={f.pipe.name} sub={`${n0(f.leads)} leads created this month in this pipeline · spend allocated by lead share`}
+                    caveat="One cohort: this pipeline's leads created this month and how far they've progressed. “Cost / event” spreads that pipeline's share of ad spend across every event — a blended guide, not paid-only CAC." />
+                </div>
+              ))}
+            </div>
+            : <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelPipes[0].rows} total={funnelPipes[0].leads} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." /></div>)
           : <div className="mr-empty">No key events configured — set them in Settings → Key events.</div>}
         {paidCmp && paidCmp.rows.length ? (
           <>

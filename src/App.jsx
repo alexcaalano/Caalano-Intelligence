@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.207.1'
+const APP_VERSION = '3.208.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -934,7 +934,7 @@ function TrendSource({ w28, row, money }) {
     </table>
   )
 }
-function ClientTrend({ row, tr, currency, onPick }) {
+function ClientTrend({ row, tr, currency, onPick, domId }) {
   // Channels this client runs, plus a blended view when they run both. Shown as
   // a toggle so Google-only (and Meta-only) clients can still filter to theirs.
   const chanOpts = [['blended', 'Blended']]
@@ -946,7 +946,7 @@ function ClientTrend({ row, tr, currency, onPick }) {
   const wins = tr.windows || []
   const resultLabel = eff === 'google' ? 'Cost / Conversion' : eff === 'meta' ? 'Cost / Lead' : 'Cost / Result (blended)'
   return (
-    <div className="card tr-card">
+    <div className="card tr-card" id={domId}>
       <div className="tr-head">
         <button className="tr-name" onClick={() => onPick(row.c)} title="Open client workspace">{row.name} <span className="tr-open">↗</span></button>
         {chanOpts.length > 1 && <div className="chan-toggle sm">{chanOpts.map(([k, l]) => (<button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>))}</div>}
@@ -1044,12 +1044,37 @@ function MoverDrill({ clientId, channel, days, money }) {
     {row('⭐ Best right now', b.best, (x) => <><b>{x.name}</b> · {money(x.cpl)} / result · {money(x.spend)} spend</>)}
   </div>
 }
+// DOM id for a client's trend tile (per-pipeline tiles append the pipeline id) so a
+// mover can scroll straight to the card it's describing.
+const trCardId = (clientId, pipeId) => `tr-card-${clientId}${pipeId ? '--' + pipeId : ''}`
 function MoversPanel({ list, clients, currency, onPick }) {
   const [open, setOpen] = useState(null)
   const [win, setWin] = useState(7)
   const [ai, setAi] = useState({ status: 'idle', text: null, error: null })
   const money = (v) => fmtCurrency(v, currency)
-  const movers = list.flatMap((r) => clientMovers(r, clients[r.id], win)).filter((m) => Math.abs(m.cplPct) >= 8).sort((a, b) => Math.abs(b.cplPct) - Math.abs(a.cplPct)).slice(0, 8)
+  // Build movers per pipeline for multi-pipeline clients, so each insight says which
+  // pipeline it's for (e.g. "Nexia Health Care · ADHD …") and can scroll to that exact
+  // tile; single-pipeline clients stay account-level.
+  const allMovers = []
+  for (const r of list) {
+    const t = clients[r.id]
+    if (t && t.pipelines && t.pipelines.length > 1) {
+      for (const p of t.pipelines) {
+        if (p.unlinked) continue
+        const prow = { ...r, name: `${r.name} · ${p.name}`, hasMeta: !!p.hasMeta, hasGoogle: !!p.hasGoogle }
+        for (const m of clientMovers(prow, p, win)) allMovers.push({ ...m, scrollId: trCardId(r.id, p.id) })
+      }
+    } else {
+      for (const m of clientMovers(r, t, win)) allMovers.push({ ...m, scrollId: trCardId(r.id) })
+    }
+  }
+  const movers = allMovers.filter((m) => Math.abs(m.cplPct) >= 8).sort((a, b) => Math.abs(b.cplPct) - Math.abs(a.cplPct)).slice(0, 8)
+  const scrollToCard = (id) => {
+    const el = id && document.getElementById(id)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    el.classList.add('tr-flash'); setTimeout(() => el.classList.remove('tr-flash'), 1600)
+  }
   const explain = async () => {
     setAi({ status: 'loading', text: null, error: null })
     try {
@@ -1076,7 +1101,7 @@ function MoversPanel({ list, clients, currency, onPick }) {
                 <span className={`mov-badge ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span>
                 <span className="mov-txt"><b>{m.clientName}</b> · {m.channel} cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}<span className="mov-why">{moverReason(m)} · {open === i ? '▾' : '▸'} creatives</span></span>
               </button>
-              <button className="mov-open" onClick={() => onPick(m.c)} title="Open client workspace">↗</button>
+              <button className="mov-open" onClick={() => scrollToCard(m.scrollId)} title="Scroll to this client's tile">↓</button>
             </div>
             {open === i ? <MoverDrill clientId={m.clientId} channel={m.chan} days={win} money={money} /> : null}
           </div>
@@ -1092,6 +1117,9 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
   if (tr.status === 'err' || !tr.data || !tr.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load trends - try Refresh.</p></div>
   const clients = tr.data.clients
   const list = rows.filter((r) => clients[r.id] && (r.hasMeta || r.hasGoogle))
+    .slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+  // Order a client's pipeline tiles alphabetically, keeping "Unlinked campaigns" last.
+  const pipeOrder = (pipes) => pipes.slice().sort((a, b) => (a.unlinked ? 1 : 0) - (b.unlinked ? 1 : 0) || String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   return (
     <div className="tr-list">
       {list.length > 0 && <MoversPanel list={list} clients={clients} currency={currency} onPick={onPick} />}
@@ -1100,12 +1128,12 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
         // Multi-pipeline clients render one full tile per pipeline (each a complete,
         // channel-split card), instead of one combined card with sub-tables.
         if (t.pipelines && t.pipelines.length > 1) {
-          return t.pipelines.map((p) => {
+          return pipeOrder(t.pipelines).map((p) => {
             const prow = { ...r, name: `${r.name} · ${p.name}`, hasMeta: !!p.hasMeta, hasGoogle: !!p.hasGoogle }
-            return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} />
+            return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} domId={trCardId(r.id, p.id)} />
           })
         }
-        return [<ClientTrend key={r.id} row={r} tr={t} currency={currency} onPick={onPick} />]
+        return [<ClientTrend key={r.id} row={r} tr={t} currency={currency} onPick={onPick} domId={trCardId(r.id)} />]
       })}
       {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
       <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages; where UTM attribution is connected they're split by first-touch channel, so Meta / Google cost-per-booked uses that channel's own bookings. Otherwise the toggle divides that channel's spend by total booked calls.</p>

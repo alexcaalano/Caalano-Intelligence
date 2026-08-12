@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.208.0 — 2026-08-12 · `PENDING` — Daily Performance: alphabetical tiles, per-pipeline movers, scroll-to-tile
+- **Client tiles are now in alphabetical order** (multi-pipeline tiles group under their client, pipelines
+  alphabetical with "Unlinked campaigns" last).
+- **Biggest-movers insights are now per pipeline** for multi-pipeline clients — each mover names the exact
+  pipeline it's about (e.g. "Nexia Health Care · ADHD - Leads & Sales Pipeline"), and the AI explanation
+  is fed the pipeline-level labels too.
+- **The mover jump button (↓) now scrolls straight to that client's tile** on the page (with a brief
+  highlight) instead of opening the full client workspace — the tile's name still opens the workspace.
+
 ## v3.207.1 — 2026-08-12 · `PENDING` — Fix: single-pipeline clients no longer split; campaign links now read correctly
 - **Single-pipeline clients (e.g. Pool Haus) are no longer split** into a pipeline tile + a stray "Unlinked
   campaigns" tile — the per-pipeline layout now only applies when a client genuinely runs 2+ pipelines

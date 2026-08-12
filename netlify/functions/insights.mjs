@@ -203,12 +203,65 @@ Be specific and numeric. Under 320 words. Do not use em-dashes or en-dashes; use
   return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
 }
 
+// Two real Caalano Digital fortnightly updates, included in the prompt purely as
+// voice / structure / formatting anchors (never as data to reuse). Trimmed.
+const CU_STYLE_EXAMPLES = `EXAMPLE A (IDO IDO):
+Hi Ebru,
+I hope you're having a good time overseas. I wanted to share an update on ido ido's performance over the past 14 days. During this period, Meta generated 35 leads from a total ad spend of $752.64.
+
+Meta:
+Spend: $752.64
+Leads: 35
+CPL: $21.50
+
+Key insights:
+- Since uploading four new video assets on the 21st of July, they have generated 14 leads at an average CPL of $18.47. This is a good result, particularly as the campaign is no longer running the 40% signage offer.
+- CDa_029, the new video featuring the gold wedding invitation, was the strongest of the recently uploaded assets, generating 11 leads at an $18.04 CPL.
+- Over the fortnight, five consultations were booked, two quotes were sent, and one sale was marked as won, valued at $600.
+
+Actions:
+- Launching Graphic Design Offer: once we receive the remaining video assets from you, we'll prepare and launch five new static ads promoting the Complimentary Graphic Design offer.
+
+Questions:
+- I noticed there are currently 23 leads sitting in the Contact #1 stage. Has the team mentioned a reason for this? We'd like to understand where the bottleneck is so we can see whether there's anything we can do to help.
+
+Please let me know if you have any questions.
+Kind regards,
+Andie
+
+EXAMPLE B (The Psychology Hub):
+Hi Jaz,
+I hope everything is going well. I wanted to share an update on The Psychology Hub's Meta performance over the past fortnight, along with what we're currently working on. Over the past 14 days, Meta generated 161 leads.
+
+Meta Ads:
+Spend: $1,962
+Leads: 161 (up 10 vs the previous 14 days)
+CPL: $12.18 (down $2.09 vs the previous 14 days)
+
+During this period, 51 appointments were booked at $38.46 per booking, all self-booked through automation. 6 clients were marked as won, with a combined value of $2,370.
+
+Key insights:
+- The Adult ADHD Assessment campaign generated the highest lead volume, followed by Child ADHD Assessments and Therapy.
+- CDa_017, the AI video featuring a woman in blue at her desk, generated 121 leads at a $6.22 CPL. Of these, 34 booked an appointment and five were marked as won.
+
+Actions:
+- New Child ADHD creative: we're recreating the best-performing static from the national Child ADHD campaign and will test it locally, giving us a proven concept for the local audience.
+
+Questions:
+1. How have the recent bookings been from your end, particularly lead quality and attendance?
+2. Are you happy for us to adjust the ad spend splits toward the best business outcomes, or continue as is?
+
+Please let me know if you have any questions.
+Kind regards,
+Andie`
+
 // Client Update generator — a client-facing account update for a period, in two
 // formats: a casual WhatsApp message and a formal structured email. Every figure
 // is supplied; Claude only writes it up. Returns strict JSON {subject, email,
 // whatsapp}. Australian spelling, no em dashes, from Caalano Digital.
 async function clientUpdate(apiKey, body) {
-  const { clientName, firstName, period, periodDays, clientContext = '', kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [], pipelines: pls = [], segments: segs = [], appts: ap = null, lostReasons: lr = [], avgCloseDays = null, nonBookerNotes: nbn = [], stalled: stl = [], geo = [], apptInsights: aii = null, speed: spd = null, cohortTrend: coh = [], forms: fms = [] } = body
+  const { clientName, firstName, senderName, period, periodDays, clientContext = '', kpis: k = {}, channels: ch = {}, forecast: fc = {}, creatives: cr = [], pipelines: pls = [], segments: segs = [], appts: ap = null, lostReasons: lr = [], avgCloseDays = null, nonBookerNotes: nbn = [], stalled: stl = [], geo = [], apptInsights: aii = null, speed: spd = null, cohortTrend: coh = [], forms: fms = [] } = body
+  const signName = (senderName && String(senderName).trim()) || 'the Caalano Digital team'
   const pv = k.prev || {}
   const delta = (cur, prev, lowerBetter) => { if (cur == null || prev == null || !prev) return ''; const pc = Math.round(((cur - prev) / prev) * 100); const better = lowerBetter ? pc < 0 : pc > 0; return ` (${pc >= 0 ? 'up' : 'down'} ${Math.abs(pc)}% on the previous period, ${better ? 'better' : 'worse'})` }
   // Ad-reported leads (matches Meta/Google Ads Manager) are the basis for the
@@ -265,9 +318,9 @@ async function clientUpdate(apiKey, body) {
 
 CRITICAL: Never invent, estimate or add a NUMBER, metric or hard fact that is not explicitly given below. If a figure is n/a or not provided, do not state it. But do NOT just restate the numbers back: interpret them, and draw conclusions and a point of view that follow logically from the data (which audience or ad is performing, where the funnel is getting stuck, what looks worth exploring). Opinions and a clear read are welcome and expected; fabricated figures are not.
 
-STYLE: Write as one real account manager at Caalano Digital who knows this client, emailing them directly. Warm, direct, specific and confident: a sharp operator, not a corporate template. Vary sentence length; short punchy sentences are good. Contractions are fine. Lead with the real story of the period in the first two sentences (the single thing that actually matters), not a summary of every metric. Every number you cite must be followed by what it means for their business, never a bare stat. Have a point of view.
+STYLE: Write as one real account manager at Caalano Digital who knows this client, emailing them directly. Warm, direct, specific and confident: a sharp operator, not a corporate template. Vary sentence length; short punchy sentences are good. Contractions are fine. Open with a brief, genuine one-line personal greeting then a one-line intro (as in the examples), then get to the substance; do not pad with a summary of every metric. Every number you cite must be followed by what it means for their business, never a bare stat. Have a point of view.
 
-BANNED PHRASES (these make it read like AI or a template; never use them): "I hope this finds you well", "I'm pleased/excited/thrilled to share", "As always", "Rest assured", "moving forward", "Overall", "In summary", "it's worth noting", "at the end of the day", "that said", "delighted to". BANNED WORDS: leverage, robust, delve, streamline, testament, landscape, elevate, unlock, synergy, seamless. No clichés, idioms or sporting/boxing metaphors ("punching above its weight", "moving the needle", "hit the ground running", "smashing it"). When you cite a percentage change, say what it is compared to naturally (for example "up 143% on the last fortnight"). Refer to the time period casually (for example "over the last fortnight", "this past month") and never quote raw dates or say "reporting period".
+BANNED PHRASES (these make it read like AI or a template; never use them): "I hope this email finds you well", "I'm pleased/excited/thrilled to share", "As always", "Rest assured", "moving forward", "In summary", "it's worth noting", "at the end of the day", "that said", "delighted to". (A brief genuine opener like "Hope you're all well" or "Hope you had a good week" IS welcome; only the stiff templated version above is banned.) BANNED WORDS: leverage, robust, delve, streamline, testament, landscape, elevate, unlock, synergy, seamless. No clichés, idioms or sporting/boxing metaphors ("punching above its weight", "moving the needle", "hit the ground running", "smashing it"). When you cite a percentage change, say what it is compared to naturally (for example "up 143% on the last fortnight"). Refer to the time period casually (for example "over the last fortnight", "this past month") and never quote raw dates or say "reporting period".
 
 NOUNS: Do NOT call the client's customers "jobs" (that is trade-specific and wrong for most clients). Use neutral terms: clients, customers, new business, or closed deals; or mirror the client's own terminology from the background context if it is given.
 
@@ -291,20 +344,21 @@ Produce TWO versions of the same update. Reply in EXACTLY this format and nothin
 ###WHATSAPP###
 <the casual WhatsApp message, which can span many lines>
 
-EMAIL version: formal and structured with clear headings/bullets. Structure it high level first, then drill down. ${firstName ? `Open with "Hi ${firstName},"` : 'Open with "Hi there,"'} then a one-line intro. Sections in THIS order:
-1. "Quick Summary" - fold spend, cost efficiency, leads and booked calls together here with the key movements versus the previous period.${twoChannels ? ' IMPORTANT: both Meta and Google ran this period, so explicitly break out the channel split here (Meta spend and Meta leads; Google spend and Google conversions). Call the Google ones "conversions", not leads, since Google conversions are not always the same as a form lead, and make clear the combined lead figure includes Google conversions, so the client can reconcile against each platform.' : ''}
-2. Attendance and Wins - explain attended calls honestly using the appointments breakdown: if attendance looks low, make clear how many calls are still upcoming (not yet happened) and how many were no-shows, and if there is a reporting gap noted above, mention it gently as something for the team to tidy up. For revenue: if there are no wins yet and the average close time note says it is expected for a cohort this recent, say so plainly rather than framing it as bad.
-3. Segments - group the ad sets into their named audience segments (e.g. Health Professionals, Borrowing Capacity, Buyers Advocacy) and give a one-line read on how each is performing on leads AND booked calls where booked figures are available. Only mention segments present in the data.
-${multiPipe ? '4. Pipelines - a SHORT dedicated section per pipeline (this client runs more than one), each with its leads/bookings/booking rate/wins and, in funnel order, where its open deals are sitting. If a pipeline has no wins, do not gloss over it: cover its leads and bookings and where the deals have got to and are heading.' : '4. Pipeline - cover leads/bookings/wins and, if there are no wins yet, where the open deals have got to in the funnel (in order).'}
-5. "Top Performing Ads" - the most granular level, last: list the best individual ads with their leads, cost per lead, booked calls and cost per booked call. This is the ONLY individual-ads section; do not add a separate "what's working" list.
-${(nbn && nbn.length) ? '6. If a pipeline or segment has a notably low lead-to-booking rate, add ONE short, tactful observation about the likely cause based on the themes in the non-booker notes (themes only, no names, no quotes).' : ''}
-FINAL SECTION - the most important one. Head it naturally (for example "A few things we'd love your take on" or "Over to you"). Do NOT tell the client what we are unilaterally doing next, and do NOT prescribe budget changes. Instead ask 2 or 3 specific, genuine questions, grounded in the data above, that get them to reply:
-- Where a segment or ad is showing strong front-end value (cheap leads and booked calls), ask whether those leads and calls are turning into good conversations and quality prospects at their end. Then, only if they are, note that we can look together at whether there is room to lean further into it (never assume the budget can simply be increased; frame it as a joint decision that depends on their answer).
-- If there are stalled deals in the data, ask whether there is anything we can do to help move the ones sitting at a particular stage, or get their context on where those are at.
-- Optionally, ask how the lead quality has felt for them generally.
-Make each question specific to this client's actual numbers, not generic. The point is to earn a reply. Then a short, warm sign-off from the Caalano Digital team (no emojis). Do NOT call their customers "jobs"; if you ask about closed business, say "closed deals" or "new clients".
+STYLE EXAMPLES (two real Caalano Digital fortnightly updates, included ONLY to show the house voice, section flow and plain-text formatting. Do NOT reuse their numbers, clients, creatives or specifics; match their tone and shape using THIS client's data above):
+"""
+${CU_STYLE_EXAMPLES}
+"""
 
-WHATSAPP version: casual and conversational, like a real text to a client you get on well with. ${firstName ? `Start with "Hey ${firstName},"` : 'Start with "Hey,"'} Shorter than the email: the headline numbers, the best news${twoChannels ? ', noting briefly the leads came across both Meta and Google' : ''}${multiPipe ? ', a brief one-line mention of each pipeline' : ''}${segTop.length ? ', and a quick word on the standout audience/ad' : ''}. If attendance looks low, reassure briefly that some calls are still to come. Plain language, no jargon, no clichés. End with ONE specific question that gets a reply: ideally whether the strong leads are turning into good conversations at their end, or (if deals are stalled) whether we can help nudge the ones sitting idle. Do not assume budget can be increased. Do not call their customers "jobs". NO emojis. Sign off casually from the Caalano Digital team.
+EMAIL version: match the house style shown in the examples above. ${firstName ? `Open with "Hi ${firstName},"` : 'Open with "Hi team,"'} then a short, genuine one-line personal opener (for example "Hope you're all well." or "Hope you had a good week." - keep it human and brief; do NOT use the stiff "I hope this email finds you well"). Then a one-line intro that you're sharing an update on ${clientName || 'the client'}'s performance over the past fortnight, along with what the team has been working on. Then, in THIS order, as plain sections (heading words on their own line, no markdown):
+1. One overall line: the total ad spend and total leads for the fortnight.
+2. The channel breakdown, each under its own mini-heading. "Meta:" then Spend, Leads and CPL on their own lines, with the movement vs the previous fortnight in the natural style (for example "down $2.09 vs the previous 14 days").${twoChannels ? ' Then "Google:" with Spend, Conversions and Cost per conversion. Call Google outcomes "conversions", not leads; note the combined lead figure includes them so the client can reconcile against each platform.' : ' Only include a Google section if Google actually ran this period.'}
+3. A results line: booked calls${aii && aii.selfPct != null ? ' (with the self-booked share if it is notable)' : ''}, deals won and revenue, and the number and value of leads still progressing through the pipeline.
+4. "Key insights:" 2 to 4 bullets. Name the best-performing creative(s) by their code AND a short plain-English description you can infer from the ad name and format (for example a name with "Vid_Podcast_Derrick" is "Derrick's podcast video"); give each cited ad its leads, CPL and, where available, booked calls and cost per booked call. Do NOT invent visual details (colours, people, props) that the ad name does not imply. Include one grounded funnel observation where the data supports it (for example a stage where open deals are piling up, or a channel performing especially well).${(nbn && nbn.length) ? ' If a pipeline or segment has a notably low lead-to-booking rate, add ONE tactful line on the likely cause from the non-booker note themes (themes only, no names, no quotes).' : ''}
+5. "Actions:" 1 to 3 concrete next steps that follow from the data (and any planned actions in the background context). Frame each as what we recommend or are setting up and why it helps them; where something takes time, add a short realistic timeframe note. Do NOT invent specific third-party integrations, tools or campaigns that the data or context does not support, and do NOT prescribe budget increases.
+6. "Questions:" 1 to 3 specific, genuine questions grounded in this client's actual numbers, that earn a reply. Good angles: whether the cheap, well-booking leads from a standout ad or segment are turning into good conversations at their end (and only then, whether there is room to lean in further, framed as a joint decision, never assuming budget can just go up); if deals are stalled at a stage, whether we can help move them or get context; calendar availability if relevant; how lead quality has felt.
+Close with "Kind regards," on its own line, then "${signName}" on the next line. No emojis. Do NOT call the client's customers "jobs"; say "closed deals" or "new clients".
+
+WHATSAPP version: casual and conversational, like a real text to a client you get on well with. ${firstName ? `Start with "Hey ${firstName},"` : 'Start with "Hey,"'} Shorter than the email: the headline numbers, the best news${twoChannels ? ', noting briefly the leads came across both Meta and Google' : ''}${multiPipe ? ', a brief one-line mention of each pipeline' : ''}${segTop.length ? ', and a quick word on the standout audience/ad' : ''}. If attendance looks low, reassure briefly that some calls are still to come. Plain language, no jargon, no clichés. End with ONE specific question that gets a reply: ideally whether the strong leads are turning into good conversations at their end, or (if deals are stalled) whether we can help nudge the ones sitting idle. Do not assume budget can be increased. Do not call their customers "jobs". NO emojis. Sign off casually as ${signName}.
 
 Both must be positive but honest: if something dropped, frame it constructively without hiding it. Keep the email under 480 words and the WhatsApp under 150 words.`
   const out = await callClaude(apiKey, prompt)

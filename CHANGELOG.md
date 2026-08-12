@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.201.0 — 2026-08-11 · `PENDING` — Client Update matches the fortnightly house style
+- **The Client Update email now follows Caalano's real fortnightly template:** warm one-line opener →
+  overall spend/leads → Meta & Google breakdown → bookings / won / pipeline value → **Key insights**
+  (naming creatives with a plain-English description inferred from the ad name) → **Actions** (with a
+  realistic timeframe where relevant) → **Questions** → signed sign-off. Two real team emails are
+  included in the prompt as voice/format anchors.
+- **Emails now sign off with the logged-in user's name** (falls back to the Caalano Digital team).
+- **The Client Update AI now also reads the client's brand profile** (Settings → Overview), alongside
+  the free-text context, so the tone and framing fit the brand.
+
 ## v3.200.0 — 2026-08-11 · `PENDING` — Creative Cockpit → two sub-tabs (Breakdown + Curator)
 - **Creative Cockpit is now a two-tab page:** **Creative Breakdown** (the existing per-client creative
   performance + categorisation + AI strategy, renamed) and **Creative Curator** (the idea studio).

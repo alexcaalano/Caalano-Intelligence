@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.200.0'
+const APP_VERSION = '3.201.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8564,7 +8564,7 @@ function CopyBtn({ text, label = 'Copy' }) {
   const copy = async () => { try { await navigator.clipboard.writeText(text || ''); setDone(true); setTimeout(() => setDone(false), 1600) } catch { /* clipboard blocked */ } }
   return <button className="link-btn sm cu-copy" onClick={copy}>{done ? '✓ Copied' : label}</button>
 }
-function ClientUpdatePage({ clients, currency, range, nonce }) {
+function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
   useSettingsSync()
   const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
   const [selId, setSelId] = useState(list[0] ? list[0].id : null)
@@ -8621,7 +8621,7 @@ function ClientUpdatePage({ clients, currency, range, nonce }) {
       const cohortTrend = ((dataSt.data.cohorts && dataSt.data.cohorts.weeks) || []).slice(-6).map((w) => { const a = (w.ch && w.ch.all) || {}; return { week: w.label, leads: a.leads || 0, booked: a.booked || 0, won: a.won || 0 } })
       // Top forms/offers by submissions, with booked/won where available.
       const forms = formsArr.slice(0, 3).map((f) => ({ name: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, won: f.won || 0 }))
-      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), clientContext: (ctx || '').trim(), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [], stalled, geo, apptInsights, speed, cohortTrend, forms }
+      const payload = { mode: 'client-update', clientName: sel.name, firstName: firstName.trim(), senderName: (authUser && (authUser.name || authUser.email)) || '', clientContext: [profileText(sel.id), (ctx || '').trim()].filter((s) => s && s.trim()).join('\n\n'), period: rangeLabel(range), periodDays, kpis: health.kpis, channels: health.channels, forecast: health.forecast, pipelines: health.pipelines || [], segments: creatives.segments || [], creatives: topCr, appts: extra.appts || null, lostReasons: extra.lostReasons || [], avgCloseDays: extra.avgCloseDays != null ? extra.avgCloseDays : null, nonBookerNotes: extra.nonBookerNotes || [], stalled, geo, apptInsights, speed, cohortTrend, forms }
       const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
@@ -10907,7 +10907,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
-          {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
+          {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}

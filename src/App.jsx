@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.199.0'
+const APP_VERSION = '3.200.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8144,16 +8144,23 @@ function MetaInsightsPage({ clients, currency, range, nonce }) {
 function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
   const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
   const [selId, setSelId] = useState(list[0] ? list[0].id : null)
+  const [sub, setSub] = useState('breakdown')
   const sel = list.find((c) => c.id === selId) || list[0]
   if (!list.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No clients with a Meta account yet.</b></div>
   return (
     <>
-      <div className="c360-head" style={{ marginTop: 0 }}>
-        <div className="pipe-sel"><label>Client</label>
-          <select value={(sel && sel.id) || ''} onChange={(e) => setSelId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-        </div>
+      <div className="subtabs">
+        <button className={sub === 'breakdown' ? 'active' : ''} onClick={() => setSub('breakdown')}>Creative Breakdown</button>
+        <button className={sub === 'curator' ? 'active' : ''} onClick={() => setSub('curator')}>Creative Curator</button>
       </div>
-      {sel ? <CreativeCockpit key={sel.id} client={sel} currency={currency} range={range} nonce={nonce} authUser={authUser} /> : null}
+      {sub === 'breakdown' ? <>
+        <div className="c360-head" style={{ marginTop: 0 }}>
+          <div className="pipe-sel"><label>Client</label>
+            <select value={(sel && sel.id) || ''} onChange={(e) => setSelId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          </div>
+        </div>
+        {sel ? <CreativeCockpit key={sel.id} client={sel} currency={currency} range={range} nonce={nonce} authUser={authUser} /> : null}
+      </> : <CreativeCuratorPage clients={list} />}
     </>
   )
 }
@@ -8241,7 +8248,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
 
   return (
     <>
-      <div className="lvl-title">Creative Cockpit <span className="sub">· {client.name} · {rangeLabel(range)} · {fmtNumber(all.length)} creatives{hasCrm ? '' : ' · no CRM mapped (paid metrics only)'}</span></div>
+      <div className="lvl-title">Creative Breakdown <span className="sub">· {client.name} · {rangeLabel(range)} · {fmtNumber(all.length)} creatives{hasCrm ? '' : ' · no CRM mapped (paid metrics only)'}</span></div>
       <div className="scorecard">
         <Sc label="Creatives" value={fmtNumber(all.length)} />
         <Sc label="Ad spend" value={money(tot.spend)} />
@@ -10862,7 +10869,6 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>
             <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>
             <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>
-            <button className={curView === 'curator' ? 'active' : ''} onClick={() => go('curator')}><span className="ic"><NavIcon name="curator" /></span>Creative Curator</button>
             <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>
             <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>
             <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Report</button>
@@ -10900,7 +10906,6 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
-          {curView === 'curator' && !isViewer && <CreativeCuratorPage clients={visibleClients} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}

@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.200.0 — 2026-08-11 · `PENDING` — Creative Cockpit → two sub-tabs (Breakdown + Curator)
+- **Creative Cockpit is now a two-tab page:** **Creative Breakdown** (the existing per-client creative
+  performance + categorisation + AI strategy, renamed) and **Creative Curator** (the idea studio).
+  The Curator moved in here from its own top-level menu item, so all creative work lives in one place.
+
 ## v3.199.0 — 2026-08-11 · `PENDING` — Overview tab first + seeded starter brand profiles
 - **Overview is now the first tab** in each client's Settings (and opens by default).
 - **Starter brand profiles seeded for every client** from what we know: Pool Haus, Nexia Health,

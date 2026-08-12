@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.192.0'
+const APP_VERSION = '3.193.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6170,8 +6170,12 @@ function AliasEditor({ clientId, nonce }) {
   // ad-set / creative aliasing.
   const NONAD = new Set(['social', 'organic', 'manual', 'calendar', 'email', 'referral', 'direct', 'none', 'sms', 'whatsapp', 'qr', 'link', 'bio', 'link_in_bio', 'linktree', 'linkinbio', 'profile'])
   const isNonAd = (name) => { const s = String(name || '').trim().toLowerCase(); return NONAD.has(s) || /link.?in.?bio|linktree/.test(s) }
-  const curList = st.names || { campaign: [], medium: [], content: [] }
-  const curSet = { campaign: new Set(curList.campaign.map(unorm)), medium: new Set(curList.medium.map(unorm)), content: new Set(curList.content.map(unorm)) }
+  // Current-name lists are now channel-tagged: [{ name, channel }]. Tolerate the
+  // old string-array shape too (cached responses) so nothing breaks mid-deploy.
+  const curListRaw = st.names || { campaign: [], medium: [], content: [] }
+  const asObjs = (arr) => (arr || []).map((x) => (typeof x === 'string' ? { name: x, channel: null } : x)).filter((x) => x && x.name)
+  const curList = { campaign: asObjs(curListRaw.campaign), medium: asObjs(curListRaw.medium), content: asObjs(curListRaw.content) }
+  const curSet = { campaign: new Set(curList.campaign.map((o) => unorm(o.name))), medium: new Set(curList.medium.map((o) => unorm(o.name))), content: new Set(curList.content.map((o) => unorm(o.name))) }
   // Did the current-name lists actually load? If not, we can't tell which UTMs
   // are unmatched (everything would look unmatched), so we warn instead of dumping.
   const namesLoaded = !!st.names && (curList.campaign.length + curList.medium.length + curList.content.length) > 0
@@ -6208,7 +6212,8 @@ function AliasEditor({ clientId, nonce }) {
                 {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs — everything ties to a current name.'}</p>
                   : un.map((o) => {
                     const oc = adCode(o.name)
-                    const sug = suggestFor(o.name, curList[lvl])
+                    const cand = curList[lvl].map((x) => x.name)
+                    const sug = suggestFor(o.name, cand)
                     const sc = sug.value ? adCode(sug.value) : null
                     return (
                       <div className="alias-row" key={o.name}>
@@ -6217,7 +6222,11 @@ function AliasEditor({ clientId, nonce }) {
                         <div className="alias-pick">
                           <select className="camp-lnk alias-sel" value="" onChange={(e) => e.target.value && setAlias(clientId, lvl, o.name, e.target.value)}>
                             <option value="">Not linked — leave as is</option>
-                            {curList[lvl].map((n) => { const cc = adCode(n); return <option key={n} value={n}>{cc ? cc.toUpperCase() + ' · ' : ''}{n}</option> })}
+                            {[['meta', 'Meta'], ['google', 'Google'], [null, 'Other']].map(([ch, chLbl]) => {
+                              const opts = curList[lvl].filter((x) => (ch === null ? !x.channel : x.channel === ch))
+                              if (!opts.length) return null
+                              return <optgroup key={chLbl} label={chLbl}>{opts.map((x) => { const cc = adCode(x.name); return <option key={x.name} value={x.name}>{cc ? cc.toUpperCase() + ' · ' : ''}{x.name}</option> })}</optgroup>
+                            })}
                           </select>
                           {sug.value ? <button className={`alias-ok ${sug.by === 'code' ? 'by-code' : 'by-words'}`} title={`Approve: ${o.name} → ${sug.value}${sug.by === 'code' ? ` (ad-number match ${(sc || '').toUpperCase()})` : ' (wording guess — verify the ad number first)'}`} onClick={() => setAlias(clientId, lvl, o.name, sug.value)}>✓ {sug.by === 'code' ? `#${(sc || '').toUpperCase()}` : 'Approve'} <span className="alias-ok-tgt">{sug.value}</span></button> : null}
                           <button className="alias-keep" title="Not a rename — this is a legit standalone (e.g. a paused campaign). Hide it and keep its data under its own name." onClick={() => setKeep(clientId, lvl, o.name, true)}>Keep separate</button>

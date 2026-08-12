@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.193.0 — 2026-08-11 · `PENDING` — UTM aliases: load Meta names + link by channel
+- **Fixed: the UTM-alias linker now loads Meta campaign / ad-set / creative names**, not just Google.
+  The "current names" pull was fetching Meta ad-level data over 90 days, which often timed out and was
+  silently dropped — leaving only Google in the dropdown and, worse, making live **Meta** campaigns
+  wrongly appear in the "unmatched" list. It now uses a lighter ~35-day "live" window (with a retry),
+  so Meta loads reliably.
+- **The link dropdown is now grouped by channel** (Meta / Google), so you can link a renamed Meta
+  campaign to the right live Meta campaign instead of only seeing Google options.
+- Net effect: only genuinely unmatched UTMs (that match no live Meta *or* Google entity) remain in the
+  list, and each can be linked to the correct channel's current name.
+
 ## v3.192.0 — 2026-08-11 · `PENDING` — Creative sort: dropdown + asc/desc toggle
 - Replaced the long row of Creative-performance sort chips with a compact **dropdown** (grouped:
   Performance · Key event volume · Cheapest cost per event) plus an **↑/↓ direction toggle**. Picking

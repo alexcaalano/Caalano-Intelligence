@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.193.0'
+const APP_VERSION = '3.194.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6139,7 +6139,7 @@ function AliasEditor({ clientId, nonce }) {
       // Lightweight name-only endpoint (not the heavy buildMeta) so the current
       // campaign / ad-set / ad names load reliably even for large accounts.
       fetch(`/.netlify/functions/windsor?scope=adnames&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-    ]).then(([a, n]) => setSt({ status: 'ok', attr: a && a.attribution, names: (n && !n.error) ? { campaign: n.campaigns || [], medium: n.adsets || [], content: n.ads || [] } : null }))
+    ]).then(([a, n]) => setSt({ status: 'ok', attr: a && a.attribution, names: (n && !n.error) ? { campaign: n.campaigns || [], medium: n.adsets || [], content: n.ads || [], ids: n.ids || { campaign: [], medium: [], content: [] } } : null }))
       .catch(() => setSt({ status: 'err' }))
   }, [st.status, clientId])
   const A = st.attr
@@ -6175,7 +6175,11 @@ function AliasEditor({ clientId, nonce }) {
   const curListRaw = st.names || { campaign: [], medium: [], content: [] }
   const asObjs = (arr) => (arr || []).map((x) => (typeof x === 'string' ? { name: x, channel: null } : x)).filter((x) => x && x.name)
   const curList = { campaign: asObjs(curListRaw.campaign), medium: asObjs(curListRaw.medium), content: asObjs(curListRaw.content) }
-  const curSet = { campaign: new Set(curList.campaign.map((o) => unorm(o.name))), medium: new Set(curList.medium.map((o) => unorm(o.name))), content: new Set(curList.content.map((o) => unorm(o.name))) }
+  // Match on names AND raw entity IDs, so a UTM carrying a live campaign/ad-set/ad
+  // ID (not its name) is treated as matched and hidden too.
+  const curIds = curListRaw.ids || { campaign: [], medium: [], content: [] }
+  const matchSet = (lvl) => new Set([...curList[lvl].map((o) => unorm(o.name)), ...((curIds[lvl] || []).map(unorm))])
+  const curSet = { campaign: matchSet('campaign'), medium: matchSet('medium'), content: matchSet('content') }
   // Did the current-name lists actually load? If not, we can't tell which UTMs
   // are unmatched (everything would look unmatched), so we warn instead of dumping.
   const namesLoaded = !!st.names && (curList.campaign.length + curList.medium.length + curList.content.length) > 0

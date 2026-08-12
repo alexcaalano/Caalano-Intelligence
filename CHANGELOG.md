@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.194.0 — 2026-08-11 · `PENDING` — UTM aliases: hide anything that matches a live entity (names + IDs)
+- **The unmatched list now hides any UTM that matches a live Meta or Google entity by name _or_ by ID.**
+  A UTM that carries a raw campaign/ad-set/ad **ID** (e.g. `120242333973070146`) instead of the name is
+  now recognised as a live campaign and dropped from the list — only genuinely orphaned UTMs remain.
+- **More robust Meta name loading:** the Meta pull is split so campaign + ad-set names load on a light
+  query even if the heavier ad-level pull is slow, so live Meta campaigns/ad sets reliably match and
+  disappear from the list.
+
 ## v3.193.0 — 2026-08-11 · `PENDING` — UTM aliases: load Meta names + link by channel
 - **Fixed: the UTM-alias linker now loads Meta campaign / ad-set / creative names**, not just Google.
   The "current names" pull was fetching Meta ad-level data over 90 days, which often timed out and was

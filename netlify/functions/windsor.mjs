@@ -2513,20 +2513,31 @@ export default async (req) => {
     const namesFrom = (() => { const t = Date.parse(to); if (!isFinite(t)) return from; const s = new Date(t - 35 * 86400000).toISOString().slice(0, 10); return (from && from > s) ? from : s })()
     const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, id))
     try {
-      const [fb, gg] = await Promise.all([
-        cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name'], namesFrom, to, '', key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
-        cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name'], namesFrom, to, '', key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
+      // Split the Meta pull: campaign + ad-set names (light) separately from the
+      // ad-level names (heavier), so a slow ad pull can't wipe out the campaign /
+      // ad-set names. Also pull the entity IDs so a UTM that carries a raw
+      // campaign/ad-set ID (instead of the name) still matches a live entity.
+      const [fbCA, fbAds, gg] = await Promise.all([
+        cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id'], namesFrom, to, '', key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+        cc.meta ? windsorFetch('facebook', ['account_id', 'ad_name', 'ad_id'], namesFrom, to, '', key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+        cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], namesFrom, to, '', key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
       ])
       // Tag every name with the channel it came from so the linker can group
       // Meta vs Google. First channel to claim a name wins (rare cross-channel dupes).
       const uniqTag = (pairs) => { const m = new Map(); for (const [n, ch] of pairs) { const s = String(n || '').trim(); if (s && !m.has(s)) m.set(s, ch) } return [...m.entries()].map(([name, channel]) => ({ name, channel })).sort((a, b) => a.name.localeCompare(b.name)) }
+      const idList = (arr) => [...new Set(arr.map((v) => String(v ?? '').trim()).filter(Boolean))]
       return json({
         scope: 'adnames', client,
-        campaigns: uniqTag([...fb.map((r) => [r.campaign, 'meta']), ...gg.map((r) => [r.campaign, 'google'])]),
-        adsets: uniqTag([...fb.map((r) => [r.adset_name, 'meta']), ...gg.map((r) => [r.ad_group_name, 'google'])]),
-        ads: uniqTag(fb.map((r) => [r.ad_name, 'meta'])),
+        campaigns: uniqTag([...fbCA.map((r) => [r.campaign, 'meta']), ...gg.map((r) => [r.campaign, 'google'])]),
+        adsets: uniqTag([...fbCA.map((r) => [r.adset_name, 'meta']), ...gg.map((r) => [r.ad_group_name, 'google'])]),
+        ads: uniqTag(fbAds.map((r) => [r.ad_name, 'meta'])),
+        ids: {
+          campaign: idList([...fbCA.map((r) => r.campaign_id), ...gg.map((r) => r.campaign_id)]),
+          medium: idList([...fbCA.map((r) => r.adset_id), ...gg.map((r) => r.ad_group_id)]),
+          content: idList(fbAds.map((r) => r.ad_id)),
+        },
       }, 200, true)
-    } catch (e) { return json({ scope: 'adnames', client, error: String((e && e.message) || e).slice(0, 160), campaigns: [], adsets: [], ads: [] }, 200) }
+    } catch (e) { return json({ scope: 'adnames', client, error: String((e && e.message) || e).slice(0, 160), campaigns: [], adsets: [], ads: [], ids: { campaign: [], medium: [], content: [] } }, 200) }
   }
 
   const c = CLIENTS[client]

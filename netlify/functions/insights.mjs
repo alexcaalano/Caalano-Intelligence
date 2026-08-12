@@ -141,6 +141,37 @@ ${c.transcript ? `Video transcript: ${String(c.transcript).slice(0, 2000)}` : ''
 // Creative Cockpit — a strategy briefing over the whole tagged + performance set:
 // what's working, what to double down on, and new concepts to test. Every number
 // is supplied; Claude only interprets it.
+// Creative Curator: brainstorm ready-to-brief paid-social creative concepts from
+// the chosen Format / Style / CTA / Audience / Angle, in general research mode or
+// framed for one client (name + industry + free-text context). Returns markdown.
+async function creativeCurator(apiKey, body) {
+  const { scope = 'research', clientName, industry, clientContext, format, style, cta, audience, angle, avoid = [] } = body
+  const ctx = scope === 'client' && clientName
+    ? `You are briefing creative for a SPECIFIC client. Client: ${clientName}${industry ? ` (industry: ${industry})` : ''}.${clientContext ? ` Context about the brand, offer and customers: ${String(clientContext).slice(0, 1500)}` : ''} Frame every concept for this business and its real customers; reference their offer where you can.`
+    : 'General research mode: give broadly useful ideas for a service / lead-generation business. Keep them adaptable across verticals.'
+  const pick = (label, v) => (v ? `${label}: ${v}. ` : '')
+  const constraints = `${pick('Format', format)}${pick('Creative style', style)}${pick('Call to action', cta)}${pick('Target audience', audience)}${pick('Messaging angle', angle)}`.trim() || 'No fixed constraints: range across formats, styles, CTAs and angles for variety.'
+  const avoidLine = avoid && avoid.length ? `\nDo NOT repeat these concepts already on the board: ${avoid.slice(0, 12).join(' | ')}.` : ''
+  const prompt = `You are a senior paid-social (Meta / Instagram) creative strategist at a lead-generation agency. Generate fresh, ready-to-brief creative concepts a team could shoot this week.
+
+${ctx}
+
+Requested constraints (honour any that are set; where something is not set, choose what fits best and vary it): ${constraints}${avoidLine}
+
+Produce 5 distinct concepts. For EACH, use exactly this markdown block:
+### [n]. [Punchy concept title]
+- **Format / Style / CTA:** ...
+- **Audience & angle:** ...
+- **Hook (first 3 seconds):** one scroll-stopping opening line, in quotes
+- **Structure:** 3 to 5 quick beats (video), or card-by-card (carousel), or the layout (image)
+- **On-screen / caption idea:** one line
+- **Why it works:** one line
+
+Make them concrete and production-ready, not generic. Vary the angles across the five. Australian spelling. Do NOT use em dashes or en dashes; use commas, colons or hyphens. Keep the whole thing under 550 words.`
+  const out = await callClaude(apiKey, prompt)
+  return { ...out, generatedAt: new Date().toISOString() }
+}
+
 async function creativeStrategy(apiKey, body) {
   const { clientName, period, rollups = {}, top = [], bottom = [] } = body
   const dimLine = (label, arr) => `${label}: ${(arr || []).slice(0, 8).map((e) => `${e.key} (${e.n} ads, $${n0(e.spend)} spend, ${n0(e.leads)} leads${e.bk != null ? `, ${n0(e.bk)} booked` : ''}${e.cpb != null ? `, $${n0(e.cpb)}/booked call` : ''})`).join('; ') || 'untagged'}`
@@ -308,6 +339,10 @@ export default async (req) => {
   }
   if (body && body.mode === 'creative-strategy') {
     try { return json(await creativeStrategy(apiKey, body)) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+  if (body && body.mode === 'creative-curator') {
+    try { return json(await creativeCurator(apiKey, body)) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

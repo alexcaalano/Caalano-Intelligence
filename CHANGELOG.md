@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.197.0 — 2026-08-11 · `PENDING` — New module: Creative Curator (v1)
+- **New "Creative Curator" menu item** (under Creative Cockpit) to strategise new creatives. Pick any
+  mix of **Format × Style × CTA × Audience × Angle** and generate ready-to-brief concepts:
+  - **Instant** concepts from a researched library of **20 paid-social creative styles** (Before &
+    After, Face-to-camera/UGC, Podcast clip, Testimonial, PAS, How-to, Listicle, Myth-bust, Founder
+    story, Demo, Comparison, Proof montage, Objection handling, FAQ, Green-screen, Text hook, POV,
+    Checklist, Offer, Stat) — each with a hook, a beat-by-beat structure and why it works.
+  - **AI concepts** via a new `creative-curator` mode — bespoke ideas, in general **Research** mode or
+    a **Client deep-dive** that uses the client's saved context.
+  - **Save-to-board:** star concepts to a per-client (or Research) board, synced to the server like
+    every other setting. A browsable style-library reference is built in.
+
 ## v3.196.0 — 2026-08-11 · `PENDING` — Speed to Lead measured within business hours by default
 - **Every client now measures Speed to Lead within business hours by default** (Mon–Fri 9am–5pm), so a
   lead that arrives at 11pm and gets a reply at 9am counts as a fast morning response, not a 10-hour

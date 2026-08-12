@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.196.0'
+const APP_VERSION = '3.197.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2128,9 +2128,10 @@ const SEED_OPTLOG = {
   'simchat': 'https://docs.google.com/spreadsheets/d/1XUvtG8hkVLRkGLt6IS3T0H35vXWHVLHKWOIS-lvq0Ao/edit?gid=0#gid=0',
   'psychology-hub': 'https://docs.google.com/spreadsheets/d/1vg7Y0KSH7dcIkH1HkFxjarct5SjSzIVmF46MK6h_QDA/edit',
 }
+const CURATOR_KEY = 'caalano_curator_board'
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2151,8 +2152,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -7441,6 +7442,191 @@ function ChangePasswordCard() {
   )
 }
 
+/* ============ Creative Curator ============ */
+// A creative strategy studio: pick Format x Style x CTA x Audience x Angle and
+// get ready-to-brief concept ideas, from a researched library of paid-social
+// creative styles (instant, deterministic) or from AI (bespoke). Save the good
+// ones to a per-client (or general Research) board. This is v1 - deliberately a
+// strong foundation to build on.
+const CC_FORMATS = [
+  { id: 'video', label: 'Video', emoji: '🎬', hint: 'Short-form vertical — Reels / Stories / TikTok' },
+  { id: 'image', label: 'Image', emoji: '🖼️', hint: 'Single static graphic or photo' },
+  { id: 'carousel', label: 'Carousel', emoji: '🎠', hint: 'Multi-card swipe (great for steps / proof)' },
+]
+const CC_CTAS = [
+  { id: 'book', label: 'Book a call', line: 'Book your free consult', verb: 'book a free call' },
+  { id: 'magnet', label: 'Lead magnet', line: 'Download the free guide', verb: 'grab the free guide' },
+  { id: 'enquiry', label: 'Enquiry / quote', line: 'Get your free quote', verb: 'request a quote' },
+  { id: 'quiz', label: 'Quiz', line: 'Take the 60-second quiz', verb: 'take the quiz' },
+  { id: 'message', label: 'Message us', line: 'Send us a message', verb: 'message us' },
+  { id: 'event', label: 'Webinar / event', line: 'Save your seat', verb: 'register' },
+  { id: 'visit', label: 'Learn more', line: 'See how it works', verb: 'learn more' },
+]
+const CC_ANGLES = [
+  { id: 'pain', label: 'Pain-led', desc: 'Lead with the problem / frustration' },
+  { id: 'aspiration', label: 'Aspirational', desc: 'Paint the dream outcome' },
+  { id: 'authority', label: 'Authority', desc: 'Expertise, credentials, method' },
+  { id: 'proof', label: 'Social proof', desc: 'Results, reviews, numbers' },
+  { id: 'curiosity', label: 'Curiosity', desc: 'Open a loop, tease a reveal' },
+  { id: 'urgency', label: 'Urgency', desc: 'Now, limited, seasonal' },
+  { id: 'contrarian', label: 'Contrarian', desc: 'Challenge a common belief' },
+  { id: 'education', label: 'Educational', desc: 'Teach something useful first' },
+]
+const CC_AUD_SUGGEST = ['Cold / new', 'Warm / retargeting', 'Homeowners', 'Business owners', 'Parents', 'Local area', 'High-intent', 'Budget-conscious', 'Premium buyers']
+// The researched library of paid-social creative styles for service / lead-gen.
+const CC_STYLES = [
+  { id: 'before-after', name: 'Before & After', emoji: '🔄', desc: 'Show the transformation: the old / broken state, then the finished result.', why: 'Transformation is the most scroll-stopping proof a service can show.', formats: ['video', 'image', 'carousel'], ctas: ['enquiry', 'book', 'magnet'], angles: ['aspiration', 'proof', 'curiosity'], hooks: ["You won't believe what this looked like 6 weeks ago…", 'From this… to THIS.', "{aud} thought it couldn't be saved. Watch."], structure: ['Open on the raw "before"', 'Fast cuts of the work in progress', 'Reveal the finished "after"', 'Name the timeframe + result', 'CTA: {cta}'] },
+  { id: 'face-camera', name: 'Face to Camera (UGC)', emoji: '🗣️', desc: 'Founder or happy customer talking straight down the lens, phone-shot, authentic.', why: 'Feels like a friend\'s recommendation, not an ad — beats polished production for cold traffic.', formats: ['video'], ctas: ['book', 'enquiry', 'magnet', 'message'], angles: ['authority', 'pain', 'education'], hooks: ['If you\'re {aud}, stop scrolling — this is for you.', 'Three things I wish every client knew before they started.', 'I need to be honest about something in our industry.'], structure: ['Pattern-interrupt hook, straight to camera', 'One clear problem it solves', 'Proof or quick example', 'What to do next', 'CTA: {cta}'] },
+  { id: 'podcast', name: 'Podcast Clip', emoji: '🎙️', desc: 'A short, punchy clip framed like a podcast / interview moment with captions.', why: 'Conversational authority — feels like earned media, not an ad. Highly bingeable.', formats: ['video'], ctas: ['book', 'magnet', 'visit'], angles: ['authority', 'contrarian', 'education'], hooks: ['"Most {aud} get this completely wrong."', '"Here\'s what nobody tells you about…"', '"The biggest mistake I see every week is…"'], structure: ['Cold open on a bold spoken claim', 'Two-shot / mic-in-frame podcast look', 'One insight, told as a story', 'Big captioned takeaway line', 'CTA: {cta}'] },
+  { id: 'testimonial', name: 'Testimonial / Case Study', emoji: '⭐', desc: 'A real customer tells their story: problem, experience, result.', why: 'Third-party proof lowers risk — the single most persuasive thing a stranger can hear.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry'], angles: ['proof', 'pain', 'aspiration'], hooks: ['"I was nervous to spend the money — here\'s what happened."', 'Meet {aud} who were exactly where you are now.', '"I wish I\'d done this sooner."'], structure: ['Customer names the problem they had', 'What the experience was like', 'The concrete result (numbers if possible)', 'Who it\'s right for', 'CTA: {cta}'] },
+  { id: 'pas', name: 'Problem → Agitate → Solve', emoji: '🎯', desc: 'Name the pain, twist the knife, then present the fix.', why: 'The classic direct-response spine — meets a warm/painful need head-on.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry', 'magnet'], angles: ['pain', 'authority'], hooks: ['Still dealing with {problem}? It only gets worse.', 'The real reason {aud} stay stuck.', 'This one problem is costing you more than you think.'], structure: ['State the problem plainly', 'Agitate: the cost of leaving it', 'Introduce the solution', 'Why it works', 'CTA: {cta}'] },
+  { id: 'how-to', name: 'Educational / How-To', emoji: '📚', desc: 'Teach one genuinely useful thing, fast.', why: 'Value-first builds trust and trains the algorithm on watch time; primes the sale.', formats: ['video', 'carousel'], ctas: ['magnet', 'visit', 'book'], angles: ['education', 'authority'], hooks: ['How to {outcome} without {common pain}.', '3 steps to {outcome} — save this.', 'Do this before you {big decision}.'], structure: ['Promise the takeaway up front', 'Step 1 / 2 / 3 (quick, concrete)', 'A pro tip most people miss', 'Recap', 'CTA: {cta}'] },
+  { id: 'listicle', name: 'Listicle (“3 things…”)', emoji: '🔢', desc: 'A numbered rundown — tips, mistakes, signs, reasons.', why: 'Numbered promises are easy to consume and screenshot — high save + share rate.', formats: ['video', 'carousel'], ctas: ['magnet', 'visit', 'book'], angles: ['education', 'curiosity'], hooks: ['3 signs it\'s time to {action}.', '5 mistakes {aud} make (and how to avoid them).', '4 things to check before you {decision}.'], structure: ['Title card with the number', 'One point per beat / card', 'Keep each punchy + specific', 'Strongest point last', 'CTA: {cta}'] },
+  { id: 'myth-bust', name: 'Myth-busting', emoji: '❌', desc: 'Call out a widely-believed myth and correct it.', why: 'Pattern-interrupt: challenging a belief earns attention and positions you as the expert.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'magnet', 'visit'], angles: ['contrarian', 'authority', 'education'], hooks: ['"{Myth}" — this is completely wrong.', 'Stop believing this about {topic}.', 'Your {provider} won\'t tell you this.'], structure: ['State the myth', 'Why it\'s wrong', 'The truth + proof', 'What to do instead', 'CTA: {cta}'] },
+  { id: 'founder-story', name: 'Founder Story / BTS', emoji: '👔', desc: 'The person and the "why" behind the business; behind-the-scenes.', why: 'People buy from people — story builds brand affinity and trust at the same time.', formats: ['video', 'carousel'], ctas: ['book', 'visit', 'message'], angles: ['authority', 'aspiration'], hooks: ['We started this because we were sick of {industry problem}.', 'Come behind the scenes of a {job} day.', 'Why we do things differently.'], structure: ['Hook on the "why"', 'A quick origin beat', 'How that shapes the work today', 'The standard you hold', 'CTA: {cta}'] },
+  { id: 'demo', name: 'Service / Product Demo', emoji: '🛠️', desc: 'Show the thing working — the process, the tool, the result in motion.', why: 'Seeing is believing; demos de-risk and answer "what do I actually get?".', formats: ['video', 'carousel'], ctas: ['enquiry', 'book', 'visit'], angles: ['proof', 'education'], hooks: ['Here\'s exactly what {service} looks like.', 'Watch this in action.', 'This is how we {do the thing} in {timeframe}.'], structure: ['Set up what you\'re about to show', 'Walk through the process / product', 'Highlight the wow moment', 'The end result', 'CTA: {cta}'] },
+  { id: 'comparison', name: 'Us vs Them / This vs That', emoji: '⚖️', desc: 'Contrast two options — your way vs the common (worse) way.', why: 'Framing choices makes your advantage obvious and easy to remember.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry', 'visit'], angles: ['contrarian', 'authority', 'proof'], hooks: ['The cheap way vs the right way.', 'What most {providers} do vs what we do.', 'Don\'t pick {option A} until you\'ve seen this.'], structure: ['Set up the two options', 'Side-by-side on the key differences', 'Where the common option fails', 'Your advantage', 'CTA: {cta}'] },
+  { id: 'proof-montage', name: 'Social Proof Montage', emoji: '📣', desc: 'Rapid-fire reviews, results, logos, numbers set to music.', why: 'Volume of proof creates a bandwagon effect — "everyone chooses these guys".', formats: ['video', 'image'], ctas: ['book', 'enquiry'], angles: ['proof', 'urgency'], hooks: ['200+ {aud} can\'t be wrong.', 'The reviews say it better than we can.', 'This is what {number} happy clients looks like.'], structure: ['Punchy stat or star rating open', 'Fast cuts of reviews / results', 'One standout testimonial', 'The headline number', 'CTA: {cta}'] },
+  { id: 'objection', name: 'Objection Handling', emoji: '🛡️', desc: 'Name the thing holding them back and dismantle it.', why: 'Removing the #1 objection is often the highest-leverage creative you can run.', formats: ['video', 'carousel'], ctas: ['book', 'enquiry', 'message'], angles: ['pain', 'authority', 'proof'], hooks: ['"Isn\'t it expensive?" Let\'s talk about it.', 'Worried about {objection}? Read this.', 'The real cost of NOT doing it.'], structure: ['State the objection out loud', 'Empathise — it\'s fair to think that', 'Reframe with facts / proof', 'The bigger cost of waiting', 'CTA: {cta}'] },
+  { id: 'faq', name: 'FAQ', emoji: '❓', desc: 'Answer the questions everyone asks before they buy.', why: 'Pre-empting questions shortens the path to enquiry and filters for good-fit leads.', formats: ['video', 'carousel'], ctas: ['enquiry', 'book', 'message'], angles: ['education', 'authority'], hooks: ['The 3 questions {aud} always ask us.', '"How much does it cost?" — honest answer inside.', 'Everything you wanted to ask but didn\'t.'], structure: ['Q1 + straight answer', 'Q2 + straight answer', 'Q3 + straight answer', 'Reassure on the big worry', 'CTA: {cta}'] },
+  { id: 'green-screen', name: 'Green-screen Reaction', emoji: '🟩', desc: 'Talent reacts to / breaks down a screenshot, article, review or competitor ad.', why: 'Reactive, native-feeling content that rides on something topical or relatable.', formats: ['video'], ctas: ['visit', 'book', 'magnet'], angles: ['contrarian', 'education', 'curiosity'], hooks: ['I saw this and had to respond.', 'This {post/review} is exactly why {problem} happens.', 'Let me break down what\'s really going on here.'], structure: ['React to the on-screen thing', 'Point out what\'s wrong / interesting', 'Give your expert take', 'Tie back to the offer', 'CTA: {cta}'] },
+  { id: 'text-hook', name: 'Bold Text Hook', emoji: '🔠', desc: 'A big on-screen statement carries the ad; minimal production.', why: 'Cheap to make, easy to test many angles fast; the hook does all the work.', formats: ['image', 'video'], ctas: ['magnet', 'book', 'visit'], angles: ['curiosity', 'contrarian', 'pain'], hooks: ['{aud}: read this before you spend another dollar.', 'The {topic} secret nobody posts about.', 'If you\'re {aud}, this changes everything.'], structure: ['Bold statement fills the frame', 'One supporting line', 'Micro-proof', 'CTA: {cta}'] },
+  { id: 'pov', name: '“POV:” Relatable', emoji: '🎭', desc: 'A relatable point-of-view scenario your audience instantly recognises.', why: 'Relatability drives shares and comments — cheap reach and warm intent.', formats: ['video'], ctas: ['book', 'message', 'visit'], angles: ['pain', 'aspiration', 'curiosity'], hooks: ['POV: you finally {desired outcome}.', 'POV: it\'s 2am and you\'re still {problem}.', 'Tell me you\'re {aud} without telling me.'], structure: ['Set the POV scene', 'Play out the relatable moment', 'Twist to the solution', 'CTA: {cta}'] },
+  { id: 'checklist', name: 'Checklist / Guide', emoji: '✅', desc: 'A save-worthy checklist or mini-guide, ideal as a carousel.', why: 'High-value, high-save; perfect vehicle for a lead magnet CTA.', formats: ['carousel', 'image'], ctas: ['magnet', 'quiz', 'visit'], angles: ['education', 'authority'], hooks: ['The {topic} checklist to save before you start.', 'Steal our {n}-point {process} checklist.', 'Don\'t {action} without checking these.'], structure: ['Cover card: the promise', 'One checklist item per card', 'A "most people miss this" card', 'Offer the full version', 'CTA: {cta}'] },
+  { id: 'offer', name: 'Offer / Promo', emoji: '🏷️', desc: 'A clear, time-bound offer or seasonal hook.', why: 'Direct-response workhorse for warm audiences and seasonal pushes.', formats: ['image', 'video', 'carousel'], ctas: ['enquiry', 'book', 'event'], angles: ['urgency', 'aspiration'], hooks: ['This month only: {offer}.', '{Season} is coming — book before it\'s gone.', 'We\'ve got {n} spots left this {period}.'], structure: ['Lead with the offer', 'What\'s included / the value', 'The deadline / scarcity', 'Reassure (guarantee / proof)', 'CTA: {cta}'] },
+  { id: 'stat', name: 'Stat / Data-led', emoji: '📊', desc: 'A surprising statistic anchors the message.', why: 'A sharp number earns instant credibility and curiosity.', formats: ['image', 'video', 'carousel'], ctas: ['magnet', 'book', 'visit'], angles: ['authority', 'curiosity', 'education'], hooks: ['87% of {aud} don\'t know this.', '{Big number} — here\'s what it means for you.', 'The number that should worry every {aud}.'], structure: ['Reveal the stat', 'Why it matters to them', 'What it means for their decision', 'CTA: {cta}'] },
+]
+const ccFindF = (id) => CC_FORMATS.find((x) => x.id === id)
+const ccFindC = (id) => CC_CTAS.find((x) => x.id === id)
+const ccFindA = (id) => CC_ANGLES.find((x) => x.id === id)
+const ccFill = (str, audience, ctaId) => { const aud = (audience && audience.trim()) || 'the right people'; const c = ccFindC(ctaId); return String(str || '').replace(/\{aud\}/g, aud).replace(/\{cta\}/g, c ? c.verb : 'take the next step') }
+function ccBuild({ format, style, cta, audience, angle }, n = 6) {
+  let pool = style ? CC_STYLES.filter((s) => s.id === style)
+    : CC_STYLES.filter((s) => (!format || s.formats.includes(format)) && (!cta || s.ctas.includes(cta)) && (!angle || s.angles.includes(angle)))
+  if (!pool.length) pool = style ? CC_STYLES.filter((s) => s.id === style) : CC_STYLES
+  const out = []
+  for (let i = 0; out.length < n && i < pool.length * 3; i++) {
+    const s = pool[i % pool.length]; const round = Math.floor(i / pool.length)
+    const fmt = format || s.formats[0]; const c = cta || s.ctas[0]; const ang = angle || s.angles[0]
+    const hook = ccFill(s.hooks[round % s.hooks.length], audience, c)
+    out.push({ id: `${s.id}|${fmt}|${c}|${ang}|${round}`, styleId: s.id, styleName: s.name, emoji: s.emoji, format: fmt, cta: c, audience: (audience && audience.trim()) || null, angle: ang, hook, structure: s.structure.map((b) => ccFill(b, audience, c)), why: s.why })
+  }
+  return out
+}
+// Curator board persistence (server-synced like every other setting).
+function loadBoard(key) { return (SETTINGS.curator && SETTINGS.curator[key]) || [] }
+function saveBoard(key, list) { SETTINGS.curator = { ...(SETTINGS.curator || {}), [key]: list }; writeLS(CURATOR_KEY, SETTINGS.curator); saveSettingsRemote({ curator: { [key]: list } }); bumpSettings() }
+
+function CcChips({ options, value, onChange, anyLabel = 'Any' }) {
+  return (
+    <div className="cc-chips">
+      <button className={`cc-chip${value == null ? ' on' : ''}`} onClick={() => onChange(null)}>{anyLabel}</button>
+      {options.map((o) => <button key={o.id} className={`cc-chip${value === o.id ? ' on' : ''}`} title={o.hint || o.desc || ''} onClick={() => onChange(value === o.id ? null : o.id)}>{o.emoji ? `${o.emoji} ` : ''}{o.label || o.name}</button>)}
+    </div>
+  )
+}
+function CcConceptCard({ c, saved, onSave }) {
+  const f = ccFindF(c.format), ct = ccFindC(c.cta), an = ccFindA(c.angle)
+  return (
+    <div className="cc-card">
+      <div className="cc-card-h">
+        <span className="cc-card-style">{c.emoji} {c.styleName}</span>
+        <button className={`cc-star${saved ? ' on' : ''}`} title={saved ? 'Saved to board' : 'Save to board'} onClick={() => onSave(c)} disabled={saved}>{saved ? '★ Saved' : '☆ Save'}</button>
+      </div>
+      <div className="cc-badges">
+        {f && <span className="cc-badge">{f.emoji} {f.label}</span>}
+        {ct && <span className="cc-badge cc-badge-cta">{ct.label}</span>}
+        {an && <span className="cc-badge cc-badge-ang">{an.label}</span>}
+        {c.audience && <span className="cc-badge cc-badge-aud">{c.audience}</span>}
+      </div>
+      <div className="cc-hook"><span className="cc-lab">Hook</span>{c.hook}</div>
+      <div className="cc-struct"><span className="cc-lab">Structure</span><ol>{c.structure.map((b, i) => <li key={i}>{b}</li>)}</ol></div>
+      <div className="cc-why">💡 {c.why}</div>
+    </div>
+  )
+}
+function CreativeCuratorPage({ clients }) {
+  useSettingsSync()
+  const [scope, setScope] = useState('research')
+  const [clientId, setClientId] = useState(() => (clients[0] && clients[0].id) || null)
+  const client = clients.find((c) => c.id === clientId) || null
+  const boardKey = scope === 'client' && clientId ? `c:${clientId}` : 'research'
+  const board = loadBoard(boardKey)
+  const savedIds = new Set(board.map((b) => b.id))
+  const [format, setFormat] = useState(null)
+  const [styleId, setStyleId] = useState(null)
+  const [cta, setCta] = useState(null)
+  const [angle, setAngle] = useState(null)
+  const [audience, setAudience] = useState('')
+  const [concepts, setConcepts] = useState([])
+  const [ai, setAi] = useState({ status: 'idle', text: null, error: null, at: null })
+  const [libOpen, setLibOpen] = useState(false)
+  const gen = () => setConcepts(ccBuild({ format, style: styleId, cta, audience, angle }, 6))
+  const genAI = async () => {
+    setAi({ status: 'loading', text: null, error: null, at: null })
+    try {
+      const sObj = CC_STYLES.find((s) => s.id === styleId)
+      const payload = { mode: 'creative-curator', scope, clientName: client && scope === 'client' ? client.name : null, industry: (client && (client.industry || client.vertical)) || null,
+        clientContext: scope === 'client' && clientId ? loadClientCtx(clientId) : '',
+        format: format ? ccFindF(format).label : null, style: sObj ? sObj.name : null, cta: cta ? ccFindC(cta).label : null, audience: audience.trim() || null, angle: angle ? ccFindA(angle).label : null,
+        avoid: board.map((b) => `${b.styleName}: ${b.hook}`).slice(0, 12) }
+      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      setAi({ status: 'ok', text: j.insights, error: null, at: j.generatedAt || new Date().toISOString() })
+    } catch (e) { setAi({ status: 'err', text: null, error: String(e.message || e), at: null }) }
+  }
+  const save = (c) => { if (savedIds.has(c.id)) return; saveBoard(boardKey, [{ ...c, savedAt: Date.now() }, ...board]) }
+  const removeSaved = (id) => saveBoard(boardKey, board.filter((b) => b.id !== id))
+  return (
+    <>
+      <div className="lvl-title">Creative Curator <span className="sub">· strategise new creatives from Format × Style × CTA × Audience × Angle · {scope === 'client' && client ? client.name : 'general research'}</span></div>
+      <div className="cc-modebar">
+        <div className="chan-toggle sm">
+          <button className={scope === 'research' ? 'on' : ''} onClick={() => setScope('research')}>🔎 Research</button>
+          <button className={scope === 'client' ? 'on' : ''} onClick={() => setScope('client')}>🎯 Client deep-dive</button>
+        </div>
+        {scope === 'client' && <select className="cc-client-sel" value={clientId || ''} onChange={(e) => setClientId(e.target.value)}>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
+        <span className="cap">{scope === 'research' ? 'General ideas for a service / lead-gen business. Board saved under Research.' : 'Ideas framed for this client; board saved to them.'}</span>
+      </div>
+      <div className="card cc-builder">
+        <div className="cc-row"><span className="cc-row-l">Format</span><CcChips options={CC_FORMATS} value={format} onChange={setFormat} /></div>
+        <div className="cc-row"><span className="cc-row-l">Style</span><CcChips options={CC_STYLES} value={styleId} onChange={setStyleId} /></div>
+        <div className="cc-row"><span className="cc-row-l">Call to action</span><CcChips options={CC_CTAS} value={cta} onChange={setCta} /></div>
+        <div className="cc-row"><span className="cc-row-l">Angle</span><CcChips options={CC_ANGLES} value={angle} onChange={setAngle} /></div>
+        <div className="cc-row"><span className="cc-row-l">Audience</span><div className="cc-aud"><input className="cc-aud-in" placeholder="e.g. Sydney homeowners with a tired old pool" value={audience} onChange={(e) => setAudience(e.target.value)} /><div className="cc-chips">{CC_AUD_SUGGEST.map((a) => <button key={a} className="cc-chip sm" onClick={() => setAudience(a)}>{a}</button>)}</div></div></div>
+        <div className="cc-actions">
+          <button className="cc-gen" onClick={gen}>✨ Generate ideas</button>
+          <button className="cc-gen cc-gen-ai" onClick={genAI} disabled={ai.status === 'loading'}>{ai.status === 'loading' ? <><span className="spin sm" /> Thinking…</> : '🤖 Generate with AI'}</button>
+          {(format || styleId || cta || angle || audience) && <button className="cc-clear" onClick={() => { setFormat(null); setStyleId(null); setCta(null); setAngle(null); setAudience('') }}>Clear</button>}
+        </div>
+      </div>
+      {ai.status === 'err' && <div className="card"><p className="cap" style={{ margin: 0 }}>AI couldn’t generate this time: {ai.error}. The instant library still works — hit “Generate ideas”.</p></div>}
+      {ai.status === 'ok' && ai.text && <div className="card cc-ai"><div className="cc-ai-h">🤖 AI concepts <span className="cap">· {scope === 'client' && client ? client.name : 'research'}</span></div><MdText text={ai.text} /></div>}
+      {concepts.length > 0 && <>
+        <div className="lvl-title" style={{ marginTop: 16 }}>Concepts <span className="sub">· from the library · click ☆ to save to your board</span></div>
+        <div className="cc-grid">{concepts.map((c) => <CcConceptCard key={c.id} c={c} saved={savedIds.has(c.id)} onSave={save} />)}</div>
+      </>}
+      {concepts.length === 0 && ai.status === 'idle' && <div className="card cc-empty"><div className="big">🎨</div><b>Pick any mix of Format · Style · CTA · Angle · Audience</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>…then hit <b>Generate ideas</b> for instant concept briefs from the library, or <b>Generate with AI</b> for bespoke ones. Leave anything on “Any” to range wider. Star the good ones to build your board.</p></div>}
+      <div className="lvl-title" style={{ marginTop: 18 }}>★ Saved board <span className="sub">· {scope === 'client' && client ? client.name : 'Research'} · {board.length} concept{board.length === 1 ? '' : 's'}</span></div>
+      {board.length === 0 ? <div className="card"><p className="cap" style={{ margin: 0 }}>Nothing saved yet. Star concepts above to collect them here — the board is saved and shared with your team.</p></div>
+        : <div className="cc-grid">{board.map((c) => <div className="cc-card cc-card-saved" key={c.id}>
+            <div className="cc-card-h"><span className="cc-card-style">{c.emoji} {c.styleName}</span><button className="cc-star on" title="Remove from board" onClick={() => removeSaved(c.id)}>✕ Remove</button></div>
+            <div className="cc-badges">{ccFindF(c.format) && <span className="cc-badge">{ccFindF(c.format).emoji} {ccFindF(c.format).label}</span>}{ccFindC(c.cta) && <span className="cc-badge cc-badge-cta">{ccFindC(c.cta).label}</span>}{ccFindA(c.angle) && <span className="cc-badge cc-badge-ang">{ccFindA(c.angle).label}</span>}{c.audience && <span className="cc-badge cc-badge-aud">{c.audience}</span>}</div>
+            <div className="cc-hook"><span className="cc-lab">Hook</span>{c.hook}</div>
+            <div className="cc-struct"><span className="cc-lab">Structure</span><ol>{(c.structure || []).map((b, i) => <li key={i}>{b}</li>)}</ol></div>
+          </div>)}</div>}
+      <div className="lvl-title" style={{ marginTop: 18 }}><button className="cc-liblink" onClick={() => setLibOpen((o) => !o)}>{libOpen ? '▾' : '▸'} Creative style library <span className="sub">· {CC_STYLES.length} researched styles · what they are & when to use them</span></button></div>
+      {libOpen && <div className="cc-lib">{CC_STYLES.map((s) => <div className="cc-lib-item" key={s.id}>
+        <div className="cc-lib-h">{s.emoji} <b>{s.name}</b></div>
+        <p className="cc-lib-desc">{s.desc}</p>
+        <p className="cc-lib-why">💡 {s.why}</p>
+        <div className="cc-lib-meta"><span>Best formats: {s.formats.map((f) => ccFindF(f).label).join(', ')}</span><span>Pairs with: {s.ctas.map((c) => ccFindC(c).label).join(', ')}</span></div>
+      </div>)}</div>}
+    </>
+  )
+}
+
 /* ============ Shell ============ */
 /* ============ Creative Cockpit ============ */
 // A hub for creative insight, performance and strategy: every Meta creative in
@@ -10434,6 +10620,7 @@ function NavIcon({ name }) {
     trends: <><polyline points="3 16 9 10 13 14 21 6" /><polyline points="15 6 21 6 21 12" /></>,
     weekly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /><path d="M8.5 15l2 2 4-4" /></>,
     cockpit: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5M8 20v-5M16 20v-5" /></>,
+    curator: <><circle cx="13.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="10.5" r="2.5" /><circle cx="8.5" cy="7.5" r="2.5" /><circle cx="6.5" cy="12.5" r="2.5" /><path d="M12 22a4 4 0 0 1 0-8 3 3 0 0 0 0-6" /></>,
     insights: <><path d="M3 12h4l2.5 7 4-15 2.5 8H21" /></>,
     update: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3.5 7l8.5 6 8.5-6" /></>,
     monthly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>,
@@ -10592,6 +10779,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>
             <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>
             <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>
+            <button className={curView === 'curator' ? 'active' : ''} onClick={() => go('curator')}><span className="ic"><NavIcon name="curator" /></span>Creative Curator</button>
             <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>
             <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>
             <button className={curView === 'monthly' ? 'active' : ''} onClick={() => go('monthly')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Report</button>
@@ -10617,8 +10805,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client — followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client — followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -10629,6 +10817,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
+          {curView === 'curator' && !isViewer && <CreativeCuratorPage clients={visibleClients} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}

@@ -2663,3 +2663,10 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mov-drill-items { display: flex; flex-direction: column; gap: 2px; }
 .mov-drill-item { font-size: 12px; color: var(--muted); }
 .mov-drill-item b { color: var(--text); font-weight: 700; }
+
+/* Daily Performance — 28-day graph + source table */
+.tr-graph { margin: 4px 0 10px; }
+.tr-src { width: 100%; font-size: 12px; }
+.tr-src th, .tr-src td { padding: 6px 8px; }
+.tr-src td:not(.lft), .tr-src th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
+.tr-src .tr-src-tot td { font-weight: 800; border-top: 2px solid var(--border-2); }

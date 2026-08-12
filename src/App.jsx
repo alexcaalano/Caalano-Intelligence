@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.204.0'
+const APP_VERSION = '3.205.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -872,6 +872,49 @@ function TrendCell({ label, value, cur, prev, goodWhenDown = true, sub }) {
     </div>
   )
 }
+// 28-day daily graph for one client + channel: ad spend (line), ad-reported
+// results (bars) and cost per result (line). Ad-reported = the campaign's
+// optimisation event (Meta leads / Google conversions), matching Ads Manager.
+function TrendGraph({ daily, eff, currency }) {
+  const data = (daily || []).map((d) => {
+    const spend = eff === 'meta' ? d.metaSpend : eff === 'google' ? d.gSpend : (d.metaSpend + d.gSpend)
+    const results = eff === 'meta' ? d.metaLeads : eff === 'google' ? d.gConv : (d.metaLeads + d.gConv)
+    const dt = new Date(d.date + 'T12:00')
+    return { label: dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), spend: Math.round(spend * 100) / 100, results, cpl: results ? Math.round((spend / results) * 100) / 100 : null }
+  })
+  if (!data.some((d) => d.spend > 0 || d.results > 0)) return <div className="cap" style={{ padding: '10px 0' }}>No spend or results in the last 28 days for this channel.</div>
+  return (
+    <div className="tr-graph">
+      <ResponsiveContainer width="100%" height={180}>
+        <ComposedChart data={data} margin={{ left: -8, right: 6, top: 8 }}>
+          <CartesianGrid stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="label" fontSize={9.5} stroke="var(--muted)" interval="preserveStartEnd" minTickGap={18} />
+          <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" allowDecimals={false} />
+          <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+          <Tooltip formatter={(v, n) => (n === 'Results' ? fmtNumber(v) : fmtCurrency(v, currency))} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar yAxisId="l" dataKey="results" name="Results" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={16} />
+          <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#12b886" strokeWidth={2} dot={false} />
+          <Line yAxisId="r" dataKey="cpl" name="Cost / result" stroke="#ec4899" strokeWidth={2} dot={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+function TrendSource({ w28, row, money }) {
+  if (!w28) return null
+  const rows = []
+  if (row.hasGoogle) rows.push({ src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results })
+  if (row.hasMeta) rows.push({ src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results })
+  const tot = rows.reduce((a, r) => ({ cost: a.cost + r.cost, leads: a.leads + r.leads }), { cost: 0, leads: 0 })
+  const cpl = (c, l) => (l ? money(c / l) : '-')
+  return (
+    <table className="mini-tbl tr-src"><thead><tr><th className="lft">Source · last 28 days</th><th>Cost</th><th>Results</th><th>Cost / result</th></tr></thead>
+      <tbody>{rows.map((r) => <tr key={r.src}><td className="lft">{r.src}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td></tr>)}
+        <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads))}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
+    </table>
+  )
+}
 function ClientTrend({ row, tr, currency, onPick }) {
   // Channels this client runs, plus a blended view when they run both. Shown as
   // a toggle so Google-only (and Meta-only) clients can still filter to theirs.
@@ -896,6 +939,9 @@ function ClientTrend({ row, tr, currency, onPick }) {
         if (!mv.length) return null
         return <div className="tr-movers"><span className="tr-movers-lab">What moved · 7d</span>{mv.map((m, i) => <div className="tr-mover" key={i}><span className={`mov-badge sm ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span> <b>{m.channel}</b> cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}: {moverReason(m)}</div>)}</div>
       })()}
+      <div className="tr-row-lab" style={{ marginTop: 12 }}>28-day daily · Spend, Results &amp; Cost per Result <span className="sub">· {eff === 'blended' ? 'Meta + Google' : eff === 'meta' ? 'Meta' : 'Google'} · ad-reported</span></div>
+      <TrendGraph daily={tr.daily} eff={eff} currency={currency} />
+      <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} />
     </div>
   )
 }

@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.205.0 — 2026-08-11 · `PENDING` — Daily Performance: 28-day daily graph per client (Looker-style)
+- **Each client now shows a 28-day daily graph** of ad Spend (line), Results (bars) and Cost per Result
+  (line), plus a **Source table** (Google / Facebook cost, results, cost-per-result over 28 days) — a
+  native version of the Looker daily view. Results are ad-reported (the campaign's optimisation event:
+  Meta leads / Google conversions), matching Ads Manager.
+- Respects the existing **Blended / Meta / Google** toggle, and sits below the CPL window scorecards.
+- (Next: per-pipeline sub-tables for multi-pipeline clients, and a CRM key-events overlay on the graph.)
+
 ## v3.204.0 — 2026-08-11 · `PENDING` — Movers: creative breakdown + Client Update loads faster
 - **Biggest movers now drill to the creative/campaign level.** Click any mover to expand a live
   breakdown for that client + channel + window: which creatives are **fatiguing** (cost rising),

@@ -779,7 +779,11 @@ async function buildTrends(key) {
         blended: { spend: ms + gs, spendPrev: msp + gsp, results: ml + gc, resultsPrev: mlp + gcp, booked: sumR(blendedBooked, 0, n), bookedPrev: sumR(blendedBooked, n, 2 * n) },
       }
     })
-    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows }
+    // Last 28 days, chronological (oldest first), per channel: ad spend + ad-reported
+    // results (Meta leads / Google conversions) + booked calls — for the daily graph.
+    const daily = []
+    for (let i = 27; i >= 0; i--) daily.push({ date: days[i], metaSpend: Math.round(E.metaSpend[i] * 100) / 100, metaLeads: Math.round(E.metaLeads[i]), gSpend: Math.round(E.gSpend[i] * 100) / 100, gConv: Math.round(E.gConv[i]), booked: Math.round(blendedBooked[i]) })
+    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily }
   }
   return { clients: out }
 }

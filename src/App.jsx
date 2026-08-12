@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.203.0'
+const APP_VERSION = '3.204.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -932,7 +932,55 @@ function moverReason(m) {
   if (sp != null && sp < -10 && (rp == null || rp > sp)) return `spend cut ${Math.abs(sp).toFixed(0)}% with ${unit} ${p(rp)}`
   return `${unit} ${p(rp)} vs spend ${p(sp)}`
 }
+// On-demand creative/campaign breakdown behind a mover: fetch the client's deep
+// data for the last N days (which carries a prior-equal-period `prev` per entity)
+// and classify what drove the cost move — scaling/new, fatiguing, pulled back, best.
+function useMoverCreatives(clientId, channel, days) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    const dayAgo = (n) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - n); return iso(d) }
+    const to = dayAgo(1), from = dayAgo(days)
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&from=${from}&to=${to}`)
+      .then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && !j.error ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, channel, days])
+  return st
+}
+function moverCreativeBreakdown(j, channel) {
+  const ads = (channel === 'meta' ? (j && j.meta && j.meta.ads) : (j && j.google && j.google.campaigns)) || []
+  const items = ads.map((a) => {
+    const res = a.results != null ? a.results : (a.leads != null ? a.leads : (a.conversions || 0))
+    const spend = a.spend || 0; const pv = a.prev || {}
+    const pres = pv.results != null ? pv.results : (pv.leads != null ? pv.leads : (pv.conversions || 0))
+    const pspend = pv.spend || 0
+    return { name: a.name, spend, res, cpl: res ? spend / res : null, pspend, pres, pcpl: pres ? pspend / pres : null }
+  }).filter((x) => x.name && (x.spend > 0 || x.pspend > 0))
+  return {
+    scaling: items.filter((x) => x.pspend < Math.max(5, x.spend * 0.15) && x.spend >= 10).sort((a, b) => b.spend - a.spend).slice(0, 3),
+    fatigue: items.filter((x) => x.pspend > 0 && x.spend > 0 && x.cpl != null && x.pcpl != null && x.cpl > x.pcpl * 1.2).sort((a, b) => (b.cpl - b.pcpl) * b.spend - (a.cpl - a.pcpl) * a.spend).slice(0, 3),
+    dropped: items.filter((x) => x.pspend >= 10 && x.spend < x.pspend * 0.3).sort((a, b) => b.pspend - a.pspend).slice(0, 2),
+    best: items.filter((x) => x.res > 0 && x.cpl != null && x.spend >= 5).sort((a, b) => a.cpl - b.cpl).slice(0, 2),
+  }
+}
+function MoverDrill({ clientId, channel, days, money }) {
+  const st = useMoverCreatives(clientId, channel, days)
+  if (st.status === 'loading') return <div className="mov-drill"><Spinner label="Loading creative breakdown…" /></div>
+  if (st.status === 'err' || !st.data) return <div className="mov-drill"><span className="cap">Couldn’t load the creative breakdown for this window.</span></div>
+  const b = moverCreativeBreakdown(st.data, channel)
+  const noun = channel === 'meta' ? 'creatives' : 'campaigns'
+  const row = (label, arr, fmt) => arr.length ? <div className="mov-drill-row"><span className="mov-drill-lab">{label}</span><div className="mov-drill-items">{arr.map((x, i) => <div className="mov-drill-item" key={i}>{fmt(x)}</div>)}</div></div> : null
+  if (!b.scaling.length && !b.fatigue.length && !b.dropped.length && !b.best.length) return <div className="mov-drill"><span className="cap">No standout {noun} — the move looks broad across the account.</span></div>
+  return <div className="mov-drill">
+    {row('🔥 Fatiguing (cost rising)', b.fatigue, (x) => <><b>{x.name}</b> · {money(x.pcpl)} → {money(x.cpl)} / result · {money(x.spend)} spend</>)}
+    {row('🚀 Scaling / new', b.scaling, (x) => <><b>{x.name}</b> · {money(x.spend)} spend{x.cpl != null ? ` · ${money(x.cpl)} / result` : ''}</>)}
+    {row('📉 Pulled back', b.dropped, (x) => <><b>{x.name}</b> · {money(x.pspend)} → {money(x.spend)} spend</>)}
+    {row('⭐ Best right now', b.best, (x) => <><b>{x.name}</b> · {money(x.cpl)} / result · {money(x.spend)} spend</>)}
+  </div>
+}
 function MoversPanel({ list, clients, currency, onPick }) {
+  const [open, setOpen] = useState(null)
   const [win, setWin] = useState(7)
   const [ai, setAi] = useState({ status: 'idle', text: null, error: null })
   const money = (v) => fmtCurrency(v, currency)
@@ -951,16 +999,22 @@ function MoversPanel({ list, clients, currency, onPick }) {
     <div className="card mov-panel">
       <div className="mov-head">
         <b>📊 Biggest movers</b>
-        <div className="chan-toggle sm">{MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => { setWin(n); setAi({ status: 'idle', text: null, error: null }) }}>{n}d</button>)}</div>
-        <span className="cap">cost per result vs the prior {win} days · biggest changes across all clients</span>
+        <div className="chan-toggle sm">{MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => { setWin(n); setOpen(null); setAi({ status: 'idle', text: null, error: null }) }}>{n}d</button>)}</div>
+        <span className="cap">cost per result vs the prior {win} days · biggest changes across all clients · click a mover for its creative breakdown</span>
         {movers.length > 0 && <button className="mov-ai" onClick={explain} disabled={ai.status === 'loading'}>{ai.status === 'loading' ? <><span className="spin sm" /> Thinking…</> : '🤖 Explain with AI'}</button>}
       </div>
       {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved more than 8% over the last {win} days.</p>
         : <div className="mov-list">{movers.map((m, i) => (
-          <button className="mov-item" key={i} onClick={() => onPick(m.c)} title="Open client">
-            <span className={`mov-badge ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span>
-            <span className="mov-txt"><b>{m.clientName}</b> · {m.channel} cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}<span className="mov-why">{moverReason(m)}</span></span>
-          </button>
+          <div className={`mov-item2${open === i ? ' open' : ''}`} key={i}>
+            <div className="mov-item-h">
+              <button className="mov-exp" onClick={() => setOpen(open === i ? null : i)} title="Creative breakdown">
+                <span className={`mov-badge ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span>
+                <span className="mov-txt"><b>{m.clientName}</b> · {m.channel} cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}<span className="mov-why">{moverReason(m)} · {open === i ? '▾' : '▸'} creatives</span></span>
+              </button>
+              <button className="mov-open" onClick={() => onPick(m.c)} title="Open client workspace">↗</button>
+            </div>
+            {open === i ? <MoverDrill clientId={m.clientId} channel={m.chan} days={win} money={money} /> : null}
+          </div>
         ))}</div>}
       {ai.status === 'ok' && ai.text ? <div className="mov-aibox"><div className="cc-ai-h">🤖 Likely causes</div><MdText text={ai.text} /></div> : null}
       {ai.status === 'err' ? <p className="cap" style={{ marginBottom: 0 }}>AI explain failed: {ai.error}. The rules-based read above still stands.</p> : null}
@@ -8462,12 +8516,17 @@ function useUpdateData(clientId, range, nonce) {
     let alive = true; setSt({ status: 'loading', data: null })
     const base = `/.netlify/functions/windsor?client=${clientId}`
     const g = (s) => fetch(`${base}&scope=${s}&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({}))
+    // The CORE numbers (health) are the same consolidated figures the client view
+    // uses; the update is ready as soon as these load. Everything else is optional
+    // enrichment that merges in as it arrives, so a slow / timing-out extra can
+    // never block generating the update.
+    g('health').then((health) => { if (alive) setSt({ status: (health && health.error) ? 'err' : 'ok', data: { health } }) })
     Promise.all([
-      g('health'), g('creatives'), g('updateextra'), g('users'),
+      g('creatives'), g('updateextra'), g('users'),
       fetch(`${base}&channel=google&${q}${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
       g('forms'), g('appts'), g('speed'),
       fetch(`${base}&scope=cohorts&weeks=12${nonce ? `&_r=${nonce}` : ''}`).then((r) => r.json()).catch(() => ({})),
-    ]).then(([health, creatives, extra, users, google, forms, appts, speed, cohorts]) => { if (alive) setSt({ status: (health && health.error) ? 'err' : 'ok', data: { health, creatives, extra, users, google, forms, appts, speed, cohorts } }) })
+    ]).then(([creatives, extra, users, google, forms, appts, speed, cohorts]) => { if (alive) setSt((s) => (s.status === 'ok' ? { ...s, data: { ...s.data, creatives, extra, users, google, forms, appts, speed, cohorts } } : s)) })
     return () => { alive = false }
   }, [clientId, q, nonce])
   return st
@@ -8661,7 +8720,7 @@ function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
     if (dataSt.status !== 'ok' || !dataSt.data) { setErr('The client numbers are still loading, give it a moment and try again.'); return }
     setBusy(true); setErr(null)
     try {
-      const { health, creatives, extra, users } = dataSt.data
+      const { health, creatives = {}, extra = {}, users = {} } = dataSt.data
       if (!health || health.error) throw new Error((health && health.error) || 'could not load the client data')
       const topCr = (creatives.creatives || [])
         .map((c) => ({ name: c.name, format: c.format, spend: c.spend, leads: c.crm ? c.crm.leads : c.leads, booked: c.crm ? c.crm.booked : 0 }))

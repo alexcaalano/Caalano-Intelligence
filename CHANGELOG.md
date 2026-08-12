@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.204.0 — 2026-08-11 · `PENDING` — Movers: creative breakdown + Client Update loads faster
+- **Biggest movers now drill to the creative/campaign level.** Click any mover to expand a live
+  breakdown for that client + channel + window: which creatives are **fatiguing** (cost rising),
+  **scaling / new**, **pulled back**, and the **best right now** — so you can see what actually drove
+  the cost move, not just the channel-level number.
+- **Client Update generates off the core client-view numbers by default.** It no longer waits on all
+  nine supporting data pulls: the update is ready as soon as the consolidated figures (the same the
+  client view uses) load, and the extra detail (creatives, forms, speed to lead, cohorts, etc.) merges
+  in as it arrives instead of blocking. A slow or timing-out extra can't hold up the update.
+
 ## v3.203.0 — 2026-08-11 · `PENDING` — Daily Performance biggest movers + exact per-channel CPL in updates
 - **Daily Performance now surfaces the biggest movers.** A "Biggest movers" panel at the top ranks the
   largest cost-per-result changes across all clients for a chosen window (3/7/14/21/28 days), each with

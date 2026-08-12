@@ -805,16 +805,22 @@ async function buildTrends(key) {
     // name auto-match), plus that pipeline's own CRM booked / won. Campaigns that
     // resolve to nothing become an "Unlinked campaigns" tile so every dollar of spend
     // stays visible. The UI shows the client as one tile per pipeline when >1.
-    const pipeList = [...E.pipe.values()].filter((p) => p.id !== 'none' || sumR(p.leads, 0, 28) > 0)
+    // Only split a client into per-pipeline tiles when it genuinely runs more than one
+    // pipeline. Single-pipeline clients keep the one combined tile (splitting there
+    // adds nothing and would wrongly carve off an "Unlinked" tile).
+    const realPipes = [...E.pipe.values()].filter((p) => p.id !== 'none' && sumR(p.leads, 0, 56) > 0)
+    const pipeList = realPipes
     let pipelinesOut = null
-    if (pipeList.length) {
+    if (pipeList.length > 1) {
+      // Campaign→pipeline links are stored per client: campmap[clientId][campaignName].
+      const clientCampmap = (savedCampmap && savedCampmap[id]) || {}
       // Lead totals per pipeline (28d) drive the auto-matcher's tie-breaks.
       const pArr = pipeList.map((p) => ({ id: p.id, name: p.name, crm: { leads: sumR(p.leads, 0, 28) } }))
       const validPid = new Set(pArr.map((p) => p.id))
       const allCampNames = [...new Set([...E.campMeta.keys(), ...E.campGoogle.keys()])].map((name) => ({ name }))
       const auto = autoMatch(pArr, allCampNames)
       const resolvePid = (name) => {
-        const saved = savedCampmap[name]
+        const saved = clientCampmap[name]
         if (saved && saved !== 'all' && validPid.has(saved)) return saved
         const a = auto.get(name)
         return (a && a !== 'all' && validPid.has(a)) ? a : null
@@ -842,7 +848,7 @@ async function buildTrends(key) {
         }
       })
       const tileDaily = (mS, mL, gS, gC, booked, won) => { const d = []; for (let i = 27; i >= 0; i--) d.push({ date: days[i], metaSpend: r2(mS[i]), metaLeads: Math.round(mL[i]), gSpend: r2(gS[i]), gConv: Math.round(gC[i]), booked: Math.round(booked[i]), won: Math.round(won[i]) }); return d }
-      pipelinesOut = pipeList
+      const realTiles = pipeList
         .map((p) => {
           const mS = pMS.get(p.id), mL = pML.get(p.id), gS = pGS.get(p.id), gC = pGC.get(p.id)
           return {
@@ -854,15 +860,22 @@ async function buildTrends(key) {
         })
         .filter((po) => po.leads28 > 0 || po.spend28 > 0.5)
         .sort((a, b) => (b.leads28 - a.leads28) || (b.spend28 - a.spend28))
-      // Unlinked campaigns (spend with no resolvable pipeline) → its own tile so
-      // totals still reconcile; no CRM, so booked-rate is hidden.
-      if (sumR(uMS, 0, 28) + sumR(uGS, 0, 28) > 1) {
-        pipelinesOut.push({
-          id: '_unlinked', name: 'Unlinked campaigns', hasCrm: false, unlinked: true,
-          hasMeta: sumR(uMS, 0, 56) > 0.5, hasGoogle: sumR(uGS, 0, 56) > 0.5,
-          leads28: 0, spend28: sumR(uMS, 0, 28) + sumR(uGS, 0, 28),
-          windows: tileWindows(uMS, uML, uGS, uGC, mk()), daily: tileDaily(uMS, uML, uGS, uGC, mk(), mk()),
-        })
+      // Still worth splitting only if ≥2 pipelines actually have activity.
+      if (realTiles.length > 1) {
+        pipelinesOut = realTiles
+        // Unlinked campaigns (spend with no resolvable pipeline) → its own tile so
+        // totals still reconcile; no CRM, so booked-rate is hidden. Only worth showing
+        // when it's a material slice of spend (>5% of the 28-day total).
+        const unSpend28 = sumR(uMS, 0, 28) + sumR(uGS, 0, 28)
+        const linkedSpend28 = realTiles.reduce((s, t) => s + t.spend28, 0)
+        if (unSpend28 > 1 && unSpend28 > linkedSpend28 * 0.05) {
+          pipelinesOut.push({
+            id: '_unlinked', name: 'Unlinked campaigns', hasCrm: false, unlinked: true,
+            hasMeta: sumR(uMS, 0, 56) > 0.5, hasGoogle: sumR(uGS, 0, 56) > 0.5,
+            leads28: 0, spend28: unSpend28,
+            windows: tileWindows(uMS, uML, uGS, uGC, mk()), daily: tileDaily(uMS, uML, uGS, uGC, mk(), mk()),
+          })
+        }
       }
     }
     out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily, pipelines: pipelinesOut }

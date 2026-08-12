@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.207.1 — 2026-08-12 · `PENDING` — Fix: single-pipeline clients no longer split; campaign links now read correctly
+- **Single-pipeline clients (e.g. Pool Haus) are no longer split** into a pipeline tile + a stray "Unlinked
+  campaigns" tile — the per-pipeline layout now only applies when a client genuinely runs 2+ pipelines
+  with activity.
+- **Fixed campaign→pipeline resolution**: the saved campaign map is stored per client
+  (`campmap[clientId][campaign]`), but the trends backend was reading it as a flat map, so every explicit
+  link was missed and spend fell through to "Unlinked". It now reads the client-scoped map, so linked
+  campaigns attribute to their pipeline as set in Settings → Campaign links.
+- The "Unlinked campaigns" tile now only appears when unattributed spend is a **material slice (>5%)** of
+  the client's 28-day spend, so a stray dollar doesn't spawn a whole tile.
+
 ## v3.207.0 — 2026-08-12 · `PENDING` — Daily Performance: multi-pipeline clients render as separate tiles
 - **Multi-pipeline clients now show one full tile per pipeline** instead of a combined card with sub-tables
   at the bottom. e.g. Nexia becomes **“Nexia Health Care · ADHD - Leads & Sales Pipeline”** and

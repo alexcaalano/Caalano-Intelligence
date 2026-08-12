@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.210.0 — 2026-08-12 · `PENDING` — Settings: new “Daily performance” tab (per-client + per-pipeline visibility)
+- **New Settings → Daily performance tab.** Toggle, per client, whether it appears on the Daily
+  Performance tab — and, for clients running more than one pipeline, which pipeline tiles show. Everything
+  is on by default; “Show all / Hide all” bulk buttons included. Saved to the server & shared across the team.
+- The Daily Performance tab (and its Biggest-movers panel) now respect these toggles: hidden clients drop
+  out entirely, hidden pipelines drop their tile.
+
 ## v3.209.0 — 2026-08-12 · `PENDING` — Daily Performance: click a window tile for a full breakdown
 - **Each window scorecard (Last 3 / 7 / 14 / 21 / 28 days) is now clickable** and opens a breakdown for
   that period:

@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.209.0'
+const APP_VERSION = '3.210.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1118,7 +1118,7 @@ function MoversPanel({ list, clients, currency, onPick }) {
     const t = clients[r.id]
     if (t && t.pipelines && t.pipelines.length > 1) {
       for (const p of t.pipelines) {
-        if (p.unlinked) continue
+        if (p.unlinked || !dpPipeOn(r.id, p.id)) continue
         const prow = { ...r, name: `${r.name} · ${p.name}`, hasMeta: !!p.hasMeta, hasGoogle: !!p.hasGoogle }
         for (const m of clientMovers(prow, p, win)) allMovers.push({ ...m, scrollId: trCardId(r.id, p.id) })
       }
@@ -1174,7 +1174,9 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
   if (tr.status === 'loading') return <div className="card"><Spinner label="Loading performance trends…" /></div>
   if (tr.status === 'err' || !tr.data || !tr.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load trends - try Refresh.</p></div>
   const clients = tr.data.clients
-  const list = rows.filter((r) => clients[r.id] && (r.hasMeta || r.hasGoogle))
+  // Respect the per-client Daily Performance visibility toggles (Settings → Daily
+  // performance). Hidden clients drop out entirely; hidden pipelines drop their tile.
+  const list = rows.filter((r) => clients[r.id] && (r.hasMeta || r.hasGoogle) && dpClientOn(r.id))
     .slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   // Order a client's pipeline tiles alphabetically, keeping "Unlinked campaigns" last.
   const pipeOrder = (pipes) => pipes.slice().sort((a, b) => (a.unlinked ? 1 : 0) - (b.unlinked ? 1 : 0) || String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
@@ -1184,9 +1186,11 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
       {list.flatMap((r) => {
         const t = clients[r.id]
         // Multi-pipeline clients render one full tile per pipeline (each a complete,
-        // channel-split card), instead of one combined card with sub-tables.
+        // channel-split card), instead of one combined card with sub-tables. Hidden
+        // pipelines (unchecked in Settings) are dropped; unlinked-spend tile is kept.
         if (t.pipelines && t.pipelines.length > 1) {
-          return pipeOrder(t.pipelines).map((p) => {
+          const vis = pipeOrder(t.pipelines).filter((p) => p.unlinked || dpPipeOn(r.id, p.id))
+          return vis.map((p) => {
             const prow = { ...r, name: `${r.name} · ${p.name}`, hasMeta: !!p.hasMeta, hasGoogle: !!p.hasGoogle }
             return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} domId={trCardId(r.id, p.id)} clientId={r.id} pipeId={p.unlinked ? '_unlinked' : p.id} stagePos={t.stagePos} />
           })
@@ -2420,9 +2424,10 @@ const SEED_OPTLOG = {
 }
 const CURATOR_KEY = 'caalano_curator_board'
 const PROFILE_KEY = 'caalano_client_profile'
+const DAILYPERF_KEY = 'caalano_dailyperf'
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2443,8 +2448,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2588,6 +2593,15 @@ function useDiscoverNames() {
 
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
+// Daily Performance visibility: which clients (and, for multi-pipeline clients, which
+// pipeline tiles) appear on the Daily Performance tab. Everything defaults ON; the
+// store only records exceptions ({ off: true } for a hidden client, { pipes: { id:
+// false } } for a hidden pipeline tile).
+function dpClientOn(clientId) { const v = SETTINGS.dailyperf && SETTINGS.dailyperf[clientId]; return !(v && v.off) }
+function dpPipeOn(clientId, pipeId) { const v = SETTINGS.dailyperf && SETTINGS.dailyperf[clientId]; return !(v && v.pipes && v.pipes[pipeId] === false) }
+function saveDp(clientId, entry) { SETTINGS.dailyperf = { ...(SETTINGS.dailyperf || {}), [clientId]: entry }; writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); saveSettingsRemote({ dailyperf: { [clientId]: entry } }); bumpSettings() }
+function setDpClient(clientId, on) { const e = { ...((SETTINGS.dailyperf || {})[clientId] || {}) }; if (on) delete e.off; else e.off = true; saveDp(clientId, e) }
+function setDpPipe(clientId, pipeId, on) { const e = { ...((SETTINGS.dailyperf || {})[clientId] || {}) }; const pipes = { ...(e.pipes || {}) }; if (on) delete pipes[pipeId]; else pipes[pipeId] = false; if (Object.keys(pipes).length) e.pipes = pipes; else delete e.pipes; saveDp(clientId, e) }
 // Per-client Optimisation Log Google Sheet URL.
 function loadOptLog(clientId) { return SETTINGS.optlog[clientId] || SEED_OPTLOG[clientId] || '' }
 function saveOptLog(clientId, url) { SETTINGS.optlog = { ...SETTINGS.optlog, [clientId]: url }; writeLS(OPTLOG_KEY, SETTINGS.optlog); saveSettingsRemote({ optlog: { [clientId]: url } }); bumpSettings() }
@@ -7012,6 +7026,74 @@ function SocialKpiSettings({ clients }) {
     </div>
   )
 }
+// A small on/off switch (accessible) reused across Settings.
+function Toggle({ on, onChange, sm, disabled }) {
+  return (
+    <button type="button" role="switch" aria-checked={!!on} disabled={disabled} className={`tgl${on ? ' on' : ''}${sm ? ' sm' : ''}`} onClick={() => onChange(!on)}>
+      <span className="tgl-knob" />
+    </button>
+  )
+}
+// Settings → Daily performance: per-client (and per-pipeline) visibility on the Daily
+// Performance tab. Pulls the same trends feed the tab uses to know each client's
+// channels + pipelines; toggles persist via the shared settings store.
+function DailyPerfSettings({ clients }) {
+  useSettingsSync()
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true
+    fetch('/.netlify/functions/windsor?scope=trends')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.clients ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading Daily Performance clients…" /></div>
+  if (st.status === 'err' || !st.data || !st.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load the Daily Performance client list — try Refresh.</p></div>
+  const tc = st.data.clients
+  const list = (clients || [])
+    .filter((c) => tc[c.id] && (tc[c.id].hasMeta || tc[c.id].hasGoogle) && !isClientDeleted(c.id))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+  const shown = list.filter((c) => dpClientOn(c.id)).length
+  const setAll = (on) => { for (const c of list) setDpClient(c.id, on) }
+  return (
+    <div className="card dp-set">
+      <h3 style={{ marginTop: 0 }}>Daily performance visibility</h3>
+      <p className="cap" style={{ marginTop: -4 }}>Choose which clients appear on the <b>Daily Performance</b> tab — and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server &amp; shared across your team.</p>
+      <div className="dp-bar">
+        <span className="dp-count">{shown} of {list.length} clients shown</span>
+        <div className="dp-bulk"><button onClick={() => setAll(true)}>Show all</button><button onClick={() => setAll(false)}>Hide all</button></div>
+      </div>
+      <div className="dp-list">
+        {list.map((c) => {
+          const t = tc[c.id]
+          const on = dpClientOn(c.id)
+          const pipes = (t.pipelines || []).filter((p) => !p.unlinked)
+          return (
+            <div className={`dp-row${on ? '' : ' is-off'}`} key={c.id}>
+              <div className="dp-row-h">
+                <Toggle on={on} onChange={(v) => setDpClient(c.id, v)} />
+                <span className="dp-nm">{c.name}</span>
+                <span className="dp-tags cap">{t.hasMeta ? 'Meta' : ''}{t.hasMeta && t.hasGoogle ? ' · ' : ''}{t.hasGoogle ? 'Google' : ''}{pipes.length > 1 ? ` · ${pipes.length} pipelines` : ''}</span>
+              </div>
+              {on && pipes.length > 1 ? (
+                <div className="dp-pipes">
+                  {pipes.map((p) => (
+                    <label className="dp-pipe" key={p.id}>
+                      <Toggle on={dpPipeOn(c.id, p.id)} onChange={(v) => setDpPipe(c.id, p.id, v)} sm />
+                      <span className="dp-pipe-nm">{p.name}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+        {!list.length ? <p className="cap" style={{ margin: 0 }}>No clients with Meta or Google ad data to configure.</p> : null}
+      </div>
+    </div>
+  )
+}
 function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
@@ -7046,6 +7128,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
         {isAdmin && <button className={section === 'clients' ? 'on' : ''} onClick={() => setSection('clients')}>Clients</button>}
         {isAdmin && <button className={section === 'fatigue' ? 'on' : ''} onClick={() => setSection('fatigue')}>Creative fatigue</button>}
         {isAdmin && <button className={section === 'socialkpis' ? 'on' : ''} onClick={() => setSection('socialkpis')}>Organic KPIs</button>}
+        {isAdmin && <button className={section === 'dailyperf' ? 'on' : ''} onClick={() => setSection('dailyperf')}>Daily performance</button>}
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
         <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
@@ -7062,6 +7145,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
       )}
       {isAdmin && section === 'fatigue' && <FatigueSettings />}
       {isAdmin && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
+      {isAdmin && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}
       {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name }))} />}
       {authEnabled && section === 'account' && (
         <div className="card">

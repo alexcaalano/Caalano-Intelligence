@@ -2697,3 +2697,28 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .tr-brk-tbl thead th { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); border-bottom: 1px solid var(--border); }
 .tr-brk-tbl tbody tr + tr td { border-top: 1px solid var(--border); }
 .tr-brk-note { margin: 6px 0 0; font-size: 10.5px; }
+/* Toggle switch (Settings) */
+.tgl { position: relative; width: 38px; height: 22px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--border); cursor: pointer; padding: 0; flex: 0 0 auto; transition: background .14s; }
+.tgl.sm { width: 32px; height: 18px; }
+.tgl .tgl-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .14s; }
+.tgl.sm .tgl-knob { width: 12px; height: 12px; }
+.tgl.on { background: #4f7cff; border-color: #4f7cff; }
+.tgl.on .tgl-knob { transform: translateX(16px); }
+.tgl.sm.on .tgl-knob { transform: translateX(14px); }
+.tgl:disabled { opacity: .5; cursor: default; }
+/* Daily performance visibility settings */
+.dp-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 6px; flex-wrap: wrap; }
+.dp-count { font-weight: 700; font-size: 12.5px; color: var(--muted); }
+.dp-bulk { display: flex; gap: 6px; }
+.dp-bulk button { border: 1px solid var(--border); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.dp-bulk button:hover { border-color: #4f7cff; color: var(--text); }
+.dp-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.dp-row { padding: 9px 10px; border-radius: 9px; border: 1px solid transparent; }
+.dp-row:hover { background: var(--panel-2, rgba(127,127,127,.05)); }
+.dp-row.is-off { opacity: .58; }
+.dp-row-h { display: flex; align-items: center; gap: 11px; }
+.dp-nm { font-weight: 700; font-size: 13.5px; }
+.dp-tags { margin-left: auto; white-space: nowrap; }
+.dp-pipes { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 8px 0 2px 49px; }
+.dp-pipe { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; }
+.dp-pipe-nm { color: var(--muted); }

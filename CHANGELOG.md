@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.195.0 — 2026-08-11 · `PENDING` — Self-healing data loads on date-range changes
+- **The Meta / Google deep views now retry automatically** when a pull times out. The single-call
+  path had no retry, so a transient timeout right after a date-range change showed the "couldn't load"
+  card immediately — and the fix was to refresh again by hand. It now retries up to 3× with backoff
+  (and aborts a hung request via a client-side timeout) before surfacing the error, showing
+  "Taking longer than usual — retrying…" while it does. The Executive (health) view got the same
+  treatment; the attribution/Caalano360 feed already retried.
+
 ## v3.194.0 — 2026-08-11 · `PENDING` — UTM aliases: hide anything that matches a live entity (names + IDs)
 - **The unmatched list now hides any UTM that matches a live Meta or Google entity by name _or_ by ID.**
   A UTM that carries a raw campaign/ad-set/ad **ID** (e.g. `120242333973070146`) instead of the name is

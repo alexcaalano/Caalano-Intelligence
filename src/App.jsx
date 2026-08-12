@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.194.0'
+const APP_VERSION = '3.195.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2840,10 +2840,14 @@ function useHealth(clientId, range, nonce = 0, reload = 0) {
   useEffect(() => {
     let alive = true
     setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}${reload ? `&_b=${reload}` : ''}`)
+    const url = `/.netlify/functions/windsor?client=${clientId}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}${reload ? `&_b=${reload}` : ''}`
+    // Heavy build — retry a couple of times with backoff before showing an error,
+    // so a transient timeout on a range change self-heals instead of erroring.
+    const attempt = (n) => fetch(`${url}&_a=${n}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+      .catch(() => { if (!alive) return; if (n < 2) setTimeout(() => { if (alive) attempt(n + 1) }, 1200 * (n + 1)); else setSt({ status: 'err', data: null }) })
+    attempt(0)
     return () => { alive = false }
   }, [clientId, q, nonce, reload])
   return st
@@ -3900,6 +3904,13 @@ function mergeMetaParts(parts) {
     adDailyLevel: 'ad', totals, prev: null, chunked: true,
   }
 }
+// Human label for the deep-data loading state, covering the monthly-chunk
+// progress and the auto-retry progress of the single-call path.
+function deepLoadLabel(progress, chLabel, range) {
+  if (progress && progress.retry) return `Taking longer than usual — retrying… (${progress.retry + 1}/${progress.of + 1})`
+  if (progress && progress.total) return `Loading ${rangeLabel(range)} ${chLabel} data… ${progress.done}/${progress.total} months`
+  return `Loading live ${chLabel} data…`
+}
 function useLiveDeep(clientId, channel, range, nonce = 0) {
   const [state, setState] = useState({ status: 'idle', data: null, progress: null })
   const q = rangeQuery(range)
@@ -3910,11 +3921,34 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
     if (!channel) { setState({ status: 'idle', data: null, progress: null }); return }
     let alive = true
     if (!chunky) {
+      // Single-call path with automatic retry + a client-side timeout. Serverless
+      // pulls sometimes time out transiently (esp. right after a range change),
+      // and a plain one-shot fetch surfaced the error card immediately — so the
+      // fix used to be "refresh again". Now we retry with backoff before giving up,
+      // and abort a hung request so it can't stall the whole tab.
       setState({ status: 'loading', data: null, progress: null })
-      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-        .then((r) => r.json().catch(() => ({ error: `Server returned HTTP ${r.status} (the pull may have timed out).` })))
-        .then((j) => { if (alive) setState({ status: j && !j.error ? 'ok' : 'err', data: j || null, progress: null }) })
-        .catch(() => { if (alive) setState({ status: 'err', data: { error: 'Network error reaching the data function.' }, progress: null }) })
+      const base = `/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`
+      const MAX = 2 // up to 3 attempts total
+      const permanent = (j) => /no\s+\w+\s+account|not connected|connect your/i.test(String((j && j.error) || ''))
+      const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+      const attempt = async (n) => {
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 14000)
+        let j = null
+        try {
+          const r = await fetch(`${base}&_a=${n}`, { signal: ctrl.signal })
+          j = await r.json().catch(() => ({ error: `Server returned HTTP ${r.status} (the pull may have timed out).` }))
+        } catch (e) { j = { error: 'Network error / timeout reaching the data function.' } }
+        finally { clearTimeout(timer) }
+        if (!alive) return
+        if (j && !j.error) { setState({ status: 'ok', data: j, progress: null }); return }
+        if (permanent(j) || n >= MAX) { setState({ status: 'err', data: j || null, progress: null }); return }
+        setState({ status: 'loading', data: null, progress: { retry: n + 1, of: MAX } })
+        await sleep(1200 * (n + 1))
+        if (!alive) return
+        return attempt(n + 1)
+      }
+      attempt(0)
       return () => { alive = false }
     }
     const chunks = splitRange(range, 31)
@@ -5739,10 +5773,10 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
       <div style={{ marginTop: 16 }}>
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
-        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={live.progress ? `Loading ${rangeLabel(range)} Meta data… ${live.progress.done}/${live.progress.total} months` : 'Loading live Meta data…'} /></div>
+        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Meta', range)} /></div>
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months — ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
-        {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label="Loading live Google data…" /></div>
+        {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Google', range)} /></div>
           : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}

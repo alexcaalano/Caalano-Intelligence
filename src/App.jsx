@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.212.0'
+const APP_VERSION = '3.212.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1123,7 +1123,6 @@ const trCardId = (clientId, pipeId) => `tr-card-${clientId}${pipeId ? '--' + pip
 function MoversPanel({ list, clients, currency, onPick }) {
   const [open, setOpen] = useState(null)
   const [win, setWin] = useState(7)
-  const [ai, setAi] = useState({ status: 'idle', text: null, error: null })
   const money = (v) => fmtCurrency(v, currency)
   // Build movers per pipeline for multi-pipeline clients, so each insight says which
   // pipeline it's for (e.g. "Nexia Health Care · ADHD …") and can scroll to that exact
@@ -1148,23 +1147,12 @@ function MoversPanel({ list, clients, currency, onPick }) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
     el.classList.add('tr-flash'); setTimeout(() => el.classList.remove('tr-flash'), 1600)
   }
-  const explain = async () => {
-    setAi({ status: 'loading', text: null, error: null })
-    try {
-      const payload = { mode: 'movers', window: win, movers: movers.map((m) => ({ client: m.clientName, channel: m.channel, unit: m.chan === 'google' ? 'conversions' : 'leads', cplPrev: Math.round(m.cplP), cpl: Math.round(m.cpl), cplPct: Math.round(m.cplPct), spendPct: m.spendPct != null ? Math.round(m.spendPct) : null, resPct: m.resPct != null ? Math.round(m.resPct) : null, booked: m.booked, bookedPrev: m.bookedPrev })) }
-      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-      setAi({ status: 'ok', text: j.insights, error: null })
-    } catch (e) { setAi({ status: 'err', text: null, error: String(e.message || e) }) }
-  }
   return (
     <div className="card mov-panel">
       <div className="mov-head">
         <b>📊 Biggest movers</b>
-        <div className="chan-toggle sm">{MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => { setWin(n); setOpen(null); setAi({ status: 'idle', text: null, error: null }) }}>{n}d</button>)}</div>
+        <div className="chan-toggle sm">{MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => { setWin(n); setOpen(null) }}>{n}d</button>)}</div>
         <span className="cap">cost per result vs the prior {win} days · biggest changes across all clients · click a mover for its creative breakdown</span>
-        {movers.length > 0 && <button className="mov-ai" onClick={explain} disabled={ai.status === 'loading'}>{ai.status === 'loading' ? <><span className="spin sm" /> Thinking…</> : '🤖 Explain with AI'}</button>}
       </div>
       {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved more than 8% over the last {win} days.</p>
         : <div className="mov-list">{movers.map((m, i) => (
@@ -1179,8 +1167,6 @@ function MoversPanel({ list, clients, currency, onPick }) {
             {open === i ? <MoverDrill clientId={m.clientId} channel={m.chan} days={win} money={money} /> : null}
           </div>
         ))}</div>}
-      {ai.status === 'ok' && ai.text ? <div className="mov-aibox"><div className="cc-ai-h">🤖 Likely causes</div><MdText text={ai.text} /></div> : null}
-      {ai.status === 'err' ? <p className="cap" style={{ marginBottom: 0 }}>AI explain failed: {ai.error}. The rules-based read above still stands.</p> : null}
     </div>
   )
 }

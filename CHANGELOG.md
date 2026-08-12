@@ -17,6 +17,10 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.212.1 — 2026-08-12 · `PENDING` — Remove “Explain with AI” from Daily Performance movers
+- Removed the “🤖 Explain with AI” button (and its output box) from the Biggest movers panel on the Daily
+  Performance tab. The rules-based “what moved” reasons and per-mover creative breakdown remain.
+
 ## v3.212.0 — 2026-08-12 · `PENDING` — Key-events source split now uses UTM attribution (not lead-source)
 - The Key events by source breakdown now classifies each key event by the opportunity's **first-touch UTM
   attribution** (the same Meta / Google / non-paid model the rest of Caalano360 uses), pulled from the GHL

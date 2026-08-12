@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.207.0 — 2026-08-12 · `PENDING` — Daily Performance: multi-pipeline clients render as separate tiles
+- **Multi-pipeline clients now show one full tile per pipeline** instead of a combined card with sub-tables
+  at the bottom. e.g. Nexia becomes **“Nexia Health Care · ADHD - Leads & Sales Pipeline”** and
+  **“Nexia Health Care · Allied Health - Lead & Sales Pipeline”**, each a complete card: CPL window
+  scorecards, "what moved", the 28-day Spend/Results/Cost-per-Result graph (with the 🟠 key-events overlay),
+  and its own Source · last 28 days grand total.
+- Spend + ad-reported results in each tile are **split by the saved campaign→pipeline links** (auto-matched
+  where unlinked); booked / won come from that pipeline's CRM. Any spend that can't be attributed to a
+  pipeline appears as its own **“Unlinked campaigns”** tile so every dollar still reconciles.
+- Removed the per-pipeline sub-tables added in v3.206 in favour of this cleaner, fully-visual layout.
+
 ## v3.206.0 — 2026-08-12 · `PENDING` — Monthly Report per-pipeline split + Daily Performance Phase 2 & 3
 - **Monthly Report — key-event consolidation fixed.** Calendar-linked key events now merge cleanly with
   their pipeline stage even when the calendar carries a `[PIPE]` tag, so the "leads → key events" funnel

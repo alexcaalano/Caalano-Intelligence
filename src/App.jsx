@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.206.0'
+const APP_VERSION = '3.207.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -920,44 +920,6 @@ function TrendGraph({ daily, eff, currency }) {
     </div>
   )
 }
-// One multi-pipeline client's per-pipeline performance table (Phase 2): spend split
-// by campaign→pipeline links, CRM leads/booked/won by the pipeline the opp sits in.
-function PipeTrendTable({ p, currency }) {
-  const money = (v) => fmtCurrency(v, currency)
-  const wins = p.windows || []
-  const dtag = (cur, prev) => {
-    if (prev == null || prev <= 0 || cur == null) return null
-    const pct = ((cur - prev) / prev) * 100
-    if (Math.abs(pct) < 1) return null
-    return <span className={`tr-dtag ${pct <= 0 ? 'good' : 'bad'}`}>{pct > 0 ? '▲' : '▼'}{Math.abs(pct).toFixed(0)}%</span>
-  }
-  return (
-    <div className="tr-pipe">
-      <div className="tr-pipe-h"><span className="c360-dot" /> {p.name}</div>
-      <div className="tr-pipe-scroll">
-        <table className="mini-tbl tr-pipe-tbl">
-          <thead><tr><th className="lft">Window</th><th>Spend</th><th>Leads</th><th>Booked</th><th>Won</th><th>Cost / Lead</th><th>Cost / Booked</th></tr></thead>
-          <tbody>{wins.map((w) => {
-            const cpl = w.leads ? w.spend / w.leads : null
-            const cplP = w.leadsPrev ? w.spendPrev / w.leadsPrev : null
-            const cpb = w.booked ? w.spend / w.booked : null
-            return (
-              <tr key={w.n}>
-                <td className="lft">{WLABEL[w.n]}</td>
-                <td>{money(w.spend)}</td>
-                <td>{fmtNumber(w.leads)}</td>
-                <td>{fmtNumber(w.booked)}</td>
-                <td>{fmtNumber(w.won)}</td>
-                <td>{cpl != null ? <>{money(cpl)} {dtag(cpl, cplP)}</> : '-'}</td>
-                <td>{cpb != null ? money(cpb) : '-'}</td>
-              </tr>
-            )
-          })}</tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
 function TrendSource({ w28, row, money }) {
   if (!w28) return null
   const rows = []
@@ -978,7 +940,7 @@ function ClientTrend({ row, tr, currency, onPick }) {
   const chanOpts = [['blended', 'Blended']]
   if (row.hasMeta) chanOpts.push(['meta', 'Meta'])
   if (row.hasGoogle) chanOpts.push(['google', 'Google'])
-  const [chan, setChan] = useState(row.hasMeta && row.hasGoogle ? 'blended' : row.hasGoogle ? 'google' : 'meta')
+  const [chan, setChan] = useState(row.hasMeta && row.hasGoogle ? 'blended' : (row.hasGoogle && !row.hasMeta) ? 'google' : (row.hasMeta && !row.hasGoogle) ? 'meta' : 'blended')
   const eff = chan
   const money = (v) => fmtCurrency(v, currency)
   const wins = tr.windows || []
@@ -999,13 +961,6 @@ function ClientTrend({ row, tr, currency, onPick }) {
       <div className="tr-row-lab" style={{ marginTop: 12 }}>28-day daily · Spend, Results &amp; Cost per Result <span className="sub">· {eff === 'blended' ? 'Meta + Google' : eff === 'meta' ? 'Meta' : 'Google'} · ad-reported{tr.hasCrm ? ' · 🟠 key events (booked) marked by day' : ''}</span></div>
       <TrendGraph daily={tr.daily} eff={eff} currency={currency} />
       <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} />
-      {tr.pipelines && tr.pipelines.length > 1 ? (
-        <div className="tr-pipes">
-          <div className="tr-row-lab" style={{ marginTop: 12 }}>Per-pipeline performance <span className="sub">· spend split by campaign→pipeline links · CRM leads / booked / won by pipeline</span></div>
-          {tr.pipelines.map((p) => <PipeTrendTable key={p.id} p={p} currency={currency} />)}
-          {tr.unassigned ? (() => { const w = (tr.unassigned.windows || []).find((x) => x.n === 28); return w && w.spend ? <div className="tr-unassigned cap">⚠ {money(w.spend)} of spend over 28d isn't linked to a pipeline — link those campaigns in Settings → Campaign map to attribute it.</div> : null })() : null}
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -1140,7 +1095,18 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
   return (
     <div className="tr-list">
       {list.length > 0 && <MoversPanel list={list} clients={clients} currency={currency} onPick={onPick} />}
-      {list.map((r) => <ClientTrend key={r.id} row={r} tr={clients[r.id]} currency={currency} onPick={onPick} />)}
+      {list.flatMap((r) => {
+        const t = clients[r.id]
+        // Multi-pipeline clients render one full tile per pipeline (each a complete,
+        // channel-split card), instead of one combined card with sub-tables.
+        if (t.pipelines && t.pipelines.length > 1) {
+          return t.pipelines.map((p) => {
+            const prow = { ...r, name: `${r.name} · ${p.name}`, hasMeta: !!p.hasMeta, hasGoogle: !!p.hasGoogle }
+            return <ClientTrend key={`${r.id}:${p.id}`} row={prow} tr={p} currency={currency} onPick={onPick} />
+          })
+        }
+        return [<ClientTrend key={r.id} row={r} tr={t} currency={currency} onPick={onPick} />]
+      })}
       {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
       <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages; where UTM attribution is connected they're split by first-touch channel, so Meta / Google cost-per-booked uses that channel's own bookings. Otherwise the toggle divides that channel's spend by total booked calls.</p>
     </div>

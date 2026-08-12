@@ -2680,17 +2680,3 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .tr-gtip { background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 10px; font-size: 11.5px; line-height: 1.55; box-shadow: 0 6px 20px rgba(0,0,0,.14); }
 .tr-gtip-d { font-weight: 800; margin-bottom: 3px; }
 .tr-gtip-ke { margin-top: 3px; padding-top: 3px; border-top: 1px dashed var(--border); color: var(--text); }
-/* Per-pipeline sub-tables (Phase 2) */
-.tr-pipes { margin-top: 4px; }
-.tr-pipe { margin: 8px 0 12px; }
-.tr-pipe-h { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 12px; margin-bottom: 5px; }
-.tr-pipe-scroll { overflow-x: auto; }
-.tr-pipe-tbl { width: 100%; font-size: 11.5px; border-collapse: collapse; min-width: 460px; }
-.tr-pipe-tbl th, .tr-pipe-tbl td { padding: 5px 8px; white-space: nowrap; }
-.tr-pipe-tbl td:not(.lft), .tr-pipe-tbl th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
-.tr-pipe-tbl thead th { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); border-bottom: 1px solid var(--border); }
-.tr-pipe-tbl tbody tr + tr td { border-top: 1px solid var(--border); }
-.tr-dtag { font-size: 9.5px; font-weight: 800; margin-left: 3px; }
-.tr-dtag.good { color: #16a34a; }
-.tr-dtag.bad { color: #dc2626; }
-.tr-unassigned { margin: 4px 0 2px; padding: 6px 9px; background: var(--warn-bg, rgba(245,158,11,.08)); border-radius: 7px; }

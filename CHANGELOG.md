@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.196.0 — 2026-08-11 · `PENDING` — Speed to Lead measured within business hours by default
+- **Every client now measures Speed to Lead within business hours by default** (Mon–Fri 9am–5pm), so a
+  lead that arrives at 11pm and gets a reply at 9am counts as a fast morning response, not a 10-hour
+  one. The Settings → Working hours toggle is ticked by default; a client can still change the hours or
+  switch it off (that choice is remembered). The Caalano360 speed summary now honours the same hours as
+  the Timing tab.
+
 ## v3.195.0 — 2026-08-11 · `PENDING` — Self-healing data loads on date-range changes
 - **The Meta / Google deep views now retry automatically** when a pull times out. The single-call
   path had no retry, so a transient timeout right after a date-range change showed the "couldn't load"

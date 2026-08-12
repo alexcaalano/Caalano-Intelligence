@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.195.0'
+const APP_VERSION = '3.196.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -604,10 +604,23 @@ function saveCloseOverride(clientId, days) {
 // Resolve the sales-cycle length for a client: manual override first, else CRM.
 function closeDaysFor(clientId, crmAvg) { const ov = loadCloseOverride(clientId); return ov != null && ov > 0 ? { days: ov, manual: true } : (crmAvg != null && crmAvg > 0 ? { days: crmAvg, manual: false } : null) }
 // Working hours per client (for Speed to Lead). { days:[0-6], startMin, endMin }.
-function loadHours(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; const h = o && o.hours; return (h && Array.isArray(h.days) && h.days.length && h.startMin != null && h.endMin != null) ? h : null }
+// Speed to Lead is measured within business hours for EVERY client by default
+// (Mon–Fri 9–5), so an after-hours lead answered next morning isn't scored as a
+// 10-hour response. A client can override the hours or turn it off entirely
+// (hoursOff), which is respected.
+const DEFAULT_HOURS = { days: [1, 2, 3, 4, 5], startMin: 540, endMin: 1020 }
+const validHours = (h) => !!(h && Array.isArray(h.days) && h.days.length && h.startMin != null && h.endMin != null)
+function loadHours(clientId) {
+  const o = SETTINGS.clients && SETTINGS.clients[clientId]
+  if (o && o.hoursOff) return null           // explicitly turned off for this client
+  if (o && validHours(o.hours)) return o.hours // custom saved hours
+  return DEFAULT_HOURS                        // default: on, business hours
+}
 function saveHours(clientId, hours) {
   const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
-  const next = { ...cur, hours: hours || null }
+  // Enabling stores the hours and clears the off flag; disabling sets the off
+  // flag (keeping the last hours so re-enabling restores them).
+  const next = hours ? { ...cur, hours, hoursOff: false } : { ...cur, hoursOff: true }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
   writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
 }
@@ -2964,7 +2977,7 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+    fetch(`/.netlify/functions/windsor?scope=speed&client=${clientId}&${rangeQuery(range)}${hoursQuery(loadHours(clientId))}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setSt({ status: j && !j.error ? 'ok' : 'err', data: j }) })
       .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
@@ -6834,11 +6847,12 @@ function SalesCycleField({ clientId }) {
 // override the days + open/close time. Drives the Speed to Lead measurement so
 // after-hours gaps aren't counted as slow responses.
 function ActiveHoursField({ clientId }) {
-  const saved = loadHours(clientId)
+  const saved = loadHours(clientId) // DEFAULT_HOURS when unset; null only if explicitly off
+  const init = saved || DEFAULT_HOURS
   const [enabled, setEnabled] = useState(() => !!saved)
-  const [days, setDays] = useState(() => (saved ? saved.days : [1, 2, 3, 4, 5]))
-  const [start, setStart] = useState(() => (saved ? hhmm(saved.startMin) : '09:00'))
-  const [end, setEnd] = useState(() => (saved ? hhmm(saved.endMin) : '17:00'))
+  const [days, setDays] = useState(() => init.days)
+  const [start, setStart] = useState(() => hhmm(init.startMin))
+  const [end, setEnd] = useState(() => hhmm(init.endMin))
   const [detected, setDetected] = useState(undefined)
   const [tick, setTick] = useState(false)
   useEffect(() => {

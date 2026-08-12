@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.199.0 — 2026-08-11 · `PENDING` — Overview tab first + seeded starter brand profiles
+- **Overview is now the first tab** in each client's Settings (and opens by default).
+- **Starter brand profiles seeded for every client** from what we know: Pool Haus, Nexia Health,
+  Finr Advisory, Psychology Hub, Book a Midwife and others get inferred industry, ICP, brand voice,
+  angle and keyword themes pre-filled. Anything that must be a real claim (pricing, proof stats,
+  guarantees, competitors, website) is left blank or marked `[confirm]` so nothing fabricated can end
+  up in an ad. Editing a field overrides the seed and saves as normal.
+
 ## v3.198.0 — 2026-08-11 · `PENDING` — Client Brand Profile (Settings → Overview) feeding the Curator
 - **New "Overview" tab on each client in Settings** — a structured **Client Brand Profile**: website,
   one-liner, industry, brand voice, ICP, offer & pricing, differentiators, objections, proof points,

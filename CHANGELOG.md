@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.203.0 — 2026-08-11 · `PENDING` — Daily Performance biggest movers + exact per-channel CPL in updates
+- **Daily Performance now surfaces the biggest movers.** A "Biggest movers" panel at the top ranks the
+  largest cost-per-result changes across all clients for a chosen window (3/7/14/21/28 days), each with
+  a rules-based reason decomposed from the spend vs results move (for example "spend rose 22% but leads
+  only +6%"). An **"Explain with AI"** button adds a plausible per-mover hypothesis. Each client card
+  also shows its own **"What moved · 7d"** callouts per channel.
+- **Client Update now quotes the exact CPL per channel** (Meta CPL and Google cost per conversion),
+  never a single merged figure, and the word "blended" is banned from client-facing copy.
+
 ## v3.202.0 — 2026-08-11 · `PENDING` — Organic Social: daily snapshots so data never disappears
 - **New daily social snapshot** (`social-snapshot`, scheduled @daily; `social-snapshot-now` to run/seed
   on demand) captures each connected client's Instagram + Facebook-organic **daily metrics, follower

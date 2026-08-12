@@ -172,6 +172,28 @@ Make them concrete and production-ready, not generic. Vary the angles across the
   return { ...out, generatedAt: new Date().toISOString() }
 }
 
+// Daily Performance "biggest movers": hypothesise WHY each cost-per-result move
+// happened, from the spend vs results decomposition already computed client-side.
+async function moversExplain(apiKey, body) {
+  const { window: win, movers = [] } = body
+  if (!Array.isArray(movers) || !movers.length) return { insights: 'No notable movers to explain.', model: null, generatedAt: new Date().toISOString() }
+  const lines = movers.slice(0, 12).map((m, i) => `${i + 1}. ${m.client}, ${m.channel} cost per ${m.unit}: $${m.cplPrev} to $${m.cpl} (${m.cplPct > 0 ? '+' : ''}${m.cplPct}%). Spend ${m.spendPct == null ? 'n/a' : (m.spendPct > 0 ? '+' : '') + m.spendPct + '%'}, ${m.unit} ${m.resPct == null ? 'n/a' : (m.resPct > 0 ? '+' : '') + m.resPct + '%'}${m.booked != null ? `, booked calls ${m.booked} vs ${m.bookedPrev}` : ''}.`).join('\n')
+  const prompt = `You are a paid-media strategist reviewing what moved over the last ${win} days versus the prior ${win} days. For each mover below, give a SHORT, plausible hypothesis for WHY the cost per result changed, using ONLY the spend and results moves given (do not invent numbers).
+
+Guidance for your reasoning:
+- Cost up mostly because spend outpaced results: say so plainly (budget scaled faster than delivery).
+- Results down on roughly steady spend: creative fatigue, audience saturation, or a landing/tracking issue are plausible; name the most likely.
+- Cost down because results rose on steady or lower spend: a fresh creative or better audience is likely working.
+Always flag these as hypotheses to confirm at the campaign and creative level (the mover data is channel-level only).
+
+Movers:
+${lines}
+
+Reply in markdown as one short bullet per mover, in the form "- Client, Channel: one-sentence hypothesis." Australian spelling. Never use em dashes or en dashes. Under 240 words.`
+  const out = await callClaude(apiKey, prompt)
+  return { ...out, generatedAt: new Date().toISOString() }
+}
+
 async function creativeStrategy(apiKey, body) {
   const { clientName, period, rollups = {}, top = [], bottom = [] } = body
   const dimLine = (label, arr) => `${label}: ${(arr || []).slice(0, 8).map((e) => `${e.key} (${e.n} ads, $${n0(e.spend)} spend, ${n0(e.leads)} leads${e.bk != null ? `, ${n0(e.bk)} booked` : ''}${e.cpb != null ? `, $${n0(e.cpb)}/booked call` : ''})`).join('; ') || 'untagged'}`
@@ -274,7 +296,13 @@ async function clientUpdate(apiKey, body) {
   const lines = []
   lines.push(`Ad spend $${n0(k.adSpend)}${delta(k.adSpend, pv.adSpend, false)} (Meta $${n0(ch.metaSpend)}, Google $${n0(ch.googleSpend)})`)
   lines.push(`Leads from the ads: ${n0(adLeads)}${delta(adLeads, prevAdLeads, false)}. THIS is the headline lead number to use; it is the ad-reported count and matches Meta/Google Ads Manager (Meta ${n0(ch.metaLeads)}, Google ${n0(ch.googleConv)}).`)
-  lines.push(`Cost per lead $${adCpl != null ? n0(adCpl) : 'n/a'} (ad spend divided by ad-reported leads, so it matches Ads Manager), cost per booked call ${k.cpBooked != null ? '$' + n0(k.cpBooked) : 'n/a'}.`)
+  // Exact per-channel cost efficiency, so the email can quote each channel's own
+  // CPL / cost per conversion (never a single merged figure).
+  const metaCpl = ch.metaLeads ? Math.round(ch.metaSpend / ch.metaLeads) : null
+  const googleCpc = ch.googleConv ? Math.round(ch.googleSpend / ch.googleConv) : null
+  if ((ch.metaSpend || 0) > 0) lines.push(`Meta channel: spend $${n0(ch.metaSpend)}, ${n0(ch.metaLeads)} leads, cost per lead ${metaCpl != null ? '$' + n0(metaCpl) : 'n/a'}. Quote THIS exact Meta CPL, not a merged one.`)
+  if ((ch.googleSpend || 0) > 0) lines.push(`Google channel: spend $${n0(ch.googleSpend)}, ${n0(ch.googleConv)} conversions, cost per conversion ${googleCpc != null ? '$' + n0(googleCpc) : 'n/a'}. Quote THIS exact Google cost per conversion.`)
+  lines.push(`Combined cost per lead $${adCpl != null ? n0(adCpl) : 'n/a'} (total ad spend over ad-reported leads), cost per booked call ${k.cpBooked != null ? '$' + n0(k.cpBooked) : 'n/a'}. Use the per-channel figures above in the email; do NOT report a single merged CPL as the headline and never use the word "blended".`)
   lines.push(`Booked calls ${n0(k.booked)}${delta(k.booked, pv.booked, false)} (Caalano Systems bookings attributed to the ads by UTM).`)
   if (k.leads != null && k.leads !== adLeads) lines.push(`For context only (do NOT use as the ad lead count): the CRM logged ${n0(k.leads)} opportunities across all pipelines and sources this period. This differs from the ${n0(adLeads)} ad-reported leads because the CRM counts every source and can count differently. If you mention pipeline lead numbers, describe them as opportunities in the CRM, not ad leads.`)
   if (k.openValue) lines.push(`Open pipeline value right now $${n0(k.openValue)}`)
@@ -320,7 +348,7 @@ CRITICAL: Never invent, estimate or add a NUMBER, metric or hard fact that is no
 
 STYLE: Write as one real account manager at Caalano Digital who knows this client, emailing them directly. Warm, direct, specific and confident: a sharp operator, not a corporate template. Vary sentence length; short punchy sentences are good. Contractions are fine. Open with a brief, genuine one-line personal greeting then a one-line intro (as in the examples), then get to the substance; do not pad with a summary of every metric. Every number you cite must be followed by what it means for their business, never a bare stat. Have a point of view.
 
-BANNED PHRASES (these make it read like AI or a template; never use them): "I hope this email finds you well", "I'm pleased/excited/thrilled to share", "As always", "Rest assured", "moving forward", "In summary", "it's worth noting", "at the end of the day", "that said", "delighted to". (A brief genuine opener like "Hope you're all well" or "Hope you had a good week" IS welcome; only the stiff templated version above is banned.) BANNED WORDS: leverage, robust, delve, streamline, testament, landscape, elevate, unlock, synergy, seamless. No clichés, idioms or sporting/boxing metaphors ("punching above its weight", "moving the needle", "hit the ground running", "smashing it"). When you cite a percentage change, say what it is compared to naturally (for example "up 143% on the last fortnight"). Refer to the time period casually (for example "over the last fortnight", "this past month") and never quote raw dates or say "reporting period".
+BANNED PHRASES (these make it read like AI or a template; never use them): "I hope this email finds you well", "I'm pleased/excited/thrilled to share", "As always", "Rest assured", "moving forward", "In summary", "it's worth noting", "at the end of the day", "that said", "delighted to". (A brief genuine opener like "Hope you're all well" or "Hope you had a good week" IS welcome; only the stiff templated version above is banned.) BANNED WORDS: leverage, robust, delve, streamline, testament, landscape, elevate, unlock, synergy, seamless, blended (report each channel's own exact CPL / cost per conversion, never a merged "blended" cost). No clichés, idioms or sporting/boxing metaphors ("punching above its weight", "moving the needle", "hit the ground running", "smashing it"). When you cite a percentage change, say what it is compared to naturally (for example "up 143% on the last fortnight"). Refer to the time period casually (for example "over the last fortnight", "this past month") and never quote raw dates or say "reporting period".
 
 NOUNS: Do NOT call the client's customers "jobs" (that is trade-specific and wrong for most clients). Use neutral terms: clients, customers, new business, or closed deals; or mirror the client's own terminology from the background context if it is given.
 
@@ -351,7 +379,7 @@ ${CU_STYLE_EXAMPLES}
 
 EMAIL version: match the house style shown in the examples above. ${firstName ? `Open with "Hi ${firstName},"` : 'Open with "Hi team,"'} then a short, genuine one-line personal opener (for example "Hope you're all well." or "Hope you had a good week." - keep it human and brief; do NOT use the stiff "I hope this email finds you well"). Then a one-line intro that you're sharing an update on ${clientName || 'the client'}'s performance over the past fortnight, along with what the team has been working on. Then, in THIS order, as plain sections (heading words on their own line, no markdown):
 1. One overall line: the total ad spend and total leads for the fortnight.
-2. The channel breakdown, each under its own mini-heading. "Meta:" then Spend, Leads and CPL on their own lines, with the movement vs the previous fortnight in the natural style (for example "down $2.09 vs the previous 14 days").${twoChannels ? ' Then "Google:" with Spend, Conversions and Cost per conversion. Call Google outcomes "conversions", not leads; note the combined lead figure includes them so the client can reconcile against each platform.' : ' Only include a Google section if Google actually ran this period.'}
+2. The channel breakdown, each under its own mini-heading. "Meta:" then Spend, Leads and CPL on their own lines, quoting the EXACT Meta cost per lead from the data (not a merged figure), with the movement vs the previous fortnight in the natural style (for example "down $2.09 vs the previous 14 days").${twoChannels ? ' Then "Google:" with Spend, Conversions and the EXACT Google cost per conversion. Call Google outcomes "conversions", not leads. Give each channel its own precise cost figure; never merge Meta and Google into one cost per lead and never use the word "blended". You may state the combined lead total for reconciliation, but the cost efficiency must be reported per channel.' : ' Only include a Google section if Google actually ran this period.'}
 3. A results line: booked calls${aii && aii.selfPct != null ? ' (with the self-booked share if it is notable)' : ''}, deals won and revenue, and the number and value of leads still progressing through the pipeline.
 4. "Key insights:" 2 to 4 bullets. Name the best-performing creative(s) by their code AND a short plain-English description you can infer from the ad name and format (for example a name with "Vid_Podcast_Derrick" is "Derrick's podcast video"); give each cited ad its leads, CPL and, where available, booked calls and cost per booked call. Do NOT invent visual details (colours, people, props) that the ad name does not imply. Include one grounded funnel observation where the data supports it (for example a stage where open deals are piling up, or a channel performing especially well).${(nbn && nbn.length) ? ' If a pipeline or segment has a notably low lead-to-booking rate, add ONE tactful line on the likely cause from the non-booker note themes (themes only, no names, no quotes).' : ''}
 5. "Actions:" 1 to 3 concrete next steps that follow from the data (and any planned actions in the background context). Frame each as what we recommend or are setting up and why it helps them; where something takes time, add a short realistic timeframe note. Do NOT invent specific third-party integrations, tools or campaigns that the data or context does not support, and do NOT prescribe budget increases.
@@ -397,6 +425,10 @@ export default async (req) => {
   }
   if (body && body.mode === 'creative-curator') {
     try { return json(await creativeCurator(apiKey, body)) }
+    catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+  if (body && body.mode === 'movers') {
+    try { return json(await moversExplain(apiKey, body)) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

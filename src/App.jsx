@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.202.0'
+const APP_VERSION = '3.203.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -891,6 +891,79 @@ function ClientTrend({ row, tr, currency, onPick }) {
       </div>
       <div className="tr-row-lab">{resultLabel} <span className="sub">· vs previous equal period{tr.hasCrm ? ' · % = booking rate (booked ÷ leads)' : ''}</span></div>
       <div className="tr-grid">{wins.map((w) => { const d = w[eff]; const cpl = d.results ? d.spend / d.results : null; const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null; const br = d.results ? (d.booked / d.results) * 100 : null; return <TrendCell key={w.n} label={WLABEL[w.n]} value={cpl != null ? money(cpl) : '-'} cur={cpl} prev={cplP} sub={tr.hasCrm && br != null ? `${br.toFixed(1)}% booked` : null} /> })}</div>
+      {(() => {
+        const mv = clientMovers(row, tr, 7).filter((m) => Math.abs(m.cplPct) >= 8)
+        if (!mv.length) return null
+        return <div className="tr-movers"><span className="tr-movers-lab">What moved · 7d</span>{mv.map((m, i) => <div className="tr-mover" key={i}><span className={`mov-badge sm ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span> <b>{m.channel}</b> cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}: {moverReason(m)}</div>)}</div>
+      })()}
+    </div>
+  )
+}
+// --- Biggest movers: what changed most vs the prior equal window, and why. ---
+const MOVER_WINS = [3, 7, 14, 21, 28]
+const pctChg = (cur, prev) => (prev != null && prev > 0 && cur != null) ? ((cur - prev) / prev) * 100 : null
+// Per client, per channel: the cost-per-result move for a window, with the spend
+// and results moves that drove it (so the reason can be decomposed).
+function clientMovers(row, tr, win) {
+  const w = (tr.windows || []).find((x) => x.n === win); if (!w) return []
+  const chans = []; if (row.hasMeta) chans.push(['meta', 'Meta']); if (row.hasGoogle) chans.push(['google', 'Google'])
+  const out = []
+  for (const [ck, cl] of chans) {
+    const d = w[ck]; if (!d || (d.spend || 0) < 1) continue
+    const cpl = d.results ? d.spend / d.results : null
+    const cplP = d.resultsPrev ? d.spendPrev / d.resultsPrev : null
+    const cplPct = pctChg(cpl, cplP); if (cplPct == null) continue
+    out.push({ c: row.c, clientId: row.id, clientName: row.name, chan: ck, channel: cl, cpl, cplP, cplPct, spend: d.spend, spendPrev: d.spendPrev, spendPct: pctChg(d.spend, d.spendPrev), results: d.results, resultsPrev: d.resultsPrev, resPct: pctChg(d.results, d.resultsPrev), booked: d.booked, bookedPrev: d.bookedPrev, win })
+}
+  return out
+}
+// Rules-based "why" from the spend vs results decomposition of a CPL move.
+function moverReason(m) {
+  const unit = m.chan === 'google' ? 'conversions' : 'leads'
+  const p = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(0)}%`)
+  const sp = m.spendPct, rp = m.resPct
+  if (m.cplPct > 0) { // cost went up (worse)
+    if (rp != null && rp < -5 && (sp == null || Math.abs(sp) <= 12)) return `${unit} fell ${Math.abs(rp).toFixed(0)}% on roughly steady spend`
+    if (sp != null && sp > 10 && (rp == null || rp < sp)) return `spend rose ${sp.toFixed(0)}% but ${unit} only ${p(rp)}`
+    if (rp != null && rp < -5 && sp != null && sp < -5) return `spend and ${unit} both fell, ${unit} faster (${p(rp)} vs ${p(sp)} spend)`
+    return `${unit} ${p(rp)} vs spend ${p(sp)}`
+  }
+  if (rp != null && rp > 5 && (sp == null || Math.abs(sp) <= 12)) return `${unit} rose ${rp.toFixed(0)}% on roughly steady spend`
+  if (sp != null && sp < -10 && (rp == null || rp > sp)) return `spend cut ${Math.abs(sp).toFixed(0)}% with ${unit} ${p(rp)}`
+  return `${unit} ${p(rp)} vs spend ${p(sp)}`
+}
+function MoversPanel({ list, clients, currency, onPick }) {
+  const [win, setWin] = useState(7)
+  const [ai, setAi] = useState({ status: 'idle', text: null, error: null })
+  const money = (v) => fmtCurrency(v, currency)
+  const movers = list.flatMap((r) => clientMovers(r, clients[r.id], win)).filter((m) => Math.abs(m.cplPct) >= 8).sort((a, b) => Math.abs(b.cplPct) - Math.abs(a.cplPct)).slice(0, 8)
+  const explain = async () => {
+    setAi({ status: 'loading', text: null, error: null })
+    try {
+      const payload = { mode: 'movers', window: win, movers: movers.map((m) => ({ client: m.clientName, channel: m.channel, unit: m.chan === 'google' ? 'conversions' : 'leads', cplPrev: Math.round(m.cplP), cpl: Math.round(m.cpl), cplPct: Math.round(m.cplPct), spendPct: m.spendPct != null ? Math.round(m.spendPct) : null, resPct: m.resPct != null ? Math.round(m.resPct) : null, booked: m.booked, bookedPrev: m.bookedPrev })) }
+      const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      setAi({ status: 'ok', text: j.insights, error: null })
+    } catch (e) { setAi({ status: 'err', text: null, error: String(e.message || e) }) }
+  }
+  return (
+    <div className="card mov-panel">
+      <div className="mov-head">
+        <b>📊 Biggest movers</b>
+        <div className="chan-toggle sm">{MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => { setWin(n); setAi({ status: 'idle', text: null, error: null }) }}>{n}d</button>)}</div>
+        <span className="cap">cost per result vs the prior {win} days · biggest changes across all clients</span>
+        {movers.length > 0 && <button className="mov-ai" onClick={explain} disabled={ai.status === 'loading'}>{ai.status === 'loading' ? <><span className="spin sm" /> Thinking…</> : '🤖 Explain with AI'}</button>}
+      </div>
+      {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved more than 8% over the last {win} days.</p>
+        : <div className="mov-list">{movers.map((m, i) => (
+          <button className="mov-item" key={i} onClick={() => onPick(m.c)} title="Open client">
+            <span className={`mov-badge ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span>
+            <span className="mov-txt"><b>{m.clientName}</b> · {m.channel} cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}<span className="mov-why">{moverReason(m)}</span></span>
+          </button>
+        ))}</div>}
+      {ai.status === 'ok' && ai.text ? <div className="mov-aibox"><div className="cc-ai-h">🤖 Likely causes</div><MdText text={ai.text} /></div> : null}
+      {ai.status === 'err' ? <p className="cap" style={{ marginBottom: 0 }}>AI explain failed: {ai.error}. The rules-based read above still stands.</p> : null}
     </div>
   )
 }
@@ -902,6 +975,7 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
   const list = rows.filter((r) => clients[r.id] && (r.hasMeta || r.hasGoogle))
   return (
     <div className="tr-list">
+      {list.length > 0 && <MoversPanel list={list} clients={clients} currency={currency} onPick={onPick} />}
       {list.map((r) => <ClientTrend key={r.id} row={r} tr={clients[r.id]} currency={currency} onPick={onPick} />)}
       {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
       <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages; where UTM attribution is connected they're split by first-touch channel, so Meta / Google cost-per-booked uses that channel's own bookings. Otherwise the toggle divides that channel's spend by total booked calls.</p>

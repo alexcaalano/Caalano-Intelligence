@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.198.0 — 2026-08-11 · `PENDING` — Client Brand Profile (Settings → Overview) feeding the Curator
+- **New "Overview" tab on each client in Settings** — a structured **Client Brand Profile**: website,
+  one-liner, industry, brand voice, ICP, offer & pricing, differentiators, objections, proof points,
+  competitors, on-brand keywords, words to avoid, winning ad-copy angles, and free notes. Auto-saves,
+  server-synced and shared with the team, with a completeness meter.
+- **The Creative Curator's Client deep-dive now reads this profile** (plus the existing free-text
+  context), so AI concepts are grounded in the brand's real voice, offer and customers. The Curator
+  shows how much of the profile is filled and nudges you to complete it.
+
 ## v3.197.0 — 2026-08-11 · `PENDING` — New module: Creative Curator (v1)
 - **New "Creative Curator" menu item** (under Creative Cockpit) to strategise new creatives. Pick any
   mix of **Format × Style × CTA × Audience × Angle** and generate ready-to-brief concepts:

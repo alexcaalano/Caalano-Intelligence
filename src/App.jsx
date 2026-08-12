@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.197.0'
+const APP_VERSION = '3.198.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2129,9 +2129,10 @@ const SEED_OPTLOG = {
   'psychology-hub': 'https://docs.google.com/spreadsheets/d/1vg7Y0KSH7dcIkH1HkFxjarct5SjSzIVmF46MK6h_QDA/edit',
 }
 const CURATOR_KEY = 'caalano_curator_board'
+const PROFILE_KEY = 'caalano_client_profile'
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2152,8 +2153,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2195,6 +2196,37 @@ function saveClientCtx(clientId, text) {
   SETTINGS.clientctx = { ...(SETTINGS.clientctx || {}), [clientId]: text }
   writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); saveSettingsRemote({ clientctx: { [clientId]: text } }); bumpSettings()
 }
+// Client Brand Profile — a structured "everything about this brand" file per
+// client that feeds the AI features (Creative Curator, and available for more).
+const PROFILE_FIELDS = [
+  { k: 'website', label: 'Website', ph: 'https://…', area: false },
+  { k: 'oneLiner', label: 'What they do (one line)', ph: 'e.g. Sydney concrete pool builder for premium homes', area: false },
+  { k: 'industry', label: 'Industry / vertical', ph: 'e.g. Home improvement — pools', area: false },
+  { k: 'voice', label: 'Brand voice / tone', ph: 'e.g. Confident, warm, plain-English; premium but approachable', area: true },
+  { k: 'icp', label: 'Ideal customer (ICP)', ph: 'Who they sell to — demographics, mindset, buying triggers', area: true },
+  { k: 'offer', label: 'Core offer & pricing notes', ph: 'Main services, typical deal size, guarantees, finance', area: true },
+  { k: 'differentiators', label: 'Selling points / differentiators', ph: 'Why choose them over competitors', area: true },
+  { k: 'objections', label: 'Common objections (+ answers)', ph: 'Price, timing, trust, DIY… and how they’re handled', area: true },
+  { k: 'proof', label: 'Proof points', ph: 'Results, reviews, awards, jobs done, guarantees', area: true },
+  { k: 'competitors', label: 'Competitors', ph: 'Who they’re up against', area: false },
+  { k: 'keywords', label: 'Keywords / phrases that resonate', ph: 'On-brand words, SEO / ad keywords', area: true },
+  { k: 'avoidWords', label: 'Words / claims to avoid', ph: 'Compliance limits, off-brand terms, banned claims', area: false },
+  { k: 'adNotes', label: 'Winning angles / ad-copy notes', ph: 'Hooks & angles that have worked, offers that convert', area: true },
+  { k: 'notes', label: 'Anything else', ph: 'Free notes for the team & AI', area: true },
+]
+function loadProfile(clientId) { return (SETTINGS.profile && SETTINGS.profile[clientId]) || {} }
+function saveProfile(clientId, obj) {
+  SETTINGS.profile = { ...(SETTINGS.profile || {}), [clientId]: obj }
+  writeLS(PROFILE_KEY, SETTINGS.profile); saveSettingsRemote({ profile: { [clientId]: obj } }); bumpSettings()
+}
+// Serialise a client's profile into a plain-text block for the AI prompt.
+function profileText(clientId) {
+  const p = loadProfile(clientId); if (!p) return ''
+  const parts = []
+  for (const f of PROFILE_FIELDS) { const v = String(p[f.k] || '').trim(); if (v) parts.push(`${f.label}: ${v}`) }
+  return parts.join('\n')
+}
+function profileFilled(clientId) { const p = loadProfile(clientId); return PROFILE_FIELDS.reduce((n, f) => n + (String(p[f.k] || '').trim() ? 1 : 0), 0) }
 // Shared creative-fatigue thresholds (one set across all clients). CTR drops are
 // stored as whole percents everywhere; the backend divides by 100 when scoring.
 const FATIGUE_DEFAULTS = { freqMed: 3, freqHigh: 5, ctrDropMed: 15, ctrDropHigh: 35, minImpr: 800 }
@@ -6940,6 +6972,34 @@ function MetaConversionsEditor({ clientId, currency }) {
     </div>
   )
 }
+// Client Brand Profile editor (Settings → Overview). A structured "everything
+// about this brand" file that feeds the AI features. Auto-saves on blur.
+function ClientProfileEditor({ clientId }) {
+  useSettingsSync()
+  const [form, setForm] = useState(() => loadProfile(clientId))
+  const [tick, setTick] = useState(false)
+  useEffect(() => { setForm(loadProfile(clientId)) }, [clientId])
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const persist = () => { saveProfile(clientId, form); setTick(true); setTimeout(() => setTick(false), 1200) }
+  const filled = PROFILE_FIELDS.reduce((n, f) => n + (String(form[f.k] || '').trim() ? 1 : 0), 0)
+  return (
+    <div className="prof">
+      <p className="cap" style={{ marginTop: 0 }}>Capture everything about this brand: what they do, who they sell to, their voice, offers, proof, objections and the words that work. This becomes the client's context file — the <b>Creative Curator</b> reads it in Client deep-dive mode, and more AI features will use it. Saved to the server and shared with your team.{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</p>
+      <div className="prof-meter"><span className="prof-meter-fill" style={{ width: `${Math.round((filled / PROFILE_FIELDS.length) * 100)}%` }} /></div>
+      <div className="prof-meter-lab cap">{filled} / {PROFILE_FIELDS.length} sections filled</div>
+      <div className="prof-grid">
+        {PROFILE_FIELDS.map((f) => (
+          <div className={`prof-field${f.area ? ' prof-field-wide' : ''}`} key={f.k}>
+            <label>{f.label}</label>
+            {f.area
+              ? <textarea rows={3} placeholder={f.ph} value={form[f.k] || ''} onChange={(e) => set(f.k, e.target.value)} onBlur={persist} />
+              : <input type="text" placeholder={f.ph} value={form[f.k] || ''} onChange={(e) => set(f.k, e.target.value)} onBlur={persist} />}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 function SettingsEditModal({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
@@ -6961,7 +7021,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   // Cache-buster tied to the linked accounts, so relinking a client bypasses
   // the 10-min CDN cache on the blend/attribution/calendar responses.
   const sig = normId(c.ghl) + '-' + normId(c.meta) + '-' + normId(c.google)
-  const tabs = [['summary', 'Summary']]
+  const tabs = [['summary', 'Summary'], ['profile', 'Overview']]
   if (c.ghl) tabs.push(['keyevents', 'Key events'])
   if (c.meta) tabs.push(['metaconv', 'Meta conversions'])
   if (canLink) tabs.push(['links', 'Campaign links'])
@@ -7011,6 +7071,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
               </div>
             )}
           </div>}
+          {tab === 'profile' && <div className="set-tabpane"><div className="set-sec-t">Overview — client brand profile</div><ClientProfileEditor clientId={c.id} /></div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions — primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
@@ -7567,7 +7628,7 @@ function CreativeCuratorPage({ clients }) {
     try {
       const sObj = CC_STYLES.find((s) => s.id === styleId)
       const payload = { mode: 'creative-curator', scope, clientName: client && scope === 'client' ? client.name : null, industry: (client && (client.industry || client.vertical)) || null,
-        clientContext: scope === 'client' && clientId ? loadClientCtx(clientId) : '',
+        clientContext: scope === 'client' && clientId ? [profileText(clientId), loadClientCtx(clientId)].filter((s) => s && s.trim()).join('\n\n') : '',
         format: format ? ccFindF(format).label : null, style: sObj ? sObj.name : null, cta: cta ? ccFindC(cta).label : null, audience: audience.trim() || null, angle: angle ? ccFindA(angle).label : null,
         avoid: board.map((b) => `${b.styleName}: ${b.hook}`).slice(0, 12) }
       const r = await fetch('/.netlify/functions/insights', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) })
@@ -7587,7 +7648,9 @@ function CreativeCuratorPage({ clients }) {
           <button className={scope === 'client' ? 'on' : ''} onClick={() => setScope('client')}>🎯 Client deep-dive</button>
         </div>
         {scope === 'client' && <select className="cc-client-sel" value={clientId || ''} onChange={(e) => setClientId(e.target.value)}>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
-        <span className="cap">{scope === 'research' ? 'General ideas for a service / lead-gen business. Board saved under Research.' : 'Ideas framed for this client; board saved to them.'}</span>
+        <span className="cap">{scope === 'research' ? 'General ideas for a service / lead-gen business. Board saved under Research.'
+          : clientId && profileFilled(clientId) ? `AI uses this client's brand profile (${profileFilled(clientId)}/${PROFILE_FIELDS.length} sections filled).`
+            : 'Tip: fill the client’s brand profile in Settings → Overview so AI ideas fit the brand.'}</span>
       </div>
       <div className="card cc-builder">
         <div className="cc-row"><span className="cc-row-l">Format</span><CcChips options={CC_FORMATS} value={format} onChange={setFormat} /></div>

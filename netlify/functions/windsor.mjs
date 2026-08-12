@@ -1293,7 +1293,7 @@ function rollupGhl(rows) {
 // Organic social (Instagram business + Facebook Page) for one client. Each query
 // stays within a single Windsor "table" so cross-table joins don't drop rows;
 // everything is best-effort (a failed sub-fetch yields [] and the rest renders).
-async function buildSocial(soc, from, to, key) {
+async function buildSocial(soc, from, to, key, clientId) {
   const igId = soc.ig, fbo = soc.fbo
   const F = (connector, fields) => windsorFetch(connector, fields, from, to, null, key).catch(() => [])
   const byDate = (rows, map) => { const m = new Map(); for (const r of rows) { const d = String(r.date || r.timestamp || '').slice(0, 10); if (!d) continue; const e = m.get(d) || { date: d }; map(e, r); m.set(d, e) } return [...m.values()].sort((a, b) => a.date.localeCompare(b.date)) }
@@ -1348,7 +1348,142 @@ async function buildSocial(soc, from, to, key) {
     const posts = postRows.map((p) => { const eng = num(p.post_engagements); const impr = num(p.post_impressions); return { id: p.post_id, date: String(p.post_created_time || '').slice(0, 10), message: String(p.post_message_oneline || '').replace(/\s+/g, ' ').slice(0, 160), permalink: p.permalink_url || null, picture: p.full_picture || null, impressions: impr, impressionsOrganic: num(p.post_impressions_organic), engagements: eng, reactions: num(p.post_reactions_total), comments: num(p.post_comments_total), shares: num(p.post_activity_by_action_type_share), clicks: num(p.post_clicks), er: impr ? Math.round((eng / impr) * 1000) / 10 : null } }).filter((x) => x.id).sort((a, b) => b.engagements - a.engagements).slice(0, 60)
     fb = { page: { fans: lastNonNull(pageRows, 'page_fans'), follows: lastNonNull(pageRows, 'page_follows') }, totals, daily, posts }
   }
+  // Auto-fill from the saved snapshot store: the Meta/IG organic API only returns
+  // roughly the last 90 days of insights (and followers/demographics are "now
+  // only"), so beyond that window the live pull is empty. We merge in the daily
+  // history we captured while it was still available, and fall back to the last
+  // stored followers/demographics when the live ones are gone.
+  if (clientId) {
+    try {
+      const snap = await loadSocialSnap(clientId)
+      if (snap) {
+        const inWin = (d) => (!from || d >= from) && (!to || d <= to)
+        const latestBefore = (obj) => { const ds = Object.keys(obj || {}).filter((d) => !to || d <= to).sort(); return ds.length ? { date: ds[ds.length - 1], v: obj[ds[ds.length - 1]] } : null }
+        if (ig && snap.ig) {
+          const live = new Set(ig.daily.map((d) => d.date))
+          const extra = []
+          for (const [d, e] of Object.entries(snap.ig.daily || {})) {
+            if (!inWin(d) || live.has(d)) continue
+            extra.push({ date: d, reach: e.reach || 0, newFollowers: e.newFollowers || 0, interactions: e.interactions || 0, views: e.views || 0, likes: e.likes || 0, comments: e.comments || 0, saves: e.saves || 0, shares: e.shares || 0, replies: e.replies || 0, posts: e.posts || 0 })
+            const t = ig.totals
+            t.reach += e.reach || 0; t.views += e.views || 0; t.engaged += e.engaged || 0; t.likes += e.likes || 0; t.comments += e.comments || 0; t.shares += e.shares || 0; t.saves += e.saves || 0; t.replies += e.replies || 0; t.linkTaps += e.linkTaps || 0; t.interactions += e.interactions || 0; t.newFollowers += e.newFollowers || 0
+          }
+          if (extra.length) {
+            ig.daily = [...ig.daily, ...extra].sort((a, b) => a.date.localeCompare(b.date))
+            ig.totals.engagement = ig.totals.likes + ig.totals.comments + ig.totals.shares + ig.totals.saves
+            ig.totals.er = ig.totals.reach ? Math.round((ig.totals.interactions / ig.totals.reach) * 1000) / 10 : null
+            ig.fromStore = extra.length
+          }
+          if (!ig.profile.followers) { const f = latestBefore(snap.ig.followers); if (f) ig.profile = { ...ig.profile, followers: f.v.followers || 0, follows: f.v.follows || ig.profile.follows || 0, mediaCount: f.v.mediaCount || ig.profile.mediaCount || 0, asOf: f.date } }
+          if (!ig.demographics.gender.length && !ig.demographics.age.length && !ig.demographics.country.length) { const dm = latestBefore(snap.ig.demographics); if (dm) ig.demographics = { ...dm.v, asOf: dm.date } }
+        }
+        if (fb && snap.fb) {
+          const live = new Set(fb.daily.map((d) => d.date))
+          const extra = []
+          for (const [d, e] of Object.entries(snap.fb.daily || {})) {
+            if (!inWin(d) || live.has(d)) continue
+            extra.push({ date: d, impressionsOrganic: e.impressionsOrganic || 0, impressionsPaid: e.impressionsPaid || 0, engagements: e.engagements || 0, netFollowers: (e.newFollows || 0) - (e.unfollows || 0), posts: e.posts || 0, reactions: e.reactions || 0, comments: e.comments || 0, shares: e.shares || 0 })
+            const t = fb.totals
+            t.impressions += e.impressions || 0; t.impressionsOrganic += e.impressionsOrganic || 0; t.impressionsPaid += e.impressionsPaid || 0; t.reachUnique += e.reachUnique || 0; t.engagements += e.engagements || 0; t.pageViews += e.pageViews || 0; t.videoViews += e.videoViews || 0; t.newFollows += e.newFollows || 0; t.unfollows += e.unfollows || 0
+          }
+          if (extra.length) { fb.daily = [...fb.daily, ...extra].sort((a, b) => a.date.localeCompare(b.date)); fb.fromStore = extra.length }
+          if (!fb.page.fans) { const f = latestBefore(snap.fb.followers); if (f) fb.page = { ...fb.page, fans: f.v.fans || 0, follows: f.v.follows || fb.page.follows || 0, asOf: f.date } }
+        }
+      }
+    } catch { /* store optional - never block the live view */ }
+  }
   return { ig, fb }
+}
+
+// --- Organic social snapshot store: preserve the metrics that vanish once they
+// fall outside the Meta/IG API's ~90-day insights window (daily series, and the
+// point-in-time followers + demographics). Written daily by social-snapshot.
+const socialStore = () => getStore({ name: 'caalano-social', consistency: 'strong' })
+async function loadSocialSnap(clientId) { try { return (await socialStore().get(clientId, { type: 'json' })) || null } catch { return null } }
+// Lean per-day capture (everything the totals + daily views need), plus the
+// point-in-time followers/media count and audience demographics. No heavy media
+// bodies — this is the durable, storable core.
+async function socialPerDay(soc, from, to, key) {
+  const igId = soc.ig, fbo = soc.fbo
+  const F = (c, f) => windsorFetch(c, f, from, to, null, key).catch(() => [])
+  const demoArr = (rows, nk, sk, cap) => { const out = rows.map((r) => ({ name: r[nk], size: num(r[sk]) })).filter((x) => x.name && x.size).sort((a, b) => b.size - a.size); return cap ? out.slice(0, cap) : out }
+  const lastNonNull = (rows, k) => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i][k] != null && rows[i][k] !== '') return num(rows[i][k]); return 0 }
+  let ig = null, fb = null
+  if (igId) {
+    const flt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, igId))
+    const [dtv, dins, prof, media, gender, age, country] = await Promise.all([
+      F('instagram', ['account_id', 'date', 'views', 'accounts_engaged', 'likes', 'comments', 'shares', 'saves', 'replies', 'profile_links_taps', 'total_interactions']).then(flt),
+      F('instagram', ['account_id', 'date', 'reach', 'follower_count']).then(flt),
+      F('instagram', ['account_id', 'followers_count', 'follows_count', 'media_count', 'username']).then(flt),
+      F('instagram', ['account_id', 'media_id', 'timestamp']).then(flt),
+      F('instagram', ['account_id', 'audience_gender_name', 'audience_gender_size']).then(flt),
+      F('instagram', ['account_id', 'audience_age_name', 'audience_age_size']).then(flt),
+      F('instagram', ['account_id', 'audience_country_name', 'audience_country_size']).then(flt),
+    ])
+    const perDay = {}; const D = (d) => (perDay[d] = perDay[d] || {})
+    for (const r of dtv) { const d = String(r.date || '').slice(0, 10); if (!d) continue; const e = D(d); e.views = (e.views || 0) + num(r.views); e.engaged = (e.engaged || 0) + num(r.accounts_engaged); e.likes = (e.likes || 0) + num(r.likes); e.comments = (e.comments || 0) + num(r.comments); e.shares = (e.shares || 0) + num(r.shares); e.saves = (e.saves || 0) + num(r.saves); e.replies = (e.replies || 0) + num(r.replies); e.linkTaps = (e.linkTaps || 0) + num(r.profile_links_taps); e.interactions = (e.interactions || 0) + num(r.total_interactions) }
+    for (const r of dins) { const d = String(r.date || '').slice(0, 10); if (!d) continue; const e = D(d); e.reach = (e.reach || 0) + num(r.reach); e.newFollowers = (e.newFollowers || 0) + num(r.follower_count) }
+    for (const m of media) { const d = String(m.timestamp || '').slice(0, 10); if (!d) continue; const e = D(d); e.posts = (e.posts || 0) + 1 }
+    const p = prof[0] || {}
+    ig = { perDay, profile: { followers: num(p.followers_count), follows: num(p.follows_count), mediaCount: num(p.media_count), username: p.username || null }, demographics: { gender: demoArr(gender, 'audience_gender_name', 'audience_gender_size'), age: demoArr(age, 'audience_age_name', 'audience_age_size'), country: demoArr(country, 'audience_country_name', 'audience_country_size', 8) } }
+  }
+  if (fbo) {
+    const flt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, fbo))
+    const [pageRows, postRows] = await Promise.all([
+      F('facebook_organic', ['account_id', 'date', 'page_fans', 'page_follows', 'page_impressions', 'page_impressions_organic', 'page_impressions_paid', 'page_impressions_unique', 'page_post_engagements', 'page_views_total', 'page_video_views', 'page_daily_follows', 'page_daily_unfollows']).then(flt),
+      F('facebook_organic', ['account_id', 'post_id', 'post_created_time', 'post_reactions_total', 'post_comments_total', 'post_activity_by_action_type_share']).then(flt),
+    ])
+    const perDay = {}; const D = (d) => (perDay[d] = perDay[d] || {})
+    for (const r of pageRows) { const d = String(r.date || '').slice(0, 10); if (!d) continue; const e = D(d); e.impressions = (e.impressions || 0) + num(r.page_impressions); e.impressionsOrganic = (e.impressionsOrganic || 0) + num(r.page_impressions_organic); e.impressionsPaid = (e.impressionsPaid || 0) + num(r.page_impressions_paid); e.reachUnique = (e.reachUnique || 0) + num(r.page_impressions_unique); e.engagements = (e.engagements || 0) + num(r.page_post_engagements); e.pageViews = (e.pageViews || 0) + num(r.page_views_total); e.videoViews = (e.videoViews || 0) + num(r.page_video_views); e.newFollows = (e.newFollows || 0) + num(r.page_daily_follows); e.unfollows = (e.unfollows || 0) + num(r.page_daily_unfollows) }
+    for (const r of postRows) { const d = String(r.post_created_time || '').slice(0, 10); if (!d) continue; const e = D(d); e.posts = (e.posts || 0) + 1; e.reactions = (e.reactions || 0) + num(r.post_reactions_total); e.comments = (e.comments || 0) + num(r.post_comments_total); e.shares = (e.shares || 0) + num(r.post_activity_by_action_type_share) }
+    fb = { perDay, page: { fans: lastNonNull(pageRows, 'page_fans'), follows: lastNonNull(pageRows, 'page_follows') } }
+  }
+  return { ig, fb }
+}
+// Merge a fresh capture into the stored blob (upsert daily by date; stamp today's
+// followers + demographics). Bounded to the last ~800 days so it can't grow forever.
+function mergeSocialSnap(existing, fresh, today) {
+  const out = existing && typeof existing === 'object' ? { ...existing } : {}
+  const prune = (obj) => { const ks = Object.keys(obj).sort(); return ks.length > 800 ? Object.fromEntries(ks.slice(ks.length - 800).map((k) => [k, obj[k]])) : obj }
+  const side = (name) => {
+    const cur = (out[name] && typeof out[name] === 'object') ? out[name] : {}
+    const nf = fresh[name]; if (!nf) return cur.daily ? cur : null
+    const daily = { ...(cur.daily || {}) }; for (const [d, e] of Object.entries(nf.perDay || {})) daily[d] = e
+    const followers = { ...(cur.followers || {}) }
+    if (name === 'ig' && nf.profile && (nf.profile.followers || nf.profile.mediaCount)) followers[today] = { followers: nf.profile.followers || 0, follows: nf.profile.follows || 0, mediaCount: nf.profile.mediaCount || 0 }
+    if (name === 'fb' && nf.page && nf.page.fans) followers[today] = { fans: nf.page.fans || 0, follows: nf.page.follows || 0 }
+    const demographics = { ...(cur.demographics || {}) }
+    if (name === 'ig' && nf.demographics && (nf.demographics.gender.length || nf.demographics.age.length || nf.demographics.country.length)) demographics[today] = nf.demographics
+    return { daily: prune(daily), followers: prune(followers), demographics: prune(demographics) }
+  }
+  const ig = side('ig'), fb = side('fb')
+  if (ig) out.ig = ig; if (fb) out.fb = fb
+  out.updatedAt = today
+  return out
+}
+// Daily snapshot of every social-connected client. First run per client backfills
+// ~90 days (whatever the API still returns); later runs roll a 35-day window and
+// upsert, so a missed day self-heals. Called by the social-snapshot scheduled fn.
+export async function runSocialSnapshots() {
+  const key = process.env.WINDSOR_API_KEY
+  if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
+  const store = socialStore()
+  const today = new Date().toISOString().slice(0, 10)
+  const dayStr = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+  const results = []
+  for (const [id, soc] of Object.entries(SOCIAL)) {
+    if (!soc || (!soc.ig && !soc.fbo)) continue
+    try {
+      const existing = await store.get(id, { type: 'json' }).catch(() => null)
+      const has = existing && ((existing.ig && Object.keys(existing.ig.daily || {}).length) || (existing.fb && Object.keys(existing.fb.daily || {}).length))
+      const from = has ? dayStr(35) : dayStr(90)
+      const fresh = await socialPerDay(soc, from, today, key)
+      const merged = mergeSocialSnap(existing, fresh, today)
+      await store.set(id, JSON.stringify(merged))
+      results.push({ client: id, ok: true, igDays: merged.ig ? Object.keys(merged.ig.daily || {}).length : 0, fbDays: merged.fb ? Object.keys(merged.fb.daily || {}).length : 0, seeded: !has })
+    } catch (e) { results.push({ client: id, ok: false, error: String((e && e.message) || e).slice(0, 140) }) }
+  }
+  return { ok: true, count: results.length, results }
 }
 
 // Lean per-month organic rollup (aggregate metrics only — no media/demographics),
@@ -1561,7 +1696,7 @@ export default async (req) => {
     }
     const soc = SOCIAL[client]
     if (!soc) return json({ ig: null, fb: null, connected: false })
-    try { const data = await buildSocial(soc, from, to, key); return json({ client, period: { from, to }, ...data }, 200, true) }
+    try { const data = await buildSocial(soc, from, to, key, client); return json({ client, period: { from, to }, ...data }, 200, true) }
     catch (e) { return json({ ig: null, fb: null, error: String(e.message || e) }, 502) }
   }
 

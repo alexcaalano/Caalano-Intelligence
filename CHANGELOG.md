@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.202.0 — 2026-08-11 · `PENDING` — Organic Social: daily snapshots so data never disappears
+- **New daily social snapshot** (`social-snapshot`, scheduled @daily; `social-snapshot-now` to run/seed
+  on demand) captures each connected client's Instagram + Facebook-organic **daily metrics, follower
+  count and audience demographics** into a `caalano-social` blob store. The first run per client
+  backfills ~90 days of whatever the API still returns; later runs roll a 35-day window and upsert.
+- **The Organic Social dashboard now auto-fills gaps from the store** — beyond the Meta/IG API's ~90-day
+  insights window (where daily series, followers and demographics normally blank out), the saved history
+  is merged into the live view and folded into the period totals, so long ranges keep working.
+
 ## v3.201.0 — 2026-08-11 · `PENDING` — Client Update matches the fortnightly house style
 - **The Client Update email now follows Caalano's real fortnightly template:** warm one-line opener →
   overall spend/leads → Meta & Google breakdown → bookings / won / pipeline value → **Key insights**

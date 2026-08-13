@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.244.0 — 2026-08-13 · `PENDING` — Faster loads: split vendor bundles (part 1 of perf pass)
+- **Smaller, cacheable JS.** The whole app shipped as one ~1.5 MB chunk (424 KB gzip) that re-downloaded on every
+  deploy. Split the stable vendor libs into their own chunks — **Recharts + d3** (115 KB gzip) and **React/React-DOM**
+  (45 KB gzip) — so the app chunk drops to ~272 KB gzip, the three load in parallel on first paint, and a normal
+  deploy only re-downloads the app chunk (the vendor chunks stay cached). jspdf / html2canvas / leaflet / the AU
+  postcode map stay lazy-loaded (only pulled when the Monthly Report or Location map is opened).
+- Backend data-path speedups (caching, duplicate-fetch removal, tighter timeouts) follow in the next part.
+
 ## v3.243.0 — 2026-08-13 · `PENDING` — Landing Page Performance: green Caalano360 columns matched by URL
 - The **Landing Page Performance** table now carries the full green Caalano360 outcome columns, matched by the CRM's
   **first-touch URL** (`attributions[].url`) to the Google landing-page report. This is a robust matching path that

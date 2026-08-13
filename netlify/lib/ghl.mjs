@@ -512,6 +512,9 @@ export async function ghlOpportunityRows(locationId, from, to) {
     opportunity_pipeline_stage_id: o.pipelineStageId || null,
     opportunity_monetary_value: num(o.monetaryValue),
     opportunity_created_at: o.createdAt || null,
+    // Won-date (status last changed) — for closed-in-period bucketing. Windsor
+    // doesn't expose this; the direct API does.
+    opportunity_won_at: o.lastStatusChangeAt || o.lastStageChangeAt || null,
     opportunity_assigned_to: o.assignedTo || null,
     opportunity_source: o.source || o.opportunitySource || null,
   }))

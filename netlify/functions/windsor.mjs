@@ -1096,7 +1096,7 @@ async function buildCohortsView(c, weeks, key) {
 }
 
 // Weekly (Mon–Sun) traffic-light data for one client over the last N weeks.
-async function buildWeekly(c, weeks, key) {
+async function buildWeekly(c, weeks, key, wonBasis = 'created') {
   const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
   // Only report fully completed weeks: the current (in-progress) week is excluded,
@@ -1112,11 +1112,14 @@ async function buildWeekly(c, weeks, key) {
   const endSun = new Date(anchorMon); endSun.setUTCDate(endSun.getUTCDate() + 6) // last completed Sunday
   const end = dstr(endSun)
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
+  // Closed won basis buckets wins by their WON-date, which can fall in a week for a
+  // deal created months earlier — so widen the opp fetch back ~180 days to catch them.
+  const oppFrom = wonBasis === 'closed' ? new Date(new Date(start + 'T00:00:00Z').getTime() - 180 * 86400000).toISOString().slice(0, 10) : start
   // CRM (opportunities + pipelines) straight from the GoHighLevel API; Meta / Google from Windsor.
   const [fb, gg, opps, pipes] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
-    c.ghl ? ghlOpportunityRows(c.ghl, start, end).catch(() => []) : Promise.resolve([]),
+    c.ghl ? ghlOpportunityRows(c.ghl, oppFrom, end).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlPipelineRows(c.ghl).catch(() => []) : Promise.resolve([]),
   ])
   const B = weekStarts.map((w) => ({ week: w, weekNum: isoWeek(w), metaSpend: 0, gSpend: 0, metaLeads: 0, gConv: 0, crmLeads: 0, booked: 0, shown: 0, won: 0, wonValue: 0 }))
@@ -1124,13 +1127,22 @@ async function buildWeekly(c, weeks, key) {
   for (const r of gg) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].gSpend += num(r.spend); B[i].gConv += num(r.conversions) }
   const idx = stageIndex(pipes)
   for (const r of opps) {
-    const i = wkIndex.get(mondayOf(String(r.opportunity_created_at || '').slice(0, 10))); if (i == null) continue
-    const b = B[i]; b.crmLeads++
+    const ci = wkIndex.get(mondayOf(String(r.opportunity_created_at || '').slice(0, 10)))
     const pi = idx.get(r.opportunity_pipeline_id); const st = String(r.opportunity_status || '').toLowerCase()
     const stg = pi ? pi.byId[r.opportunity_pipeline_stage_id] : null; const pos = stg ? stg.pos : -1; const isWon = st === 'won'
-    if (isWon) { b.won++; b.wonValue += num(r.opportunity_monetary_value) }
-    if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) b.booked++
-    if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) b.shown++
+    const val = num(r.opportunity_monetary_value)
+    // Leads / booked / shown are always created-basis (bucket by the week created).
+    if (ci != null) {
+      const b = B[ci]; b.crmLeads++
+      if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) b.booked++
+      if (isWon || (pi && pi.showPos != null && pos >= pi.showPos)) b.shown++
+      if (wonBasis !== 'closed' && isWon) { b.won++; b.wonValue += val }
+    }
+    // Closed basis: bucket the win by its won-date week (may be outside the created week).
+    if (wonBasis === 'closed' && isWon) {
+      const wi = wkIndex.get(mondayOf(String(r.opportunity_won_at || '').slice(0, 10)))
+      if (wi != null) { B[wi].won++; B[wi].wonValue += val }
+    }
   }
   const out = B.map((b) => {
     const spend = b.metaSpend + b.gSpend, leads = b.metaLeads + b.gConv
@@ -2480,7 +2492,8 @@ export default async (req) => {
     const cw = CLIENTS[client]
     if (!cw) return json({ error: `unknown client ${client}` }, 404)
     const weeks = Math.max(2, Math.min(16, parseInt(url.searchParams.get('weeks'), 10) || 6))
-    try { const wk = await buildWeekly(cw, weeks, key); return json({ scope: 'weekly', client, weeks, ...wk }, 200, true) }
+    const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
+    try { const wk = await buildWeekly(cw, weeks, key, wonBasis); return json({ scope: 'weekly', client, weeks, wonBasis, ...wk }, 200, true) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

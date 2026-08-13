@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.236.0 — 2026-08-13 · `PENDING` — Won-basis toggle: Weekly board done (rollout complete)
+- The **Weekly Traffic Light** board now honours the Won-basis toggle — the last surface. In **Closed** mode, each
+  week's Won / Won Value is bucketed by the deal's **won-date** (a deal created months earlier counts in the week it
+  was banked), fetching ~180 extra days of opportunities to catch earlier-created wins; leads / booked / shown stay
+  created-basis. A basis chip sits on the Won Value tile.
+- With this, the **Won basis toggle covers every surface**: Users, Agency Overview, Caalano360 / Executive, and Weekly.
+  Added `opportunity_won_at` (last status-change date) to the direct-API opportunity adapter to power the closed-basis
+  weekly bucketing.
+
 ## v3.235.0 — 2026-08-13 · `PENDING` — Google ad-group ID/ad-ID auto-resolve (Meta left as-is by name)
 - **Google Ads:** the ad-group green Caalano360 columns now resolve the CRM's numeric UTM to the live ad-group name —
   robustly, whether the client's Google template put the **ad-group ID** or the **ad ID** in `utm_content`. Added a

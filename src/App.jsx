@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.235.0'
+const APP_VERSION = '3.236.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1359,17 +1359,17 @@ function MdText({ text }) {
     return <p key={i}>{bold(t)}</p>
   })}</div>
 }
-function useWeekly(clientId, weeks, nonce = 0) {
+function useWeekly(clientId, weeks, nonce = 0, wonBasis = 'closed') {
   const [state, setState] = useState({ status: 'loading', data: null })
   useEffect(() => {
     if (!clientId) return
     let alive = true; setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=weekly&client=${clientId}&weeks=${weeks}${nonce ? `&_r=${nonce}` : ''}`)
+    fetch(`/.netlify/functions/windsor?scope=weekly&client=${clientId}&weeks=${weeks}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: j && j.weeks ? 'ok' : 'err', data: j }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [clientId, weeks, nonce])
+  }, [clientId, weeks, nonce, wonBasis])
   return state
 }
 function WkTile({ label, value, num, target, goodWhenDown = true }) {
@@ -1398,11 +1398,11 @@ function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, c
     </ResponsiveContainer>
   )
 }
-function WeeklyTab({ rows, currency, nonce }) {
+function WeeklyTab({ rows, currency, nonce, wonBasis = 'closed' }) {
   const clients = [...rows].sort((a, b) => a.name.localeCompare(b.name))
   const [cid, setCid] = useState(clients[0]?.id || null)
   const [weeks, setWeeks] = useState(6)
-  const wk = useWeekly(cid, weeks, nonce)
+  const wk = useWeekly(cid, weeks, nonce, wonBasis)
   const kpis = cid ? loadKpis(cid) : {}
   const money = (v) => fmtCurrency(v, currency)
   const clientName = clients.find((c) => c.id === cid)?.name || '-'
@@ -1468,7 +1468,7 @@ function WeeklyTab({ rows, currency, nonce }) {
                   <WkTile label="All Leads CPL" value={aCpl ? money(aCpl) : '-'} num={aCpl} target={kpis.cpl} goodWhenDown />
                   <WkTile label="Booking Rate" value={fmtPct(bookRate, 1)} num={bookRate} target={kpis.bookingRate} goodWhenDown={false} />
                   <WkTile label="CPA (cost/won)" value={cpa ? money(cpa) : '-'} num={cpa} target={kpis.cpa} goodWhenDown />
-                  <WkTile label="Won Value" value={money(T.wonValue)} num={null} />
+                  <WkTile label={<>Won Value <WonBasisChip basis={wonBasis} /></>} value={money(T.wonValue)} num={null} />
                   <WkTile label="Avg Deal Value" value={T.won ? money(avgDeal) : '-'} num={null} />
                   <WkTile label="ROAS" value={`${roas.toFixed(2)}×`} num={null} />
                 </div>
@@ -11915,7 +11915,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
-          {(curView === 'overview' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
+          {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
           {curView !== 'monthly' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => { setPicked(null); setView(isViewer ? 'clients' : 'overview') }}>

@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.238.0 — 2026-08-13 · `PENDING` — Google Ads view: ad-level (Ad ID) table with labels + friendly names
+- New **Ads** table in the Google Ads view (below Ad groups), one row per `ad_id`, **scoped to the drilled-into
+  campaign / ad group** so you can see exactly which ads belong to which ad group. Full metrics + Conv. rate + green
+  Caalano360 columns (matched on `utm_content`, which usually carries the ad ID).
+- Google Search RSAs have no creative name, so each ad is labelled by (in order): a **friendly name you set**, the
+  **Google Ads label** pulled from the Windsor connector (if exposed), or the raw ad ID. Set a name inline with the
+  ✎ button on any ad row — stored per client, syncs across devices, and overrides the label.
+- Backend: `buildGoogle` now pulls ad-level rows and a guarded ad-labels query from Windsor (falls back silently if
+  the connector doesn't expose labels); new `adnames` settings section persists the friendly-name overrides.
+
 ## v3.237.0 — 2026-08-13 · `PENDING` — Google Ads view: Conversion Rate, pagination, fully-dynamic drill-down, landing-page reorder
 - **Conversion Rate (conv / clicks)** is now a standard column across **every** Google Ads table — campaigns, ad groups,
   keywords, match type, search terms and landing pages — sortable like the rest.

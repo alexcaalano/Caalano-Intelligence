@@ -2822,3 +2822,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .gdiag-grid > div { background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; }
 .gdiag-grid b { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
 .gdiag-grid span { font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; word-break: break-word; }
+.ad-id { color: var(--muted); font-variant-numeric: tabular-nums; }
+.ad-lbl { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .03em; }
+.ad-ren { background: none; border: none; cursor: pointer; color: var(--faint); font-size: 12px; padding: 0 2px; opacity: .55; }
+.ad-ren:hover { opacity: 1; color: var(--brand); }

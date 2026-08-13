@@ -1188,7 +1188,7 @@ async function fetchGeo(accountId, from, to, preset, key) {
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
-  const [cg, kw, st, dy, prev, agDay, stDay, ca, geo, lp] = await Promise.all([
+  const [cg, kw, st, dy, prev, agDay, stDay, ca, geo, lp, ads, adLabelRows] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
@@ -1201,6 +1201,15 @@ async function buildGoogle(accountId, from, to, preset, key) {
     // Landing Page Performance (Google's expanded landing-page report). Its own
     // query so a failure can't blank the campaigns/keywords; aggregated by URL.
     windsorFetch('google_ads', ['account_id', 'expanded_landing_page_view_expanded_final_url', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    // Ad-level (ad_id) rows — Google Search RSAs have no creative name, so the UI
+    // labels them by ad ID (+ a friendly-name map from Settings) and scopes them
+    // to the drilled-into campaign / ad group. Own query so a field mismatch can't
+    // blank the rest of the Google view.
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    // Google Ads labels applied to each ad (if the connector exposes them) → used
+    // as the ad's friendly name automatically. Own guarded query: if the `labels`
+    // field isn't available the whole call 400s and we fall back to Settings names.
+    windsorFetch('google_ads', ['account_id', 'ad_id', 'labels'], from, to, preset, key).then(filt).catch(() => []),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
   roll.geo = geo
@@ -1218,6 +1227,26 @@ async function buildGoogle(accountId, from, to, preset, key) {
     lpM.set(url, e)
   }
   roll.landingPages = [...lpM.values()].filter((x) => x.cost > 0 || x.clicks > 0).sort((a, b) => b.cost - a.cost).slice(0, 200)
+  // Ads keyed by (campaign, ad group, ad id) so each ad belongs to exactly one
+  // ad group — this lets the UI filter ads by the drilled-into campaign/ad group.
+  const adM = new Map()
+  for (const r of ads) {
+    const id = r.ad_id != null && String(r.ad_id).trim() ? String(r.ad_id).trim() : null; if (!id) continue
+    const camp = r.campaign || null, ag = r.ad_group_name || null; const k = camp + '|' + ag + '|' + id
+    const e = adM.get(k) || { id, campaign: camp, adGroup: ag, cost: 0, impressions: 0, clicks: 0, conversions: 0 }
+    e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions)
+    adM.set(k, e)
+  }
+  roll.ads = [...adM.values()].filter((x) => x.cost > 0 || x.clicks > 0).sort((a, b) => b.cost - a.cost).slice(0, 500)
+  // Ad labels from Google Ads (if the connector exposes them): { ad_id -> label }.
+  // Read a few possible field spellings defensively; Settings names override these.
+  const adLabels = {}
+  for (const r of (adLabelRows || [])) {
+    const id = r.ad_id != null && String(r.ad_id).trim() ? String(r.ad_id).trim() : null; if (!id) continue
+    const lab = String(r.labels ?? r.label ?? r.ad_labels ?? '').trim().replace(/[[\]"]/g, '').replace(/\s*,\s*/g, ', ').trim()
+    if (lab && !adLabels[id]) adLabels[id] = lab
+  }
+  roll.adLabels = adLabels
   // Detailed rows (campaign, ad group, action) so the UI can filter them to the
   // drilled-into campaign / ad group; the front-end aggregates by action name.
   roll.conversionActions = ca.map((r) => ({ campaign: r.campaign || null, adGroup: r.ad_group_name || null, name: r.conversion_action_name, category: titleCase(String(r.conversion_action_category || '').replace(/_/g, ' ')), conversions: num(r.conversions), allConversions: num(r.all_conversions), value: num(r.conversions_value) })).filter((r) => r.name && r.allConversions > 0).slice(0, 3000)

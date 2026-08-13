@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.237.0'
+const APP_VERSION = '3.238.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2041,11 +2041,14 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [sSort, onSSort] = useSort('cost')
   const [lpSort, onLpSort] = useSort('cost')
   const [mtSort, onMtSort] = useSort('cost')
-  // Pagination (20 per page) for the long keyword + search-term tables.
+  const [adSort, onAdSort] = useSort('cost')
+  useSettingsSync() // re-render when an ad's friendly name is saved
+  // Pagination (20 per page) for the long keyword + search-term + ad tables.
   const [kwPage, setKwPage] = useState(0)
   const [stPage, setStPage] = useState(0)
+  const [adPage, setAdPage] = useState(0)
   // Reset to the first page whenever the cross-dimension filter changes.
-  useEffect(() => { setKwPage(0); setStPage(0) }, [sel.campaign, sel.adGroup, sel.keyword, sel.matchType])
+  useEffect(() => { setKwPage(0); setStPage(0); setAdPage(0) }, [sel.campaign, sel.adGroup, sel.keyword, sel.matchType])
   const [kePipe, setKePipe] = useState(null)
   useEffect(() => { setKePipe(null) }, [pipe])
   const [keyDrill, setKeyDrill] = useState(null)
@@ -2136,6 +2139,17 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const stSorted = sortRows(searchTerms.map((s) => ({ ...s, ctr: rate(s.clicks, s.impressions), cvr: rate(s.conversions, s.clicks), costConv: s.conversions ? s.cost / s.conversions : null })), sSort)
   const stPages = Math.max(1, Math.ceil(stSorted.length / PAGE)); const stPg = Math.min(stPage, stPages - 1)
   const stView = stSorted.slice(stPg * PAGE, stPg * PAGE + PAGE)
+  // Ads (ad_id level): scoped to the drilled campaign/ad group, named by the
+  // Settings override → Google Ads label → raw ID, with per-ad CRM outcomes
+  // (utm_content usually carries the ad ID) for the green Caalano360 columns.
+  const adNames = loadAdNames(clientId)
+  const adLabels = g.adLabels || {}
+  const adNameOf = (id) => adNames[id] || adLabels[id] || null
+  const oAdG = mkOutcomeMap((A && A.byContent) || [])
+  const adsFiltered = (g.ads || []).filter((a) => baseCA(a))
+  const adSorted = sortRows(adsFiltered.map((a) => ({ ...gMetrics(a), name: adNameOf(a.id) || a.id, ...o360Fields(oAdG.get(unorm(a.id)), a.cost, a.conversions, o360cols) })), adSort)
+  const adPages = Math.max(1, Math.ceil(adSorted.length / PAGE)); const adPg = Math.min(adPage, adPages - 1)
+  const adView = adSorted.slice(adPg * PAGE, adPg * PAGE + PAGE)
   // Key events for the Google channel: configured pipeline stages + booked
   // calendars, scored against Google-attributed CRM data and Google spend.
   const gCh = A && A.channels && A.channels.google
@@ -2315,6 +2329,12 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           </details>
         )
       })()}
+      {(g.ads && g.ads.length > 0) && <>
+        <div className="lvl-title">Ads <span className="sub">· {adsFiltered.length}{selLabel ? ` in ${selLabel}` : ''} · Search RSAs have no name, so each shows its Google Ads label or a name you set (✎){has360 ? ' · green = CRM outcomes (utm_content)' : ''}</span></div>
+        <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><SortTh k="name" sort={adSort} on={onAdSort}>Ad</SortTh><SortTh k="adGroup" sort={adSort} on={onAdSort}>Ad group</SortTh><SortTh k="cost" sort={adSort} on={onAdSort}>Cost</SortTh><SortTh k="impressions" sort={adSort} on={onAdSort}>Impr.</SortTh><SortTh k="ctr" sort={adSort} on={onAdSort}>CTR</SortTh><SortTh k="cpc" sort={adSort} on={onAdSort}>CPC</SortTh><SortTh k="conversions" sort={adSort} on={onAdSort}>Conv.</SortTh><SortTh k="cvr" sort={adSort} on={onAdSort}>Conv. rate</SortTh><SortTh k="costConv" sort={adSort} on={onAdSort}>Cost/conv</SortTh>{has360 && <O360Head sort={adSort} on={onAdSort} cols={o360cols} />}</tr></thead>
+          <tbody>{adView.map((a) => { const nm = adNameOf(a.id); return (<tr key={a.campaign + '|' + a.adGroup + '|' + a.id}><td>{nm ? <b>{nm}</b> : <span className="ad-id" title={a.id}>{a.id}</span>}{nm && adNames[a.id] ? null : nm ? <span className="ad-lbl"> · label</span> : null} <button className="ad-ren" title="Set a friendly name for this ad" onClick={() => { const v = window.prompt('Friendly name for Google ad ' + a.id, adNames[a.id] || adLabels[a.id] || ''); if (v !== null) setAdName(clientId, a.id, v) }}>✎</button></td><td style={{ color: 'var(--muted)', fontSize: 12 }} title={a.campaign}>{a.adGroup || '-'}</td>{GCells(a)}{has360 && o360Cells(a, currency, o360cols)}</tr>) })}</tbody></table></div>
+        <Pager page={adPg} pages={adPages} onPage={setAdPage} total={adsFiltered.length} unit="ads" />
+      </>}
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms{has360 ? ' · green = CRM outcomes (utm_term)' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={10} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={10} cols={o360cols} />}<tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="cvr" sort={kSort} on={onKSort}>Conv. rate</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh>{has360 && <O360Head sort={kSort} on={onKSort} cols={o360cols} />}</tr></thead>
         <tbody>{kwView.map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{fmtPct(rate(k.conversions, k.clicks), 1)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '-'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '-' : k.qs}</span></td>{has360 && o360Cells(k, currency, o360cols)}</tr>))}</tbody></table></div>
@@ -2649,9 +2669,10 @@ const SEED_OPTLOG = {
 const CURATOR_KEY = 'caalano_curator_board'
 const PROFILE_KEY = 'caalano_client_profile'
 const DAILYPERF_KEY = 'caalano_dailyperf'
+const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendlyName } } — friendly names for Google Ad IDs
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -2672,8 +2693,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -2846,6 +2867,16 @@ function saveAliases(clientId, level, map) {
   const nx = { ...raw, [level]: map }
   SETTINGS.aliases = { ...SETTINGS.aliases, [clientId]: nx }
   writeLS(ALIASES_KEY, SETTINGS.aliases); saveSettingsRemote({ aliases: { [clientId]: nx } }); bumpSettings()
+}
+// Friendly names for Google Ad IDs, per client: { ad_id -> name }. Google Search
+// RSAs have no name, so the ad table shows the Google Ads label (from Windsor) or
+// a name typed here; this override wins over the label.
+function loadAdNames(clientId) { return (SETTINGS.adnames && SETTINGS.adnames[clientId]) || {} }
+function setAdName(clientId, adId, name) {
+  const cur = { ...loadAdNames(clientId) }
+  if (name && name.trim()) cur[adId] = name.trim(); else delete cur[adId]
+  SETTINGS.adnames = { ...(SETTINGS.adnames || {}), [clientId]: cur }
+  writeLS(ADNAMES_KEY, SETTINGS.adnames); saveSettingsRemote({ adnames: { [clientId]: cur } }); bumpSettings()
 }
 function setAlias(clientId, level, oldName, currentName) {
   const cur = loadAliases(clientId); const m = { ...(cur[level] || {}) }

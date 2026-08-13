@@ -17,6 +17,10 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.213.1 — 2026-08-12 · `PENDING` — Daily graph: make the Google stacked bar a distinct light blue
+- Changed the Google segment of the stacked results bar (and its tooltip dot) from violet to a light sky
+  blue so it's clearly distinguishable from Meta's indigo.
+
 ## v3.213.0 — 2026-08-12 · `PENDING` — Daily graph: stacked Meta/Google bars + Google conversion-action drill
 - **The 28-day daily graph now stacks Meta vs Google results** (two colours) in the Blended view for
   two-channel clients, so you can see at a glance which channel is driving the conversions. The hover card

@@ -2704,7 +2704,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 /* Google conversion-actions drill in the source table */
 .tr-src-click { cursor: pointer; }
 .tr-src-click:hover td { background: var(--panel-2, rgba(127,127,127,.05)); }
-.tr-src-more { font-size: 10px; color: #8b5cf6; font-weight: 700; margin-left: 8px; }
+.tr-src-more { font-size: 10px; color: #0ea5e9; font-weight: 700; margin-left: 8px; }
 .tr-src-drillrow td { padding: 0 !important; background: transparent; }
 .tr-src-drillbox { padding: 8px 4px 4px; }
 /* Toggle switch (Settings) */

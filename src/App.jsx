@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.213.0'
+const APP_VERSION = '3.213.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -899,7 +899,7 @@ function TrendGraph({ daily, eff, currency, hasMeta, hasGoogle }) {
       <div className="tr-gtip">
         <div className="tr-gtip-d">{label}</div>
         <div>Results: <b>{fmtNumber(p.results)}</b></div>
-        {stack ? <div className="tr-gtip-split"><span className="tr-gtip-dot" style={{ background: '#4f7cff' }} />Meta <b>{fmtNumber(p.metaR)}</b> · <span className="tr-gtip-dot" style={{ background: '#8b5cf6' }} />Google <b>{fmtNumber(p.gR)}</b></div> : null}
+        {stack ? <div className="tr-gtip-split"><span className="tr-gtip-dot" style={{ background: '#4f7cff' }} />Meta <b>{fmtNumber(p.metaR)}</b> · <span className="tr-gtip-dot" style={{ background: '#38bdf8' }} />Google <b>{fmtNumber(p.gR)}</b></div> : null}
         <div>Spend: <b>{fmtCurrency(p.spend, currency)}</b></div>
         {p.cpl != null ? <div>Cost / result: <b>{fmtCurrency(p.cpl, currency)}</b></div> : null}
         {(p.booked > 0 || p.won > 0) ? <div className="tr-gtip-ke">📅 Booked: <b>{fmtNumber(p.booked)}</b>{p.won > 0 ? <> · 🏆 Won: <b>{fmtNumber(p.won)}</b></> : null}</div> : null}
@@ -918,7 +918,7 @@ function TrendGraph({ daily, eff, currency, hasMeta, hasGoogle }) {
           <Legend wrapperStyle={{ fontSize: 11 }} />
           {stack ? [
             <Bar key="m" yAxisId="l" dataKey="metaR" name="Meta results" stackId="r" fill="#4f7cff" maxBarSize={16} />,
-            <Bar key="g" yAxisId="l" dataKey="gR" name="Google results" stackId="r" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={16} />,
+            <Bar key="g" yAxisId="l" dataKey="gR" name="Google results" stackId="r" fill="#38bdf8" radius={[3, 3, 0, 0]} maxBarSize={16} />,
           ] : <Bar yAxisId="l" dataKey="results" name="Results" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={16} />}
           <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#12b886" strokeWidth={2} dot={false} />
           <Line yAxisId="r" dataKey="cpl" name="Cost / result" stroke="#ec4899" strokeWidth={2} dot={false} />

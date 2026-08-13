@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.231.0 — 2026-08-13 · `PENDING` — Auto-resolve Google/Meta campaign IDs → names for Caalano360 attribution
+- Google (and Meta) UTMs usually carry the numeric **campaign ID** (e.g. `utm_campaign=24053934849`), not the name —
+  so CRM outcomes keyed by that ID never matched the ad tables (keyed by name) and the **Caalano360 outcome columns
+  came up empty**. Now the attribution feed pulls Windsor's **`campaign_id ↔ campaign name`** pairing and hands the UI a
+  `{id → name}` map, which auto-folds those IDs into the live campaign name. No manual linking, and it self-updates as
+  campaigns change.
+- Applied to the Meta and Google Caalano360 outcome columns, and to the attribution diagnostics (a resolved ID no longer
+  shows as "unmatched"). The manual **UTM-aliases** editor still wins on conflict, as the override for genuinely orphaned
+  UTMs (e.g. a deleted campaign whose ID still has historical leads).
+
 ## v3.230.0 — 2026-08-13 · `PENDING` — Google Ads: Landing Page Performance (above Keywords)
 - The **Google Ads** view now pulls **Landing Page Performance** — a new section above Keywords showing which
   destination **pages** the budget drove traffic to, with cost, impressions, CTR, clicks, conversions and cost/conv

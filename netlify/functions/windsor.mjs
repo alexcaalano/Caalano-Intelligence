@@ -3314,7 +3314,21 @@ export default async (req) => {
     try {
       const pipeline = url.searchParams.get('pipeline') || null
       const fn = url.searchParams.get('debug') ? sampleAttribution : buildAttribution
-      const attribution = await fn(c.ghl, from, to, pipeline ? { pipeline } : {})
+      // Google/Meta UTMs often carry the numeric campaign ID (e.g. utm_campaign=
+      // 24053934849), not the name — so CRM outcomes keyed by that ID never match
+      // the ad tables (keyed by name). Windsor returns campaign_id alongside the
+      // campaign name, so pull that pairing and hand the UI a {id -> name} map to
+      // auto-resolve the IDs. Own queries, each .catch → nothing blanks attribution.
+      const filtG = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, c.google))
+      const filtM = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, c.meta))
+      const [attribution, ggIds, fbIds] = await Promise.all([
+        fn(c.ghl, from, to, pipeline ? { pipeline } : {}),
+        c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
+        c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id'], from, to, preset, key).then(filtM).catch(() => []) : Promise.resolve([]),
+      ])
+      const campIdMap = {}
+      for (const r of [...ggIds, ...fbIds]) { const id = String(r.campaign_id ?? '').trim(); const nm = r.campaign; if (id && nm && !campIdMap[id]) campIdMap[id] = nm }
+      attribution.campIdMap = campIdMap
       return json({ client, channel, period: { from, to, preset }, attribution }, 200, !url.searchParams.get('debug'))
     } catch (e) { return json({ connected: true, error: String(e.message || e) }, 502) }
   }

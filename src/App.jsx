@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.230.0'
+const APP_VERSION = '3.231.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1665,7 +1665,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
     if (!creColsCache[k]) creColsCache[k] = buildO360Cols(keyEventsForPipe(loadKeyEvents(clientId), pid || 'all'), stagePos, calNames)
     return { cols: creColsCache[k], pid }
   }
-  const oCamp = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign)
+  const oCamp = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign, A && A.campIdMap)
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
   // not utm_term - so match ad-set rows against byMedium. Aliases fold renamed
   // ad sets' old-UTM leads into the current name.
@@ -2066,7 +2066,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const stagePos = stagePosMap([...(allPipes || []), ...((A && A.channels && A.channels.all && A.channels.all.pipelines) || [])])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
-  const oCampG = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign)
+  const oCampG = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign, A && A.campIdMap)
   const oAgG = mkOutcomeMap(A && A.byTerm)
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   const costPerConv = t.conversions ? t.cost / t.conversions : 0
@@ -2804,8 +2804,16 @@ function applyAliases(arr, aliasMap) {
   }
   return order.map((k) => byCanon.get(k))
 }
-// mkOutcomeMap with a client's aliases for a level applied first.
-function aliasedOutcomeMap(clientId, level, arr) { return mkOutcomeMap(applyAliases(arr, loadAliases(clientId)[level])) }
+// mkOutcomeMap with a client's aliases for a level applied first. `autoMap`
+// ({ rawUtmValue -> currentName }) is an automatically-derived fold applied
+// BEFORE the manual aliases (manual wins on conflict) — used to resolve numeric
+// Google/Meta campaign IDs in utm_campaign to their live campaign name, from
+// Windsor's campaign_id↔name pairing, so the Caalano360 outcome columns match.
+function aliasedOutcomeMap(clientId, level, arr, autoMap) {
+  const manual = loadAliases(clientId)[level] || {}
+  const merged = autoMap && Object.keys(autoMap).length ? { ...autoMap, ...manual } : manual
+  return mkOutcomeMap(applyAliases(arr, merged))
+}
 // Pull the spreadsheet id + tab gid out of a Google Sheets URL (gid defaults to 0).
 function parseSheetRef(url) {
   const m = String(url || '').match(/\/spreadsheets\/d\/([a-zA-Z0-9\-_]+)/)
@@ -6502,11 +6510,15 @@ function AttributionDiagnostics({ attribData, camps, currency }) {
   if (!attribData || !camps || !camps.length) return null
   const money = (v) => fmtCurrency(v, currency)
   const badge = (s) => <span className="src-badge" style={{ background: s === 'Meta' ? '#4f7cff' : '#12b886' }}>{s === 'Meta' ? 'M' : 'G'}</span>
-  const oCamp = mkOutcomeMap(attribData.byCampaign)
+  // Auto-fold numeric Google/Meta campaign IDs in utm_campaign to their live name
+  // first (from Windsor's campaign_id↔name pairing), so IDs that resolve to a real
+  // campaign aren't flagged as "unmatched" here — only genuinely orphaned UTMs are.
+  const byCampaign = applyAliases(attribData.byCampaign, attribData.campIdMap)
+  const oCamp = mkOutcomeMap(byCampaign)
   const adNames = new Set(camps.map((cc) => unorm(cc.name)).filter(Boolean))
   const unmatchedAd = camps.filter((cc) => cc.spend > 0 && !oCamp.has(unorm(cc.name))).sort((a, z) => z.spend - a.spend)
-  const notSet = (attribData.byCampaign || []).find((x) => x.name === '(not set)') || null
-  const unmatchedUtm = (attribData.byCampaign || []).filter((x) => x.name !== '(not set)' && x.leads > 0 && !adNames.has(unorm(x.name))).sort((a, z) => (z.won - a.won) || (z.revenue - a.revenue) || (z.leads - a.leads))
+  const notSet = (byCampaign || []).find((x) => x.name === '(not set)') || null
+  const unmatchedUtm = (byCampaign || []).filter((x) => x.name !== '(not set)' && x.leads > 0 && !adNames.has(unorm(x.name))).sort((a, z) => (z.won - a.won) || (z.revenue - a.revenue) || (z.leads - a.leads))
   const lostRev = unmatchedUtm.reduce((s, x) => s + x.revenue, 0) + (notSet ? notSet.revenue : 0)
   const gapSpend = unmatchedAd.reduce((s, x) => s + x.spend, 0)
   if (!unmatchedAd.length && !unmatchedUtm.length && !(notSet && notSet.leads)) return null

@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.224.0 — 2026-08-13 · `PENDING` — CRM data moves to the direct GoHighLevel API (blend / Executive / Client Update / Weekly)
+- The **Caalano360 blend**, **Executive** health score, **Client Update** and the **Weekly Traffic Light** board now
+  read their CRM opportunities, pipelines and user names **straight from the GoHighLevel API** instead of Windsor's
+  GoHighLevel feed. This means:
+  - **No sync lag** — a just-linked client (e.g. Quad Care) shows correct CRM numbers immediately, rather than waiting
+    for Windsor to backfill the account.
+  - **Numbers reconcile** — the blend's leads / booked / won now match the CRM tab (both count "created in the window"
+    in the client's timezone). Previously the blend used Windsor's broader "opportunity in period" basis, so the two
+    could disagree for the same client and range.
+- Implemented via direct-API shape adapters (`ghlOpportunityRows` / `ghlPipelineRows` / `ghlUserRows`) that return the
+  exact row shape the builders already consumed, so the aggregation logic is unchanged.
+- Meta / Google spend still comes from Windsor. The two **agency-wide** views (the Overview rollup and the Client
+  Trends tab) stay on Windsor for now — the Trends tab already uses the direct API as its primary source when a client's
+  CRM is connected, and the Overview rollup needs the daily-snapshot path to fan out across every account within the
+  function time limit (planned next).
+- Note: Caalano360 / Executive / Weekly figures may shift slightly with this change — that shift is them becoming
+  consistent with the CRM tab.
+
 ## v3.223.0 — 2026-08-13 · `PENDING` — Key events: pipeline stages load for just-linked clients; Settings client editor opens on Summary
 - **Pipeline stages now load straight from GoHighLevel** in the Key-events editor, instead of only from Windsor. Windsor
   only returns a client's pipelines once it has synced opportunity data for the account, so a **just-linked client**

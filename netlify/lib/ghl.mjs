@@ -489,6 +489,41 @@ export async function listPipelines(locationId) {
     stages: (p.stages || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s, i) => ({ id: s.id, name: s.name, pos: s.position ?? i })),
   }))
 }
+// --- Direct-API shape adapters -------------------------------------------
+// Return GoHighLevel data in the SAME row shape Windsor's `gohighlevel`
+// connector produces, so the aggregation builders (blend, weekly, …) can read
+// straight from the API instead of Windsor — no builder-logic changes, and no
+// waiting for Windsor to backfill a newly-linked account. Single-account, so no
+// account_id filtering is needed downstream.
+export async function ghlOpportunityRows(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const opps = await allOpportunities(locTok, locationId, from, to, 3000)
+  return opps.map((o) => ({
+    account_id: locationId,
+    opportunity_status: o.status || '',
+    opportunity_pipeline_id: o.pipelineId || null,
+    opportunity_pipeline_stage_id: o.pipelineStageId || null,
+    opportunity_monetary_value: num(o.monetaryValue),
+    opportunity_created_at: o.createdAt || null,
+    opportunity_assigned_to: o.assignedTo || null,
+    opportunity_source: o.source || o.opportunitySource || null,
+  }))
+}
+export async function ghlPipelineRows(locationId) {
+  const locTok = await locationToken(locationId)
+  const pipes = await fetchPipelines(locTok, locationId)
+  return (pipes || []).map((p) => ({
+    account_id: locationId,
+    pipeline_id: p.id,
+    pipeline_name: p.name,
+    pipeline_stages: (p.stages || []).map((s) => ({ id: s.id, name: s.name, position: s.position })),
+  }))
+}
+export async function ghlUserRows(locationId) {
+  const locTok = await locationToken(locationId)
+  const j = await ghlGet(locTok, '/users/', { locationId }).catch(() => ({ users: [] }))
+  return (j.users || []).map((u) => ({ account_id: locationId, user_id: u.id || u._id, user_name: u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null }))
+}
 
 // Per-form performance: group leads by the form they filled out (Meta Lead
 // Forms by their real facebookFormName, GHL/website forms by name) and tie each

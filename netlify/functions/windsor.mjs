@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1085,11 +1085,12 @@ async function buildWeekly(c, weeks, key) {
   const endSun = new Date(anchorMon); endSun.setUTCDate(endSun.getUTCDate() + 6) // last completed Sunday
   const end = dstr(endSun)
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
+  // CRM (opportunities + pipelines) straight from the GoHighLevel API; Meta / Google from Windsor.
   const [fb, gg, opps, pipes] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], start, end, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], start, end, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    c.ghl ? ghlOpportunityRows(c.ghl, start, end).catch(() => []) : Promise.resolve([]),
+    c.ghl ? ghlPipelineRows(c.ghl).catch(() => []) : Promise.resolve([]),
   ])
   const B = weekStarts.map((w) => ({ week: w, weekNum: isoWeek(w), metaSpend: 0, gSpend: 0, metaLeads: 0, gConv: 0, crmLeads: 0, booked: 0, shown: 0, won: 0, wonValue: 0 }))
   for (const r of fb) { const i = wkIndex.get(mondayOf(String(r.date || '').slice(0, 10))); if (i == null) continue; B[i].metaSpend += num(r.spend); B[i].metaLeads += fbLeads(r) }
@@ -1263,21 +1264,24 @@ function campAgg(rows, source, convField) {
 async function buildBlend(c, from, to, preset, key) {
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
   const pr = prevRange(from, to)
+  // GHL opportunities / pipelines / users come straight from the GoHighLevel API
+  // (not Windsor), so the blend reconciles with the CRM tab and works the moment a
+  // client is linked (Windsor lags on newly-connected accounts). Meta / Google
+  // still come from Windsor. All fired in parallel so wall-clock ≈ the slowest one.
   const [fb, gg, oppsRaw, pipes, userRows, pFb, pGg, pOppsRaw] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at', 'opportunity_assigned_to'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], from, to, preset, key).then(filt(c.ghl)) : Promise.resolve([]),
-    c.ghl ? windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    c.ghl ? ghlOpportunityRows(c.ghl, from, to).catch(() => []) : Promise.resolve([]),
+    c.ghl ? ghlPipelineRows(c.ghl).catch(() => []) : Promise.resolve([]),
+    c.ghl ? ghlUserRows(c.ghl).catch(() => []) : Promise.resolve([]),
     pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
     pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
-    pr.from && c.ghl ? windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_monetary_value', 'opportunity_created_at'], pr.from, pr.to, null, key).then(filt(c.ghl)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.ghl ? ghlOpportunityRows(c.ghl, pr.from, pr.to).catch(() => []) : Promise.resolve([]),
   ])
-  // Windsor's GoHighLevel feed returns opportunities on a broader basis than
-  // "created in period", so a short window (e.g. Today) over-counts leads vs the
-  // direct API. Filter to opportunities created inside the window, in the
-  // client's timezone, so the blend's leads / per-user / per-pipeline counts
-  // reconcile with the Meta and CRM tabs.
+  // Opportunities now come straight from the GoHighLevel API, already filtered to
+  // "created inside the window" in the client's timezone, so this is a defensive
+  // no-op that keeps the counts reconciled with the Meta and CRM tabs (and would
+  // still clamp any out-of-window row that slipped through).
   let opps = oppsRaw, pOpps = pOppsRaw
   if (c.ghl && from && to) {
     try {
@@ -2243,7 +2247,7 @@ export default async (req) => {
     try {
       const [md, usersRows] = await Promise.all([
         monthlyDeals(cc.ghl, from, to),
-        windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,cc.ghl))).catch(() => []),
+        ghlUserRows(cc.ghl).catch(() => []),
       ])
       const uName = {}; for (const u of usersRows) if (u.user_id) uName[u.user_id] = u.user_name
       const nm = (id) => uName[id] || (id === 'unassigned' ? 'Unassigned' : 'User ' + String(id).slice(-4))
@@ -3166,7 +3170,7 @@ export default async (req) => {
       // Pull CRM + user-name lookup + won-in-period (realised revenue) in parallel.
       const [crm, usersRows, wonClosed] = await Promise.all([
         buildCrm(c.ghl, from, to),
-        windsorFetch('gohighlevel', ['account_id', 'user_id', 'user_name'], from, to, preset, key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,c.ghl))).catch(() => []),
+        ghlUserRows(c.ghl).catch(() => []),
         (from && to) ? wonInPeriod(c.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
       crm.wonClosed = wonClosed

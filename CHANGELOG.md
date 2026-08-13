@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.213.0 — 2026-08-12 · `PENDING` — Daily graph: stacked Meta/Google bars + Google conversion-action drill
+- **The 28-day daily graph now stacks Meta vs Google results** (two colours) in the Blended view for
+  two-channel clients, so you can see at a glance which channel is driving the conversions. The hover card
+  shows the Meta / Google split for each day. Single-channel and Meta/Google-only views keep the single bar.
+- **Google conversion-action drill**: on a client tile, the “Google Ads” row in the *Source · last 28 days*
+  table is now clickable — it expands to show every Google **conversion action** behind the Results number
+  (primary conversions, all-conversions, and % of total), so you can see exactly what’s being counted.
+
 ## v3.212.1 — 2026-08-12 · `PENDING` — Remove “Explain with AI” from Daily Performance movers
 - Removed the “🤖 Explain with AI” button (and its output box) from the Biggest movers panel on the Daily
   Performance tab. The rules-based “what moved” reasons and per-mover creative breakdown remain.

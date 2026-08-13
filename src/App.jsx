@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.212.1'
+const APP_VERSION = '3.213.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -875,12 +875,16 @@ function TrendCell({ label, value, cur, prev, goodWhenDown = true, sub, onClick,
 // 28-day daily graph for one client + channel: ad spend (line), ad-reported
 // results (bars) and cost per result (line). Ad-reported = the campaign's
 // optimisation event (Meta leads / Google conversions), matching Ads Manager.
-function TrendGraph({ daily, eff, currency }) {
+function TrendGraph({ daily, eff, currency, hasMeta, hasGoogle }) {
+  // In the blended view for a two-channel client, split the Results bar into stacked
+  // Meta + Google segments so you can see which channel is driving the conversions.
+  const stack = eff === 'blended' && hasMeta && hasGoogle
   const data = (daily || []).map((d) => {
     const spend = eff === 'meta' ? d.metaSpend : eff === 'google' ? d.gSpend : (d.metaSpend + d.gSpend)
-    const results = eff === 'meta' ? d.metaLeads : eff === 'google' ? d.gConv : (d.metaLeads + d.gConv)
+    const metaR = d.metaLeads || 0, gR = d.gConv || 0
+    const results = eff === 'meta' ? metaR : eff === 'google' ? gR : (metaR + gR)
     const dt = new Date(d.date + 'T12:00')
-    return { label: dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), spend: Math.round(spend * 100) / 100, results, cpl: results ? Math.round((spend / results) * 100) / 100 : null, booked: d.booked || 0, won: d.won || 0 }
+    return { label: dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), spend: Math.round(spend * 100) / 100, results, metaR, gR, cpl: results ? Math.round((spend / results) * 100) / 100 : null, booked: d.booked || 0, won: d.won || 0 }
   })
   if (!data.some((d) => d.spend > 0 || d.results > 0)) return <div className="cap" style={{ padding: '10px 0' }}>No spend or results in the last 28 days for this channel.</div>
   // Phase 3: key events (booked calls / deals won) plotted by their fired date. A
@@ -895,6 +899,7 @@ function TrendGraph({ daily, eff, currency }) {
       <div className="tr-gtip">
         <div className="tr-gtip-d">{label}</div>
         <div>Results: <b>{fmtNumber(p.results)}</b></div>
+        {stack ? <div className="tr-gtip-split"><span className="tr-gtip-dot" style={{ background: '#4f7cff' }} />Meta <b>{fmtNumber(p.metaR)}</b> · <span className="tr-gtip-dot" style={{ background: '#8b5cf6' }} />Google <b>{fmtNumber(p.gR)}</b></div> : null}
         <div>Spend: <b>{fmtCurrency(p.spend, currency)}</b></div>
         {p.cpl != null ? <div>Cost / result: <b>{fmtCurrency(p.cpl, currency)}</b></div> : null}
         {(p.booked > 0 || p.won > 0) ? <div className="tr-gtip-ke">📅 Booked: <b>{fmtNumber(p.booked)}</b>{p.won > 0 ? <> · 🏆 Won: <b>{fmtNumber(p.won)}</b></> : null}</div> : null}
@@ -911,7 +916,10 @@ function TrendGraph({ daily, eff, currency }) {
           <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
           <Tooltip content={gTip} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar yAxisId="l" dataKey="results" name="Results" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={16} />
+          {stack ? [
+            <Bar key="m" yAxisId="l" dataKey="metaR" name="Meta results" stackId="r" fill="#4f7cff" maxBarSize={16} />,
+            <Bar key="g" yAxisId="l" dataKey="gR" name="Google results" stackId="r" fill="#8b5cf6" radius={[3, 3, 0, 0]} maxBarSize={16} />,
+          ] : <Bar yAxisId="l" dataKey="results" name="Results" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={16} />}
           <Line yAxisId="r" dataKey="spend" name="Spend" stroke="#12b886" strokeWidth={2} dot={false} />
           <Line yAxisId="r" dataKey="cpl" name="Cost / result" stroke="#ec4899" strokeWidth={2} dot={false} />
           {anyKe ? <Line yAxisId="l" dataKey="booked" name="Booked (key event)" stroke="transparent" legendType="circle" isAnimationActive={false} activeDot={false} dot={keDot} /> : null}
@@ -920,16 +928,62 @@ function TrendGraph({ daily, eff, currency }) {
     </div>
   )
 }
-function TrendSource({ w28, row, money }) {
+// Lazy-load a client's Google conversion actions over the last N days (the deep
+// Google feed carries per-action rows), aggregated by action name — so the Google
+// Results number can be broken into the conversion actions that made it up.
+function useGoogleConvActions(clientId, days) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    const dayAgo = (n) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - n); return iso(d) }
+    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=google&from=${dayAgo(days)}&to=${dayAgo(1)}`)
+      .then((r) => r.json()).then((j) => { if (alive) setSt({ status: j && j.google ? 'ok' : 'err', data: j && j.google }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, days])
+  return st
+}
+function GoogleConvDrill({ clientId, days, money }) {
+  const st = useGoogleConvActions(clientId, days)
+  if (st.status === 'loading') return <div className="tr-src-drillbox"><Spinner label="Loading Google conversion actions…" /></div>
+  if (st.status === 'err' || !st.data) return <div className="tr-src-drillbox"><span className="cap">Couldn’t load Google conversion actions.</span></div>
+  const acts = {}
+  for (const r of (st.data.conversionActions || [])) { const e = acts[r.name] = acts[r.name] || { name: r.name, category: r.category, conv: 0, all: 0 }; e.conv += r.conversions || 0; e.all += r.allConversions || 0 }
+  const rows = Object.values(acts).sort((a, b) => (b.conv - a.conv) || (b.all - a.all))
+  const totConv = rows.reduce((s, r) => s + r.conv, 0)
+  if (!rows.length) return <div className="tr-src-drillbox"><span className="cap">No Google conversion actions recorded in the last {days} days.</span></div>
+  return (
+    <div className="tr-src-drillbox">
+      <table className="mini-tbl tr-brk-tbl">
+        <thead><tr><th className="lft">Conversion action</th><th>Conversions</th><th>All conv.</th><th>% of conv.</th></tr></thead>
+        <tbody>
+          {rows.map((r) => <tr key={r.name}><td className="lft">{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '—'}</td></tr>)}
+          <tr className="tr-src-tot"><td className="lft">Total</td><td>{fmtNumber(Math.round(totConv * 10) / 10)}</td><td>{fmtNumber(Math.round(rows.reduce((s, r) => s + r.all, 0) * 10) / 10)}</td><td>100%</td></tr>
+        </tbody>
+      </table>
+      <p className="tr-brk-note cap">“Conversions” is Google’s primary/optimised count (matches the Results number); “All conv.” includes secondary actions. Account-wide over the last {days} days.</p>
+    </div>
+  )
+}
+function TrendSource({ w28, row, money, clientId, pipeId }) {
+  const [openG, setOpenG] = useState(false)
   if (!w28) return null
+  const canDrill = !!(row.hasGoogle && clientId && (!pipeId || pipeId === 'all'))
   const rows = []
-  if (row.hasGoogle) rows.push({ src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results })
-  if (row.hasMeta) rows.push({ src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results })
+  if (row.hasGoogle) rows.push({ key: 'google', src: 'Google Ads', cost: w28.google.spend, leads: w28.google.results, drill: canDrill })
+  if (row.hasMeta) rows.push({ key: 'meta', src: 'Facebook Ads', cost: w28.meta.spend, leads: w28.meta.results })
   const tot = rows.reduce((a, r) => ({ cost: a.cost + r.cost, leads: a.leads + r.leads }), { cost: 0, leads: 0 })
   const cpl = (c, l) => (l ? money(c / l) : '-')
   return (
     <table className="mini-tbl tr-src"><thead><tr><th className="lft">Source · last 28 days</th><th>Cost</th><th>Results</th><th>Cost / result</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r.src}><td className="lft">{r.src}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td></tr>)}
+      <tbody>{rows.map((r) => (
+        <React.Fragment key={r.key}>
+          <tr className={r.drill ? 'tr-src-click' : ''} onClick={r.drill ? () => setOpenG((o) => !o) : undefined} title={r.drill ? 'Click to see the Google conversion actions behind this number' : undefined}>
+            <td className="lft">{r.src}{r.drill ? <span className="tr-src-more">{openG ? '▾' : '▸'} conversion actions</span> : null}</td><td>{money(r.cost)}</td><td>{fmtNumber(Math.round(r.leads))}</td><td>{cpl(r.cost, r.leads)}</td>
+          </tr>
+          {r.drill && openG ? <tr className="tr-src-drillrow"><td colSpan={4}><GoogleConvDrill clientId={clientId} days={28} money={money} /></td></tr> : null}
+        </React.Fragment>
+      ))}
         <tr className="tr-src-tot"><td className="lft">Grand total</td><td>{money(tot.cost)}</td><td>{fmtNumber(Math.round(tot.leads))}</td><td>{cpl(tot.cost, tot.leads)}</td></tr></tbody>
     </table>
   )
@@ -1032,8 +1086,8 @@ function ClientTrend({ row, tr, currency, onPick, domId, clientId, pipeId, stage
         return <div className="tr-movers"><span className="tr-movers-lab">What moved · 7d</span>{mv.map((m, i) => <div className="tr-mover" key={i}><span className={`mov-badge sm ${m.cplPct > 0 ? 'bad' : 'good'}`}>{m.cplPct > 0 ? '▲' : '▼'} {Math.abs(m.cplPct).toFixed(0)}%</span> <b>{m.channel}</b> cost / {m.chan === 'google' ? 'conv.' : 'lead'} {money(m.cplP)} → {money(m.cpl)}: {moverReason(m)}</div>)}</div>
       })()}
       <div className="tr-row-lab" style={{ marginTop: 12 }}>28-day daily · Spend, Results &amp; Cost per Result <span className="sub">· {eff === 'blended' ? 'Meta + Google' : eff === 'meta' ? 'Meta' : 'Google'} · ad-reported{tr.hasCrm ? ' · 🟠 key events (booked) marked by day' : ''}</span></div>
-      <TrendGraph daily={tr.daily} eff={eff} currency={currency} />
-      <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} />
+      <TrendGraph daily={tr.daily} eff={eff} currency={currency} hasMeta={row.hasMeta} hasGoogle={row.hasGoogle} />
+      <TrendSource w28={wins.find((w) => w.n === 28)} row={row} money={money} clientId={clientId} pipeId={pipeId} />
     </div>
   )
 }

@@ -2698,6 +2698,15 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .tr-brk-tbl tbody tr + tr td { border-top: 1px solid var(--border); }
 .tr-brk-note { margin: 6px 0 0; font-size: 10.5px; }
 .tr-brk-src { margin-bottom: 8px; flex-wrap: wrap; }
+/* Graph tooltip Meta/Google split line */
+.tr-gtip-split { display: flex; align-items: center; gap: 5px; margin: 1px 0; }
+.tr-gtip-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+/* Google conversion-actions drill in the source table */
+.tr-src-click { cursor: pointer; }
+.tr-src-click:hover td { background: var(--panel-2, rgba(127,127,127,.05)); }
+.tr-src-more { font-size: 10px; color: #8b5cf6; font-weight: 700; margin-left: 8px; }
+.tr-src-drillrow td { padding: 0 !important; background: transparent; }
+.tr-src-drillbox { padding: 8px 4px 4px; }
 /* Toggle switch (Settings) */
 .tgl { position: relative; width: 38px; height: 22px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--border); cursor: pointer; padding: 0; flex: 0 0 auto; transition: background .14s; }
 .tgl.sm { width: 32px; height: 18px; }

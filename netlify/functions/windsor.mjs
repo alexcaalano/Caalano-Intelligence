@@ -2864,8 +2864,12 @@ export default async (req) => {
     // (possibly narrow) dashboard range hides accounts with no recent spend. That's
     // why fewer accounts showed than are actually connected. A fixed 12-month lookup
     // lists every account with any activity in the last year.
+    // 12-month window: wide enough to list accounts with any activity this year,
+    // but short enough that Windsor's per-account aggregation returns inside the
+    // ~10s function budget. A 2-year window timed out (Windsor took too long),
+    // which surfaced as "a connector is erroring" with 0 accounts.
     const dTo = new Date().toISOString().slice(0, 10)
-    const dFrom = new Date(Date.now() - 730 * 86400000).toISOString().slice(0, 10)
+    const dFrom = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
     // Capture (not swallow) Windsor connector errors so the UI can tell a broken /
     // unauthorised connector apart from a connector that simply has no accounts yet.
     let metaErr = null, googleErr = null, ga4Err = null

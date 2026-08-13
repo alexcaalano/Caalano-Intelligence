@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.241.0'
+const APP_VERSION = '3.242.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2254,7 +2254,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   // Ad groups: the CRM carries the ad-group as an ID whose UTM param varies by the
   // client's Google template (utm_medium on some, utm_content on others), so resolve
   // the ad_group_id→name map across BOTH dims — only the one holding the ID matches.
-  const oAgG = aliasedOutcomeMap(clientId, 'medium', [...((A && A.byMedium) || []), ...((A && A.byContent) || [])], A && A.mediumIdMap)
+  const oAgG = aliasedOutcomeMap(clientId, 'medium', [...((A && A.byMedium) || []), ...((A && A.byCreative) || [])], A && A.mediumIdMap)
   // Keywords: utm_term carries the keyword text, so match by text (the fuller
   // signal — keeps every keyword's green data). Only when the SAME keyword text
   // runs in 2+ match types (e.g. "adhd" Exact and Phrase) do we try to split by
@@ -2496,7 +2496,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         const matched = adGroups.filter((a) => oAgG.get(unorm(a.name))).length
         const idMapN = (A && A.mediumIdMap) ? Object.keys(A.mediumIdMap).length : 0
         const medRaw = ((A && A.byMedium) || []).map((x) => x.name).filter(Boolean)
-        const conRaw = ((A && A.byContent) || []).map((x) => x.name).filter(Boolean)
+        const conRaw = ((A && A.byCreative) || []).map((x) => x.name).filter(Boolean)
         const looksNumeric = (arr) => arr.some((v) => /^\d{6,}$/.test(String(v).trim()))
         const hint = matched > 0
           ? `${matched} of ${adGroups.length} ad groups matched CRM outcomes.`

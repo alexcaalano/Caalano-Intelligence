@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.242.0 — 2026-08-13 · `PENDING` — Fix: ad-group attribution (byCreative) + connector discovery timeout
+- **Ad-group Caalano360 columns now match.** Root cause: the attribution builder exposes the `utm_content` dimension
+  as `byCreative`, but the Google view's ad-group matcher (and its diagnostic) read a non-existent `byContent`, so the
+  ad-group IDs the CRM stores in `utm_content` were never used (0/10 matched). Confirmed against live GHL data that
+  `utmContent` carries the Google ad-group ID (e.g. 181669933171); repointed the matcher to `byCreative`, which the
+  Windsor `ad_group_id → name` map then resolves.
+- **Connector discovery fix.** The 2-year discovery window (v3.241.0) timed out on Windsor's per-account aggregation,
+  surfacing as "a connector is erroring" with 0 Meta / Google / GA4 accounts. Reverted to a 12-month window, which
+  returns inside the function budget.
+
 ## v3.241.0 — 2026-08-13 · `PENDING` — GA4 connector picker, wider account discovery, Google Ads polish
 - **Settings connector editor**: Google Analytics 4 is now a proper **picker column** (like Meta / Google / CRM),
   populated from the accounts Windsor exposes on its GA4 connector — pick the property or paste its ID. This also

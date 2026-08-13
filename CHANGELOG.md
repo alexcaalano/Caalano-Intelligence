@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.233.0 — 2026-08-13 · `PENDING` — Caalano360 green columns extend to ad groups, keywords + a new Match-type table
+- Following the campaign ID→name auto-resolve, the attribution feed now also returns **ad-group** (`ad_group_id` /
+  `adset_id`) and **ad** (`ad_id`) id↔name maps from Windsor.
+- **Ad groups (Google):** now resolve the CRM's ad-group ID to its name — across both `utm_medium` and `utm_content`,
+  since which UTM param carries the ad-group ID varies by the client's Google template — so the green Caalano360 outcome
+  columns populate correctly (previously they matched the wrong dimension).
+- **Keywords:** the keyword table now has the **green Caalano360 outcome columns** (matched on `utm_term`, the keyword
+  text).
+- **New Match-type table** (Broad / Phrase / Exact) with green columns. Match type isn't stored in the CRM, so CRM
+  outcomes are **rolled up from each keyword's outcomes via its match type** — no extra UTM needed.
+- Suggestions for what else we can match next: **ad/creative level** (utm_content → `ad_id`, map already fetched),
+  and Google **network** (Search / Display / YouTube), **device**, or **location** dimensions if you want green columns
+  on those too.
+
 ## v3.232.0 — 2026-08-13 · `PENDING` — Won-basis toggle now covers Overview + Caalano360/Executive
 - The **Won basis** toggle (Closed vs Created) now also drives the **Agency Overview** (headline Revenue + leaderboard,
   via the ovrow feed) and the **Caalano360 / Executive** tab (revenue + ROAS in the health score), in addition to Users.

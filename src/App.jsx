@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.232.0'
+const APP_VERSION = '3.233.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2040,6 +2040,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [kSort, onKSort] = useSort('cost')
   const [sSort, onSSort] = useSort('cost')
   const [lpSort, onLpSort] = useSort('cost')
+  const [mtSort, onMtSort] = useSort('cost')
   const [kePipe, setKePipe] = useState(null)
   useEffect(() => { setKePipe(null) }, [pipe])
   const [keyDrill, setKeyDrill] = useState(null)
@@ -2067,7 +2068,18 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = buildO360Cols(keList, stagePos, calNames)
   const oCampG = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign, A && A.campIdMap)
-  const oAgG = mkOutcomeMap(A && A.byTerm)
+  // Ad groups: the CRM carries the ad-group as an ID whose UTM param varies by the
+  // client's Google template (utm_medium on some, utm_content on others), so resolve
+  // the ad_group_id→name map across BOTH dims — only the one holding the ID matches.
+  const oAgG = aliasedOutcomeMap(clientId, 'medium', [...((A && A.byMedium) || []), ...((A && A.byContent) || [])], A && A.mediumIdMap)
+  // Keywords: utm_term carries the keyword text, so it matches by name directly.
+  const oKwG = mkOutcomeMap((A && A.byTerm) || [])
+  // Match type: the CRM doesn't tag match type, but each keyword HAS one (from
+  // Windsor), so fold the per-keyword CRM outcomes into their match type (reusing
+  // applyAliases as a { keywordText -> matchType } fold) to get CRM outcomes by
+  // match type — green columns without any extra UTM.
+  const kwToMatch = {}; for (const k of (g.keywords || [])) if (k.text && k.match) kwToMatch[k.text] = k.match
+  const oMatchG = mkOutcomeMap(applyAliases((A && A.byTerm) || [], kwToMatch))
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   const costPerConv = t.conversions ? t.cost / t.conversions : 0
   const avgCpc = t.clicks ? t.cost / t.clicks : 0
@@ -2080,6 +2092,9 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const matchCA = (r) => (!sel.campaign || r.campaign === sel.campaign) && (!sel.adGroup || r.adGroup === sel.adGroup)
   const adGroups = g.adGroups.filter((a) => !sel.campaign || a.campaign === sel.campaign)
   const keywords = g.keywords.filter(matchCA)
+  // Match-type rollup (Broad / Phrase / Exact) of the in-scope keywords, for the
+  // Match type table — ad metrics + CRM outcomes (green) via oMatchG.
+  const matchRows = (() => { const m = new Map(); for (const k of keywords) { const type = k.match || '—'; const e = m.get(type) || { name: type, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += k.cost; e.impressions += k.impressions; e.clicks += k.clicks; e.conversions += k.conversions; m.set(type, e) } return [...m.values()].filter((x) => x.cost > 0 || x.conversions > 0).sort((a, b) => b.cost - a.cost) })()
   const searchTerms = (g.searchTerms || []).filter((r) => matchCA(r))
   const selLabel = [sel.campaign, sel.adGroup, sel.keyword].filter(Boolean).join(' › ')
   // conversion actions + match types respond to the drill-down selection
@@ -2247,9 +2262,14 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
             <tr key={lp.url}><td><a href={lp.url} target="_blank" rel="noopener noreferrer" title={lp.url} className="lp-link">{short.length > 64 ? short.slice(0, 62) + '…' : short}</a></td><td>{fmtCurrency(lp.cost, currency)}</td><td>{fmtNumber(lp.impressions)}</td><td>{fmtPct(rate(lp.clicks, lp.impressions), 2)}</td><td>{fmtNumber(lp.clicks)}</td><td>{fmtNumber(lp.conversions)}</td><td>{lp.conversions ? fmtCurrency(lp.cost / lp.conversions, currency) : '-'}</td></tr>
           ) })}</tbody></table></div>
       </>}
-      <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms</span></div>
-      <div className="table-wrap"><table><thead><tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh></tr></thead>
-        <tbody>{sortRows(keywords.map(gMetrics), kSort).map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '-'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '-' : k.qs}</span></td></tr>))}</tbody></table></div>
+      <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms{has360 ? ' · green = CRM outcomes (utm_term)' : ''}</span></div>
+      <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh>{has360 && <O360Head sort={kSort} on={onKSort} cols={o360cols} />}</tr></thead>
+        <tbody>{sortRows(keywords.map((k) => ({ ...gMetrics(k), ...o360Fields(oKwG.get(unorm(k.text)), k.cost, k.conversions, o360cols) })), kSort).map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '-'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '-' : k.qs}</span></td>{has360 && o360Cells(k, currency, o360cols)}</tr>))}</tbody></table></div>
+      {matchRows.length > 0 && <>
+        <div className="lvl-title">Match type <span className="sub">· Broad / Phrase / Exact{selLabel ? ` · in ${selLabel}` : ''}{has360 ? ' · green = CRM outcomes (rolled up from each keyword)' : ''}</span></div>
+        <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={7} cols={o360cols} />}<tr><SortTh k="name" sort={mtSort} on={onMtSort}>Match type</SortTh><SortTh k="cost" sort={mtSort} on={onMtSort}>Cost</SortTh><SortTh k="impressions" sort={mtSort} on={onMtSort}>Impr.</SortTh><SortTh k="ctr" sort={mtSort} on={onMtSort}>CTR</SortTh><SortTh k="cpc" sort={mtSort} on={onMtSort}>CPC</SortTh><SortTh k="conversions" sort={mtSort} on={onMtSort}>Conv.</SortTh><SortTh k="costConv" sort={mtSort} on={onMtSort}>Cost/conv</SortTh>{has360 && <O360Head sort={mtSort} on={onMtSort} cols={o360cols} />}</tr></thead>
+          <tbody>{sortRows(matchRows.map((m) => ({ ...gMetrics(m), ...o360Fields(oMatchG.get(unorm(m.name)), m.cost, m.conversions, o360cols) })), mtSort).map((m) => (<tr key={m.name}><td><span className="q-badge q-unk">{m.name}</span></td><td>{fmtCurrency(m.cost, currency)}</td><td>{fmtNumber(m.impressions)}</td><td>{fmtPct(rate(m.clicks, m.impressions), 2)}</td><td>{fmtCurrency(m.clicks ? m.cost / m.clicks : 0, currency)}</td><td>{fmtNumber(m.conversions)}</td><td>{m.conversions ? fmtCurrency(m.cost / m.conversions, currency) : '-'}</td>{has360 && o360Cells(m, currency, o360cols)}</tr>))}</tbody></table></div>
+      </>}
       <div className="lvl-title">Search terms <span className="sub">· {searchTerms.length} of {fmtNumber(g.searchTermsTotal)} actual queries by spend{selLabel ? ` · in ${selLabel}` : ''}</span></div>
       {searchTerms.length ? (
         <div className="table-wrap"><table><thead><tr><SortTh k="term" sort={sSort} on={onSSort}>Search term</SortTh><SortTh k="campaign" sort={sSort} on={onSSort}>Campaign</SortTh><SortTh k="cost" sort={sSort} on={onSSort}>Cost</SortTh><SortTh k="ctr" sort={sSort} on={onSSort}>CTR</SortTh><SortTh k="clicks" sort={sSort} on={onSSort}>Clicks</SortTh><SortTh k="conversions" sort={sSort} on={onSSort}>Conv.</SortTh><SortTh k="costConv" sort={sSort} on={onSSort}>Cost / conv</SortTh></tr></thead>

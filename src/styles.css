@@ -2707,6 +2707,9 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .tr-src-more { font-size: 10px; color: #0ea5e9; font-weight: 700; margin-left: 8px; }
 .tr-src-drillrow td { padding: 0 !important; background: transparent; }
 .tr-src-drillbox { padding: 8px 4px 4px; }
+.tr-brk-click { cursor: pointer; }
+.tr-brk-click:hover td { background: var(--panel-2, rgba(79,124,255,.06)); }
+.tr-brk-drillind { color: #4f7cff; font-weight: 800; }
 /* Toggle switch (Settings) */
 .tgl { position: relative; width: 38px; height: 22px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--border); cursor: pointer; padding: 0; flex: 0 0 auto; transition: background .14s; }
 .tgl.sm { width: 32px; height: 18px; }

@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.214.0 — 2026-08-12 · `PENDING` — Window breakdown: drill each key event to the exact people
+- In the window breakdown popup, every key event in the **Key events by source** table is now clickable
+  and opens the full people list behind it — the exact opportunities that reached that event in that window,
+  scoped to the selected source (All / Paid / Non-paid / Meta / Google, via UTM attribution). Reuses the
+  same people modal (status filter, per-contact notes) as the Caalano360 funnel.
+
 ## v3.213.1 — 2026-08-12 · `PENDING` — Daily graph: make the Google stacked bar a distinct light blue
 - Changed the Google segment of the stacked results bar (and its tooltip dot) from violet to a light sky
   blue so it's clearly distinguishable from Meta's indigo.

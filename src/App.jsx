@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.213.1'
+const APP_VERSION = '3.214.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1023,6 +1023,10 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   const srcSpend = src === 'meta' ? (w.meta ? w.meta.spend : 0) : src === 'google' ? (w.google ? w.google.spend : 0) : src === 'nonpaid' ? 0 : totalSpend
   const cpe = (n) => (n && srcSpend ? money(srcSpend / n) : '—')
   const srcLabel = (KE_SRC.find(([k]) => k === src) || [])[1] || 'All CRM'
+  // Drill into the exact people/records behind a key event in this window + source.
+  const [drill, setDrill] = useState(null)
+  const dayAgo = (k) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - k); return iso(d) }
+  const winRange = { from: dayAgo(w.n - 1), to: dayAgo(0) }
   return (
     <div className="tr-brk">
       <div className="tr-brk-grid">
@@ -1045,16 +1049,22 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
               <thead><tr><th className="lft">Key event · {srcLabel}</th><th>Count</th><th>% leads</th><th>Cost / event</th></tr></thead>
               <tbody>
                 <tr><td className="lft">Leads</td><td>{fmtNumber(leads)}</td><td>{leads ? '100%' : '—'}</td><td>{cpe(leads)}</td></tr>
-                {keRows.map((r, i) => (
-                  <tr key={r.label + i}><td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}</td><td>{fmtNumber(r.count || 0)}</td><td>{leads ? fmtPct((r.count / leads) * 100, 0) : '—'}</td><td>{cpe(r.count || 0)}</td></tr>
-                ))}
+                {keRows.map((r, i) => {
+                  const can = (r.count || 0) > 0
+                  return (
+                    <tr key={r.label + i} className={can ? 'tr-brk-click' : ''} onClick={can ? () => setDrill(r) : undefined} title={can ? 'Click to see the exact people behind this' : undefined}>
+                      <td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}{can ? <span className="tr-brk-drillind"> ›</span> : null}</td><td>{fmtNumber(r.count || 0)}</td><td>{leads ? fmtPct((r.count / leads) * 100, 0) : '—'}</td><td>{cpe(r.count || 0)}</td>
+                    </tr>
+                  )
+                })}
                 {!keRows.length ? <tr><td className="lft" colSpan={4}><span className="cap">No key events {leads ? 'reached from this source' : 'configured'} in this window.</span></td></tr> : null}
               </tbody>
             </table>
-            <p className="tr-brk-note cap">{src === 'nonpaid' ? 'Non-paid = organic / referral / direct leads (no ad spend, so no cost per event).' : `Cost / event = ${srcLabel === 'All CRM' ? 'total' : srcLabel} ad spend ÷ people who reached that event.`} Source = {crm.utm ? 'first-touch UTM attribution on each opportunity' : "the lead's Caalano Systems source"}.</p>
+            <p className="tr-brk-note cap">{src === 'nonpaid' ? 'Non-paid = organic / referral / direct leads (no ad spend, so no cost per event).' : `Cost / event = ${srcLabel === 'All CRM' ? 'total' : srcLabel} ad spend ÷ people who reached that event.`} Source = {crm.utm ? 'first-touch UTM attribution on each opportunity' : "the lead's Caalano Systems source"}. Click a key event to see the exact people.</p>
           </>) : <p className="cap" style={{ margin: '4px 0 0' }}>Unlinked ad spend isn't tied to a pipeline, so it has no CRM key events.</p>}
         </div>
       </div>
+      {drill ? <KeyPeopleModal event={{ ...drill, pipeline: drill.pipeline || (pipeId && pipeId !== 'all' ? pipeId : null) }} clientId={clientId} channel={src} range={winRange} currency={currency} onClose={() => setDrill(null)} /> : null}
     </div>
   )
 }

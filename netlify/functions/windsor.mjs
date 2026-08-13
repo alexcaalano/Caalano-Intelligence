@@ -707,7 +707,7 @@ function reachedInChannel(chanObj, stageName) {
   }
   return total
 }
-async function buildOverview(from, to, preset, key) {
+async function buildOverview(from, to, preset, key, wonBasis = 'created') {
   const metaRev = {}, googleRev = {}, ghlRev = {}
   for (const [id, c] of Object.entries(CLIENTS)) { if (c.meta) metaRev[acctKey(c.meta)] = id; if (c.google) googleRev[acctKey(c.google)] = id; if (c.ghl) ghlRev[norm(c.ghl)] = id }
   // last-8-day daily spend (yesterday + prior week) for zero-spend alerts
@@ -739,7 +739,11 @@ async function buildOverview(from, to, preset, key) {
     const list = Object.entries(CLIENTS).filter(([, c]) => c.ghl)
     const deadline = Date.now() + 7000
     let i = 0
-    const worker = async () => { while (i < list.length && Date.now() < deadline) { const [id, c] = list[i++]; try { tally(id, await ghlOpportunityRows(c.ghl, from, to)) } catch { /* app not installed / slow → skip */ } } }
+    const one = async (id, c) => {
+      if (wonBasis === 'closed') { const w = await wonInPeriod(c.ghl, from, to); if (w && w.total) out[id] = { revenue: w.total.revenue, won: w.total.won } }
+      else tally(id, await ghlOpportunityRows(c.ghl, from, to))
+    }
+    const worker = async () => { while (i < list.length && Date.now() < deadline) { const [id, c] = list[i++]; try { await one(id, c) } catch { /* app not installed / slow → skip */ } } }
     await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker))
     return out
   }
@@ -1837,6 +1841,16 @@ function applyClosedBasis(crm, wc) {
   const setUser = (u, w) => { u.won = w ? w.won : 0; u.wonValue = w ? w.revenue : 0; u.convRate = u.leads ? +((100 * u.won) / u.leads).toFixed(1) : 0 }
   for (const u of crm.byUser || []) setUser(u, wc.byUser ? wc.byUser[u.id] : null)
 }
+// Same overlay for a Caalano360 blend payload (its CRM sub-objects use won /
+// revenue / avgValue). Account + per-pipeline + per-user headline flip; the deep
+// per-user-per-pipeline drill and the prev-period delta stay created-basis.
+function applyClosedBasisBlend(blend, wc) {
+  if (!blend || !wc) return
+  const setC = (crm, w) => { if (!crm) return; crm.won = w ? w.won : 0; crm.revenue = w ? w.revenue : 0; crm.avgValue = w ? w.avgValue : 0 }
+  setC(blend.crm, wc.total)
+  for (const p of blend.pipelines || []) setC(p.crm, wc.byPipeline ? wc.byPipeline[p.id] : null)
+  for (const u of blend.users || []) setC(u.crm, wc.byUser ? wc.byUser[u.id] : null)
+}
 
 // ---------------------------------------------------------------------------
 // Server-side result cache + reliability telemetry
@@ -2408,7 +2422,11 @@ export default async (req) => {
   // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.
   if (url.searchParams.get('scope') === 'agency') {
     try {
-      const ov = await buildOverview(from, to, preset, key)
+      // Backend default stays 'created' (unchanged); the frontend passes 'closed'
+      // for the global default, so no-param callers are unaffected.
+      const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
+      const ov = await buildOverview(from, to, preset, key, wonBasis)
+      ov.wonBasis = wonBasis
       if (filtered) {
         ov.clients = pickAllowed(ov.clients)
         if (ov.alerts) { ov.alerts.meta = (ov.alerts.meta || []).filter((a) => canView(a.id)); ov.alerts.google = (ov.alerts.google || []).filter((a) => canView(a.id)) }
@@ -2568,12 +2586,25 @@ export default async (req) => {
     const pipeline = url.searchParams.get('pipeline') || null
     const channel = url.searchParams.get('channel') || 'all'
     try {
+      const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
       const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
-      const [perf, fb, gg] = await Promise.all([
+      const [perf, fb, gg, wonClosed] = await Promise.all([
         buildUserPerformance(cc.ghl, from, to, { pipeline, channel }),
         cc.meta ? windsorFetch('facebook', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
         cc.google ? windsorFetch('google_ads', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
+        (wonBasis === 'closed' && from && to) ? wonInPeriod(cc.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
+      // Closed basis: overlay each rep's won/revenue with their won-in-period
+      // (banked) figures; leads / booked / funnel stay created-basis. Cost/Won is
+      // recomputed frontend-side from the swapped won.
+      if (wonBasis === 'closed' && wonClosed && wonClosed.byUser) {
+        for (const u of perf.users || []) {
+          const w = wonClosed.byUser[u.id] || { won: 0, revenue: 0, avgValue: 0 }
+          u.won = w.won; u.revenue = w.revenue; u.wonValue = w.revenue; u.avgDeal = w.avgValue
+          u.winRate = u.leads ? Math.round((100 * u.won) / u.leads) : null
+        }
+      }
+      perf._wonBasis = wonBasis
       const metaSpend = Math.round(fb.reduce((s, r) => s + num(r.spend), 0))
       const googleSpend = Math.round(gg.reduce((s, r) => s + num(r.spend), 0))
       // Ad spend can't be attributed to an individual rep, but it CAN be scoped to
@@ -3279,6 +3310,9 @@ export default async (req) => {
         (c.ghl && from && to) ? wonInPeriod(c.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
       blend.wonClosed = wonClosed
+      const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
+      blend._wonBasis = wonBasis
+      if (wonBasis === 'closed' && wonClosed) applyClosedBasisBlend(blend, wonClosed)
       return json({ client, channel, period: { from, to, preset }, blend }, 200, true)
     } catch (e) { return json({ error: String(e.message || e) }, 502) }
   }

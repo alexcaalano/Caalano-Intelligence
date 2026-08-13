@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.229.0 — 2026-08-13 · `PENDING` — Won-basis toggle (live on Users) + Google conversion-actions overlap fix
+- **Won basis toggle** — a global `Won basis: ⟨Closed | Created⟩` control now appears in the header on the client
+  workspace (default **Closed**, persisted). Only Won / revenue / win-rate flip; leads, funnel and appointments stay
+  created-basis. A **basis chip** on the Won card shows which is active.
+- **Live on the Users tab now:** each rep's Won / revenue / win-rate switches between banked-in-period (Closed) and
+  won-from-this-period's-leads (Created). Backend overlays for Caalano360 (blend), the CRM board and the agency
+  Overview are staged behind the same `wonBasis` param; their frontends (Executive, Overview headline via the ovrow
+  feed, Weekly) are the next surfaces to light up — nothing flips until each opts in, so no other number changes.
+- **Fix: Google conversion-actions overlap.** Expanding *conversion actions* in a window/tile breakdown made the wide
+  table bleed over the Key-events panel (grid children default to `min-width:auto`). Columns can now shrink and the
+  drill table scrolls within its own box instead of overlapping.
+
 ## v3.228.0 — 2026-08-13 · `PENDING` — Won-basis toggle: backend foundation (Closed-in vs Created-in period)
 - Groundwork for the upcoming **Won basis** toggle (Closed-in-period vs Created-in-period). Adds a backend overlay
   (`applyClosedBasis`) that swaps a CRM board's Won / revenue / avg-won-value / close-rate to the **closed-in-period**

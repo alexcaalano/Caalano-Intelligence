@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.228.0'
+const APP_VERSION = '3.229.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -434,18 +434,18 @@ function useClientLogos() {
   })
 }
 
-function useAgencyLive(range, nonce = 0) {
+function useAgencyLive(range, nonce = 0, wonBasis = 'closed') {
   const [state, setState] = useState({ status: 'idle', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true
     setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=agency&${q}${nonce ? `&_r=${nonce}` : ''}`)
+    fetch(`/.netlify/functions/windsor?scope=agency&${q}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: j && !j.error && j.clients ? 'ok' : 'err', data: j && j.clients ? j : null }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [q, nonce])
+  }, [q, nonce, wonBasis])
   return state
 }
 
@@ -4548,6 +4548,26 @@ function DateRange({ range, onChange, busy }) {
   )
 }
 
+// Global "Won basis" control (header, beside the date range). Flips only the Won /
+// revenue figures between Closed-in-period (banked, by won-date) and Created-in-
+// period (won among the period's leads — the cohort/ROI view). Leads, the funnel
+// and appointments always stay created-basis.
+function WonBasisToggle({ value, onChange }) {
+  return (
+    <div className="date-sel wb-sel">
+      <label title="Which Won deals count: those banked in the period (Closed), or those from leads created in the period (Created). Only Won/revenue change — leads & funnel stay created-basis.">Won basis</label>
+      <div className="chan-toggle wb-toggle">
+        <button className={value === 'closed' ? 'on' : ''} onClick={() => onChange('closed')} title="Deals marked Won during this period, by their won-date (banked / realised revenue), regardless of when the lead was created.">Closed</button>
+        <button className={value === 'created' ? 'on' : ''} onClick={() => onChange('created')} title="Deals from leads created in this period that have since been won (cohort / ROI view). Recent ranges are still maturing.">Created</button>
+      </div>
+    </div>
+  )
+}
+// Small chip shown on a Won / revenue card so the active basis is never ambiguous.
+function WonBasisChip({ basis }) {
+  const closed = basis !== 'created'
+  return <span className={`wb-chip ${closed ? 'closed' : 'created'}`} title={closed ? 'Closed-in-period: deals banked in this range by their won-date. A win-rate vs this range’s leads mixes cohorts — read it as throughput, not conversion.' : 'Created-in-period: won among leads created in this range (cohort/ROI). Recent ranges are still maturing, so this understates.'}>{closed ? 'Closed-in-period' : 'Created-in-period'}</span>
+}
 function LiveBadge({ mode, label }) {
   const map = { live: { t: `● Live · ${label}`, c: 'tk-full' }, snapshot: { t: 'Snapshot · June 2026', c: 'tk-wins' } }
   const m = map[mode]; if (!m) return null
@@ -5942,7 +5962,7 @@ function OpenDealRow({ d, clientId, money, showPipe }) {
     </React.Fragment>
   )
 }
-function UsersView({ clientId, range, nonce, currency }) {
+function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [pipe, setPipe] = useState('all')
   const [chan, setChan] = useState('all')
@@ -5955,7 +5975,7 @@ function UsersView({ clientId, range, nonce, currency }) {
   const chanParam = chan !== 'all' ? `&channel=${chan}` : ''
   useEffect(() => {
     let alive = true
-    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${chanParam}${nonce ? `&_r=${nonce}` : ''}`
+    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${chanParam}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}`
     const cached = apiCachePeek(url)
     // Paint the last good payload instantly (if any) and revalidate underneath, so
     // reopening this client/tab feels immediate instead of blank-spinner-then-load.
@@ -5965,7 +5985,7 @@ function UsersView({ clientId, range, nonce, currency }) {
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch((e) => { if (alive && !ctl.signal.aborted) setSt(cached ? { status: 'ok', data: cached } : { status: 'err', data: { error: String((e && e.message) || e) } }) })
     return () => { alive = false; ctl.abort() }
-  }, [clientId, rangeQuery(range), pipeParam, chanParam, nonce])
+  }, [clientId, rangeQuery(range), pipeParam, chanParam, wonBasis, nonce])
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading user performance…" /></div>
   const d = st.data || {}
   if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">👤</div><b>Couldn't load user performance.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
@@ -6031,7 +6051,7 @@ function UsersView({ clientId, range, nonce, currency }) {
         <div className="tm-sc hero"><span className="tm-lab">Reps</span><b>{fmtNumber(users.length)}</b><span className="tm-sub">with assigned leads</span></div>
         <div className="tm-sc"><span className="tm-lab">Leads</span><b>{fmtNumber(tot.leads)}</b><span className="tm-sub">assigned in range</span></div>
         <div className="tm-sc"><span className="tm-lab">Booked</span><b>{fmtNumber(tot.booked)}</b><span className="tm-sub">{fmtNumber(tot.shown)} shown</span></div>
-        <div className="tm-sc"><span className="tm-lab">Won</span><b>{fmtNumber(tot.won)}</b><span className="tm-sub">{tot.leads ? Math.round((tot.won / tot.leads) * 100) : 0}% win rate</span></div>
+        <div className="tm-sc"><span className="tm-lab">Won <WonBasisChip basis={wonBasis} /></span><b>{fmtNumber(tot.won)}</b><span className="tm-sub">{tot.leads ? Math.round((tot.won / tot.leads) * 100) : 0}% win rate{wonBasis !== 'created' ? ' (vs created leads)' : ''}</span></div>
         <div className="tm-sc"><span className="tm-lab">Revenue</span><b>{money(tot.revenue)}</b><span className="tm-sub">{totalSpend ? `${money(totalSpend)} ad spend` : ''}</span></div>
       </div>
 
@@ -6283,7 +6303,7 @@ function OptimisationLog({ clientId }) {
     </div>
   )
 }
-function ClientWorkspace({ client, index, data, config, range, nonce, onBack, authUser }) {
+function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser }) {
   useSettingsSync()
   const [tab, setTab] = useState('overall')
   const [baked, setBaked] = useState(undefined)
@@ -6337,7 +6357,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, onBack, au
       </div>
       <div style={{ marginTop: 16 }}>
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />}
-        {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
+        {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} />}
         {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Meta', range)} /></div>
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months — ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
@@ -11732,6 +11752,11 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const [picked, setPicked] = useState(null)
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'dark' } catch { return 'dark' } })
   const [range, setRange] = useState(() => presetRange('last_30d'))
+  // Won basis: 'closed' (banked in the period, by won-date) or 'created' (won
+  // among leads created in the period — the cohort/ROI view). Global + persisted.
+  // Only Won/revenue/ROAS flip; leads, funnel and appointments stay created-basis.
+  const [wonBasis, setWonBasis] = useState(() => { try { return localStorage.getItem('caalano_wonbasis') === 'created' ? 'created' : 'closed' } catch { return 'closed' } })
+  useEffect(() => { try { localStorage.setItem('caalano_wonbasis', wonBasis) } catch {} }, [wonBasis])
   const [refreshKey, setRefreshKey] = useState(0)
   const [navOpen, setNavOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('caalano_sb') === '1' } catch { return false } })
@@ -11740,7 +11765,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // dashboard is safe to screen-share with a client. Not persisted — always
   // starts off so it can never be left on by accident.
   const [present, setPresent] = useState(false)
-  const agency = useAgencyLive(range, refreshKey)
+  const agency = useAgencyLive(range, refreshKey, wonBasis)
   useClientLogos() // one-time brand-logo sync from Caalano Systems (avatars)
   // Server-backed settings: re-render on hydrate/change; enabled is a derived
   // write-through value so client on/off persists to the server like the rest.
@@ -11850,19 +11875,20 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {curView === 'clients' && curPicked && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
           {curView !== 'monthly' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => { setPicked(null); setView(isViewer ? 'clients' : 'overview') }}>
-          {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
+          {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={(c) => { setPicked(c); setView('clients') }} />}
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
-          {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} />}
+          {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} wonBasis={wonBasis} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
-          {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
+          {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} wonBasis={wonBasis} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}
         </ErrorBoundary>
       </main>

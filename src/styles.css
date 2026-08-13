@@ -2793,3 +2793,16 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .ao-badge { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 999px; flex: none; }
 .ao-badge.good { background: color-mix(in srgb, var(--pos) 18%, transparent); color: var(--pos); }
 .ao-badge.weak { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+
+/* ---- Fix: Google conversion-actions drill overlapping the key-events panel ---- */
+/* Grid children default to min-width:auto, so a wide nested table pushes the left
+   column past its track and over the right panel. Let columns shrink and scroll. */
+.tr-brk-grid > * { min-width: 0; }
+.tr-src-drillbox { overflow-x: auto; }
+.tr-src-drillbox > table { min-width: 320px; }
+
+/* ---- Won-basis header control + chip ---- */
+.wb-sel .chan-toggle.wb-toggle { margin: 0; }
+.wb-chip { display: inline-block; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+.wb-chip.closed { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); }
+.wb-chip.created { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }

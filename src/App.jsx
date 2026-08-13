@@ -7,10 +7,11 @@ import {
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
+import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.221.0'
+const APP_VERSION = '3.222.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -353,6 +354,61 @@ function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat, onClick }) {
       {flat ? <span className="flat">{flat}</span> : (cur != null && prev != null) ? <Delta cur={cur} prev={prev} goodWhenDown={goodWhenDown} /> : null}
     </div>
   )
+}
+
+/* ============ Resilient data fetch ============ */
+// One place every data view fetches through, so speed + reliability improve
+// everywhere at once:
+//   • one silent retry on a network drop / 502 / timeout (the common transient
+//     failures) before the user ever sees an error — with a short backoff;
+//   • an AbortController timeout so a hung request fails fast instead of spinning;
+//   • a friendly, specific Error message on genuine failure;
+//   • a failure beacon POSTed to the server log (scope=clientlog) so browser-side
+//     breakages land in the same Reliability log as server-side ones;
+//   • a small in-memory cache of the last good payload per URL (nonce-stripped),
+//     so a view can paint instantly on revisit and revalidate in the background.
+const _apiMemCache = new Map()
+const _cacheKeyOf = (url) => String(url).replace(/([?&])_r=[^&]*/, '$1').replace(/[?&]$/, '')
+function apiCachePeek(url) { const e = _apiMemCache.get(_cacheKeyOf(url)); return e ? e.data : null }
+function apiBeacon(url, error, ms) {
+  try {
+    const u = new URL(url, location.origin)
+    const body = JSON.stringify({ scope: u.searchParams.get('scope') || (u.searchParams.get('channel') ? `channel:${u.searchParams.get('channel')}` : 'unknown'), client: u.searchParams.get('client') || null, error: String(error).slice(0, 240), ms })
+    fetch('/.netlify/functions/windsor?scope=clientlog', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }).catch(() => {})
+  } catch { /* never throw from the beacon */ }
+}
+async function apiJson(url, { signal, timeoutMs = 30000, tries = 2 } = {}) {
+  const t0 = (typeof performance !== 'undefined' ? performance.now() : 0)
+  let lastErr
+  for (let attempt = 0; attempt < tries; attempt++) {
+    const ctl = new AbortController()
+    const onAbort = () => ctl.abort()
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener('abort', onAbort, { once: true }) }
+    const timer = setTimeout(() => ctl.abort(), timeoutMs)
+    try {
+      const r = await fetch(url, { signal: ctl.signal })
+      clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort)
+      if (!r.ok) {
+        // 5xx / 502 are transient (function timeout / cold-start) — retry once.
+        if (r.status >= 500 && attempt < tries - 1) { await new Promise((res) => setTimeout(res, 600 * (attempt + 1))); continue }
+        throw new Error(r.status >= 500 ? `The server took too long (${r.status}). Try a smaller date range or Refresh.` : `Request failed (${r.status}).`)
+      }
+      const j = await r.json()
+      _apiMemCache.set(_cacheKeyOf(url), { at: Date.now(), data: j })
+      return j
+    } catch (e) {
+      clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort)
+      // A caller-driven abort (unmount / new request) is not a failure — bail silently.
+      if (signal && signal.aborted) throw e
+      lastErr = e
+      const aborted = e && e.name === 'AbortError'
+      if (attempt < tries - 1) { await new Promise((res) => setTimeout(res, 600 * (attempt + 1))); continue }
+      const msg = aborted ? 'Timed out — the data took too long to load. Try a smaller date range or Refresh.' : (e && e.message) || 'Network error.'
+      apiBeacon(url, msg, Math.round((typeof performance !== 'undefined' ? performance.now() : 0) - t0))
+      throw new Error(msg)
+    }
+  }
+  throw lastErr || new Error('Request failed.')
 }
 
 /* ============ Agency live rollup ============ */
@@ -5898,13 +5954,16 @@ function UsersView({ clientId, range, nonce, currency }) {
   const pipeParam = pipe !== 'all' ? `&pipeline=${encodeURIComponent(pipe)}` : ''
   const chanParam = chan !== 'all' ? `&channel=${chan}` : ''
   useEffect(() => {
-    let alive = true; setSt({ status: 'loading', data: null })
-    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)
-    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${chanParam}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`server ${r.status}`))))
+    let alive = true
+    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${chanParam}${nonce ? `&_r=${nonce}` : ''}`
+    const cached = apiCachePeek(url)
+    // Paint the last good payload instantly (if any) and revalidate underneath, so
+    // reopening this client/tab feels immediate instead of blank-spinner-then-load.
+    setSt(cached ? { status: 'ok', data: cached } : { status: 'loading', data: null })
+    const ctl = new AbortController()
+    apiJson(url, { signal: ctl.signal, timeoutMs: 30000 })
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch((e) => { if (alive) setSt({ status: 'err', data: { error: e && e.name === 'AbortError' ? 'timed out' : String((e && e.message) || e) } }) })
-      .finally(() => clearTimeout(timer))
+      .catch((e) => { if (alive && !ctl.signal.aborted) setSt(cached ? { status: 'ok', data: cached } : { status: 'err', data: { error: String((e && e.message) || e) } }) })
     return () => { alive = false; ctl.abort() }
   }, [clientId, rangeQuery(range), pipeParam, chanParam, nonce])
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading user performance…" /></div>
@@ -7224,6 +7283,103 @@ function DailyPerfSettings({ clients }) {
     </div>
   )
 }
+// Parse CHANGELOG.md (bundled at build time) into version entries for the Logs
+// panel. Each release is a `## vX.Y.Z — date · `status` — title` block followed
+// by `- ` bullet lines.
+function parseChangelog(raw) {
+  return String(raw || '').split(/\n## /).slice(1).map((block) => {
+    const nl = block.indexOf('\n')
+    const head = (nl === -1 ? block : block.slice(0, nl)).trim()
+    const body = nl === -1 ? '' : block.slice(nl + 1)
+    const m = head.match(/^(v[\d.]+)\s*—\s*([\d-]+)?\s*·?\s*`?([^`—]*?)`?\s*—\s*(.+)$/)
+    const bullets = body.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('- ')).map((l) => l.replace(/^-\s*/, ''))
+    return m
+      ? { version: m[1], date: (m[2] || '').trim(), status: (m[3] || '').trim(), title: m[4].trim(), bullets }
+      : { version: head.split(/\s/)[0], date: '', status: '', title: head, bullets }
+  })
+}
+// Logs — Super-Admin only. Two views: build/version history (from CHANGELOG.md)
+// and the live reliability failure log (server-side ring buffer).
+function LogsPanel({ clients }) {
+  const [tab, setTab] = useState('versions')
+  const nameOf = (id) => { const c = (clients || []).find((x) => x.id === id); return c ? c.name : (id ? `…${String(id).slice(-6)}` : '—') }
+  const versions = useMemo(() => parseChangelog(CHANGELOG_RAW), [])
+  const [log, setLog] = useState({ status: 'idle' })
+  const [days, setDays] = useState(3)
+  const loadLog = () => {
+    setLog({ status: 'loading' })
+    apiJson(`/.netlify/functions/windsor?scope=diaglog&days=${days}&_r=${Date.now()}`, { timeoutMs: 20000, tries: 1 })
+      .then((j) => setLog({ status: j && j.error ? 'err' : 'ok', data: j }))
+      .catch((e) => setLog({ status: 'err', data: { error: String(e.message || e) } }))
+  }
+  useEffect(() => { if (tab === 'failures') loadLog() /* eslint-disable-next-line */ }, [tab, days])
+  const sevMeta = { error: ['✗', 'bad', 'Error'], 'error-stale': ['◐', 'warn', 'Error (served cached)'], slow: ['⏱', 'warn', 'Slow'], client: ['◱', 'bad', 'Browser'] }
+  return (
+    <div className="logs-panel">
+      <div className="card">
+        <div className="logs-head">
+          <div><h3 style={{ margin: 0 }}>Logs</h3><p className="cap" style={{ margin: '4px 0 0' }}>Super-Admin only. Build/version history and the live reliability log used to find and fix what's failing.</p></div>
+          <div className="chan-toggle">
+            <button className={tab === 'versions' ? 'on' : ''} onClick={() => setTab('versions')}>Build versions</button>
+            <button className={tab === 'failures' ? 'on' : ''} onClick={() => setTab('failures')}>Failure logs</button>
+          </div>
+        </div>
+      </div>
+      {tab === 'versions' && (
+        <div className="card">
+          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Version history <span style={{ fontWeight: 400 }}>· {versions.length} releases · current <b>v{APP_VERSION}</b></span></div>
+          <div className="logs-ver">
+            {versions.map((v) => (
+              <div className="logs-verrow" key={v.version}>
+                <div className="logs-vermeta">
+                  <span className="logs-ver">{v.version}</span>
+                  {v.date && <span className="logs-verdate">{v.date}</span>}
+                  {v.status && <span className={`logs-verstat ${/pending/i.test(v.status) ? 'pend' : 'live'}`}>{/pending/i.test(v.status) ? 'PENDING' : v.status}</span>}
+                </div>
+                <div className="logs-verbody">
+                  <div className="logs-vertitle">{v.title}</div>
+                  {v.bullets.length > 0 && <ul>{v.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {tab === 'failures' && (
+        <div className="card">
+          <div className="logs-head" style={{ marginBottom: 8 }}>
+            <div className="cap" style={{ fontWeight: 700 }}>Reliability log <span style={{ fontWeight: 400 }}>· failures &amp; slow builds (&gt;6s), newest first</span></div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div className="chan-toggle">{[1, 3, 7, 14].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d}d</button>)}</div>
+              <button className="set-add" onClick={loadLog}>↻ Refresh</button>
+            </div>
+          </div>
+          {log.status === 'loading' && <Spinner label="Loading reliability log…" />}
+          {log.status === 'err' && <div className="cap">Couldn't load the log: {log.data && log.data.error}</div>}
+          {log.status === 'ok' && (log.data.count === 0
+            ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>No failures or slow builds in the last {days} day{days === 1 ? '' : 's'}.</b><p className="cap">Everything served within budget. Entries appear here automatically when something times out, errors, or runs slow.</p></div>
+            : (<>
+              <div className="logs-summary">{Object.entries(log.data.summary || {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const [sev, scope] = k.split('|'); const sm = sevMeta[sev] || ['•', '', sev]; return <span key={k} className={`logs-chip ${sm[1]}`}>{sm[0]} {scope} <b>{n}</b></span> })}</div>
+              <div className="table-wrap"><table className="mini-tbl logs-tbl">
+                <thead><tr><th className="lft">When</th><th className="lft">Type</th><th className="lft">Scope</th><th className="lft">Client</th><th>ms</th><th className="lft">Detail</th></tr></thead>
+                <tbody>{log.data.entries.map((e, i) => { const sm = sevMeta[e.sev] || ['•', '', e.sev]; return (
+                  <tr key={i}>
+                    <td className="lft logs-when">{new Date(e.t).toLocaleString()}</td>
+                    <td className="lft"><span className={`logs-chip ${sm[1]}`}>{sm[0]} {sm[2]}</span></td>
+                    <td className="lft">{e.scope}</td>
+                    <td className="lft">{nameOf(e.client)}</td>
+                    <td>{e.ms != null ? fmtNumber(e.ms) : '-'}</td>
+                    <td className="lft logs-detail">{e.error || (e.sev === 'slow' ? 'Slow build (approaching the 10s function limit)' : '')}{e.ageMs != null ? ` · served cached ${Math.round(e.ageMs / 60000)}m old` : ''}</td>
+                  </tr>
+                ) })}</tbody>
+              </table></div>
+              <p className="caveat" style={{ marginTop: 10 }}>Rolling log, ~400 entries/day, kept ~60 days. <b>Slow</b> = a build over 6s (close to the 10s function ceiling — a caching candidate). <b>Error (served cached)</b> = a rebuild failed but the user still saw the last good data instead of an error.</p>
+            </>))}
+        </div>
+      )}
+    </div>
+  )
+}
 function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestricted, currency, authUser, authEnabled, theme, setTheme, onPick }) {
   const [filter, setFilter] = useState('active')
   const [q, setQ] = useState('')
@@ -7262,7 +7418,9 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
         <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
+        {isSuper && <button className={section === 'logs' ? 'on' : ''} onClick={() => setSection('logs')}>Logs</button>}
       </div>
+      {isSuper && section === 'logs' && <LogsPanel clients={config.clients} />}
       {section === 'appearance' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Appearance</h3>

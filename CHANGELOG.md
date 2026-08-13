@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.222.0 — 2026-08-13 · `PENDING` — Speed + reliability: server result cache, stale-on-error, failure log, Super-Admin Logs
+- **Server-side result cache (10-min, stale-while-error).** Heavy client-scoped views (Users, CRM, Meta, Google,
+  appointments, cohorts, forms, weekly, health…) now cache their assembled payload in Netlify Blobs. Repeat loads —
+  tab switches, reopening a client, teammates — return in **<1s** instead of rebuilding from Windsor/GoHighLevel each
+  time. Access control runs **before** the cache is read, so a hit never leaks across accounts. The **Refresh** button
+  still forces a fully live rebuild.
+- **Stale-on-error fallback.** If a rebuild fails (upstream timeout / 5xx), the last good payload is served (marked
+  cached) instead of the *"Couldn't load…"* error — the #1 source of visible failures.
+- **Reliability failure log.** Every failure and every slow build (>6s, near the 10s function limit) is recorded to a
+  rolling per-day log, including browser-side failures beaconed from the app. This is what lets us find and fix the
+  weak spots and safely make individual views live (no cache) later.
+- **Settings → Logs (Super-Admin only).** New panel with two tabs: **Build versions** (the full changelog / version
+  history) and **Failure logs** (the reliability log, with per-scope failure counts and slow-build detection).
+- **Frontend resilience.** A shared fetch layer adds one silent retry on transient 502/timeout, friendlier error copy,
+  and an in-memory cache so a revisited view paints instantly then revalidates (live on the Users view first).
+- **Trimmed CRM over-fetch.** The Users view no longer pages 120 extra days of opportunities it immediately discards —
+  fewer sequential CRM calls, faster loads, far fewer timeouts.
+
 ## v3.221.0 — 2026-08-13 · `PENDING` — Users: "All users" stacked funnel + rep-filter tabs in the deal drill
 - The **Users** leaderboard now has a pinned **All users** summary row at the top. Expand it to see the whole-team
   funnel where **every stage bar is coloured per rep** (stacked segments) so you can see, at a glance, who holds

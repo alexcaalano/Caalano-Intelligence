@@ -1658,9 +1658,14 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const DAY = 86400000
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
-  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
-  const [wideOpps, pipelines, appts, userRows, reasons] = await Promise.all([
-    allOpportunities(locTok, locationId, wideFrom, to, 2000),
+  // This view counts leads by their created date within [from,to] (every downstream
+  // number derives from that in-window cohort), so we page opportunities only back
+  // to the window start. Widening the fetch earlier just pulled deals that were
+  // immediately filtered out — extra sequential CRM pages for nothing, and a
+  // frequent cause of the ~10s function timeout. Other builders that genuinely
+  // need won-in-period / UTM history keep their wide window.
+  const [inWindowOpps, pipelines, appts, userRows, reasons] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to, 2000),
     fetchPipelines(locTok, locationId),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map() })),
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
@@ -1676,7 +1681,7 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))
   const nameOf = (id) => (id === 'unassigned' ? 'Unassigned' : (userName[id] || 'User ' + String(id).slice(-4)))
-  const opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  const opps = inWindowOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
   let cohort = opts.pipeline ? opps.filter((o) => o.pipelineId === opts.pipeline) : opps
   // Optional channel filter (first-touch UTM): all | paid | nonpaid | meta | google.
   const chan = opts.channel && opts.channel !== 'all' ? opts.channel : null

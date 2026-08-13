@@ -1797,7 +1797,59 @@ function viewerAllowed(me, scope, channel) {
   return permit.some((t) => myTabs.includes(t))
 }
 
+// ---------------------------------------------------------------------------
+// Server-side result cache + reliability telemetry
+// ---------------------------------------------------------------------------
+// The heavy client-scoped views (Users, CRM, Meta, Google, appointments…) each
+// rebuild from Windsor / GoHighLevel on every request — multi-second work that
+// bumps the ~10s function ceiling and 502s when an upstream is slow. A short
+// blob cache lets repeat loads (tab switches, teammates, the same client
+// reopened) return in <1s and, crucially, lets a rebuild that fails fall back
+// to the last good payload instead of an error. Access control runs BEFORE the
+// cache is read, so a hit can never leak across accounts.
+const RESULT_TTL_MS = 10 * 60 * 1000            // serve a cached payload fresh for 10 min
+const STALE_ON_ERROR_MS = 6 * 60 * 60 * 1000    // on a rebuild failure, fall back to a payload up to 6h old
+const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
+// Scopes safe to cache: client-scoped, GET, identical for every authorised
+// caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
+const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend'])
+const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
+async function readResultCache(key) { try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } }
+function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
+function cacheKeyFrom(url) {
+  const p = new URLSearchParams(url.search)
+  p.delete('_r'); p.delete('debug'); p.delete('nonce')
+  const entries = [...p.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : 1)))
+  return 'v1:' + encodeURIComponent(entries.map(([k, v]) => `${k}=${v}`).join('&'))
+}
+
+// Reliability log — a capped, per-day ring buffer of failures + slow builds so we
+// can see WHICH scope/client/upstream is unreliable and drive those toward live
+// (no cache). Blobs have no atomic append, so we read-modify-write the day's
+// bucket; failures are rare enough that the occasional lost concurrent write is
+// an acceptable trade for zero extra infrastructure. Never throws into the
+// request path.
+const diagStore = () => getStore({ name: 'caalano-diag', consistency: 'strong' })
+const DIAG_DAY_CAP = 400
+function diagDayKey(d) { return 'diag:' + new Date(d).toISOString().slice(0, 10) }
+async function diagLog(entry) {
+  try {
+    const now = Date.now()
+    const dayKey = diagDayKey(now)
+    const store = diagStore()
+    const cur = (await store.get(dayKey, { type: 'json' }).catch(() => null)) || []
+    cur.push({ t: now, ...entry })
+    const trimmed = cur.length > DIAG_DAY_CAP ? cur.slice(cur.length - DIAG_DAY_CAP) : cur
+    await store.setJSON(dayKey, trimmed)
+    // Maintain a small index of which days have logs, so the viewer can page back.
+    const idx = (await store.get('diag:index', { type: 'json' }).catch(() => null)) || []
+    const day = dayKey.slice(5)
+    if (!idx.includes(day)) { idx.push(day); idx.sort().reverse(); await store.setJSON('diag:index', idx.slice(0, 60)) }
+  } catch { /* diagnostics must never break the request */ }
+}
+
 export default async (req) => {
+  const _t0 = Date.now()
   const url = new URL(req.url)
   const client = url.searchParams.get('client')
   const scope = url.searchParams.get('scope')
@@ -1814,7 +1866,31 @@ export default async (req) => {
   // the browser (`private`) when auth is on; keep shared-CDN caching (`public`)
   // only in single-user mode where every caller has identical access.
   const cacheScope = process.env.AUTH_SECRET ? 'private' : 'public'
-  const json = (obj, status = 200, cache = false) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
+  // Populated after access control (below) for cacheable client-scoped requests.
+  let _ckey = null       // blob cache key for this request
+  let _staleHit = null   // last cached payload (any age) — for stale-on-error fallback
+  const mkResponse = (obj, status, cache) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
+  const json = async (obj, status = 200, cache = false) => {
+    const softErr = status === 200 && obj && obj.error
+    // Stale-on-error: a transient rebuild failure (upstream timeout / 5xx that the
+    // branch caught and returned as a 200 { error }) falls back to the last good
+    // payload instead of surfacing an error to the user. Only for cacheable
+    // requests that actually have a recent-enough cached copy. The diag write is
+    // awaited so the failure is durably recorded before the lambda can freeze.
+    if (_ckey && _staleHit && softErr && (Date.now() - _staleHit.at) < STALE_ON_ERROR_MS) {
+      await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at })
+      return mkResponse({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true } }, 200, true)
+    }
+    if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240) })
+    // Write-through: cache a freshly-built success, and flag builds that came close
+    // to the timeout so we can see which scopes to make live-safe first.
+    if (_ckey && cache && status === 200 && obj && !obj.error && !obj._cache) {
+      writeResultCache(_ckey, obj)
+      const ms = Date.now() - _t0
+      if (ms > 6000) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms })
+    }
+    return mkResponse(obj, status, cache)
+  }
 
   if (!key) return json({ error: 'WINDSOR_API_KEY not set' }, 500)
   // Merge any UI-added clients (Settings -> Add client) into the registry so
@@ -1859,6 +1935,47 @@ export default async (req) => {
   const canView = (id) => (!restrictTo || restrictTo.has(id)) && !restrictedSet.has(id)
   const filtered = !!restrictTo || restrictedSet.size > 0
   const pickAllowed = (obj) => filtered ? Object.fromEntries(Object.entries(obj || {}).filter(([id]) => canView(id))) : (obj || {})
+
+  // ---- Server result cache (fresh-hit fast path) ---------------------------
+  // Now that access control has run, a cache hit for this client-scoped request
+  // is safe to serve. `_ckey` also arms the write-through + stale-on-error paths
+  // inside json() above. The Refresh button (which appends `_r=<nonce>`) bypasses
+  // the fresh window so a manual refresh is always fully live.
+  const _isCacheable = req.method === 'GET' && !debug && client && !restrictTo && restrictedSet.size === 0 &&
+    (CACHEABLE_SCOPES.has(scope) || (!scope && CACHEABLE_CHANNELS.has(channel)))
+  if (_isCacheable) {
+    _ckey = cacheKeyFrom(url)
+    _staleHit = await readResultCache(_ckey)
+    const bust = !!url.searchParams.get('_r')
+    if (_staleHit && !bust && (Date.now() - _staleHit.at) < RESULT_TTL_MS) {
+      return json({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000) } }, 200, true)
+    }
+  }
+
+  // ---- Reliability log reader (staff/admin) --------------------------------
+  // Reads the failure/slow-build ring buffer so the Settings → Reliability panel
+  // can show what's failing, where, and how close to the timeout each scope runs.
+  if (scope === 'diaglog') {
+    if (me && me.role !== 'superadmin') return json({ error: 'Not authorised.' }, 403)
+    try {
+      const store = diagStore()
+      const idx = (await store.get('diag:index', { type: 'json' }).catch(() => null)) || []
+      const days = idx.slice(0, Math.max(1, Math.min(14, Number(url.searchParams.get('days')) || 3)))
+      let entries = []
+      for (const day of days) { const rows = await store.get(`diag:${day}`, { type: 'json' }).catch(() => null); if (Array.isArray(rows)) entries = entries.concat(rows) }
+      entries.sort((a, b) => b.t - a.t)
+      const summary = {}
+      for (const e of entries) { const k = `${e.sev}|${e.scope}`; summary[k] = (summary[k] || 0) + 1 }
+      return json({ scope: 'diaglog', days, count: entries.length, summary, entries: entries.slice(0, 400) })
+    } catch (e) { return json({ scope: 'diaglog', error: String(e.message || e).slice(0, 200) }) }
+  }
+  // Client-side failure beacon: the browser POSTs a failure (502 / timeout /
+  // parse error it saw) so the same log captures browser-visible breakages the
+  // function itself never got to record.
+  if (scope === 'clientlog' && req.method === 'POST') {
+    try { const b = await req.json().catch(() => ({})); await diagLog({ sev: 'client', scope: String(b.scope || 'unknown').slice(0, 60), client: b.client || client || null, ms: Number(b.ms) || null, error: String(b.error || '').slice(0, 240) }) } catch { /* ignore */ }
+    return json({ ok: true })
+  }
 
   // ---- Monthly Report ------------------------------------------------------
   // Frozen monthly client reports. The deck itself is assembled on the client

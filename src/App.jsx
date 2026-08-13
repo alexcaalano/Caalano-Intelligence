@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.231.0'
+const APP_VERSION = '3.232.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -488,7 +488,7 @@ function computeRows(snapClients, live) {
 }
 
 /* ============ Overview ============ */
-function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onPick }) {
+function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, wonBasis = 'closed', onPick }) {
   const rowById = Object.fromEntries(rows.map((r) => [r.id, r]))
   const nameOf = (id) => rowById[id]?.name || id
   const AlertCol = ({ title, color, list }) => (
@@ -517,7 +517,7 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onP
   // won-revenue basis, so a finance client's loan-sized deal value could make
   // the two disagree by millions. `ov` is shared down to AgencyComparison so
   // there's a single fetch.
-  const ov = useOvRows(rows, range, nonce)
+  const ov = useOvRows(rows, range, nonce, wonBasis)
   const crmIds = rows.filter((r) => r.c.ghl).map((r) => r.id)
   let totalRev = 0, crmReady = 0
   for (const id of crmIds) {
@@ -534,7 +534,7 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, onP
         <Kpi label="Leads & Conversions" tag="ADS" value={fmtNumber(t.conversions)} />
         <Kpi label="Blended Cost / Result" tag="ADS" value={fmtCurrency(cpl, currency)} />
         <Kpi label="Blended CTR" tag="ADS" value={fmtPct(ctr, 2)} />
-        <Kpi label="Revenue Generated" tag="CRM" value={crmIds.length ? (crmReady ? fmtCurrency(totalRev, currency) : '…') : '-'} flat={crmPending > 0 ? `${crmReady}/${crmIds.length} clients loaded` : undefined} />
+        <Kpi label={<>Revenue Generated <WonBasisChip basis={wonBasis} /></>} tag="CRM" value={crmIds.length ? (crmReady ? fmtCurrency(totalRev, currency) : '…') : '-'} flat={crmPending > 0 ? `${crmReady}/${crmIds.length} clients loaded` : undefined} />
         <Kpi label="ROAS" tag="CRM" value={crmReady && t.spend ? `${roas.toFixed(2)}×` : '-'} flat={crmPending > 0 ? 'loading CRM…' : undefined} />
       </div>
       {alerts && (alerts.meta || alerts.google) && <>
@@ -595,16 +595,16 @@ function primaryCalOf(clientId) {
 // Lazy-fetch the GHL metrics (opps/booked/shown/won/revenue per channel, cur +
 // prev) for each CRM client, one request each, so the fast Windsor columns
 // render immediately and these fill in with spinners.
-function useOvRows(rows, range, nonce = 0) {
+function useOvRows(rows, range, nonce = 0, wonBasis = 'closed') {
   const [map, setMap] = useState({})
   const ghlIds = rows.filter((r) => r.c.ghl).map((r) => r.id)
-  const depKey = ghlIds.join(',') + '|' + rangeQuery(range) + '|' + nonce
+  const depKey = ghlIds.join(',') + '|' + rangeQuery(range) + '|' + nonce + '|' + wonBasis
   useEffect(() => {
     let alive = true
     setMap(Object.fromEntries(ghlIds.map((id) => [id, { status: 'loading' }])))
     const one = (id, period) => {
       const pc = primaryCalOf(id)
-      const q = `${rangeQuery(range)}&cal=${encodeURIComponent(pc.cals)}&stage=${encodeURIComponent(pc.stage)}&period=${period}`
+      const q = `${rangeQuery(range)}&cal=${encodeURIComponent(pc.cals)}&stage=${encodeURIComponent(pc.stage)}&period=${period}&wonBasis=${wonBasis}`
       const ctl = new AbortController()
       const timer = setTimeout(() => ctl.abort(), 28000)
       return fetch(`/.netlify/functions/windsor?scope=ovrow&client=${id}&${q}${nonce ? `&_r=${nonce}` : ''}`, { signal: ctl.signal })
@@ -3367,13 +3367,13 @@ const hColor = (s) => (s == null ? '#9aa0a6' : s >= 70 ? '#1e9e5a' : s >= 40 ? '
 const hLabel = (s) => (s == null ? 'No data' : s >= 70 ? 'Healthy' : s >= 40 ? 'Needs attention' : 'At risk')
 const PILLAR_KEYS = [['marketing', 'Marketing'], ['sales', 'Sales'], ['ops', 'Operations'], ['revenue', 'Revenue']]
 
-function useHealth(clientId, range, nonce = 0, reload = 0) {
+function useHealth(clientId, range, nonce = 0, reload = 0, wonBasis = 'closed') {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true
     setSt({ status: 'loading', data: null })
-    const url = `/.netlify/functions/windsor?client=${clientId}&scope=health&${q}${nonce ? `&_r=${nonce}` : ''}${reload ? `&_b=${reload}` : ''}`
+    const url = `/.netlify/functions/windsor?client=${clientId}&scope=health&${q}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}${reload ? `&_b=${reload}` : ''}`
     // Heavy build — retry a couple of times with backoff before showing an error,
     // so a transient timeout on a range change self-heals instead of erroring.
     const attempt = (n) => fetch(`${url}&_a=${n}`)
@@ -3382,7 +3382,7 @@ function useHealth(clientId, range, nonce = 0, reload = 0) {
       .catch(() => { if (!alive) return; if (n < 2) setTimeout(() => { if (alive) attempt(n + 1) }, 1200 * (n + 1)); else setSt({ status: 'err', data: null }) })
     attempt(0)
     return () => { alive = false }
-  }, [clientId, q, nonce, reload])
+  }, [clientId, q, nonce, reload, wonBasis])
   return st
 }
 
@@ -4112,11 +4112,11 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
 }
 
 const CC_CHANS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['google', 'Google'], ['meta', 'Meta']]
-function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser }) {
+function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed' }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
   useEffect(() => { setChan('all') }, [clientId])
-  const health = useHealth(clientId, range, nonce, reload)
+  const health = useHealth(clientId, range, nonce, reload, wonBasis)
   const crmAgg = useCrmAgg(clientId, range, nonce, chan)
   const ccDrill = useCcDrill(clientId, range, nonce, chan)
   const cc = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
@@ -6372,7 +6372,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} />}
+        {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} />}
         {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Meta', range)} /></div>
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
@@ -11895,7 +11895,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
-          {curView === 'clients' && curPicked && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
+          {(curView === 'overview' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
           {curView !== 'monthly' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => { setPicked(null); setView(isViewer ? 'clients' : 'overview') }}>

@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.232.0 — 2026-08-13 · `PENDING` — Won-basis toggle now covers Overview + Caalano360/Executive
+- The **Won basis** toggle (Closed vs Created) now also drives the **Agency Overview** (headline Revenue + leaderboard,
+  via the ovrow feed) and the **Caalano360 / Executive** tab (revenue + ROAS in the health score), in addition to Users.
+  The toggle appears in the header on both the Overview and the client workspace. Backend overlays use `wonInPeriod`'s
+  per-channel closed figures; leads / funnel / appointments stay created-basis; defaults stay `created` server-side so
+  nothing flips unless the UI opts in.
+- Still to come: the **Weekly Traffic Light** board (needs a won-by-week, by-won-date engine) and basis chips on the
+  Executive cards.
+
 ## v3.231.0 — 2026-08-13 · `PENDING` — Auto-resolve Google/Meta campaign IDs → names for Caalano360 attribution
 - Google (and Meta) UTMs usually carry the numeric **campaign ID** (e.g. `utm_campaign=24053934849`), not the name —
   so CRM outcomes keyed by that ID never matched the ad tables (keyed by name) and the **Caalano360 outcome columns

@@ -1429,8 +1429,16 @@ const avgScores = (arr) => { const v = arr.filter((x) => x != null); return v.le
 const safeDiv = (a, b) => (b ? a / b : null)
 const pillar = (label, comps) => { const score = avgScores(comps.map((c) => c.score)); return { label, score, components: comps.filter((c) => c.score != null || c.actual != null) } }
 
-async function buildHealth(c, from, to, preset, key, weights) {
+async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'created') {
   const blend = await buildBlend(c, from, to, preset, key)
+  // Closed won basis: overlay the blend's won/revenue with won-in-period (banked)
+  // before deriving the score, so the Executive's revenue/ROAS reflect it. Leads
+  // and the funnel stay created-basis. Default 'created' → unchanged for snapshot
+  // and other callers.
+  if (wonBasis === 'closed' && c.ghl && from && to) {
+    const wc = await wonInPeriod(c.ghl, from, to).catch(() => null)
+    if (wc) applyClosedBasisBlend(blend, wc)
+  }
   const p = blend.paid, crm = blend.crm || {}, prev = blend.prev || null
   const pc = (prev && prev.crm) || {}
   const pSpend = prev ? prev.adSpend : null
@@ -2551,12 +2559,13 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc) return json({ scope: 'health', client, error: `unknown client ${client}` }, 404)
     try {
+      const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
       const cfg = await readHealthConfig(client)
       const [health, history] = await Promise.all([
-        buildHealth(cc, from, to, preset, key, cfg.weights),
+        buildHealth(cc, from, to, preset, key, cfg.weights, wonBasis),
         readHealthHistory(client).catch(() => []),
       ])
-      return json({ scope: 'health', client, period: { from, to, preset }, ...health, history }, 200, true)
+      return json({ scope: 'health', client, period: { from, to, preset }, wonBasis, ...health, history }, 200, true)
     } catch (e) { return json({ scope: 'health', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
@@ -3185,7 +3194,10 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'ovrow', client, connected: false })
     const cals = (url.searchParams.get('cal') || '').split(',').filter(Boolean)
     const stage = url.searchParams.get('stage')
-    const summ = (attr) => {
+    const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
+    // Closed basis: swap won/revenue per channel to won-in-period (banked); leads,
+    // booked, shown stay created-basis. `wc` = wonInPeriod.channels or null.
+    const summ = (attr, wc) => {
       const chans = attr.channels || {}
       const byCal = (attr.appointments && attr.appointments.byCalendar) || []
       const calRecs = cals.length ? byCal.filter((c) => cals.includes(c.id)) : null
@@ -3198,7 +3210,8 @@ export default async (req) => {
           for (const cr of calRecs) { const src = ch === 'all' ? cr : ((cr.ch && cr.ch[ch]) || {}); booked += src.booked || 0; shown += src.shown || 0 }
           if (stage) booked += Math.max(0, reachedInChannel(chans[ch], stage) - booked)
         } else { booked = tt.booked || 0; shown = tt.shown || 0 }
-        out[ch] = { opps: tt.leads || 0, won: tt.won || 0, revenue: tt.revenue || 0, booked, shown }
+        const wcc = wc && wc[ch]
+        out[ch] = { opps: tt.leads || 0, won: wcc ? wcc.won : (tt.won || 0), revenue: wcc ? wcc.revenue : (tt.revenue || 0), booked, shown }
       }
       const add = (a, b) => ({ opps: a.opps + b.opps, won: a.won + b.won, revenue: a.revenue + b.revenue, booked: a.booked + b.booked, shown: a.shown + b.shown })
       out.paid = add(out.meta, out.google)
@@ -3212,8 +3225,11 @@ export default async (req) => {
     let fr = from, t = to
     if (period === 'prev') { const pr = prevRange(from, to); if (!pr.from) return json({ scope: 'ovrow', client, period, data: null }); fr = pr.from; t = pr.to }
     try {
-      const attr = await buildAttribution(cc.ghl, fr, t, { lite: true })
-      return json({ scope: 'ovrow', client, period, connected: true, data: summ(attr) }, 200, true)
+      const [attr, wcp] = await Promise.all([
+        buildAttribution(cc.ghl, fr, t, { lite: true }),
+        (wonBasis === 'closed' && fr && t) ? wonInPeriod(cc.ghl, fr, t).catch(() => null) : Promise.resolve(null),
+      ])
+      return json({ scope: 'ovrow', client, period, connected: true, wonBasis, data: summ(attr, wcp && wcp.channels) }, 200, true)
     } catch (e) { return json({ scope: 'ovrow', client, period, error: String(e.message || e).slice(0, 160), data: null }, 200) }
   }
 

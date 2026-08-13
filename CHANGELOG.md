@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.215.0 — 2026-08-12 · `PENDING` — Custom Meta conversions: add-by-name + flow through results everywhere
+- **Any custom Meta conversion can now be a client's result.** In Settings → Meta conversions, type a custom
+  conversion by its Ads-Manager name (e.g. `B_Page_View`) and click **Find + add** — it probes the account,
+  confirms it's firing (90-day count), and adds it to the picker so you can set it Primary. Works for any
+  business's own custom pixel event, no code change per client.
+- **The configured conversion now drives Results everywhere**: the Meta tab, Monthly Report, and — new —
+  the **Daily Performance** results/cost-per-result and stacked bar. Previously Daily Performance only
+  counted standard leads, so custom-conversion clients read wrong there.
+- Backend: `buildMeta` pulls + counts the client's configured custom fields alongside the standard result
+  set; `buildTrends` counts each client's configured primary conversion for its daily Meta results (with a
+  safe fallback so a bad field can't blank everyone out); new `metaprobe` scope powers add-by-name.
+
 ## v3.214.0 — 2026-08-12 · `PENDING` — Window breakdown: drill each key event to the exact people
 - In the window breakdown popup, every key event in the **Key events by source** table is now clickable
   and opens the full people list behind it — the exact opportunities that reached that event in that window,

@@ -135,7 +135,17 @@ const META_EVENT_FIELD = {
   SUBMIT_APPLICATION: ['conversions_submit_application_total', 'applications'],
 }
 const DEST_PREFIX = { WEBSITE: 'Website', MESSENGER: 'Messenger', ON_AD: 'On-Facebook', ON_POST: 'On-Facebook', ON_PAGE: 'On-Facebook', ON_VIDEO: 'On-Facebook', PHONE_CALL: 'Call', APP: 'App' }
-const prettyField = (id) => META_CONV_LABEL[id] || String(id || '').replace(/^(conversions_|actions_)/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+const prettyField = (id) => META_CONV_LABEL[id] || String(id || '')
+  .replace(/^(conversions|actions)_offsite_conversion_fb_pixel_custom_/, '')
+  .replace(/^(conversions_|actions_)/, '')
+  .replace(/_/g, ' ')
+  .replace(/\b\w/g, (c) => c.toUpperCase())
+// Candidate Windsor field ids for a custom Meta conversion, from its Ads-Manager
+// event name (e.g. "B_Page_View"). Custom pixel conversions surface as
+// conversions_offsite_conversion_fb_pixel_custom_<snake>; we also try the actions_
+// prefix. Used by the add-custom-conversion probe so any business's own event works.
+const customConvSnake = (name) => String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+const customConvCandidates = (name) => { const s = customConvSnake(name); if (!s) return []; return [`conversions_offsite_conversion_fb_pixel_custom_${s}`, `actions_offsite_conversion_fb_pixel_custom_${s}`] }
 const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 // Auto-detect a row's result field + Ads-Manager-style label from its ad set
 // optimisation goal + destination + promoted object. Returns null when it can't
@@ -238,15 +248,16 @@ async function windsorFetch(connector, fields, from, to, preset, key) {
 
 // Aggregate a set of Meta rows by a key field into a metrics map. Leads use the
 // Ads-Manager-matching definition (fbLeads), not the double-counting superset.
-function aggMeta(rows, keyField) {
+function aggMeta(rows, keyField, extra = []) {
   const m = new Map()
+  const resultFields = extra.length ? [...META_RESULT_FIELDS, ...extra] : META_RESULT_FIELDS
   for (const r of rows) {
     const k = r[keyField]; if (!k) continue
     let e = m.get(k)
     if (!e) { e = { name: k, campaign: r.campaign || null, spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, videoViews: 0, reach: 0, _rf: {}, optGoal: null, destType: null, promoted: null }; m.set(k, e) }
     e.spend += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks)
     e.linkClicks += num(r.inline_link_clicks); e.leads += fbLeads(r); e.videoViews += num(r.actions_video_view); e.reach += num(r.reach)
-    for (const f of META_RESULT_FIELDS) e._rf[f] = (e._rf[f] || 0) + num(r[f])
+    for (const f of resultFields) e._rf[f] = (e._rf[f] || 0) + num(r[f])
     if (!e.optGoal && r.adset_optimization_goal) e.optGoal = r.adset_optimization_goal
     if (!e.destType && r.adset_destination_type) e.destType = r.adset_destination_type
     if (!e.promoted && r.adset_promoted_object) e.promoted = r.adset_promoted_object
@@ -254,16 +265,16 @@ function aggMeta(rows, keyField) {
   return [...m.values()]
 }
 const clean = (e) => { const { _rf, optGoal, destType, promoted, ...v } = e; return v }
-function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback) {
+function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra = []) {
   // FIX A: campaign / ad-set counts come from Meta's own per-level breakdowns
   // (de-duplicated at each level), not from summing the ad rows, so they match
   // Meta Ads Manager instead of inflating via cross-ad attribution.
-  const campaignsRaw = aggMeta(campRows, 'campaign').sort((a, b) => b.spend - a.spend)
+  const campaignsRaw = aggMeta(campRows, 'campaign', extra).sort((a, b) => b.spend - a.spend)
   const prevCamp = new Map()
-  for (const c of aggMeta(pCampRows || [], 'campaign')) prevCamp.set(c.name, c)
+  for (const c of aggMeta(pCampRows || [], 'campaign', extra)) prevCamp.set(c.name, c)
   // Ad sets carry the optimisation goal + promoted object, so results resolve
   // here first; campaign + ad results are rolled up / joined from them.
-  const adsets = aggMeta(adsetRows, 'adset_name').sort((a, b) => b.spend - a.spend)
+  const adsets = aggMeta(adsetRows, 'adset_name', extra).sort((a, b) => b.spend - a.spend)
   for (const a of adsets) {
     const rr = rowResult(a, fallback)
     a.resultField = rr.field; a.resultType = rr.label; a.resultAuto = rr.auto
@@ -336,9 +347,28 @@ async function readMetaPrimary(clientId) {
   try {
     const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
     const mc = s && s.metaconv && s.metaconv[clientId]
-    if (mc && mc.primary) return { field: mc.primary, label: prettyField(mc.primary) }
+    if (mc && mc.primary) {
+      // Custom conversion fields (not in the standard result set) must be fetched +
+      // captured explicitly so resultCount can read them — return them as `extra`.
+      const ids = [mc.primary, ...(mc.secondary || [])].filter(Boolean)
+      const std = new Set(META_RESULT_FIELDS)
+      const extra = [...new Set(ids.filter((f) => !std.has(f)))]
+      return { field: mc.primary, label: prettyField(mc.primary), extra }
+    }
   } catch { /* ignore */ }
   return null
+}
+// Every client's configured PRIMARY Meta conversion field id, keyed by client id, in
+// one settings read — so the cross-client trends builder can count each client's own
+// optimised event (custom conversions included) instead of just standard leads.
+async function readAllMetaPrimary() {
+  const out = {}
+  try {
+    const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+    const mc = (s && s.metaconv) || {}
+    for (const [cid, v] of Object.entries(mc)) if (v && v.primary) out[cid] = v.primary
+  } catch { /* ignore */ }
+  return out
 }
 // Health-score config for a client: pillar weights + optional qualified-stage
 // override. Falls back to equal 25/25/25/25 weights and the zero-config
@@ -423,11 +453,16 @@ export async function runHealthSnapshots(dates) {
 async function buildMeta(accountId, from, to, preset, key, fallback) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
+  // The client's configured CUSTOM conversion fields (Settings → Meta conversions) are
+  // pulled + counted alongside the standard result set, so a non-standard optimised
+  // event (e.g. B_Page_View) reports its own "Results" everywhere, matching Ads Manager.
+  const extra = (fallback && fallback.extra) || []
+  const RESULT_FIELDS = extra.length ? [...META_RESULT_FIELDS, ...extra] : META_RESULT_FIELDS
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
-  const campFields = ['account_id', 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+  const campFields = ['account_id', 'campaign', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
   // Ad-set query carries the optimisation goal + promoted object so results
   // auto-detect per ad set.
-  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
+  const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
   // The per-ad-per-day breakdown (adDaily) is by far the heaviest query — for a
   // year that's (#ads x 365) rows, which blows the payload and the time budget.
   // For big windows drop it to campaign x day (10-50x smaller); the campaign
@@ -444,8 +479,8 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   const adCatch = windowDays(from, to, preset) > 90
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     (adCatch
-      ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt).catch(() => [])
-      : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt)),
+      ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt).catch(() => [])
+      : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt)),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
@@ -454,7 +489,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
     windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
   ])
-  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback)
+  const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra)
   roll.prev = metaTotals(prevRows)
   roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name || null, ad: r.ad_name || null, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && (r.ad || r.campaign))
   roll.adDailyLevel = bigWin ? 'campaign' : 'ad'
@@ -729,8 +764,17 @@ async function buildTrends(key) {
   // Saved campaign→pipeline links, so per-pipeline spend can be split by the actual
   // Settings mapping (Phase 2) rather than a blunt lead-share allocation.
   const savedCampmap = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).then((s) => (s && s.campmap) || {}).catch(() => ({}))
+  // Each client's configured primary Meta conversion, so the daily "results" match its
+  // optimised event (custom conversions included) instead of standard leads only.
+  const metaPrimaryByClient = await readAllMetaPrimary()
+  const baseFbFields = ['account_id', 'campaign', 'date', 'spend', ...FB_LEAD_FIELDS]
+  const primaryFields = [...new Set(Object.values(metaPrimaryByClient))].filter((f) => f && !baseFbFields.includes(f))
+  const metaResultOf = (id, r) => { const pf = metaPrimaryByClient[id]; return pf ? num(r[pf]) : fbLeads(r) }
   const [fb, gg, opps, pipes] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'campaign', 'date', 'spend', ...FB_LEAD_FIELDS], dstr(start), dstr(today), null, key).catch(() => []),
+    // If an added custom field is unexpectedly rejected, fall back to the standard
+    // fields so a single client can't blank out everyone's Meta trends.
+    windsorFetch('facebook', [...baseFbFields, ...primaryFields], dstr(start), dstr(today), null, key)
+      .catch(() => windsorFetch('facebook', baseFbFields, dstr(start), dstr(today), null, key).catch(() => [])),
     windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at', 'opportunity_source'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
@@ -753,7 +797,7 @@ async function buildTrends(key) {
   const ensureReach = (e, key) => ensureReachIn(e.reach, key)
   const ensurePipe = (e, pid, name) => { let p = e.pipe.get(pid); if (!p) { p = { id: pid, name: name || 'Pipeline', leads: mk(), booked: mk(), won: mk(), leadsCh: { meta: mk(), google: mk(), other: mk() }, wonCh: { meta: mk(), google: mk(), other: mk() } }; e.pipe.set(pid, p) } else if (name && (!p.name || p.name === 'Pipeline')) p.name = name; return p }
   const ensureCamp = (m, name) => { let a = m.get(name); if (!a) { a = mk(); m.set(name, a) } return a }
-  for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const ld = fbLeads(r); e.metaSpend[di] += sp; e.metaLeads[di] += ld; if (r.campaign) { ensureCamp(e.campMeta, r.campaign)[di] += sp; ensureCamp(e.campMetaLeads, r.campaign)[di] += ld } }
+  for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const ld = metaResultOf(id, r); e.metaSpend[di] += sp; e.metaLeads[di] += ld; if (r.campaign) { ensureCamp(e.campMeta, r.campaign)[di] += sp; ensureCamp(e.campMetaLeads, r.campaign)[di] += ld } }
   for (const r of gg) { const id = googleId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const cv = num(r.conversions); e.gSpend[di] += sp; e.gConv[di] += cv; if (r.campaign) { ensureCamp(e.campGoogle, r.campaign)[di] += sp; ensureCamp(e.campGoogleConv, r.campaign)[di] += cv } }
   // Windsor blended booked (fallback when the GHL app isn't connected / a client's fetch fails)
   const idxByAcct = {}; const pipeNameByAcct = {}
@@ -2497,15 +2541,41 @@ export default async (req) => {
     const DAY = 86400000
     const f90 = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10)
     const t0 = new Date().toISOString().slice(0, 10)
-    const ids = META_CONV_CANDIDATES.map(([id]) => id)
+    // Candidate list + any custom conversion fields this client already saved, so a
+    // previously-added custom event still shows its live count.
+    let savedCustom = []
+    try { const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }); const mc = s && s.metaconv && s.metaconv[client]; if (mc) { const std = new Set(META_CONV_CANDIDATES.map(([id]) => id)); savedCustom = [mc.primary, ...(mc.secondary || [])].filter(Boolean).filter((f) => !std.has(f)) } } catch { /* ignore */ }
+    const ids = [...new Set([...META_CONV_CANDIDATES.map(([id]) => id), ...savedCustom])]
     try {
       const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...ids], f90, t0, null, key)).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
       let spend = 0; const sums = {}
       for (const r of rows) { spend += num(r.spend); for (const id of ids) sums[id] = (sums[id] || 0) + num(r[id]) }
-      const actions = ids.map((id) => ({ id, label: META_CONV_LABEL[id] || id, count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
-        .filter((a) => a.count > 0).sort((a, b) => b.count - a.count)
+      const savedSet = new Set(savedCustom)
+      const actions = ids.map((id) => ({ id, label: META_CONV_LABEL[id] || prettyField(id), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null, custom: savedSet.has(id) }))
+        .filter((a) => a.count > 0 || savedSet.has(a.id)).sort((a, b) => b.count - a.count)
       return json({ scope: 'metaactions', client, window: { from: f90, to: t0 }, spend: Math.round(spend), actions }, 200, true)
     } catch (e) { return json({ scope: 'metaactions', client, error: String(e.message || e).slice(0, 200), actions: [] }, 200) }
+  }
+
+  // Probe a custom Meta conversion by its Ads-Manager event name (e.g. "B_Page_View").
+  // Tries the standard custom-pixel field-name variants and returns whichever have data,
+  // so any business's own custom conversion can be added in Settings → Meta conversions.
+  if (url.searchParams.get('scope') === 'metaprobe') {
+    const cc = CLIENTS[client]
+    const event = url.searchParams.get('event') || ''
+    if (!cc || !cc.meta) return json({ scope: 'metaprobe', client, meta: false, found: [] })
+    const cands = customConvCandidates(event)
+    if (!cands.length) return json({ scope: 'metaprobe', client, found: [], error: 'Enter a conversion event name.' })
+    const DAY = 86400000
+    const f90 = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10)
+    const t0 = new Date().toISOString().slice(0, 10)
+    try {
+      const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...cands], f90, t0, null, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+      let spend = 0; const sums = {}
+      for (const r of rows) { spend += num(r.spend); for (const id of cands) sums[id] = (sums[id] || 0) + num(r[id]) }
+      const found = cands.map((id) => ({ id, label: prettyField(id), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null })).filter((a) => a.count > 0)
+      return json({ scope: 'metaprobe', client, event, window: { from: f90, to: t0 }, tried: cands, found }, 200, true)
+    } catch (e) { return json({ scope: 'metaprobe', client, error: String(e.message || e).slice(0, 200), found: [] }, 200) }
   }
 
   // Creative Cockpit — every Meta creative with its performance and (where the

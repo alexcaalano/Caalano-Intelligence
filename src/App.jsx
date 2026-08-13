@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.214.0'
+const APP_VERSION = '3.215.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7392,6 +7392,21 @@ function MetaConversionsEditor({ clientId, currency }) {
   const [st, setSt] = useState({ status: 'loading', actions: [] })
   const [cfg, setCfg] = useState(() => loadMetaConv(clientId))
   const [saved, setSaved] = useState(false)
+  const [addName, setAddName] = useState('')
+  const [added, setAdded] = useState([])
+  const [probe, setProbe] = useState({ status: 'idle' })
+  const findCustom = () => {
+    const ev = addName.trim(); if (!ev) return
+    setProbe({ status: 'loading' })
+    fetch(`/.netlify/functions/windsor?scope=metaprobe&client=${clientId}&event=${encodeURIComponent(ev)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        const found = (j && j.found) || []
+        setProbe({ status: found.length ? 'ok' : 'none' })
+        if (found.length) { setAdded((a) => { const seen = new Set(a.map((x) => x.id)); return [...a, ...found.filter((f) => !seen.has(f.id))] }); setAddName('') }
+      })
+      .catch(() => setProbe({ status: 'err' }))
+  }
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', actions: [] })
     fetch(`/.netlify/functions/windsor?scope=metaactions&client=${clientId}`)
@@ -7405,13 +7420,23 @@ function MetaConversionsEditor({ clientId, currency }) {
   const save = () => { saveMetaConv(clientId, cfg); setSaved(true); setTimeout(() => setSaved(false), 1500) }
   const money = (v) => fmtCurrency(v, currency)
   const known = st.actions || []
-  // Keep a previously-saved choice visible even if it didn't fire in the window.
-  const extra = [cfg.primary, ...(cfg.secondary || [])].filter(Boolean).filter((id) => !known.some((a) => a.id === id)).map((id) => ({ id, label: id, count: 0, costPer: null }))
-  const list = [...known, ...extra]
-  const labelOf = (id) => (list.find((a) => a.id === id) || {}).label || id
+  // Merge, de-duplicated by id: discovered events + probed custom events + any saved
+  // choice not otherwise present. Custom events keep their probed label / count.
+  const byId = new Map()
+  for (const a of [...known, ...added]) if (!byId.has(a.id)) byId.set(a.id, a)
+  for (const id of [cfg.primary, ...(cfg.secondary || [])].filter(Boolean)) if (!byId.has(id)) byId.set(id, { id, label: id, count: 0, costPer: null })
+  const list = [...byId.values()]
+  const labelOf = (id) => (byId.get(id) || {}).label || id
   return (
     <div className="mconv">
-      <p className="cap" style={{ marginTop: 0 }}>Choose the Meta conversion this client optimises to as its <b>primary result</b> — it becomes the headline result &amp; cost-per on the Meta tab. Tick any <b>secondary</b> events to show alongside. Only events that fired in the last 90 days are listed (custom-pixel events are this client’s own funnel steps).</p>
+      <p className="cap" style={{ marginTop: 0 }}>Choose the Meta conversion this client optimises to as its <b>primary result</b> — it becomes the headline result &amp; cost-per on the Meta tab, Monthly Report and Daily Performance. Tick any <b>secondary</b> events to show alongside. Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
+      <div className="mconv-add">
+        <input type="text" placeholder="Add a custom conversion by name (e.g. B_Page_View)" value={addName} onChange={(e) => setAddName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') findCustom() }} />
+        <button className="btn-ghost sm" onClick={findCustom} disabled={probe.status === 'loading' || !addName.trim()}>{probe.status === 'loading' ? 'Finding…' : 'Find + add'}</button>
+        {probe.status === 'none' ? <span className="cap">No data for that event name in the last 90 days — check the exact custom-conversion name in Ads Manager.</span>
+          : probe.status === 'err' ? <span className="cap">Probe failed — try again.</span>
+            : probe.status === 'ok' ? <span className="cap" style={{ color: '#16a34a' }}>✓ Added — tick it Primary below.</span> : null}
+      </div>
       {st.status === 'loading' ? <Spinner label="Loading Meta conversions…" />
         : st.status === 'err' ? <div className="cap">Couldn’t load conversions{st.error ? ` — ${st.error}` : ''}.</div>
           : !list.length ? <div className="cap">No Meta conversions have fired for this account in the last 90 days. If the account is new, they’ll appear once data flows.</div>

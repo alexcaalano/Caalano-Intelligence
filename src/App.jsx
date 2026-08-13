@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.242.0'
+const APP_VERSION = '3.243.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2337,6 +2337,10 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   // Ads: the CRM carries the ad id in its own param (utm_ad_id → byAd), so match
   // the Google ad row's id directly. (utm_content is the ad GROUP id, used above.)
   const oAdG = mkOutcomeMap((A && A.byAd) || [])
+  // Landing pages: match the CRM's first-touch URL (byUrl) to the Google landing
+  // page report by normalised URL (drop protocol/www/query/hash/trailing slash).
+  const lpUrlKey = (u) => { if (!u) return ''; let s = String(u).trim().toLowerCase().split('#')[0].split('?')[0]; return s.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '') }
+  const oLpG = mkOutcomeMap((A && A.byUrl) || [])
   const adsFiltered = (g.ads || []).filter((a) => baseCA(a))
   const adSorted = sortRows(adsFiltered.map((a) => ({ ...gMetrics(a), name: adNameOf(a.id), ...o360Fields(oAdG.get(unorm(a.id)), a.cost, a.conversions, o360cols) })), adSort)
   const adPages = Math.max(1, Math.ceil(adSorted.length / PAGE)); const adPg = Math.min(adPage, adPages - 1)
@@ -2542,10 +2546,10 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         <Pager page={stPg} pages={stPages} onPage={setStPage} total={searchTerms.length} unit="terms" />
       </>) : <p className="caveat">No search-term data in this range{selLabel ? ` for ${selLabel}` : ''}.</p>}
       {g.landingPages && g.landingPages.length > 0 && <>
-        <div className="lvl-title">Landing page performance <span className="sub">· {g.landingPages.length} destination URLs by spend · where the budget sent traffic · account-wide</span></div>
-        <div className="table-wrap"><table><thead><tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="cost" sort={lpSort} on={onLpSort}>Cost</SortTh><SortTh k="impressions" sort={lpSort} on={onLpSort}>Impr.</SortTh><SortTh k="ctr" sort={lpSort} on={onLpSort}>CTR</SortTh><SortTh k="clicks" sort={lpSort} on={onLpSort}>Clicks</SortTh><SortTh k="conversions" sort={lpSort} on={onLpSort}>Conv.</SortTh><SortTh k="cvr" sort={lpSort} on={onLpSort}>Conv. rate</SortTh><SortTh k="costConv" sort={lpSort} on={onLpSort}>Cost/conv</SortTh></tr></thead>
-          <tbody>{sortRows(g.landingPages.map((lp) => ({ ...lp, ctr: rate(lp.clicks, lp.impressions), cvr: rate(lp.conversions, lp.clicks), costConv: lp.conversions ? lp.cost / lp.conversions : null })), lpSort).map((lp) => { const short = String(lp.url).replace(/^https?:\/\//, '').replace(/\/$/, ''); return (
-            <tr key={lp.url}><td className="lp-cell"><a href={lp.url} target="_blank" rel="noopener noreferrer" title={lp.url} className="lp-link">{short.length > 150 ? short.slice(0, 148) + '…' : short}</a></td><td>{fmtCurrency(lp.cost, currency)}</td><td>{fmtNumber(lp.impressions)}</td><td>{fmtPct(rate(lp.clicks, lp.impressions), 2)}</td><td>{fmtNumber(lp.clicks)}</td><td>{fmtNumber(lp.conversions)}</td><td>{fmtPct(rate(lp.conversions, lp.clicks), 1)}</td><td>{lp.conversions ? fmtCurrency(lp.cost / lp.conversions, currency) : '-'}</td></tr>
+        <div className="lvl-title">Landing page performance <span className="sub">· {g.landingPages.length} destination URLs by spend · where the budget sent traffic · account-wide{has360 ? ' · green = CRM outcomes (matched by first-touch URL)' : ''}</span></div>
+        <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="cost" sort={lpSort} on={onLpSort}>Cost</SortTh><SortTh k="impressions" sort={lpSort} on={onLpSort}>Impr.</SortTh><SortTh k="ctr" sort={lpSort} on={onLpSort}>CTR</SortTh><SortTh k="clicks" sort={lpSort} on={onLpSort}>Clicks</SortTh><SortTh k="conversions" sort={lpSort} on={onLpSort}>Conv.</SortTh><SortTh k="cvr" sort={lpSort} on={onLpSort}>Conv. rate</SortTh><SortTh k="costConv" sort={lpSort} on={onLpSort}>Cost/conv</SortTh>{has360 && <O360Head sort={lpSort} on={onLpSort} cols={o360cols} />}</tr></thead>
+          <tbody>{sortRows(g.landingPages.map((lp) => ({ ...lp, ctr: rate(lp.clicks, lp.impressions), cvr: rate(lp.conversions, lp.clicks), costConv: lp.conversions ? lp.cost / lp.conversions : null, ...o360Fields(oLpG.get(unorm(lpUrlKey(lp.url))), lp.cost, lp.conversions, o360cols) })), lpSort).map((lp) => { const short = String(lp.url).replace(/^https?:\/\//, '').replace(/\/$/, ''); return (
+            <tr key={lp.url}><td className="lp-cell"><a href={lp.url} target="_blank" rel="noopener noreferrer" title={lp.url} className="lp-link">{short.length > 150 ? short.slice(0, 148) + '…' : short}</a></td><td>{fmtCurrency(lp.cost, currency)}</td><td>{fmtNumber(lp.impressions)}</td><td>{fmtPct(rate(lp.clicks, lp.impressions), 2)}</td><td>{fmtNumber(lp.clicks)}</td><td>{fmtNumber(lp.conversions)}</td><td>{fmtPct(rate(lp.conversions, lp.clicks), 1)}</td><td>{lp.conversions ? fmtCurrency(lp.cost / lp.conversions, currency) : '-'}</td>{has360 && o360Cells(lp, currency, o360cols)}</tr>
           ) })}</tbody></table></div>
       </>}
       {daily.length > 0 && <>

@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.243.0 — 2026-08-13 · `PENDING` — Landing Page Performance: green Caalano360 columns matched by URL
+- The **Landing Page Performance** table now carries the full green Caalano360 outcome columns, matched by the CRM's
+  **first-touch URL** (`attributions[].url`) to the Google landing-page report. This is a robust matching path that
+  doesn't depend on ID mapping — GHL exposes the clean landing URL on every opportunity.
+- Backend (`ghl.mjs`): `utmOf` now returns the first-touch `url`; `buildAttribution` adds a `byUrl` dimension
+  (normalised: no protocol/www/query/hash/trailing slash) threaded through every outcome bump, exposed as `byUrl`.
+
 ## v3.242.0 — 2026-08-13 · `PENDING` — Fix: ad-group attribution (byCreative) + connector discovery timeout
 - **Ad-group Caalano360 columns now match.** Root cause: the attribution builder exposes the `utm_content` dimension
   as `byCreative`, but the Google view's ad-group matcher (and its diagnostic) read a non-existent `byContent`, so the

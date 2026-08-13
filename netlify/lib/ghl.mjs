@@ -475,6 +475,20 @@ export async function listCalendars(locationId) {
   const cals = j.calendars || j.calendar || []
   return cals.map((c) => ({ id: c.id || c._id || c.calendarId, name: c.name || c.calendarName || 'Calendar' })).filter((c) => c.id)
 }
+// Pipelines + their stages straight from the GoHighLevel API (not Windsor), so
+// the Key-events editor can list stages the moment a client is linked — before
+// Windsor has backfilled any opportunity data for the account. Shape matches the
+// blend feed's pipelines (id, name, stages:[{id,name,pos}]) so the editor can use
+// either interchangeably.
+export async function listPipelines(locationId) {
+  const locTok = await locationToken(locationId)
+  const pipes = await fetchPipelines(locTok, locationId)
+  return (pipes || []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    stages: (p.stages || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s, i) => ({ id: s.id, name: s.name, pos: s.position ?? i })),
+  }))
+}
 
 // Per-form performance: group leads by the form they filled out (Meta Lead
 // Forms by their real facebookFormName, GHL/website forms by name) and tie each

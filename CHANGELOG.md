@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.223.0 — 2026-08-13 · `PENDING` — Key events: pipeline stages load for just-linked clients; Settings client editor opens on Summary
+- **Pipeline stages now load straight from GoHighLevel** in the Key-events editor, instead of only from Windsor. Windsor
+  only returns a client's pipelines once it has synced opportunity data for the account, so a **just-linked client**
+  (e.g. Quad Care) showed *"No Caalano Systems pipeline stages found"* even though the CRM was connected and calendars
+  loaded. The editor now falls back to the direct GHL pipeline list, so stages appear the moment the client is linked.
+- The **client editor in Settings** now opens on the **Summary** tab (linked accounts, timezone, sales cycle) again,
+  and Summary is the first tab.
+
 ## v3.222.0 — 2026-08-13 · `PENDING` — Speed + reliability: server result cache, stale-on-error, failure log, Super-Admin Logs
 - **Server-side result cache (10-min, stale-while-error).** Heavy client-scoped views (Users, CRM, Meta, Google,
   appointments, cohorts, forms, weekly, health…) now cache their assembled payload in Netlify Blobs. Repeat loads —

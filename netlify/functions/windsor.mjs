@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -2639,7 +2639,16 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'calendars', client, calendars: [] })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'calendars', client, connected: false, calendars: [] })
-    try { return json({ scope: 'calendars', client, connected: true, calendars: await listCalendars(cc.ghl) }, 200, true) }
+    try {
+      // Pipelines come from the DIRECT GHL API (not Windsor), so the Key-events
+      // editor lists stages the instant a client is linked — before Windsor has
+      // synced any opportunity data for the account.
+      const [calendars, pipelines] = await Promise.all([
+        listCalendars(cc.ghl),
+        listPipelines(cc.ghl).catch(() => []),
+      ])
+      return json({ scope: 'calendars', client, connected: true, calendars, pipelines }, 200, true)
+    }
     catch (e) { return json({ scope: 'calendars', client, error: String(e.message || e).slice(0, 160), calendars: [] }, 200) }
   }
 

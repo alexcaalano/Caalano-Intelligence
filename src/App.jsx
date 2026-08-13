@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.222.0'
+const APP_VERSION = '3.223.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6581,10 +6581,16 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
     setCals({ status: 'loading', list: [] })
     fetch(`/.netlify/functions/windsor?scope=calendars&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => setCals({ status: 'ok', list: j.calendars || [] }))
-      .catch(() => setCals({ status: 'err', list: [] }))
+      .then((j) => setCals({ status: 'ok', list: j.calendars || [], pipelines: j.pipelines || [] }))
+      .catch(() => setCals({ status: 'err', list: [], pipelines: [] }))
   }, [open, cals.status, clientId])
-  const pipes = (st.blend && st.blend.pipelines) || []
+  // Prefer Windsor's blend pipelines (they carry per-stage open-deal counts), but
+  // fall back to the direct-GHL pipeline list from the calendars scope when the
+  // blend has none — e.g. a just-linked client Windsor hasn't synced yet, so the
+  // stages still appear immediately instead of "No pipeline stages found".
+  const blendPipes = (st.blend && st.blend.pipelines) || []
+  const directPipes = cals.pipelines || []
+  const pipes = blendPipes.some((p) => (p.stages || []).length) ? blendPipes : (directPipes.length ? directPipes : blendPipes)
   const withStages = pipes.filter((p) => (p.stages || []).length)
   const multi = withStages.length > 1
   // A stage entry is a bare name (or {stage} with no cal); a calendar entry is
@@ -6671,7 +6677,7 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
                 : <p className="cap">Couldn’t load calendars.</p>}
         </div>
         <div className="kev-pipe" style={{ marginTop: 10 }}>Pipeline stages{multi ? ' · grouped by pipeline' : ''}</div>
-        {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
+        {(st.status === 'loading' || (cals.status === 'loading' && !withStages.length)) ? <Spinner label="Loading pipeline stages…" />
           : withStages.length ? withStages.map((p) => (
             <div className="kev-group" key={p.id}>
               {multi && <div className="kev-pipe">{p.name}</div>}
@@ -6680,7 +6686,7 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
               ))}</div>
             </div>
           ))
-          : st.status === 'ok' ? <p className="cap">No Caalano Systems pipeline stages found.</p>
+          : (st.status === 'ok' || cals.status === 'ok') ? <p className="cap">No Caalano Systems pipeline stages found.</p>
             : <p className="cap">Couldn’t load pipeline stages.</p>}
       </div>}
     </div>
@@ -7764,7 +7770,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   // Cache-buster tied to the linked accounts, so relinking a client bypasses
   // the 10-min CDN cache on the blend/attribution/calendar responses.
   const sig = normId(c.ghl) + '-' + normId(c.meta) + '-' + normId(c.google)
-  const tabs = [['profile', 'Overview'], ['summary', 'Summary']]
+  const tabs = [['summary', 'Summary'], ['profile', 'Overview']]
   if (c.ghl) tabs.push(['keyevents', 'Key events'])
   if (c.meta) tabs.push(['metaconv', 'Meta conversions'])
   if (canLink) tabs.push(['links', 'Campaign links'])
@@ -7774,7 +7780,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (c.ghl) tabs.push(['qualstage', 'Qualified lead'])
   tabs.push(['optlog', 'Optimisation Log'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics'])
-  const [tab, setTab] = useState('profile')
+  const [tab, setTab] = useState('summary')
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>

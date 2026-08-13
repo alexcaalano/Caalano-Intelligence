@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.217.1 — 2026-08-12 · `PENDING` — Google conversion actions: star the primary conversions
+- The Google conversion-actions breakdown now marks each **primary** conversion with a **⭐** — the ones
+  with a non-zero Conversions count that make up the Results number. Un-starred rows are secondary actions
+  (counted only in “All conv.”).
+
 ## v3.217.0 — 2026-08-12 · `PENDING` — Window popup: Google conversion-actions drill + Meta-detect diagnostics
 - The window breakdown popup's **Google** row (Ad spend → results) is now clickable and expands the Google
   **conversion actions** for that exact window (3/7/14/21/28 days), same as the 28-day source table.

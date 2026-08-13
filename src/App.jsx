@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.217.0'
+const APP_VERSION = '3.217.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -957,11 +957,11 @@ function GoogleConvDrill({ clientId, days, money }) {
       <table className="mini-tbl tr-brk-tbl">
         <thead><tr><th className="lft">Conversion action</th><th>Conversions</th><th>All conv.</th><th>% of conv.</th></tr></thead>
         <tbody>
-          {rows.map((r) => <tr key={r.name}><td className="lft">{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '—'}</td></tr>)}
+          {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary — counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '—'}</td></tr> })}
           <tr className="tr-src-tot"><td className="lft">Total</td><td>{fmtNumber(Math.round(totConv * 10) / 10)}</td><td>{fmtNumber(Math.round(rows.reduce((s, r) => s + r.all, 0) * 10) / 10)}</td><td>100%</td></tr>
         </tbody>
       </table>
-      <p className="tr-brk-note cap">“Conversions” is Google’s primary/optimised count (matches the Results number); “All conv.” includes secondary actions. Account-wide over the last {days} days.</p>
+      <p className="tr-brk-note cap"><b>⭐ = primary conversion</b> — these are what make up the Results number (Google’s primary/optimised “Conversions” count). Un-starred rows are secondary actions, counted only in “All conv.”. Account-wide over the last {days} days.</p>
     </div>
   )
 }

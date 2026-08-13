@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.224.0'
+const APP_VERSION = '3.225.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7091,6 +7091,105 @@ function AddClientModal({ existing, editClient, onClose }) {
     </div>
   )
 }
+// --- Auto-onboard --------------------------------------------------------
+// Name-normaliser + similarity for matching a GHL location to its Meta / Google
+// ad accounts. Strips punctuation and common legal/industry filler so
+// "Quad Care Pty Ltd" ~ "Quad Care - ADHD" still match on their real name.
+const AO_STOP = new Set(['pty', 'ltd', 'inc', 'llc', 'co', 'the', 'group', 'and', 'pl'])
+const aoTokens = (s) => new Set(String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter((t) => t && !AO_STOP.has(t)))
+const aoSim = (a, b) => { const A = aoTokens(a), B = aoTokens(b); if (!A.size || !B.size) return 0; let inter = 0; for (const t of A) if (B.has(t)) inter++; return inter / Math.max(A.size, B.size) }
+const aoBest = (name, list) => { let best = null, score = 0; for (const it of list) { const s = aoSim(name, it.name); if (s > score) { score = s; best = it } } return score >= 0.5 ? { id: best.id, name: best.name, score } : null }
+const aoSlug = (s) => String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
+// Auto-onboard modal: pulls every GHL agency location + Windsor Meta/Google
+// account, fuzzy-matches each unmapped location to its ad accounts, and lets you
+// confirm + create them all in one pass. The closest thing to "install to a
+// sub-account and it connects" with the accounts we can already see.
+function AutoOnboardModal({ existing, onClose }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [rows, setRows] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(0)
+  const load = (force) => {
+    setSt({ status: 'loading', data: null })
+    fetchDiscover(force).then((d) => {
+      setSt({ status: 'ok', data: d })
+      const mapped = new Set()
+      for (const c of existing || []) { if (c.ghl) mapped.add(normId(c.ghl)) }
+      const meta = d.meta || [], google = d.google || []
+      // Anchor on GHL locations not already linked to a client; suggest the best
+      // Meta + Google match for each.
+      const next = (d.ghl || []).filter((l) => !mapped.has(normId(l.id)) && !l.mapped).map((l) => {
+        const m = aoBest(l.name, meta.filter((x) => !x.mapped)) || aoBest(l.name, meta)
+        const g = aoBest(l.name, google.filter((x) => !x.mapped)) || aoBest(l.name, google)
+        return { ghlId: l.id, ghlName: l.name, name: l.name, meta: m ? m.id : '', google: g ? g.id : '', sel: true, matchM: m ? Math.round(m.score * 100) : null, matchG: g ? Math.round(g.score * 100) : null }
+      })
+      setRows(next)
+    }).catch(() => setSt({ status: 'err', data: null }))
+  }
+  useEffect(() => { load(false) /* eslint-disable-next-line */ }, [])
+  const d = st.data || {}
+  const metaList = d.meta || [], googleList = d.google || []
+  const nameOf = (list, id) => { const it = list.find((x) => normId(x.id) === normId(id)); return it ? it.name : null }
+  const upd = (i, patch) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const selected = rows.filter((r) => r.sel)
+  const createAll = async () => {
+    if (!selected.length || busy) return
+    setBusy(true); let n = 0
+    const taken = new Set((existing || []).map((c) => c.id))
+    for (const r of selected) {
+      let base = aoSlug(r.name), id = base, k = 2
+      while (taken.has(id)) id = `${base}-${k++}`
+      taken.add(id)
+      saveCustomClient(id, {
+        name: r.name.trim() || r.ghlName, meta: r.meta || null, google: r.google || null, ghl: r.ghlId || null,
+        metaName: nameOf(metaList, r.meta), googleName: nameOf(googleList, r.google), ghlName: r.ghlName,
+      })
+      n++; setDone(n)
+    }
+    setBusy(false); setTimeout(onClose, 700)
+  }
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head">
+          <div><h3>✨ Auto-onboard clients</h3><span className="cap">Every Caalano Systems location that isn’t linked yet, matched to its Meta &amp; Google ad accounts</span></div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><button className="btn-ghost sm" onClick={() => load(true)} disabled={st.status === 'loading'}>⟳ Refresh</button><button className="icon-btn" onClick={onClose}>✕</button></div>
+        </div>
+        <div className="m-body">
+          {st.status === 'loading' ? <Spinner label="Scanning your Caalano Systems, Meta &amp; Google accounts…" />
+            : st.status === 'err' ? <div className="cap">Couldn’t load accounts — <button className="btn-ghost sm" onClick={() => load(true)}>try again</button>.</div>
+              : rows.length === 0 ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>Every Caalano Systems location is already linked to a client.</b><p className="cap">New sub-account? Install the app on it and add its ad account to your Meta Business Manager + Windsor, then hit Refresh.</p></div>
+                : (<>
+                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.</p>
+                  <div className="ao-table">
+                    <div className="ao-h"><span /><span>Client name</span><span>Caalano Systems</span><span>Meta</span><span>Google</span></div>
+                    {rows.map((r, i) => (
+                      <div className={`ao-row${r.sel ? '' : ' off'}`} key={r.ghlId}>
+                        <label className="ao-chk"><input type="checkbox" checked={r.sel} onChange={() => upd(i, { sel: !r.sel })} /></label>
+                        <input className="ao-name" value={r.name} onChange={(e) => upd(i, { name: e.target.value })} />
+                        <span className="ao-ghl" title={r.ghlId}>{r.ghlName}</span>
+                        <span className="ao-sel">
+                          <select value={r.meta} onChange={(e) => upd(i, { meta: e.target.value })}><option value="">— none —</option>{metaList.map((m) => <option key={m.id} value={m.id}>{m.name}{m.mapped ? ' (in use)' : ''}</option>)}</select>
+                          {r.matchM != null && r.meta ? <span className={`ao-badge ${r.matchM >= 60 ? 'good' : 'weak'}`}>{r.matchM}%</span> : null}
+                        </span>
+                        <span className="ao-sel">
+                          <select value={r.google} onChange={(e) => upd(i, { google: e.target.value })}><option value="">— none —</option>{googleList.map((g) => <option key={g.id} value={g.id}>{g.name}{g.mapped ? ' (in use)' : ''}</option>)}</select>
+                          {r.matchG != null && r.google ? <span className={`ao-badge ${r.matchG >= 60 ? 'good' : 'weak'}`}>{r.matchG}%</span> : null}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="addcl-foot">
+                    <span className="cap">{selected.length} of {rows.length} selected{busy ? ` · creating ${done}/${selected.length}…` : ''}</span>
+                    <button className="addcl-save" disabled={!selected.length || busy} onClick={createAll}>{busy ? 'Creating…' : `Create ${selected.length} client${selected.length === 1 ? '' : 's'}`}</button>
+                  </div>
+                  <p className="caveat" style={{ marginTop: 10 }}>Matches are by account name — a location with no confident ad-account match is created CRM-only, which is fine (link Meta/Google later). Meta/Google accounts only appear once Windsor has synced them, so add the ad account to your Business Manager + Windsor first if it’s missing.</p>
+                </>)}
+        </div>
+      </div>
+    </div>
+  )
+}
 // An account chip that shows the account NAME (resolved from discovery) with the
 // raw id underneath, so mis-links are obvious at a glance.
 function AccountTag({ label, id, name }) {
@@ -7391,6 +7490,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState(null) // client being configured (modal)
   const [adding, setAdding] = useState(false)   // add/edit-client explorer modal (true = new, client = edit)
+  const [autoOnboard, setAutoOnboard] = useState(false) // auto-onboard matcher modal
   const role = authEnabled && authUser ? authUser.role : 'admin' // legacy/basic = full admin
   const isAdmin = isAdminishFE(role)
   const isSuper = !authEnabled || role === 'superadmin' // legacy/basic = super
@@ -7460,6 +7560,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
       <div className="set-toolbar">
         <div className="chan-toggle">{SET_FILTERS.filter(([k]) => k !== 'deleted' || deletedList.length).map(([k, lbl]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{lbl}{k === 'active' ? ` · ${activeCount}` : k === 'inactive' ? ` · ${liveClients.length - activeCount}` : k === 'deleted' ? ` · ${deletedList.length}` : ''}</button>)}</div>
         <input className="set-search" placeholder="Search clients…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {isSuper && <button className="set-add" onClick={() => setAutoOnboard(true)} title="Auto-match every unlinked Caalano Systems location to its Meta & Google accounts">✨ Auto-onboard</button>}
         {isSuper && <button className="set-add" onClick={() => setAdding(true)}>+ Add client</button>}
         <LogoSyncButton />
         <span className="set-saved">✓ Saved to server · shared across your team</span>
@@ -7508,6 +7609,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
       </>)}
       {editing && <SettingsEditModal client={editing} names={names} currency={currency} canManageAccounts={isSuper} onClose={() => setEditing(null)} onOpen={() => { const cc = editing; setEditing(null); onPick(cc) }} onRelink={() => { const cc = editing; setEditing(null); setAdding(cc) }} />}
       {adding && <AddClientModal existing={config.clients} editClient={typeof adding === 'object' ? adding : null} onClose={() => setAdding(false)} />}
+      {autoOnboard && <AutoOnboardModal existing={config.clients} onClose={() => setAutoOnboard(false)} />}
     </div>
   )
 }

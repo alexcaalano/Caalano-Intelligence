@@ -2777,3 +2777,19 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .logs-tbl td:not(.lft), .logs-tbl th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
 .logs-when { white-space: nowrap; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .logs-detail { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* ---- Auto-onboard matcher -------------------------------------------- */
+.ao-table { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.ao-h, .ao-row { display: grid; grid-template-columns: 34px 1.4fr 1.3fr 1.5fr 1.5fr; gap: 10px; align-items: center; }
+.ao-h { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); padding: 0 4px; }
+.ao-row { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 7px 8px; }
+.ao-row.off { opacity: .45; }
+.ao-chk { display: flex; justify-content: center; }
+.ao-name { font-weight: 700; font-size: 13px; }
+.ao-name, .ao-sel select { width: 100%; padding: 6px 8px; border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); border-radius: 7px; font-size: 12.5px; }
+.ao-ghl { font-size: 12.5px; color: var(--muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ao-sel { display: flex; align-items: center; gap: 6px; }
+.ao-sel select { flex: 1; min-width: 0; }
+.ao-badge { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 999px; flex: none; }
+.ao-badge.good { background: color-mix(in srgb, var(--pos) 18%, transparent); color: var(--pos); }
+.ao-badge.weak { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }

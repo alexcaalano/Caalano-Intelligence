@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.225.0 — 2026-08-13 · `PENDING` — Auto-onboard: one-click link every Caalano Systems location to its Meta & Google accounts
+- New **✨ Auto-onboard** button in Settings → Clients (Super-Admin). It scans every Caalano Systems (GoHighLevel) agency
+  location that isn't linked to a client yet, and **fuzzy-matches each one to its Meta & Google ad accounts by name**
+  (e.g. "Quad Care" GHL ↔ "Quad Care" Meta), showing a confidence badge.
+- Review the suggested links (tweak the Meta/Google dropdowns, rename, untick any you don't want) and **create them all
+  in one pass** — the closest thing to "install the app on a sub-account and it just connects" with the accounts we can
+  already see. A location with no confident ad-account match is created CRM-only (link ads later).
+- Matches use a name normaliser that strips punctuation and legal filler (Pty/Ltd/etc.) so slightly different names
+  still pair up. Ad accounts only appear once Windsor has synced them, so add the account to your Business Manager +
+  Windsor first if it's missing, then hit Refresh.
+
 ## v3.224.0 — 2026-08-13 · `PENDING` — CRM data moves to the direct GoHighLevel API (blend / Executive / Client Update / Weekly)
 - The **Caalano360 blend**, **Executive** health score, **Client Update** and the **Weekly Traffic Light** board now
   read their CRM opportunities, pipelines and user names **straight from the GoHighLevel API** instead of Windsor's

@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.238.1'
+const APP_VERSION = '3.239.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2023,6 +2023,160 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   )
 }
 
+/* ============ Analytics (GA4) deep ============ */
+const gaFmtDur = (s) => { const n = Math.round(gaNum(s)); const m = Math.floor(n / 60); const ss = n % 60; return `${m}m ${String(ss).padStart(2, '0')}s` }
+const gaNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
+const GA_C = { sessions: '#6366f1', engaged: '#22c55e', key: '#f59e0b', users: '#06b6d4' }
+function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
+  const [srcSort, onSrcSort] = useSort('sessions')
+  const [lpSort, onLpSort] = useSort('sessions')
+  const [evSort, onEvSort] = useSort('count')
+  const [chSort, onChSort] = useSort('sessions')
+  const scrollRootRef = React.useRef(null)
+  useSyncedTableScroll(scrollRootRef)
+  const ga = deep && deep.ganalytics
+  if (!ga || (!ga.totals && !(ga.daily && ga.daily.length))) return <EmptyDeep channel="Google Analytics" range={range} />
+  const t = ga.totals || {}
+  const prev = ga.prev
+  const A = attr && attr.data && attr.data.attribution
+  const crm = (A && A.channels && A.channels.all && A.channels.all.totals) || null
+  const crmCh = (k) => (A && A.channels && A.channels[k] && A.channels[k].totals) || null
+  const delta = (cur, pv) => (pv ? (cur - pv) / pv * 100 : null)
+  const Delta = ({ cur, pv, inv }) => { const d = delta(cur, pv); if (d == null || !isFinite(d)) return null; const up = d >= 0; const good = inv ? !up : up; return <span className={`ga-d ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(d), 0)}</span> }
+  const daily = (ga.daily || []).map((d) => ({ ...d, label: dayLabel(d.date) }))
+  const src = ga.bySource || []
+  const chan = ga.byChannel || []
+  const events = ga.events || []
+  const lps = ga.landingPages || []
+  const devices = ga.byDevice || []
+  const diag = ga._diag || {}
+  const sessions = t.sessions || 0, engaged = t.engagedSessions || 0, keyEvents = t.keyEvents || 0
+  return (
+    <div className="ga-view" ref={scrollRootRef}>
+      {/* Headline KPI cards */}
+      <div className="ga-kpis">
+        {[
+          ['Sessions', fmtNumber(sessions), prev && <Delta cur={sessions} pv={prev.sessions} />],
+          ['Engaged sessions', fmtNumber(engaged), prev && <Delta cur={engaged} pv={prev.engagedSessions} />],
+          ['Engagement rate', fmtPct(t.engagementRate || 0, 1), null],
+          ['Bounce rate', fmtPct(t.bounceRate || 0, 1), null],
+          ['Key events', fmtNumber(keyEvents), prev && <Delta cur={keyEvents} pv={prev.keyEvents} />],
+          ['Event count', fmtNumber(t.eventCount || 0), null],
+          ['Page views', fmtNumber(t.pageViews || 0), prev && <Delta cur={t.pageViews || 0} pv={prev.pageViews} />],
+          ['Users', fmtNumber(t.users || 0), prev && <Delta cur={t.users || 0} pv={prev.users} />],
+          ['New users', fmtNumber(t.newUsers || 0), null],
+          ['Avg. session', gaFmtDur(t.avgSessionDuration || 0), null],
+        ].map(([label, value, d]) => (
+          <div className="ga-kpi" key={label}><div className="ga-kpi-l">{label}</div><div className="ga-kpi-v">{value} {d}</div></div>
+        ))}
+      </div>
+
+      {/* Full funnel: website engagement (GA4) → CRM outcomes (Caalano Systems) */}
+      {crm && (() => {
+        const steps = [
+          { k: 'Sessions', v: sessions, c: GA_C.sessions, src: 'GA4' },
+          { k: 'Engaged', v: engaged, c: GA_C.engaged, src: 'GA4' },
+          { k: 'Key events', v: keyEvents, c: GA_C.key, src: 'GA4' },
+          { k: 'CRM leads', v: crm.leads || 0, c: '#8b5cf6', src: 'Caalano Systems' },
+          { k: 'CRM won', v: crm.won || 0, c: '#12b886', src: 'Caalano Systems' },
+        ]
+        const mx = Math.max(1, ...steps.map((s) => s.v))
+        return (
+          <div className="card ga-funnel">
+            <div className="lvl-title" style={{ marginTop: 0 }}>Website-to-revenue funnel <span className="sub">· GA4 traffic &amp; engagement joined to Caalano Systems CRM outcomes for the same window</span></div>
+            <div className="ga-funnel-row">{steps.map((s, i) => (
+              <React.Fragment key={s.k}>
+                <div className="ga-fstep">
+                  <div className="ga-fbar" style={{ background: s.c, height: `${Math.max(6, (s.v / mx) * 84)}px` }} />
+                  <div className="ga-fv">{fmtNumber(s.v)}</div>
+                  <div className="ga-fk">{s.k}</div>
+                  <div className="ga-fsrc">{s.src}</div>
+                  {i > 0 && steps[i - 1].v ? <div className="ga-fconv">{fmtPct(s.v / steps[i - 1].v * 100, 1)}</div> : null}
+                </div>
+              </React.Fragment>
+            ))}</div>
+            <p className="cap">Sessions → Engaged → Key events come from GA4; CRM leads → won come from Caalano Systems (same date range). The % under each step is its conversion from the step before — a quick read on where the drop-off is between traffic, engagement, and revenue.</p>
+          </div>
+        )
+      })()}
+
+      {/* Daily trend */}
+      {daily.length > 0 && <div className="card">
+        <div className="lvl-title" style={{ marginTop: 0 }}>Daily traffic <span className="sub">· {daily.length} days · sessions, engaged sessions &amp; key events</span></div>
+        <ResponsiveContainer width="100%" height={240}>
+          <ComposedChart data={daily} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-2)" vertical={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval="preserveStartEnd" minTickGap={28} />
+            <YAxis yAxisId="l" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={44} />
+            <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={36} />
+            <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border-2)', borderRadius: 8, fontSize: 12 }} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar yAxisId="l" dataKey="sessions" name="Sessions" fill={GA_C.sessions} radius={[3, 3, 0, 0]} maxBarSize={26} />
+            <Bar yAxisId="l" dataKey="engaged" name="Engaged" fill={GA_C.engaged} radius={[3, 3, 0, 0]} maxBarSize={26} />
+            <Line yAxisId="r" dataKey="keyEvents" name="Key events" stroke={GA_C.key} strokeWidth={2} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>}
+
+      {/* Channel grouping + CRM enrichment side by side */}
+      <div className="ga-2col">
+        {chan.length > 0 && <div className="card">
+          <div className="lvl-title" style={{ marginTop: 0 }}>Traffic by channel <span className="sub">· GA4 default channel grouping</span></div>
+          <div className="table-wrap"><table><thead><tr><SortTh k="name" sort={chSort} on={onChSort}>Channel</SortTh><SortTh k="sessions" sort={chSort} on={onChSort}>Sessions</SortTh><SortTh k="engaged" sort={chSort} on={onChSort}>Engaged</SortTh><SortTh k="engagementRate" sort={chSort} on={onChSort}>Eng. rate</SortTh><SortTh k="keyEvents" sort={chSort} on={onChSort}>Key events</SortTh></tr></thead>
+            <tbody>{sortRows(chan, chSort).map((c) => (<tr key={c.name}><td>{c.name}</td><td>{fmtNumber(c.sessions)}</td><td>{fmtNumber(c.engaged)}</td><td>{fmtPct(c.engagementRate, 1)}</td><td>{fmtNumber(c.keyEvents)}</td></tr>))}</tbody></table></div>
+        </div>}
+        {crm && <div className="card">
+          <div className="lvl-title" style={{ marginTop: 0 }}>CRM outcomes by paid channel <span className="sub">· Caalano Systems · enriches Meta &amp; Google beyond ad-platform numbers</span></div>
+          <div className="table-wrap"><table><thead><tr><th>Channel</th><th>Leads</th><th>Booked</th><th>Won</th><th>Revenue</th></tr></thead>
+            <tbody>{[['Meta', 'meta'], ['Google', 'google'], ['Other / organic', 'other']].map(([lbl, k]) => { const c = crmCh(k); return (<tr key={k}><td>{lbl}</td><td>{fmtNumber((c && c.leads) || 0)}</td><td>{fmtNumber((c && c.booked) || 0)}</td><td>{fmtNumber((c && c.won) || 0)}</td><td>{fmtCurrency((c && c.revenue) || 0, currency)}</td></tr>) })}
+              <tr className="ga-tot"><td>All</td><td>{fmtNumber(crm.leads || 0)}</td><td>{fmtNumber(crm.booked || 0)}</td><td>{fmtNumber(crm.won || 0)}</td><td>{fmtCurrency(crm.revenue || 0, currency)}</td></tr></tbody></table></div>
+        </div>}
+      </div>
+
+      {/* Source / medium */}
+      {src.length > 0 && <div className="card">
+        <div className="lvl-title" style={{ marginTop: 0 }}>Traffic by source / medium <span className="sub">· {src.length} · where sessions came from</span></div>
+        <div className="table-wrap"><table><thead><tr><SortTh k="name" sort={srcSort} on={onSrcSort}>Source / medium</SortTh><SortTh k="sessions" sort={srcSort} on={onSrcSort}>Sessions</SortTh><SortTh k="engaged" sort={srcSort} on={onSrcSort}>Engaged</SortTh><SortTh k="engagementRate" sort={srcSort} on={onSrcSort}>Eng. rate</SortTh><SortTh k="keyEvents" sort={srcSort} on={onSrcSort}>Key events</SortTh></tr></thead>
+          <tbody>{sortRows(src, srcSort).slice(0, 30).map((s) => (<tr key={s.name}><td>{s.name}</td><td>{fmtNumber(s.sessions)}</td><td>{fmtNumber(s.engaged)}</td><td>{fmtPct(s.engagementRate, 1)}</td><td>{fmtNumber(s.keyEvents)}</td></tr>))}</tbody></table></div>
+      </div>}
+
+      {/* Landing pages */}
+      {lps.length > 0 && <div className="card">
+        <div className="lvl-title" style={{ marginTop: 0 }}>Landing page performance <span className="sub">· {lps.length} · first page of each session</span></div>
+        <div className="table-wrap"><table><thead><tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="sessions" sort={lpSort} on={onLpSort}>Sessions</SortTh><SortTh k="engaged" sort={lpSort} on={onLpSort}>Engaged</SortTh><SortTh k="engagementRate" sort={lpSort} on={onLpSort}>Eng. rate</SortTh><SortTh k="bounceRate" sort={lpSort} on={onLpSort}>Bounce</SortTh><SortTh k="keyEvents" sort={lpSort} on={onLpSort}>Key events</SortTh></tr></thead>
+          <tbody>{sortRows(lps, lpSort).slice(0, 40).map((lp) => { const short = String(lp.url).replace(/^https?:\/\//, ''); return (<tr key={lp.url}><td title={lp.url}>{short.length > 60 ? short.slice(0, 58) + '…' : short}</td><td>{fmtNumber(lp.sessions)}</td><td>{fmtNumber(lp.engaged)}</td><td>{fmtPct(lp.engagementRate, 1)}</td><td>{fmtPct(lp.bounceRate, 1)}</td><td>{fmtNumber(lp.keyEvents)}</td></tr>) })}</tbody></table></div>
+      </div>}
+
+      {/* Events + devices */}
+      <div className="ga-2col">
+        {events.length > 0 && <div className="card">
+          <div className="lvl-title" style={{ marginTop: 0 }}>Top events <span className="sub">· {events.length} · by count</span></div>
+          <div className="table-wrap"><table><thead><tr><SortTh k="name" sort={evSort} on={onEvSort}>Event</SortTh><SortTh k="count" sort={evSort} on={onEvSort}>Count</SortTh><SortTh k="keyEvents" sort={evSort} on={onEvSort}>Key event</SortTh></tr></thead>
+            <tbody>{sortRows(events, evSort).slice(0, 25).map((e) => (<tr key={e.name}><td>{e.name}</td><td>{fmtNumber(e.count)}</td><td>{e.keyEvents ? fmtNumber(e.keyEvents) : '–'}</td></tr>))}</tbody></table></div>
+        </div>}
+        {devices.length > 0 && <div className="card">
+          <div className="lvl-title" style={{ marginTop: 0 }}>Devices <span className="sub">· sessions by device category</span></div>
+          <div className="mini-scroll">{devices.map((dv) => { const mx = Math.max(1, ...devices.map((x) => x.sessions)); return (
+            <div className="loc-row" key={dv.name}><span className="loc-nm">{dv.name}</span><span className="loc-bar"><span className="loc-fill" style={{ width: `${(dv.sessions / mx) * 100}%` }} /></span><span className="loc-ct">{fmtNumber(dv.sessions)}</span></div>
+          ) })}</div>
+        </div>}
+      </div>
+
+      {/* Diagnostic — only when something didn't come back, so empties are explainable */}
+      {Object.entries(diag).some(([k, v]) => k !== 'connector' && !v) && (
+        <details className="gdiag">
+          <summary>Some Analytics sections are empty · why?</summary>
+          <div className="gdiag-body">
+            <p>These GA4 queries returned no rows for this window/property. If a section you expect is empty, the most likely cause is a Windsor field-name mismatch or the GA4 property ID not matching what Windsor returns. Run <code>?channel=ganalytics&amp;probe=1</code> against the data function to see the exact field spellings Windsor recognises.</p>
+            <div className="gdiag-grid">{Object.entries(diag).filter(([k]) => k !== 'connector').map(([k, v]) => (<div key={k}><b>{k}</b><span>{v ? '✓ data' : '— empty'}</span></div>))}</div>
+            <p className="cap">Connector: {diag.connector || 'google_analytics_4'} · property {ga.property}</p>
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
 /* ============ Google deep ============ */
 const qsClass = (n) => n === '' || n == null ? 'q-unk' : n >= 7 ? 'q-above' : n >= 4 ? 'q-avg' : 'q-low'
 const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
@@ -2798,7 +2952,7 @@ function saveFatigueCfg(cfg) {
 
 // UI-added clients (Settings -> Add client), persisted server-side and merged
 // into the dashboard's client list.
-function customClientList() { return Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && !v._deleted && (v.meta || v.google || v.ghl)).map(([id, v]) => ({ id, name: v.name || id, industry: v.industry || null, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, metaName: v.metaName || null, googleName: v.googleName || null, ghlName: v.ghlName || null, custom: true })) }
+function customClientList() { return Object.entries(SETTINGS.clients || {}).filter(([, v]) => v && !v._deleted && (v.meta || v.google || v.ghl || v.ga4)).map(([id, v]) => ({ id, name: v.name || id, industry: v.industry || null, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, ga4: v.ga4 || null, metaName: v.metaName || null, googleName: v.googleName || null, ghlName: v.ghlName || null, custom: true })) }
 function saveCustomClient(id, mapping) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: mapping }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: mapping } }); bumpSettings() }
 function removeCustomClient(id) { SETTINGS.clients = { ...(SETTINGS.clients || {}), [id]: null }; writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [id]: null } }); bumpSettings() }
 // True delete: hide a client from every list (base or UI-added). A soft _deleted
@@ -6448,11 +6602,13 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // previously added unconditionally, which is why it appeared with no data.)
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
+  // Analytics (GA4) tab — only when the client has a GA4 property linked in Settings.
+  if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
   if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
-  const channel = curTab === 'meta' ? 'meta' : curTab === 'google' ? 'google' : curTab === 'overall' ? 'blend' : null
+  const channel = curTab === 'meta' ? 'meta' : curTab === 'google' ? 'google' : curTab === 'analytics' ? 'ganalytics' : curTab === 'overall' ? 'blend' : null
   // Local retry bump so a failed deep pull (e.g. a large window that timed out)
   // can be re-attempted without a full-app Refresh. Combined with the app nonce.
   const [deepRetry, setDeepRetry] = useState(0)
@@ -6471,6 +6627,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
     if (live.status !== 'ok' || !live.data || !live.data[ch]) return false
     const d = live.data[ch]
     if (ch === 'ghl') return !!d.summary
+    if (ch === 'ganalytics') return !!(d.totals || (d.daily && d.daily.length))
     return (d.campaigns && d.campaigns.length) || (d.ads && d.ads.length)
   }
   const srcFor = (ch) => (liveOK(ch) ? live.data : baked)
@@ -6493,6 +6650,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Google', range)} /></div>
           : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+        {curTab === 'analytics' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Analytics', range)} /></div>
+          : (live.status === 'err' && !liveOK('ganalytics')) ? <DeepError channel="Google Analytics" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
+            : <><LiveBadge mode={liveOK('ganalytics') ? 'live' : null} label={presetLabel} /><AnalyticsDeep deep={srcFor('ganalytics')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
@@ -7146,6 +7306,7 @@ function AddClientModal({ existing, editClient, onClose }) {
   const [ghl, setGhl] = useState(editClient ? (editClient.ghl || '') : '')
   const [meta, setMeta] = useState(editClient ? (editClient.meta || '') : '')
   const [google, setGoogle] = useState(editClient ? (editClient.google || '') : '')
+  const [ga4, setGa4] = useState(editClient ? (editClient.ga4 || '') : '')
   const [nameEdited, setNameEdited] = useState(isEdit)
   const [saved, setSaved] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -7162,12 +7323,12 @@ function AddClientModal({ existing, editClient, onClose }) {
   const nameOf = (arr, id) => { const it = (arr || []).find((x) => normId(x.id) === normId(id)); return it ? it.name : null }
   const slug = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
   const uniqueId = (base) => { let id = base, n = 2; const taken = new Set((existing || []).filter((c) => !isEdit || c.id !== editClient.id).map((c) => c.id)); while (taken.has(id)) id = `${base}-${n++}`; return id }
-  const canSave = name.trim() && (meta || google || ghl)
+  const canSave = name.trim() && (meta || google || ghl || (ga4 || '').trim())
   const save = () => {
     if (!canSave) return
     const mapping = {
       name: name.trim(),
-      meta: meta || null, google: google || null, ghl: ghl || null,
+      meta: meta || null, google: google || null, ghl: ghl || null, ga4: (ga4 || '').trim() || null,
       metaName: nameOf(d.meta, meta), googleName: nameOf(d.google, google), ghlName: nameOf(d.ghl, ghl),
     }
     saveCustomClient(isEdit ? editClient.id : uniqueId(slug(name)), mapping)
@@ -7227,6 +7388,10 @@ function AddClientModal({ existing, editClient, onClose }) {
                   <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty={d.metaErr ? `⚠ Windsor Meta connector error — it may need re-authorising in Windsor: ${d.metaErr}` : 'No Meta accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
                   <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty={d.googleErr ? `⚠ Windsor Google connector error — it may need re-authorising in Windsor: ${d.googleErr}` : 'No Google accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
                 </div>
+                <div className="addcl-ga4">
+                  <label>📊 Google Analytics 4 <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· paste the GA4 property ID (as it appears in Windsor / GA4) to unlock the Analytics tab · optional</span></label>
+                  <input value={ga4} onChange={(e) => setGa4(e.target.value)} placeholder="e.g. 312345678" inputMode="numeric" />
+                </div>
                 <div className="addcl-status cap">
                   {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems (GHL) not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
                   {d.fetchedAt ? <> · refreshed {new Date(d.fetchedAt).toLocaleTimeString()}</> : null}
@@ -7234,7 +7399,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   {d.metaErr || d.googleErr ? <span className="addcl-stat-bad"> · a connector is erroring (see above)</span> : null}
                 </div>
                 <div className="addcl-foot">
-                  {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
+                  {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google || (ga4 || '').trim()) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}${(ga4 || '').trim() ? ' · GA4' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
                   <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
                 <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked — a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the GoHighLevel agency connection. <b>New account not showing?</b> Windsor only lists it once it has synced some data for it — a just-connected account can take a while to backfill. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
@@ -8027,7 +8192,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
     if (!name.trim()) return
     saveCustomClient(c.id, {
       name: name.trim(), industry: industry.trim() || null,
-      meta: c.meta || null, google: c.google || null, ghl: c.ghl || null,
+      meta: c.meta || null, google: c.google || null, ghl: c.ghl || null, ga4: c.ga4 || null,
       metaName: nm('meta', c.meta) || c.metaName || null, googleName: nm('google', c.google) || c.googleName || null, ghlName: nm('ghl', c.ghl) || c.ghlName || null,
     })
     setSavedDetails(true); setTimeout(() => setSavedDetails(false), 1500)
@@ -11940,7 +12105,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const applyOv = (c) => {
     const o = overrides[c.id]; if (!o) return c
     const g = (k, fb) => (o[k] !== undefined && o[k] !== null && o[k] !== '' ? o[k] : fb)
-    return { ...c, name: g('name', c.name), industry: (o.industry !== undefined && o.industry !== '') ? o.industry : c.industry, meta: o.meta !== undefined ? o.meta : c.meta, google: o.google !== undefined ? o.google : c.google, ghl: o.ghl !== undefined ? o.ghl : c.ghl, metaName: o.metaName || c.metaName, googleName: o.googleName || c.googleName, ghlName: o.ghlName || c.ghlName, custom: true }
+    return { ...c, name: g('name', c.name), industry: (o.industry !== undefined && o.industry !== '') ? o.industry : c.industry, meta: o.meta !== undefined ? o.meta : c.meta, google: o.google !== undefined ? o.google : c.google, ghl: o.ghl !== undefined ? o.ghl : c.ghl, ga4: o.ga4 !== undefined ? o.ga4 : c.ga4, metaName: o.metaName || c.metaName, googleName: o.googleName || c.googleName, ghlName: o.ghlName || c.ghlName, custom: true }
   }
   const custom = customClientList()
   const extras = custom.filter((cu) => !data.clients.some((c) => c.id === cu.id))

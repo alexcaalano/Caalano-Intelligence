@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.239.0 — 2026-08-13 · `PENDING` — New Google Analytics (GA4) tab
+- New **Analytics** tab in the client workspace, shown whenever a client has a **GA4 property** linked. Add the property
+  ID in Settings → the connector editor now has a "📊 Google Analytics 4" field alongside Meta / Google / Caalano Systems.
+- The tab shows **Sessions, Engaged sessions, Engagement rate, Bounce rate, Key events, Event count, Page views, Users,
+  New users, Avg. session duration** (with prev-period deltas), a **daily traffic** chart, **traffic by channel** and
+  **by source/medium**, **landing-page performance**, **top events**, and a **device** split.
+- **Caalano Systems enrichment**: a *Website-to-revenue funnel* joins GA4 traffic/engagement to CRM leads → won for the
+  same window (with step-to-step conversion %), plus a *CRM outcomes by paid channel* table that enriches Meta & Google
+  beyond ad-platform numbers — all inside the Analytics tab; the Meta and Google tabs are untouched.
+- Backend: new `channel=ganalytics` Windsor scope (`buildGanalytics`) pulling GA4 via the `google_analytics_4` connector,
+  scoped per client by property ID; every query is independently guarded with a diagnostic panel so a Windsor field-name
+  mismatch degrades one section rather than the whole tab (a `?probe=1` endpoint reports the exact recognised fields).
+
 ## v3.238.1 — 2026-08-13 · `PENDING` — Hotfix: Google Ads views crashing (`matchCA is not defined`)
 - Fixed a regression from v3.237.0 (the cascading-filter refactor) that renamed the `matchCA` drill-filter helper to
   `baseCA` but left one reference in the conversion-actions aggregation. That runs on every Google view render, so

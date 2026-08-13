@@ -430,8 +430,8 @@ export async function customClients() {
     for (const [id, v] of Object.entries(c)) {
       if (!id || !v || typeof v !== 'object') continue
       if (v._deleted) continue
-      if (!v.meta && !v.google && !v.ghl) continue
-      out[id] = { name: v.name || id, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null }
+      if (!v.meta && !v.google && !v.ghl && !v.ga4) continue
+      out[id] = { name: v.name || id, meta: v.meta || null, google: v.google || null, ghl: v.ghl || null, ga4: v.ga4 || null }
     }
     return out
   } catch { return {} }

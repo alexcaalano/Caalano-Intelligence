@@ -1256,6 +1256,61 @@ async function buildGoogle(accountId, from, to, preset, key) {
   return roll
 }
 
+// Google Analytics 4 via the Windsor.ai connector. Scoped to one client's GA4
+// property by `account_id` (Windsor normalises the property id into account_id,
+// same as Meta/Google). Every query is guarded (.catch → null) so an unknown
+// field can't blank the whole tab; _diag records which queries returned rows so
+// empty sections are explainable. Rates are normalised to 0–100 percent.
+const GA4_CONNECTOR = 'google_analytics_4'
+function ga4Agg(rows, keyFn) {
+  const m = new Map()
+  for (const r of (rows || [])) {
+    const k = keyFn(r); if (!k) continue
+    const e = m.get(k) || { name: k, sessions: 0, engaged: 0, keyEvents: 0, eventCount: 0 }
+    e.sessions += num(r.sessions); e.engaged += num(r.engaged_sessions); e.keyEvents += num(r.conversions); e.eventCount += num(r.event_count)
+    m.set(k, e)
+  }
+  return [...m.values()].map((e) => ({ ...e, engagementRate: e.sessions ? e.engaged / e.sessions * 100 : 0 })).sort((a, b) => b.sessions - a.sessions).slice(0, 50)
+}
+// GA rate fields arrive as a ratio (0–1) or already a percent; normalise to %.
+const ga4Pct = (v) => { const n = num(v); return n > 0 && n <= 1 ? n * 100 : n }
+async function buildGanalytics(propertyId, from, to, preset, key) {
+  const filt = (rows) => (rows || []).filter((r) => r.account_id == null || acctEq(r.account_id, propertyId))
+  const pr = prevRange(from, to)
+  const q = (fields, f = from, t = to, p = preset) => windsorFetch(GA4_CONNECTOR, ['account_id', ...fields], f, t, p, key).then(filt).catch(() => null)
+  const [totalRows, dayRows, srcRows, chanRows, evtRows, lpRows, prevRows, devRows] = await Promise.all([
+    q(['sessions', 'engaged_sessions', 'bounce_rate', 'event_count', 'conversions', 'screen_page_views', 'total_users', 'new_users', 'average_session_duration']),
+    q(['date', 'sessions', 'engaged_sessions', 'conversions', 'screen_page_views', 'total_users']),
+    q(['session_source', 'session_medium', 'sessions', 'engaged_sessions', 'conversions', 'event_count']),
+    q(['session_default_channel_grouping', 'sessions', 'engaged_sessions', 'conversions']),
+    q(['event_name', 'event_count', 'conversions']),
+    q(['landing_page', 'sessions', 'engaged_sessions', 'bounce_rate', 'conversions']),
+    pr.from ? q(['sessions', 'engaged_sessions', 'conversions', 'screen_page_views', 'total_users'], pr.from, pr.to, null) : Promise.resolve(null),
+    q(['device_category', 'sessions', 'engaged_sessions', 'conversions']),
+  ])
+  const sum = (rows, f) => (rows || []).reduce((a, r) => a + num(r[f]), 0)
+  const wpct = (rows, f, wf) => { let s = 0, w = 0; for (const r of (rows || [])) { const ww = num(r[wf]); s += ga4Pct(r[f]) * ww; w += ww } return w ? s / w : 0 }
+  const totals = (totalRows && totalRows.length) ? {
+    sessions: sum(totalRows, 'sessions'), engagedSessions: sum(totalRows, 'engaged_sessions'),
+    engagementRate: sum(totalRows, 'sessions') ? sum(totalRows, 'engaged_sessions') / sum(totalRows, 'sessions') * 100 : 0,
+    bounceRate: wpct(totalRows, 'bounce_rate', 'sessions'),
+    eventCount: sum(totalRows, 'event_count'), keyEvents: sum(totalRows, 'conversions'),
+    pageViews: sum(totalRows, 'screen_page_views'), users: sum(totalRows, 'total_users'),
+    newUsers: sum(totalRows, 'new_users'),
+    avgSessionDuration: (() => { let s = 0, w = 0; for (const r of totalRows) { const ww = num(r.sessions); s += num(r.average_session_duration) * ww; w += ww } return w ? s / w : 0 })(),
+  } : null
+  const daily = (dayRows || []).map((r) => ({ date: String(r.date || '').slice(0, 10), sessions: num(r.sessions), engaged: num(r.engaged_sessions), keyEvents: num(r.conversions), pageViews: num(r.screen_page_views), users: num(r.total_users) })).filter((r) => /^\d{4}-\d\d-\d\d$/.test(r.date)).sort((a, b) => a.date.localeCompare(b.date))
+  const bySource = ga4Agg(srcRows, (r) => `${r.session_source || '(direct)'} / ${r.session_medium || '(none)'}`)
+  const byChannel = ga4Agg(chanRows, (r) => r.session_default_channel_grouping || 'Unassigned')
+  const events = (evtRows || []).reduce((m, r) => { const n = r.event_name; if (!n) return m; const e = m.get(n) || { name: n, count: 0, keyEvents: 0 }; e.count += num(r.event_count); e.keyEvents += num(r.conversions); m.set(n, e); return m }, new Map())
+  const eventsArr = [...events.values()].sort((a, b) => b.count - a.count).slice(0, 40)
+  const landingPages = (lpRows || []).map((r) => ({ url: r.landing_page, sessions: num(r.sessions), engaged: num(r.engaged_sessions), engagementRate: num(r.sessions) ? num(r.engaged_sessions) / num(r.sessions) * 100 : 0, bounceRate: ga4Pct(r.bounce_rate), keyEvents: num(r.conversions) })).filter((r) => r.url && r.sessions > 0).sort((a, b) => b.sessions - a.sessions).slice(0, 100)
+  const byDevice = ga4Agg(devRows, (r) => r.device_category || 'unknown')
+  const prev = (prevRows && prevRows.length) ? { sessions: sum(prevRows, 'sessions'), engagedSessions: sum(prevRows, 'engaged_sessions'), keyEvents: sum(prevRows, 'conversions'), pageViews: sum(prevRows, 'screen_page_views'), users: sum(prevRows, 'total_users') } : null
+  const _diag = { totals: !!(totalRows && totalRows.length), daily: !!daily.length, source: !!bySource.length, channel: !!byChannel.length, events: !!eventsArr.length, landingPages: !!landingPages.length, device: !!byDevice.length, connector: GA4_CONNECTOR }
+  return { property: propertyId, totals, prev, daily, bySource, byChannel, events: eventsArr, landingPages, byDevice, _diag }
+}
+
 /* ===== Caalano360 blend: paid + CRM in one call =====
    Stage names come from the Pipelines table (pipeline_stages), so we can
    classify each opportunity as "booked" / "shown" by the POSITION of its
@@ -3418,6 +3473,28 @@ export default async (req) => {
       blend._wonBasis = wonBasis
       if (wonBasis === 'closed' && wonClosed) applyClosedBasisBlend(blend, wonClosed)
       return json({ client, channel, period: { from, to, preset }, blend }, 200, true)
+    } catch (e) { return json({ error: String(e.message || e) }, 502) }
+  }
+
+  // Google Analytics 4 — its own connector + mapping key (c.ga4), so it's routed
+  // before the generic FIELDS lookup.
+  if (channel === 'ganalytics') {
+    const propertyId = c.ga4
+    if (!propertyId) return json({ error: `no GA4 property for ${client}. Add one in Settings.` }, 404)
+    if (url.searchParams.get('probe') === '1') {
+      // Field probe: report which GA4 field names Windsor recognises + populates,
+      // so the exact spellings can be confirmed against the live account.
+      const cand = ['date', 'sessions', 'engaged_sessions', 'engagement_rate', 'bounce_rate', 'event_count', 'conversions', 'key_events', 'screen_page_views', 'page_views', 'total_users', 'new_users', 'active_users', 'average_session_duration', 'session_source', 'session_medium', 'session_source_medium', 'source_medium', 'session_default_channel_grouping', 'default_channel_group', 'landing_page', 'landing_page_plus_query_string', 'event_name', 'device_category']
+      const results = {}
+      await Promise.all(cand.map(async (f) => {
+        try { const rows = await windsorFetch(GA4_CONNECTOR, ['account_id', f], from, to, preset, key); results[f] = { ok: true, rows: rows.length, sample: rows[0] ? rows[0][f] : null } }
+        catch (e) { results[f] = { ok: false, error: String(e.message || e).slice(0, 80) } }
+      }))
+      return json({ probe: GA4_CONNECTOR, propertyId, fields: results })
+    }
+    try {
+      const ganalytics = await buildGanalytics(propertyId, from, to, preset, key)
+      return json({ client, channel, period: { from, to, preset }, ganalytics }, 200, true)
     } catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

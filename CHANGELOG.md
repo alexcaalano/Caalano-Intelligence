@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.235.0 — 2026-08-13 · `PENDING` — Google ad-group ID/ad-ID auto-resolve (Meta left as-is by name)
+- **Google Ads:** the ad-group green Caalano360 columns now resolve the CRM's numeric UTM to the live ad-group name —
+  robustly, whether the client's Google template put the **ad-group ID** or the **ad ID** in `utm_content`. Added a
+  separate Windsor query mapping `ad_id → its ad group` (Google has no ad-level table — responsive search ads have no
+  names — so an ad-ID UTM folds up to its ad group). The resolution is applied across both `utm_medium` and
+  `utm_content`, so it works no matter which param the template uses.
+- **Meta left exactly as it was** — Meta ad sets / creatives match by **name** (already working), so the earlier
+  attempt to ID-resolve them was reverted. Nothing about Meta matching changed.
+
 ## v3.234.0 — 2026-08-13 · `PENDING` — Ad/creative + ad-set ID resolution for the Meta Caalano360 columns
 - Applied the ad-group/ad id↔name maps to the **Meta** view: **ad sets** now resolve `adset_id`→name (utm_medium) and
   **creatives/ads** resolve `ad_id`→name (utm_content), so the green Caalano360 outcome columns populate on those tables

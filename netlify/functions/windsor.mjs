@@ -3337,19 +3337,27 @@ export default async (req) => {
       // auto-resolve the IDs. Own queries, each .catch → nothing blanks attribution.
       const filtG = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, c.google))
       const filtM = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, c.meta))
-      const [attribution, ggIds, fbIds] = await Promise.all([
+      const [attribution, ggIds, fbIds, ggAdIds] = await Promise.all([
         fn(c.ghl, from, to, pipeline ? { pipeline } : {}),
         // Google: campaign + ad-group (id ↔ name) so both levels' UTM IDs resolve.
         c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
         // Meta: campaign + ad-set (id ↔ name) + ad (id ↔ name).
         c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id', 'ad_name', 'ad_id'], from, to, preset, key).then(filtM).catch(() => []) : Promise.resolve([]),
+        // Google ad_id → its ad group. Google has no ad-level table (RSAs have no
+        // names), so if the CRM's utm_content carries the AD id rather than the
+        // ad-group id, fold it to the ad group so the ad-group green columns still
+        // populate. Own query so a field mismatch can't blank the campaign/ad-group
+        // resolution above.
+        c.google ? windsorFetch('google_ads', ['account_id', 'ad_group_name', 'ad_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
       ])
       // {id -> name} maps per level, so a CRM UTM carrying the numeric ID resolves
       // to the live entity name for the Caalano360 outcome columns. campaign =
-      // utm_campaign, medium = ad group / ad set, content = ad / creative.
+      // utm_campaign, medium = ad group / ad set. (Meta ad-level uses names, so its
+      // creatives aren't ID-resolved here.)
       const campIdMap = {}, mediumIdMap = {}, contentIdMap = {}
       const put = (m, id, nm) => { const i = String(id ?? '').trim(); if (i && nm && !m[i]) m[i] = nm }
       for (const r of ggIds) { put(campIdMap, r.campaign_id, r.campaign); put(mediumIdMap, r.ad_group_id, r.ad_group_name) }
+      for (const r of ggAdIds) { put(mediumIdMap, r.ad_id, r.ad_group_name) } // Google ad-id → ad group
       for (const r of fbIds) { put(campIdMap, r.campaign_id, r.campaign); put(mediumIdMap, r.adset_id, r.adset_name); put(contentIdMap, r.ad_id, r.ad_name) }
       attribution.campIdMap = campIdMap; attribution.mediumIdMap = mediumIdMap; attribution.contentIdMap = contentIdMap
       return json({ client, channel, period: { from, to, preset }, attribution }, 200, !url.searchParams.get('debug'))

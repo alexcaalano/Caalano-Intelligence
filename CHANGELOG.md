@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.219.0 — 2026-08-12 · `PENDING` — Meta detect: surface the detected optimisation custom conversion by name
+- The detector now reads the custom conversion's **event name from the ad set's pixel rule** (e.g.
+  `B_page_view`) and its numeric id, and **lists it in the picker even at 0 count** — a rarely-firing custom
+  conversion is still the account's true optimised "Results" event and should be selectable. It's now the
+  **auto-suggested primary**, using the confirmed-valid `conversions_offsite_conversion_custom_<id>` field.
+- Set it Primary and it flows to the Meta tab / Monthly Report / Daily Performance, counting the moment it fires.
+
 ## v3.218.1 — 2026-08-12 · `PENDING` — Meta detect: report which result fields Windsor accepts (native `results` probe)
 - The auto-detect now records per-field whether Windsor **accepts** a field (valid) vs **rejects** it, and
   surfaces the accepted list in the diagnostic — so we can tell whether Meta's native `results`/`cost_per_result`

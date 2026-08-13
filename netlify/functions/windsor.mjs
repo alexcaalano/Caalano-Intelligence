@@ -2605,7 +2605,9 @@ export default async (req) => {
     // 1. Optimisation intent — the highest-spend ad set's goal, any custom event names,
     //    and any custom-conversion IDs named in its promoted object (a custom conversion
     //    is identified by a numeric id, which is the most reliable field-name seed).
-    let goal = null, promotedSample = null; const evNames = new Set(); const customIds = new Set()
+    let goal = null, promotedSample = null, optConv = null, optConvSpend = -1; const evNames = new Set(); const customIds = new Set(); const convById = new Map()
+    // The human event name lives inside the pixel_rule ("event":{"eq":"B_page_view"}).
+    const evFromRule = (rule) => { try { const s = typeof rule === 'string' ? rule : JSON.stringify(rule); const m = s.match(/"event"\s*:\s*\{\s*"eq"\s*:\s*"([^"]+)"/); return m ? m[1] : null } catch { return null } }
     try {
       const adsets = (await windsorFetch('facebook', ['account_id', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'spend'], from, t0, null, key)).filter(acct)
       let best = -1
@@ -2617,10 +2619,21 @@ export default async (req) => {
           if (!promotedSample && (p.custom_conversion_id || p.custom_event_str || String(p.custom_event_type || '').toUpperCase() === 'OTHER')) promotedSample = a.adset_promoted_object
           for (const k of ['custom_event_str', 'custom_conversion_name', 'pixel_rule_name', 'application_name']) if (p[k]) evNames.add(String(p[k]))
           if (p.custom_event_type && !['OTHER', 'CONTENT_VIEW'].includes(String(p.custom_event_type).toUpperCase())) evNames.add(String(p.custom_event_type))
-          for (const k of ['custom_conversion_id', 'custom_conversion', 'offline_conversion_data_set_id']) { const v = p[k]; if (v && /^\d{6,}$/.test(String(v))) customIds.add(String(v)) }
+          const cid = p.custom_conversion_id && /^\d{6,}$/.test(String(p.custom_conversion_id)) ? String(p.custom_conversion_id) : null
+          if (cid) {
+            customIds.add(cid)
+            const evName = evFromRule(p.pixel_rule) || p.custom_event_str || `Custom conversion ${cid.slice(-6)}`
+            if (!convById.has(cid)) convById.set(cid, evName)
+            // The custom conversion the highest-spend ad set optimises to is the true
+            // "Results" event for the account — suggest it as primary.
+            if (sp > optConvSpend) { optConvSpend = sp; optConv = { id: cid, event: evName } }
+          }
+          for (const k of ['custom_conversion', 'offline_conversion_data_set_id']) { const v = p[k]; if (v && /^\d{6,}$/.test(String(v))) customIds.add(String(v)) }
         }
       }
     } catch { /* ignore */ }
+    // Canonical Windsor field for a custom conversion id (verified valid on the account).
+    const convField = (id) => `conversions_offsite_conversion_custom_${id}`
     const auto = resolveMetaResult({ adset_optimization_goal: goal })
     let spend = 0
     try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], from, t0, null, key)).filter(acct); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
@@ -2650,8 +2663,21 @@ export default async (req) => {
     const allCands = [...stdCands, ...expCands]
     const actions = allCands.map((id) => ({ id, label: META_CONV_LABEL[id] || (id === 'results' ? 'Results (Meta optimised)' : prettyField(id)), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
       .filter((a) => a.count > 0).sort((a, b) => b.count - a.count)
+    // Always surface every DETECTED optimisation custom conversion (labelled by its
+    // event name from the pixel rule) whose Windsor field is valid — even at 0 count,
+    // since a rarely-firing custom conversion is still the account's true "Results"
+    // event and should be selectable / auto-suggested.
+    for (const [id, evName] of convById) {
+      const f = convField(id)
+      if (expStatus[f] === 'invalid') continue
+      if (!actions.some((a) => a.id === f)) actions.push({ id: f, label: `${evName} (custom conversion)`, count: Math.round(sums[f] || 0), costPer: sums[f] ? Math.round((spend / sums[f]) * 100) / 100 : null, custom: true, optimised: !!(optConv && optConv.id === id) })
+      else { const ex = actions.find((a) => a.id === f); ex.label = `${evName} (custom conversion)`; ex.optimised = !!(optConv && optConv.id === id) }
+    }
     const autoField = auto && auto.field && auto.field !== 'leads_native' ? auto.field : (auto && auto.field === 'leads_native' ? 'actions_leadgen_grouped' : null)
-    const suggest = (autoField && actions.some((a) => a.id === autoField)) ? autoField : (actions[0] ? actions[0].id : null)
+    // Prefer the detected optimisation custom conversion (the real per-campaign Results
+    // event) as the suggested primary; else the objective's field; else top-firing.
+    const optConvField = optConv && expStatus[convField(optConv.id)] !== 'invalid' ? convField(optConv.id) : null
+    const suggest = optConvField || ((autoField && actions.some((a) => a.id === autoField)) ? autoField : (actions[0] ? actions[0].id : null))
     // Which experimental fields Windsor ACCEPTED (valid, even if zero) — the shortlist of
     // real fields we can use; 'invalid' ones don't exist on the connector.
     const acceptedFields = expCands.filter((f) => expStatus[f] && expStatus[f] !== 'invalid')

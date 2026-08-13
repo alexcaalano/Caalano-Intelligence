@@ -718,14 +718,41 @@ async function buildOverview(from, to, preset, key) {
   // Previous equal-length period for the agency comparison table (fast Windsor
   // ad metrics only; the GHL columns fetch their own prev per client lazily).
   const pr = prevRange(from, to)
-  const [fb, gg, opps, fbD, ggD, pFb, pGg] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key),
-    windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
-    windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key).catch(() => []),
-    windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
-    windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
-    pr.from ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
-    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
+  // Per-client won revenue + won count — straight from the GoHighLevel API, fanned
+  // out across accounts with a small concurrency pool and a hard time budget so a
+  // large agency can't push the function past its ~10s limit. Any account that is
+  // slow or whose marketplace app isn't installed is simply skipped (partial CRM),
+  // exactly the graceful degradation the old Windsor best-effort call gave. Runs in
+  // parallel with the Windsor ad calls, so it adds little wall-clock. The Windsor
+  // GHL call remains only as a fallback for the (frontend-never) preset-only path.
+  const ghlWonByClient = async () => {
+    const out = {}
+    // Only attach CRM to a client that actually had opportunities in the window
+    // (matches the previous behaviour: no rows → no crm key, rather than $0/0).
+    const tally = (id, rows) => { if (!rows.length) return; let revenue = 0, won = 0; for (const r of rows) if (String(r.opportunity_status || '').toLowerCase() === 'won') { revenue += num(r.opportunity_monetary_value); won++ } out[id] = { revenue, won } }
+    if (!(from && to)) {
+      const rows = await windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key).catch(() => [])
+      const by = {}; for (const r of rows) { const id = ghlRev[norm(r.account_id)]; if (!id) continue; (by[id] = by[id] || []).push(r) }
+      for (const id in by) tally(id, by[id])
+      return out
+    }
+    const list = Object.entries(CLIENTS).filter(([, c]) => c.ghl)
+    const deadline = Date.now() + 7000
+    let i = 0
+    const worker = async () => { while (i < list.length && Date.now() < deadline) { const [id, c] = list[i++]; try { tally(id, await ghlOpportunityRows(c.ghl, from, to)) } catch { /* app not installed / slow → skip */ } } }
+    await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker))
+    return out
+  }
+  const [[fb, gg, fbD, ggD, pFb, pGg], crmByClient] = await Promise.all([
+    Promise.all([
+      windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key),
+      windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
+      windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
+      windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
+      pr.from ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
+      pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
+    ]),
+    ghlWonByClient(),
   ])
   const clients = {}
   const ensure = (id) => (clients[id] = clients[id] || {})
@@ -749,11 +776,7 @@ async function buildOverview(from, to, preset, key) {
     const e = ensure(id); e.googlePrev = e.googlePrev || { cost: 0, conversions: 0 }
     e.googlePrev.cost += num(r.spend); e.googlePrev.conversions += num(r.conversions)
   }
-  for (const r of opps) {
-    const id = ghlRev[norm(r.account_id)]; if (!id) continue
-    const e = ensure(id); e.crm = e.crm || { revenue: 0, won: 0 }
-    if (String(r.opportunity_status || '').toLowerCase() === 'won') { e.crm.revenue += num(r.opportunity_monetary_value); e.crm.won++ }
-  }
+  for (const [id, cr] of Object.entries(crmByClient)) { const e = ensure(id); e.crm = { revenue: cr.revenue, won: cr.won } }
   // Zero-spend alerts: an account that spent over the prior week but $0 yesterday
   // has likely paused (failed payment / budget exhausted / manual pause).
   const yStr = dstr(yest)

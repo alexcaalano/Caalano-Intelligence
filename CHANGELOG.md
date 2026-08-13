@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.227.0 — 2026-08-13 · `PENDING` — Agency Overview CRM moves to the direct GoHighLevel API
+- The agency **Overview** rollup now reads each client's won revenue + won count **straight from the GoHighLevel API**
+  instead of Windsor's GoHighLevel feed — the last GHL-through-Windsor dependency on any client-facing view. Its numbers
+  now reconcile with the CRM tab and Caalano360, and don't lag on newly-connected accounts.
+- Done safely: the per-client CRM is fanned out with a small concurrency pool and a **hard 7-second budget** running in
+  parallel with the Windsor ad calls, so it can't push the function past its ~10s limit. Any account that's slow (or
+  whose marketplace app isn't installed) is simply skipped — the same graceful "best-effort" degradation the old Windsor
+  call gave. Output shape is unchanged; Meta/Google spend + the zero-spend alerts still come from Windsor.
+- With this, **every client-facing view now reads GoHighLevel data from the direct API.** The only GHL-on-Windsor left is
+  a dormant fallback in the Trends tab (already direct-primary via `crmTrends` whenever a client's CRM is connected).
+
 ## v3.226.0 — 2026-08-13 · `PENDING` — Auto-onboard: API-readiness check (flags sub-accounts missing the marketplace app)
 - Auto-onboard now **tests whether each sub-account's API is actually reachable** before offering it. The direct API
   needs the GoHighLevel marketplace app installed on a sub-account (that's what lets us mint its location token), so a

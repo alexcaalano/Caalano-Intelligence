@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.216.0 — 2026-08-12 · `PENDING` — Meta conversions: auto-detect the optimisation event (no typing)
+- The Meta conversions tab now **auto-detects** the client's optimisation event: it reads the ad sets'
+  optimisation goal + promoted object to learn which conversion the account optimises to (matching Ads
+  Manager's Results column), probes every firing conversion, and surfaces a **“🎯 Auto-detected … · Use as
+  primary”** banner. One click sets it.
+- Probing is now **batched over a 30-day window with per-batch error isolation**, so a large account or an
+  unknown field name can't time out the picker (fixes the “operation was aborted”).
+- Widened the custom-conversion field-name variants tried, and the manual “add by name” remains as a fallback.
+
 ## v3.215.0 — 2026-08-12 · `PENDING` — Custom Meta conversions: add-by-name + flow through results everywhere
 - **Any custom Meta conversion can now be a client's result.** In Settings → Meta conversions, type a custom
   conversion by its Ads-Manager name (e.g. `B_Page_View`) and click **Find + add** — it probes the account,

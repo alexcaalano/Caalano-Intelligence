@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.215.0'
+const APP_VERSION = '3.216.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7409,9 +7409,10 @@ function MetaConversionsEditor({ clientId, currency }) {
   }
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', actions: [] })
-    fetch(`/.netlify/functions/windsor?scope=metaactions&client=${clientId}`)
+    // Auto-detect: read the account's optimisation event + every firing conversion.
+    fetch(`/.netlify/functions/windsor?scope=metadetect&client=${clientId}`)
       .then((r) => r.json())
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend }) })
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend, suggest: j && j.suggest, goal: j && j.goal }) })
       .catch((e) => { if (alive) setSt({ status: 'err', actions: [], error: String((e && e.message) || e) }) })
     return () => { alive = false }
   }, [clientId])
@@ -7441,6 +7442,12 @@ function MetaConversionsEditor({ clientId, currency }) {
         : st.status === 'err' ? <div className="cap">Couldn’t load conversions{st.error ? ` — ${st.error}` : ''}.</div>
           : !list.length ? <div className="cap">No Meta conversions have fired for this account in the last 90 days. If the account is new, they’ll appear once data flows.</div>
             : <>
+              {st.suggest && st.suggest !== cfg.primary ? (
+                <div className="mconv-auto">
+                  <span>🎯 Auto-detected optimisation event: <b>{labelOf(st.suggest)}</b>{st.goal ? <span className="cap"> · goal: {String(st.goal).replace(/_/g, ' ').toLowerCase()}</span> : null}</span>
+                  <button className="btn-ghost sm" onClick={() => setPrimary(st.suggest)}>Use as primary</button>
+                </div>
+              ) : null}
               <div className="table-wrap"><table className="mini-tbl mconv-tbl">
                 <thead><tr><th className="lft">Conversion event</th><th>Count · 90d</th><th>Cost / action</th><th>Primary</th><th>Secondary</th></tr></thead>
                 <tbody>{list.map((a) => (

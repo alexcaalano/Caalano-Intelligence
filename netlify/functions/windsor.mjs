@@ -145,7 +145,18 @@ const prettyField = (id) => META_CONV_LABEL[id] || String(id || '')
 // conversions_offsite_conversion_fb_pixel_custom_<snake>; we also try the actions_
 // prefix. Used by the add-custom-conversion probe so any business's own event works.
 const customConvSnake = (name) => String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-const customConvCandidates = (name) => { const s = customConvSnake(name); if (!s) return []; return [`conversions_offsite_conversion_fb_pixel_custom_${s}`, `actions_offsite_conversion_fb_pixel_custom_${s}`] }
+const customConvCandidates = (name) => {
+  const s = customConvSnake(name); if (!s) return []
+  return [...new Set([
+    `conversions_offsite_conversion_fb_pixel_custom_${s}`,
+    `actions_offsite_conversion_fb_pixel_custom_${s}`,
+    `conversions_offsite_conversion_custom_${s}`,
+    `actions_offsite_conversion_custom_${s}`,
+    `conversions_onsite_conversion_custom_${s}`,
+    `conversions_custom_${s}`,
+    `actions_custom_${s}`,
+  ])]
+}
 const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 // Auto-detect a row's result field + Ads-Manager-style label from its ad set
 // optimisation goal + destination + promoted object. Returns null when it can't
@@ -2576,6 +2587,49 @@ export default async (req) => {
       const found = cands.map((id) => ({ id, label: prettyField(id), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null })).filter((a) => a.count > 0)
       return json({ scope: 'metaprobe', client, event, window: { from: f90, to: t0 }, tried: cands, found }, 200, true)
     } catch (e) { return json({ scope: 'metaprobe', client, error: String(e.message || e).slice(0, 200), found: [] }, 200) }
+  }
+
+  // Auto-detect a client's optimisation event + every conversion field that's firing.
+  // Reads the ad sets' optimisation goal + promoted object to learn WHICH custom event
+  // the account optimises to (matching Ads Manager's Results column), then probes the
+  // standard set + variants derived from that event — in small batches with per-batch
+  // try/catch over a 30-day window, so an unknown field name or a big account can't
+  // time out the whole call. Returns firing conversions + a suggested primary.
+  if (url.searchParams.get('scope') === 'metadetect') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.meta) return json({ scope: 'metadetect', client, meta: false, actions: [] })
+    const DAY = 86400000
+    const from = new Date(Date.now() - 30 * DAY).toISOString().slice(0, 10)
+    const t0 = new Date().toISOString().slice(0, 10)
+    const acct = (r) => !r.account_id || acctEq(r.account_id, cc.meta)
+    // 1. Optimisation intent — the highest-spend ad set's goal + any custom event names
+    //    named in its promoted object.
+    let goal = null; const evNames = new Set()
+    try {
+      const adsets = (await windsorFetch('facebook', ['account_id', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'spend'], from, t0, null, key)).filter(acct)
+      let best = -1
+      for (const a of adsets) {
+        const sp = num(a.spend); if (sp > best && a.adset_optimization_goal) { best = sp; goal = a.adset_optimization_goal }
+        try { const p = typeof a.adset_promoted_object === 'string' ? JSON.parse(a.adset_promoted_object) : a.adset_promoted_object; if (p) { for (const k of ['custom_event_str', 'custom_conversion_name', 'pixel_rule_name', 'application_name']) if (p[k]) evNames.add(String(p[k])); if (p.custom_event_type && !['OTHER', 'CONTENT_VIEW'].includes(String(p.custom_event_type).toUpperCase())) evNames.add(String(p.custom_event_type)) } } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+    // 2. Candidate fields: standards + variants from the detected event names.
+    const auto = resolveMetaResult({ adset_optimization_goal: goal })
+    const cands = [...new Set([...META_CONV_CANDIDATES.map(([id]) => id), ...[...evNames].flatMap(customConvCandidates)])]
+    let spend = 0
+    try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], from, t0, null, key)).filter(acct); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
+    const sums = {}
+    for (let i = 0; i < cands.length; i += 8) {
+      const batch = cands.slice(i, i + 8)
+      try { const rows = (await windsorFetch('facebook', ['account_id', ...batch], from, t0, null, key)).filter(acct); for (const r of rows) for (const f of batch) sums[f] = (sums[f] || 0) + num(r[f]) } catch { /* skip a bad batch */ }
+    }
+    const actions = cands.map((id) => ({ id, label: META_CONV_LABEL[id] || prettyField(id), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
+      .filter((a) => a.count > 0).sort((a, b) => b.count - a.count)
+    // Suggested primary: the field the objective resolves to (if it fired), else the
+    // top-firing conversion.
+    const autoField = auto && auto.field && auto.field !== 'leads_native' ? auto.field : (auto && auto.field === 'leads_native' ? 'actions_leadgen_grouped' : null)
+    const suggest = (autoField && actions.some((a) => a.id === autoField)) ? autoField : (actions[0] ? actions[0].id : null)
+    return json({ scope: 'metadetect', client, window: { from, to: t0 }, goal: goal || null, evNames: [...evNames], spend: Math.round(spend), actions, suggest, tried: cands }, 200, true)
   }
 
   // Creative Cockpit — every Meta creative with its performance and (where the

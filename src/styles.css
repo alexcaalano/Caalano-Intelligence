@@ -539,6 +539,17 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .u-fn-track { height: 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .u-fn-fill { display: flex; align-items: center; justify-content: flex-end; height: 100%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 5px; min-width: 22px; box-sizing: border-box; font-variant-numeric: tabular-nums; }
 .u-fn-rate { font-size: 11px; font-weight: 700; color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+/* "All users" summary row — stacked per-rep funnel + legend */
+.u-agg-row > td { background: color-mix(in srgb, var(--brand) 7%, var(--panel)); font-weight: 700; }
+.u-agg-row > td.lft { border-left: 3px solid var(--brand); }
+.u-fn-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 9px; }
+.u-fn-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); font-weight: 600; }
+.u-fn-leg i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; flex: none; }
+.u-fn-stack { display: flex; align-items: center; }
+.u-fn-seg { height: 100%; min-width: 2px; }
+.u-fn-seg:first-child { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
+.u-fn-stack-n { font-size: 11px; font-weight: 700; color: var(--text); padding: 0 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.u-drill-tabs { margin-bottom: 10px; flex-wrap: wrap; }
 .u-pipes table { margin-top: 4px; }
 .u-pipes .mini-tbl td:not(.lft), .u-pipes .mini-tbl th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
 .tm-scan { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--muted); }

@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.221.0 — 2026-08-13 · `PENDING` — Users: "All users" stacked funnel + rep-filter tabs in the deal drill
+- The **Users** leaderboard now has a pinned **All users** summary row at the top. Expand it to see the whole-team
+  funnel where **every stage bar is coloured per rep** (stacked segments) so you can see, at a glance, who holds
+  leads at each stage. A colour legend maps each segment to a rep.
+- Clicking a stage in the All-users open-pipeline panel opens the deal drill with **rep tabs across the top** — click
+  a rep to filter the live deals to just theirs (with per-rep counts), or "All" to see everyone.
+- Fixed the **horizontal scroller** in the open-deals drill modal: the modal is now full-width
+  (`min(1080px, 96vw)`) so the fixed-layout deal table fits without a horizontal scrollbar.
+
 ## v3.220.0 — 2026-08-12 · `PENDING` — Meta conversions: allow multiple primary conversions (summed headline)
 - You can now tick **multiple primary conversions** per account (checkboxes instead of a single radio). The
   headline result + cost-per on the Meta tab, Monthly Report and Daily Performance becomes the **sum** of

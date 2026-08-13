@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.229.0'
+const APP_VERSION = '3.230.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2039,6 +2039,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const [aSort, onASort] = useSort('cost')
   const [kSort, onKSort] = useSort('cost')
   const [sSort, onSSort] = useSort('cost')
+  const [lpSort, onLpSort] = useSort('cost')
   const [kePipe, setKePipe] = useState(null)
   useEffect(() => { setKePipe(null) }, [pipe])
   const [keyDrill, setKeyDrill] = useState(null)
@@ -2239,6 +2240,13 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={7} green={has360} cols={o360cols} /><GHead first="Ad group" o360 sort={aSort} on={onASort} />
         <tbody>{sortRows(adGroups.map((c) => ({ ...gMetrics(c), ...o360Fields(oAgG.get(unorm(c.name)), c.cost, c.conversions, o360cols) })), aSort).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+      {g.landingPages && g.landingPages.length > 0 && <>
+        <div className="lvl-title">Landing pages <span className="sub">· {g.landingPages.length} destination URLs by spend · where the budget sent traffic · account-wide</span></div>
+        <div className="table-wrap"><table><thead><tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="cost" sort={lpSort} on={onLpSort}>Cost</SortTh><SortTh k="impressions" sort={lpSort} on={onLpSort}>Impr.</SortTh><SortTh k="ctr" sort={lpSort} on={onLpSort}>CTR</SortTh><SortTh k="clicks" sort={lpSort} on={onLpSort}>Clicks</SortTh><SortTh k="conversions" sort={lpSort} on={onLpSort}>Conv.</SortTh><SortTh k="costConv" sort={lpSort} on={onLpSort}>Cost/conv</SortTh></tr></thead>
+          <tbody>{sortRows(g.landingPages.map((lp) => ({ ...lp, ctr: rate(lp.clicks, lp.impressions), costConv: lp.conversions ? lp.cost / lp.conversions : null })), lpSort).map((lp) => { const short = String(lp.url).replace(/^https?:\/\//, '').replace(/\/$/, ''); return (
+            <tr key={lp.url}><td><a href={lp.url} target="_blank" rel="noopener noreferrer" title={lp.url} className="lp-link">{short.length > 64 ? short.slice(0, 62) + '…' : short}</a></td><td>{fmtCurrency(lp.cost, currency)}</td><td>{fmtNumber(lp.impressions)}</td><td>{fmtPct(rate(lp.clicks, lp.impressions), 2)}</td><td>{fmtNumber(lp.clicks)}</td><td>{fmtNumber(lp.conversions)}</td><td>{lp.conversions ? fmtCurrency(lp.cost / lp.conversions, currency) : '-'}</td></tr>
+          ) })}</tbody></table></div>
+      </>}
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms</span></div>
       <div className="table-wrap"><table><thead><tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh></tr></thead>
         <tbody>{sortRows(keywords.map(gMetrics), kSort).map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '-'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '-' : k.qs}</span></td></tr>))}</tbody></table></div>

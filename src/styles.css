@@ -2806,3 +2806,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .wb-chip { display: inline-block; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
 .wb-chip.closed { background: color-mix(in srgb, var(--brand) 16%, transparent); color: var(--brand); }
 .wb-chip.created { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+
+/* Google landing-page link */
+.lp-link { color: var(--brand); text-decoration: none; }
+.lp-link:hover { text-decoration: underline; }

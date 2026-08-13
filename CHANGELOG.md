@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.230.0 — 2026-08-13 · `PENDING` — Google Ads: Landing Page Performance (above Keywords)
+- The **Google Ads** view now pulls **Landing Page Performance** — a new section above Keywords showing which
+  destination **pages** the budget drove traffic to, with cost, impressions, CTR, clicks, conversions and cost/conv
+  (sortable, each page links out). Source: Google's expanded landing-page report via Windsor
+  (`expanded_landing_page_view_expanded_final_url`), confirmed live.
+- Pages are aggregated by **origin + path** (the query string — UTMs, gclid, ad_id — is stripped), so all keyword/UTM
+  variants of the same page collapse into one real landing-page row instead of dozens of near-identical URLs. It's its
+  own Windsor query, so a failure can't blank the campaigns/keywords tables; the section is account-wide.
+
 ## v3.229.0 — 2026-08-13 · `PENDING` — Won-basis toggle (live on Users) + Google conversion-actions overlap fix
 - **Won basis toggle** — a global `Won basis: ⟨Closed | Created⟩` control now appears in the header on the client
   workspace (default **Closed**, persisted). Only Won / revenue / win-rate flip; leads, funnel and appointments stay

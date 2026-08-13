@@ -1176,7 +1176,7 @@ async function fetchGeo(accountId, from, to, preset, key) {
 async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
-  const [cg, kw, st, dy, prev, agDay, stDay, ca, geo] = await Promise.all([
+  const [cg, kw, st, dy, prev, agDay, stDay, ca, geo, lp] = await Promise.all([
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
@@ -1186,9 +1186,26 @@ async function buildGoogle(accountId, from, to, preset, key) {
     windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key).then(filt).catch(() => []),
     fetchGeo(accountId, from, to, preset, key).catch(() => ({ dim: null, locations: [] })),
+    // Landing Page Performance (Google's expanded landing-page report). Its own
+    // query so a failure can't blank the campaigns/keywords; aggregated by URL.
+    windsorFetch('google_ads', ['account_id', 'expanded_landing_page_view_expanded_final_url', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
   roll.geo = geo
+  // Landing pages by spend: which destination PAGES the budget drove traffic to.
+  // Google's expanded URL carries every UTM / gclid param, so strip the query
+  // string to the origin+path — otherwise each keyword variant is a separate
+  // "page". Aggregate by that clean page URL.
+  const cleanUrl = (u) => { try { const x = new URL(u); return (x.origin + x.pathname).replace(/\/$/, '') || x.origin } catch { return String(u).split('?')[0].split('#')[0].replace(/\/$/, '') } }
+  const lpM = new Map()
+  for (const r of lp) {
+    const raw = r.expanded_landing_page_view_expanded_final_url; if (!raw) continue
+    const url = cleanUrl(raw); if (!url) continue
+    const e = lpM.get(url) || { url, cost: 0, impressions: 0, clicks: 0, conversions: 0 }
+    e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions)
+    lpM.set(url, e)
+  }
+  roll.landingPages = [...lpM.values()].filter((x) => x.cost > 0 || x.clicks > 0).sort((a, b) => b.cost - a.cost).slice(0, 200)
   // Detailed rows (campaign, ad group, action) so the UI can filter them to the
   // drilled-into campaign / ad group; the front-end aggregates by action name.
   roll.conversionActions = ca.map((r) => ({ campaign: r.campaign || null, adGroup: r.ad_group_name || null, name: r.conversion_action_name, category: titleCase(String(r.conversion_action_category || '').replace(/_/g, ' ')), conversions: num(r.conversions), allConversions: num(r.all_conversions), value: num(r.conversions_value) })).filter((r) => r.name && r.allConversions > 0).slice(0, 3000)

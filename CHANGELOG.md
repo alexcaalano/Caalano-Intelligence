@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.218.0 — 2026-08-12 · `PENDING` — Meta custom-conversion detect: probe by ID + native Results, plus diagnostics
+- Auto-detect now probes custom conversions **one field at a time** (a single unknown field name no longer
+  silently drops a whole batch), tries the custom-conversion's **numeric ID** from the ad set's promoted
+  object, and tries Meta's native **`results`** field — the widest net for surfacing a non-standard
+  optimised event (e.g. `B_Page_View`).
+- Settings → Meta conversions gains a **“Not seeing your custom conversion?”** disclosure showing the
+  detected goal, ad-set event names, custom-conversion IDs, the raw promoted object, and how many field
+  names were tried — so a genuinely non-standard field id can be identified and hard-mapped.
+
 ## v3.217.1 — 2026-08-12 · `PENDING` — Google conversion actions: star the primary conversions
 - The Google conversion-actions breakdown now marks each **primary** conversion with a **⭐** — the ones
   with a non-zero Conversions count that make up the Results number. Un-starred rows are secondary actions

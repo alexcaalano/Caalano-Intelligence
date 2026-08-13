@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.220.0 — 2026-08-12 · `PENDING` — Meta conversions: allow multiple primary conversions (summed headline)
+- You can now tick **multiple primary conversions** per account (checkboxes instead of a single radio). The
+  headline result + cost-per on the Meta tab, Monthly Report and Daily Performance becomes the **sum** of
+  every primary ticked — for accounts that optimise to / report on more than one event (e.g. Nexia).
+- Legacy single-primary configs are read as a one-item list automatically; the result engine
+  (resultCount / readField / rowResult) and the trends builder sum an array of primary fields.
+
 ## v3.219.1 — 2026-08-12 · `PENDING` — Meta detect: don't CDN-cache the detect/probe responses (fresh on load)
 - The Meta conversion auto-detect + probe responses are no longer cached for 10 min, so changes appear as
   soon as the tab loads instead of being masked by a stale response.

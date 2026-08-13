@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.219.1'
+const APP_VERSION = '3.220.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2765,9 +2765,16 @@ function formsDoneCount(clientId) { const fm = SETTINGS.formmeta && SETTINGS.for
 
 // Per-client Meta conversion selection: which Meta conversion event is this
 // client's PRIMARY reported result, plus optional SECONDARY events to show.
-function loadMetaConv(clientId) { return (SETTINGS.metaconv && SETTINGS.metaconv[clientId]) || { primary: null, secondary: [] } }
+// Primary is a list (an account can optimise to / report several conversions summed).
+// Legacy single-string values are normalised to a one-item array on read.
+function loadMetaConv(clientId) {
+  const v = (SETTINGS.metaconv && SETTINGS.metaconv[clientId]) || {}
+  const primary = Array.isArray(v.primary) ? v.primary.filter(Boolean) : (v.primary ? [v.primary] : [])
+  return { primary, secondary: (Array.isArray(v.secondary) ? v.secondary : []).filter((s) => !primary.includes(s)) }
+}
 function saveMetaConv(clientId, obj) {
-  const next = { primary: obj.primary || null, secondary: Array.isArray(obj.secondary) ? obj.secondary : [] }
+  const primary = Array.isArray(obj.primary) ? obj.primary.filter(Boolean) : (obj.primary ? [obj.primary] : [])
+  const next = { primary, secondary: (Array.isArray(obj.secondary) ? obj.secondary : []).filter((s) => !primary.includes(s)) }
   SETTINGS.metaconv = { ...(SETTINGS.metaconv || {}), [clientId]: next }
   writeLS(METACONV_KEY, SETTINGS.metaconv); saveSettingsRemote({ metaconv: { [clientId]: next } }); bumpSettings()
 }
@@ -7430,7 +7437,9 @@ function MetaConversionsEditor({ clientId, currency }) {
       .catch((e) => { if (alive) setSt({ status: 'err', actions: [], error: String((e && e.message) || e) }) })
     return () => { alive = false }
   }, [clientId])
-  const setPrimary = (id) => setCfg((c) => ({ primary: id, secondary: (c.secondary || []).filter((s) => s !== id) }))
+  const isPrimary = (id) => (cfg.primary || []).includes(id)
+  const togglePrimary = (id) => setCfg((c) => { const has = (c.primary || []).includes(id); return { primary: has ? c.primary.filter((p) => p !== id) : [...(c.primary || []), id], secondary: (c.secondary || []).filter((s) => s !== id) } })
+  const addPrimary = (id) => setCfg((c) => ((c.primary || []).includes(id) ? c : { primary: [...(c.primary || []), id], secondary: (c.secondary || []).filter((s) => s !== id) }))
   const toggleSecondary = (id) => setCfg((c) => { const has = (c.secondary || []).includes(id); return { ...c, secondary: has ? c.secondary.filter((s) => s !== id) : [...(c.secondary || []), id] } })
   const save = () => { saveMetaConv(clientId, cfg); setSaved(true); setTimeout(() => setSaved(false), 1500) }
   const money = (v) => fmtCurrency(v, currency)
@@ -7439,12 +7448,12 @@ function MetaConversionsEditor({ clientId, currency }) {
   // choice not otherwise present. Custom events keep their probed label / count.
   const byId = new Map()
   for (const a of [...known, ...added]) if (!byId.has(a.id)) byId.set(a.id, a)
-  for (const id of [cfg.primary, ...(cfg.secondary || [])].filter(Boolean)) if (!byId.has(id)) byId.set(id, { id, label: id, count: 0, costPer: null })
+  for (const id of [...(cfg.primary || []), ...(cfg.secondary || [])].filter(Boolean)) if (!byId.has(id)) byId.set(id, { id, label: id, count: 0, costPer: null })
   const list = [...byId.values()]
   const labelOf = (id) => (byId.get(id) || {}).label || id
   return (
     <div className="mconv">
-      <p className="cap" style={{ marginTop: 0 }}>Choose the Meta conversion this client optimises to as its <b>primary result</b> — it becomes the headline result &amp; cost-per on the Meta tab, Monthly Report and Daily Performance. Tick any <b>secondary</b> events to show alongside. Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
+      <p className="cap" style={{ marginTop: 0 }}>Tick the conversion(s) this client optimises to as its <b>primary result</b> — the headline result &amp; cost-per on the Meta tab, Monthly Report and Daily Performance is the <b>sum</b> of every primary you tick. Tick any <b>secondary</b> events to show alongside (not counted in the headline). Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
       <div className="mconv-add">
         <input type="text" placeholder="Add a custom conversion by name (e.g. B_Page_View)" value={addName} onChange={(e) => setAddName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') findCustom() }} />
         <button className="btn-ghost sm" onClick={findCustom} disabled={probe.status === 'loading' || !addName.trim()}>{probe.status === 'loading' ? 'Finding…' : 'Find + add'}</button>
@@ -7476,28 +7485,28 @@ function MetaConversionsEditor({ clientId, currency }) {
             </div>
           )
             : <>
-              {st.suggest && st.suggest !== cfg.primary ? (
+              {st.suggest && !isPrimary(st.suggest) ? (
                 <div className="mconv-auto">
                   <span>🎯 Auto-detected optimisation event: <b>{labelOf(st.suggest)}</b>{st.goal ? <span className="cap"> · goal: {String(st.goal).replace(/_/g, ' ').toLowerCase()}</span> : null}</span>
-                  <button className="btn-ghost sm" onClick={() => setPrimary(st.suggest)}>Use as primary</button>
+                  <button className="btn-ghost sm" onClick={() => addPrimary(st.suggest)}>{(cfg.primary || []).length ? 'Add as primary' : 'Use as primary'}</button>
                 </div>
               ) : null}
               <div className="table-wrap"><table className="mini-tbl mconv-tbl">
                 <thead><tr><th className="lft">Conversion event</th><th>Count · 90d</th><th>Cost / action</th><th>Primary</th><th>Secondary</th></tr></thead>
                 <tbody>{list.map((a) => (
-                  <tr key={a.id} className={cfg.primary === a.id ? 'row-sel' : ''}>
+                  <tr key={a.id} className={isPrimary(a.id) ? 'row-sel' : ''}>
                     <td className="lft">{a.label}</td>
                     <td>{fmtNumber(a.count)}</td>
                     <td>{a.costPer != null ? money(a.costPer) : '-'}</td>
-                    <td><input type="radio" name={`prim-${clientId}`} checked={cfg.primary === a.id} onChange={() => setPrimary(a.id)} /></td>
-                    <td><input type="checkbox" checked={(cfg.secondary || []).includes(a.id)} disabled={cfg.primary === a.id} onChange={() => toggleSecondary(a.id)} /></td>
+                    <td><input type="checkbox" checked={isPrimary(a.id)} onChange={() => togglePrimary(a.id)} /></td>
+                    <td><input type="checkbox" checked={(cfg.secondary || []).includes(a.id)} disabled={isPrimary(a.id)} onChange={() => toggleSecondary(a.id)} /></td>
                   </tr>
                 ))}</tbody>
               </table></div>
               <div className="mconv-foot">
                 <button className="btn-primary" onClick={save}>{saved ? '✓ Saved' : 'Save conversions'}</button>
-                {cfg.primary && <button className="btn-ghost sm" onClick={() => setCfg({ primary: null, secondary: [] })}>Clear</button>}
-                <span className="cap">{cfg.primary ? `Primary: ${labelOf(cfg.primary)}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}` : 'No primary set — the Meta tab shows Leads by default.'}</span>
+                {(cfg.primary || []).length ? <button className="btn-ghost sm" onClick={() => setCfg({ primary: [], secondary: [] })}>Clear</button> : null}
+                <span className="cap">{(cfg.primary || []).length ? `Primary: ${cfg.primary.map(labelOf).join(' + ')}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}${cfg.primary.length > 1 ? ' · headline = their sum' : ''}` : 'No primary set — the Meta tab shows Leads by default.'}</span>
               </div>
             </>}
     </div>

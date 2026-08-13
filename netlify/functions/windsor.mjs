@@ -185,14 +185,19 @@ function resolveMetaResult(row) {
 function rowResult(entity, fallback) {
   const auto = resolveMetaResult({ adset_optimization_goal: entity.optGoal, adset_destination_type: entity.destType, adset_promoted_object: entity.promoted })
   if (auto) return { field: auto.field, label: auto.label, auto: true }
-  if (fallback && fallback.field) return { field: fallback.field, label: cap1(prettyField(fallback.field)), auto: false }
+  // Multiple configured primary conversions → sum them; the field becomes an array.
+  const fields = (fallback && fallback.fields && fallback.fields.length) ? fallback.fields : (fallback && fallback.field ? [fallback.field] : [])
+  if (fields.length > 1) return { field: fields, label: fallback.label || 'Results', auto: false }
+  if (fields.length === 1) return { field: fields[0], label: cap1(prettyField(fields[0])), auto: false }
   return { field: null, label: 'Leads', auto: false }
 }
 // 'leads_native' = Instant Form + on-Facebook leads (matches Ads Manager's
-// lead-gen "Results"); null field = fbLeads; else the raw conversion field.
-const resultCount = (entity, field) => field === 'inline_link_clicks' ? entity.linkClicks
+// lead-gen "Results"); null field = fbLeads; else the raw conversion field. An array
+// of fields (multiple configured primaries) sums each.
+const resultCountOne = (entity, field) => field === 'inline_link_clicks' ? entity.linkClicks
   : field === 'leads_native' ? ((entity._rf ? (entity._rf.actions_leadgen_grouped || 0) + (entity._rf.actions_onsite_conversion_lead_grouped || 0) : 0) || entity.leads)
   : field ? (entity._rf ? entity._rf[field] || 0 : 0) : entity.leads
+const resultCount = (entity, field) => Array.isArray(field) ? field.reduce((s, f) => s + resultCountOne(entity, f), 0) : resultCountOne(entity, field)
 // All conversion actions an entity accrued (non-zero), for the results hover —
 // so a Lead campaign can still show it also drove messaging, website leads, etc.
 const META_BREAKDOWN = [
@@ -308,10 +313,11 @@ function rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fa
     c.prev = p ? { spend: p.spend, impressions: p.impressions, clicks: p.clicks, linkClicks: p.linkClicks, leads: p.leads, videoViews: p.videoViews, reach: p.reach } : null
     return clean(c)
   })
-  const readField = (r, field) => field === 'inline_link_clicks' ? num(r.inline_link_clicks) : field === 'leads_native' ? fbLeads(r) : field ? num(r[field]) : fbLeads(r)
+  const readFieldOne = (r, field) => field === 'inline_link_clicks' ? num(r.inline_link_clicks) : field === 'leads_native' ? fbLeads(r) : field ? num(r[field]) : fbLeads(r)
+  const readField = (r, field) => Array.isArray(field) ? field.reduce((s, f) => s + readFieldOne(r, f), 0) : readFieldOne(r, field)
   const ads = adRows.map((r) => {
     const parent = adsetByName.get(r.adset_name)
-    const field = parent ? parent.resultField : (fallback && fallback.field) || null
+    const field = parent ? parent.resultField : ((fallback && fallback.fields && fallback.fields.length ? (fallback.fields.length > 1 ? fallback.fields : fallback.fields[0]) : (fallback && fallback.field)) || null)
     const label = parent ? parent.resultType : (fallback ? fallback.label : 'Leads')
     const results = readField(r, field)
     const spend = num(r.spend)
@@ -358,13 +364,15 @@ async function readMetaPrimary(clientId) {
   try {
     const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
     const mc = s && s.metaconv && s.metaconv[clientId]
-    if (mc && mc.primary) {
+    const primary = mc ? (Array.isArray(mc.primary) ? mc.primary.filter(Boolean) : (mc.primary ? [mc.primary] : [])) : []
+    if (primary.length) {
       // Custom conversion fields (not in the standard result set) must be fetched +
       // captured explicitly so resultCount can read them — return them as `extra`.
-      const ids = [mc.primary, ...(mc.secondary || [])].filter(Boolean)
+      const ids = [...primary, ...(mc.secondary || [])].filter(Boolean)
       const std = new Set(META_RESULT_FIELDS)
       const extra = [...new Set(ids.filter((f) => !std.has(f)))]
-      return { field: mc.primary, label: prettyField(mc.primary), extra }
+      const label = primary.length === 1 ? cap1(prettyField(primary[0])) : `${cap1(prettyField(primary[0]))} +${primary.length - 1} more`
+      return { field: primary[0], fields: primary, label, extra }
     }
   } catch { /* ignore */ }
   return null
@@ -377,7 +385,7 @@ async function readAllMetaPrimary() {
   try {
     const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
     const mc = (s && s.metaconv) || {}
-    for (const [cid, v] of Object.entries(mc)) if (v && v.primary) out[cid] = v.primary
+    for (const [cid, v] of Object.entries(mc)) { const p = v ? (Array.isArray(v.primary) ? v.primary.filter(Boolean) : (v.primary ? [v.primary] : [])) : []; if (p.length) out[cid] = p }
   } catch { /* ignore */ }
   return out
 }
@@ -779,8 +787,8 @@ async function buildTrends(key) {
   // optimised event (custom conversions included) instead of standard leads only.
   const metaPrimaryByClient = await readAllMetaPrimary()
   const baseFbFields = ['account_id', 'campaign', 'date', 'spend', ...FB_LEAD_FIELDS]
-  const primaryFields = [...new Set(Object.values(metaPrimaryByClient))].filter((f) => f && !baseFbFields.includes(f))
-  const metaResultOf = (id, r) => { const pf = metaPrimaryByClient[id]; return pf ? num(r[pf]) : fbLeads(r) }
+  const primaryFields = [...new Set(Object.values(metaPrimaryByClient).flat())].filter((f) => f && !baseFbFields.includes(f))
+  const metaResultOf = (id, r) => { const pf = metaPrimaryByClient[id]; return (pf && pf.length) ? pf.reduce((s, f) => s + num(r[f]), 0) : fbLeads(r) }
   const [fb, gg, opps, pipes] = await Promise.all([
     // If an added custom field is unexpectedly rejected, fall back to the standard
     // fields so a single client can't blank out everyone's Meta trends.

@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.218.1 — 2026-08-12 · `PENDING` — Meta detect: report which result fields Windsor accepts (native `results` probe)
+- The auto-detect now records per-field whether Windsor **accepts** a field (valid) vs **rejects** it, and
+  surfaces the accepted list in the diagnostic — so we can tell whether Meta's native `results`/`cost_per_result`
+  metrics are available on the account (the clean per-campaign Results answer) or it's a Windsor data gap.
+- Widened the numeric custom-conversion-ID field variants tried.
+
 ## v3.218.0 — 2026-08-12 · `PENDING` — Meta custom-conversion detect: probe by ID + native Results, plus diagnostics
 - Auto-detect now probes custom conversions **one field at a time** (a single unknown field name no longer
   silently drops a whole batch), tries the custom-conversion's **numeric ID** from the ad set's promoted

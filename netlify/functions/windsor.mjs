@@ -2636,18 +2636,26 @@ export default async (req) => {
     //     query, so probe these ONE AT A TIME so one bad name can't drop the others.
     const expCands = [...new Set([
       ...[...evNames].flatMap(customConvCandidates),
-      ...[...customIds].flatMap((id) => [`conversions_offsite_conversion_custom_${id}`, `actions_offsite_conversion_custom_${id}`, `conversions_offsite_conversion_fb_pixel_custom_${id}`, `conversions_custom_${id}`]),
-      'results', 'conversions',
+      ...[...customIds].flatMap((id) => [`conversions_offsite_conversion_custom_${id}`, `actions_offsite_conversion_custom_${id}`, `conversions_offsite_conversion_fb_pixel_custom_${id}`, `conversions_custom_${id}`, `conversions_custom_conversion_${id}`, `custom_conversion_${id}`]),
+      // Meta's native computed metrics — the account's per-campaign "Results", whatever
+      // it optimises to (custom conversions included). The prize field if Windsor has it.
+      'results', 'cost_per_result', 'result_rate', 'conversions', 'cost_per_conversion',
     ])]
+    // Track per-field outcome so the diagnostic can tell "Windsor rejected this field"
+    // apart from "valid field but zero" — that's what tells us which field actually exists.
+    const expStatus = {}
     for (const f of expCands) {
-      try { const rows = (await windsorFetch('facebook', ['account_id', f], from, t0, null, key)).filter(acct); let s = 0; for (const r of rows) s += num(r[f]); if (s > 0) sums[f] = s } catch { /* field not supported */ }
+      try { const rows = (await windsorFetch('facebook', ['account_id', f], from, t0, null, key)).filter(acct); let s = 0; for (const r of rows) s += num(r[f]); if (s > 0) sums[f] = s; expStatus[f] = s > 0 ? 'data' : 'zero' } catch { expStatus[f] = 'invalid' }
     }
     const allCands = [...stdCands, ...expCands]
     const actions = allCands.map((id) => ({ id, label: META_CONV_LABEL[id] || (id === 'results' ? 'Results (Meta optimised)' : prettyField(id)), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
       .filter((a) => a.count > 0).sort((a, b) => b.count - a.count)
     const autoField = auto && auto.field && auto.field !== 'leads_native' ? auto.field : (auto && auto.field === 'leads_native' ? 'actions_leadgen_grouped' : null)
     const suggest = (autoField && actions.some((a) => a.id === autoField)) ? autoField : (actions[0] ? actions[0].id : null)
-    return json({ scope: 'metadetect', client, window: { from, to: t0 }, goal: goal || null, evNames: [...evNames], customIds: [...customIds], promoted: promotedSample || null, spend: Math.round(spend), actions, suggest, tried: allCands }, 200, true)
+    // Which experimental fields Windsor ACCEPTED (valid, even if zero) — the shortlist of
+    // real fields we can use; 'invalid' ones don't exist on the connector.
+    const acceptedFields = expCands.filter((f) => expStatus[f] && expStatus[f] !== 'invalid')
+    return json({ scope: 'metadetect', client, window: { from, to: t0 }, goal: goal || null, evNames: [...evNames], customIds: [...customIds], promoted: promotedSample || null, spend: Math.round(spend), actions, suggest, tried: allCands, expStatus, acceptedFields }, 200, true)
   }
 
   // Creative Cockpit — every Meta creative with its performance and (where the

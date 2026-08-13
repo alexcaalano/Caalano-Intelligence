@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.218.0'
+const APP_VERSION = '3.218.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7426,7 +7426,7 @@ function MetaConversionsEditor({ clientId, currency }) {
     // Auto-detect: read the account's optimisation event + every firing conversion.
     fetch(`/.netlify/functions/windsor?scope=metadetect&client=${clientId}`)
       .then((r) => r.json())
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend, suggest: j && j.suggest, goal: j && j.goal, evNames: (j && j.evNames) || [], tried: (j && j.tried) || [], customIds: (j && j.customIds) || [], promoted: j && j.promoted }) })
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend, suggest: j && j.suggest, goal: j && j.goal, evNames: (j && j.evNames) || [], tried: (j && j.tried) || [], customIds: (j && j.customIds) || [], promoted: j && j.promoted, acceptedFields: (j && j.acceptedFields) || [] }) })
       .catch((e) => { if (alive) setSt({ status: 'err', actions: [], error: String((e && e.message) || e) }) })
     return () => { alive = false }
   }, [clientId])
@@ -7461,6 +7461,7 @@ function MetaConversionsEditor({ clientId, currency }) {
               {st.evNames && st.evNames.length ? <div>Event names on the ad sets: <b>{st.evNames.join(', ')}</b></div> : null}
               {st.customIds && st.customIds.length ? <div>Custom-conversion IDs found: <b>{st.customIds.join(', ')}</b></div> : null}
               {st.promoted ? <div>Ad-set promoted object: <code style={{ fontSize: 10 }}>{typeof st.promoted === 'string' ? st.promoted : JSON.stringify(st.promoted)}</code></div> : null}
+              <div style={{ marginTop: 4 }}>Windsor <b>accepts</b> these result fields (valid on this account): <code style={{ fontSize: 10 }}>{(st.acceptedFields || []).length ? st.acceptedFields.join(', ') : 'none of the custom / native `results` variants'}</code></div>
               <div style={{ marginTop: 4 }}>Custom conversions are counted only if Windsor exposes the exact field. We probed <b>{(st.tried || []).length}</b> field names. If your event still isn't listed, its Windsor field id is non-standard — send the goal / IDs / promoted-object above to your Caalano admin to hard-map it.</div>
             </div>
           ) : null}

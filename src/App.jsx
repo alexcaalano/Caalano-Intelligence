@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.239.0'
+const APP_VERSION = '3.240.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2179,6 +2179,27 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
 
 /* ============ Google deep ============ */
 const qsClass = (n) => n === '' || n == null ? 'q-unk' : n >= 7 ? 'q-above' : n >= 4 ? 'q-avg' : 'q-low'
+// Match-type initial (Exact→e, Phrase→p, Broad→b), to join a keyword row's match
+// type to the CRM's utm_matchtype-keyed outcomes ("keywordText||e/p/b").
+const mInit = (m) => String(m || '').trim().charAt(0).toLowerCase()
+const MI_NAME = { e: 'Exact', p: 'Phrase', b: 'Broad' }
+// Aggregate byTermMatch entries (name = "text||m") into per-match-type rows named
+// Exact / Phrase / Broad, summing every numeric metric + the stages/cals maps, so
+// the Match-type table's green columns split correctly.
+function aggByMatchInitial(arr) {
+  const m = new Map()
+  for (const e of arr || []) {
+    const mi = String(e.name || '').split('||')[1]; const nm = MI_NAME[mInit(mi)]; if (!nm) continue
+    let g = m.get(nm)
+    if (!g) { g = { name: nm }; m.set(nm, g) }
+    for (const k in e) {
+      if (k === 'name') continue
+      if (typeof e[k] === 'number') g[k] = (g[k] || 0) + e[k]
+      else if (e[k] && typeof e[k] === 'object') { g[k] = g[k] || {}; for (const kk in e[k]) g[k][kk] = (g[k][kk] || 0) + e[k][kk] }
+    }
+  }
+  return [...m.values()]
+}
 const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
 const mtColor = (t) => MT_COLOR[t] || '#8b5cf6'
 function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
@@ -2234,14 +2255,20 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   // client's Google template (utm_medium on some, utm_content on others), so resolve
   // the ad_group_id→name map across BOTH dims — only the one holding the ID matches.
   const oAgG = aliasedOutcomeMap(clientId, 'medium', [...((A && A.byMedium) || []), ...((A && A.byContent) || [])], A && A.mediumIdMap)
-  // Keywords: utm_term carries the keyword text, so it matches by name directly.
+  // Keywords: utm_term carries the keyword text. When the CRM ALSO carries the
+  // match type (utm_matchtype → byTermMatch, keyed "text||e/p/b"), key by
+  // text+match so "adhd" Exact and "adhd" Phrase get their own outcomes instead
+  // of the same bundled total. Falls back to text-only when the CRM has no match
+  // type at all.
+  const hasTermMatch = !!(A && A.byTermMatch && A.byTermMatch.length)
   const oKwG = mkOutcomeMap((A && A.byTerm) || [])
-  // Match type: the CRM doesn't tag match type, but each keyword HAS one (from
-  // Windsor), so fold the per-keyword CRM outcomes into their match type (reusing
-  // applyAliases as a { keywordText -> matchType } fold) to get CRM outcomes by
-  // match type — green columns without any extra UTM.
+  const oKwMatchG = mkOutcomeMap((A && A.byTermMatch) || [])
+  const kwOutcome = (k) => hasTermMatch ? oKwMatchG.get(unorm(k.text + '||' + mInit(k.match))) : oKwG.get(unorm(k.text))
+  // Match type: aggregate the CRM's per-(keyword×match) outcomes by match type
+  // when available (accurate — a keyword in two match types splits correctly);
+  // else fall back to folding byTerm by each keyword's Windsor match type.
   const kwToMatch = {}; for (const k of (g.keywords || [])) if (k.text && k.match) kwToMatch[k.text] = k.match
-  const oMatchG = mkOutcomeMap(applyAliases((A && A.byTerm) || [], kwToMatch))
+  const oMatchG = hasTermMatch ? mkOutcomeMap(aggByMatchInitial((A && A.byTermMatch) || [])) : mkOutcomeMap(applyAliases((A && A.byTerm) || [], kwToMatch))
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   const costPerConv = t.conversions ? t.cost / t.conversions : 0
   const avgCpc = t.clicks ? t.cost / t.clicks : 0
@@ -2287,7 +2314,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
       <button className="pg-btn" disabled={page >= pages - 1} onClick={() => onPage(Math.min(pages - 1, page + 1))}>Next ›</button>
     </div>
   )
-  const kwSorted = sortRows(keywords.map((k) => ({ ...gMetrics(k), ...o360Fields(oKwG.get(unorm(k.text)), k.cost, k.conversions, o360cols) })), kSort)
+  const kwSorted = sortRows(keywords.map((k) => ({ ...gMetrics(k), ...o360Fields(kwOutcome(k), k.cost, k.conversions, o360cols) })), kSort)
   const kwPages = Math.max(1, Math.ceil(kwSorted.length / PAGE)); const kwPg = Math.min(kwPage, kwPages - 1)
   const kwView = kwSorted.slice(kwPg * PAGE, kwPg * PAGE + PAGE)
   const stSorted = sortRows(searchTerms.map((s) => ({ ...s, ctr: rate(s.clicks, s.impressions), cvr: rate(s.conversions, s.clicks), costConv: s.conversions ? s.cost / s.conversions : null })), sSort)
@@ -2299,7 +2326,9 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const adNames = loadAdNames(clientId)
   const adLabels = g.adLabels || {}
   const adNameOf = (id) => adNames[id] || adLabels[id] || null
-  const oAdG = mkOutcomeMap((A && A.byContent) || [])
+  // Ads: the CRM carries the ad id in its own param (utm_ad_id → byAd), so match
+  // the Google ad row's id directly. (utm_content is the ad GROUP id, used above.)
+  const oAdG = mkOutcomeMap((A && A.byAd) || [])
   const adsFiltered = (g.ads || []).filter((a) => baseCA(a))
   const adSorted = sortRows(adsFiltered.map((a) => ({ ...gMetrics(a), name: adNameOf(a.id) || a.id, ...o360Fields(oAdG.get(unorm(a.id)), a.cost, a.conversions, o360cols) })), adSort)
   const adPages = Math.max(1, Math.ceil(adSorted.length / PAGE)); const adPg = Math.min(adPage, adPages - 1)

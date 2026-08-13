@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.240.0 — 2026-08-13 · `PENDING` — Google Ads matching: ad-level on `utm_ad_id`, keywords split by match type
+- **Ad-level green columns now match on `utm_ad_id`** (the ad ID the CRM stores in its own param) instead of
+  `utm_content` (which is the ad-GROUP ID). The attribution backend now emits a `byAd` breakdown keyed by ad ID with
+  full CRM outcomes (leads / booked / shown / won + calendar & stage key events), so the Ads table's Caalano360 columns
+  populate per ad. Ad-group columns keep matching on `utm_content` (confirmed = ad-group ID).
+- **Keyword outcomes now split by match type.** Previously "adhd" Exact and "adhd" Phrase showed the same bundled CRM
+  result because they matched on keyword text alone. When the CRM carries `utm_matchtype`, outcomes are now keyed by
+  keyword **text + match type** (new `byTermMatch` breakdown), so Exact and Phrase report separately; the Match-type
+  table aggregates the same way. Falls back to text-only matching when the CRM has no match type.
+- Backend (`ghl.mjs`): `utmOf` now reads `utm_ad_id` and `utm_matchtype`; `buildAttribution` threads the two new
+  dimensions through every outcome bump (leads, booked, shown, cancelled, stages, per-calendar).
+
 ## v3.239.0 — 2026-08-13 · `PENDING` — New Google Analytics (GA4) tab
 - New **Analytics** tab in the client workspace, shown whenever a client has a **GA4 property** linked. Add the property
   ID in Settings → the connector editor now has a "📊 Google Analytics 4" field alongside Meta / Google / Caalano Systems.

@@ -267,14 +267,23 @@ function utmOf(opp) {
   const campaign = a.utmCampaign || a.utm_campaign || a.campaign || null
   const content = a.utmContent || a.utm_content || null
   const term = a.utmTerm || a.utm_term || a.utmKeyword || null
+  // Google templates can carry the ad id in its own param (utm_ad_id) and the
+  // keyword's match type (utm_matchtype = e/p/b) — used to key ad-level outcomes
+  // and to split a keyword's outcomes by match type (Exact vs Phrase).
+  const ad = a.utmAdId || a.utm_ad_id || a.utmAdid || a.ad_id || a.adId || null
+  const matchType = a.utmMatchtype || a.utm_matchtype || a.utmMatchType || a.matchtype || a.matchType || null
   // Every string on the attribution that could fingerprint the channel, so
   // classification never depends on a single field (e.g. GHL often reports the
   // session source as "Paid Social" / "Paid Search" while the platform name
   // only appears in utm_source).
   const sig = [a.utmSessionSource, a.sessionSource, a.utmSource, a.utm_source, a.utmMedium, a.utm_medium, a.medium, a.utmCampaign, a.utm_campaign, a.campaign, a.utmAdSource, a.adSource, a.referrer, a.fbclid, a.gclid, a.fbAdId, a.adId]
     .filter(Boolean).join(' ').toLowerCase()
-  return { source, medium, campaign, content, term, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null, sig }
+  return { source, medium, campaign, content, term, ad, matchType, adId: a.adId || a.fbAdId || a.gclid || a.fbclid || null, sig }
 }
+// Key an opportunity's keyword outcome by keyword text + match-type initial
+// (e/p/b), so "adhd" Exact and "adhd" Phrase are separate — only when the CRM
+// actually carries a match type; otherwise null (falls back to text-only byTerm).
+const termMatchKey = (u) => (u && u.term && u.matchType) ? `${u.term}||${String(u.matchType).trim().charAt(0).toLowerCase()}` : null
 
 // Classify an opportunity's first-touch UTMs into a paid channel so the whole
 // Caalano360 view can pivot Meta-only / Google-only / All. Matches across every
@@ -2310,7 +2319,11 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const useAppts = !!(appts && appts.connected)
 
-  const dim = { source: new Map(), medium: new Map(), campaign: new Map(), content: new Map(), term: new Map() }
+  const dim = { source: new Map(), medium: new Map(), campaign: new Map(), content: new Map(), term: new Map(), ad: new Map(), termMatch: new Map() }
+  // Guarded bumps for the ad-id + keyword×match-type dims: skip when the opp
+  // has no ad id / match type so those maps never accrue a "(not set)" bucket.
+  const entIf = (map, key) => (key && String(key).trim() ? ent(map, key) : null)
+  const bumpLeadIf = (map, key, o, pi) => { if (key && String(key).trim()) bumpLead(map, key, o, pi) }
   const ent = (map, keyRaw) => {
     const key = keyRaw && String(keyRaw).trim() ? String(keyRaw).trim() : '(not set)'
     let e = map.get(key)
@@ -2366,6 +2379,8 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
     bumpLead(dim.campaign, u.campaign, o, pi)
     bumpLead(dim.content, u.content, o, pi)
     bumpLead(dim.term, u.term, o, pi)
+    bumpLeadIf(dim.ad, u.ad, o, pi)
+    bumpLeadIf(dim.termMatch, termMatchKey(u), o, pi)
     // Per-entity stage reach for the green key-event columns: which stages this
     // lead reached (all stages at/behind its current stage; won reaches all).
     if (pi && pi.stages && pi.stages.length) {
@@ -2383,6 +2398,8 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(ent(dim.medium, u.medium), 'stages', key)
           bumpKey(ent(dim.content, u.content), 'stages', key)
           bumpKey(ent(dim.term, u.term), 'stages', key)
+          bumpKey(entIf(dim.ad, u.ad), 'stages', key)
+          bumpKey(entIf(dim.termMatch, termMatchKey(u)), 'stages', key)
         }
       }
     }
@@ -2422,11 +2439,13 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
       if (f.bookedInPeriod) {
         bookedActions++; chanAct.all.booked++; chanAct[ch].booked++
         ent(dim.source, u.source).booked++; ent(dim.medium, u.medium).booked++; ent(dim.campaign, u.campaign).booked++; ent(dim.content, u.content).booked++; ent(dim.term, u.term).booked++
+        { const ea = entIf(dim.ad, u.ad); if (ea) ea.booked++; const et = entIf(dim.termMatch, termMatchKey(u)); if (et) et.booked++ }
         const det = sd(u.source); ent(det.medium, u.medium).booked++; ent(det.campaign, u.campaign).booked++; ent(det.content, u.content).booked++
       }
       if (f.cancelledInPeriod) {
         cancelledActions++; chanAct.all.cancelled++; chanAct[ch].cancelled++
         ent(dim.source, u.source).cancelled++; ent(dim.medium, u.medium).cancelled++; ent(dim.campaign, u.campaign).cancelled++; ent(dim.content, u.content).cancelled++; ent(dim.term, u.term).cancelled++
+        { const ea = entIf(dim.ad, u.ad); if (ea) ea.cancelled++; const et = entIf(dim.termMatch, termMatchKey(u)); if (et) et.cancelled++ }
         const det = sd(u.source); ent(det.medium, u.medium).cancelled++; ent(det.campaign, u.campaign).cancelled++; ent(det.content, u.content).cancelled++
       }
       // Shown = explicit "showed" status; else a fallback when the opportunity is
@@ -2441,10 +2460,12 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
       if (shownHit) {
         shownActions++; chanAct.all.shown++; chanAct[ch].shown++
         ent(dim.source, u.source).shown++; ent(dim.medium, u.medium).shown++; ent(dim.campaign, u.campaign).shown++; ent(dim.content, u.content).shown++; ent(dim.term, u.term).shown++
+        { const ea = entIf(dim.ad, u.ad); if (ea) ea.shown++; const et = entIf(dim.termMatch, termMatchKey(u)); if (et) et.shown++ }
         const det = sd(u.source); ent(det.medium, u.medium).shown++; ent(det.campaign, u.campaign).shown++; ent(det.content, u.content).shown++
         if (viaStage) {
           shownStageActions++; chanAct.all.shownStage++; chanAct[ch].shownStage++
           ent(dim.source, u.source).shownStage++; ent(dim.medium, u.medium).shownStage++; ent(dim.campaign, u.campaign).shownStage++; ent(dim.content, u.content).shownStage++; ent(dim.term, u.term).shownStage++
+          { const ea = entIf(dim.ad, u.ad); if (ea) ea.shownStage++; const et = entIf(dim.termMatch, termMatchKey(u)); if (et) et.shownStage++ }
           ent(det.medium, u.medium).shownStage++; ent(det.campaign, u.campaign).shownStage++; ent(det.content, u.content).shownStage++
         }
       }
@@ -2475,6 +2496,8 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(ent(dim.medium, u.medium), 'cals', calId)
           bumpKey(ent(dim.content, u.content), 'cals', calId)
           bumpKey(ent(dim.term, u.term), 'cals', calId)
+          bumpKey(entIf(dim.ad, u.ad), 'cals', calId)
+          bumpKey(entIf(dim.termMatch, termMatchKey(u)), 'cals', calId)
         }
         // Occurred = the appointment's date has passed (call happened in-period),
         // so it's the correct denominator for show rate (upcoming bookings excluded).
@@ -2484,6 +2507,8 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(ent(dim.medium, u.medium), 'calsOccurred', calId)
           bumpKey(ent(dim.content, u.content), 'calsOccurred', calId)
           bumpKey(ent(dim.term, u.term), 'calsOccurred', calId)
+          bumpKey(entIf(dim.ad, u.ad), 'calsOccurred', calId)
+          bumpKey(entIf(dim.termMatch, termMatchKey(u)), 'calsOccurred', calId)
         }
         if (f.shownByStatus) {
           cal.shown++; cal.ch[ch].shown++
@@ -2492,6 +2517,8 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
           bumpKey(ent(dim.medium, u.medium), 'calsShown', calId)
           bumpKey(ent(dim.content, u.content), 'calsShown', calId)
           bumpKey(ent(dim.term, u.term), 'calsShown', calId)
+          bumpKey(entIf(dim.ad, u.ad), 'calsShown', calId)
+          bumpKey(entIf(dim.termMatch, termMatchKey(u)), 'calsShown', calId)
         }
         if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
       }
@@ -2545,7 +2572,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
     pipeline: opts.pipeline || null,
     manualLeads, oppSources,
     appointments: { connected: useAppts, calendars: (appts && appts.calendars) || 0, events: (appts && appts.events) || 0, booked: bookedActions, shown: shownActions, shownStage: shownStageActions, cancelled: cancelledActions, byCalendar },
-    bySource, byMedium: top(dim.medium, 300), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400),
+    bySource, byMedium: top(dim.medium, 300), byCampaign: top(dim.campaign, 200), byCreative: top(dim.content, 400), byTerm: top(dim.term, 400), byAd: top(dim.ad, 500), byTermMatch: top(dim.termMatch, 800),
     channels: chan,
   }
 }

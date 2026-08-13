@@ -17,6 +17,10 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.219.1 — 2026-08-12 · `PENDING` — Meta detect: don't CDN-cache the detect/probe responses (fresh on load)
+- The Meta conversion auto-detect + probe responses are no longer cached for 10 min, so changes appear as
+  soon as the tab loads instead of being masked by a stale response.
+
 ## v3.219.0 — 2026-08-12 · `PENDING` — Meta detect: surface the detected optimisation custom conversion by name
 - The detector now reads the custom conversion's **event name from the ad set's pixel rule** (e.g.
   `B_page_view`) and its numeric id, and **lists it in the picker even at 0 count** — a rarely-firing custom

@@ -2585,7 +2585,7 @@ export default async (req) => {
       let spend = 0; const sums = {}
       for (const r of rows) { spend += num(r.spend); for (const id of cands) sums[id] = (sums[id] || 0) + num(r[id]) }
       const found = cands.map((id) => ({ id, label: prettyField(id), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null })).filter((a) => a.count > 0)
-      return json({ scope: 'metaprobe', client, event, window: { from: f90, to: t0 }, tried: cands, found }, 200, true)
+      return json({ scope: 'metaprobe', client, event, window: { from: f90, to: t0 }, tried: cands, found }, 200, false)
     } catch (e) { return json({ scope: 'metaprobe', client, error: String(e.message || e).slice(0, 200), found: [] }, 200) }
   }
 
@@ -2681,7 +2681,7 @@ export default async (req) => {
     // Which experimental fields Windsor ACCEPTED (valid, even if zero) — the shortlist of
     // real fields we can use; 'invalid' ones don't exist on the connector.
     const acceptedFields = expCands.filter((f) => expStatus[f] && expStatus[f] !== 'invalid')
-    return json({ scope: 'metadetect', client, window: { from, to: t0 }, goal: goal || null, evNames: [...evNames], customIds: [...customIds], promoted: promotedSample || null, spend: Math.round(spend), actions, suggest, tried: allCands, expStatus, acceptedFields }, 200, true)
+    return json({ scope: 'metadetect', client, window: { from, to: t0 }, goal: goal || null, evNames: [...evNames], customIds: [...customIds], promoted: promotedSample || null, spend: Math.round(spend), actions, suggest, tried: allCands, expStatus, acceptedFields }, 200, false)
   }
 
   // Creative Cockpit — every Meta creative with its performance and (where the

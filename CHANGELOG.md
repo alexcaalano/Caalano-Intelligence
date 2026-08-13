@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.238.1 — 2026-08-13 · `PENDING` — Hotfix: Google Ads views crashing (`matchCA is not defined`)
+- Fixed a regression from v3.237.0 (the cascading-filter refactor) that renamed the `matchCA` drill-filter helper to
+  `baseCA` but left one reference in the conversion-actions aggregation. That runs on every Google view render, so
+  **all Google Ads views threw "Something went wrong loading this view"**. Repointed the reference to `baseCA`.
+
 ## v3.238.0 — 2026-08-13 · `PENDING` — Google Ads view: ad-level (Ad ID) table with labels + friendly names
 - New **Ads** table in the Google Ads view (below Ad groups), one row per `ad_id`, **scoped to the drilled-into
   campaign / ad group** so you can see exactly which ads belong to which ad group. Full metrics + Conv. rate + green

@@ -1824,6 +1824,20 @@ function viewerAllowed(me, scope, channel) {
   return permit.some((t) => myTabs.includes(t))
 }
 
+// Overlay closed-basis (won-by-won-date) figures onto a created-basis CRM board.
+// Only Won / revenue / avg-won-value / close-rate flip; leads, open, lost, the
+// funnel steps and stages stay created-basis. wonClosed (from wonInPeriod) gives
+// total + per-pipeline + per-user closed figures; a level with no closed wins is
+// zeroed. Per-pipeline-per-user isn't in wonClosed, so that deep table keeps its
+// created basis (noted in the UI).
+function applyClosedBasis(crm, wc) {
+  const setTot = (t, w) => { if (!t) return; t.won = w ? w.won : 0; t.revenue = w ? w.revenue : 0; t.avgWonValue = w ? w.avgValue : 0; const denom = t.won + (t.lost || 0) + (t.abandoned || 0); t.closeRate = denom ? +((100 * t.won) / denom).toFixed(1) : 0 }
+  setTot(crm.totals, wc.total)
+  for (const p of crm.pipelines || []) { const w = wc.byPipeline ? wc.byPipeline[p.id] : null; if (p.funnel) p.funnel.won = w ? w.won : 0; setTot(p.totals, w) }
+  const setUser = (u, w) => { u.won = w ? w.won : 0; u.wonValue = w ? w.revenue : 0; u.convRate = u.leads ? +((100 * u.won) / u.leads).toFixed(1) : 0 }
+  for (const u of crm.byUser || []) setUser(u, wc.byUser ? wc.byUser[u.id] : null)
+}
+
 // ---------------------------------------------------------------------------
 // Server-side result cache + reliability telemetry
 // ---------------------------------------------------------------------------
@@ -3222,6 +3236,15 @@ export default async (req) => {
         (from && to) ? wonInPeriod(c.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
       crm.wonClosed = wonClosed
+      // Won basis: 'created' (default — won among leads created in the window) or
+      // 'closed' (won by their won-date, i.e. banked in the window, regardless of
+      // when created). Only Won/revenue/derived flip; leads, funnel, appts stay
+      // created-basis. Default stays 'created' server-side so callers that don't
+      // opt in (e.g. Monthly Report) are unaffected; the global "Closed" default
+      // is applied by the frontend passing wonBasis=closed.
+      const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
+      crm._wonBasis = wonBasis
+      if (wonBasis === 'closed' && wonClosed) applyClosedBasis(crm, wonClosed)
       const uName = {}; for (const u of usersRows) if (u.user_id) uName[u.user_id] = u.user_name
       const nameOf = (id) => uName[id] || (id === 'unassigned' ? 'Unassigned' : 'User ' + String(id).slice(-4))
       const nameRows = (rows) => rows.map((r) => ({ ...r, name: nameOf(r.id) }))

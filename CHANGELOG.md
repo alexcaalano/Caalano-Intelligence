@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.228.0 — 2026-08-13 · `PENDING` — Won-basis toggle: backend foundation (Closed-in vs Created-in period)
+- Groundwork for the upcoming **Won basis** toggle (Closed-in-period vs Created-in-period). Adds a backend overlay
+  (`applyClosedBasis`) that swaps a CRM board's Won / revenue / avg-won-value / close-rate to the **closed-in-period**
+  figures (won by their won-date, from `wonInPeriod`) while leaving leads, the funnel and appointments on their
+  created-in-period basis.
+- **Inert until the UI opts in:** the backend default stays `created`, so nothing changes yet — a screen only flips when
+  it passes `wonBasis=closed`. This lets the toggle roll out one revenue surface at a time (Caalano360, Users, Overview)
+  without disturbing anything else. Next: the header toggle + basis chip and wiring those surfaces.
+
 ## v3.227.0 — 2026-08-13 · `PENDING` — Agency Overview CRM moves to the direct GoHighLevel API
 - The agency **Overview** rollup now reads each client's won revenue + won count **straight from the GoHighLevel API**
   instead of Windsor's GoHighLevel feed — the last GHL-through-Windsor dependency on any client-facing view. Its numbers

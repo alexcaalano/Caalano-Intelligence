@@ -1994,6 +1994,12 @@ const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong'
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
 const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
+// Agency-wide scopes that carry NO client param. They ARE the slowest first-load
+// calls (whole-roster Windsor + GHL fan-out), so caching them is the single
+// biggest load-time win. Safe to cache only for UNRESTRICTED callers (no
+// per-caller filtering) — the gate below enforces that, and each builder already
+// returns cache=!filtered, so a restricted caller still rebuilds live.
+const CACHEABLE_SCOPES_NOCLIENT = new Set(['agency', 'coverage'])
 async function readResultCache(key) { try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } }
 function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
 function cacheKeyFrom(url) {
@@ -2121,8 +2127,9 @@ export default async (req) => {
   // is safe to serve. `_ckey` also arms the write-through + stale-on-error paths
   // inside json() above. The Refresh button (which appends `_r=<nonce>`) bypasses
   // the fresh window so a manual refresh is always fully live.
-  const _isCacheable = req.method === 'GET' && !debug && client && !restrictTo && restrictedSet.size === 0 &&
-    (CACHEABLE_SCOPES.has(scope) || (!scope && CACHEABLE_CHANNELS.has(channel)))
+  const _isCacheable = req.method === 'GET' && !debug && !restrictTo && restrictedSet.size === 0 &&
+    ((client && (CACHEABLE_SCOPES.has(scope) || (!scope && CACHEABLE_CHANNELS.has(channel)))) ||
+     (!client && CACHEABLE_SCOPES_NOCLIENT.has(scope)))
   if (_isCacheable) {
     _ckey = cacheKeyFrom(url)
     _staleHit = await readResultCache(_ckey)

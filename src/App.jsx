@@ -7,11 +7,12 @@ import {
 import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
-import CHANGELOG_RAW from '../CHANGELOG.md?raw'
+// CHANGELOG.md is loaded on demand (dynamic import) inside the Super-Admin Logs
+// panel — keeping ~200KB of markdown out of the main bundle for every visitor.
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.244.0'
+const APP_VERSION = '3.245.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7775,7 +7776,11 @@ function parseChangelog(raw) {
 function LogsPanel({ clients }) {
   const [tab, setTab] = useState('versions')
   const nameOf = (id) => { const c = (clients || []).find((x) => x.id === id); return c ? c.name : (id ? `…${String(id).slice(-6)}` : '—') }
-  const versions = useMemo(() => parseChangelog(CHANGELOG_RAW), [])
+  // Load the (large) changelog markdown on demand instead of inlining it into the
+  // main bundle for every visitor — this panel is Super-Admin only.
+  const [changelogRaw, setChangelogRaw] = useState('')
+  useEffect(() => { let alive = true; import('../CHANGELOG.md?raw').then((m) => { if (alive) setChangelogRaw(m.default || '') }).catch(() => {}); return () => { alive = false } }, [])
+  const versions = useMemo(() => parseChangelog(changelogRaw), [changelogRaw])
   const [log, setLog] = useState({ status: 'idle' })
   const [days, setDays] = useState(3)
   const loadLog = () => {

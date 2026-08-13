@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.245.0 — 2026-08-13 · `PENDING` — Faster loads: cache the agency first-load call + trim the bundle (part 2)
+- **Agency Overview is now cached.** The `scope=agency` whole-roster pull (Windsor + GoHighLevel fan-out across every
+  client) fires on every first load and was **completely uncached** — the single biggest wall-clock cost on landing.
+  Now cached like the per-client scopes (10-min fresh, 6-hour stale-on-error, Refresh still forces live). Only for
+  unrestricted callers — restricted staff still rebuild their filtered view live, so no cross-account leak. `coverage`
+  is cached the same way.
+- **Main JS bundle down ~55%.** The 219 KB `CHANGELOG.md` markdown was inlined into the main bundle for every
+  visitor even though only the Super-Admin Logs panel reads it — now loaded on demand. Combined with the vendor split
+  in v3.244.0, the always-loaded app chunk drops from **424 KB → 192 KB gzip**; charts (115 KB) and React (45 KB) load
+  in parallel and stay cached across deploys.
+
 ## v3.244.0 — 2026-08-13 · `PENDING` — Faster loads: split vendor bundles (part 1 of perf pass)
 - **Smaller, cacheable JS.** The whole app shipped as one ~1.5 MB chunk (424 KB gzip) that re-downloaded on every
   deploy. Split the stable vendor libs into their own chunks — **Recharts + d3** (115 KB gzip) and **React/React-DOM**

@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.241.0 — 2026-08-13 · `PENDING` — GA4 connector picker, wider account discovery, Google Ads polish
+- **Settings connector editor**: Google Analytics 4 is now a proper **picker column** (like Meta / Google / CRM),
+  populated from the accounts Windsor exposes on its GA4 connector — pick the property or paste its ID. This also
+  surfaces the exact GA4 account ID Windsor uses, which is what the Analytics tab filters on (pasting the raw GA4
+  property number may not match). The account status line now shows the GA4 count too.
+- **Account discovery widened**: the connector picker now lists every account with activity in the **last 2 years**
+  (was tied to the selected dashboard range, which hid accounts with no recent spend — why fewer showed than are
+  connected). Accounts with no data at all in Windsor still need a manual ID paste.
+- **GA4 resilience**: the Analytics headline + daily queries now fall back to a minimal field set if a richer GA4
+  field name isn't recognised, so the tab renders core metrics instead of going blank.
+- **Google Ads view polish** (from feedback): ads now default-name to **"<Ad group> - N"** (ranked by spend, so a
+  single-ad group just reads as its name) — a label or typed name still overrides; keyword green columns **revert to
+  the fuller text match** and only split by match type when a keyword genuinely runs in 2+ match types; **landing-page
+  URLs show in full**; and **Search terms gained an Ad group column**.
+
 ## v3.240.0 — 2026-08-13 · `PENDING` — Google Ads matching: ad-level on `utm_ad_id`, keywords split by match type
 - **Ad-level green columns now match on `utm_ad_id`** (the ad ID the CRM stores in its own param) instead of
   `utm_content` (which is the ad-GROUP ID). The attribution backend now emits a `byAd` breakdown keyed by ad ID with

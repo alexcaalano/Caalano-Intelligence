@@ -658,8 +658,9 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .addcl-name { margin-bottom: 14px; }
 .addcl-name label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; margin-bottom: 5px; }
 .addcl-name input { width: 100%; max-width: 360px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 12px; color: var(--text); font-size: 14px; }
-.addcl-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-@media (max-width: 760px) { .addcl-cols { grid-template-columns: 1fr; } }
+.addcl-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 900px) { .addcl-cols { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .addcl-cols { grid-template-columns: 1fr; } }
 .addcl-ga4 { margin-top: 14px; }
 .addcl-ga4 label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; margin-bottom: 5px; }
 .addcl-ga4 input { width: 100%; max-width: 360px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 12px; color: var(--text); font-size: 14px; }
@@ -2813,6 +2814,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 /* Google landing-page link */
 .lp-link { color: var(--brand); text-decoration: none; }
 .lp-link:hover { text-decoration: underline; }
+.lp-cell { min-width: 440px; max-width: 720px; white-space: normal; word-break: break-all; }
 .gdiag { margin: 6px 0 14px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--panel-2); overflow: hidden; }
 .gdiag > summary { list-style: none; cursor: pointer; padding: 10px 14px; font-size: 12.5px; font-weight: 650; color: var(--muted); }
 .gdiag > summary::-webkit-details-marker { display: none; }

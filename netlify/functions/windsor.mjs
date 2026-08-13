@@ -1278,9 +1278,13 @@ async function buildGanalytics(propertyId, from, to, preset, key) {
   const filt = (rows) => (rows || []).filter((r) => r.account_id == null || acctEq(r.account_id, propertyId))
   const pr = prevRange(from, to)
   const q = (fields, f = from, t = to, p = preset) => windsorFetch(GA4_CONNECTOR, ['account_id', ...fields], f, t, p, key).then(filt).catch(() => null)
+  // Fallback query: if the rich field set fails (one unknown field 400s the whole
+  // Windsor call), retry with a minimal always-present set so the tab still renders
+  // the core metrics instead of showing empty.
+  const qF = async (fields, safe, f = from, t = to, p = preset) => { const r = await q(fields, f, t, p); return (r && r.length) ? r : await q(safe, f, t, p) }
   const [totalRows, dayRows, srcRows, chanRows, evtRows, lpRows, prevRows, devRows] = await Promise.all([
-    q(['sessions', 'engaged_sessions', 'bounce_rate', 'event_count', 'conversions', 'screen_page_views', 'total_users', 'new_users', 'average_session_duration']),
-    q(['date', 'sessions', 'engaged_sessions', 'conversions', 'screen_page_views', 'total_users']),
+    qF(['sessions', 'engaged_sessions', 'bounce_rate', 'event_count', 'conversions', 'screen_page_views', 'total_users', 'new_users', 'average_session_duration'], ['sessions', 'engaged_sessions']),
+    qF(['date', 'sessions', 'engaged_sessions', 'conversions', 'screen_page_views', 'total_users'], ['date', 'sessions']),
     q(['session_source', 'session_medium', 'sessions', 'engaged_sessions', 'conversions', 'event_count']),
     q(['session_default_channel_grouping', 'sessions', 'engaged_sessions', 'conversions']),
     q(['event_name', 'event_count', 'conversions']),
@@ -2852,23 +2856,35 @@ export default async (req) => {
   // can see. Each is flagged `mapped` when it already belongs to a client, so the
   // UI can surface what's still available to connect.
   if (url.searchParams.get('scope') === 'discover') {
-    const usedGhl = new Set(), usedMeta = new Set(), usedGoogle = new Set()
-    for (const c of Object.values(CLIENTS)) { if (c.ghl) usedGhl.add(norm(c.ghl)); if (c.meta) usedMeta.add(norm(c.meta)); if (c.google) usedGoogle.add(norm(c.google)) }
+    const usedGhl = new Set(), usedMeta = new Set(), usedGoogle = new Set(), usedGa4 = new Set()
+    for (const c of Object.values(CLIENTS)) { if (c.ghl) usedGhl.add(norm(c.ghl)); if (c.meta) usedMeta.add(norm(c.meta)); if (c.google) usedGoogle.add(norm(c.google)); if (c.ga4) usedGa4.add(norm(c.ga4)) }
     const nameById = (rows) => { const m = new Map(); for (const r of (rows || [])) { const id = r.account_id; if (id == null) continue; const k = String(id); if (!m.has(k) || (!m.get(k) && r.account_name)) m.set(k, r.account_name || '') } return m }
+    // Discover over a WIDE window (last 12 months), NOT the selected range — Windsor
+    // only returns accounts that have data IN the queried window, so using the
+    // (possibly narrow) dashboard range hides accounts with no recent spend. That's
+    // why fewer accounts showed than are actually connected. A fixed 12-month lookup
+    // lists every account with any activity in the last year.
+    const dTo = new Date().toISOString().slice(0, 10)
+    const dFrom = new Date(Date.now() - 730 * 86400000).toISOString().slice(0, 10)
     // Capture (not swallow) Windsor connector errors so the UI can tell a broken /
     // unauthorised connector apart from a connector that simply has no accounts yet.
-    let metaErr = null, googleErr = null
-    const [locs, fbRows, ggRows] = await Promise.all([
+    let metaErr = null, googleErr = null, ga4Err = null
+    const [locs, fbRows, ggRows, gaRows] = await Promise.all([
       (isConnected().then((ok) => (ok ? listLocations() : [])).catch((e) => ({ error: String(e.message || e).slice(0, 160) }))),
-      windsorFetch('facebook', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch((e) => { metaErr = String(e.message || e).slice(0, 200); return [] }),
-      windsorFetch('google_ads', ['account_id', 'account_name', 'spend'], from, to, preset, key).catch((e) => { googleErr = String(e.message || e).slice(0, 200); return [] }),
+      windsorFetch('facebook', ['account_id', 'account_name', 'spend'], dFrom, dTo, null, key).catch((e) => { metaErr = String(e.message || e).slice(0, 200); return [] }),
+      windsorFetch('google_ads', ['account_id', 'account_name', 'spend'], dFrom, dTo, null, key).catch((e) => { googleErr = String(e.message || e).slice(0, 200); return [] }),
+      // GA4: account_name may not be a valid field on this connector, so fall back
+      // to id-only on error. `sessions` is the safest always-present metric.
+      windsorFetch(GA4_CONNECTOR, ['account_id', 'account_name', 'sessions'], dFrom, dTo, null, key)
+        .catch(() => windsorFetch(GA4_CONNECTOR, ['account_id', 'sessions'], dFrom, dTo, null, key).catch((e) => { ga4Err = String(e.message || e).slice(0, 200); return [] })),
     ])
     const ghlErr = locs && locs.error ? locs.error : null
     const ghl = Array.isArray(locs) ? locs.map((l) => ({ id: l.id, name: l.name, mapped: usedGhl.has(norm(l.id)) })) : []
-    const metaMap = nameById(fbRows), googleMap = nameById(ggRows)
+    const metaMap = nameById(fbRows), googleMap = nameById(ggRows), ga4Map = nameById(gaRows)
     const meta = [...metaMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedMeta.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const google = [...googleMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGoogle.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    return json({ scope: 'discover', ghl, meta, google, ghlErr, metaErr, googleErr, metaCount: meta.length, googleCount: google.length, fetchedAt: new Date().toISOString(), connected: await isConnected().catch(() => false) }, 200)
+    const ga4 = [...ga4Map.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGa4.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    return json({ scope: 'discover', ghl, meta, google, ga4, ghlErr, metaErr, googleErr, ga4Err, metaCount: meta.length, googleCount: google.length, ga4Count: ga4.length, fetchedAt: new Date().toISOString(), connected: await isConnected().catch(() => false) }, 200)
   }
 
   // Onboarding readiness: for each agency Caalano Systems location NOT yet linked

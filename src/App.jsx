@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.240.0'
+const APP_VERSION = '3.241.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2255,20 +2255,18 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   // client's Google template (utm_medium on some, utm_content on others), so resolve
   // the ad_group_id→name map across BOTH dims — only the one holding the ID matches.
   const oAgG = aliasedOutcomeMap(clientId, 'medium', [...((A && A.byMedium) || []), ...((A && A.byContent) || [])], A && A.mediumIdMap)
-  // Keywords: utm_term carries the keyword text. When the CRM ALSO carries the
-  // match type (utm_matchtype → byTermMatch, keyed "text||e/p/b"), key by
-  // text+match so "adhd" Exact and "adhd" Phrase get their own outcomes instead
-  // of the same bundled total. Falls back to text-only when the CRM has no match
-  // type at all.
-  const hasTermMatch = !!(A && A.byTermMatch && A.byTermMatch.length)
+  // Keywords: utm_term carries the keyword text, so match by text (the fuller
+  // signal — keeps every keyword's green data). Only when the SAME keyword text
+  // runs in 2+ match types (e.g. "adhd" Exact and Phrase) do we try to split by
+  // match type via the CRM's utm_matchtype (byTermMatch, keyed "text||e/p/b");
+  // if the CRM has no match-specific outcome for that pair, fall back to text.
   const oKwG = mkOutcomeMap((A && A.byTerm) || [])
   const oKwMatchG = mkOutcomeMap((A && A.byTermMatch) || [])
-  const kwOutcome = (k) => hasTermMatch ? oKwMatchG.get(unorm(k.text + '||' + mInit(k.match))) : oKwG.get(unorm(k.text))
-  // Match type: aggregate the CRM's per-(keyword×match) outcomes by match type
-  // when available (accurate — a keyword in two match types splits correctly);
-  // else fall back to folding byTerm by each keyword's Windsor match type.
+  const kwMatchCount = {}; for (const k of (g.keywords || [])) { const tx = unorm(k.text); (kwMatchCount[tx] || (kwMatchCount[tx] = new Set())).add(mInit(k.match)) }
+  const kwOutcome = (k) => { const tx = unorm(k.text); if ((kwMatchCount[tx] ? kwMatchCount[tx].size : 0) > 1) { const s = oKwMatchG.get(unorm(k.text + '||' + mInit(k.match))); if (s) return s } return oKwG.get(tx) }
+  // Match type: fold byTerm by each keyword's Windsor match type (as before).
   const kwToMatch = {}; for (const k of (g.keywords || [])) if (k.text && k.match) kwToMatch[k.text] = k.match
-  const oMatchG = hasTermMatch ? mkOutcomeMap(aggByMatchInitial((A && A.byTermMatch) || [])) : mkOutcomeMap(applyAliases((A && A.byTerm) || [], kwToMatch))
+  const oMatchG = mkOutcomeMap(applyAliases((A && A.byTerm) || [], kwToMatch))
   const t = g.totals || g.campaigns.reduce((a, c) => ({ cost: a.cost + c.cost, impressions: a.impressions + c.impressions, clicks: a.clicks + c.clicks, conversions: a.conversions + c.conversions }), { cost: 0, impressions: 0, clicks: 0, conversions: 0 })
   const costPerConv = t.conversions ? t.cost / t.conversions : 0
   const avgCpc = t.clicks ? t.cost / t.clicks : 0
@@ -2325,12 +2323,22 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   // (utm_content usually carries the ad ID) for the green Caalano360 columns.
   const adNames = loadAdNames(clientId)
   const adLabels = g.adLabels || {}
-  const adNameOf = (id) => adNames[id] || adLabels[id] || null
+  // Default ad name: "<Ad group> - N", N ranked by spend within the ad group
+  // (highest spender = 1). Most ad groups have one ad, so this reads as the ad
+  // group name. Overridden by a name you set (✎) or a Google Ads label.
+  const adDefaultName = (() => {
+    const byAg = {}; for (const a of (g.ads || [])) { const ag = a.adGroup || '—'; (byAg[ag] || (byAg[ag] = [])).push(a) }
+    const m = {}
+    for (const ag in byAg) { byAg[ag].slice().sort((a, b) => (b.cost || 0) - (a.cost || 0)).forEach((a, i) => { m[a.id] = `${ag} - ${i + 1}` }) }
+    return m
+  })()
+  const adNameSrc = (id) => adNames[id] ? 'set' : adLabels[id] ? 'label' : adDefaultName[id] ? 'auto' : null
+  const adNameOf = (id) => adNames[id] || adLabels[id] || adDefaultName[id] || id
   // Ads: the CRM carries the ad id in its own param (utm_ad_id → byAd), so match
   // the Google ad row's id directly. (utm_content is the ad GROUP id, used above.)
   const oAdG = mkOutcomeMap((A && A.byAd) || [])
   const adsFiltered = (g.ads || []).filter((a) => baseCA(a))
-  const adSorted = sortRows(adsFiltered.map((a) => ({ ...gMetrics(a), name: adNameOf(a.id) || a.id, ...o360Fields(oAdG.get(unorm(a.id)), a.cost, a.conversions, o360cols) })), adSort)
+  const adSorted = sortRows(adsFiltered.map((a) => ({ ...gMetrics(a), name: adNameOf(a.id), ...o360Fields(oAdG.get(unorm(a.id)), a.cost, a.conversions, o360cols) })), adSort)
   const adPages = Math.max(1, Math.ceil(adSorted.length / PAGE)); const adPg = Math.min(adPage, adPages - 1)
   const adView = adSorted.slice(adPg * PAGE, adPg * PAGE + PAGE)
   // Key events for the Google channel: configured pipeline stages + booked
@@ -2513,9 +2521,9 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         )
       })()}
       {(g.ads && g.ads.length > 0) && <>
-        <div className="lvl-title">Ads <span className="sub">· {adsFiltered.length}{selLabel ? ` in ${selLabel}` : ''} · Search RSAs have no name, so each shows its Google Ads label or a name you set (✎){has360 ? ' · green = CRM outcomes (utm_content)' : ''}</span></div>
+        <div className="lvl-title">Ads <span className="sub">· {adsFiltered.length}{selLabel ? ` in ${selLabel}` : ''} · Search RSAs have no name, so each defaults to its ad group + spend rank; set a Google Ads label or a name you type (✎){has360 ? ' · green = CRM outcomes (utm_ad_id)' : ''}</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><SortTh k="name" sort={adSort} on={onAdSort}>Ad</SortTh><SortTh k="adGroup" sort={adSort} on={onAdSort}>Ad group</SortTh><SortTh k="cost" sort={adSort} on={onAdSort}>Cost</SortTh><SortTh k="impressions" sort={adSort} on={onAdSort}>Impr.</SortTh><SortTh k="ctr" sort={adSort} on={onAdSort}>CTR</SortTh><SortTh k="cpc" sort={adSort} on={onAdSort}>CPC</SortTh><SortTh k="conversions" sort={adSort} on={onAdSort}>Conv.</SortTh><SortTh k="cvr" sort={adSort} on={onAdSort}>Conv. rate</SortTh><SortTh k="costConv" sort={adSort} on={onAdSort}>Cost/conv</SortTh>{has360 && <O360Head sort={adSort} on={onAdSort} cols={o360cols} />}</tr></thead>
-          <tbody>{adView.map((a) => { const nm = adNameOf(a.id); return (<tr key={a.campaign + '|' + a.adGroup + '|' + a.id}><td>{nm ? <b>{nm}</b> : <span className="ad-id" title={a.id}>{a.id}</span>}{nm && adNames[a.id] ? null : nm ? <span className="ad-lbl"> · label</span> : null} <button className="ad-ren" title="Set a friendly name for this ad" onClick={() => { const v = window.prompt('Friendly name for Google ad ' + a.id, adNames[a.id] || adLabels[a.id] || ''); if (v !== null) setAdName(clientId, a.id, v) }}>✎</button></td><td style={{ color: 'var(--muted)', fontSize: 12 }} title={a.campaign}>{a.adGroup || '-'}</td>{GCells(a)}{has360 && o360Cells(a, currency, o360cols)}</tr>) })}</tbody></table></div>
+          <tbody>{adView.map((a) => { const src = adNameSrc(a.id); return (<tr key={a.campaign + '|' + a.adGroup + '|' + a.id}><td><b>{adNameOf(a.id)}</b>{src === 'label' ? <span className="ad-lbl"> · label</span> : src === 'auto' ? <span className="ad-lbl"> · auto</span> : null} <button className="ad-ren" title="Set a friendly name for this ad" onClick={() => { const v = window.prompt('Friendly name for Google ad ' + a.id + ' (ad group: ' + (a.adGroup || '—') + ')', adNames[a.id] || adLabels[a.id] || ''); if (v !== null) setAdName(clientId, a.id, v) }}>✎</button></td><td style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'normal' }} title={a.campaign}>{a.adGroup || '-'}</td>{GCells(a)}{has360 && o360Cells(a, currency, o360cols)}</tr>) })}</tbody></table></div>
         <Pager page={adPg} pages={adPages} onPage={setAdPage} total={adsFiltered.length} unit="ads" />
       </>}
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms{has360 ? ' · green = CRM outcomes (utm_term)' : ''}</span></div>
@@ -2529,15 +2537,15 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
       </>}
       <div className="lvl-title">Search terms <span className="sub">· {searchTerms.length} of {fmtNumber(g.searchTermsTotal)} actual queries by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter by the matched keyword</span></div>
       {searchTerms.length ? (<>
-        <div className="table-wrap"><table><thead><tr><SortTh k="term" sort={sSort} on={onSSort}>Search term</SortTh><SortTh k="campaign" sort={sSort} on={onSSort}>Campaign</SortTh><SortTh k="cost" sort={sSort} on={onSSort}>Cost</SortTh><SortTh k="ctr" sort={sSort} on={onSSort}>CTR</SortTh><SortTh k="clicks" sort={sSort} on={onSSort}>Clicks</SortTh><SortTh k="conversions" sort={sSort} on={onSSort}>Conv.</SortTh><SortTh k="cvr" sort={sSort} on={onSSort}>Conv. rate</SortTh><SortTh k="costConv" sort={sSort} on={onSSort}>Cost / conv</SortTh></tr></thead>
-          <tbody>{stView.map((s, i) => (<tr key={s.campaign + '|' + s.adGroup + '|' + s.term + i} className={sel.keyword && s.keyword === sel.keyword ? 'row-sel' : ''} style={{ cursor: s.keyword ? 'pointer' : 'default' }} onClick={() => s.keyword && pickTerm(s)}><td>{s.term}</td><td style={{ color: 'var(--muted)', fontSize: 12 }} title={s.campaign}>{s.adGroup || s.campaign || '-'}</td><td>{fmtCurrency(s.cost, currency)}</td><td>{fmtPct(rate(s.clicks, s.impressions), 2)}</td><td>{fmtNumber(s.clicks)}</td><td>{fmtNumber(s.conversions)}</td><td>{fmtPct(rate(s.conversions, s.clicks), 1)}</td><td>{s.conversions ? fmtCurrency(s.cost / s.conversions, currency) : '-'}</td></tr>))}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><SortTh k="term" sort={sSort} on={onSSort}>Search term</SortTh><SortTh k="campaign" sort={sSort} on={onSSort}>Campaign</SortTh><SortTh k="adGroup" sort={sSort} on={onSSort}>Ad group</SortTh><SortTh k="cost" sort={sSort} on={onSSort}>Cost</SortTh><SortTh k="ctr" sort={sSort} on={onSSort}>CTR</SortTh><SortTh k="clicks" sort={sSort} on={onSSort}>Clicks</SortTh><SortTh k="conversions" sort={sSort} on={onSSort}>Conv.</SortTh><SortTh k="cvr" sort={sSort} on={onSSort}>Conv. rate</SortTh><SortTh k="costConv" sort={sSort} on={onSSort}>Cost / conv</SortTh></tr></thead>
+          <tbody>{stView.map((s, i) => (<tr key={s.campaign + '|' + s.adGroup + '|' + s.term + i} className={sel.keyword && s.keyword === sel.keyword ? 'row-sel' : ''} style={{ cursor: s.keyword ? 'pointer' : 'default' }} onClick={() => s.keyword && pickTerm(s)}><td>{s.term}</td><td style={{ color: 'var(--muted)', fontSize: 12 }}>{s.campaign || '-'}</td><td style={{ color: 'var(--muted)', fontSize: 12 }}>{s.adGroup || '-'}</td><td>{fmtCurrency(s.cost, currency)}</td><td>{fmtPct(rate(s.clicks, s.impressions), 2)}</td><td>{fmtNumber(s.clicks)}</td><td>{fmtNumber(s.conversions)}</td><td>{fmtPct(rate(s.conversions, s.clicks), 1)}</td><td>{s.conversions ? fmtCurrency(s.cost / s.conversions, currency) : '-'}</td></tr>))}</tbody></table></div>
         <Pager page={stPg} pages={stPages} onPage={setStPage} total={searchTerms.length} unit="terms" />
       </>) : <p className="caveat">No search-term data in this range{selLabel ? ` for ${selLabel}` : ''}.</p>}
       {g.landingPages && g.landingPages.length > 0 && <>
         <div className="lvl-title">Landing page performance <span className="sub">· {g.landingPages.length} destination URLs by spend · where the budget sent traffic · account-wide</span></div>
         <div className="table-wrap"><table><thead><tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="cost" sort={lpSort} on={onLpSort}>Cost</SortTh><SortTh k="impressions" sort={lpSort} on={onLpSort}>Impr.</SortTh><SortTh k="ctr" sort={lpSort} on={onLpSort}>CTR</SortTh><SortTh k="clicks" sort={lpSort} on={onLpSort}>Clicks</SortTh><SortTh k="conversions" sort={lpSort} on={onLpSort}>Conv.</SortTh><SortTh k="cvr" sort={lpSort} on={onLpSort}>Conv. rate</SortTh><SortTh k="costConv" sort={lpSort} on={onLpSort}>Cost/conv</SortTh></tr></thead>
           <tbody>{sortRows(g.landingPages.map((lp) => ({ ...lp, ctr: rate(lp.clicks, lp.impressions), cvr: rate(lp.conversions, lp.clicks), costConv: lp.conversions ? lp.cost / lp.conversions : null })), lpSort).map((lp) => { const short = String(lp.url).replace(/^https?:\/\//, '').replace(/\/$/, ''); return (
-            <tr key={lp.url}><td><a href={lp.url} target="_blank" rel="noopener noreferrer" title={lp.url} className="lp-link">{short.length > 64 ? short.slice(0, 62) + '…' : short}</a></td><td>{fmtCurrency(lp.cost, currency)}</td><td>{fmtNumber(lp.impressions)}</td><td>{fmtPct(rate(lp.clicks, lp.impressions), 2)}</td><td>{fmtNumber(lp.clicks)}</td><td>{fmtNumber(lp.conversions)}</td><td>{fmtPct(rate(lp.conversions, lp.clicks), 1)}</td><td>{lp.conversions ? fmtCurrency(lp.cost / lp.conversions, currency) : '-'}</td></tr>
+            <tr key={lp.url}><td className="lp-cell"><a href={lp.url} target="_blank" rel="noopener noreferrer" title={lp.url} className="lp-link">{short.length > 150 ? short.slice(0, 148) + '…' : short}</a></td><td>{fmtCurrency(lp.cost, currency)}</td><td>{fmtNumber(lp.impressions)}</td><td>{fmtPct(rate(lp.clicks, lp.impressions), 2)}</td><td>{fmtNumber(lp.clicks)}</td><td>{fmtNumber(lp.conversions)}</td><td>{fmtPct(rate(lp.conversions, lp.clicks), 1)}</td><td>{lp.conversions ? fmtCurrency(lp.cost / lp.conversions, currency) : '-'}</td></tr>
           ) })}</tbody></table></div>
       </>}
       {daily.length > 0 && <>
@@ -3015,7 +3023,7 @@ function useDiscoverNames() {
   useEffect(() => { let alive = true; fetchDiscover().then((j) => { if (alive) setD(j) }).catch(() => {}); return () => { alive = false } }, [])
   return useMemo(() => {
     const mk = (arr) => Object.fromEntries((arr || []).map((x) => [normId(x.id), x.name]))
-    return d ? { meta: mk(d.meta), google: mk(d.google), ghl: mk(d.ghl) } : null
+    return d ? { meta: mk(d.meta), google: mk(d.google), ghl: mk(d.ghl), ga4: mk(d.ga4) } : null
   }, [d])
 }
 
@@ -7358,7 +7366,7 @@ function AddClientModal({ existing, editClient, onClose }) {
     const mapping = {
       name: name.trim(),
       meta: meta || null, google: google || null, ghl: ghl || null, ga4: (ga4 || '').trim() || null,
-      metaName: nameOf(d.meta, meta), googleName: nameOf(d.google, google), ghlName: nameOf(d.ghl, ghl),
+      metaName: nameOf(d.meta, meta), googleName: nameOf(d.google, google), ghlName: nameOf(d.ghl, ghl), ga4Name: nameOf(d.ga4, ga4),
     }
     saveCustomClient(isEdit ? editClient.id : uniqueId(slug(name)), mapping)
     setSaved(true); setTimeout(onClose, 900)
@@ -7370,6 +7378,7 @@ function AddClientModal({ existing, editClient, onClose }) {
   const pickGhl = (id) => { setGhl(id); fillName(nameOf(d.ghl, id)) }
   const pickMeta = (id) => { setMeta(id); fillName(nameOf(d.meta, id)) }
   const pickGoogle = (id) => { setGoogle(id); fillName(nameOf(d.google, id)) }
+  const pickGa4 = (id) => { setGa4(id); fillName(nameOf(d.ga4, id)) }
   // A selected id that isn't in the discovered list (e.g. a brand-new Windsor
   // account not yet backfilled, or an existing link whose account has no recent
   // activity) still needs to show as selected + be linkable — so the picker also
@@ -7416,15 +7425,12 @@ function AddClientModal({ existing, editClient, onClose }) {
                   <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={pickGhl} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
                   <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty={d.metaErr ? `⚠ Windsor Meta connector error — it may need re-authorising in Windsor: ${d.metaErr}` : 'No Meta accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
                   <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty={d.googleErr ? `⚠ Windsor Google connector error — it may need re-authorising in Windsor: ${d.googleErr}` : 'No Google accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
-                </div>
-                <div className="addcl-ga4">
-                  <label>📊 Google Analytics 4 <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· paste the GA4 property ID (as it appears in Windsor / GA4) to unlock the Analytics tab · optional</span></label>
-                  <input value={ga4} onChange={(e) => setGa4(e.target.value)} placeholder="e.g. 312345678" inputMode="numeric" />
+                  <Col title="📊 Google Analytics 4" items={d.ga4} sel={ga4} onSel={pickGa4} empty={d.ga4Err ? `⚠ Windsor GA4 connector error — it may need re-authorising in Windsor: ${d.ga4Err}` : 'No GA4 properties found yet from Windsor. Paste the property ID below to link it now.'} />
                 </div>
                 <div className="addcl-status cap">
                   {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems (GHL) not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
                   {d.fetchedAt ? <> · refreshed {new Date(d.fetchedAt).toLocaleTimeString()}</> : null}
-                  {' · '}{fmtNumber((d.meta || []).length)} Meta · {fmtNumber((d.google || []).length)} Google · {fmtNumber((d.ghl || []).length)} CRM accounts visible
+                  {' · '}{fmtNumber((d.meta || []).length)} Meta · {fmtNumber((d.google || []).length)} Google · {fmtNumber((d.ga4 || []).length)} GA4 · {fmtNumber((d.ghl || []).length)} CRM accounts visible
                   {d.metaErr || d.googleErr ? <span className="addcl-stat-bad"> · a connector is erroring (see above)</span> : null}
                 </div>
                 <div className="addcl-foot">

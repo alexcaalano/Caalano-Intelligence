@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.245.0'
+const APP_VERSION = '3.246.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -435,6 +435,24 @@ function useClientLogos() {
   })
 }
 
+// Client-side GET de-dupe. Sibling components/tabs often fetch the SAME windsor
+// URL for the same client/range (e.g. blend, attribution and scope=users are each
+// pulled by several views). This shares ONE in-flight/recent request per identical
+// URL instead of firing N round-trips. Returns a CLONED Response, so it's a drop-in
+// for `fetch(url)` — callers keep reading r.ok / r.json() unchanged. The URL already
+// encodes client + range + the refresh nonce (_r), so a manual Refresh (new nonce)
+// always gets a fresh URL and bypasses this. Entries live ~45s; failures aren't
+// cached; the server itself still caches for 10 minutes behind this.
+const _getInflight = new Map() // url -> { at, p: Promise<Response> }
+function dedupeFetch(url, ttl = 45000) {
+  const now = Date.now()
+  const hit = _getInflight.get(url)
+  if (hit && (now - hit.at) < ttl) return hit.p.then((r) => r.clone())
+  const p = fetch(url)
+  _getInflight.set(url, { at: now, p })
+  p.then((r) => { if (!r.ok) _getInflight.delete(url) }, () => _getInflight.delete(url))
+  return p.then((r) => r.clone())
+}
 function useAgencyLive(range, nonce = 0, wonBasis = 'closed') {
   const [state, setState] = useState({ status: 'idle', data: null })
   const q = rangeQuery(range)
@@ -2622,7 +2640,7 @@ function useAttribution(clientId, range, nonce = 0) {
     // The GHL-backed attribution build is heavy and can transiently time out or
     // hit a cold start / rate limit. Retry a couple of times with backoff before
     // surfacing the error (and carry the real backend reason, not a generic one).
-    const attempt = (n) => fetch(url)
+    const attempt = (n) => dedupeFetch(url)
       .then(async (r) => { if (r.ok) return r.json(); let m = `HTTP ${r.status}`; try { const j = await r.json(); if (j && j.error) m = j.error } catch {} throw new Error(m) })
       .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
       .catch((e) => { if (!alive) return; if (n < 2) setTimeout(() => { if (alive) attempt(n + 1) }, 1200 * (n + 1)); else setState({ status: 'err', data: null, error: String((e && e.message) || e).slice(0, 200) }) })
@@ -2641,7 +2659,7 @@ function usePipelineAttr(clientId, range, nonce, pipe, fallback) {
   useEffect(() => {
     if (!active) { setState(null); return }
     let alive = true; setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}&pipeline=${encodeURIComponent(pipe)}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}&pipeline=${encodeURIComponent(pipe)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
@@ -2668,7 +2686,7 @@ function usePrevAttr(clientId, range, nonce) {
   useEffect(() => {
     if (!q) { setState(null); return }
     let alive = true
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setState(j && j.attribution ? j.attribution : null) }).catch(() => { if (alive) setState(null) })
     return () => { alive = false }
   }, [clientId, q, nonce]) // eslint-disable-line
@@ -3759,7 +3777,7 @@ function TeamPerformance({ clientId, range, nonce, money }) {
   const [open, setOpen] = useState(null)
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', users: [] })
-    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', users: j.users || [] }) })
       .catch(() => { if (alive) setSt({ status: 'err', users: [] }) })
@@ -3868,7 +3886,7 @@ function AtRiskPanel({ clientId, range, nonce, money }) {
   useEffect(() => {
     let alive = true
     setSt({ status: 'loading', deals: [] })
-    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => {
         const deals = []
@@ -4142,7 +4160,7 @@ function useCrmAgg(clientId, range, nonce, channel = 'all') {
   const q = rangeQuery(range)
   useEffect(() => {
     let alive = true; setD(null)
-    fetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => r.json()).then((j) => {
         if (!alive) return
         const us = (j && j.users) || []
@@ -6719,7 +6737,7 @@ function KpiEditor({ clientId, embedded, nonce }) {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
     const r = presetRange('last_30d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
@@ -6898,8 +6916,8 @@ function ClientTrackingDiagnostics({ clientId, currency, embedded, nonce }) {
     setSt({ status: 'loading', blend: null, attr: null })
     const r = presetRange('last_30d')
     Promise.all([
-      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
-      fetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=attribution&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
     ]).then(([b, a]) => setSt({ status: 'ok', blend: (b && b.blend) || null, attr: (a && a.attribution) || null }))
       .catch(() => setSt({ status: 'err', blend: null, attr: null }))
   }, [open, st.status, clientId])
@@ -6926,7 +6944,7 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
     const r = presetRange('last_30d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
@@ -7055,7 +7073,7 @@ function QualStageEditor({ clientId, nonce }) {
     if (st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
     const r = presetRange('last_30d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
@@ -7095,7 +7113,7 @@ function AliasEditor({ clientId, nonce }) {
     const r = { from: iso(from), to: iso(now) }
     const q = `client=${clientId}&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`
     Promise.all([
-      fetch(`/.netlify/functions/windsor?channel=attribution&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      dedupeFetch(`/.netlify/functions/windsor?channel=attribution&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
       // Lightweight name-only endpoint (not the heavy buildMeta) so the current
       // campaign / ad-set / ad names load reliably even for large accounts.
       fetch(`/.netlify/functions/windsor?scope=adnames&${q}`).then((x) => (x.ok ? x.json() : null)).catch(() => null),
@@ -7212,7 +7230,7 @@ function CampaignLinker({ clientId, embedded, nonce }) {
     if (!open || st.status !== 'idle') return
     setSt({ status: 'loading', blend: null })
     const r = presetRange('last_30d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
+    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => setSt({ status: 'ok', blend: j.blend }))
       .catch(() => setSt({ status: 'err', blend: null }))
@@ -8022,7 +8040,7 @@ function SalesCycleField({ clientId }) {
   useEffect(() => {
     let alive = true; setCrm(undefined)
     const r = presetRange('last_90d')
-    fetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
+    dedupeFetch(`/.netlify/functions/windsor?client=${clientId}&channel=blend&${rangeQuery(r)}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setCrm(j && j.blend && j.blend.wonClosed && j.blend.wonClosed.avgCloseDays != null ? j.blend.wonClosed.avgCloseDays : null) })
       .catch(() => { if (alive) setCrm(null) })

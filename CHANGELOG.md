@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.246.0 — 2026-08-13 · `PENDING` — Faster loads: de-dupe per-tab data fetches (part 3)
+- **Clicking through a client's tabs no longer refetches the same data.** Several views each independently pulled the
+  same `channel=blend`, `channel=attribution` and `scope=users` feed for the same client/range — up to 3× the round
+  trips. A shared client-side de-dupe (`dedupeFetch`) now collapses identical in-flight/recent requests into one, so
+  moving between the Caalano360, Users, CRM and scorecard views reuses the first pull instead of re-hitting the
+  function. The refresh nonce still forces a fully live pull, and failures are never cached.
+
 ## v3.245.0 — 2026-08-13 · `PENDING` — Faster loads: cache the agency first-load call + trim the bundle (part 2)
 - **Agency Overview is now cached.** The `scope=agency` whole-roster pull (Windsor + GoHighLevel fan-out across every
   client) fires on every first load and was **completely uncached** — the single biggest wall-clock cost on landing.

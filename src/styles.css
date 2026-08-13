@@ -2810,3 +2810,15 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 /* Google landing-page link */
 .lp-link { color: var(--brand); text-decoration: none; }
 .lp-link:hover { text-decoration: underline; }
+.gdiag { margin: 6px 0 14px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--panel-2); overflow: hidden; }
+.gdiag > summary { list-style: none; cursor: pointer; padding: 10px 14px; font-size: 12.5px; font-weight: 650; color: var(--muted); }
+.gdiag > summary::-webkit-details-marker { display: none; }
+.gdiag > summary::before { content: '▸ '; color: var(--faint); }
+.gdiag[open] > summary::before { content: '▾ '; }
+.gdiag-body { padding: 4px 14px 14px; border-top: 1px solid var(--border-2); }
+.gdiag-body > p { font-size: 12.5px; color: var(--text); margin: 10px 0; line-height: 1.5; }
+.gdiag-body > p.cap { font-size: 11px; color: var(--faint); font-style: italic; }
+.gdiag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 10px 0; }
+.gdiag-grid > div { background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; }
+.gdiag-grid b { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
+.gdiag-grid span { font-size: 12.5px; color: var(--text); font-variant-numeric: tabular-nums; word-break: break-word; }

@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.237.0 — 2026-08-13 · `PENDING` — Google Ads view: Conversion Rate, pagination, fully-dynamic drill-down, landing-page reorder
+- **Conversion Rate (conv / clicks)** is now a standard column across **every** Google Ads table — campaigns, ad groups,
+  keywords, match type, search terms and landing pages — sortable like the rest.
+- **Landing Page Performance** moved down to sit just **above Day-by-day** (previously above Keywords), keeping the
+  campaign → ad group → keyword drill sequence uninterrupted; it also gains the Conv. rate column.
+- **Pagination**: Keywords and Search terms now render **20 rows at a time** with Prev / Next controls, resetting to
+  page 1 whenever the filter changes.
+- **Fully dynamic, cascading drill-down**: clicking any row — campaign, ad group, keyword, match type or search term —
+  now filters every related table, and selections **stack** (campaign → ad group → keyword narrows progressively).
+  Match-type rows are now clickable, and picking a lower level auto-selects its parents. Click a selected row again to
+  clear it.
+- **Ad-group attribution diagnostic**: a collapsible panel under the Ad groups table shows how many ad groups matched
+  CRM outcomes and exactly what `utm_medium` / `utm_content` the CRM carries, so empty green columns are diagnosable
+  (Google auto-tagging typically writes `cpc` to utm_medium and the ad-group / ad ID to utm_content). Ad-group ID→name
+  resolution already spans both UTM dimensions plus the ad-id→ad-group fold from the prior release.
+
 ## v3.236.0 — 2026-08-13 · `PENDING` — Won-basis toggle: Weekly board done (rollout complete)
 - The **Weekly Traffic Light** board now honours the Won-basis toggle — the last surface. In **Closed** mode, each
   week's Won / Won Value is bucketed by the deal's **won-date** (a deal created months earlier counts in the week it

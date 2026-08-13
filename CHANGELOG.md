@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.217.0 — 2026-08-12 · `PENDING` — Window popup: Google conversion-actions drill + Meta-detect diagnostics
+- The window breakdown popup's **Google** row (Ad spend → results) is now clickable and expands the Google
+  **conversion actions** for that exact window (3/7/14/21/28 days), same as the 28-day source table.
+- Settings → Meta conversions now shows **auto-detect diagnostics** when nothing is found: the detected
+  optimisation goal, any event names read off the ad sets, and the Windsor field names tried — so a custom
+  conversion whose field name differs can be identified and mapped without hitting a URL.
+
 ## v3.216.0 — 2026-08-12 · `PENDING` — Meta conversions: auto-detect the optimisation event (no typing)
 - The Meta conversions tab now **auto-detects** the client's optimisation event: it reads the ad sets'
   optimisation goal + promoted object to learn which conversion the account optimises to (matching Ads

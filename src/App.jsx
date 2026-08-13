@@ -10,7 +10,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.216.0'
+const APP_VERSION = '3.217.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1027,6 +1027,10 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   const [drill, setDrill] = useState(null)
   const dayAgo = (k) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - k); return iso(d) }
   const winRange = { from: dayAgo(w.n - 1), to: dayAgo(0) }
+  // Google conversion-actions drill for THIS window (account tiles only — the actions
+  // feed is account-wide, so it wouldn't match a pipeline tile's scoped Google results).
+  const [gOpen, setGOpen] = useState(false)
+  const canGDrill = !!(clientId && (!pipeId || pipeId === 'all') && w.google && (w.google.results || w.google.spend))
   return (
     <div className="tr-brk">
       <div className="tr-brk-grid">
@@ -1035,8 +1039,17 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
           <table className="mini-tbl tr-brk-tbl">
             <thead><tr><th className="lft">Source</th><th>Spend</th><th>Results</th><th>Cost / result</th></tr></thead>
             <tbody>
-              {srcRows.length ? srcRows.map((r) => <tr key={r.label}><td className="lft">{r.label}</td><td>{money(r.spend)}</td><td>{fmtNumber(r.results)}</td><td>{cpr(r.spend, r.results)}</td></tr>)
-                : <tr><td className="lft" colSpan={4}><span className="cap">No ad spend in this window.</span></td></tr>}
+              {srcRows.length ? srcRows.map((r) => {
+                const isG = r.label === 'Google' && canGDrill
+                return (
+                  <React.Fragment key={r.label}>
+                    <tr className={isG ? 'tr-src-click' : ''} onClick={isG ? () => setGOpen((o) => !o) : undefined} title={isG ? 'Click for the Google conversion actions in this window' : undefined}>
+                      <td className="lft">{r.label}{isG ? <span className="tr-src-more">{gOpen ? '▾' : '▸'} conversion actions</span> : null}</td><td>{money(r.spend)}</td><td>{fmtNumber(r.results)}</td><td>{cpr(r.spend, r.results)}</td>
+                    </tr>
+                    {isG && gOpen ? <tr className="tr-src-drillrow"><td colSpan={4}><GoogleConvDrill clientId={clientId} days={w.n} money={money} /></td></tr> : null}
+                  </React.Fragment>
+                )
+              }) : <tr><td className="lft" colSpan={4}><span className="cap">No ad spend in this window.</span></td></tr>}
               <tr className="tr-src-tot"><td className="lft">Total</td><td>{money(totalSpend)}</td><td>{fmtNumber(b.results || 0)}</td><td>{cpr(totalSpend, b.results || 0)}</td></tr>
             </tbody>
           </table>
@@ -7412,7 +7425,7 @@ function MetaConversionsEditor({ clientId, currency }) {
     // Auto-detect: read the account's optimisation event + every firing conversion.
     fetch(`/.netlify/functions/windsor?scope=metadetect&client=${clientId}`)
       .then((r) => r.json())
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend, suggest: j && j.suggest, goal: j && j.goal }) })
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', actions: (j && j.actions) || [], error: j && j.error, spend: j && j.spend, suggest: j && j.suggest, goal: j && j.goal, evNames: (j && j.evNames) || [], tried: (j && j.tried) || [] }) })
       .catch((e) => { if (alive) setSt({ status: 'err', actions: [], error: String((e && e.message) || e) }) })
     return () => { alive = false }
   }, [clientId])
@@ -7440,7 +7453,12 @@ function MetaConversionsEditor({ clientId, currency }) {
       </div>
       {st.status === 'loading' ? <Spinner label="Loading Meta conversions…" />
         : st.status === 'err' ? <div className="cap">Couldn’t load conversions{st.error ? ` — ${st.error}` : ''}.</div>
-          : !list.length ? <div className="cap">No Meta conversions have fired for this account in the last 90 days. If the account is new, they’ll appear once data flows.</div>
+          : !list.length ? (
+            <div className="mconv-empty">
+              <div className="cap">No Meta conversions were detected firing for this account.{st.spend ? ` (${money(st.spend)} spent in the last 30 days.)` : ''}</div>
+              {(st.goal || (st.evNames && st.evNames.length)) ? <div className="cap" style={{ marginTop: 6 }}>Detected optimisation goal: <b>{st.goal ? String(st.goal).replace(/_/g, ' ').toLowerCase() : '—'}</b>{st.evNames && st.evNames.length ? <> · event(s) named on the ad sets: <b>{st.evNames.join(', ')}</b></> : null}. If your custom conversion (e.g. from Ads Manager’s Results column) should be here but isn’t, its Windsor field name differs from what we tried — send this to your Caalano admin: <code style={{ fontSize: 10 }}>{(st.tried || []).slice(0, 8).join(', ')}{(st.tried || []).length > 8 ? '…' : ''}</code></div> : null}
+            </div>
+          )
             : <>
               {st.suggest && st.suggest !== cfg.primary ? (
                 <div className="mconv-auto">

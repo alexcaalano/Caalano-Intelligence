@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -2678,6 +2678,31 @@ export default async (req) => {
     const meta = [...metaMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedMeta.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const google = [...googleMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGoogle.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     return json({ scope: 'discover', ghl, meta, google, ghlErr, metaErr, googleErr, metaCount: meta.length, googleCount: google.length, fetchedAt: new Date().toISOString(), connected: await isConnected().catch(() => false) }, 200)
+  }
+
+  // Onboarding readiness: for each agency Caalano Systems location NOT yet linked
+  // to a client, test whether its API is actually reachable (a location token can
+  // only be minted when the marketplace app is installed on that sub-account). So
+  // Auto-onboard only offers locations you can really pull, and flags the rest as
+  // "install the app first". Bounded + pooled to stay inside the function limit.
+  if (url.searchParams.get('scope') === 'onboardscan') {
+    if (me && me.role === 'viewer') return json({ error: 'Not authorised.' }, 403)
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'onboardscan', connected: false, locations: [] })
+    try {
+      const locs = await listLocations()
+      const mapped = new Set(); for (const c of Object.values(CLIENTS)) if (c.ghl) mapped.add(norm(c.ghl))
+      const unmapped = locs.filter((l) => !mapped.has(norm(l.id)))
+      const SCAN_CAP = 60
+      const toScan = unmapped.slice(0, SCAN_CAP)
+      // Test readiness with a small concurrency pool so a big agency doesn't blow
+      // the time budget; anything beyond the cap is reported as unknown.
+      const ready = {}
+      let i = 0
+      const worker = async () => { while (i < toScan.length) { const l = toScan[i++]; ready[l.id] = await checkLocationAccess(l.id).catch(() => false) } }
+      await Promise.all(Array.from({ length: Math.min(6, toScan.length) }, worker))
+      const out = locs.map((l) => ({ id: l.id, name: l.name, mapped: mapped.has(norm(l.id)), ready: mapped.has(norm(l.id)) ? true : (l.id in ready ? ready[l.id] : null) }))
+      return json({ scope: 'onboardscan', connected: true, scanned: toScan.length, unmapped: unmapped.length, locations: out, fetchedAt: new Date().toISOString() }, 200)
+    } catch (e) { return json({ scope: 'onboardscan', error: String(e.message || e).slice(0, 200), locations: [] }, 200) }
   }
 
   // Meta conversion actions that actually fired for a client's ad account, for

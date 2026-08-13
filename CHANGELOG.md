@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.226.0 — 2026-08-13 · `PENDING` — Auto-onboard: API-readiness check (flags sub-accounts missing the marketplace app)
+- Auto-onboard now **tests whether each sub-account's API is actually reachable** before offering it. The direct API
+  needs the GoHighLevel marketplace app installed on a sub-account (that's what lets us mint its location token), so a
+  location can be listed but not yet pullable.
+- Each location is labelled **✓ API ready** or **⚠ app not installed**; not-installed ones are shown, greyed and
+  unticked, with a note to install the app (or enable “install on all sub-accounts” in your GHL app) and Refresh. Only
+  API-ready locations can be created, so Auto-onboard never makes a client it can’t pull.
+
 ## v3.225.0 — 2026-08-13 · `PENDING` — Auto-onboard: one-click link every Caalano Systems location to its Meta & Google accounts
 - New **✨ Auto-onboard** button in Settings → Clients (Super-Admin). It scans every Caalano Systems (GoHighLevel) agency
   location that isn't linked to a client yet, and **fuzzy-matches each one to its Meta & Google ad accounts by name**

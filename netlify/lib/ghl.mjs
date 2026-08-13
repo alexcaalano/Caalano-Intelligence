@@ -449,6 +449,13 @@ export async function deletedClients() {
 }
 // All Caalano Systems (GoHighLevel) sub-accounts under the agency, for the
 // "add client" explorer: id + name so a new client can be mapped to its CRM.
+// Can we actually reach this sub-account's API? A location token can only be
+// minted when the marketplace app is installed/authorised on that location, so a
+// successful mint is a reliable "API ready" signal and a failure means the app
+// isn't installed there yet. Cheap: one token call (cached per warm lambda).
+export async function checkLocationAccess(locationId) {
+  try { await locationToken(locationId); return true } catch { return false }
+}
 export async function listLocations() {
   const t = await agencyToken()
   if (!t.companyId) throw new Error('No agency companyId on the stored token - re-authorise as the Agency (Company).')

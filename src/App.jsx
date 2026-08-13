@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.225.0'
+const APP_VERSION = '3.226.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7111,18 +7111,27 @@ function AutoOnboardModal({ existing, onClose }) {
   const [done, setDone] = useState(0)
   const load = (force) => {
     setSt({ status: 'loading', data: null })
-    fetchDiscover(force).then((d) => {
+    const scanUrl = `/.netlify/functions/windsor?scope=onboardscan${force ? `&_r=${Date.now()}` : ''}`
+    Promise.all([
+      fetchDiscover(force),
+      apiJson(scanUrl, { timeoutMs: 25000, tries: 1 }).catch(() => ({ locations: [] })),
+    ]).then(([d, scan]) => {
       setSt({ status: 'ok', data: d })
+      // Readiness per location: true = API reachable (app installed), false = app
+      // not installed on that sub-account, null/undefined = not scanned/unknown.
+      const readyMap = {}
+      for (const l of (scan.locations || [])) readyMap[normId(l.id)] = l.ready
       const mapped = new Set()
       for (const c of existing || []) { if (c.ghl) mapped.add(normId(c.ghl)) }
       const meta = d.meta || [], google = d.google || []
       // Anchor on GHL locations not already linked to a client; suggest the best
-      // Meta + Google match for each.
+      // Meta + Google match for each. Default-select only the API-ready ones.
       const next = (d.ghl || []).filter((l) => !mapped.has(normId(l.id)) && !l.mapped).map((l) => {
         const m = aoBest(l.name, meta.filter((x) => !x.mapped)) || aoBest(l.name, meta)
         const g = aoBest(l.name, google.filter((x) => !x.mapped)) || aoBest(l.name, google)
-        return { ghlId: l.id, ghlName: l.name, name: l.name, meta: m ? m.id : '', google: g ? g.id : '', sel: true, matchM: m ? Math.round(m.score * 100) : null, matchG: g ? Math.round(g.score * 100) : null }
-      })
+        const ready = normId(l.id) in readyMap ? readyMap[normId(l.id)] : null
+        return { ghlId: l.id, ghlName: l.name, name: l.name, meta: m ? m.id : '', google: g ? g.id : '', sel: ready !== false, matchM: m ? Math.round(m.score * 100) : null, matchG: g ? Math.round(g.score * 100) : null, ready }
+      }).sort((a, b) => (a.ready === false) - (b.ready === false) || String(a.name).localeCompare(String(b.name)))
       setRows(next)
     }).catch(() => setSt({ status: 'err', data: null }))
   }
@@ -7131,7 +7140,8 @@ function AutoOnboardModal({ existing, onClose }) {
   const metaList = d.meta || [], googleList = d.google || []
   const nameOf = (list, id) => { const it = list.find((x) => normId(x.id) === normId(id)); return it ? it.name : null }
   const upd = (i, patch) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
-  const selected = rows.filter((r) => r.sel)
+  const selected = rows.filter((r) => r.sel && r.ready !== false)
+  const notReady = rows.filter((r) => r.ready === false).length
   const createAll = async () => {
     if (!selected.length || busy) return
     setBusy(true); let n = 0
@@ -7160,14 +7170,14 @@ function AutoOnboardModal({ existing, onClose }) {
             : st.status === 'err' ? <div className="cap">Couldn’t load accounts — <button className="btn-ghost sm" onClick={() => load(true)}>try again</button>.</div>
               : rows.length === 0 ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>Every Caalano Systems location is already linked to a client.</b><p className="cap">New sub-account? Install the app on it and add its ad account to your Meta Business Manager + Windsor, then hit Refresh.</p></div>
                 : (<>
-                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.</p>
+                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.{notReady ? <> <b style={{ color: 'var(--warn)' }}>{notReady} can’t be onboarded yet</b> — the marketplace app isn’t installed on those sub-accounts, so the API can’t reach them. Install it (or enable “install on all sub-accounts” in your GHL app) and hit Refresh.</> : null}</p>
                   <div className="ao-table">
                     <div className="ao-h"><span /><span>Client name</span><span>Caalano Systems</span><span>Meta</span><span>Google</span></div>
                     {rows.map((r, i) => (
-                      <div className={`ao-row${r.sel ? '' : ' off'}`} key={r.ghlId}>
-                        <label className="ao-chk"><input type="checkbox" checked={r.sel} onChange={() => upd(i, { sel: !r.sel })} /></label>
-                        <input className="ao-name" value={r.name} onChange={(e) => upd(i, { name: e.target.value })} />
-                        <span className="ao-ghl" title={r.ghlId}>{r.ghlName}</span>
+                      <div className={`ao-row${r.sel && r.ready !== false ? '' : ' off'}`} key={r.ghlId}>
+                        <label className="ao-chk"><input type="checkbox" checked={r.sel && r.ready !== false} disabled={r.ready === false} onChange={() => upd(i, { sel: !r.sel })} /></label>
+                        <input className="ao-name" value={r.name} onChange={(e) => upd(i, { name: e.target.value })} disabled={r.ready === false} />
+                        <span className="ao-ghl" title={r.ghlId}>{r.ghlName}{r.ready === false ? <span className="ao-badge weak" title="Install the marketplace app on this sub-account to enable API access">⚠ app not installed</span> : r.ready === true ? <span className="ao-badge good">✓ API ready</span> : null}</span>
                         <span className="ao-sel">
                           <select value={r.meta} onChange={(e) => upd(i, { meta: e.target.value })}><option value="">— none —</option>{metaList.map((m) => <option key={m.id} value={m.id}>{m.name}{m.mapped ? ' (in use)' : ''}</option>)}</select>
                           {r.matchM != null && r.meta ? <span className={`ao-badge ${r.matchM >= 60 ? 'good' : 'weak'}`}>{r.matchM}%</span> : null}

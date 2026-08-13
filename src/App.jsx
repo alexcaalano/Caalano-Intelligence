@@ -11,7 +11,7 @@ import CHANGELOG_RAW from '../CHANGELOG.md?raw'
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.233.0'
+const APP_VERSION = '3.234.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1669,8 +1669,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   // Ad sets are tagged in the CRM as utm_medium (e.g. "CDas_06_Broad_National"),
   // not utm_term - so match ad-set rows against byMedium. Aliases fold renamed
   // ad sets' old-UTM leads into the current name.
-  const oAdset = aliasedOutcomeMap(clientId, 'medium', A && A.byMedium)
-  const oCre = aliasedOutcomeMap(clientId, 'content', A && A.byCreative)
+  const oAdset = aliasedOutcomeMap(clientId, 'medium', A && A.byMedium, A && A.mediumIdMap)
+  const oCre = aliasedOutcomeMap(clientId, 'content', A && A.byCreative, A && A.contentIdMap)
   // Account totals - the fixed baseline for creative "vs account average" colour
   // coding, regardless of any drill-in.
   const acct = m.totals || { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, leads: 0, reach: 0 }

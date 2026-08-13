@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.234.0 — 2026-08-13 · `PENDING` — Ad/creative + ad-set ID resolution for the Meta Caalano360 columns
+- Applied the ad-group/ad id↔name maps to the **Meta** view: **ad sets** now resolve `adset_id`→name (utm_medium) and
+  **creatives/ads** resolve `ad_id`→name (utm_content), so the green Caalano360 outcome columns populate on those tables
+  the same way campaigns already do. This is the "Ad/Creative" link (Google has no distinct ad-level table — responsive
+  search ads have no real names — so Meta creatives are where ad-level outcomes live).
+
 ## v3.233.0 — 2026-08-13 · `PENDING` — Caalano360 green columns extend to ad groups, keywords + a new Match-type table
 - Following the campaign ID→name auto-resolve, the attribution feed now also returns **ad-group** (`ad_group_id` /
   `adset_id`) and **ad** (`ad_id`) id↔name maps from Windsor.

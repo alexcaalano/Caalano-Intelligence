@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.248.0 — 2026-08-13 · `PENDING` — Clearer "session expired" message on data tabs
+- When a data pull fails because the **login session expired** (the error was "Not authenticated"), the tab now shows a
+  clear **"Your session expired — sign in again"** message with a reload button, instead of the misleading "temporary
+  timeout, try a shorter range." Reloading re-runs the auth check and lands on the login screen; no data is lost.
+
 ## v3.247.0 — 2026-08-13 · `PENDING` — Location view: pipeline selector
 - The **Location** view now has a **pipeline selector** (for multi-pipeline clients like FINR — Buyers Agent vs
   Mortgage Broker). Pick a pipeline to see the lead map, scorecards and location list for just that pipeline's leads.

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.247.0'
+const APP_VERSION = '3.248.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2614,6 +2614,15 @@ function DeepError({ channel, error, range, onRetry }) {
   if (noAccount) return <div className="card empty-deep"><div className="big">🔌</div>
     <b>No {channel} account connected for this client.</b>
     <p style={{ maxWidth: 480, margin: '8px auto 0' }}>Link a {channel} ad account to this client (Settings → the client → connections) and it’ll appear here. If you only run CRM or the other channel for this client, you can ignore this tab.</p>
+  </div>
+  // A session expiry isn't a timeout — the login cookie lapsed, so the pull came
+  // back "Not authenticated". Show a sign-in message, not the misleading "temporary
+  // timeout", and reload (which re-runs the auth check → login screen).
+  const authExpired = /not authenticated|unauthenticated|session (expired|timed out|has expired)|token expired|please (log|sign) ?in|401/i.test(String(error || ''))
+  if (authExpired) return <div className="card empty-deep"><div className="big">🔐</div>
+    <b>Your session expired.</b>
+    <p style={{ maxWidth: 480, margin: '8px auto 0' }}>You were signed out (usually after a period of inactivity), so this pull couldn’t authenticate. Sign back in and it’ll load — no data was lost.</p>
+    <button className="set-relink" style={{ marginTop: 12 }} onClick={() => window.location.reload()}>↻ Sign in again</button>
   </div>
   const big = range && (range.preset === 'this_year' || (range.from && range.to && (new Date(range.to) - new Date(range.from)) / 86400000 > 120))
   return <div className="card empty-deep"><div className="big">⏳</div>

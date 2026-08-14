@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.247.0 — 2026-08-13 · `PENDING` — Location view: pipeline selector
+- The **Location** view now has a **pipeline selector** (for multi-pipeline clients like FINR — Buyers Agent vs
+  Mortgage Broker). Pick a pipeline to see the lead map, scorecards and location list for just that pipeline's leads.
+- Backend: each form location now carries a per-pipeline split (`byPipe`), so the selector projects leads / booked /
+  won / lost accurately per pipeline rather than lumping every pipeline together.
+
 ## v3.246.0 — 2026-08-13 · `PENDING` — Faster loads: de-dupe per-tab data fetches (part 3)
 - **Clicking through a client's tabs no longer refetches the same data.** Several views each independently pulled the
   same `channel=blend`, `channel=attribution` and `scope=users` feed for the same client/range — up to 3× the round

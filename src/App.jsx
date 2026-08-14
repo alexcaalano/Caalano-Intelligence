@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.246.0'
+const APP_VERSION = '3.247.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5579,21 +5579,27 @@ function FormLocations({ form }) {
 function LocationView({ clientId, range, nonce, currency }) {
   const st = useForms(clientId, range, nonce)
   const db = useAuDb()
+  const [pipe, setPipe] = useState('all')
   const money = (v) => fmtCurrency(v, currency)
+  const pipes = (st.data && st.data.pipelines) || []
+  // Project each form's location answers to the selected pipeline (using the
+  // per-location byPipe split from the backend), then merge/plot as usual.
   const locs = useMemo(() => {
     const forms = (st.data && st.data.forms) || []
-    const all = forms.flatMap((f) => f.locations || [])
-    if (!all.length) return []
-    return mergeLocations(groupAnswers(all), db)
-  }, [st.data, db])
+    const raw = forms.flatMap((f) => f.locations || [])
+    const proj = pipe === 'all' ? raw : raw.map((l) => { const b = l.byPipe && l.byPipe[pipe]; return b && b.leads ? { value: l.value, leads: b.leads, booked: b.booked, won: b.won, lost: b.lost } : null }).filter(Boolean)
+    if (!proj.length) return []
+    return mergeLocations(groupAnswers(proj), db)
+  }, [st.data, db, pipe])
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading lead locations…" /></div>
   const d = st.data
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load location data.</b></div>
   if (d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected.</b></div>
   if (!locs.length) return (
     <><div className="lvl-title">Lead locations</div>
-      <div className="card empty-deep"><div className="big">📍</div><b>No location data on leads in this range.</b>
-        <p style={{ maxWidth: 480, margin: '8px auto 0' }}>This map fills in whenever leads submit a suburb, postcode or address on a form (Meta Lead Forms and website forms both count). None of the forms in this period captured a location field.</p></div>
+      <FormPipeFilter pipes={pipes} value={pipe} onChange={setPipe} />
+      <div className="card empty-deep"><div className="big">📍</div><b>No location data on leads in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b>
+        <p style={{ maxWidth: 480, margin: '8px auto 0' }}>This map fills in whenever leads submit a suburb, postcode or address on a form (Meta Lead Forms and website forms both count). {pipe !== 'all' ? 'Try “All pipelines”, or none' : 'None'} of the forms in this period captured a location field.</p></div>
     </>
   )
   const tot = locs.reduce((a, l) => ({ leads: a.leads + (l.leads || 0), booked: a.booked + (l.booked || 0), won: a.won + (l.won || 0), lost: a.lost + (l.lost || 0) }), { leads: 0, booked: 0, won: 0, lost: 0 })
@@ -5601,6 +5607,7 @@ function LocationView({ clientId, range, nonce, currency }) {
   return (
     <>
       <div className="lvl-title">Lead locations <span className="sub">· where leads come from, who booked, who won · {rangeLabel(range)}</span></div>
+      <FormPipeFilter pipes={pipes} value={pipe} onChange={setPipe} />
       <div className="scorecard">
         <Sc label="Locations" value={fmtNumber(locs.length)} />
         <Sc label="Leads mapped" value={fmtNumber(tot.leads)} />

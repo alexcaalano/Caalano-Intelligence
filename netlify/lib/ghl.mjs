@@ -677,7 +677,7 @@ export async function buildForms(locationId, from, to) {
   const agg = new Map()
   const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map(), people: [] } ; agg.set(L.label, e) } return e }
   const bump = (o, booked, shown, won, rev) => { o.leads++; if (booked) o.booked++; if (shown) o.shown++; if (won) { o.won++; o.revenue += rev } }
-  const bumpLoc = (m, value, booked, won, lost) => { if (!value) return; let a = m.get(value); if (!a) { a = { value, leads: 0, booked: 0, won: 0, lost: 0 }; m.set(value, a) } a.leads++; if (booked) a.booked++; if (won) a.won++; if (lost) a.lost++ }
+  const bumpLoc = (m, value, booked, won, lost, pid) => { if (!value) return; let a = m.get(value); if (!a) { a = { value, leads: 0, booked: 0, won: 0, lost: 0, byPipe: {} }; m.set(value, a) } a.leads++; if (booked) a.booked++; if (won) a.won++; if (lost) a.lost++; if (pid) { const b = a.byPipe[pid] || (a.byPipe[pid] = { leads: 0, booked: 0, won: 0, lost: 0 }); b.leads++; if (booked) b.booked++; if (won) b.won++; if (lost) b.lost++ } }
   for (const [cid, { L, answers, pc, name }] of contactData) {
     const e = ent(L)
     const f = apptByContact.get(cid); const booked = !!(f && f.bookedInPeriod); const shown = !!(f && f.shownByStatus)
@@ -714,14 +714,14 @@ export async function buildForms(locationId, from, to) {
     const pid = o && o.pipelineId
     if (pid) { let bp = e.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; e.byPipe.set(pid, bp) } bump(bp, booked, shown, won, rev) }
     // Location breakdown: postcode + any location-style answer.
-    if (pc && /^[0-9A-Za-z\- ]{3,10}$/.test(pc)) bumpLoc(e.loc, pc, booked, won, lost)
+    if (pc && /^[0-9A-Za-z\- ]{3,10}$/.test(pc)) bumpLoc(e.loc, pc, booked, won, lost, pid)
     // Answer-level segmentation: per question, per answer value.
     for (const [q, v] of Object.entries(answers)) {
       let qm = e.seg.get(q); if (!qm) { qm = new Map(); e.seg.set(q, qm) }
       let av = qm.get(v); if (!av) { av = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, people: [] }; qm.set(v, av) }
       bump(av, booked, shown, won, rev)
       if (av.people.length < 80) av.people.push(person)
-      if (LOC_RE.test(q)) bumpLoc(e.loc, v, booked, won, lost)
+      if (LOC_RE.test(q)) bumpLoc(e.loc, v, booked, won, lost, pid)
     }
   }
   const forms = [...agg.values()].sort((a, b) => b.leads - a.leads).map((e) => {

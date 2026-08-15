@@ -1800,6 +1800,10 @@ export async function buildStageTiming(locationId) {
 // per contact. Keyed by userId (the frontend joins names from the users scope).
 export async function buildUserCalls(locationId, from, to) {
   const locTok = await locationToken(locationId)
+  // Resolve rep names up front so this works even when a client assigns no
+  // opportunities to users (the leaderboard would be empty, but calls still exist).
+  const userRows = await ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => [])
+  const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null
   const byUser = new Map()
   const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0 }; byUser.set(uid, e) } return e }
   let cursor = null, guard = 0, total = 0
@@ -1824,7 +1828,7 @@ export async function buildUserCalls(locationId, from, to) {
     if (!cursor || msgs.length < 1000) break
   }
   const users = [...byUser.values()].map((e) => ({
-    userId: e.userId, outbound: e.outbound, inbound: e.inbound,
+    userId: e.userId, name: userName[e.userId] || (e.userId === 'unassigned' ? 'Unassigned / automated' : null), outbound: e.outbound, inbound: e.inbound,
     outboundMinutes: Math.round(e.outboundSec / 60),
     connectRate: e.outbound ? (e.outboundConnected / e.outbound) * 100 : 0,
     avgTalkMin: e.outboundConnected ? Math.round((e.outboundSec / e.outboundConnected / 60) * 10) / 10 : 0,

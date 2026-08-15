@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.250.0'
+const APP_VERSION = '3.250.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6379,14 +6379,14 @@ function UserCallActivity({ users, clientId, range, nonce }) {
   }, [clientId, rangeQuery(range), nonce])
   if (!d) return <div className="card"><Spinner label="Loading call activity…" /></div>
   if (d.error || !d.byUser || !d.byUser.length) return null
-  const nameOf = (id) => { const u = (users || []).find((x) => x.id === id); return u ? u.name : (id === 'unassigned' ? 'Unassigned / automated' : 'User ' + String(id).slice(-4)) }
+  const nameOf = (r) => r.name || (() => { const u = (users || []).find((x) => x.id === r.userId); return u ? u.name : (r.userId === 'unassigned' ? 'Unassigned / automated' : 'User ' + String(r.userId).slice(-4)) })()
   const rows = [...d.byUser].sort((a, b) => b.outbound - a.outbound)
   const totOut = rows.reduce((a, r) => a + r.outbound, 0), totMin = rows.reduce((a, r) => a + r.outboundMinutes, 0)
   return (
     <div className="card">
       <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Call activity <span style={{ fontWeight: 400 }}>· GoHighLevel dialer · {fmtNumber(d.totalCalls)} calls · {fmtNumber(totOut)} outbound · {fmtNumber(totMin)} talk min</span></div>
       <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th></tr></thead>
-        <tbody>{rows.map((r) => (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r.userId)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td></tr>))}</tbody></table></div>
+        <tbody>{rows.map((r) => (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td></tr>))}</tbody></table></div>
     </div>
   )
 }
@@ -6426,7 +6426,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const chanSel = (
     <div className="chan-toggle">{[['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => { setChan(k); setOpen(null) }}>{lbl}</button>)}</div>
   )
-  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b></div></div>
+  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} /></div>
   // Configured stage key events -> matrix columns (stage reach per user), sorted
   // by their real pipeline position so the funnel reads top-to-bottom (and the
   // cumulative step % make sense) instead of following config order.

@@ -1794,6 +1794,43 @@ export async function buildStageTiming(locationId) {
     .sort((a, b) => b.openCount - a.openCount)
   return { connected: true, totalOpen: opps.length, capped: opps.length >= 3000, pipelines: pipelinesOut }
 }
+// Per-user call activity from GoHighLevel's dialer: outbound volume, talk
+// minutes, connect rate, and inbound handled. Uses the bulk message export
+// (channel=Call) so it's a few paged requests for the whole location, not one
+// per contact. Keyed by userId (the frontend joins names from the users scope).
+export async function buildUserCalls(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const byUser = new Map()
+  const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0 }; byUser.set(uid, e) } return e }
+  let cursor = null, guard = 0, total = 0
+  while (guard++ < 8) {
+    const q = { channel: 'Call', limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }
+    if (from) q.startDate = from
+    if (to) q.endDate = to
+    if (cursor) q.cursor = cursor
+    const j = await ghlGet(locTok, '/conversations/messages/export', q).catch(() => null)
+    if (!j) break
+    const msgs = j.messages || []
+    for (const m of msgs) {
+      const uid = m.userId || 'unassigned'
+      const dur = num(m.meta && m.meta.call && m.meta.call.duration)
+      const connected = String(m.status || '').toLowerCase() === 'completed'
+      const e = ent(uid)
+      if (m.direction === 'outbound') { e.outbound++; if (connected) e.outboundConnected++; e.outboundSec += dur }
+      else { e.inbound++; if (connected) e.inboundConnected++ }
+      total++
+    }
+    cursor = j.nextCursor
+    if (!cursor || msgs.length < 1000) break
+  }
+  const users = [...byUser.values()].map((e) => ({
+    userId: e.userId, outbound: e.outbound, inbound: e.inbound,
+    outboundMinutes: Math.round(e.outboundSec / 60),
+    connectRate: e.outbound ? (e.outboundConnected / e.outbound) * 100 : 0,
+    avgTalkMin: e.outboundConnected ? Math.round((e.outboundSec / e.outboundConnected / 60) * 10) / 10 : 0,
+  })).sort((a, b) => b.outbound - a.outbound)
+  return { connected: true, totalCalls: total, byUser: users }
+}
 export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const locTok = await locationToken(locationId)
   const tz = await locationTimezone(locationId)

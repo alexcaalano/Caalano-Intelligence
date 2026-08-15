@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.250.0 — 2026-08-13 · `PENDING` — Users tab: per-rep Call Activity (GHL dialer)
+- New **Call activity** section on the Users tab: per rep, **outbound calls**, **talk minutes**, **connect rate**,
+  **avg talk time**, and **inbound handled** — pulled from GoHighLevel's dialer for the selected range.
+- Backend: new `scope=usercalls` (cached) aggregates the bulk **Call export** (`channel=Call`) by `userId` — efficient
+  (paged for the whole location, not one request per contact). Reads `direction`, `status`, and `meta.call.duration`.
+- First chunk of the User-review expansion. Next: appointments-booked / self-vs-user-booked show rates, lost reasons
+  by rep, per-user speed-to-lead, CAC per rep (spend by lead share), and a per-rep funnel.
+
 ## v3.249.0 — 2026-08-13 · `PENDING` — Timing tab: "Time in stage" (where deals are piling up)
 - New **Time in stage** section at the top of the Timing tab. For every **open** deal it measures how long it's been
   sitting in its **current pipeline stage** (straight from the stage moves — no appointment/creation inference), then

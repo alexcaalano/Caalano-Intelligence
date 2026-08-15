@@ -512,6 +512,19 @@ tr.u-detail-row > td { background: var(--panel-2); padding: 0; border-bottom: 1p
 .u-vc.open b { color: var(--brand); }
 .u-vc.won b { color: var(--pos); }
 .u-vc.lost b { color: var(--neg); }
+.u-vc.vwr { border-color: color-mix(in srgb, var(--pos) 30%, var(--border)); }
+.u-vc.vwr b { color: var(--pos); }
+/* Leaderboard rank column + period-over-period movement arrows. */
+.appt-tbl th.u-rank-h, .appt-tbl td.u-rank { text-align: center; width: 46px; }
+.u-rank { white-space: nowrap; }
+.u-rank-n { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--muted); }
+.u-rank-mv { font-size: 9.5px; font-weight: 700; margin-left: 3px; font-variant-numeric: tabular-nums; }
+.u-rank-mv.up { color: var(--pos); }
+.u-rank-mv.down { color: var(--neg); }
+.u-rank-mv.flat { color: var(--faint); }
+.u-rank-mv.new { color: var(--brand); text-transform: uppercase; font-size: 8.5px; letter-spacing: .02em; }
+/* Coverage flag: reps with leads but no logged outbound calls. */
+.u-idle-flag { margin: 0 0 9px; padding: 7px 11px; border-radius: 8px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--warn, #f59e0b) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warn, #f59e0b) 40%, var(--border)); color: color-mix(in srgb, var(--warn, #f59e0b) 65%, var(--text)); }
 .u-funnel { display: flex; flex-direction: column; gap: 7px; }
 .u-fn-head { display: grid; grid-template-columns: 130px 1fr 44px 44px; gap: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); }
 .u-fn-head span:nth-child(3), .u-fn-head span:nth-child(4) { text-align: right; }

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.253.0'
+const APP_VERSION = '3.254.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4709,6 +4709,16 @@ function presetRange(id) {
 }
 const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
 const rangeLabel = (r) => r.label || `${r.from} → ${r.to}`
+// The equal-length period immediately BEFORE this range, for period-over-period
+// comparisons (e.g. leaderboard rank movement). from/to are inclusive YYYY-MM-DD.
+const prevRange = (r) => {
+  const f = new Date(`${r.from}T00:00:00`), t = new Date(`${r.to}T00:00:00`)
+  if (isNaN(f) || isNaN(t)) return null
+  const days = Math.round((t - f) / 86400000) + 1
+  const pt = new Date(f); pt.setDate(pt.getDate() - 1)
+  const pf = new Date(pt); pf.setDate(pf.getDate() - (days - 1))
+  return { from: iso(pf), to: iso(pt) }
+}
 
 // Fetch live deep data for the active channel from the Windsor.ai Netlify function.
 // Split a date range into ≤maxDays sub-windows (used to beat the serverless time
@@ -6369,7 +6379,7 @@ function OpenDealRow({ d, clientId, money, showPipe }) {
 // Per-rep call activity from the GHL dialer (outbound volume, talk minutes,
 // connect rate, inbound). Self-contained fetch; joins rep names from the users
 // list already loaded by UsersView. Hides itself if there are no calls.
-function UserCallActivity({ users, clientId, range, nonce }) {
+function UserCallActivity({ users, clientId, range, nonce, currency }) {
   const [d, setD] = useState(null)
   useEffect(() => {
     let alive = true; setD(null)
@@ -6387,12 +6397,21 @@ function UserCallActivity({ users, clientId, range, nonce }) {
   // appointment and per won deal. Blank when the client doesn't assign to reps.
   const uById = new Map((users || []).map((u) => [u.id, u]))
   const fmtRatio = (n, d2) => (!d2 ? '—' : (n / d2).toFixed(n / d2 >= 10 ? 0 : 1))
+  const money = (v) => fmtCurrency(v, currency)
+  // Revenue per hour of talk time — a rep who wins more from fewer dial-minutes
+  // stands out. Blank when we can't join revenue or there's no talk time yet.
+  const revPerHr = (r, u) => (u && u.revenue && r.outboundMinutes ? money(u.revenue / (r.outboundMinutes / 60)) : '—')
+  // Coverage flag: reps who have leads assigned but logged no outbound calls this
+  // period (they're not appearing in the call rows at all, or with zero outbound).
+  const outByUid = new Map(rows.map((r) => [r.userId, r.outbound]))
+  const idle = (users || []).filter((u) => (u.leads || 0) > 0 && !(outByUid.get(u.id) > 0))
   const totOut = rows.reduce((a, r) => a + r.outbound, 0), totMin = rows.reduce((a, r) => a + r.outboundMinutes, 0)
   return (
     <div className="card">
       <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Call activity <span style={{ fontWeight: 400 }}>· GoHighLevel dialer · {fmtNumber(d.totalCalls)} calls · {fmtNumber(totOut)} outbound · {fmtNumber(totMin)} talk min</span></div>
-      <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th><th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th><th title="Share of leads this rep called back within 5 minutes">≤5 min %</th><th title="Outbound calls per appointment booked by this rep">Calls / booked</th><th title="Outbound calls per deal won by this rep">Calls / won</th></tr></thead>
-        <tbody>{rows.map((r) => { const u = uById.get(r.userId); return (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{r.sla5Pct == null ? '—' : `${r.sla5Pct}%`}</td><td>{u ? fmtRatio(r.outbound, u.booked) : '—'}</td><td>{u ? fmtRatio(r.outbound, u.won) : '—'}</td></tr>) })}</tbody></table></div>
+      {idle.length > 0 && <div className="u-idle-flag" title="These reps have leads assigned in this range but no outbound calls logged in the dialer — either they're not calling or not logging calls here.">⚠ {idle.length === 1 ? '1 rep has' : `${idle.length} reps have`} assigned leads but no logged outbound calls: {idle.map((u) => u.name).join(', ')}</div>}
+      <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th><th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th><th title="Share of leads this rep called back within 5 minutes">≤5 min %</th><th title="Outbound calls per appointment booked by this rep">Calls / booked</th><th title="Outbound calls per deal won by this rep">Calls / won</th><th title="Revenue won per hour of this rep's talk time">Rev / talk-hr</th></tr></thead>
+        <tbody>{rows.map((r) => { const u = uById.get(r.userId); return (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{r.sla5Pct == null ? '—' : `${r.sla5Pct}%`}</td><td>{u ? fmtRatio(r.outbound, u.booked) : '—'}</td><td>{u ? fmtRatio(r.outbound, u.won) : '—'}</td><td>{revPerHr(r, u)}</td></tr>) })}</tbody></table></div>
     </div>
   )
 }
@@ -6428,6 +6447,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const [open, setOpen] = useState(null) // expanded user id
   const [drill, setDrill] = useState(null) // { name, stage, deals } for the open-deals modal
   const [drillUser, setDrillUser] = useState('all') // rep-filter tab inside the drill
+  const [prevUsers, setPrevUsers] = useState(null) // previous equal-length period, for rank movement
   const money = (v) => fmtCurrency(v, currency)
   const pipeParam = pipe !== 'all' ? `&pipeline=${encodeURIComponent(pipe)}` : ''
   const chanParam = chan !== 'all' ? `&channel=${chan}` : ''
@@ -6444,6 +6464,15 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
       .catch((e) => { if (alive && !ctl.signal.aborted) setSt(cached ? { status: 'ok', data: cached } : { status: 'err', data: { error: String((e && e.message) || e) } }) })
     return () => { alive = false; ctl.abort() }
   }, [clientId, rangeQuery(range), pipeParam, chanParam, wonBasis, nonce])
+  // Previous equal-length period (same filters) purely for rank movement arrows.
+  // Best-effort: if it fails or the range can't be shifted, arrows just don't show.
+  useEffect(() => {
+    let alive = true; setPrevUsers(null)
+    const pr = prevRange(range); if (!pr) return
+    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&from=${pr.from}&to=${pr.to}${pipeParam}${chanParam}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}`
+    dedupeFetch(url).then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setPrevUsers(j && !j.error ? (j.users || []) : []) }).catch(() => { if (alive) setPrevUsers([]) })
+    return () => { alive = false }
+  }, [clientId, rangeQuery(range), pipeParam, chanParam, wonBasis, nonce])
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading user performance…" /></div>
   const d = st.data || {}
   if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">👤</div><b>Couldn't load user performance.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
@@ -6456,7 +6485,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const chanSel = (
     <div className="chan-toggle">{[['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => { setChan(k); setOpen(null) }}>{lbl}</button>)}</div>
   )
-  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></div>
+  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></div>
   // Configured stage key events -> matrix columns (stage reach per user), sorted
   // by their real pipeline position so the funnel reads top-to-bottom (and the
   // cumulative step % make sense) instead of following config order.
@@ -6501,6 +6530,24 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
     costWon: tot.won && totalSpend ? totalSpend / tot.won : null,
   }
   const leaderboardRows = users.length > 1 ? [allUser, ...sorted] : sorted
+  // Rank by wins (the natural standing) so the # column is stable no matter which
+  // column the table is sorted by, and the arrow shows movement vs the prior period.
+  const wonRank = {}; [...users].sort((a, b) => (b.won - a.won) || (b.revenue - a.revenue)).forEach((u, i) => { wonRank[u.id] = i + 1 })
+  const prevRank = {}
+  if (prevUsers && prevUsers.length) [...prevUsers].sort((a, b) => (b.won - a.won) || (b.revenue - a.revenue)).forEach((u, i) => { prevRank[u.id] = i + 1 })
+  const havePrev = prevUsers != null && prevUsers.length > 0
+  const rankCell = (u) => {
+    if (u._agg) return <td className="u-rank" />
+    const cr = wonRank[u.id]; const pr = prevRank[u.id]
+    let mv = null
+    if (havePrev) {
+      if (pr == null) mv = <span className="u-rank-mv new" title="Not ranked last period">new</span>
+      else if (pr > cr) mv = <span className="u-rank-mv up" title={`Up ${pr - cr} from #${pr} last period`}>▲{pr - cr}</span>
+      else if (pr < cr) mv = <span className="u-rank-mv down" title={`Down ${cr - pr} from #${pr} last period`}>▼{cr - pr}</span>
+      else mv = <span className="u-rank-mv flat" title="Same rank as last period">—</span>
+    }
+    return <td className="u-rank"><span className="u-rank-n">{cr}</span>{mv}</td>
+  }
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
     <div className="timing-view">
@@ -6529,17 +6576,18 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
         </ResponsiveContainer>
       </div>
 
-      <UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} />
+      <UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} />
 
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl">
-          <thead><tr><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
+          <thead><tr><th className="u-rank-h" title="Rank by wins; arrow shows movement vs the previous equal-length period">#</th><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
           <tbody>{leaderboardRows.map((u) => {
             const isOpen = open === u.id
             return (
               <React.Fragment key={u.id}>
                 <tr className={`${isOpen ? 'row-sel' : ''}${u._agg ? ' u-agg-row' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setOpen(isOpen ? null : u.id)}>
+                  {rankCell(u)}
                   <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {u.name}</td>
                   <td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{u.bookRate == null ? '-' : `${u.bookRate}%`}</td>
                   <td>{fmtNumber(u.shown)}</td><td>{u.showRate == null ? '-' : `${u.showRate}%`}</td>
@@ -6548,15 +6596,17 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                   <td>{u.costWon != null ? money(u.costWon) : '-'}</td>
                   <td>{u.cac != null ? money(u.cac) : '-'}</td>
                 </tr>
-                {isOpen && <tr className="u-detail-row"><td colSpan={13}>
+                {isOpen && <tr className="u-detail-row"><td colSpan={14}>
                   <div className="u-detail">
                     <div className="u-detail-main">
+                      {(() => { const wv = u.wonValue != null ? u.wonValue : u.revenue; const lv = u.lostValue || 0; const decided = wv + lv; const vwr = decided ? Math.round((wv / decided) * 100) : null; return (
                       <div className="u-val-cards">
                         <div className="u-vc"><span>Total pipeline</span><b>{money(u.pipelineValue || 0)}</b><i>{fmtNumber(u.leads)} deals</i></div>
                         <div className="u-vc open"><span>Open (live)</span><b>{money(u.openValue || 0)}</b><i>{fmtNumber(u.open)} deals still in play</i></div>
-                        <div className="u-vc won"><span>Won</span><b>{money(u.wonValue != null ? u.wonValue : u.revenue)}</b><i>{fmtNumber(u.won)} deals</i></div>
-                        <div className="u-vc lost"><span>Lost</span><b>{money(u.lostValue || 0)}</b><i>{fmtNumber(u.lost)} deals</i></div>
-                      </div>
+                        <div className="u-vc won"><span>Won</span><b>{money(wv)}</b><i>{fmtNumber(u.won)} deals</i></div>
+                        <div className="u-vc lost"><span>Lost</span><b>{money(lv)}</b><i>{fmtNumber(u.lost)} deals</i></div>
+                        <div className="u-vc vwr" title="Won value ÷ (won + lost value) — win rate weighted by deal size, so a few big wins/losses aren't hidden by the count-based win %."><span>Value win rate</span><b>{vwr == null ? '—' : `${vwr}%`}</b><i>of decided value</i></div>
+                      </div>) })()}
                       {u._agg && aggUsersSorted.filter((x) => x.leads > 0).length > 1 && <div className="u-fn-legend">{aggUsersSorted.filter((x) => x.leads > 0).map((x) => <span key={x.id} className="u-fn-leg"><i style={{ background: userColorMap[x.id] }} />{x.name}</span>)}</div>}
                       <div className="u-funnel">
                         <div className="u-fn-head"><span /><span>reached</span><span title="Conversion from the previous stage">step</span><span title="Conversion from all leads">total</span></div>

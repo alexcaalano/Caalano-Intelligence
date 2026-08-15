@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.254.0 — 2026-08-15 · `PENDING` — Users tab: rank movement, talk-time efficiency, coverage flags, value win rate
+- **Rank + movement arrows** on the leaderboard: a new **#** column ranks reps by wins and shows ▲/▼ movement vs the
+  **previous equal-length period** (▲2 = up two spots, `new` = not ranked last period). Best-effort second fetch of the
+  same scope for the prior window with the same pipeline/channel filters; arrows simply hide if it can't load.
+- **Rev / talk-hr** column on Call activity: revenue won per hour of a rep's talk time — surfaces reps who win more
+  from fewer dial-minutes.
+- **Coverage flag**: a warning banner lists reps who have leads assigned in the range but **no logged outbound calls**
+  in the dialer — a "who isn't calling their leads" catch.
+- **Value win rate** card in each rep's expandable row: won value ÷ (won + lost value) — a size-weighted win rate, so a
+  few big wins or losses aren't hidden by the count-based win %.
+
 ## v3.253.0 — 2026-08-15 · `PENDING` — Users tab: response SLA + activity-to-outcome ratios
 - **≤5 min %** column on the Call activity table: share of a rep's leads they called back within 5 minutes (the classic
   speed-to-lead SLA). Backend `scope=usercalls` computes it from the same per-lead gaps used for the median.

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.251.0'
+const APP_VERSION = '3.252.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6381,12 +6381,13 @@ function UserCallActivity({ users, clientId, range, nonce }) {
   if (d.error || !d.byUser || !d.byUser.length) return null
   const nameOf = (r) => r.name || (() => { const u = (users || []).find((x) => x.id === r.userId); return u ? u.name : (r.userId === 'unassigned' ? 'Unassigned / automated' : 'User ' + String(r.userId).slice(-4)) })()
   const rows = [...d.byUser].sort((a, b) => b.outbound - a.outbound)
+  const fmtSpeedHrs = (h) => (h == null ? '—' : h < 1 ? `${Math.round(h * 60)}m` : h < 48 ? `${h < 10 ? h.toFixed(1) : Math.round(h)}h` : `${Math.round(h / 24)}d`)
   const totOut = rows.reduce((a, r) => a + r.outbound, 0), totMin = rows.reduce((a, r) => a + r.outboundMinutes, 0)
   return (
     <div className="card">
       <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Call activity <span style={{ fontWeight: 400 }}>· GoHighLevel dialer · {fmtNumber(d.totalCalls)} calls · {fmtNumber(totOut)} outbound · {fmtNumber(totMin)} talk min</span></div>
-      <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th></tr></thead>
-        <tbody>{rows.map((r) => (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td></tr>))}</tbody></table></div>
+      <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th><th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th></tr></thead>
+        <tbody>{rows.map((r) => (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td></tr>))}</tbody></table></div>
     </div>
   )
 }
@@ -6459,7 +6460,10 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const resolvedKe = mergeCalKeyEvents(normKeyEvents(keyEventsForPipe(loadKeyEvents(clientId), pipe === 'all' ? 'all' : pipe)))
   const stageCols = [...new Set(resolvedKe.filter((e) => !WON_RE.test(e.label)).map((e) => (e.kind === 'calendar' ? e.stage : e.ref)).filter(Boolean))]
     .sort((a, b) => (stageRank[a] != null ? stageRank[a] : 9999) - (stageRank[b] != null ? stageRank[b] : 9999))
-  const withCost = users.map((u) => ({ ...u, costWon: u.won && totalSpend ? totalSpend / u.won : null, costBooked: u.booked && totalSpend ? totalSpend / u.booked : null }))
+  // CAC per rep: ad spend allocated by each rep's SHARE of leads (not the full
+  // spend, which every rep would otherwise carry), then ÷ their wins.
+  const totalLeadsAll = users.reduce((a, u) => a + (u.leads || 0), 0)
+  const withCost = users.map((u) => ({ ...u, costWon: u.won && totalSpend ? totalSpend / u.won : null, costBooked: u.booked && totalSpend ? totalSpend / u.booked : null, cac: (u.leads && u.won && totalSpend && totalLeadsAll) ? (totalSpend * (u.leads / totalLeadsAll)) / u.won : null }))
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const sorted = [...withCost].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return (av - bv) * sort.dir })
   const tot = users.reduce((a, u) => ({ leads: a.leads + u.leads, booked: a.booked + u.booked, shown: a.shown + u.shown, won: a.won + u.won, revenue: a.revenue + u.revenue }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
@@ -6525,7 +6529,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl">
-          <thead><tr><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th></tr></thead>
+          <thead><tr><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
           <tbody>{leaderboardRows.map((u) => {
             const isOpen = open === u.id
             return (
@@ -6537,8 +6541,9 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                   <td>{fmtNumber(u.won)}</td><td>{u.winRate == null ? '-' : `${u.winRate}%`}</td>
                   <td>{money(u.revenue)}</td><td>{u.avgDeal != null ? money(u.avgDeal) : '-'}</td><td>{u.avgCloseDays != null ? `${u.avgCloseDays}d` : '-'}</td>
                   <td>{u.costWon != null ? money(u.costWon) : '-'}</td>
+                  <td>{u.cac != null ? money(u.cac) : '-'}</td>
                 </tr>
-                {isOpen && <tr className="u-detail-row"><td colSpan={12}>
+                {isOpen && <tr className="u-detail-row"><td colSpan={13}>
                   <div className="u-detail">
                     <div className="u-detail-main">
                       <div className="u-val-cards">

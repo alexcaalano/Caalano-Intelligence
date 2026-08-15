@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.252.0 — 2026-08-15 · `PENDING` — Users tab: Speed-to-lead per rep + CAC per rep
+- **Speed to lead** column added to the Call activity table: for each rep, the **median time from a lead coming in
+  to that rep's first outbound call** to the contact. Shown in the most readable unit (minutes / hours / days) with a
+  tooltip of the sample size. Backend `scope=usercalls` now also pulls opportunities for the range to establish each
+  contact's lead-in time, tracks the first outbound call per contact, and computes each rep's median gap (0–90 day
+  window, ignores negatives/outliers).
+- **CAC** column added to the Users leaderboard: ad spend **allocated to each rep by their share of leads**, divided by
+  their wins — a per-rep cost-to-acquire. Tooltip explains the allocation.
+- Rounds out the Users-tab deep-dive: **lost reasons by rep**, **close rate & deals won**, and the **per-rep funnel**
+  were already present in each rep's expandable row, so those metrics needed no new work.
+
 ## v3.251.0 — 2026-08-13 · `PENDING` — Users tab: Appointments by rep (self vs rep booked + show rates)
 - New **Appointments by rep** section on the Users tab: per rep — total **booked**, **self-booked** vs **rep-booked**,
   the **show rate for each** (self-booked vs rep-booked), and won. Answers "who's booking, and do self-booked or

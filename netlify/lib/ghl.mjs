@@ -1803,10 +1803,20 @@ export async function buildUserCalls(locationId, from, to) {
   const locTok = await locationToken(locationId)
   // Resolve rep names up front so this works even when a client assigns no
   // opportunities to users (the leaderboard would be empty, but calls still exist).
-  const userRows = await ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => [])
+  // Lead-in time per contact (their earliest opportunity's createdAt) so we can
+  // measure speed-to-lead: lead created → first OUTBOUND call, credited to the
+  // rep who made that call. Own fetch, guarded so a slow opps pull can't blank
+  // the call stats.
+  const [userRows, opps] = await Promise.all([
+    ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
+    allOpportunities(locTok, locationId, from, to, 3000).catch(() => []),
+  ])
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null
+  const leadMs = new Map()
+  for (const o of opps) { const cid = contactIdOf(o); const t = Date.parse(o.createdAt); if (cid && isFinite(t) && (!leadMs.has(cid) || t < leadMs.get(cid))) leadMs.set(cid, t) }
+  const firstOut = new Map() // contactId -> { ms, uid } first outbound call
   const byUser = new Map()
-  const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0 }; byUser.set(uid, e) } return e }
+  const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0, speed: [] }; byUser.set(uid, e) } return e }
   let cursor = null, guard = 0, total = 0
   while (guard++ < 8) {
     const q = { channel: 'Call', limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }
@@ -1821,18 +1831,24 @@ export async function buildUserCalls(locationId, from, to) {
       const dur = num(m.meta && m.meta.call && m.meta.call.duration)
       const connected = String(m.status || '').toLowerCase() === 'completed'
       const e = ent(uid)
-      if (m.direction === 'outbound') { e.outbound++; if (connected) e.outboundConnected++; e.outboundSec += dur }
-      else { e.inbound++; if (connected) e.inboundConnected++ }
+      if (m.direction === 'outbound') {
+        e.outbound++; if (connected) e.outboundConnected++; e.outboundSec += dur
+        if (m.contactId) { const cms = Date.parse(m.dateAdded); if (isFinite(cms)) { const cur = firstOut.get(m.contactId); if (!cur || cms < cur.ms) firstOut.set(m.contactId, { ms: cms, uid }) } }
+      } else { e.inbound++; if (connected) e.inboundConnected++ }
       total++
     }
     cursor = j.nextCursor
     if (!cursor || msgs.length < 1000) break
   }
+  // Speed-to-lead: lead-in → first outbound call, credited to that caller.
+  for (const [cid, fo] of firstOut) { const lm = leadMs.get(cid); if (lm == null) continue; const gapH = (fo.ms - lm) / 3600000; if (gapH >= 0 && gapH <= 24 * 90) { const e = byUser.get(fo.uid); if (e) e.speed.push(gapH) } }
+  const med = (a) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
   const users = [...byUser.values()].map((e) => ({
     userId: e.userId, name: userName[e.userId] || (e.userId === 'unassigned' ? 'Unassigned / automated' : null), outbound: e.outbound, inbound: e.inbound,
     outboundMinutes: Math.round(e.outboundSec / 60),
     connectRate: e.outbound ? (e.outboundConnected / e.outbound) * 100 : 0,
     avgTalkMin: e.outboundConnected ? Math.round((e.outboundSec / e.outboundConnected / 60) * 10) / 10 : 0,
+    speedToLeadHrs: e.speed.length ? Math.round(med(e.speed) * 10) / 10 : null, speedSamples: e.speed.length,
   })).sort((a, b) => b.outbound - a.outbound)
   return { connected: true, totalCalls: total, byUser: users }
 }

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.248.0'
+const APP_VERSION = '3.249.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6119,6 +6119,51 @@ function TimingDrill({ drill, money, onClose }) {
     </div>
   )
 }
+// Time in stage — for every OPEN deal, how long it's been sitting in its current
+// pipeline stage (measured straight from stage moves). Aggregated per stage /
+// pipeline; the client's configured key-event stages are flagged. Shows where
+// deals are piling up. Self-contained: hides itself if unavailable.
+function StageTimingSection({ clientId, nonce }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useSettingsSync()
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    dedupeFetch(`/.netlify/functions/windsor?scope=stagetiming&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, nonce])
+  const keyNames = useMemo(() => new Set((loadKeyEvents(clientId) || []).map((k) => String(typeof k === 'string' ? k : (k.stage || k.name || '')).trim().toLowerCase()).filter(Boolean)), [clientId])
+  const d = st.data
+  if (st.status === 'loading') return <div className="card"><Spinner label="Measuring time in each stage…" /></div>
+  if (st.status === 'err' || !d || d.connected === false || d.ghl === false) return null
+  const pipes = d.pipelines || []
+  if (!pipes.length) return null
+  const fmtDays = (n) => (n == null ? '—' : n >= 1 ? `${n < 10 ? n.toFixed(1) : Math.round(n)}d` : `${Math.round(n * 24)}h`)
+  return (
+    <div className="stagetime" style={{ marginBottom: 18 }}>
+      <div className="lvl-title" style={{ marginTop: 0 }}>Time in stage <span className="sub">· {fmtNumber(d.totalOpen)} open deals · how long they've been sitting in their current stage{d.capped ? ' · sampled to 3,000' : ''}</span></div>
+      {pipes.map((p) => {
+        const maxAvg = Math.max(1, ...p.stages.map((s) => s.avgDays))
+        return (
+          <div className="card" key={p.id} style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 8 }}><b>{p.name}</b> <span className="cap">· {fmtNumber(p.openCount)} open</span></div>
+            <div className="table-wrap"><table><thead><tr><th>Stage</th><th>Open deals</th><th>Avg days</th><th>Median</th><th>Oldest</th><th style={{ width: '28%' }}>Dwell</th></tr></thead>
+              <tbody>{p.stages.map((s) => { const key = keyNames.has(String(s.name).trim().toLowerCase()); return (
+                <tr key={s.id} className={key ? 'row-sel' : ''}>
+                  <td>{s.name}{key ? <span className="q-badge q-above" style={{ marginLeft: 6 }}>key</span> : null}</td>
+                  <td>{fmtNumber(s.count)}</td><td>{fmtDays(s.avgDays)}</td><td>{fmtDays(s.medianDays)}</td><td>{fmtDays(s.oldestDays)}</td>
+                  <td><span className="st-bar"><span style={{ width: `${(s.avgDays / maxAvg) * 100}%`, background: s.avgDays > 30 ? '#f0435b' : s.avgDays > 14 ? '#f5a524' : '#12b886' }} /></span></td>
+                </tr>
+              ) })}</tbody></table></div>
+          </div>
+        )
+      })}
+      <p className="cap">This is the age of deals <b>currently</b> in each stage — where they're piling up — measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (GoHighLevel doesn't keep that history).</p>
+    </div>
+  )
+}
 function TimingView({ clientId, range, nonce, currency }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [scan, setScan] = useState(null) // { status, processed, total, data }
@@ -6733,7 +6778,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
-        {curTab === 'timing' && <TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
+        {curTab === 'timing' && <><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
         {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
       </div>
     </>

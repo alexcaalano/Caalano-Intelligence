@@ -1727,6 +1727,73 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
 // by contact), won / revenue / lost / open, average close time, and a per-
 // pipeline split. Used by the client's Users tab. Optionally scoped to one
 // pipeline. Ad-cost-per-outcome is added by the caller (spend isn't per-user).
+// Page OPEN opportunities only (status filter), with NO date window — "how long
+// is this deal sitting in its current stage" is about live pipeline state, not
+// when the deal was created, so we must see every open deal (including old ones
+// that are stuck). The status filter keeps us off the huge closed history.
+async function openOpportunities(locTok, locationId, cap = 3000) {
+  const out = []; let startAfter, startAfterId, guard = 0
+  const maxPages = Math.min(35, Math.ceil(cap / 100) + 3)
+  while (guard++ < maxPages && out.length < cap) {
+    const q = { location_id: locationId, limit: 100, order: 'added_desc', status: 'open' }
+    if (startAfter != null) { q.startAfter = startAfter; q.startAfterId = startAfterId }
+    const j = await ghlGet(locTok, '/opportunities/search', q)
+    const batch = j.opportunities || []
+    for (const o of batch) {
+      // Defensive: only keep opens even if the API ignored the status filter.
+      if (String(o.status || '').toLowerCase() !== 'open') continue
+      out.push({ pipelineId: o.pipelineId, stageId: o.pipelineStageId, at: o.lastStageChangeAt || o.createdAt, created: o.createdAt })
+    }
+    const meta = j.meta || {}
+    const nextId = meta.startAfterId || (batch.length ? batch[batch.length - 1].id : null)
+    const nextAfter = meta.startAfter || (batch.length ? (batch[batch.length - 1].sort || [])[0] : null)
+    if (batch.length < 100 || !nextId || nextId === startAfterId) break
+    startAfter = nextAfter; startAfterId = nextId
+  }
+  return out
+}
+// "Time in stage" — for every deal currently OPEN in the pipeline, how long it
+// has been sitting in its current stage (now − lastStageChangeAt), aggregated per
+// stage per pipeline (avg / median / p90 / oldest + count). Measured straight from
+// the pipeline stages; no appointment/creation inference. NOTE: this is the age of
+// deals CURRENTLY in each stage (right-censored) — it shows where deals are piling
+// up, not the completed duration of deals that already moved on (GHL doesn't keep
+// that history).
+export async function buildStageTiming(locationId) {
+  const locTok = await locationToken(locationId)
+  const [opps, pipelines] = await Promise.all([
+    openOpportunities(locTok, locationId),
+    fetchPipelines(locTok, locationId),
+  ])
+  const now = Date.now(), DAY = 86400000
+  const stageMeta = new Map(); const pipeName = {}
+  for (const p of pipelines) {
+    pipeName[p.id] = p.name
+    ;(p.stages || []).forEach((s, i) => stageMeta.set(s.id, { pipelineId: p.id, name: s.name, pos: (s.position ?? i) }))
+  }
+  const byStage = new Map()
+  for (const o of opps) {
+    const t = Date.parse(o.at); if (!isFinite(t)) continue
+    const age = Math.max(0, (now - t) / DAY)
+    if (!byStage.has(o.stageId)) byStage.set(o.stageId, [])
+    byStage.get(o.stageId).push(age)
+  }
+  const median = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
+  const pctile = (a, p) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))] }
+  const pipes = new Map()
+  for (const [stageId, ages] of byStage) {
+    const m = stageMeta.get(stageId); const pid = m ? m.pipelineId : 'unknown'
+    if (!pipes.has(pid)) pipes.set(pid, { id: pid, name: pipeName[pid] || 'Pipeline', stages: [] })
+    pipes.get(pid).stages.push({
+      id: stageId, name: m ? m.name : 'Unknown stage', pos: m ? m.pos : 999, count: ages.length,
+      avgDays: ages.reduce((s, x) => s + x, 0) / ages.length, medianDays: median(ages), p90Days: pctile(ages, 0.9), oldestDays: Math.max(...ages),
+    })
+  }
+  const pipelinesOut = [...pipes.values()]
+    .map((p) => ({ ...p, stages: p.stages.sort((a, b) => a.pos - b.pos), openCount: p.stages.reduce((s, x) => s + x.count, 0) }))
+    .sort((a, b) => b.openCount - a.openCount)
+  return { connected: true, totalOpen: opps.length, capped: opps.length >= 3000, pipelines: pipelinesOut }
+}
 export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const locTok = await locationToken(locationId)
   const tz = await locationTimezone(locationId)

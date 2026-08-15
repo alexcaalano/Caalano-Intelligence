@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.249.0 — 2026-08-13 · `PENDING` — Timing tab: "Time in stage" (where deals are piling up)
+- New **Time in stage** section at the top of the Timing tab. For every **open** deal it measures how long it's been
+  sitting in its **current pipeline stage** (straight from the stage moves — no appointment/creation inference), then
+  shows **avg / median / oldest days + deal count** per stage, per pipeline, with a dwell bar (green < 14d, amber < 30d,
+  red beyond). Your configured **key-event stages are flagged**. This is the "where are deals getting stuck" view.
+- Backend: new `scope=stagetiming` (cached) — pulls only **open** opportunities via GHL's status filter (no date
+  window, since it's live pipeline state) and aggregates `now − lastStageChangeAt` per stage.
+- Honest scope: this is the age of deals *currently* in each stage (where they pile up), not the completed time a deal
+  spent in a stage it already left — GoHighLevel doesn't retain that history. Full stage-to-stage journey timing is the
+  next phase (a background recorder that accumulates going forward).
+
 ## v3.248.0 — 2026-08-13 · `PENDING` — Clearer "session expired" message on data tabs
 - When a data pull fails because the **login session expired** (the error was "Not authenticated"), the tab now shows a
   clear **"Your session expired — sign in again"** message with a reload button, instead of the misleading "temporary

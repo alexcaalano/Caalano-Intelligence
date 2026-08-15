@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -1992,7 +1992,7 @@ const STALE_ON_ERROR_MS = 6 * 60 * 60 * 1000    // on a rebuild failure, fall ba
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend'])
+const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -2828,6 +2828,17 @@ export default async (req) => {
     const user = url.searchParams.get('user') || null
     try { return json({ scope: 'appts', client, period: { from, to, preset }, ...(await buildAppointmentInsights(cc.ghl, from, to, { debug: dbg, pipeline, calIds, user })) }, 200, !dbg) }
     catch (e) { return json({ scope: 'appts', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
+  // Time in stage — for every OPEN deal, how long it's been sitting in its current
+  // stage (now − lastStageChangeAt), aggregated per stage/pipeline. No date window
+  // (it's live pipeline state). Cached like other CRM scopes.
+  if (url.searchParams.get('scope') === 'stagetiming') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'stagetiming', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'stagetiming', client, connected: false })
+    try { return json({ scope: 'stagetiming', client, ...(await buildStageTiming(cc.ghl)) }, 200, true) }
+    catch (e) { return json({ scope: 'stagetiming', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
   // Read-only probe of a client's forms / submissions / custom fields, to see

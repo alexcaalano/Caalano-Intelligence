@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.251.0 — 2026-08-13 · `PENDING` — Users tab: Appointments by rep (self vs rep booked + show rates)
+- New **Appointments by rep** section on the Users tab: per rep — total **booked**, **self-booked** vs **rep-booked**,
+  the **show rate for each** (self-booked vs rep-booked), and won. Answers "who's booking, and do self-booked or
+  rep-booked appts show up more?".
+- Backend: extended the appointments builder's per-user breakdown to split self vs staff booking within each rep
+  (show rate per booking type). Renders on the Users tab even when the client doesn't assign opportunities to reps.
+
 ## v3.250.0 — 2026-08-13 · `PENDING` — Users tab: per-rep Call Activity (GHL dialer)
 - New **Call activity** section on the Users tab: per rep, **outbound calls**, **talk minutes**, **connect rate**,
   **avg talk time**, and **inbound handled** — pulled from GoHighLevel's dialer for the selected range.

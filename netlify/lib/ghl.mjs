@@ -1667,8 +1667,9 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
       if (won) { C.won++; if (closeDays != null) { C.closeSum += closeDays; C.closeN++ } }
       const b = C.buckets[bk]; if (b) { b.booked++; if (r.cancelled) b.cancelled++; if (rescheduled) b.rescheduled++; if (resulted) b.resulted++; if (occurred) { b.occurred++; if (r.shown) b.shown++ } if (won) { b.won++; if (closeDays != null) { b.closeSum += closeDays; b.closeN++ } } }
       const bb = C.byBookedBy[r.bookedBy]; bb.booked++; bb.leadSum += r.lead; if (occurred) { bb.occurred++; if (r.shown) bb.shown++ } if (won) bb.won++
-      let um = C.byUser.get(uid); if (!um) { um = { id: uid, booked: 0, occurred: 0, shown: 0, won: 0 }; C.byUser.set(uid, um) }
+      let um = C.byUser.get(uid); if (!um) { um = { id: uid, booked: 0, occurred: 0, shown: 0, won: 0, self: { booked: 0, occurred: 0, shown: 0 }, staff: { booked: 0, occurred: 0, shown: 0 } }; C.byUser.set(uid, um) }
       um.booked++; if (occurred) { um.occurred++; if (r.shown) um.shown++ } if (won) um.won++
+      const ub = r.bookedBy === 'self' ? um.self : um.staff; ub.booked++; if (occurred) { ub.occurred++; if (r.shown) ub.shown++ }
       const dd2 = C.dow[dow]; dd2.booked++; if (occurred) { dd2.occurred++; if (r.shown) dd2.shown++ }
       const sl = slotIdx >= 0 ? C.slots[slotIdx] : null; if (sl) { sl.booked++; if (occurred) { sl.occurred++; if (r.shown) sl.shown++ } }
     }
@@ -1703,7 +1704,7 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
       avgCloseDays: C.closeN ? Math.round(C.closeSum / C.closeN) : null,
       buckets: C.buckets.map((b) => ({ key: b.key, label: b.label, booked: b.booked, occurred: b.occurred, shown: b.shown, won: b.won, cancelled: b.cancelled, rescheduled: b.rescheduled, resulted: b.resulted, showRate: b.occurred ? Math.round((b.shown / b.occurred) * 100) : null, winRate: b.booked ? Math.round((b.won / b.booked) * 100) : null, cancelRate: b.booked ? Math.round((b.cancelled / b.booked) * 100) : null, avgCloseDays: b.closeN ? Math.round(b.closeSum / b.closeN) : null })),
       byBookedBy: { self: bb(C.byBookedBy.self), staff: bb(C.byBookedBy.staff) },
-      byUser: [...C.byUser.values()].map((u) => ({ name: nameOfUser(u.id), booked: u.booked, occurred: u.occurred, shown: u.shown, won: u.won, showRate: u.occurred ? Math.round((u.shown / u.occurred) * 100) : null, winRate: u.booked ? Math.round((u.won / u.booked) * 100) : null })).sort((a, b) => b.booked - a.booked),
+      byUser: [...C.byUser.values()].map((u) => ({ name: nameOfUser(u.id), id: u.id, booked: u.booked, occurred: u.occurred, shown: u.shown, won: u.won, showRate: u.occurred ? Math.round((u.shown / u.occurred) * 100) : null, winRate: u.booked ? Math.round((u.won / u.booked) * 100) : null, selfBooked: u.self.booked, userBooked: u.staff.booked, showRateSelf: u.self.occurred ? Math.round((u.self.shown / u.self.occurred) * 100) : null, showRateUser: u.staff.occurred ? Math.round((u.staff.shown / u.staff.occurred) * 100) : null })).sort((a, b) => b.booked - a.booked),
       byDow: C.dow.map((x, i) => ({ label: DOW_NAMES[i], ...rt(x) })),
       byTimeOfDay: C.slots.map((x, i) => ({ label: HOUR_SLOTS[i].label, ...rt(x) })),
     }

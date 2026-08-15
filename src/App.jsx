@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.250.1'
+const APP_VERSION = '3.251.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6390,6 +6390,30 @@ function UserCallActivity({ users, clientId, range, nonce }) {
     </div>
   )
 }
+// Per-rep appointment activity: total booked, self-booked vs rep-booked, and the
+// show rate for each. Reads the appointments scope's per-user breakdown. Hides
+// itself if there are no appointments.
+function UserApptActivity({ clientId, range, nonce }) {
+  const [d, setD] = useState(null)
+  useEffect(() => {
+    let alive = true; setD(null)
+    dedupeFetch(`/.netlify/functions/windsor?scope=appts&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setD(j || { error: true }) }).catch(() => { if (alive) setD({ error: true }) })
+    return () => { alive = false }
+  }, [clientId, rangeQuery(range), nonce])
+  if (!d) return <div className="card"><Spinner label="Loading appointment activity…" /></div>
+  const by = d && d.channels && d.channels.all && d.channels.all.byUser
+  const rows = (by || []).filter((u) => u.booked > 0).sort((a, b) => b.booked - a.booked)
+  if (!rows.length) return null
+  const pct = (v) => (v == null ? '—' : `${v}%`)
+  return (
+    <div className="card">
+      <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Appointments by rep <span style={{ fontWeight: 400 }}>· who booked (self vs rep) &amp; who showed</span></div>
+      <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Booked</th><th>Self-booked</th><th>Rep-booked</th><th>Show% self</th><th>Show% rep</th><th>Won</th></tr></thead>
+        <tbody>{rows.map((u) => (<tr key={u.id || u.name}><td style={{ textAlign: 'left' }}>{u.name}</td><td>{fmtNumber(u.booked)}</td><td>{fmtNumber(u.selfBooked)}</td><td>{fmtNumber(u.userBooked)}</td><td>{pct(u.showRateSelf)}</td><td>{pct(u.showRateUser)}</td><td>{fmtNumber(u.won)}</td></tr>))}</tbody></table></div>
+    </div>
+  )
+}
 function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [pipe, setPipe] = useState('all')
@@ -6426,7 +6450,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const chanSel = (
     <div className="chan-toggle">{[['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => { setChan(k); setOpen(null) }}>{lbl}</button>)}</div>
   )
-  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} /></div>
+  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></div>
   // Configured stage key events -> matrix columns (stage reach per user), sorted
   // by their real pipeline position so the funnel reads top-to-bottom (and the
   // cumulative step % make sense) instead of following config order.
@@ -6496,7 +6520,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
         </ResponsiveContainer>
       </div>
 
-      <UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} />
+      <UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} />
 
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>

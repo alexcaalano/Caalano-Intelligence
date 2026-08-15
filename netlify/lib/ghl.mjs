@@ -1849,6 +1849,9 @@ export async function buildUserCalls(locationId, from, to) {
     connectRate: e.outbound ? (e.outboundConnected / e.outbound) * 100 : 0,
     avgTalkMin: e.outboundConnected ? Math.round((e.outboundSec / e.outboundConnected / 60) * 10) / 10 : 0,
     speedToLeadHrs: e.speed.length ? Math.round(med(e.speed) * 10) / 10 : null, speedSamples: e.speed.length,
+    // Response-time SLA: share of leads this rep called back within 5 minutes
+    // (the classic speed-to-lead benchmark). null when there are no timed leads.
+    sla5Pct: e.speed.length ? Math.round((e.speed.filter((g) => g <= 5 / 60).length / e.speed.length) * 100) : null,
   })).sort((a, b) => b.outbound - a.outbound)
   return { connected: true, totalCalls: total, byUser: users }
 }

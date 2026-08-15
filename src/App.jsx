@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.252.0'
+const APP_VERSION = '3.253.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6382,12 +6382,17 @@ function UserCallActivity({ users, clientId, range, nonce }) {
   const nameOf = (r) => r.name || (() => { const u = (users || []).find((x) => x.id === r.userId); return u ? u.name : (r.userId === 'unassigned' ? 'Unassigned / automated' : 'User ' + String(r.userId).slice(-4)) })()
   const rows = [...d.byUser].sort((a, b) => b.outbound - a.outbound)
   const fmtSpeedHrs = (h) => (h == null ? '—' : h < 1 ? `${Math.round(h * 60)}m` : h < 48 ? `${h < 10 ? h.toFixed(1) : Math.round(h)}h` : `${Math.round(h / 24)}d`)
+  // Join call activity with the leaderboard's outcomes (booked/won) so we can show
+  // activity-to-outcome ratios: how many outbound calls it took this rep per booked
+  // appointment and per won deal. Blank when the client doesn't assign to reps.
+  const uById = new Map((users || []).map((u) => [u.id, u]))
+  const fmtRatio = (n, d2) => (!d2 ? '—' : (n / d2).toFixed(n / d2 >= 10 ? 0 : 1))
   const totOut = rows.reduce((a, r) => a + r.outbound, 0), totMin = rows.reduce((a, r) => a + r.outboundMinutes, 0)
   return (
     <div className="card">
       <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Call activity <span style={{ fontWeight: 400 }}>· GoHighLevel dialer · {fmtNumber(d.totalCalls)} calls · {fmtNumber(totOut)} outbound · {fmtNumber(totMin)} talk min</span></div>
-      <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th><th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th></tr></thead>
-        <tbody>{rows.map((r) => (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td></tr>))}</tbody></table></div>
+      <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th><th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th><th title="Share of leads this rep called back within 5 minutes">≤5 min %</th><th title="Outbound calls per appointment booked by this rep">Calls / booked</th><th title="Outbound calls per deal won by this rep">Calls / won</th></tr></thead>
+        <tbody>{rows.map((r) => { const u = uById.get(r.userId); return (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{r.sla5Pct == null ? '—' : `${r.sla5Pct}%`}</td><td>{u ? fmtRatio(r.outbound, u.booked) : '—'}</td><td>{u ? fmtRatio(r.outbound, u.won) : '—'}</td></tr>) })}</tbody></table></div>
     </div>
   )
 }

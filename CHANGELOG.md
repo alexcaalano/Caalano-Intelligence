@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.253.0 — 2026-08-15 · `PENDING` — Users tab: response SLA + activity-to-outcome ratios
+- **≤5 min %** column on the Call activity table: share of a rep's leads they called back within 5 minutes (the classic
+  speed-to-lead SLA). Backend `scope=usercalls` computes it from the same per-lead gaps used for the median.
+- **Calls / booked** and **Calls / won** columns: outbound calls per appointment booked and per deal won by each rep —
+  activity-to-outcome efficiency. Joined in the front end from the leaderboard's booked/won so no extra fetch.
+- Pipeline velocity per rep (avg days lead→won) was already the leaderboard's **Avg close** column, so no new work there.
+
 ## v3.252.0 — 2026-08-15 · `PENDING` — Users tab: Speed-to-lead per rep + CAC per rep
 - **Speed to lead** column added to the Call activity table: for each rep, the **median time from a lead coming in
   to that rep's first outbound call** to the contact. Shown in the most readable unit (minutes / hours / days) with a

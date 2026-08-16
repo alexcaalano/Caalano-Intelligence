@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.257.0 — 2026-08-16 · `PENDING` — Call activity no longer gated behind the leaderboard
+- **Fix:** the **Call activity** (and **Appointments by rep**) sections were only rendered once the rep **leaderboard**
+  finished loading. On a heavy account (e.g. Nexia) that leaderboard pull — opportunities + pipelines + appointments +
+  users + lost-reasons — can be slow or time out, and when it did, the whole Users tab showed a spinner or an error and
+  the call stats never even mounted, despite the dialer being full of calls.
+- Call activity and Appointments-by-rep now render on their **own independent fetches**, below whatever state the
+  leaderboard is in — loading, error, empty or full. So the call stats show even when the leaderboard is still loading
+  or couldn't load for the window. The leaderboard error message now says so, and points to trying a smaller range.
+
 ## v3.256.0 — 2026-08-16 · `PENDING` — App-wide "loading… / all data is in" indicator
 - Added a single, app-wide status pill (bottom-right) that shows a spinner **whenever any data is still loading**
   anywhere in Caalano360 — deep views, attribution, Users, Timing, GA4, Forms, Location, Appointments, agency rollup —

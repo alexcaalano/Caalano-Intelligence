@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.256.0'
+const APP_VERSION = '3.257.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6542,9 +6542,14 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
     dedupeFetch(url).then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setPrevUsers(j && !j.error ? (j.users || []) : []) }).catch(() => { if (alive) setPrevUsers([]) })
     return () => { alive = false }
   }, [clientId, rangeQuery(range), pipeParam, chanParam, wonBasis, nonce])
-  if (st.status === 'loading') return <div className="card"><Spinner label="Loading user performance…" /></div>
+  // Call activity + appointments-by-rep run on their OWN fetches (scope=usercalls /
+  // scope=appts) and must not be held hostage by the (heavier) leaderboard pull —
+  // on a big account that can be slow or time out, and the call stats should still
+  // show. So we render them below whatever state the leaderboard is in.
+  const repActivity = <><UserCallActivity users={(st.data && st.data.users) || []} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></>
+  if (st.status === 'loading') return <div className="timing-view"><div className="card"><Spinner label="Loading user performance…" /></div>{repActivity}</div>
   const d = st.data || {}
-  if (st.status === 'err' || d.connected === false) return <div className="card empty-deep"><div className="big">👤</div><b>Couldn't load user performance.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
+  if (st.status === 'err' || d.connected === false) return <div className="timing-view"><div className="card empty-deep"><div className="big">👤</div><b>Couldn't load the rep leaderboard{d.error ? '' : ''}.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p><p className="cap" style={{ maxWidth: 520, margin: '8px auto 0' }}>The leaderboard (opportunities-heavy) couldn't load for this window — try a smaller range. Call activity still shows below.</p></div>{repActivity}</div>
   const users = d.users || []
   const pipes = d.pipelines || []
   const totalSpend = d.totalSpend || 0
@@ -6554,7 +6559,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const chanSel = (
     <div className="chan-toggle">{[['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => { setChan(k); setOpen(null) }}>{lbl}</button>)}</div>
   )
-  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></div>
+  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div>{repActivity}</div>
   // Configured stage key events -> matrix columns (stage reach per user), sorted
   // by their real pipeline position so the funnel reads top-to-bottom (and the
   // cumulative step % make sense) instead of following config order.
@@ -6645,7 +6650,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
         </ResponsiveContainer>
       </div>
 
-      <UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} />
+      {repActivity}
 
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>

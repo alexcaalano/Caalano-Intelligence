@@ -1262,6 +1262,39 @@ async function buildGoogle(accountId, from, to, preset, key) {
 // field can't blank the whole tab; _diag records which queries returned rows so
 // empty sections are explainable. Rates are normalised to 0–100 percent.
 const GA4_CONNECTOR = 'google_analytics_4'
+// Windsor's GA4 connector slug has changed across their API versions, and calling
+// an unknown slug returns HTTP 400 `{"error":"We don't have this connector yet!"}`
+// — which is exactly what was blanking the Analytics discovery even though the
+// account HAS GA4 properties connected. So we probe a short candidate list once
+// and cache whichever slug Windsor actually accepts. Ordered most-likely first.
+const GA4_SLUG_CANDIDATES = ['googleanalytics4', 'google_analytics_4', 'google_analytics', 'ga4', 'google_analytics4']
+let _ga4Slug = null, _ga4SlugInflight = null
+async function resolveGa4Slug(key) {
+  if (_ga4Slug) return _ga4Slug
+  // Share one probe across concurrent callers (buildGanalytics fires many GA4
+  // queries at once) so a cold start doesn't run the candidate loop N times.
+  if (_ga4SlugInflight) return _ga4SlugInflight
+  _ga4SlugInflight = (async () => {
+    for (const slug of GA4_SLUG_CANDIDATES) {
+      try {
+        const p = new URLSearchParams({ api_key: key, fields: 'account_id', date_preset: 'last_7d' })
+        const r = await resilientFetch(`https://connectors.windsor.ai/${slug}?${p.toString()}`, {}, { label: `Windsor ga4-probe ${slug}`, timeoutMs: 6000, retries: 0 })
+        const txt = await r.text().catch(() => '')
+        // A recognised connector answers 200 (rows or empty) or a param/auth error —
+        // but never "we don't have this connector". Anything else means valid slug.
+        if (r.status !== 404 && !/don'?t\s+have\s+this\s+connector/i.test(txt)) { _ga4Slug = slug; return slug }
+      } catch { /* transient — try the next candidate */ }
+    }
+    _ga4Slug = GA4_SLUG_CANDIDATES[0]
+    return _ga4Slug
+  })()
+  try { return await _ga4SlugInflight } finally { _ga4SlugInflight = null }
+}
+// GA4 fetch that always targets the resolved slug (not the stale const).
+async function windsorGa4(fields, from, to, preset, key) {
+  const slug = await resolveGa4Slug(key)
+  return windsorFetch(slug, fields, from, to, preset, key)
+}
 function ga4Agg(rows, keyFn) {
   const m = new Map()
   for (const r of (rows || [])) {
@@ -1277,7 +1310,7 @@ const ga4Pct = (v) => { const n = num(v); return n > 0 && n <= 1 ? n * 100 : n }
 async function buildGanalytics(propertyId, from, to, preset, key) {
   const filt = (rows) => (rows || []).filter((r) => r.account_id == null || acctEq(r.account_id, propertyId))
   const pr = prevRange(from, to)
-  const q = (fields, f = from, t = to, p = preset) => windsorFetch(GA4_CONNECTOR, ['account_id', ...fields], f, t, p, key).then(filt).catch(() => null)
+  const q = (fields, f = from, t = to, p = preset) => windsorGa4(['account_id', ...fields], f, t, p, key).then(filt).catch(() => null)
   // Fallback query: if the rich field set fails (one unknown field 400s the whole
   // Windsor call), retry with a minimal always-present set so the tab still renders
   // the core metrics instead of showing empty.
@@ -1311,7 +1344,7 @@ async function buildGanalytics(propertyId, from, to, preset, key) {
   const landingPages = (lpRows || []).map((r) => ({ url: r.landing_page, sessions: num(r.sessions), engaged: num(r.engaged_sessions), engagementRate: num(r.sessions) ? num(r.engaged_sessions) / num(r.sessions) * 100 : 0, bounceRate: ga4Pct(r.bounce_rate), keyEvents: num(r.conversions) })).filter((r) => r.url && r.sessions > 0).sort((a, b) => b.sessions - a.sessions).slice(0, 100)
   const byDevice = ga4Agg(devRows, (r) => r.device_category || 'unknown')
   const prev = (prevRows && prevRows.length) ? { sessions: sum(prevRows, 'sessions'), engagedSessions: sum(prevRows, 'engaged_sessions'), keyEvents: sum(prevRows, 'conversions'), pageViews: sum(prevRows, 'screen_page_views'), users: sum(prevRows, 'total_users') } : null
-  const _diag = { totals: !!(totalRows && totalRows.length), daily: !!daily.length, source: !!bySource.length, channel: !!byChannel.length, events: !!eventsArr.length, landingPages: !!landingPages.length, device: !!byDevice.length, connector: GA4_CONNECTOR }
+  const _diag = { totals: !!(totalRows && totalRows.length), daily: !!daily.length, source: !!bySource.length, channel: !!byChannel.length, events: !!eventsArr.length, landingPages: !!landingPages.length, device: !!byDevice.length, connector: _ga4Slug || GA4_CONNECTOR }
   return { property: propertyId, totals, prev, daily, bySource, byChannel, events: eventsArr, landingPages, byDevice, _diag }
 }
 
@@ -2905,10 +2938,10 @@ export default async (req) => {
       (isConnected().then((ok) => (ok ? listLocations() : [])).catch((e) => ({ error: String(e.message || e).slice(0, 160) }))),
       windsorFetch('facebook', ['account_id', 'account_name', 'spend'], dFrom, dTo, null, key).catch((e) => { metaErr = String(e.message || e).slice(0, 200); return [] }),
       windsorFetch('google_ads', ['account_id', 'account_name', 'spend'], dFrom, dTo, null, key).catch((e) => { googleErr = String(e.message || e).slice(0, 200); return [] }),
-      // GA4: account_name may not be a valid field on this connector, so fall back
-      // to id-only on error. `sessions` is the safest always-present metric.
-      windsorFetch(GA4_CONNECTOR, ['account_id', 'account_name', 'sessions'], dFrom, dTo, null, key)
-        .catch(() => windsorFetch(GA4_CONNECTOR, ['account_id', 'sessions'], dFrom, dTo, null, key).catch((e) => { ga4Err = String(e.message || e).slice(0, 200); return [] })),
+      // GA4: uses the auto-resolved connector slug (Windsor's GA4 slug varies).
+      // account_name may not be a valid field, so fall back to id-only on error.
+      windsorGa4(['account_id', 'account_name', 'sessions'], dFrom, dTo, null, key)
+        .catch(() => windsorGa4(['account_id', 'sessions'], dFrom, dTo, null, key).catch((e) => { ga4Err = String(e.message || e).slice(0, 200); return [] })),
     ])
     const ghlErr = locs && locs.error ? locs.error : null
     const ghl = Array.isArray(locs) ? locs.map((l) => ({ id: l.id, name: l.name, mapped: usedGhl.has(norm(l.id)) })) : []
@@ -2916,7 +2949,7 @@ export default async (req) => {
     const meta = [...metaMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedMeta.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const google = [...googleMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGoogle.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const ga4 = [...ga4Map.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGa4.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    return json({ scope: 'discover', ghl, meta, google, ga4, ghlErr, metaErr, googleErr, ga4Err, metaCount: meta.length, googleCount: google.length, ga4Count: ga4.length, fetchedAt: new Date().toISOString(), connected: await isConnected().catch(() => false) }, 200)
+    return json({ scope: 'discover', ghl, meta, google, ga4, ghlErr, metaErr, googleErr, ga4Err, metaCount: meta.length, googleCount: google.length, ga4Count: ga4.length, ga4Slug: _ga4Slug || null, fetchedAt: new Date().toISOString(), connected: await isConnected().catch(() => false) }, 200)
   }
 
   // Onboarding readiness: for each agency Caalano Systems location NOT yet linked
@@ -3535,10 +3568,10 @@ export default async (req) => {
       const cand = ['date', 'sessions', 'engaged_sessions', 'engagement_rate', 'bounce_rate', 'event_count', 'conversions', 'key_events', 'screen_page_views', 'page_views', 'total_users', 'new_users', 'active_users', 'average_session_duration', 'session_source', 'session_medium', 'session_source_medium', 'source_medium', 'session_default_channel_grouping', 'default_channel_group', 'landing_page', 'landing_page_plus_query_string', 'event_name', 'device_category']
       const results = {}
       await Promise.all(cand.map(async (f) => {
-        try { const rows = await windsorFetch(GA4_CONNECTOR, ['account_id', f], from, to, preset, key); results[f] = { ok: true, rows: rows.length, sample: rows[0] ? rows[0][f] : null } }
+        try { const rows = await windsorGa4(['account_id', f], from, to, preset, key); results[f] = { ok: true, rows: rows.length, sample: rows[0] ? rows[0][f] : null } }
         catch (e) { results[f] = { ok: false, error: String(e.message || e).slice(0, 80) } }
       }))
-      return json({ probe: GA4_CONNECTOR, propertyId, fields: results })
+      return json({ probe: await resolveGa4Slug(key), propertyId, fields: results })
     }
     try {
       const ganalytics = await buildGanalytics(propertyId, from, to, preset, key)

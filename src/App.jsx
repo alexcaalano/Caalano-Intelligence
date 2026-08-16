@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.257.0'
+const APP_VERSION = '3.258.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7693,7 +7693,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={pickGhl} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
                   <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty={d.metaErr ? `⚠ Windsor Meta connector error — it may need re-authorising in Windsor: ${d.metaErr}` : 'No Meta accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
                   <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty={d.googleErr ? `⚠ Windsor Google connector error — it may need re-authorising in Windsor: ${d.googleErr}` : 'No Google accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
-                  <Col title="📊 Google Analytics 4" items={d.ga4} sel={ga4} onSel={pickGa4} empty={d.ga4Err ? `⚠ Windsor GA4 connector error — it may need re-authorising in Windsor: ${d.ga4Err}` : 'No GA4 properties found yet from Windsor. Paste the property ID below to link it now.'} />
+                  <Col title="📊 Google Analytics 4" items={d.ga4} sel={ga4} onSel={pickGa4} empty={d.ga4Err ? (/don'?t\s+have\s+this\s+connector/i.test(d.ga4Err) ? `⚠ Windsor doesn't recognise the GA4 connector on this key. Add the "Google Analytics 4" data source in your Windsor account (Data sources → add GA4), then hit Refresh accounts.` : `⚠ Windsor GA4 connector error — it may need re-authorising in Windsor: ${d.ga4Err}`) : 'No GA4 properties found yet from Windsor. Paste the property ID below to link it now.'} />
                 </div>
                 <div className="addcl-status cap">
                   {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems (GHL) not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
@@ -7705,7 +7705,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google || (ga4 || '').trim()) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}${(ga4 || '').trim() ? ' · GA4' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
                   <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
-                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked — a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the GoHighLevel agency connection. <b>New account not showing?</b> Windsor only lists it once it has synced some data for it — a just-connected account can take a while to backfill. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
+                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked — a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the GoHighLevel agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> — so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
               </>}
         </div>
       </div>

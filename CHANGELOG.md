@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.258.0 — 2026-08-16 · `PENDING` — Fix GA4 connector discovery (wrong Windsor slug) + clearer account-count messaging
+- **Fix:** the Analytics (GA4) connector always showed **0 accounts** with Windsor's error *"We don't have this
+  connector yet!"*, even though the Windsor account has GA4 properties connected. The cause was the wrong connector
+  **slug** in the Windsor API URL (`google_analytics_4`). Windsor's GA4 slug differs (and has changed across their API
+  versions), so we now **probe a candidate list once and cache whichever slug Windsor accepts** (`googleanalytics4`
+  first), and use it for all GA4 pulls (discovery, the Analytics tab, and the field probe). GA4 properties should now
+  come through.
+- If GA4 still errors, the empty-state message now says specifically to **add the GA4 data source in Windsor**
+  (Data sources → add Google Analytics 4) rather than the generic "re-authorise".
+- **Clarified Meta/Google counts:** the picker shows fewer accounts than Windsor's "connected" total because Windsor's
+  data API only returns accounts with **activity in the last 12 months** — dormant or still-backfilling accounts don't
+  appear here yet. The footer note now explains this and reminds you to paste the account ID to link one immediately.
+- The discover response now includes the resolved `ga4Slug` for transparency.
+
 ## v3.257.0 — 2026-08-16 · `PENDING` — Call activity no longer gated behind the leaderboard
 - **Fix:** the **Call activity** (and **Appointments by rep**) sections were only rendered once the rep **leaderboard**
   finished loading. On a heavy account (e.g. Nexia) that leaderboard pull — opportunities + pipelines + appointments +

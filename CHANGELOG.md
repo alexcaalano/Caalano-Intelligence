@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.255.0 — 2026-08-16 · `PENDING` — HOTFIX: Call activity vanished on large accounts (e.g. Nexia)
+- **Fix:** on high-volume accounts the whole **Call activity** section could disappear. The speed-to-lead feature
+  (v3.252.0) added an opportunities pull inside the calls scope; on a big account, viewed for an older window, that
+  pull pages back through weeks of newer deals and blew the ~10s function budget — the timeout then blanked the entire
+  section (the calls, talk minutes, connect rates — everything), even though the dialer data was all there.
+- The opportunities pull is now **best-effort and concurrent**: the call export (the core stats) always ships, and
+  speed-to-lead / ≤5 min % fill in only if the opps pull returns within a short grace window (otherwise they show "—"
+  for that load and populate on a subsequent one). Call volume, talk minutes, connect rate, inbound, calls-per-outcome
+  and Rev/talk-hr no longer depend on it.
+
 ## v3.254.0 — 2026-08-15 · `PENDING` — Users tab: rank movement, talk-time efficiency, coverage flags, value win rate
 - **Rank + movement arrows** on the leaderboard: a new **#** column ranks reps by wins and shows ▲/▼ movement vs the
   **previous equal-length period** (▲2 = up two spots, `new` = not ranked last period). Best-effort second fetch of the

@@ -1803,17 +1803,16 @@ export async function buildUserCalls(locationId, from, to) {
   const locTok = await locationToken(locationId)
   // Resolve rep names up front so this works even when a client assigns no
   // opportunities to users (the leaderboard would be empty, but calls still exist).
-  // Lead-in time per contact (their earliest opportunity's createdAt) so we can
-  // measure speed-to-lead: lead created → first OUTBOUND call, credited to the
-  // rep who made that call. Own fetch, guarded so a slow opps pull can't blank
-  // the call stats.
-  const [userRows, opps] = await Promise.all([
-    ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
-    allOpportunities(locTok, locationId, from, to, 3000).catch(() => []),
-  ])
+  const userRows = await ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => [])
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null
-  const leadMs = new Map()
-  for (const o of opps) { const cid = contactIdOf(o); const t = Date.parse(o.createdAt); if (cid && isFinite(t) && (!leadMs.has(cid) || t < leadMs.get(cid))) leadMs.set(cid, t) }
+  // The call export is the CORE payload. Speed-to-lead / SLA also need each
+  // contact's lead-in time (their earliest opportunity's createdAt), but on large
+  // accounts that opps pull pages back through weeks of newer deals and can eat the
+  // whole ~10s function budget — which used to time out and blank the entire call
+  // section. So we fire it off CONCURRENTLY here and only wait a short grace window
+  // for it after the calls are in; if it isn't ready, call stats still ship and
+  // speed-to-lead is simply omitted for this load.
+  const oppsP = allOpportunities(locTok, locationId, from, to, 2000).then((o) => o).catch(() => null)
   const firstOut = new Map() // contactId -> { ms, uid } first outbound call
   const byUser = new Map()
   const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0, speed: [] }; byUser.set(uid, e) } return e }
@@ -1840,8 +1839,17 @@ export async function buildUserCalls(locationId, from, to) {
     cursor = j.nextCursor
     if (!cursor || msgs.length < 1000) break
   }
-  // Speed-to-lead: lead-in → first outbound call, credited to that caller.
-  for (const [cid, fo] of firstOut) { const lm = leadMs.get(cid); if (lm == null) continue; const gapH = (fo.ms - lm) / 3600000; if (gapH >= 0 && gapH <= 24 * 90) { const e = byUser.get(fo.uid); if (e) e.speed.push(gapH) } }
+  // Best-effort: give the concurrent opps pull a short grace window now that the
+  // calls are done. If it hasn't resolved, skip speed-to-lead rather than stall.
+  let opps = null
+  try { opps = await Promise.race([oppsP, new Promise((r) => setTimeout(() => r(null), 3000))]) } catch { opps = null }
+  const speedAvailable = Array.isArray(opps)
+  if (speedAvailable) {
+    const leadMs = new Map()
+    for (const o of opps) { const cid = contactIdOf(o); const t = Date.parse(o.createdAt); if (cid && isFinite(t) && (!leadMs.has(cid) || t < leadMs.get(cid))) leadMs.set(cid, t) }
+    // Speed-to-lead: lead-in → first outbound call, credited to that caller.
+    for (const [cid, fo] of firstOut) { const lm = leadMs.get(cid); if (lm == null) continue; const gapH = (fo.ms - lm) / 3600000; if (gapH >= 0 && gapH <= 24 * 90) { const e = byUser.get(fo.uid); if (e) e.speed.push(gapH) } }
+  }
   const med = (a) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
   const users = [...byUser.values()].map((e) => ({
     userId: e.userId, name: userName[e.userId] || (e.userId === 'unassigned' ? 'Unassigned / automated' : null), outbound: e.outbound, inbound: e.inbound,
@@ -1853,7 +1861,7 @@ export async function buildUserCalls(locationId, from, to) {
     // (the classic speed-to-lead benchmark). null when there are no timed leads.
     sla5Pct: e.speed.length ? Math.round((e.speed.filter((g) => g <= 5 / 60).length / e.speed.length) * 100) : null,
   })).sort((a, b) => b.outbound - a.outbound)
-  return { connected: true, totalCalls: total, byUser: users }
+  return { connected: true, totalCalls: total, byUser: users, speedAvailable }
 }
 export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const locTok = await locationToken(locationId)

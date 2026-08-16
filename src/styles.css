@@ -604,6 +604,14 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .load-dot.bad { background: #f0435b; }
 .load-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--brand) 30%, transparent); border-top-color: var(--brand); animation: load-spin .7s linear infinite; flex: 0 0 auto; }
 @keyframes load-spin { to { transform: rotate(360deg); } }
+/* App-wide load status pill — fixed, bottom-right; shows while anything is
+   loading, then flashes "All data is in" once everything settles. */
+.gload { position: fixed; right: 18px; bottom: 18px; z-index: 4000; display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); box-shadow: 0 6px 22px rgba(0,0,0,.16); animation: gload-in .22s ease-out; }
+.gload.loading { border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); color: var(--text); }
+.gload.done { border-color: color-mix(in srgb, #12b886 45%, var(--border)); background: color-mix(in srgb, #12b886 10%, var(--panel)); color: color-mix(in srgb, #12b886 55%, var(--text)); animation: gload-in .22s ease-out; }
+.gload-n { color: var(--muted); font-weight: 600; }
+@keyframes gload-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) { .gload { right: 10px; bottom: 10px; font-size: 11.5px; padding: 8px 12px; } }
 /* Super-Admin-only client (restricted): amber accent + lock badge + toggle button */
 .set-card.is-restr { border-color: color-mix(in srgb, #f5a524 45%, var(--border)); }
 .restr-badge { margin-left: 6px; font-size: 11px; vertical-align: middle; }

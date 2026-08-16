@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.256.0 — 2026-08-16 · `PENDING` — App-wide "loading… / all data is in" indicator
+- Added a single, app-wide status pill (bottom-right) that shows a spinner **whenever any data is still loading**
+  anywhere in Caalano360 — deep views, attribution, Users, Timing, GA4, Forms, Location, Appointments, agency rollup —
+  and then flashes **"All data is in"** for a couple of seconds once everything settles. The same reassurance the Meta
+  and Google views already give with their two-stage load bar, now everywhere.
+- Implemented globally by counting in-flight GET data pulls (a one-time fetch wrapper), so it covers every view without
+  needing each one wired by hand. Fire-and-forget logging beacons are ignored, and a short settle delay prevents
+  flicker between back-to-back requests (e.g. a view loading its data then its sub-sections).
+- The existing detailed Meta/Google load bars are unchanged; this pill complements them across the rest of the app.
+
 ## v3.255.0 — 2026-08-16 · `PENDING` — HOTFIX: Call activity vanished on large accounts (e.g. Nexia)
 - **Fix:** on high-volume accounts the whole **Call activity** section could disappear. The speed-to-lead feature
   (v3.252.0) added an opportunities pull inside the calls scope; on a big account, viewed for an older window, that

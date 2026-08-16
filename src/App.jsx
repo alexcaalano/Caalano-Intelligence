@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.255.0'
+const APP_VERSION = '3.256.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -410,6 +410,75 @@ async function apiJson(url, { signal, timeoutMs = 30000, tries = 2 } = {}) {
     }
   }
   throw lastErr || new Error('Request failed.')
+}
+
+// ---- App-wide load tracker -------------------------------------------------
+// One place that knows whether ANYTHING is still loading across Caalano360, so a
+// single indicator can say "still loading…" and then confirm "all data is in" —
+// the same reassurance the Meta/Google views give, but everywhere. Rather than
+// wire every view's fetch by hand (deep views, attribution, users, timing, GA4,
+// forms, location … all fetch differently), we patch fetch once and count live
+// GET pulls to our own data function. Fire-and-forget logging beacons and POSTs
+// are skipped so the signal reflects real, user-facing data loads.
+const _loadTrack = { n: 0, subs: new Set() }
+function _loadNotify() { for (const f of _loadTrack.subs) { try { f() } catch { /* ignore */ } } }
+;(function patchFetchForLoadTracking() {
+  if (typeof window === 'undefined' || window.__cw360FetchPatched) return
+  const orig = window.fetch
+  if (typeof orig !== 'function') return
+  window.__cw360FetchPatched = true
+  window.fetch = function (input, init) {
+    let url = ''
+    try { url = typeof input === 'string' ? input : (input && input.url) || '' } catch { /* ignore */ }
+    const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase()
+    const isData = url.indexOf('/.netlify/functions/') !== -1
+    const isBeacon = (init && init.keepalive) || /scope=(clientlog|diaglog|logos)/.test(url)
+    if (!isData || method !== 'GET' || isBeacon) return orig.call(this, input, init)
+    _loadTrack.n++; _loadNotify()
+    const settle = () => { _loadTrack.n = Math.max(0, _loadTrack.n - 1); _loadNotify() }
+    return orig.call(this, input, init).then((r) => { settle(); return r }, (e) => { settle(); throw e })
+  }
+})()
+// Subscribe a component to the live in-flight count.
+function useGlobalLoading() {
+  const [n, setN] = useState(_loadTrack.n)
+  useEffect(() => {
+    const f = () => setN(_loadTrack.n)
+    _loadTrack.subs.add(f); f()
+    return () => { _loadTrack.subs.delete(f) }
+  }, [])
+  return n
+}
+// A fixed, app-wide status pill: shows a spinner while data is loading anywhere,
+// then flips to "All data is in" for a couple of seconds once everything settles.
+// A short settle delay before the "done" flash absorbs the gap between two
+// back-to-back pulls (e.g. a view fetching its data then its sub-sections) so it
+// doesn't flicker done→loading→done.
+function GlobalLoadIndicator() {
+  const n = useGlobalLoading()
+  const [phase, setPhase] = useState('idle') // 'idle' | 'loading' | 'done'
+  const sawLoad = useRef(false)
+  useEffect(() => {
+    if (n > 0) { sawLoad.current = true; setPhase('loading'); return }
+    if (!sawLoad.current) return
+    const settle = setTimeout(() => {
+      setPhase('done'); sawLoad.current = false
+    }, 450)
+    return () => clearTimeout(settle)
+  }, [n])
+  useEffect(() => {
+    if (phase !== 'done') return
+    const t = setTimeout(() => setPhase('idle'), 2600)
+    return () => clearTimeout(t)
+  }, [phase])
+  if (phase === 'idle') return null
+  return (
+    <div className={`gload ${phase}`} role="status" aria-live="polite">
+      {phase === 'loading'
+        ? <><span className="load-spin" /> Loading data…{n > 1 ? <span className="gload-n">{n} in progress</span> : null}</>
+        : <><span className="load-dot ok" /> All data is in</>}
+    </div>
+  )
 }
 
 /* ============ Agency live rollup ============ */
@@ -12449,5 +12518,5 @@ export default function App() {
   if (auth.enabled && inviteToken && !auth.user) return <AcceptInvite token={inviteToken} onSignedIn={onSignedIn} />
   if (auth.enabled && auth.needsSetup) return <SetupAdmin onSignedIn={onSignedIn} />
   if (auth.enabled && !auth.user) return <LoginForm onSignedIn={onSignedIn} />
-  return <Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} />
+  return <><Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator /></>
 }

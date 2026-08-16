@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.259.0 — 2026-08-16 · `PENDING` — Surface paused/dormant Meta & Google accounts in discovery
+- **Fix attempt for the 18-vs-23 gap:** the account listing used a metric (`spend`) query, which only returns accounts
+  that had **delivery in the window** — so a connected-but-paused ad account (zero spend/impressions) was dropped.
+  (GA4 didn't hit this because `sessions` exists for any property with traffic — that's why it matched 10/10.)
+- Discovery now **also runs a dimension-only query** (`account_id` + `account_name`, no metric) for each connector and
+  **merges** it with the metric query — so accounts with no recent spend still list, while active ones keep their names
+  and data. Both queries run in parallel per connector (wall-clock stays ~one query) and each fails independently, so a
+  connector Windsor won't answer metric-less still shows via the metric query.
+- If Windsor rejects the metric-less shape for a connector, the count is unchanged from before (paste the account ID to
+  link it directly) — no regression.
+
 ## v3.258.0 — 2026-08-16 · `PENDING` — Fix GA4 connector discovery (wrong Windsor slug) + clearer account-count messaging
 - **Fix:** the Analytics (GA4) connector always showed **0 accounts** with Windsor's error *"We don't have this
   connector yet!"*, even though the Windsor account has GA4 properties connected. The cause was the wrong connector

@@ -2931,21 +2931,38 @@ export default async (req) => {
     // which surfaced as "a connector is erroring" with 0 accounts.
     const dTo = new Date().toISOString().slice(0, 10)
     const dFrom = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
-    // Capture (not swallow) Windsor connector errors so the UI can tell a broken /
-    // unauthorised connector apart from a connector that simply has no accounts yet.
+    // A metric-based listing (spend / sessions) only surfaces accounts that had
+    // DELIVERY in the window — so a connected-but-paused ad account (zero spend,
+    // zero impressions) is silently dropped, which is why fewer Meta/Google show
+    // than are connected in Windsor. GA4 didn't suffer this because `sessions`
+    // exists for any property with traffic. So for each connector we ALSO run a
+    // dimension-only query (account_id + account_name, no metric) — which lists
+    // every configured account regardless of delivery — and merge the two. Both
+    // run in parallel so wall-clock stays ~one query; each catches independently.
     let metaErr = null, googleErr = null, ga4Err = null
-    const [locs, fbRows, ggRows, gaRows] = await Promise.all([
+    const listAccts = async (fetchFields, metric, onErr) => {
+      const merged = new Map()
+      const add = (rows) => { for (const r of (rows || [])) { const id = r.account_id; if (id == null) continue; const k = String(id); const nm = r.account_name || ''; if (!merged.has(k) || (!merged.get(k) && nm)) merged.set(k, merged.get(k) || nm) } }
+      const [dimRes, metRes] = await Promise.allSettled([
+        fetchFields(['account_id', 'account_name']),
+        fetchFields(['account_id', 'account_name', metric]),
+      ])
+      if (dimRes.status === 'fulfilled') add(dimRes.value)
+      if (metRes.status === 'fulfilled') add(metRes.value)
+      // Only report an error if BOTH shapes failed (so a metric-less-query that
+      // Windsor rejects doesn't mask a working metric query, and vice-versa).
+      if (!merged.size && dimRes.status === 'rejected' && metRes.status === 'rejected') { onErr(String((metRes.reason && metRes.reason.message) || metRes.reason || 'error').slice(0, 200)) }
+      return merged
+    }
+    const [locs, metaMap, googleMap, ga4Map] = await Promise.all([
       (isConnected().then((ok) => (ok ? listLocations() : [])).catch((e) => ({ error: String(e.message || e).slice(0, 160) }))),
-      windsorFetch('facebook', ['account_id', 'account_name', 'spend'], dFrom, dTo, null, key).catch((e) => { metaErr = String(e.message || e).slice(0, 200); return [] }),
-      windsorFetch('google_ads', ['account_id', 'account_name', 'spend'], dFrom, dTo, null, key).catch((e) => { googleErr = String(e.message || e).slice(0, 200); return [] }),
-      // GA4: uses the auto-resolved connector slug (Windsor's GA4 slug varies).
-      // account_name may not be a valid field, so fall back to id-only on error.
-      windsorGa4(['account_id', 'account_name', 'sessions'], dFrom, dTo, null, key)
-        .catch(() => windsorGa4(['account_id', 'sessions'], dFrom, dTo, null, key).catch((e) => { ga4Err = String(e.message || e).slice(0, 200); return [] })),
+      listAccts((f) => windsorFetch('facebook', f, dFrom, dTo, null, key), 'spend', (e) => { metaErr = e }),
+      listAccts((f) => windsorFetch('google_ads', f, dFrom, dTo, null, key), 'spend', (e) => { googleErr = e }),
+      // GA4 uses the auto-resolved connector slug (Windsor's GA4 slug varies).
+      listAccts((f) => windsorGa4(f, dFrom, dTo, null, key), 'sessions', (e) => { ga4Err = e }),
     ])
     const ghlErr = locs && locs.error ? locs.error : null
     const ghl = Array.isArray(locs) ? locs.map((l) => ({ id: l.id, name: l.name, mapped: usedGhl.has(norm(l.id)) })) : []
-    const metaMap = nameById(fbRows), googleMap = nameById(ggRows), ga4Map = nameById(gaRows)
     const meta = [...metaMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedMeta.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const google = [...googleMap.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGoogle.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     const ga4 = [...ga4Map.entries()].map(([id, name]) => ({ id, name: name || id, mapped: usedGa4.has(norm(id)) })).sort((a, b) => (a.name || '').localeCompare(b.name || ''))

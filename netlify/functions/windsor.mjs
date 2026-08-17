@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -2761,35 +2761,25 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'users', client, ghl: false })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'users', client, connected: false })
-    const pipeline = url.searchParams.get('pipeline') || null
-    const channel = url.searchParams.get('channel') || 'all'
     try {
-      const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
-      const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
+      // One response now carries EVERY channel × pipeline combo, plus the won-in-
+      // period (closed-basis) per-user figures and channel-scoped ad spend, so the
+      // Users tab switches channel / pipeline / won-basis client-side with no
+      // refetch. All three filters only change which opportunities are counted;
+      // the expensive fetches are identical, so we do them once.
+      const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, id))
       const [perf, fb, gg, wonClosed] = await Promise.all([
-        buildUserPerformance(cc.ghl, from, to, { pipeline, channel }),
+        buildUserPerformanceCombos(cc.ghl, from, to, {}),
         cc.meta ? windsorFetch('facebook', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
         cc.google ? windsorFetch('google_ads', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
-        (wonBasis === 'closed' && from && to) ? wonInPeriod(cc.ghl, from, to).catch(() => null) : Promise.resolve(null),
+        (from && to) ? wonInPeriod(cc.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
-      // Closed basis: overlay each rep's won/revenue with their won-in-period
-      // (banked) figures; leads / booked / funnel stay created-basis. Cost/Won is
-      // recomputed frontend-side from the swapped won.
-      if (wonBasis === 'closed' && wonClosed && wonClosed.byUser) {
-        for (const u of perf.users || []) {
-          const w = wonClosed.byUser[u.id] || { won: 0, revenue: 0, avgValue: 0 }
-          u.won = w.won; u.revenue = w.revenue; u.wonValue = w.revenue; u.avgDeal = w.avgValue
-          u.winRate = u.leads ? Math.round((100 * u.won) / u.leads) : null
-        }
-      }
-      perf._wonBasis = wonBasis
       const metaSpend = Math.round(fb.reduce((s, r) => s + num(r.spend), 0))
       const googleSpend = Math.round(gg.reduce((s, r) => s + num(r.spend), 0))
       // Ad spend can't be attributed to an individual rep, but it CAN be scoped to
       // the selected channel. Non-paid has no ad spend, so cost figures are N/A.
       const spendByChannel = { all: metaSpend + googleSpend, paid: metaSpend + googleSpend, meta: metaSpend, google: googleSpend, nonpaid: 0 }
-      const totalSpend = spendByChannel[channel] != null ? spendByChannel[channel] : metaSpend + googleSpend
-      return json({ scope: 'users', client, period: { from, to, preset }, channel, totalSpend, metaSpend, googleSpend, ...perf }, 200, true)
+      return json({ scope: 'users', client, period: { from, to, preset }, metaSpend, googleSpend, spendByChannel, wonByUser: (wonClosed && wonClosed.byUser) || null, ...perf }, 200, true)
     } catch (e) { return json({ scope: 'users', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

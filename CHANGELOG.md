@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.264.0 — 2026-08-17 · `PENDING` — Users tab: instant filters (no reload on channel / pipeline / won-basis)
+- The Users tab used to **refetch** every time you changed the **All/Paid/Non-Paid/Meta/Google** toggle, the **pipeline
+  selector**, or the **Created/Closed won-basis** — a spinner each time. But those filters only change *which
+  opportunities are counted*; the expensive GHL fetches (opportunities, appointments, pipelines, users, lost-reasons)
+  are identical across every combo.
+- So the server now **fetches once and returns every channel × pipeline combo in one response** (plus the won-in-period
+  per-rep figures and channel-scoped ad spend). The front end switches channel, pipeline and won-basis **instantly,
+  client-side, with no refetch** — and, importantly, without re-hammering GoHighLevel (which naive prefetching would).
+- Each combo is produced by the **exact same aggregation** as before, so every number is unchanged; the won-basis
+  toggle applies the same won-in-period overlay the server used to. Falls back to the old behaviour for any cached
+  pre-deploy response. Also improves cache hit-rate (one cache entry per client+range instead of one per filter combo).
+
 ## v3.263.0 — 2026-08-17 · `PENDING` — Shared per-location opportunity snapshot (cut GHL request volume ~10×)
 - **The root-cause reliability fix.** Every CRM scope (users, blend, attribution, appts, speed, ccdrill, forms,
   updateextra, health…) used to page GoHighLevel's `/opportunities/search` **independently** — the same client's

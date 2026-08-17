@@ -1995,18 +1995,20 @@ export async function buildUserCalls(locationId, from, to) {
   })).sort((a, b) => b.outbound - a.outbound)
   return { connected: true, totalCalls: total, byUser: users, speedAvailable }
 }
-export async function buildUserPerformance(locationId, from, to, opts = {}) {
+// The channel / pipeline / won-basis filters on the Users tab only change WHICH
+// opportunities are counted — every expensive fetch (opps, appointments,
+// pipelines, users, lost-reasons) is identical across all filter combos. So we
+// fetch those inputs ONCE here, then aggregate per combo in-memory. buildUser-
+// PerformanceCombos uses this to return every combo in a single response, so the
+// front end can switch filters instantly without re-hitting GHL.
+async function _userPerfInputs(locationId, from, to) {
   const locTok = await locationToken(locationId)
   const tz = await locationTimezone(locationId)
-  const DAY = 86400000
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
-  // This view counts leads by their created date within [from,to] (every downstream
-  // number derives from that in-window cohort), so we page opportunities only back
-  // to the window start. Widening the fetch earlier just pulled deals that were
-  // immediately filtered out — extra sequential CRM pages for nothing, and a
-  // frequent cause of the ~10s function timeout. Other builders that genuinely
-  // need won-in-period / UTM history keep their wide window.
+  // Leads are counted by created date within [from,to] (every downstream number
+  // derives from that in-window cohort), so we page opportunities only back to the
+  // window start.
   const [inWindowOpps, pipelines, appts, userRows, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, from, to, 2000),
     fetchPipelines(locTok, locationId),
@@ -2014,6 +2016,12 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
   ])
+  const opps = inWindowOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  return { tz, opps, pipelines, appts, userRows, reasons }
+}
+function _aggregateUserPerf(inp, opts = {}) {
+  const { tz, opps: windowOpps, pipelines, appts, userRows, reasons } = inp
+  const DAY = 86400000
   const idx = stageIndexFrom(pipelines)
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
@@ -2024,7 +2032,7 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
   const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))
   const nameOf = (id) => (id === 'unassigned' ? 'Unassigned' : (userName[id] || 'User ' + String(id).slice(-4)))
-  const opps = inWindowOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  const opps = windowOpps
   let cohort = opts.pipeline ? opps.filter((o) => o.pipelineId === opts.pipeline) : opps
   // Optional channel filter (first-touch UTM): all | paid | nonpaid | meta | google.
   const chan = opts.channel && opts.channel !== 'all' ? opts.channel : null
@@ -2086,6 +2094,31 @@ export async function buildUserPerformance(locationId, from, to, opts = {}) {
     qualified: totQualified, leads: totLeads, qualRate: totLeads ? Math.round((totQualified / totLeads) * 100) : null,
     pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s) => s.name) })),
   }
+}
+// Single-combo build (kept for any caller that wants one filtered result).
+export async function buildUserPerformance(locationId, from, to, opts = {}) {
+  const inp = await _userPerfInputs(locationId, from, to)
+  return _aggregateUserPerf(inp, opts)
+}
+// Fetch inputs ONCE, then aggregate every channel × pipeline combo so the Users
+// tab can switch filters client-side with no refetch (and no extra GHL load).
+// The won-basis toggle is applied on the client from wonByUser, so it's created-
+// basis here. Each combo carries only its per-user rows + totals; the pipeline
+// list and tz live once at the top level.
+export async function buildUserPerformanceCombos(locationId, from, to, opts = {}) {
+  const inp = await _userPerfInputs(locationId, from, to)
+  const CH = ['all', 'paid', 'nonpaid', 'meta', 'google']
+  const pipeIds = ['all', ...inp.pipelines.map((p) => p.id)]
+  const combos = {}
+  for (const pid of pipeIds) {
+    combos[pid] = {}
+    for (const ch of CH) {
+      const r = _aggregateUserPerf(inp, { pipeline: pid === 'all' ? null : pid, channel: ch, qualStagePos: opts.qualStagePos })
+      combos[pid][ch] = { users: r.users, leads: r.leads, qualified: r.qualified, qualRate: r.qualRate }
+    }
+  }
+  const pipelines = inp.pipelines.map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).slice().sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((s) => s.name) }))
+  return { connected: true, tz: inp.tz, pipelines, combos }
 }
 
 // Per-contact form answers for a location in [from,to]: contactId -> [{q,a}].

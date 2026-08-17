@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.263.0'
+const APP_VERSION = '3.264.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6548,13 +6548,14 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const [open, setOpen] = useState(null) // expanded user id
   const [drill, setDrill] = useState(null) // { name, stage, deals } for the open-deals modal
   const [drillUser, setDrillUser] = useState('all') // rep-filter tab inside the drill
-  const [prevUsers, setPrevUsers] = useState(null) // previous equal-length period, for rank movement
+  const [prevData, setPrevData] = useState(null) // previous equal-length period payload, for rank movement
   const money = (v) => fmtCurrency(v, currency)
-  const pipeParam = pipe !== 'all' ? `&pipeline=${encodeURIComponent(pipe)}` : ''
-  const chanParam = chan !== 'all' ? `&channel=${chan}` : ''
+  // One fetch per client+range now returns EVERY channel × pipeline combo (plus
+  // won-in-period + channel spend), so switching channel / pipeline / won-basis is
+  // pure client-side selection — no refetch. Deps deliberately exclude the filters.
   useEffect(() => {
     let alive = true
-    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${pipeParam}${chanParam}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}`
+    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`
     const cached = apiCachePeek(url)
     // Paint the last good payload instantly (if any) and revalidate underneath, so
     // reopening this client/tab feels immediate instead of blank-spinner-then-load.
@@ -6564,27 +6565,35 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
       .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
       .catch((e) => { if (alive && !ctl.signal.aborted) setSt(cached ? { status: 'ok', data: cached } : { status: 'err', data: { error: String((e && e.message) || e) } }) })
     return () => { alive = false; ctl.abort() }
-  }, [clientId, rangeQuery(range), pipeParam, chanParam, wonBasis, nonce])
-  // Previous equal-length period (same filters) purely for rank movement arrows.
+  }, [clientId, rangeQuery(range), nonce])
+  // Previous equal-length period (all combos) purely for rank movement arrows.
   // Best-effort: if it fails or the range can't be shifted, arrows just don't show.
   useEffect(() => {
-    let alive = true; setPrevUsers(null)
+    let alive = true; setPrevData(null)
     const pr = prevRange(range); if (!pr) return
-    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&from=${pr.from}&to=${pr.to}${pipeParam}${chanParam}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}`
-    dedupeFetch(url).then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setPrevUsers(j && !j.error ? (j.users || []) : []) }).catch(() => { if (alive) setPrevUsers([]) })
+    const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&from=${pr.from}&to=${pr.to}${nonce ? `&_r=${nonce}` : ''}`
+    dedupeFetch(url).then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setPrevData(j && !j.error ? j : {}) }).catch(() => { if (alive) setPrevData({}) })
     return () => { alive = false }
-  }, [clientId, rangeQuery(range), pipeParam, chanParam, wonBasis, nonce])
+  }, [clientId, rangeQuery(range), nonce])
   // Call activity + appointments-by-rep run on their OWN fetches (scope=usercalls /
   // scope=appts) and must not be held hostage by the (heavier) leaderboard pull —
   // on a big account that can be slow or time out, and the call stats should still
   // show. So we render them below whatever state the leaderboard is in.
-  const repActivity = <><UserCallActivity users={(st.data && st.data.users) || []} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></>
-  if (st.status === 'loading') return <div className="timing-view"><div className="card"><Spinner label="Loading user performance…" /></div>{repActivity}</div>
   const d = st.data || {}
-  if (st.status === 'err' || d.connected === false) return <div className="timing-view"><div className="card empty-deep"><div className="big">👤</div><b>Couldn't load the rep leaderboard{d.error ? '' : ''}.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p><p className="cap" style={{ maxWidth: 520, margin: '8px auto 0' }}>The leaderboard (opportunities-heavy) couldn't load for this window — try a smaller range. Call activity still shows below.</p></div>{repActivity}</div>
-  const users = d.users || []
+  // Client-side filter selection: pick the active channel × pipeline combo from the
+  // single payload, apply the won-basis overlay (closed = swap in won-in-period per
+  // rep), and scope ad spend to the channel — all with no refetch. Falls back to the
+  // old flat shape (d.users) for any pre-deploy cached response.
+  const overlayBasis = (arr, wbu) => (wonBasis === 'closed' && wbu)
+    ? (arr || []).map((u) => { const w = wbu[u.id] || { won: 0, revenue: 0, avgValue: 0 }; return { ...u, won: w.won, revenue: w.revenue, wonValue: w.revenue, avgDeal: w.avgValue, winRate: u.leads ? Math.round((100 * w.won) / u.leads) : null } })
+    : (arr || [])
+  const comboUsers = (payload, p, c) => { const cb = payload && payload.combos; const hit = cb && ((cb[p] && cb[p][c]) || (cb.all && cb.all.all)); return hit ? hit.users : (payload && payload.users) || [] }
+  const users = overlayBasis(comboUsers(d, pipe, chan), d.wonByUser)
   const pipes = d.pipelines || []
-  const totalSpend = d.totalSpend || 0
+  const totalSpend = (d.spendByChannel && d.spendByChannel[chan] != null) ? d.spendByChannel[chan] : (d.totalSpend || 0)
+  const repActivity = <><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></>
+  if (st.status === 'loading') return <div className="timing-view"><div className="card"><Spinner label="Loading user performance…" /></div>{repActivity}</div>
+  if (st.status === 'err' || d.connected === false) return <div className="timing-view"><div className="card empty-deep"><div className="big">👤</div><b>Couldn't load the rep leaderboard.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p><p className="cap" style={{ maxWidth: 520, margin: '8px auto 0' }}>The leaderboard (opportunities-heavy) couldn't load for this window — try a smaller range. Call activity still shows below.</p></div>{repActivity}</div>
   const pipeSel = pipes.length > 1 && (
     <label className="appt-f"><span>Pipeline</span><select value={pipe} onChange={(e) => { setPipe(e.target.value); setOpen(null) }}><option value="all">All pipelines</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
   )
@@ -6639,6 +6648,8 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   // Rank by wins (the natural standing) so the # column is stable no matter which
   // column the table is sorted by, and the arrow shows movement vs the prior period.
   const wonRank = {}; [...users].sort((a, b) => (b.won - a.won) || (b.revenue - a.revenue)).forEach((u, i) => { wonRank[u.id] = i + 1 })
+  // Prev-period rank uses the SAME combo + won-basis as the current view.
+  const prevUsers = prevData ? overlayBasis(comboUsers(prevData, pipe, chan), prevData.wonByUser) : null
   const prevRank = {}
   if (prevUsers && prevUsers.length) [...prevUsers].sort((a, b) => (b.won - a.won) || (b.revenue - a.revenue)).forEach((u, i) => { prevRank[u.id] = i + 1 })
   const havePrev = prevUsers != null && prevUsers.length > 0

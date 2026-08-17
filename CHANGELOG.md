@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.263.0 — 2026-08-17 · `PENDING` — Shared per-location opportunity snapshot (cut GHL request volume ~10×)
+- **The root-cause reliability fix.** Every CRM scope (users, blend, attribution, appts, speed, ccdrill, forms,
+  updateextra, health…) used to page GoHighLevel's `/opportunities/search` **independently** — the same client's
+  opportunity list fetched 6-15× per view — which is what blew GHL's rate limit and caused the 429 storms.
+- Now one **wide per-location snapshot** (last ~430 days) is pulled once and shared: an in-memory copy dedupes calls
+  within/near an invocation, and a Netlify Blobs copy (best-effort, ~10 min) dedupes across invocations. Every scope's
+  opportunity query is served from that snapshot **when it provably covers the requested window**, collapsing the many
+  per-scope pulls into a single cached read. This cuts total GHL opportunity requests dramatically — the actual fix for
+  the 429 root cause (the v3.262 governor handles the residual bursts).
+- **Conservative by design:** the snapshot is only trusted when the requested window starts at/after its oldest cached
+  opportunity; a wider/older window, a `from`-less query, or any snapshot/Blobs failure falls back to a **direct page —
+  identical to the previous behaviour**. Opportunity objects are read-only across the codebase (verified), so sharing
+  them is safe. Worst case on a wrong-coverage call is an undercount, same failure mode as the existing paging cap.
+
 ## v3.262.0 — 2026-08-17 · `PENDING` — GHL request governor (kill the 429 storms)
 - **The big reliability fix.** The 7-day failure log showed **93% of all errors were GoHighLevel `429 Too Many
   Requests`** — we were exceeding GHL's per-location rate limit (~100 req/10s) because every scope pages

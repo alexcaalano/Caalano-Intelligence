@@ -228,7 +228,10 @@ export async function periodBounds(locationId, from, to) {
 // --- data pulls (paged, bounded) ---
 // opportunities/search returns the opportunity, its contact AND an inline
 // `attributions` array (first/last touch, UTMs) — one call, no N+1 lookups.
-async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
+// Raw pager: hits GHL /opportunities/search directly for [from,to]. This is the
+// primitive; most callers go through allOpportunities() which serves from the
+// shared per-location snapshot to avoid re-paging the same list per scope.
+async function _pageOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
   // GHL opportunities/search has no startDate/endDate range params, so we page
   // newest-first and filter by createdAt in memory, stopping once a page is
   // entirely older than the window.
@@ -266,6 +269,78 @@ async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts =
     startAfter = nextAfter; startAfterId = nextId
   }
   return out
+}
+// --- Shared per-location opportunity snapshot ------------------------------
+// The reliability log showed the 429 storms come from many scopes (users, blend,
+// attribution, appts, speed, ccdrill, forms, updateextra…) each paging THIS
+// location's opportunities independently — the same list fetched 6-15x per view.
+// So we pull one WIDE per-location snapshot (last ~430 days) and share it: an
+// in-memory copy dedupes calls within/near an invocation, and a Netlify Blobs
+// copy (best-effort) dedupes across invocations for ~10 min. allOpportunities()
+// then serves any window WITHIN the snapshot's coverage from memory instead of
+// re-paging GHL. A window older than the snapshot, or a snapshot that couldn't be
+// built/cached, falls back to a direct page — identical to the old behaviour.
+const OPP_SNAP_MEM_MS = 120000     // in-memory freshness
+const OPP_SNAP_BLOB_MS = 600000    // cross-invocation (Blobs) freshness
+const OPP_SNAP_DAYS = 430          // how far back the snapshot reaches
+const OPP_SNAP_CAP = 4000          // max opps held (bounds Blobs payload)
+const _oppSnapMem = new Map()      // locationId -> snapshot
+const _oppSnapInflight = new Map() // locationId -> Promise (coalesce concurrent builds)
+const _oppStore = () => getStore({ name: 'caalano-oppcache', consistency: 'strong' })
+function _snapWrap(hit) {
+  // Precompute the oldest createdAt so callers can tell if their window is fully
+  // covered (a truncated snapshot only covers windows newer than its oldest opp).
+  let oldestMs = Infinity
+  for (const o of hit.opps) { const ms = Date.parse(o.createdAt); if (ms < oldestMs) oldestMs = ms }
+  return { at: hit.at, opps: hit.opps, oldestMs, truncated: hit.opps.length >= OPP_SNAP_CAP }
+}
+async function oppSnapshot(locTok, locationId) {
+  const now = Date.now()
+  const mem = _oppSnapMem.get(locationId)
+  if (mem && now - mem.at < OPP_SNAP_MEM_MS) return mem
+  if (_oppSnapInflight.has(locationId)) return _oppSnapInflight.get(locationId)
+  const build = (async () => {
+    // Cross-invocation cache first.
+    try { const hit = await _oppStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.opps) && (now - hit.at) < OPP_SNAP_BLOB_MS) { const snap = _snapWrap(hit); _oppSnapMem.set(locationId, snap); return snap } } catch { /* fall through */ }
+    const to = new Date(now).toISOString().slice(0, 10)
+    const from = new Date(now - OPP_SNAP_DAYS * 86400000).toISOString().slice(0, 10)
+    const opps = await _pageOpportunities(locTok, locationId, from, to, OPP_SNAP_CAP, { deadlineMs: 7000 })
+    const raw = { at: now, opps }
+    const snap = _snapWrap(raw)
+    // Bound warm-lambda memory: keep only the most recent handful of locations.
+    if (_oppSnapMem.size > 16) { const oldest = [..._oppSnapMem.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, 8); for (const [k] of oldest) _oppSnapMem.delete(k) }
+    _oppSnapMem.set(locationId, snap)
+    try { await _oppStore().setJSON(locationId, raw) } catch { /* payload too big / blobs unavailable — memory copy still serves */ }
+    return snap
+  })()
+  _oppSnapInflight.set(locationId, build)
+  try { return await build } finally { _oppSnapInflight.delete(locationId) }
+}
+async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
+  // Serve from the shared snapshot when it provably covers the requested window;
+  // otherwise page directly (unchanged behaviour). Conservative on purpose — a
+  // wrong "covered" call would undercount CRM numbers, so we only trust the
+  // snapshot when the window start is at/after the snapshot's oldest opportunity.
+  if (!opts.noSnapshot) {
+    try {
+      const tz = await locationTimezone(locationId)
+      const fromMs = from ? zonedStartMs(from, tz) : null
+      const toMs = to ? zonedEndMs(to, tz) : null
+      if (fromMs != null) {
+        const snap = await oppSnapshot(locTok, locationId)
+        if (snap && isFinite(snap.oldestMs) && fromMs >= snap.oldestMs) {
+          // Match _pageOpportunities' cap semantics: newest-first, bounded by the
+          // same effective cap, so small-`cap` sample callers still get ~cap rows.
+          const spanDays = Math.max(1, Math.round(((toMs != null ? toMs : Date.now()) - fromMs) / 86400000))
+          const effCap = (cap >= 1000 && spanDays > 120) ? Math.min(5000, spanDays > 300 ? 5000 : 3500) : cap
+          const out = []
+          for (const o of snap.opps) { if (out.length >= effCap) break; const ms = Date.parse(o.createdAt); if (ms >= fromMs && (toMs == null || ms <= toMs)) out.push(o) }
+          return out
+        }
+      }
+    } catch { /* fall back to direct paging */ }
+  }
+  return _pageOpportunities(locTok, locationId, from, to, cap, opts)
 }
 const BOOK_RE = /(book|appointment|\bappt\b|discovery call|consult|scheduled)/i
 const SHOW_RE = /(attend|showed|\bheld\b|payment collect|\bpaid\b|qualified|onboard|welcome)/i

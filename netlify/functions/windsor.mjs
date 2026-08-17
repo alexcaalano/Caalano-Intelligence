@@ -816,12 +816,20 @@ async function buildTrends(key) {
   const baseFbFields = ['account_id', 'campaign', 'date', 'spend', ...FB_LEAD_FIELDS]
   const primaryFields = [...new Set(Object.values(metaPrimaryByClient).flat())].filter((f) => f && !baseFbFields.includes(f))
   const metaResultOf = (id, r) => { const pf = metaPrimaryByClient[id]; return (pf && pf.length) ? pf.reduce((s, f) => s + num(r[f]), 0) : fbLeads(r) }
+  // Track whether the Meta / Google pulls actually SUCCEEDED (vs. legitimately
+  // returned no rows). This 56-day, all-accounts Meta query sits near the function
+  // timeout, so when it times out we must NOT let the blank result get cached and
+  // shown as "0 Meta results" — the caller uses these flags to skip caching and
+  // auto-retry instead of the user hammering Refresh.
+  let metaOk = true, googleOk = true
   const [fb, gg, opps, pipes] = await Promise.all([
     // If an added custom field is unexpectedly rejected, fall back to the standard
-    // fields so a single client can't blank out everyone's Meta trends.
+    // fields so a single client can't blank out everyone's Meta trends. Only a
+    // failure of BOTH shapes counts as a Meta failure (a real timeout).
     windsorFetch('facebook', [...baseFbFields, ...primaryFields], dstr(start), dstr(today), null, key)
-      .catch(() => windsorFetch('facebook', baseFbFields, dstr(start), dstr(today), null, key).catch(() => [])),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => []),
+      .catch(() => windsorFetch('facebook', baseFbFields, dstr(start), dstr(today), null, key))
+      .catch(() => { metaOk = false; return [] }),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => { googleOk = false; return [] }),
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at', 'opportunity_source'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
   ])
@@ -1039,7 +1047,7 @@ async function buildTrends(key) {
     }
     out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily, pipelines: pipelinesOut, stagePos }
   }
-  return { clients: out }
+  return { clients: out, metaOk, googleOk }
 }
 
 // ISO week number for a YYYY-MM-DD date.
@@ -2602,7 +2610,10 @@ export default async (req) => {
 
   // Rolling-window performance trends across all clients (own date logic).
   if (url.searchParams.get('scope') === 'trends') {
-    try { const tr = await buildTrends(key); if (filtered) tr.clients = pickAllowed(tr.clients); return json({ scope: 'trends', ...tr }, 200, !filtered) }
+    // Don't cache a partial pull (Meta or Google timed out) — otherwise the blank
+    // result is served for 10 min and the user has to hammer Refresh. Skipping the
+    // cache lets the client's auto-retry get a fresh, complete pull.
+    try { const tr = await buildTrends(key); if (filtered) tr.clients = pickAllowed(tr.clients); const complete = tr.metaOk !== false && tr.googleOk !== false; return json({ scope: 'trends', ...tr }, 200, !filtered && complete) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

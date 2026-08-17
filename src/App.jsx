@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.259.0'
+const APP_VERSION = '3.260.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -990,16 +990,47 @@ function AgencyComparison({ rows, currency, range, onPick, ov }) {
 
 /* ============ Client performance trends ============ */
 function useTrends(nonce = 0) {
-  const [state, setState] = useState({ status: 'loading', data: null })
+  const [state, setState] = useState({ status: 'loading', data: null, partial: false, retry: 0, of: 0 })
   useEffect(() => {
-    let alive = true; setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=trends${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setState({ status: j && j.clients ? 'ok' : 'err', data: j }) })
-      .catch(() => { if (alive) setState({ status: 'err', data: null }) })
+    let alive = true; setState({ status: 'loading', data: null, partial: false, retry: 0, of: 0 })
+    // The server marks the trends pull `metaOk:false` / `googleOk:false` when the
+    // (heavy, 56-day, all-accounts) Meta/Google query times out. Rather than show
+    // blank Meta results and make the user hit Refresh, we auto-retry a few times
+    // with backoff — the server also skips caching a partial pull, so each retry is
+    // a genuine fresh attempt. Only after exhausting retries do we show what we have.
+    const MAX = 4
+    const run = (n) => {
+      fetch(`/.netlify/functions/windsor?scope=trends${nonce ? `&_r=${nonce}` : ''}${n ? `&_a=${n}` : ''}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+        .then((j) => {
+          if (!alive) return
+          if (!j || !j.clients) throw new Error('shape')
+          const partial = j.metaOk === false || j.googleOk === false
+          if (partial && n < MAX) { setState({ status: 'loading', data: null, partial: true, retry: n + 1, of: MAX }); setTimeout(() => { if (alive) run(n + 1) }, 1500 * (n + 1)); return }
+          setState({ status: 'ok', data: j, partial, retry: n, of: MAX })
+        })
+        .catch(() => {
+          if (!alive) return
+          if (n < MAX) { setState((s) => ({ ...s, status: 'loading', retry: n + 1, of: MAX })); setTimeout(() => { if (alive) run(n + 1) }, 1500 * (n + 1)); return }
+          setState({ status: 'err', data: null, partial: false, retry: n, of: MAX })
+        })
+    }
+    run(0)
     return () => { alive = false }
   }, [nonce])
   return state
+}
+// Slim load/complete banner for the Daily Performance tab: shows a spinner while
+// the trends pull (and any Meta/Google retry) is in flight, then flips to a green
+// "All data loaded" that tidies itself away after a couple of seconds.
+function TrendsLoadBar({ status, partial, retry, of }) {
+  const [gone, setGone] = useState(false)
+  useEffect(() => { if (status === 'ok' && !partial) { setGone(false); const t = setTimeout(() => setGone(true), 2600); return () => clearTimeout(t) } setGone(false) }, [status, partial])
+  if (status === 'ok' && !partial && gone) return null
+  if (status === 'loading') return <div className="load-bar busy"><span className="load-seg"><span className="load-spin" /> Loading Meta &amp; Google results…{retry ? ` retrying (${retry}/${of})` : ''}</span></div>
+  if (status === 'err') return <div className="load-bar err"><span className="load-seg"><span className="load-dot bad" /> Couldn’t load — hit Refresh to try again.</span></div>
+  if (partial) return <div className="load-bar err"><span className="load-seg"><span className="load-dot bad" /> Meta/Google results were slow to load — showing what arrived. Hit Refresh for the rest.</span></div>
+  return <div className="load-bar done"><span className="load-seg"><span className="load-dot ok" /> All data loaded — Meta &amp; Google in.</span></div>
 }
 const WLABEL = { 3: 'Last 3 days', 7: 'Last 7 days', 14: 'Last 14 days', 21: 'Last 21 days', 28: 'Last 28 days' }
 // One scorecard: value + % change vs the prior equal window (lower cost = good).
@@ -1393,8 +1424,8 @@ function MoversPanel({ list, clients, currency, onPick }) {
 }
 function TrendsTab({ rows, currency, nonce, onPick }) {
   const tr = useTrends(nonce)
-  if (tr.status === 'loading') return <div className="card"><Spinner label="Loading performance trends…" /></div>
-  if (tr.status === 'err' || !tr.data || !tr.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load trends - try Refresh.</p></div>
+  if (tr.status === 'loading') return <div className="tr-list"><TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} /><div className="card"><Spinner label={tr.retry ? `Meta results were slow — retrying (${tr.retry}/${tr.of})…` : 'Loading performance trends…'} /></div></div>
+  if (tr.status === 'err' || !tr.data || !tr.data.clients) return <div className="tr-list"><TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} /><div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load trends - try Refresh.</p></div></div>
   const clients = tr.data.clients
   // Respect the per-client Daily Performance visibility toggles (Settings → Daily
   // performance). Hidden clients drop out entirely; hidden pipelines drop their tile.
@@ -1404,6 +1435,7 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
   const pipeOrder = (pipes) => pipes.slice().sort((a, b) => (a.unlinked ? 1 : 0) - (b.unlinked ? 1 : 0) || String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   return (
     <div className="tr-list">
+      <TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} />
       {list.length > 0 && <MoversPanel list={list} clients={clients} currency={currency} onPick={onPick} />}
       {list.flatMap((r) => {
         const t = clients[r.id]

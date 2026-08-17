@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.260.0 — 2026-08-16 · `PENDING` — Daily Performance: fix flaky Meta results + load indicator
+- **Fix:** on Daily Performance, Meta results often loaded blank until you hit Refresh a few times. The trends pull runs
+  a heavy 56-day, all-accounts Meta query near the function timeout; when it timed out, the empty result was returned
+  **and cached** for 10 minutes, so it showed "0 Meta" until a fast pull happened to land.
+- The server now tracks whether the Meta/Google pulls actually **succeeded** (vs. legitimately empty) and **does not
+  cache a partial pull**, so a timeout no longer sticks. The client **auto-retries** (up to 4× with backoff) on a
+  partial result instead of showing blank — no more manual Refresh.
+- **New load indicator** on the tab: a spinner bar *"Loading Meta & Google results… retrying (n/4)"* while it works,
+  flipping to a green *"All data loaded — Meta & Google in"* that tidies itself away once everything's in. If it still
+  can't get a complete pull after retries, it shows what arrived with a clear "hit Refresh for the rest" note.
+
 ## v3.259.0 — 2026-08-16 · `PENDING` — Surface paused/dormant Meta & Google accounts in discovery
 - **Fix attempt for the 18-vs-23 gap:** the account listing used a metric (`spend`) query, which only returns accounts
   that had **delivery in the window** — so a connected-but-paused ad account (zero spend/impressions) was dropped.

@@ -180,7 +180,7 @@ export async function periodBounds(locationId, from, to) {
 // --- data pulls (paged, bounded) ---
 // opportunities/search returns the opportunity, its contact AND an inline
 // `attributions` array (first/last touch, UTMs) — one call, no N+1 lookups.
-async function allOpportunities(locTok, locationId, from, to, cap = 1500) {
+async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
   // GHL opportunities/search has no startDate/endDate range params, so we page
   // newest-first and filter by createdAt in memory, stopping once a page is
   // entirely older than the window.
@@ -194,7 +194,16 @@ async function allOpportunities(locTok, locationId, from, to, cap = 1500) {
   const spanDays = (fromMs != null && toMs != null) ? Math.max(1, Math.round((toMs - fromMs) / 86400000)) : 30
   const effCap = (cap >= 1000 && spanDays > 120) ? Math.min(5000, spanDays > 300 ? 5000 : 3500) : cap
   const maxPages = Math.min(55, Math.max(25, Math.ceil(effCap / 100) + 3))
+  // Wall-clock guard: on a big account a wide window can page dozens of sequential
+  // requests and blow the ~10s Netlify function budget — which used to surface as a
+  // 502 (nothing loads) or a cached blank. Stop paging once we've spent the budget
+  // and return what we have (an undercount, flagged by the existing `capped` logic
+  // in callers) instead of killing the whole function. Callers that need the full
+  // set can raise deadlineMs.
+  const t0 = Date.now()
+  const deadlineMs = opts.deadlineMs || 6500
   while (guard++ < maxPages && out.length < effCap) {
+    if (Date.now() - t0 > deadlineMs) break
     const q = { location_id: locationId, limit: 100, order: 'added_desc' }
     if (startAfter != null) { q.startAfter = startAfter; q.startAfterId = startAfterId }
     const j = await ghlGet(locTok, '/opportunities/search', q)

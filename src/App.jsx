@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.260.0'
+const APP_VERSION = '3.261.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8086,6 +8086,27 @@ function LogsPanel({ clients }) {
   }
   useEffect(() => { if (tab === 'failures') loadLog() /* eslint-disable-next-line */ }, [tab, days])
   const sevMeta = { error: ['✗', 'bad', 'Error'], 'error-stale': ['◐', 'warn', 'Error (served cached)'], slow: ['⏱', 'warn', 'Slow'], client: ['◱', 'bad', 'Browser'] }
+  // Download the current reliability log (with resolved client names) as a JSON
+  // file — so it can be handed off for diagnosis without needing live log access.
+  const exportLog = (fmt) => {
+    const d = (log && log.data) || {}
+    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, error: e.error || null }))
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    let blob, name
+    if (fmt === 'csv') {
+      const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+      const head = ['when', 'sev', 'scope', 'client', 'ms', 'ageMs', 'error']
+      const lines = [head.join(','), ...entries.map((e) => head.map((k) => esc(e[k])).join(','))]
+      blob = new Blob([lines.join('\n')], { type: 'text/csv' }); name = `caalano360-reliability-log-${days}d-${stamp}.csv`
+    } else {
+      const payload = { exportedAt: new Date().toISOString(), appVersion: APP_VERSION, windowDays: days, count: d.count != null ? d.count : entries.length, summary: d.summary || {}, entries }
+      blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }); name = `caalano360-reliability-log-${days}d-${stamp}.json`
+    }
+    const url = URL.createObjectURL(blob); const a = document.createElement('a')
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+  const canExport = log.status === 'ok' && log.data && Array.isArray(log.data.entries) && log.data.entries.length > 0
   return (
     <div className="logs-panel">
       <div className="card">
@@ -8124,6 +8145,8 @@ function LogsPanel({ clients }) {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div className="chan-toggle">{[1, 3, 7, 14].map((d) => <button key={d} className={days === d ? 'on' : ''} onClick={() => setDays(d)}>{d}d</button>)}</div>
               <button className="set-add" onClick={loadLog}>↻ Refresh</button>
+              <button className="set-add" onClick={() => exportLog('json')} disabled={!canExport} title={canExport ? 'Download the log as JSON (best for sharing / diagnosis)' : 'Nothing to export yet'}>⭳ Export JSON</button>
+              <button className="set-add" onClick={() => exportLog('csv')} disabled={!canExport} title={canExport ? 'Download the log as CSV (opens in Excel/Sheets)' : 'Nothing to export yet'}>⭳ CSV</button>
             </div>
           </div>
           {log.status === 'loading' && <Spinner label="Loading reliability log…" />}

@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.261.0 — 2026-08-17 · `PENDING` — Reliability log export + opportunity-paging budget guard
+- **New:** the Failure logs panel (Super-Admin → Logs) now has **Export JSON** and **CSV** buttons — download the
+  current reliability log (with resolved client names) to share for diagnosis. JSON is best for analysis; CSV opens in
+  Excel/Sheets.
+- **Reliability fix (broad):** `allOpportunities` — the shared GoHighLevel opportunity pager behind most CRM-heavy
+  scopes (won-in-period, blend, weekly, attribution, cohorts, appointments…) — could page dozens of sequential
+  requests on a big account with a wide window and blow the ~10s function budget (surfacing as a 502 or a cached
+  blank). It now has a **wall-clock budget guard** (~6.5s): it stops paging and returns what it has (an undercount,
+  already flagged by callers) instead of killing the whole function. This lifts the single biggest timeout source
+  identified in the failure-path audit.
+
 ## v3.260.0 — 2026-08-16 · `PENDING` — Daily Performance: fix flaky Meta results + load indicator
 - **Fix:** on Daily Performance, Meta results often loaded blank until you hit Refresh a few times. The trends pull runs
   a heavy 56-day, all-accounts Meta query near the function timeout; when it timed out, the empty result was returned

@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.262.0 — 2026-08-17 · `PENDING` — GHL request governor (kill the 429 storms)
+- **The big reliability fix.** The 7-day failure log showed **93% of all errors were GoHighLevel `429 Too Many
+  Requests`** — we were exceeding GHL's per-location rate limit (~100 req/10s) because every scope pages
+  `/opportunities/search` independently and several fire at once (agency overview, a client dashboard opening many
+  tabs). The old fixed-backoff retry made it worse.
+- Added a **GHL request governor** around every GHL call: caps concurrent requests within an invocation (tames the
+  fan-outs) and, on any 429, sets a short **shared cooldown** so every other in-flight/queued GHL call waits too —
+  instead of all of them retrying into the same wall. Honours the `Retry-After` header and uses exponential backoff
+  with jitter. This directly targets the dominant error class in the log.
+- Next in the reliability plan (separate change): a **shared per-location opportunity snapshot cache** so scopes stop
+  re-fetching the same opportunity list — the fix that cuts total GHL request volume across invocations.
+
 ## v3.261.0 — 2026-08-17 · `PENDING` — Reliability log export + opportunity-paging budget guard
 - **New:** the Failure logs panel (Super-Admin → Logs) now has **Export JSON** and **CSV** buttons — download the
   current reliability log (with resolved client names) to share for diagnosis. JSON is best for analysis; CSV opens in

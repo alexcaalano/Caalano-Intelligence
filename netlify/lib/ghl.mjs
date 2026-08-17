@@ -41,6 +41,54 @@ export async function resilientFetch(url, opts = {}, { timeoutMs = 9000, retries
   throw lastErr || new Error(`${label} failed`)
 }
 
+// --- GHL request governor --------------------------------------------------
+// GoHighLevel rate-limits per location (~100 requests / 10s burst). Nearly every
+// scope pages /opportunities/search independently, and when several fire at once
+// (agency overview = one ovrow per client; a client dashboard opening users +
+// ccdrill + appts + speed + blend + attribution) we blow the burst limit and get
+// 429 storms — which the old fixed-backoff retry only made worse. This governor:
+//   1. caps concurrent GHL requests within an invocation (tames the fan-outs), and
+//   2. on ANY 429, sets a short module-wide cooldown so every other in-flight /
+//      queued GHL call waits too, instead of all retrying into the same wall.
+// (Cross-invocation request VOLUME is cut separately by caching the opportunity
+// snapshot so scopes stop re-fetching the same list — see allOpportunities.)
+const GHL_MAX_CONCURRENT = 5
+let _ghlActive = 0; const _ghlWaiters = []; let _ghlCooldownUntil = 0
+function _ghlSlot() { return new Promise((res) => { const go = () => { if (_ghlActive < GHL_MAX_CONCURRENT) { _ghlActive++; res() } else _ghlWaiters.push(go) }; go() }) }
+function _ghlDone() { _ghlActive = Math.max(0, _ghlActive - 1); const w = _ghlWaiters.shift(); if (w) w() }
+// Governed GHL fetch: concurrency-slotted, honours Retry-After, and shares a
+// cooldown across calls so a 429 backs the whole location off rather than
+// triggering a thundering-herd retry. Used by ghlGet / ghlPost.
+async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries = 3 } = {}) {
+  await _ghlSlot()
+  try {
+    let lastErr
+    for (let attempt = 0; attempt < maxTries; attempt++) {
+      const wait = _ghlCooldownUntil - Date.now()
+      if (wait > 0) await sleep(Math.min(wait, 6000))
+      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+      try {
+        const r = await fetch(url, { ...opts, signal: ctrl.signal })
+        clearTimeout(timer)
+        if (r.status === 429) {
+          const ra = Number(r.headers.get('retry-after'))
+          const backoff = (Number.isFinite(ra) && ra > 0) ? Math.min(ra * 1000, 6000) : Math.min(500 * 2 ** attempt, 4000) + Math.floor(Math.random() * 300)
+          _ghlCooldownUntil = Date.now() + backoff // make every other GHL call wait too
+          if (attempt < maxTries - 1) { await sleep(backoff); continue }
+          return r
+        }
+        if (r.status >= 500 && attempt < maxTries - 1) { await sleep(400 * (attempt + 1)); continue }
+        return r
+      } catch (e) {
+        clearTimeout(timer); lastErr = e
+        if (e.name !== 'AbortError' && attempt < maxTries - 1) { await sleep(400 * (attempt + 1)); continue }
+        throw e
+      }
+    }
+    throw lastErr || new Error(`${label} failed`)
+  } finally { _ghlDone() }
+}
+
 export async function loadTokens() { try { return await store().get('agency', { type: 'json' }) } catch { return null } }
 export async function saveTokens(t) { await store().setJSON('agency', t) }
 export async function isConnected() { return !!(await loadTokens()) }
@@ -87,13 +135,13 @@ async function locationToken(locationId) {
 async function ghlGet(locTok, path, query) {
   const url = new URL(API + path)
   for (const [k, v] of Object.entries(query || {})) if (v != null) url.searchParams.set(k, v)
-  const r = await resilientFetch(url, { headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json' } }, { label: `ghl GET ${path}` })
+  const r = await ghlFetch(url, { headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json' } }, { label: `ghl GET ${path}` })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl GET ${path} ${r.status}: ${txt.slice(0, 200)}`)
   return JSON.parse(txt)
 }
 async function ghlPost(locTok, path, bodyObj) {
-  const r = await resilientFetch(API + path, { method: 'POST', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) }, { label: `ghl POST ${path}` })
+  const r = await ghlFetch(API + path, { method: 'POST', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) }, { label: `ghl POST ${path}` })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl POST ${path} ${r.status}: ${txt.slice(0, 200)}`)
   return JSON.parse(txt)

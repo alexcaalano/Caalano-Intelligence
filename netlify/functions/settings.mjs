@@ -19,7 +19,7 @@ export default async (req) => {
       const data = (await store().get(KEY, { type: 'json' }).catch(() => null)) || {}
       // A viewer (client) only gets the settings for their OWN allocated clients,
       // and never the agency-only / sensitive sections (which clients are hidden,
-      // AI context, insights, optlog, competitors, etc.) — so the shared blob can't
+      // AI context, insights, optlog, competitors, etc.) - so the shared blob can't
       // leak other clients' key events, KPI targets or configuration.
       const secret = process.env.AUTH_SECRET
       if (secret) {
@@ -31,7 +31,7 @@ export default async (req) => {
           // Client-keyed sections the viewer UI reads, filtered to their clients.
           for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames']) scoped[s] = pick(data[s])
           // campmap is campaign-name-keyed (needed for spend attribution) and fatigue
-          // is global thresholds — neither is per-client-sensitive; pass as-is.
+          // is global thresholds - neither is per-client-sensitive; pass as-is.
           scoped.campmap = data.campmap || {}
           scoped.fatigue = data.fatigue || {}
           return json({ ok: true, data: scoped })

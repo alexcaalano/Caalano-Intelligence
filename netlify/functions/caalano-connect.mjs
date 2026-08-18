@@ -33,7 +33,7 @@ const page = (title, body) => new Response(
   { headers: { 'content-type': 'text/html', 'cache-control': 'no-store' } },
 )
 
-// Basic-Auth check for the legacy (shared-password) mode — mirrors the edge gate.
+// Basic-Auth check for the legacy (shared-password) mode - mirrors the edge gate.
 function basicOk(req) {
   const pass = process.env.SITE_PASSWORD
   if (!pass) return false
@@ -97,7 +97,7 @@ export default async (req) => {
 
   const code = url.searchParams.get('code')
   if (code) {
-    // Reject any callback whose state we didn't mint (or that has expired) — this
+    // Reject any callback whose state we didn't mint (or that has expired) - this
     // is what stops a forged/CSRF callback from overwriting the agency token. The
     // admin session was already required above.
     const st = url.searchParams.get('state')

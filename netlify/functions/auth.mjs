@@ -1,4 +1,4 @@
-// Auth API for Caalano360 — login, logout, session check, invites and user
+// Auth API for Caalano360 - login, logout, session check, invites and user
 // management. Fronted by the edge gate (which lets this endpoint through so the
 // login screen can reach it); every privileged action re-checks the caller's
 // session + role here, so the open door only leads to the login desk.

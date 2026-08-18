@@ -1,4 +1,4 @@
-// Live data backend — Windsor.ai primary. Reads WINDSOR_API_KEY from Netlify env.
+// Live data backend - Windsor.ai primary. Reads WINDSOR_API_KEY from Netlify env.
 // Query params:
 //   client   : client id (see CLIENTS map)
 //   channel  : meta | google | ghl
@@ -70,7 +70,7 @@ const FIELDS = {
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
 const norm = (s) => String(s ?? '').replace(/[^a-zA-Z0-9]/g, '')
-// Match an ad-account id tolerant of Meta's "act_" prefix — Windsor may return
+// Match an ad-account id tolerant of Meta's "act_" prefix - Windsor may return
 // "act_1234" while the stored/linked id is just "1234" (or the reverse). Without
 // this the account filter drops every row and the deep pull comes back empty even
 // though the account is correctly linked. Ad-account ids are numeric, so stripping
@@ -86,12 +86,12 @@ const FB_LEAD_FIELDS = ['actions_leadgen_grouped', 'actions_onsite_conversion_le
 // Candidate Meta conversion events offered in the per-client conversion picker
 // (Settings → Meta conversions). We query these for the account and only surface
 // the ones that actually fired. Custom pixel conversions (custom_*) are the
-// client's own funnel events (e.g. booked_appointment). Extend freely — unknown
+// client's own funnel events (e.g. booked_appointment). Extend freely - unknown
 // events fall back to a prettified label.
 const META_CONV_CANDIDATES = [
-  ['actions_leadgen_grouped', 'Lead — Instant Form'],
-  ['actions_onsite_conversion_lead_grouped', 'Lead — on-Facebook'],
-  ['actions_offsite_conversion_fb_pixel_lead', 'Lead — website pixel'],
+  ['actions_leadgen_grouped', 'Lead - Instant Form'],
+  ['actions_onsite_conversion_lead_grouped', 'Lead - on-Facebook'],
+  ['actions_offsite_conversion_fb_pixel_lead', 'Lead - website pixel'],
   ['conversions_schedule_total', 'Schedule (booking)'],
   ['conversions_contact_total', 'Contact'],
   ['conversions_submit_application_total', 'Submit application'],
@@ -104,7 +104,7 @@ const META_CONV_CANDIDATES = [
   ['actions_initiate_checkout', 'Initiate checkout'],
   ['actions_add_to_cart', 'Add to cart'],
   ['actions_onsite_conversion_messaging_conversation_started_7d', 'Messaging conversation started'],
-  ['actions_click_to_call_call_confirm', 'Click to call — confirmed'],
+  ['actions_click_to_call_call_confirm', 'Click to call - confirmed'],
   ['conversions_offsite_conversion_fb_pixel_custom_new_lead', 'New lead (custom pixel)'],
   ['conversions_offsite_conversion_fb_pixel_custom_booked_appointment', 'Booked appointment (custom pixel)'],
   ['conversions_offsite_conversion_fb_pixel_custom_booking_confirmed', 'Booking confirmed (custom pixel)'],
@@ -168,7 +168,7 @@ function resolveMetaResult(row) {
   let promoted = {}
   try { promoted = row.adset_promoted_object ? (typeof row.adset_promoted_object === 'string' ? JSON.parse(row.adset_promoted_object) : row.adset_promoted_object) : {} } catch { promoted = {} }
   const evt = String(promoted.custom_event_type || '').toUpperCase()
-  // Lead-gen = Instant Forms (or on-Facebook leads) — count the native lead form
+  // Lead-gen = Instant Forms (or on-Facebook leads) - count the native lead form
   // submissions, not the website pixel lead.
   if (goal === 'LEAD_GENERATION' || goal === 'QUALITY_LEAD') return { field: 'leads_native', label: dest === 'ON_AD' || dest === 'MESSENGER' ? 'On-Facebook leads' : 'Instant form leads' }
   if (goal.includes('CONVERSATION') || goal === 'MESSAGING_PURCHASE_CONVERSION') return { field: 'actions_onsite_conversion_messaging_conversation_started_7d', label: 'Messaging conversations' }
@@ -198,7 +198,7 @@ const resultCountOne = (entity, field) => field === 'inline_link_clicks' ? entit
   : field === 'leads_native' ? ((entity._rf ? (entity._rf.actions_leadgen_grouped || 0) + (entity._rf.actions_onsite_conversion_lead_grouped || 0) : 0) || entity.leads)
   : field ? (entity._rf ? entity._rf[field] || 0 : 0) : entity.leads
 const resultCount = (entity, field) => Array.isArray(field) ? field.reduce((s, f) => s + resultCountOne(entity, f), 0) : resultCountOne(entity, field)
-// All conversion actions an entity accrued (non-zero), for the results hover —
+// All conversion actions an entity accrued (non-zero), for the results hover -
 // so a Lead campaign can still show it also drove messaging, website leads, etc.
 const META_BREAKDOWN = [
   ['actions_leadgen_grouped', 'Instant form leads'], ['actions_onsite_conversion_lead_grouped', 'On-Facebook leads'],
@@ -220,7 +220,7 @@ function tzToday() {
   return new Date(`${g('year')}-${g('month')}-${g('day')}T00:00:00Z`)
 }
 
-// The equal-length period immediately before [from,to] — for ±vs-previous deltas.
+// The equal-length period immediately before [from,to] - for ±vs-previous deltas.
 function prevRange(from, to) {
   if (!from || !to) return { from: null, to: null }
   const f = new Date(from + 'T00:00:00Z'), t = new Date(to + 'T00:00:00Z')
@@ -245,11 +245,11 @@ async function windsorFetch(connector, fields, from, to, preset, key) {
   else { p.set('date_preset', preset || 'last_30d') }
   const url = `https://connectors.windsor.ai/${connector}?${p.toString()}`
   // The Netlify function is hard-stopped at ~10s, so EVERY attempt must finish
-  // inside that budget — otherwise the whole function is killed mid-flight and the
+  // inside that budget - otherwise the whole function is killed mid-flight and the
   // browser gets a raw 502 it can't explain (looks like "nothing loads"). So cap
   // the per-attempt timeout under the limit and skip the retry on larger windows,
   // where there's no time for a second try. buildMeta / buildGoogle fire their
-  // Windsor calls in parallel, so the wall-clock is ~one attempt, not the sum —
+  // Windsor calls in parallel, so the wall-clock is ~one attempt, not the sum -
   // and the heavy optional queries each .catch to []. A window too big to return
   // in time aborts cleanly and the caller surfaces a real "try a smaller range"
   // message instead of hanging.
@@ -367,7 +367,7 @@ async function readMetaPrimary(clientId) {
     const primary = mc ? (Array.isArray(mc.primary) ? mc.primary.filter(Boolean) : (mc.primary ? [mc.primary] : [])) : []
     if (primary.length) {
       // Custom conversion fields (not in the standard result set) must be fetched +
-      // captured explicitly so resultCount can read them — return them as `extra`.
+      // captured explicitly so resultCount can read them - return them as `extra`.
       const ids = [...primary, ...(mc.secondary || [])].filter(Boolean)
       const std = new Set(META_RESULT_FIELDS)
       const extra = [...new Set(ids.filter((f) => !std.has(f)))]
@@ -378,7 +378,7 @@ async function readMetaPrimary(clientId) {
   return null
 }
 // Every client's configured PRIMARY Meta conversion field id, keyed by client id, in
-// one settings read — so the cross-client trends builder can count each client's own
+// one settings read - so the cross-client trends builder can count each client's own
 // optimised event (custom conversions included) instead of just standard leads.
 async function readAllMetaPrimary() {
   const out = {}
@@ -482,17 +482,17 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   // Ad-set query carries the optimisation goal + promoted object so results
   // auto-detect per ad set.
   const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view']
-  // The per-ad-per-day breakdown (adDaily) is by far the heaviest query — for a
+  // The per-ad-per-day breakdown (adDaily) is by far the heaviest query - for a
   // year that's (#ads x 365) rows, which blows the payload and the time budget.
   // For big windows drop it to campaign x day (10-50x smaller); the campaign
-  // daily chart and the day drill's campaign split still work — only the
+  // daily chart and the day drill's campaign split still work - only the
   // per-creative day drill is coarser over long ranges.
   const bigWin = windowDays(from, to, preset) > 120
   const adDayFields = bigWin
     ? ['account_id', 'date', 'campaign', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS]
     : ['account_id', 'date', 'campaign', 'adset_name', 'ad_name', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS]
   // On a big window the per-creative pull is the heaviest essential query. Let it
-  // degrade to [] (empty creative section) rather than abort the whole Meta tab —
+  // degrade to [] (empty creative section) rather than abort the whole Meta tab -
   // the campaign / ad-set tables + totals come from the lighter campRows/adsetRows
   // and still render. Small windows are cheap, so this rarely triggers there.
   const adCatch = windowDays(from, to, preset) > 90
@@ -518,7 +518,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
 // --- Meta Creative Fatigue (proxy) -----------------------------------------
 // Meta's own creative_fatigue signal is webhook-push-only (not queryable), so
 // this approximates the same Low/Med/High from the signals we CAN pull via
-// Windsor: frequency (impressions / reach — the leading indicator), CTR decline
+// Windsor: frequency (impressions / reach - the leading indicator), CTR decline
 // across the period (first half vs second half), and Meta's quality ranking.
 // Scored per creative (aggregated by ad name); indicative, not Meta's exact call.
 const FATIGUE_DEFAULTS = { freqMed: 3, freqHigh: 5, ctrDropMed: 0.15, ctrDropHigh: 0.35, minImpr: 800 }
@@ -560,7 +560,7 @@ function metaFatigue(ads, daily, cfg) {
     // only things that can raise a flag.
     if (freq != null) { if (freq >= c.freqHigh) { s += 2; declining = true; reasons.push(`high frequency (${freq.toFixed(1)}x)`) } else if (freq >= c.freqMed) { s += 1; declining = true; reasons.push(`rising frequency (${freq.toFixed(1)}x)`) } }
     if (drop != null) { if (drop >= c.ctrDropHigh) { s += 2; declining = true; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } else if (drop >= c.ctrDropMed) { s += 1; declining = true; reasons.push(`CTR down ${Math.round(drop * 100)}%`) } }
-    // Quality ranking is a relevance signal, not fatigue on its own — it can only
+    // Quality ranking is a relevance signal, not fatigue on its own - it can only
     // escalate a creative that's already showing wear, never trigger a flag alone.
     if (belowAvg && declining) { s += 1; reasons.push('below-average quality ranking') }
     const level = !declining ? 'Low' : s >= 3 ? 'High' : 'Medium'
@@ -593,7 +593,7 @@ async function readFatigueConfig() {
 // --- Meta anomaly / delivery-health signal (Meta Insights tab) --------------
 // Compares the selected window against the equal prior window at account level
 // and flags material moves (CPL, CTR, frequency, spend/leads) plus delivery
-// stalls and high-spend zero-lead ads. Pure Windsor data — no Meta App needed.
+// stalls and high-spend zero-lead ads. Pure Windsor data - no Meta App needed.
 async function buildAnomalies(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
@@ -619,25 +619,25 @@ async function buildAnomalies(accountId, from, to, preset, key) {
   // CTR decline (creative/audience wear).
   if (material && c.ctr != null && p.ctr != null && p.ctr > 0) {
     const ch = pct(c.ctr, p.ctr)
-    if (ch <= -0.35) alerts.push({ metric: 'ctr', severity: 'high', dir: 'down', pct: Math.round(-ch * 100), cur: c.ctr, prev: p.ctr, title: 'Click-through rate dropped', detail: `down ${Math.round(-ch * 100)}% — creative or audience wearing out` })
+    if (ch <= -0.35) alerts.push({ metric: 'ctr', severity: 'high', dir: 'down', pct: Math.round(-ch * 100), cur: c.ctr, prev: p.ctr, title: 'Click-through rate dropped', detail: `down ${Math.round(-ch * 100)}% - creative or audience wearing out` })
     else if (ch <= -0.2) alerts.push({ metric: 'ctr', severity: 'med', dir: 'down', pct: Math.round(-ch * 100), cur: c.ctr, prev: p.ctr, title: 'Click-through rate slipping', detail: `down ${Math.round(-ch * 100)}% vs the prior window` })
   }
-  // Frequency (audience saturation) — absolute, not relative.
+  // Frequency (audience saturation) - absolute, not relative.
   if (material && c.freq != null) {
-    if (c.freq >= 6) alerts.push({ metric: 'freq', severity: 'high', cur: c.freq, prev: p.freq, title: 'High frequency', detail: `each person saw an ad ${c.freq.toFixed(1)}x on average — audience saturating` })
-    else if (c.freq >= 4) alerts.push({ metric: 'freq', severity: 'med', cur: c.freq, prev: p.freq, title: 'Frequency climbing', detail: `${c.freq.toFixed(1)}x average frequency — widen the audience or refresh creative` })
+    if (c.freq >= 6) alerts.push({ metric: 'freq', severity: 'high', cur: c.freq, prev: p.freq, title: 'High frequency', detail: `each person saw an ad ${c.freq.toFixed(1)}x on average - audience saturating` })
+    else if (c.freq >= 4) alerts.push({ metric: 'freq', severity: 'med', cur: c.freq, prev: p.freq, title: 'Frequency climbing', detail: `${c.freq.toFixed(1)}x average frequency - widen the audience or refresh creative` })
   }
-  // Delivery stall — spend collapsed vs a materially-spending prior window.
+  // Delivery stall - spend collapsed vs a materially-spending prior window.
   if (p.spend >= 100 && c.spend < p.spend * 0.4) {
-    alerts.push({ metric: 'spend', severity: 'high', dir: 'down', pct: Math.round((1 - (p.spend ? c.spend / p.spend : 0)) * 100), cur: c.spend, prev: p.spend, title: 'Spend stalled', detail: `only ${p.spend ? Math.round((c.spend / p.spend) * 100) : 0}% of the prior window's spend delivered — check budgets and delivery` })
+    alerts.push({ metric: 'spend', severity: 'high', dir: 'down', pct: Math.round((1 - (p.spend ? c.spend / p.spend : 0)) * 100), cur: c.spend, prev: p.spend, title: 'Spend stalled', detail: `only ${p.spend ? Math.round((c.spend / p.spend) * 100) : 0}% of the prior window's spend delivered - check budgets and delivery` })
   }
   // Spend up but leads not keeping pace.
   if (material && p.spend > 0) {
     const sCh = pct(c.spend, p.spend), lCh = p.leads ? pct(c.leads, p.leads) : null
     if (sCh >= 0.6 && (lCh == null || lCh < sCh * 0.5)) alerts.push({ metric: 'spendleads', severity: 'med', dir: 'up', pct: Math.round(sCh * 100), cur: c.spend, prev: p.spend, title: 'Spend up, leads flat', detail: `spend up ${Math.round(sCh * 100)}% but leads ${lCh == null ? 'not tracking' : (lCh < 0 ? `down ${Math.round(-lCh * 100)}%` : `only up ${Math.round(lCh * 100)}%`)}` })
   }
-  // Zero-lead spend — the account is spending but reporting no leads at all.
-  if (c.spend >= 100 && c.leads === 0) alerts.push({ metric: 'noleads', severity: 'high', cur: c.spend, prev: null, title: 'Spending with no leads', detail: `${Math.round(c.spend)} spent this window with zero reported leads — check tracking and delivery` })
+  // Zero-lead spend - the account is spending but reporting no leads at all.
+  if (c.spend >= 100 && c.leads === 0) alerts.push({ metric: 'noleads', severity: 'high', cur: c.spend, prev: null, title: 'Spending with no leads', detail: `${Math.round(c.spend)} spent this window with zero reported leads - check tracking and delivery` })
   // Worst-offender ads: highest spend with zero leads (aggregated by ad name).
   const adAgg = new Map()
   for (const r of adRows) { const n = r.ad_name; if (!n) continue; const e = adAgg.get(n) || { name: n, campaign: r.campaign, adset: r.adset_name, thumb: r.thumbnail_url, spend: 0, leads: 0, clicks: 0 }; e.spend += num(r.spend); e.leads += fbLeads(r); e.clicks += num(r.clicks); if (!e.thumb && r.thumbnail_url) e.thumb = r.thumbnail_url; adAgg.set(n, e) }
@@ -669,18 +669,18 @@ function rollupGoogle(cg, kw, st, dy, days) {
   const cleanAg = (r) => r.ad_group_name || (r.ad_group ? String(r.ad_group).split('/').pop() : null)
   const campaigns = [...aggBy(cg, (r) => r.campaign).entries()].map(([name, v]) => ({ name, status: 'Enabled', ...v })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
   // Ad groups keyed by (campaign, ad group) so each row belongs to exactly one
-  // campaign — this is what makes campaign→ad-group drill-down filter correctly.
+  // campaign - this is what makes campaign→ad-group drill-down filter correctly.
   const agM = new Map()
   for (const r of cg) { const ag = cleanAg(r), camp = r.campaign; if (!ag || !camp) continue; const k = camp + '|' + ag; const e = agM.get(k) || { name: ag, campaign: camp, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); agM.set(k, e) }
   const adGroups = [...agM.values()].filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost)
-  // Keywords keyed by (campaign, ad group, keyword) — a keyword that runs in two
+  // Keywords keyed by (campaign, ad group, keyword) - a keyword that runs in two
   // campaigns is two rows, each scoped, so drill-down never loses/merges them.
   const kwM = new Map()
-  for (const r of kw) { const t = r.keyword_text; if (!t) continue; const camp = r.campaign || null, ag = cleanAg(r) || null; const k = camp + '|' + ag + '|' + t; const e = kwM.get(k) || { text: t, campaign: camp, adGroup: ag, match: titleCase(r.match_type) || '—', qsSum: 0, qsN: 0, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); if (num(r.quality_score)) { e.qsSum += num(r.quality_score); e.qsN++ } kwM.set(k, e) }
+  for (const r of kw) { const t = r.keyword_text; if (!t) continue; const camp = r.campaign || null, ag = cleanAg(r) || null; const k = camp + '|' + ag + '|' + t; const e = kwM.get(k) || { text: t, campaign: camp, adGroup: ag, match: titleCase(r.match_type) || '-', qsSum: 0, qsN: 0, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); if (num(r.quality_score)) { e.qsSum += num(r.quality_score); e.qsN++ } kwM.set(k, e) }
   const keywords = [...kwM.values()].map((e) => ({ text: e.text, campaign: e.campaign, adGroup: e.adGroup, match: e.match, qs: e.qsN ? Math.max(1, Math.min(10, Math.round(e.qsSum / e.qsN))) : '', cost: e.cost, impressions: e.impressions, clicks: e.clicks, conversions: e.conversions })).filter((x) => x.cost > 0).sort((a, b) => b.cost - a.cost).slice(0, 400)
   const mt = new Map()
   for (const r of kw) { const t = titleCase(r.match_type); if (!t) continue; const e = mt.get(t) || { type: t, cost: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.clicks += num(r.clicks); e.conversions += num(r.conversions); mt.set(t, e) }
-  // Search terms keyed by (campaign, ad group, keyword, term) — carries its
+  // Search terms keyed by (campaign, ad group, keyword, term) - carries its
   // matched keyword so keyword↔search-term cross-filtering works both ways.
   const stM = new Map()
   for (const r of st) { const term = r.search_term; if (!term) continue; const camp = r.campaign || null, ag = cleanAg(r) || null; const k = camp + '|' + ag + '|' + term; const e = stM.get(k) || { term, campaign: camp, adGroup: ag, keyword: null, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += num(r.spend); e.impressions += num(r.impressions); e.clicks += num(r.clicks); e.conversions += num(r.conversions); stM.set(k, e) }
@@ -718,7 +718,7 @@ async function buildOverview(from, to, preset, key, wonBasis = 'created') {
   // Previous equal-length period for the agency comparison table (fast Windsor
   // ad metrics only; the GHL columns fetch their own prev per client lazily).
   const pr = prevRange(from, to)
-  // Per-client won revenue + won count — straight from the GoHighLevel API, fanned
+  // Per-client won revenue + won count - straight from the GoHighLevel API, fanned
   // out across accounts with a small concurrency pool and a hard time budget so a
   // large agency can't push the function past its ~10s limit. Any account that is
   // slow or whose marketplace app isn't installed is simply skipped (partial CRM),
@@ -819,7 +819,7 @@ async function buildTrends(key) {
   // Track whether the Meta / Google pulls actually SUCCEEDED (vs. legitimately
   // returned no rows). This 56-day, all-accounts Meta query sits near the function
   // timeout, so when it times out we must NOT let the blank result get cached and
-  // shown as "0 Meta results" — the caller uses these flags to skip caching and
+  // shown as "0 Meta results" - the caller uses these flags to skip caching and
   // auto-retry instead of the user hammering Refresh.
   let metaOk = true, googleOk = true
   const [fb, gg, opps, pipes] = await Promise.all([
@@ -956,7 +956,7 @@ async function buildTrends(key) {
       }
     })
     // Last 28 days, chronological (oldest first), per channel: ad spend + ad-reported
-    // results (Meta leads / Google conversions) + booked calls + deals won — for the
+    // results (Meta leads / Google conversions) + booked calls + deals won - for the
     // daily graph and its key-event overlay (Phase 3: booked / won markers by day).
     const daily = []
     for (let i = 27; i >= 0; i--) daily.push({ date: days[i], metaSpend: Math.round(E.metaSpend[i] * 100) / 100, metaLeads: Math.round(E.metaLeads[i]), gSpend: Math.round(E.gSpend[i] * 100) / 100, gConv: Math.round(E.gConv[i]), booked: Math.round(blendedBooked[i]), won: Math.round(E.wonAll[i]) })
@@ -996,7 +996,7 @@ async function buildTrends(key) {
       route(E.campMeta, pMS, uMS); route(E.campMetaLeads, pML, uML)
       route(E.campGoogle, pGS, uGS); route(E.campGoogleConv, pGC, uGC)
       // Full tr-shaped windows: meta / google / blended, with booked from the
-      // pipeline's own CRM (blended across channels — used only for the booking-rate
+      // pipeline's own CRM (blended across channels - used only for the booking-rate
       // sub-stat, matching how the client tile reads booked ÷ results).
       const r2 = (v) => Math.round(v * 100) / 100
       const tileWindows = (mS, mL, gS, gC, booked, pipeObj) => {
@@ -1121,7 +1121,7 @@ async function buildWeekly(c, weeks, key, wonBasis = 'created') {
   const end = dstr(endSun)
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
   // Closed won basis buckets wins by their WON-date, which can fall in a week for a
-  // deal created months earlier — so widen the opp fetch back ~180 days to catch them.
+  // deal created months earlier - so widen the opp fetch back ~180 days to catch them.
   const oppFrom = wonBasis === 'closed' ? new Date(new Date(start + 'T00:00:00Z').getTime() - 180 * 86400000).toISOString().slice(0, 10) : start
   // CRM (opportunities + pipelines) straight from the GoHighLevel API; Meta / Google from Windsor.
   const [fb, gg, opps, pipes] = await Promise.all([
@@ -1169,7 +1169,7 @@ async function buildWeekly(c, weeks, key, wonBasis = 'created') {
   return { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, weeks: out, lostReasons }
 }
 
-// Geographic conversions — where conversions happen. Google Ads geo reports
+// Geographic conversions - where conversions happen. Google Ads geo reports
 // can't always combine a location dim with other segments, so we probe a few
 // candidate Windsor field names one at a time and use the first that returns
 // populated, conversion-bearing rows. Returns {dim, locations:[{name,conversions,cost}]}.
@@ -1188,7 +1188,7 @@ async function fetchGeo(accountId, from, to, preset, key) {
       }
       const list = [...m.values()].filter((x) => x.conversions > 0).sort((a, b) => b.conversions - a.conversions)
       if (list.length) return { dim, locations: list.slice(0, 40) }
-    } catch { /* field not recognised — try the next candidate */ }
+    } catch { /* field not recognised - try the next candidate */ }
   }
   return { dim: null, locations: [] }
 }
@@ -1209,7 +1209,7 @@ async function buildGoogle(accountId, from, to, preset, key) {
     // Landing Page Performance (Google's expanded landing-page report). Its own
     // query so a failure can't blank the campaigns/keywords; aggregated by URL.
     windsorFetch('google_ads', ['account_id', 'expanded_landing_page_view_expanded_final_url', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
-    // Ad-level (ad_id) rows — Google Search RSAs have no creative name, so the UI
+    // Ad-level (ad_id) rows - Google Search RSAs have no creative name, so the UI
     // labels them by ad ID (+ a friendly-name map from Settings) and scopes them
     // to the drilled-into campaign / ad group. Own query so a field mismatch can't
     // blank the rest of the Google view.
@@ -1223,7 +1223,7 @@ async function buildGoogle(accountId, from, to, preset, key) {
   roll.geo = geo
   // Landing pages by spend: which destination PAGES the budget drove traffic to.
   // Google's expanded URL carries every UTM / gclid param, so strip the query
-  // string to the origin+path — otherwise each keyword variant is a separate
+  // string to the origin+path - otherwise each keyword variant is a separate
   // "page". Aggregate by that clean page URL.
   const cleanUrl = (u) => { try { const x = new URL(u); return (x.origin + x.pathname).replace(/\/$/, '') || x.origin } catch { return String(u).split('?')[0].split('#')[0].replace(/\/$/, '') } }
   const lpM = new Map()
@@ -1236,7 +1236,7 @@ async function buildGoogle(accountId, from, to, preset, key) {
   }
   roll.landingPages = [...lpM.values()].filter((x) => x.cost > 0 || x.clicks > 0).sort((a, b) => b.cost - a.cost).slice(0, 200)
   // Ads keyed by (campaign, ad group, ad id) so each ad belongs to exactly one
-  // ad group — this lets the UI filter ads by the drilled-into campaign/ad group.
+  // ad group - this lets the UI filter ads by the drilled-into campaign/ad group.
   const adM = new Map()
   for (const r of ads) {
     const id = r.ad_id != null && String(r.ad_id).trim() ? String(r.ad_id).trim() : null; if (!id) continue
@@ -1272,7 +1272,7 @@ async function buildGoogle(accountId, from, to, preset, key) {
 const GA4_CONNECTOR = 'google_analytics_4'
 // Windsor's GA4 connector slug has changed across their API versions, and calling
 // an unknown slug returns HTTP 400 `{"error":"We don't have this connector yet!"}`
-// — which is exactly what was blanking the Analytics discovery even though the
+// - which is exactly what was blanking the Analytics discovery even though the
 // account HAS GA4 properties connected. So we probe a short candidate list once
 // and cache whichever slug Windsor actually accepts. Ordered most-likely first.
 const GA4_SLUG_CANDIDATES = ['googleanalytics4', 'google_analytics_4', 'google_analytics', 'ga4', 'google_analytics4']
@@ -1288,10 +1288,10 @@ async function resolveGa4Slug(key) {
         const p = new URLSearchParams({ api_key: key, fields: 'account_id', date_preset: 'last_7d' })
         const r = await resilientFetch(`https://connectors.windsor.ai/${slug}?${p.toString()}`, {}, { label: `Windsor ga4-probe ${slug}`, timeoutMs: 6000, retries: 0 })
         const txt = await r.text().catch(() => '')
-        // A recognised connector answers 200 (rows or empty) or a param/auth error —
+        // A recognised connector answers 200 (rows or empty) or a param/auth error -
         // but never "we don't have this connector". Anything else means valid slug.
         if (r.status !== 404 && !/don'?t\s+have\s+this\s+connector/i.test(txt)) { _ga4Slug = slug; return slug }
-      } catch { /* transient — try the next candidate */ }
+      } catch { /* transient - try the next candidate */ }
     }
     _ga4Slug = GA4_SLUG_CANDIDATES[0]
     return _ga4Slug
@@ -1482,7 +1482,7 @@ async function buildBlend(c, from, to, preset, key) {
   const metaSpend = sum(metaCamps, 'spend'), metaLeads = sum(metaCamps, 'conv'), metaImpr = sum(metaCamps, 'impressions'), metaClicks = sum(metaCamps, 'clicks')
   const googleSpend = sum(googleCamps, 'spend'), googleConv = sum(googleCamps, 'conv'), googleImpr = sum(googleCamps, 'impressions'), googleClicks = sum(googleCamps, 'clicks')
   const idx = stageIndex(pipes)
-  // Per-pipeline funnels so the UI can offer a pipeline selector — a "booking"
+  // Per-pipeline funnels so the UI can offer a pipeline selector - a "booking"
   // means different things across pipelines, so they're kept separate.
   const nameOf = {}, stagesOf = {}
   for (const p of pipes) {
@@ -1491,7 +1491,7 @@ async function buildBlend(c, from, to, preset, key) {
     stagesOf[p.pipeline_id] = asArray(p.pipeline_stages).map((s) => ({ id: s.id, name: s.name, pos: s.position })).sort((a, b) => a.pos - b.pos)
   }
   // Build a full CRM view (account totals + per-pipeline funnels) for any opp
-  // subset — the whole account, or one assigned user.
+  // subset - the whole account, or one assigned user.
   const crmView = (rows) => {
     const byPipe = new Map()
     for (const r of rows) { const pid = r.opportunity_pipeline_id || 'none'; if (!byPipe.has(pid)) byPipe.set(pid, []); byPipe.get(pid).push(r) }
@@ -1544,8 +1544,8 @@ async function buildBlend(c, from, to, preset, key) {
 }
 
 // --- Executive health score ------------------------------------------------
-// A transparent 0-100 score across four pillars — Marketing, Sales, Operations,
-// Revenue — each a small set of real metrics compared to a reference (the
+// A transparent 0-100 score across four pillars - Marketing, Sales, Operations,
+// Revenue - each a small set of real metrics compared to a reference (the
 // previous equal-length period, the honest baseline until daily snapshots build
 // a rolling average). NO AI is used here: every figure is a plain calculation
 // the UI shows the working for. Pillars with no data drop out and the composite
@@ -1585,7 +1585,7 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
   const pSpend = prev ? prev.adSpend : null
   const has = { crm: !!c.ghl, meta: !!c.meta, google: !!c.google, prev: !!prev }
 
-  // Marketing — lead generation & paid efficiency. CRM lead count is the real
+  // Marketing - lead generation & paid efficiency. CRM lead count is the real
   // signal; a client with no CRM falls back to ad-reported conversions.
   const leads = c.ghl ? crm.leads : p.adConversions
   const pLeads = c.ghl ? (pc.leads != null ? pc.leads : null) : null
@@ -1596,7 +1596,7 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
     { label: 'Cost per lead', actual: cpl, ref: pCpl, fmt: 'money', score: scoreVs(cpl, pCpl, false) },
   ])
 
-  // Sales — conversion quality through the pipeline.
+  // Sales - conversion quality through the pipeline.
   const qRate = safeDiv(crm.qualified, crm.leads), pqRate = safeDiv(pc.qualified, pc.leads)
   const bRate = safeDiv(crm.booked, crm.leads), pbRate = safeDiv(pc.booked, pc.leads)
   const wRate = safeDiv(crm.won, crm.leads), pwRate = safeDiv(pc.won, pc.leads)
@@ -1606,7 +1606,7 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
     { label: 'Lead → won', actual: wRate, ref: pwRate, fmt: 'pct', score: scoreVs(wRate, pwRate, true) },
   ])
 
-  // Operations — execution on the leads booked (did they actually show up).
+  // Operations - execution on the leads booked (did they actually show up).
   const showRate = safeDiv(crm.shown, crm.booked), pShowRate = safeDiv(pc.shown, pc.booked)
   // Prefer a vs-previous score; fall back to an absolute band (80% good, 40% poor)
   // so a first-ever period still scores instead of showing blank.
@@ -1615,7 +1615,7 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
     { label: 'Show rate', actual: showRate, ref: pShowRate, fmt: 'pct', score: showScore },
   ])
 
-  // Revenue — realised money & deal quality.
+  // Revenue - realised money & deal quality.
   const revenue = pillar('Revenue', [
     { label: 'Revenue', actual: crm.revenue, ref: pc.revenue, fmt: 'money', score: scoreVs(crm.revenue, pc.revenue, true) },
     { label: 'Deals won', actual: crm.won, ref: pc.won, fmt: 'int', score: scoreVs(crm.won, pc.won, true) },
@@ -1629,7 +1629,7 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
   for (const k of wKeys) { const s = pillars[k].score; const wt = num(w[k]); if (s != null && wt > 0) { acc += s * wt; wSum += wt } }
   const composite = wSum ? Math.round(acc / wSum) : null
 
-  // Forecast — run-rate projection of the current period from elapsed time,
+  // Forecast - run-rate projection of the current period from elapsed time,
   // against the previous full period. Elapsed fraction from the client timezone
   // period bounds; a completed period paces at 100%.
   let forecast = null
@@ -1681,7 +1681,7 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
 function prettyCta(v) { return v ? titleCase(String(v).replace(/_/g, ' ')) : '' }
 function classifyDest(link, objType) {
   const l = String(link || '').toLowerCase()
-  // No external link ⇒ on-Facebook destination — almost always a Meta lead form
+  // No external link ⇒ on-Facebook destination - almost always a Meta lead form
   // for lead-gen accounts. (User can override in the cockpit.)
   if (!l) return 'Meta Lead Form'
   if (/leadconnector|gohighlevel|msgsndr/.test(l)) return 'Caalano Systems landing'
@@ -1830,7 +1830,7 @@ const socialStore = () => getStore({ name: 'caalano-social', consistency: 'stron
 async function loadSocialSnap(clientId) { try { return (await socialStore().get(clientId, { type: 'json' })) || null } catch { return null } }
 // Lean per-day capture (everything the totals + daily views need), plus the
 // point-in-time followers/media count and audience demographics. No heavy media
-// bodies — this is the durable, storable core.
+// bodies - this is the durable, storable core.
 async function socialPerDay(soc, from, to, key) {
   const igId = soc.ig, fbo = soc.fbo
   const F = (c, f) => windsorFetch(c, f, from, to, null, key).catch(() => [])
@@ -1914,7 +1914,7 @@ export async function runSocialSnapshots() {
   return { ok: true, count: results.length, results }
 }
 
-// Lean per-month organic rollup (aggregate metrics only — no media/demographics),
+// Lean per-month organic rollup (aggregate metrics only - no media/demographics),
 // for the KPI + 6-month trend view. Net followers come from the daily follower
 // deltas, so they're historically accurate even though absolute followers is
 // "current only". Returns per-platform + a blended summary for one month.
@@ -1959,11 +1959,11 @@ async function socialMonth(soc, from, to, key) {
 }
 
 // Viewer (client) tab enforcement. A viewer may only reach the windsor requests
-// that the tabs allocated to them actually fetch — every other scope/channel
+// that the tabs allocated to them actually fetch - every other scope/channel
 // (agency tools, report generation, diagnostics, and tabs they weren't given) is
 // denied even for a client they can otherwise see. Keyed `scope:<x>` (the scope
 // endpoints) or `channel:<x>` (the bare channel fetches: blend/meta/google). The
-// value is the set of tabs that legitimately issue it — a viewer passes if they
+// value is the set of tabs that legitimately issue it - a viewer passes if they
 // hold at least one. Anything not listed here is admin/agency-only for viewers.
 const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'optlog']
 const VIEWER_REQ_TABS = {
@@ -1978,9 +1978,9 @@ const VIEWER_REQ_TABS = {
   'scope:appts': ['appts'],
   'scope:speed': ['timing'],
   'scope:speedscan': ['timing'],
-  // Contact-notes drill — reachable from several tabs' drill-downs; allow for any.
+  // Contact-notes drill - reachable from several tabs' drill-downs; allow for any.
   'scope:oppnotes': VIEWER_TABS_ALL,
-  // Key-event people drill — reachable from the Meta/Google/Caalano360 funnels.
+  // Key-event people drill - reachable from the Meta/Google/Caalano360 funnels.
   'scope:keypeople': VIEWER_TABS_ALL,
 }
 function viewerAllowed(me, scope, channel) {
@@ -2026,7 +2026,7 @@ function applyClosedBasisBlend(blend, wc) {
 // Server-side result cache + reliability telemetry
 // ---------------------------------------------------------------------------
 // The heavy client-scoped views (Users, CRM, Meta, Google, appointments…) each
-// rebuild from Windsor / GoHighLevel on every request — multi-second work that
+// rebuild from Windsor / GoHighLevel on every request - multi-second work that
 // bumps the ~10s function ceiling and 502s when an upstream is slow. A short
 // blob cache lets repeat loads (tab switches, teammates, the same client
 // reopened) return in <1s and, crucially, lets a rebuild that fails fall back
@@ -2042,7 +2042,7 @@ const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
 // biggest load-time win. Safe to cache only for UNRESTRICTED callers (no
-// per-caller filtering) — the gate below enforces that, and each builder already
+// per-caller filtering) - the gate below enforces that, and each builder already
 // returns cache=!filtered, so a restricted caller still rebuilds live.
 const CACHEABLE_SCOPES_NOCLIENT = new Set(['agency', 'coverage'])
 async function readResultCache(key) { try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } }
@@ -2054,7 +2054,7 @@ function cacheKeyFrom(url) {
   return 'v1:' + encodeURIComponent(entries.map(([k, v]) => `${k}=${v}`).join('&'))
 }
 
-// Reliability log — a capped, per-day ring buffer of failures + slow builds so we
+// Reliability log - a capped, per-day ring buffer of failures + slow builds so we
 // can see WHICH scope/client/upstream is unreliable and drive those toward live
 // (no cache). Blobs have no atomic append, so we read-modify-write the day's
 // bucket; failures are rare enough that the occasional lost concurrent write is
@@ -2092,14 +2092,14 @@ export default async (req) => {
   // cached, or a transient failure gets replayed by the CDN.
   // SECURITY: when the multi-user login system is active (AUTH_SECRET set), the
   // per-caller access checks below (canSeeClient / restrictTo) run INSIDE this
-  // function — a shared-CDN cache hit would skip them and could replay one
+  // function - a shared-CDN cache hit would skip them and could replay one
   // caller's authorised payload to another (cross-client leak). So cache only in
   // the browser (`private`) when auth is on; keep shared-CDN caching (`public`)
   // only in single-user mode where every caller has identical access.
   const cacheScope = process.env.AUTH_SECRET ? 'private' : 'public'
   // Populated after access control (below) for cacheable client-scoped requests.
   let _ckey = null       // blob cache key for this request
-  let _staleHit = null   // last cached payload (any age) — for stale-on-error fallback
+  let _staleHit = null   // last cached payload (any age) - for stale-on-error fallback
   const mkResponse = (obj, status, cache) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
   const json = async (obj, status = 200, cache = false) => {
     const softErr = status === 200 && obj && obj.error
@@ -2129,7 +2129,7 @@ export default async (req) => {
   // client clears on the next cold start.
   try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
 
-  // Access control — only active when the multi-user login system is enabled
+  // Access control - only active when the multi-user login system is enabled
   // (AUTH_SECRET set). A signed-in caller is checked against their client
   // allocation; a null caller means the trusted Basic-Auth break-glass path,
   // which keeps full access. Client-scoped requests must name an allowed
@@ -2151,14 +2151,14 @@ export default async (req) => {
     if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (client && restrictedSet.has(client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (!client && me.role === 'viewer') return json({ error: 'No access to agency-wide data.' }, 403)
-    // Viewers are further limited to the exact scopes their allocated tabs fetch —
+    // Viewers are further limited to the exact scopes their allocated tabs fetch -
     // so a client can never reach an unassigned view, an agency tool (creative
     // cockpit, report generation, diagnostics) or another view's data by crafting
     // a direct request, even for a client they're allowed to see.
     if (client && me.role === 'viewer' && !viewerAllowed(me, scope, channel)) return json({ error: 'This view isn’t available on your account.' }, 403)
   }
   // Restricted staff (a User limited to specific accounts) only ever see their
-  // own accounts inside agency-wide aggregates — enforced server-side so the
+  // own accounts inside agency-wide aggregates - enforced server-side so the
   // raw response can't leak other clients. null = no restriction (admin / staff
   // with all-accounts / the trusted Basic-Auth path). `canView` also drops any
   // Super-Admin-only client for a non-super caller.
@@ -2216,7 +2216,7 @@ export default async (req) => {
   // report you export or reopen never shifts as live data updates.
   //
   // WON ATTRIBUTION: wins/revenue are captured by WON DATE (status-change to
-  // "won"), not lead-created date — so a lead created in an earlier month but
+  // "won"), not lead-created date - so a lead created in an earlier month but
   // closed in the report month counts in the report month. See wonInPeriod().
   const monthlyStore = () => getStore({ name: 'caalano-monthly', consistency: 'strong' })
   const monthKey = (cl, m) => `${cl}:${m}`
@@ -2270,7 +2270,7 @@ export default async (req) => {
         meta[m] = { ...(meta[m] || {}), publishedAt: null, publishedBy: null }; await store.setJSON(metaKey, meta)
         return json({ ok: true, month: m, published: false })
       }
-      // Default POST = generate/freeze a month (does NOT touch the published copy —
+      // Default POST = generate/freeze a month (does NOT touch the published copy -
       // a re-generated report stays on the previously-published version for clients
       // until it's re-published).
       if (!body || !body.month || !body.report) return json({ error: 'month + report required' }, 400)
@@ -2316,7 +2316,7 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'social') {
     if (url.searchParams.get('list')) {
       // Only list clients whose organic profile is actually returning data from
-      // Windsor right now — so removing a connector drops it from the dropdown.
+      // Windsor right now - so removing a connector drops it from the dropdown.
       // A light probe (followers / page fans) per client; falls back to the full
       // set if every probe fails (transient), so the dropdown never goes empty.
       const ids = Object.keys(SOCIAL).filter((id) => canView(id))
@@ -2342,7 +2342,7 @@ export default async (req) => {
     const soc = SOCIAL[client]
     if (!soc) return json({ months: [], connected: false })
     const n = Math.max(1, Math.min(12, parseInt(url.searchParams.get('months') || '6', 10)))
-    // Rolling window — always ends on the current month so the absolute-follower
+    // Rolling window - always ends on the current month so the absolute-follower
     // reconstruction (from today's count back through the monthly net deltas) is exact.
     const anchor = new Date()
     let y = anchor.getUTCFullYear(), mo = anchor.getUTCMonth() // 0-based
@@ -2357,7 +2357,7 @@ export default async (req) => {
     }
     list.reverse() // oldest → newest for charting
     try {
-      // Current absolute follower counts (per platform) — the anchor for
+      // Current absolute follower counts (per platform) - the anchor for
       // reconstructing each month's total followers (start → end).
       let curIg = 0, curFb = 0
       if (soc.ig) { const r = await windsorFetch('instagram', ['account_id', 'followers_count'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.ig))).catch(() => []); curIg = Math.max(0, ...r.map((x) => num(x.followers_count)), 0) }
@@ -2376,7 +2376,7 @@ export default async (req) => {
       // Facebook paid vs organic new followers. Windsor flattens Facebook's
       // paid/non-paid fan-add breakdown into suffixed fields; names vary, so probe
       // a few candidates over the whole window (each returns daily rows we bucket by
-      // month — no per-month calls) and fall back to total−paid where needed.
+      // month - no per-month calls) and fall back to total−paid where needed.
       let followerSplitField = null
       if (soc.fbo) {
         const fbFilt = (rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.fbo))
@@ -2468,7 +2468,7 @@ export default async (req) => {
       const dayMs = 86400000; const span = []
       if (from && to) { const t1 = Date.parse(from + 'T00:00:00Z'), t2 = Date.parse(to + 'T00:00:00Z'); if (!isNaN(t1) && !isNaN(t2) && t2 >= t1 && (t2 - t1) / dayMs < 400) for (let t = t1; t <= t2; t += dayMs) span.push(new Date(t).toISOString().slice(0, 10)) }
       const daily = (span.length ? span : Object.keys(byDay).sort()).map((d) => byDay[d] || { date: d, posts: 0, engagement: 0, likes: 0, comments: 0 })
-      // Weekday cadence (posts + avg engagement per weekday) — "best day to post".
+      // Weekday cadence (posts + avg engagement per weekday) - "best day to post".
       const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
       const wdPosts = [0, 0, 0, 0, 0, 0, 0], wdEng = [0, 0, 0, 0, 0, 0, 0]
       for (const p of posts) { const t = Date.parse(p.date + 'T00:00:00Z'); if (isNaN(t)) continue; const wd = new Date(t).getUTCDay(); wdPosts[wd]++; wdEng[wd] += p.engagement }
@@ -2484,7 +2484,7 @@ export default async (req) => {
     } catch (e) { return json({ ig: null, error: String(e.message || e) }, 200) }
   }
 
-  // Generic Windsor connector probe — hit any connector slug and see the accounts
+  // Generic Windsor connector probe - hit any connector slug and see the accounts
   // + field shape it returns. Used to wire the public IG/FB competitor connector
   // once its exact slug/fields are known. e.g.
   //   ?scope=windsorprobe&connector=instagram_public&wfields=account_id,account_name,username,followers_count&from=2026-06-01&to=2026-06-30
@@ -2565,7 +2565,7 @@ export default async (req) => {
         // Compute each month with the SAME per-ad-set rollup the campaign slide's
         // headline uses (adset fields, no `date` dimension), so the trend's latest
         // point matches the headline exactly. A `date`-dimension pull splits
-        // windowed conversions per day and under-counts results — the bug that made
+        // windowed conversions per day and under-counts results - the bug that made
         // the trend disagree with the headline. One fetch per month, in parallel.
         const fallback = await readMetaPrimary(client).catch(() => null)
         const adsetFields = ['account_id', 'campaign', 'adset_name', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'campaign_objective', 'spend', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...META_RESULT_FIELDS, 'actions_video_view']
@@ -2652,7 +2652,7 @@ export default async (req) => {
     return json({ scope: 'tz', ...out }, 200, true)
   }
 
-  // Agency-wide roll-up (no single client) — powers the Overview + leaderboard.
+  // Agency-wide roll-up (no single client) - powers the Overview + leaderboard.
   if (url.searchParams.get('scope') === 'agency') {
     try {
       // Backend default stays 'created' (unchanged); the frontend passes 'closed'
@@ -2670,7 +2670,7 @@ export default async (req) => {
 
   // Rolling-window performance trends across all clients (own date logic).
   if (url.searchParams.get('scope') === 'trends') {
-    // Don't cache a partial pull (Meta or Google timed out) — otherwise the blank
+    // Don't cache a partial pull (Meta or Google timed out) - otherwise the blank
     // result is served for 10 min and the user has to hammer Refresh. Skipping the
     // cache lets the client's auto-retry get a fresh, complete pull.
     try { const tr = await buildTrends(key); if (filtered) tr.clients = pickAllowed(tr.clients); const complete = tr.metaOk !== false && tr.googleOk !== false; return json({ scope: 'trends', ...tr }, 200, !filtered && complete) }
@@ -2726,7 +2726,7 @@ export default async (req) => {
     catch (e) { return json({ scope: 'speed', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
-  // Speed to Lead — WHOLE dataset, processed in chunks across polled requests and
+  // Speed to Lead - WHOLE dataset, processed in chunks across polled requests and
   // accumulated in a blob. The frontend calls with reset=1 to start, then polls
   // (reset absent) until status === 'done'.
   if (url.searchParams.get('scope') === 'speedscan') {
@@ -2764,9 +2764,9 @@ export default async (req) => {
   }
 
   // Per-user (sales rep) performance for the client's Users tab.
-  // Executive health score — the headline of the Caalano 360 executive tab.
+  // Executive health score - the headline of the Caalano 360 executive tab.
   // Live computation for the selected range plus whatever daily trend history the
-  // snapshot job has accumulated (empty until it first runs — no fake history).
+  // snapshot job has accumulated (empty until it first runs - no fake history).
   if (url.searchParams.get('scope') === 'health') {
     const cc = CLIENTS[client]
     if (!cc) return json({ scope: 'health', client, error: `unknown client ${client}` }, 404)
@@ -2791,7 +2791,7 @@ export default async (req) => {
     catch (e) { return json({ scope: 'updateextra', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 
-  // On-demand trend backfill for one client — weekly trailing-window points going
+  // On-demand trend backfill for one client - weekly trailing-window points going
   // back in time. Bounded per call (staff only) with a `before` cursor so the UI
   // can seed ~12 months of history across several quick calls without a timeout.
   if (url.searchParams.get('scope') === 'healthbackfill') {
@@ -2843,7 +2843,7 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'users', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
-  // Command Centre drill dataset — staff-only. Assembles every clickable
+  // Command Centre drill dataset - staff-only. Assembles every clickable
   // command-centre tile's backing data (opps by source, revenue deals, open
   // deals, lost-by-reason joined to form answers, per-calendar booking, per-
   // channel close) from a single direct-GHL load, and grafts on the paid spend /
@@ -2924,7 +2924,7 @@ export default async (req) => {
     catch (e) { return json({ scope: 'appts', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
-  // Time in stage — for every OPEN deal, how long it's been sitting in its current
+  // Time in stage - for every OPEN deal, how long it's been sitting in its current
   // stage (now − lastStageChangeAt), aggregated per stage/pipeline. No date window
   // (it's live pipeline state). Cached like other CRM scopes.
   if (url.searchParams.get('scope') === 'stagetiming') {
@@ -2936,7 +2936,7 @@ export default async (req) => {
   }
 
   // Per-user call activity (GHL dialer): outbound volume, talk minutes, connect
-  // rate, inbound handled — from the bulk Call export. Cached like other CRM scopes.
+  // rate, inbound handled - from the bulk Call export. Cached like other CRM scopes.
   if (url.searchParams.get('scope') === 'usercalls') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'usercalls', client, ghl: false })
@@ -2962,7 +2962,7 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'calendars', client, connected: false, calendars: [] })
     try {
       // Pipelines come from the DIRECT GHL API (not Windsor), so the Key-events
-      // editor lists stages the instant a client is linked — before Windsor has
+      // editor lists stages the instant a client is linked - before Windsor has
       // synced any opportunity data for the account.
       const [calendars, pipelines] = await Promise.all([
         listCalendars(cc.ghl),
@@ -2981,7 +2981,7 @@ export default async (req) => {
     const usedGhl = new Set(), usedMeta = new Set(), usedGoogle = new Set(), usedGa4 = new Set()
     for (const c of Object.values(CLIENTS)) { if (c.ghl) usedGhl.add(norm(c.ghl)); if (c.meta) usedMeta.add(norm(c.meta)); if (c.google) usedGoogle.add(norm(c.google)); if (c.ga4) usedGa4.add(norm(c.ga4)) }
     const nameById = (rows) => { const m = new Map(); for (const r of (rows || [])) { const id = r.account_id; if (id == null) continue; const k = String(id); if (!m.has(k) || (!m.get(k) && r.account_name)) m.set(k, r.account_name || '') } return m }
-    // Discover over a WIDE window (last 12 months), NOT the selected range — Windsor
+    // Discover over a WIDE window (last 12 months), NOT the selected range - Windsor
     // only returns accounts that have data IN the queried window, so using the
     // (possibly narrow) dashboard range hides accounts with no recent spend. That's
     // why fewer accounts showed than are actually connected. A fixed 12-month lookup
@@ -2993,12 +2993,12 @@ export default async (req) => {
     const dTo = new Date().toISOString().slice(0, 10)
     const dFrom = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
     // A metric-based listing (spend / sessions) only surfaces accounts that had
-    // DELIVERY in the window — so a connected-but-paused ad account (zero spend,
+    // DELIVERY in the window - so a connected-but-paused ad account (zero spend,
     // zero impressions) is silently dropped, which is why fewer Meta/Google show
     // than are connected in Windsor. GA4 didn't suffer this because `sessions`
     // exists for any property with traffic. So for each connector we ALSO run a
-    // dimension-only query (account_id + account_name, no metric) — which lists
-    // every configured account regardless of delivery — and merge the two. Both
+    // dimension-only query (account_id + account_name, no metric) - which lists
+    // every configured account regardless of delivery - and merge the two. Both
     // run in parallel so wall-clock stays ~one query; each catches independently.
     let metaErr = null, googleErr = null, ga4Err = null
     const listAccts = async (fetchFields, metric, onErr) => {
@@ -3105,7 +3105,7 @@ export default async (req) => {
   // Auto-detect a client's optimisation event + every conversion field that's firing.
   // Reads the ad sets' optimisation goal + promoted object to learn WHICH custom event
   // the account optimises to (matching Ads Manager's Results column), then probes the
-  // standard set + variants derived from that event — in small batches with per-batch
+  // standard set + variants derived from that event - in small batches with per-batch
   // try/catch over a 30-day window, so an unknown field name or a big account can't
   // time out the whole call. Returns firing conversions + a suggested primary.
   if (url.searchParams.get('scope') === 'metadetect') {
@@ -3115,7 +3115,7 @@ export default async (req) => {
     const from = new Date(Date.now() - 30 * DAY).toISOString().slice(0, 10)
     const t0 = new Date().toISOString().slice(0, 10)
     const acct = (r) => !r.account_id || acctEq(r.account_id, cc.meta)
-    // 1. Optimisation intent — the highest-spend ad set's goal, any custom event names,
+    // 1. Optimisation intent - the highest-spend ad set's goal, any custom event names,
     //    and any custom-conversion IDs named in its promoted object (a custom conversion
     //    is identified by a numeric id, which is the most reliable field-name seed).
     let goal = null, promotedSample = null, optConv = null, optConvSpend = -1; const evNames = new Set(); const customIds = new Set(); const convById = new Map()
@@ -3138,7 +3138,7 @@ export default async (req) => {
             const evName = evFromRule(p.pixel_rule) || p.custom_event_str || `Custom conversion ${cid.slice(-6)}`
             if (!convById.has(cid)) convById.set(cid, evName)
             // The custom conversion the highest-spend ad set optimises to is the true
-            // "Results" event for the account — suggest it as primary.
+            // "Results" event for the account - suggest it as primary.
             if (sp > optConvSpend) { optConvSpend = sp; optConv = { id: cid, event: evName } }
           }
           for (const k of ['custom_conversion', 'offline_conversion_data_set_id']) { const v = p[k]; if (v && /^\d{6,}$/.test(String(v))) customIds.add(String(v)) }
@@ -3151,24 +3151,24 @@ export default async (req) => {
     let spend = 0
     try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], from, t0, null, key)).filter(acct); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
     const sums = {}
-    // 2a. Known-good standard candidates — safe to batch 8-at-a-time.
+    // 2a. Known-good standard candidates - safe to batch 8-at-a-time.
     const stdCands = META_CONV_CANDIDATES.map(([id]) => id)
     for (let i = 0; i < stdCands.length; i += 8) {
       const batch = stdCands.slice(i, i + 8)
       try { const rows = (await windsorFetch('facebook', ['account_id', ...batch], from, t0, null, key)).filter(acct); for (const r of rows) for (const f of batch) sums[f] = (sums[f] || 0) + num(r[f]) } catch { /* skip */ }
     }
     // 2b. Experimental candidates (constructed custom field-name variants by name AND by
-    //     numeric id, plus Meta's native `results`) — an unknown field errors the whole
+    //     numeric id, plus Meta's native `results`) - an unknown field errors the whole
     //     query, so probe these ONE AT A TIME so one bad name can't drop the others.
     const expCands = [...new Set([
       ...[...evNames].flatMap(customConvCandidates),
       ...[...customIds].flatMap((id) => [`conversions_offsite_conversion_custom_${id}`, `actions_offsite_conversion_custom_${id}`, `conversions_offsite_conversion_fb_pixel_custom_${id}`, `conversions_custom_${id}`, `conversions_custom_conversion_${id}`, `custom_conversion_${id}`]),
-      // Meta's native computed metrics — the account's per-campaign "Results", whatever
+      // Meta's native computed metrics - the account's per-campaign "Results", whatever
       // it optimises to (custom conversions included). The prize field if Windsor has it.
       'results', 'cost_per_result', 'result_rate', 'conversions', 'cost_per_conversion',
     ])]
     // Track per-field outcome so the diagnostic can tell "Windsor rejected this field"
-    // apart from "valid field but zero" — that's what tells us which field actually exists.
+    // apart from "valid field but zero" - that's what tells us which field actually exists.
     const expStatus = {}
     for (const f of expCands) {
       try { const rows = (await windsorFetch('facebook', ['account_id', f], from, t0, null, key)).filter(acct); let s = 0; for (const r of rows) s += num(r[f]); if (s > 0) sums[f] = s; expStatus[f] = s > 0 ? 'data' : 'zero' } catch { expStatus[f] = 'invalid' }
@@ -3177,7 +3177,7 @@ export default async (req) => {
     const actions = allCands.map((id) => ({ id, label: META_CONV_LABEL[id] || (id === 'results' ? 'Results (Meta optimised)' : prettyField(id)), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
       .filter((a) => a.count > 0).sort((a, b) => b.count - a.count)
     // Always surface every DETECTED optimisation custom conversion (labelled by its
-    // event name from the pixel rule) whose Windsor field is valid — even at 0 count,
+    // event name from the pixel rule) whose Windsor field is valid - even at 0 count,
     // since a rarely-firing custom conversion is still the account's true "Results"
     // event and should be selectable / auto-suggested.
     for (const [id, evName] of convById) {
@@ -3191,13 +3191,13 @@ export default async (req) => {
     // event) as the suggested primary; else the objective's field; else top-firing.
     const optConvField = optConv && expStatus[convField(optConv.id)] !== 'invalid' ? convField(optConv.id) : null
     const suggest = optConvField || ((autoField && actions.some((a) => a.id === autoField)) ? autoField : (actions[0] ? actions[0].id : null))
-    // Which experimental fields Windsor ACCEPTED (valid, even if zero) — the shortlist of
+    // Which experimental fields Windsor ACCEPTED (valid, even if zero) - the shortlist of
     // real fields we can use; 'invalid' ones don't exist on the connector.
     const acceptedFields = expCands.filter((f) => expStatus[f] && expStatus[f] !== 'invalid')
     return json({ scope: 'metadetect', client, window: { from, to: t0 }, goal: goal || null, evNames: [...evNames], customIds: [...customIds], promoted: promotedSample || null, spend: Math.round(spend), actions, suggest, tried: allCands, expStatus, acceptedFields }, 200, false)
   }
 
-  // Creative Cockpit — every Meta creative with its performance and (where the
+  // Creative Cockpit - every Meta creative with its performance and (where the
   // client has a CRM) the real funnel behind each ad, joined by first-touch
   // utm_content. Auto-detected fields: format, thumbnail, Instagram permalink.
   // Categorisation tags live client-side (settings), keyed by the creative id.
@@ -3222,7 +3222,7 @@ export default async (req) => {
       const nk = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
       const perfByKey = {}; for (const [k, v] of Object.entries(byContent)) perfByKey[nk(k)] = v
       const usedKeys = new Set()
-      // The same creative (ad_name) can run across several ad sets — aggregate to
+      // The same creative (ad_name) can run across several ad sets - aggregate to
       // one row per name so spend/leads total correctly and ids stay unique.
       const adAgg = new Map()
       for (const a of (meta.ads || [])) {
@@ -3272,7 +3272,7 @@ export default async (req) => {
   }
 
   // Meta Creative Fatigue for the agency-wide tab: one client per request (the UI
-  // fans out across active Meta clients). Light fetch — ads + daily only — scored
+  // fans out across active Meta clients). Light fetch - ads + daily only - scored
   // by frequency, CTR decline and quality ranking against the shared thresholds.
   if (url.searchParams.get('scope') === 'fatigue') {
     if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
@@ -3313,7 +3313,7 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'fatiguewebhook', client, error: String(e.message || e).slice(0, 200), connected: false, creatives: [] }, 200) }
   }
 
-  // Webhook connection status — lists everything the meta-webhook receiver has
+  // Webhook connection status - lists everything the meta-webhook receiver has
   // stored across all accounts, so the UI can confirm the pipe works the moment
   // a test (or real) event lands, even for accounts not mapped to a client.
   if (url.searchParams.get('scope') === 'webhookstatus') {
@@ -3381,7 +3381,7 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'recommendations', error: String(e.message || e).slice(0, 200), groups: [] }, 200) }
   }
 
-  // Meta opportunity score + recommendations — pulled live from the Graph API
+  // Meta opportunity score + recommendations - pulled live from the Graph API
   // using the stored System User token (META_SYSTEM_TOKEN). One client per call.
   if (url.searchParams.get('scope') === 'opportunity') {
     if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
@@ -3405,7 +3405,7 @@ export default async (req) => {
     } catch (e) { return json({ scope: 'opportunity', client, configured: true, error: String(e.message || e).slice(0, 240) }, 200) }
   }
 
-  // Meta anomaly / delivery-health signal for the Meta Insights tab — one client
+  // Meta anomaly / delivery-health signal for the Meta Insights tab - one client
   // per request, current vs prior-window movement in the key delivery metrics.
   if (url.searchParams.get('scope') === 'anomalies') {
     if (me && me.role === 'viewer') return json({ error: 'Staff only.' }, 403)
@@ -3418,7 +3418,7 @@ export default async (req) => {
   }
 
   // Field probe for the Creative Cockpit: which creative-level fields Windsor's
-  // Meta feed exposes (call-to-action, ad copy, destination link, video asset) —
+  // Meta feed exposes (call-to-action, ad copy, destination link, video asset) -
   // used to confirm what can be auto-filled and whether a video URL is available
   // for transcription. Reports recognised + populated counts, like the Google
   // probe. Staff only; never cached.
@@ -3506,8 +3506,8 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc) return json({ error: `unknown client ${client}` }, 404)
     // These names are the CURRENT / live entities to link renamed UTMs to. A
-    // recent window is (a) lighter — a 90-day Meta ad-level pull often times out
-    // and silently drops all Meta names, leaving only Google — and (b) more
+    // recent window is (a) lighter - a 90-day Meta ad-level pull often times out
+    // and silently drops all Meta names, leaving only Google - and (b) more
     // correct, since "live" means active lately. Clamp to ~35 days.
     const namesFrom = (() => { const t = Date.parse(to); if (!isFinite(t)) return from; const s = new Date(t - 35 * 86400000).toISOString().slice(0, 10); return (from && from > s) ? from : s })()
     const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, id))
@@ -3556,7 +3556,7 @@ export default async (req) => {
         (from && to) ? wonInPeriod(c.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
       crm.wonClosed = wonClosed
-      // Won basis: 'created' (default — won among leads created in the window) or
+      // Won basis: 'created' (default - won among leads created in the window) or
       // 'closed' (won by their won-date, i.e. banked in the window, regardless of
       // when created). Only Won/revenue/derived flip; leads, funnel, appts stay
       // created-basis. Default stays 'created' server-side so callers that don't
@@ -3587,7 +3587,7 @@ export default async (req) => {
       const pipeline = url.searchParams.get('pipeline') || null
       const fn = url.searchParams.get('debug') ? sampleAttribution : buildAttribution
       // Google/Meta UTMs often carry the numeric campaign ID (e.g. utm_campaign=
-      // 24053934849), not the name — so CRM outcomes keyed by that ID never match
+      // 24053934849), not the name - so CRM outcomes keyed by that ID never match
       // the ad tables (keyed by name). Windsor returns campaign_id alongside the
       // campaign name, so pull that pairing and hand the UI a {id -> name} map to
       // auto-resolve the IDs. Own queries, each .catch → nothing blanks attribution.
@@ -3620,7 +3620,7 @@ export default async (req) => {
     } catch (e) { return json({ connected: true, error: String(e.message || e) }, 502) }
   }
 
-  // Caalano360 — blended paid + CRM aggregate for a single client.
+  // Caalano360 - blended paid + CRM aggregate for a single client.
   if (channel === 'blend') {
     try {
       const [blend, wonClosed] = await Promise.all([
@@ -3635,7 +3635,7 @@ export default async (req) => {
     } catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 
-  // Google Analytics 4 — its own connector + mapping key (c.ga4), so it's routed
+  // Google Analytics 4 - its own connector + mapping key (c.ga4), so it's routed
   // before the generic FIELDS lookup.
   if (channel === 'ganalytics') {
     const propertyId = c.ga4

@@ -1,4 +1,4 @@
-// On-demand executive-health snapshot — the HTTP-invokable twin of the daily
+// On-demand executive-health snapshot - the HTTP-invokable twin of the daily
 // scheduled `health-snapshot` function (scheduled functions can't be triggered
 // over HTTP). Visit /.netlify/functions/health-snapshot-now to compute today's
 // trailing-30-day health point for every client immediately.

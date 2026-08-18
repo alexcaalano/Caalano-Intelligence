@@ -1,4 +1,4 @@
-// Meta Ads webhook receiver — the endpoint Meta pushes ad-account events to
+// Meta Ads webhook receiver - the endpoint Meta pushes ad-account events to
 // (creative_fatigue, and optionally ad_recommendations / with_issues_ad_objects).
 //
 // GET  = Meta's subscription verification handshake: echo hub.challenge when the
@@ -10,8 +10,8 @@
 //        the dashboard join names/thumbnails from Windsor at read time.
 //
 // Env (set in Netlify → Site settings → Environment variables):
-//   META_VERIFY_TOKEN  — any string you choose; paste the same value into Meta.
-//   META_APP_SECRET    — the Meta App's secret (used to verify each POST).
+//   META_VERIFY_TOKEN  - any string you choose; paste the same value into Meta.
+//   META_APP_SECRET    - the Meta App's secret (used to verify each POST).
 import { getStore } from '@netlify/blobs'
 import crypto from 'node:crypto'
 

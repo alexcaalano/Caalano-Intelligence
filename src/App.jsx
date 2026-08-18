@@ -8,11 +8,11 @@ import {
   fmtCurrency, fmtNumber, fmtCompact, fmtPct, pctChange,
 } from './lib/format.js'
 // CHANGELOG.md is loaded on demand (dynamic import) inside the Super-Admin Logs
-// panel — keeping ~200KB of markdown out of the main bundle for every visitor.
+// panel - keeping ~200KB of markdown out of the main bundle for every visitor.
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.269.0'
+const APP_VERSION = '3.270.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -23,7 +23,7 @@ function fmtBuildTime(iso) {
 const AVATAR = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#8b5cf6']
 const acolor = (i) => AVATAR[i % AVATAR.length]
 const initials = (n) => String(n || '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
-// Google's favicon service — a reliable logo source for any domain.
+// Google's favicon service - a reliable logo source for any domain.
 const FAVICON = (domain, sz = 64) => `https://www.google.com/s2/favicons?domain=${domain}&sz=${sz}`
 // Bare hostname (no scheme / www / path) from a possibly-messy website string.
 const domainOf = (url) => { try { return new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url).hostname.replace(/^www\./, '') } catch { return null } }
@@ -269,7 +269,7 @@ function keBreakRows(B, names) {
   if (B && B.fromStage) rows.push({ label: 'Pipeline stage (fallback)', value: B.fromStage, muted: true })
   return rows
 }
-// Styled hover popup for a Caalano360 count cell — replaces the plain browser
+// Styled hover popup for a Caalano360 count cell - replaces the plain browser
 // tooltip with the same card look used across the app (header · per-source rows).
 function KeCellPop({ children, title, total, rows, note }) {
   if ((!rows || !rows.length) && !note) return children
@@ -333,9 +333,9 @@ function AttrDiag({ attr }) {
   const d = attr.data
   if (d && d.attribution) return null // green is present
   let msg
-  if (attr.status === 'err') msg = `the attribution request failed${attr.error ? ` — ${attr.error}` : ''}. Try Refresh.`
-  else if (d && d.connected === false) msg = 'Caalano Systems isn’t connected — re-authorise at /.netlify/functions/caalano-connect to restore them.'
-  else if (d && d.error) msg = `attribution error — ${String(d.error).slice(0, 200)}`
+  if (attr.status === 'err') msg = `the attribution request failed${attr.error ? ` - ${attr.error}` : ''}. Try Refresh.`
+  else if (d && d.connected === false) msg = 'Caalano Systems isn’t connected - re-authorise at /.netlify/functions/caalano-connect to restore them.'
+  else if (d && d.error) msg = `attribution error - ${String(d.error).slice(0, 200)}`
   else msg = 'no attribution data was returned for this client / period.'
   return <div className="attr-diag">Caalano360 columns hidden: {msg}</div>
 }
@@ -361,7 +361,7 @@ function Kpi({ label, value, tag, cur, prev, goodWhenDown, flat, onClick }) {
 // One place every data view fetches through, so speed + reliability improve
 // everywhere at once:
 //   • one silent retry on a network drop / 502 / timeout (the common transient
-//     failures) before the user ever sees an error — with a short backoff;
+//     failures) before the user ever sees an error - with a short backoff;
 //   • an AbortController timeout so a hung request fails fast instead of spinning;
 //   • a friendly, specific Error message on genuine failure;
 //   • a failure beacon POSTed to the server log (scope=clientlog) so browser-side
@@ -390,7 +390,7 @@ async function apiJson(url, { signal, timeoutMs = 30000, tries = 2 } = {}) {
       const r = await fetch(url, { signal: ctl.signal })
       clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort)
       if (!r.ok) {
-        // 5xx / 502 are transient (function timeout / cold-start) — retry once.
+        // 5xx / 502 are transient (function timeout / cold-start) - retry once.
         if (r.status >= 500 && attempt < tries - 1) { await new Promise((res) => setTimeout(res, 600 * (attempt + 1))); continue }
         throw new Error(r.status >= 500 ? `The server took too long (${r.status}). Try a smaller date range or Refresh.` : `Request failed (${r.status}).`)
       }
@@ -399,12 +399,12 @@ async function apiJson(url, { signal, timeoutMs = 30000, tries = 2 } = {}) {
       return j
     } catch (e) {
       clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort)
-      // A caller-driven abort (unmount / new request) is not a failure — bail silently.
+      // A caller-driven abort (unmount / new request) is not a failure - bail silently.
       if (signal && signal.aborted) throw e
       lastErr = e
       const aborted = e && e.name === 'AbortError'
       if (attempt < tries - 1) { await new Promise((res) => setTimeout(res, 600 * (attempt + 1))); continue }
-      const msg = aborted ? 'Timed out — the data took too long to load. Try a smaller date range or Refresh.' : (e && e.message) || 'Network error.'
+      const msg = aborted ? 'Timed out - the data took too long to load. Try a smaller date range or Refresh.' : (e && e.message) || 'Network error.'
       apiBeacon(url, msg, Math.round((typeof performance !== 'undefined' ? performance.now() : 0) - t0))
       throw new Error(msg)
     }
@@ -414,7 +414,7 @@ async function apiJson(url, { signal, timeoutMs = 30000, tries = 2 } = {}) {
 
 // ---- App-wide load tracker -------------------------------------------------
 // One place that knows whether ANYTHING is still loading across Caalano360, so a
-// single indicator can say "still loading…" and then confirm "all data is in" —
+// single indicator can say "still loading…" and then confirm "all data is in" -
 // the same reassurance the Meta/Google views give, but everywhere. Rather than
 // wire every view's fetch by hand (deep views, attribution, users, timing, GA4,
 // forms, location … all fetch differently), we patch fetch once and count live
@@ -508,7 +508,7 @@ function useClientLogos() {
 // URL for the same client/range (e.g. blend, attribution and scope=users are each
 // pulled by several views). This shares ONE in-flight/recent request per identical
 // URL instead of firing N round-trips. Returns a CLONED Response, so it's a drop-in
-// for `fetch(url)` — callers keep reading r.ok / r.json() unchanged. The URL already
+// for `fetch(url)` - callers keep reading r.ok / r.json() unchanged. The URL already
 // encodes client + range + the refresh nonce (_r), so a manual Refresh (new nonce)
 // always gets a fresh URL and bypasses this. Entries live ~45s; failures aren't
 // cached; the server itself still caches for 10 minutes behind this.
@@ -784,7 +784,7 @@ function MaturityBadge({ clientId, crmAvg, range, sample, size }) {
   const m = cd && rangeMaturity(cd.days, range)
   if (!m || !m.maturing) return null
   const src = cd.manual ? 'set manually in Settings' : `the CRM average of ~${cd.days} days${sample ? ` across ${sample} won deals` : ''}`
-  const tip = `Still maturing — this view covers ${m.rangeDays} days, but a typical deal takes about ${cd.days} days to close (${src}). With a 20% buffer that's ~${m.matureDays} days, so leads in this window haven't had time to convert yet. Won / Revenue / ROAS here understate the real result. Widen the range${m.shortfall ? `, or wait ~${m.shortfall} more day${m.shortfall === 1 ? '' : 's'},` : ''} for a mature picture.`
+  const tip = `Still maturing - this view covers ${m.rangeDays} days, but a typical deal takes about ${cd.days} days to close (${src}). With a 20% buffer that's ~${m.matureDays} days, so leads in this window haven't had time to convert yet. Won / Revenue / ROAS here understate the real result. Widen the range${m.shortfall ? `, or wait ~${m.shortfall} more day${m.shortfall === 1 ? '' : 's'},` : ''} for a mature picture.`
   return <span className={`maturity-badge${size === 'sm' ? ' sm' : ''}`} title={tip}>⏳ Still maturing</span>
 }
 // Fixed-position hover popup: escapes the .table-wrap overflow clip (the old
@@ -859,7 +859,7 @@ function ResultsPop({ children, r, currency }) {
     )}>{children}</HoverPop>
   )
 }
-// Styled popup for the campaigns / ad-sets Results cell — lists every conversion
+// Styled popup for the campaigns / ad-sets Results cell - lists every conversion
 // action (primary highlighted) with a total, replacing the plain browser tooltip.
 function ResBreakdownPop({ children, breakdown, primary }) {
   const bd = breakdown || []
@@ -928,7 +928,7 @@ function AgencyComparison({ rows, currency, range, onPick, ov }) {
       {crmIds.length > 0 && (crmLoading > 0 || crmErrors > 0) && (
         <div className={`ov-crm-banner ${crmLoading > 0 ? 'loading' : 'done'}`}>
           {crmLoading > 0
-            ? <><span className="ov-spin" /><b>Loading CRM metrics…</b> {crmDone} of {crmIds.length} clients ready<span className="ov-crm-sub">The Opps → ROAS columns pull live from Caalano Systems — first load can take up to ~60s.</span></>
+            ? <><span className="ov-spin" /><b>Loading CRM metrics…</b> {crmDone} of {crmIds.length} clients ready<span className="ov-crm-sub">The Opps → ROAS columns pull live from Caalano Systems - first load can take up to ~60s.</span></>
             : <><span className="ov-warn-dot">!</span><b>{crmErrors} client{crmErrors === 1 ? '' : 's'} couldn't load CRM data.</b><span className="ov-crm-sub">Hover the ⚠ on a row for the reason, or hit Refresh to retry.</span></>}
         </div>
       )}
@@ -996,7 +996,7 @@ function useTrends(nonce = 0) {
     // The server marks the trends pull `metaOk:false` / `googleOk:false` when the
     // (heavy, 56-day, all-accounts) Meta/Google query times out. Rather than show
     // blank Meta results and make the user hit Refresh, we auto-retry a few times
-    // with backoff — the server also skips caching a partial pull, so each retry is
+    // with backoff - the server also skips caching a partial pull, so each retry is
     // a genuine fresh attempt. Only after exhausting retries do we show what we have.
     const MAX = 4
     const run = (n) => {
@@ -1028,9 +1028,9 @@ function TrendsLoadBar({ status, partial, retry, of }) {
   useEffect(() => { if (status === 'ok' && !partial) { setGone(false); const t = setTimeout(() => setGone(true), 2600); return () => clearTimeout(t) } setGone(false) }, [status, partial])
   if (status === 'ok' && !partial && gone) return null
   if (status === 'loading') return <div className="load-bar busy"><span className="load-seg"><span className="load-spin" /> Loading Meta &amp; Google results…{retry ? ` retrying (${retry}/${of})` : ''}</span></div>
-  if (status === 'err') return <div className="load-bar err"><span className="load-seg"><span className="load-dot bad" /> Couldn’t load — hit Refresh to try again.</span></div>
-  if (partial) return <div className="load-bar err"><span className="load-seg"><span className="load-dot bad" /> Meta/Google results were slow to load — showing what arrived. Hit Refresh for the rest.</span></div>
-  return <div className="load-bar done"><span className="load-seg"><span className="load-dot ok" /> All data loaded — Meta &amp; Google in.</span></div>
+  if (status === 'err') return <div className="load-bar err"><span className="load-seg"><span className="load-dot bad" /> Couldn’t load - hit Refresh to try again.</span></div>
+  if (partial) return <div className="load-bar err"><span className="load-seg"><span className="load-dot bad" /> Meta/Google results were slow to load - showing what arrived. Hit Refresh for the rest.</span></div>
+  return <div className="load-bar done"><span className="load-seg"><span className="load-dot ok" /> All data loaded - Meta &amp; Google in.</span></div>
 }
 const WLABEL = { 3: 'Last 3 days', 7: 'Last 7 days', 14: 'Last 14 days', 21: 'Last 21 days', 28: 'Last 28 days' }
 // One scorecard: value + % change vs the prior equal window (lower cost = good).
@@ -1104,7 +1104,7 @@ function TrendGraph({ daily, eff, currency, hasMeta, hasGoogle }) {
   )
 }
 // Lazy-load a client's Google conversion actions over the last N days (the deep
-// Google feed carries per-action rows), aggregated by action name — so the Google
+// Google feed carries per-action rows), aggregated by action name - so the Google
 // Results number can be broken into the conversion actions that made it up.
 function useGoogleConvActions(clientId, days) {
   const [st, setSt] = useState({ status: 'loading', data: null })
@@ -1132,11 +1132,11 @@ function GoogleConvDrill({ clientId, days, money }) {
       <table className="mini-tbl tr-brk-tbl">
         <thead><tr><th className="lft">Conversion action</th><th>Conversions</th><th>All conv.</th><th>% of conv.</th></tr></thead>
         <tbody>
-          {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary — counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '—'}</td></tr> })}
+          {rows.map((r) => { const primary = r.conv > 0; return <tr key={r.name}><td className="lft">{primary ? <span title="Primary - counts toward the Results number">⭐ </span> : ''}{r.name}{r.category ? <span className="cap"> · {r.category}</span> : null}</td><td>{fmtNumber(Math.round(r.conv * 10) / 10)}</td><td>{fmtNumber(Math.round(r.all * 10) / 10)}</td><td>{totConv ? fmtPct((r.conv / totConv) * 100, 0) : '-'}</td></tr> })}
           <tr className="tr-src-tot"><td className="lft">Total</td><td>{fmtNumber(Math.round(totConv * 10) / 10)}</td><td>{fmtNumber(Math.round(rows.reduce((s, r) => s + r.all, 0) * 10) / 10)}</td><td>100%</td></tr>
         </tbody>
       </table>
-      <p className="tr-brk-note cap"><b>⭐ = primary conversion</b> — these are what make up the Results number (Google’s primary/optimised “Conversions” count). Un-starred rows are secondary actions, counted only in “All conv.”. Account-wide over the last {days} days.</p>
+      <p className="tr-brk-note cap"><b>⭐ = primary conversion</b> - these are what make up the Results number (Google’s primary/optimised “Conversions” count). Un-starred rows are secondary actions, counted only in “All conv.”. Account-wide over the last {days} days.</p>
     </div>
   )
 }
@@ -1165,7 +1165,7 @@ function TrendSource({ w28, row, money, clientId, pipeId }) {
 }
 // Click-to-open breakdown for one window tile: ad spend → results split by Meta /
 // Google (with cost per result), then every configured key event in that window with
-// its count and blended cost per event (total ad spend ÷ people who reached it) — the
+// its count and blended cost per event (total ad spend ÷ people who reached it) - the
 // same key-event engine (keyEventRows) the Caalano360 funnel + Monthly Report use.
 // Key-event source segments for the breakdown: which lead source each key event was
 // attributed to. Paid = Meta+Google, Non-paid = organic/referral/direct, All = total CRM.
@@ -1177,7 +1177,7 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   const srcRows = []
   if (w.meta && (w.meta.spend || w.meta.results)) srcRows.push({ label: 'Meta', spend: w.meta.spend || 0, results: w.meta.results || 0 })
   if (w.google && (w.google.spend || w.google.results)) srcRows.push({ label: 'Google', spend: w.google.spend || 0, results: w.google.results || 0 })
-  const cpr = (s, r) => (r ? money(s / r) : '—')
+  const cpr = (s, r) => (r ? money(s / r) : '-')
   const crm = w.crm
   // Key events split by lead-source channel. `src` picks the segment; reach/leads/won
   // are read from that segment (Paid = Meta+Google merged) and resolved with the same
@@ -1196,13 +1196,13 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
   }
   // Cost per event uses the SELECTED source's ad spend (Non-paid has none → no cost).
   const srcSpend = src === 'meta' ? (w.meta ? w.meta.spend : 0) : src === 'google' ? (w.google ? w.google.spend : 0) : src === 'nonpaid' ? 0 : totalSpend
-  const cpe = (n) => (n && srcSpend ? money(srcSpend / n) : '—')
+  const cpe = (n) => (n && srcSpend ? money(srcSpend / n) : '-')
   const srcLabel = (KE_SRC.find(([k]) => k === src) || [])[1] || 'All CRM'
   // Drill into the exact people/records behind a key event in this window + source.
   const [drill, setDrill] = useState(null)
   const dayAgo = (k) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - k); return iso(d) }
   const winRange = { from: dayAgo(w.n - 1), to: dayAgo(0) }
-  // Google conversion-actions drill for THIS window (account tiles only — the actions
+  // Google conversion-actions drill for THIS window (account tiles only - the actions
   // feed is account-wide, so it wouldn't match a pipeline tile's scoped Google results).
   const [gOpen, setGOpen] = useState(false)
   const canGDrill = !!(clientId && (!pipeId || pipeId === 'all') && w.google && (w.google.results || w.google.spend))
@@ -1236,12 +1236,12 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
             <table className="mini-tbl tr-brk-tbl">
               <thead><tr><th className="lft">Key event · {srcLabel}</th><th>Count</th><th>% leads</th><th>Cost / event</th></tr></thead>
               <tbody>
-                <tr><td className="lft">Leads</td><td>{fmtNumber(leads)}</td><td>{leads ? '100%' : '—'}</td><td>{cpe(leads)}</td></tr>
+                <tr><td className="lft">Leads</td><td>{fmtNumber(leads)}</td><td>{leads ? '100%' : '-'}</td><td>{cpe(leads)}</td></tr>
                 {keRows.map((r, i) => {
                   const can = (r.count || 0) > 0
                   return (
                     <tr key={r.label + i} className={can ? 'tr-brk-click' : ''} onClick={can ? () => setDrill(r) : undefined} title={can ? 'Click to see the exact people behind this' : undefined}>
-                      <td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}{can ? <span className="tr-brk-drillind"> ›</span> : null}</td><td>{fmtNumber(r.count || 0)}</td><td>{leads ? fmtPct((r.count / leads) * 100, 0) : '—'}</td><td>{cpe(r.count || 0)}</td>
+                      <td className="lft">{r.kind === 'calendar' ? '📅 ' : ''}{r.label}{can ? <span className="tr-brk-drillind"> ›</span> : null}</td><td>{fmtNumber(r.count || 0)}</td><td>{leads ? fmtPct((r.count / leads) * 100, 0) : '-'}</td><td>{cpe(r.count || 0)}</td>
                     </tr>
                   )
                 })}
@@ -1310,7 +1310,7 @@ function clientMovers(row, tr, win) {
 // Rules-based "why" from the spend vs results decomposition of a CPL move.
 function moverReason(m) {
   const unit = m.chan === 'google' ? 'conversions' : 'leads'
-  const p = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(0)}%`)
+  const p = (v) => (v == null ? '-' : `${v > 0 ? '+' : ''}${v.toFixed(0)}%`)
   const sp = m.spendPct, rp = m.resPct
   if (m.cplPct > 0) { // cost went up (worse)
     if (rp != null && rp < -5 && (sp == null || Math.abs(sp) <= 12)) return `${unit} fell ${Math.abs(rp).toFixed(0)}% on roughly steady spend`
@@ -1324,7 +1324,7 @@ function moverReason(m) {
 }
 // On-demand creative/campaign breakdown behind a mover: fetch the client's deep
 // data for the last N days (which carries a prior-equal-period `prev` per entity)
-// and classify what drove the cost move — scaling/new, fatiguing, pulled back, best.
+// and classify what drove the cost move - scaling/new, fatiguing, pulled back, best.
 function useMoverCreatives(clientId, channel, days) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   useEffect(() => {
@@ -1361,7 +1361,7 @@ function MoverDrill({ clientId, channel, days, money }) {
   const b = moverCreativeBreakdown(st.data, channel)
   const noun = channel === 'meta' ? 'creatives' : 'campaigns'
   const row = (label, arr, fmt) => arr.length ? <div className="mov-drill-row"><span className="mov-drill-lab">{label}</span><div className="mov-drill-items">{arr.map((x, i) => <div className="mov-drill-item" key={i}>{fmt(x)}</div>)}</div></div> : null
-  if (!b.scaling.length && !b.fatigue.length && !b.dropped.length && !b.best.length) return <div className="mov-drill"><span className="cap">No standout {noun} — the move looks broad across the account.</span></div>
+  if (!b.scaling.length && !b.fatigue.length && !b.dropped.length && !b.best.length) return <div className="mov-drill"><span className="cap">No standout {noun} - the move looks broad across the account.</span></div>
   return <div className="mov-drill">
     {row('🔥 Fatiguing (cost rising)', b.fatigue, (x) => <><b>{x.name}</b> · {money(x.pcpl)} → {money(x.cpl)} / result · {money(x.spend)} spend</>)}
     {row('🚀 Scaling / new', b.scaling, (x) => <><b>{x.name}</b> · {money(x.spend)} spend{x.cpl != null ? ` · ${money(x.cpl)} / result` : ''}</>)}
@@ -1424,7 +1424,7 @@ function MoversPanel({ list, clients, currency, onPick }) {
 }
 function TrendsTab({ rows, currency, nonce, onPick }) {
   const tr = useTrends(nonce)
-  if (tr.status === 'loading') return <div className="tr-list"><TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} /><div className="card"><Spinner label={tr.retry ? `Meta results were slow — retrying (${tr.retry}/${tr.of})…` : 'Loading performance trends…'} /></div></div>
+  if (tr.status === 'loading') return <div className="tr-list"><TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} /><div className="card"><Spinner label={tr.retry ? `Meta results were slow - retrying (${tr.retry}/${tr.of})…` : 'Loading performance trends…'} /></div></div>
   if (tr.status === 'err' || !tr.data || !tr.data.clients) return <div className="tr-list"><TrendsLoadBar status={tr.status} partial={tr.partial} retry={tr.retry} of={tr.of} /><div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load trends - try Refresh.</p></div></div>
   const clients = tr.data.clients
   // Respect the per-client Daily Performance visibility toggles (Settings → Daily
@@ -1594,7 +1594,7 @@ function WeeklyTab({ rows, currency, nonce, wonBasis = 'closed' }) {
                 </div>
                 <div className="card ai-card" style={{ marginTop: 14 }}>
                   <div className="ai-head">
-                    <div className="ai-title">✨ AI insights {ai ? <span className="sub">· {ai.weekRange} · generated {new Date(ai.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads Meta + Google vs CRM outcomes</span>}</div>
+                    <div className="ai-title">✨ AI insights {ai ? <span className="sub">· {ai.weekRange} · generated {new Date(ai.generatedAt).toLocaleString('en-AU')}</span> : <span className="sub">· Claude reads Meta + Google vs CRM outcomes</span>}</div>
                     <button className="ai-btn" onClick={genInsights} disabled={aiLoading}>{aiLoading ? 'Generating…' : ai ? '↻ Regenerate' : '✨ Generate AI insights'}</button>
                   </div>
                   {aiErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{aiErr}</p>}
@@ -1691,7 +1691,7 @@ const cplColor = (v, avg) => { if (!avg) return 'transparent'; const r = v / avg
 
 // A two-part load indicator for the Meta / Google views: the ad platform data
 // loads first, then the (heavier, GHL-backed) Caalano360 attribution. Shows the
-// live state of each so it's clear when EVERYTHING has arrived — and flags when
+// live state of each so it's clear when EVERYTHING has arrived - and flags when
 // the CRM side couldn't load (e.g. a very large window) rather than silently
 // leaving the green columns blank. Auto-tidies to a small ✓ once all is in.
 function DataLoadBar({ label = 'Meta ads', has360, status, pipeLoading }) {
@@ -1709,8 +1709,8 @@ function DataLoadBar({ label = 'Meta ads', has360, status, pipeLoading }) {
       <span className="load-seg"><span className="load-dot ok" /> {label} loaded</span>
       <span className="load-arrow">→</span>
       {crmLoading ? <span className="load-seg"><span className="load-spin" /> Loading Caalano360 (CRM outcomes)…{pipeLoading ? ' scoping to pipeline…' : ''}</span>
-        : crmErr ? <span className="load-seg err"><span className="load-dot bad" /> Caalano360 CRM didn’t load for this window — it may be too large. Try a smaller range, or reload.</span>
-          : <span className="load-seg"><span className="load-dot ok" /> Caalano360 loaded — all data in</span>}
+        : crmErr ? <span className="load-seg err"><span className="load-dot bad" /> Caalano360 CRM didn’t load for this window - it may be too large. Try a smaller range, or reload.</span>
+          : <span className="load-seg"><span className="load-dot ok" /> Caalano360 loaded - all data in</span>}
     </div>
   )
 }
@@ -1748,7 +1748,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   if (!deep?.meta) return <EmptyDeep channel="Meta Ads" range={range} />
   // When a pipeline is picked, scope the whole ad side (Cost / Impr / Reach /
   // campaigns / ad sets / creatives / daily) to that pipeline's linked campaigns
-  // — a Settings campaign→pipeline link first, else a name match — so the ad
+  // - a Settings campaign→pipeline link first, else a name match - so the ad
   // numbers match the green CRM columns instead of staying whole-account.
   const inPipe = (campName) => pipe === 'all' || pipeOfCampaign(clientId, campName, allPipes) === pipe
   const m = pipe === 'all' ? deep.meta : scopeMetaToPipe(deep.meta, inPipe)
@@ -1768,9 +1768,9 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   // configured, else the legacy Booked/Shown/Won block. Ordered by where each
   // event sits in the pipeline (calendars via their linked stage).
   // Order key events by pipeline position. Build the position map from the FULL
-  // pipeline registry (allPipelines — every stage with its position, always
+  // pipeline registry (allPipelines - every stage with its position, always
   // present) rather than only the channel funnel pipelines, which are derived
-  // from opportunity activity and can omit low/no-activity stages — leaving the
+  // from opportunity activity and can omit low/no-activity stages - leaving the
   // funnel/green-columns/creative-cards to fall back to config order.
   const stagePos = stagePosMap([...(allPipes || []), ...((A && A.channels && A.channels.all && A.channels.all.pipelines) || [])])
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
@@ -1849,7 +1849,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   // campaign summed (each opp lands in exactly one utm_campaign bucket).
   const selOc = selCamp ? oCamp.get(unorm(sel)) : null
   // Aggregate Caalano360 outcomes for the whole Meta tab. Must be META-ATTRIBUTED
-  // only — the funnel + key-event tiles use the Meta channel (channels.meta), so
+  // only - the funnel + key-event tiles use the Meta channel (channels.meta), so
   // the headline Won / Revenue have to as well. (Previously this summed EVERY
   // utm_campaign, which folded in Google + other-channel deals and inflated Won /
   // Revenue on a client that also runs Google.)
@@ -2057,7 +2057,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
             {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}{pipeSpend[p.id] ? ` · ${fmtCurrency(pipeSpend[p.id], currency)}` : ''}</option>)}
           </select> : null}
           sub={`Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}`}
-          caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline — it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
+          caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline - it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
         />}
       </div>
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
@@ -2215,7 +2215,7 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
                 </div>
               </React.Fragment>
             ))}</div>
-            <p className="cap">Sessions → Engaged → Key events come from GA4; CRM leads → won come from Caalano Systems (same date range). The % under each step is its conversion from the step before — a quick read on where the drop-off is between traffic, engagement, and revenue.</p>
+            <p className="cap">Sessions → Engaged → Key events come from GA4; CRM leads → won come from Caalano Systems (same date range). The % under each step is its conversion from the step before - a quick read on where the drop-off is between traffic, engagement, and revenue.</p>
           </div>
         )
       })()}
@@ -2282,13 +2282,13 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
         </div>}
       </div>
 
-      {/* Diagnostic — only when something didn't come back, so empties are explainable */}
+      {/* Diagnostic - only when something didn't come back, so empties are explainable */}
       {Object.entries(diag).some(([k, v]) => k !== 'connector' && !v) && (
         <details className="gdiag">
           <summary>Some Analytics sections are empty · why?</summary>
           <div className="gdiag-body">
             <p>These GA4 queries returned no rows for this window/property. If a section you expect is empty, the most likely cause is a Windsor field-name mismatch or the GA4 property ID not matching what Windsor returns. Run <code>?channel=ganalytics&amp;probe=1</code> against the data function to see the exact field spellings Windsor recognises.</p>
-            <div className="gdiag-grid">{Object.entries(diag).filter(([k]) => k !== 'connector').map(([k, v]) => (<div key={k}><b>{k}</b><span>{v ? '✓ data' : '— empty'}</span></div>))}</div>
+            <div className="gdiag-grid">{Object.entries(diag).filter(([k]) => k !== 'connector').map(([k, v]) => (<div key={k}><b>{k}</b><span>{v ? '✓ data' : '- empty'}</span></div>))}</div>
             <p className="cap">Connector: {diag.connector || 'google_analytics_4'} · property {ga.property}</p>
           </div>
         </details>
@@ -2373,10 +2373,10 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const oCampG = aliasedOutcomeMap(clientId, 'campaign', A && A.byCampaign, A && A.campIdMap)
   // Ad groups: the CRM carries the ad-group as an ID whose UTM param varies by the
   // client's Google template (utm_medium on some, utm_content on others), so resolve
-  // the ad_group_id→name map across BOTH dims — only the one holding the ID matches.
+  // the ad_group_id→name map across BOTH dims - only the one holding the ID matches.
   const oAgG = aliasedOutcomeMap(clientId, 'medium', [...((A && A.byMedium) || []), ...((A && A.byCreative) || [])], A && A.mediumIdMap)
   // Keywords: utm_term carries the keyword text, so match by text (the fuller
-  // signal — keeps every keyword's green data). Only when the SAME keyword text
+  // signal - keeps every keyword's green data). Only when the SAME keyword text
   // runs in 2+ match types (e.g. "adhd" Exact and Phrase) do we try to split by
   // match type via the CRM's utm_matchtype (byTermMatch, keyed "text||e/p/b");
   // if the CRM has no match-specific outcome for that pair, fall back to text.
@@ -2401,14 +2401,14 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const pickKw = (k) => setSel((s) => (s.keyword === k.text ? { ...s, keyword: null } : { ...s, campaign: k.campaign, adGroup: k.adGroup, keyword: k.text }))
   const pickMatch = (mt) => setSel((s) => (s.matchType === mt ? { ...s, matchType: null } : { ...s, matchType: mt }))
   const pickTerm = (tm) => setSel((s) => (s.keyword === tm.keyword ? { ...s, keyword: null } : { ...s, campaign: tm.campaign, adGroup: tm.adGroup, keyword: tm.keyword }))
-  const kwMatchMap = new Map((g.keywords || []).map((k) => [unorm(k.text), k.match || '—']))
+  const kwMatchMap = new Map((g.keywords || []).map((k) => [unorm(k.text), k.match || '-']))
   const baseCA = (r) => (!sel.campaign || r.campaign === sel.campaign) && (!sel.adGroup || r.adGroup === sel.adGroup)
   const adGroups = g.adGroups.filter((a) => !sel.campaign || a.campaign === sel.campaign)
   const keywordsBase = g.keywords.filter(baseCA) // all match types (for the match-type rollup)
-  const keywords = keywordsBase.filter((k) => !sel.matchType || (k.match || '—') === sel.matchType)
+  const keywords = keywordsBase.filter((k) => !sel.matchType || (k.match || '-') === sel.matchType)
   // Match-type rollup (Broad / Phrase / Exact) of the in-scope keywords, for the
-  // Match type table — ad metrics + CRM outcomes (green) via oMatchG.
-  const matchRows = (() => { const m = new Map(); for (const k of keywordsBase) { const type = k.match || '—'; const e = m.get(type) || { name: type, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += k.cost; e.impressions += k.impressions; e.clicks += k.clicks; e.conversions += k.conversions; m.set(type, e) } return [...m.values()].filter((x) => x.cost > 0 || x.conversions > 0).sort((a, b) => b.cost - a.cost) })()
+  // Match type table - ad metrics + CRM outcomes (green) via oMatchG.
+  const matchRows = (() => { const m = new Map(); for (const k of keywordsBase) { const type = k.match || '-'; const e = m.get(type) || { name: type, cost: 0, impressions: 0, clicks: 0, conversions: 0 }; e.cost += k.cost; e.impressions += k.impressions; e.clicks += k.clicks; e.conversions += k.conversions; m.set(type, e) } return [...m.values()].filter((x) => x.cost > 0 || x.conversions > 0).sort((a, b) => b.cost - a.cost) })()
   const searchTerms = (g.searchTerms || []).filter((r) => baseCA(r) && (!sel.keyword || r.keyword === sel.keyword) && (!sel.matchType || kwMatchMap.get(unorm(r.keyword)) === sel.matchType))
   const selLabel = [sel.campaign, sel.adGroup, sel.keyword].filter(Boolean).join(' › ')
   // conversion actions + match types respond to the drill-down selection
@@ -2447,7 +2447,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   // (highest spender = 1). Most ad groups have one ad, so this reads as the ad
   // group name. Overridden by a name you set (✎) or a Google Ads label.
   const adDefaultName = (() => {
-    const byAg = {}; for (const a of (g.ads || [])) { const ag = a.adGroup || '—'; (byAg[ag] || (byAg[ag] = [])).push(a) }
+    const byAg = {}; for (const a of (g.ads || [])) { const ag = a.adGroup || '-'; (byAg[ag] || (byAg[ag] = [])).push(a) }
     const m = {}
     for (const ag in byAg) { byAg[ag].slice().sort((a, b) => (b.cost || 0) - (a.cost || 0)).forEach((a, i) => { m[a.id] = `${ag} - ${i + 1}` }) }
     return m
@@ -2499,7 +2499,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
       </div>
       {has360 && (() => {
-        // Per-pipeline Caalano360 metrics — same treatment as Meta (Leads first,
+        // Per-pipeline Caalano360 metrics - same treatment as Meta (Leads first,
         // count · vs-prev · % of leads, combined cost tiles), for Google.
         const rmap = reachedByStage(gCh ? (gCh.pipelines || []) : [])
         const calMap = calCountMap(A, 'google')
@@ -2563,7 +2563,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}{pipeSpend[p.id] ? ` · ${fmtCurrency(pipeSpend[p.id], currency)}` : ''}</option>)}
         </select> : null}
         sub={`Google-attributed leads through your key pipeline stages and booked calendars · cost per event = Google spend ÷ count · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}`}
-        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google; cost per event divides the Google spend in this range. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline — it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
+        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google; cost per event divides the Google spend in this range. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline - it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
       />}
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Daily trend</h3><p className="cap">Spend, Conversions and Cost / Conversion by day{pipe !== 'all' ? ' · whole account' : ''}</p>
@@ -2592,7 +2592,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         </div>
         <div className="card chart-card"><h3>Conversion actions</h3><p className="cap">What Google is counting{selLabel ? ` · in ${selLabel}` : ''} · <span className="ca-star">★</span> = primary (counted in Conversions)</p>
           {caAgg.length ? <div className="mini-scroll"><table className="mini-table ca-mt"><thead><tr><th>Action</th><th>Conv.</th><th>Value</th></tr></thead>
-            <tbody>{caAgg.map((a) => { const primary = a.conversions > 0; return (<tr key={a.name}><td className="ca-name" title={a.name}><span>{primary ? <span className="ca-star" title="Primary — counted in Conversions">★ </span> : null}{a.name}</span><span className="ca-cat">{a.category || '-'}</span><span>{primary ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>}</span></td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '-'}</td></tr>) })}</tbody></table></div>
+            <tbody>{caAgg.map((a) => { const primary = a.conversions > 0; return (<tr key={a.name}><td className="ca-name" title={a.name}><span>{primary ? <span className="ca-star" title="Primary - counted in Conversions">★ </span> : null}{a.name}</span><span className="ca-cat">{a.category || '-'}</span><span>{primary ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>}</span></td><td>{fmtNumber(a.allConversions)}</td><td>{a.value ? fmtCurrency(a.value, currency) : '-'}</td></tr>) })}</tbody></table></div>
             : <p className="cap">No conversion actions{selLabel ? ` in ${selLabel}` : ''}.</p>}
         </div>
         <div className="card chart-card"><h3>Conversion locations</h3><p className="cap">Where conversions are happening{geoDim ? ` · by ${geoDim.replace(/_/g, ' ')}` : ''}</p>
@@ -2627,7 +2627,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
           : idMapN === 0
             ? 'Windsor returned no ad-group / ad IDs for this account, so IDs in the CRM can\'t be resolved to names. Check the Google Ads connector is linked and has data in this range.'
             : (looksNumeric(conRaw) || looksNumeric(medRaw))
-              ? 'The CRM carries numeric IDs but none matched a live ad-group ID from Windsor — the tracking template likely writes a different ID (e.g. the campaign or a custom value). Send one example contact\'s utm_medium + utm_content and I can map it.'
+              ? 'The CRM carries numeric IDs but none matched a live ad-group ID from Windsor - the tracking template likely writes a different ID (e.g. the campaign or a custom value). Send one example contact\'s utm_medium + utm_content and I can map it.'
               : 'The CRM\'s utm_medium / utm_content don\'t carry the ad-group ID (usually just "cpc" / a static value). To light these up, the client\'s Google URL template needs {adgroupid} in utm_content (utm_term already carries the keyword, which is why keywords match).'
         return (
           <details className="gdiag">
@@ -2639,7 +2639,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
                 <div><b>utm_medium values in CRM</b><span>{medRaw.length ? medRaw.slice(0, 8).join(', ') + (medRaw.length > 8 ? ' …' : '') : '(none)'}</span></div>
                 <div><b>utm_content values in CRM</b><span>{conRaw.length ? conRaw.slice(0, 8).join(', ') + (conRaw.length > 8 ? ' …' : '') : '(none)'}</span></div>
               </div>
-              <p className="cap">Keywords match on utm_term (name), campaigns match on utm_campaign (ID auto-resolved). Ad groups match when utm_medium or utm_content resolves to an ad-group name — directly or via the Windsor ID map.</p>
+              <p className="cap">Keywords match on utm_term (name), campaigns match on utm_campaign (ID auto-resolved). Ad groups match when utm_medium or utm_content resolves to an ad-group name - directly or via the Windsor ID map.</p>
             </div>
           </details>
         )
@@ -2647,7 +2647,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
       {(g.ads && g.ads.length > 0) && <>
         <div className="lvl-title">Ads <span className="sub">· {adsFiltered.length}{selLabel ? ` in ${selLabel}` : ''} · Search RSAs have no name, so each defaults to its ad group + spend rank; set a Google Ads label or a name you type (✎){has360 ? ' · green = CRM outcomes (utm_ad_id)' : ''}</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><SortTh k="name" sort={adSort} on={onAdSort}>Ad</SortTh><SortTh k="adGroup" sort={adSort} on={onAdSort}>Ad group</SortTh><SortTh k="cost" sort={adSort} on={onAdSort}>Cost</SortTh><SortTh k="impressions" sort={adSort} on={onAdSort}>Impr.</SortTh><SortTh k="ctr" sort={adSort} on={onAdSort}>CTR</SortTh><SortTh k="cpc" sort={adSort} on={onAdSort}>CPC</SortTh><SortTh k="conversions" sort={adSort} on={onAdSort}>Conv.</SortTh><SortTh k="cvr" sort={adSort} on={onAdSort}>Conv. rate</SortTh><SortTh k="costConv" sort={adSort} on={onAdSort}>Cost/conv</SortTh>{has360 && <O360Head sort={adSort} on={onAdSort} cols={o360cols} />}</tr></thead>
-          <tbody>{adView.map((a) => { const src = adNameSrc(a.id); return (<tr key={a.campaign + '|' + a.adGroup + '|' + a.id}><td><b>{adNameOf(a.id)}</b>{src === 'label' ? <span className="ad-lbl"> · label</span> : src === 'auto' ? <span className="ad-lbl"> · auto</span> : null} <button className="ad-ren" title="Set a friendly name for this ad" onClick={() => { const v = window.prompt('Friendly name for Google ad ' + a.id + ' (ad group: ' + (a.adGroup || '—') + ')', adNames[a.id] || adLabels[a.id] || ''); if (v !== null) setAdName(clientId, a.id, v) }}>✎</button></td><td style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'normal' }} title={a.campaign}>{a.adGroup || '-'}</td>{GCells(a)}{has360 && o360Cells(a, currency, o360cols)}</tr>) })}</tbody></table></div>
+          <tbody>{adView.map((a) => { const src = adNameSrc(a.id); return (<tr key={a.campaign + '|' + a.adGroup + '|' + a.id}><td><b>{adNameOf(a.id)}</b>{src === 'label' ? <span className="ad-lbl"> · label</span> : src === 'auto' ? <span className="ad-lbl"> · auto</span> : null} <button className="ad-ren" title="Set a friendly name for this ad" onClick={() => { const v = window.prompt('Friendly name for Google ad ' + a.id + ' (ad group: ' + (a.adGroup || '-') + ')', adNames[a.id] || adLabels[a.id] || ''); if (v !== null) setAdName(clientId, a.id, v) }}>✎</button></td><td style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'normal' }} title={a.campaign}>{a.adGroup || '-'}</td>{GCells(a)}{has360 && o360Cells(a, currency, o360cols)}</tr>) })}</tbody></table></div>
         <Pager page={adPg} pages={adPages} onPage={setAdPage} total={adsFiltered.length} unit="ads" />
       </>}
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms{has360 ? ' · green = CRM outcomes (utm_term)' : ''}</span></div>
@@ -2701,28 +2701,28 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
 }
 
 function EmptyDeep({ channel, range }) {
-  return <div className="card empty-deep"><div className="big">📊</div><b>No {channel} activity in {range ? rangeLabel(range) : 'this period'}.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>The {channel} account is connected but returned no campaigns or spend for this date range. Widen the range, or check the account is still active and spending — data appears here as soon as there’s activity in the selected period.</p></div>
+  return <div className="card empty-deep"><div className="big">📊</div><b>No {channel} activity in {range ? rangeLabel(range) : 'this period'}.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>The {channel} account is connected but returned no campaigns or spend for this date range. Widen the range, or check the account is still active and spending - data appears here as soon as there’s activity in the selected period.</p></div>
 }
 
 // Shown when the LIVE deep pull actually failed (vs. a client that was never
-// built). A big window (e.g. This year) is the usual cause — the pull can exceed
+// built). A big window (e.g. This year) is the usual cause - the pull can exceed
 // the serverless time limit. Tell the truth and give a way forward, instead of
 // the misleading "not pulled yet" placeholder.
 function DeepError({ channel, error, range, onRetry }) {
-  // A "no <channel> account for <client>" response isn't a timeout — it means the
+  // A "no <channel> account for <client>" response isn't a timeout - it means the
   // ad account isn't linked. Show a connect-oriented message with no retry.
   const noAccount = /no\s+\w+\s+account/i.test(String(error || ''))
   if (noAccount) return <div className="card empty-deep"><div className="big">🔌</div>
     <b>No {channel} account connected for this client.</b>
     <p style={{ maxWidth: 480, margin: '8px auto 0' }}>Link a {channel} ad account to this client (Settings → the client → connections) and it’ll appear here. If you only run CRM or the other channel for this client, you can ignore this tab.</p>
   </div>
-  // A session expiry isn't a timeout — the login cookie lapsed, so the pull came
+  // A session expiry isn't a timeout - the login cookie lapsed, so the pull came
   // back "Not authenticated". Show a sign-in message, not the misleading "temporary
   // timeout", and reload (which re-runs the auth check → login screen).
   const authExpired = /not authenticated|unauthenticated|session (expired|timed out|has expired)|token expired|please (log|sign) ?in|401/i.test(String(error || ''))
   if (authExpired) return <div className="card empty-deep"><div className="big">🔐</div>
     <b>Your session expired.</b>
-    <p style={{ maxWidth: 480, margin: '8px auto 0' }}>You were signed out (usually after a period of inactivity), so this pull couldn’t authenticate. Sign back in and it’ll load — no data was lost.</p>
+    <p style={{ maxWidth: 480, margin: '8px auto 0' }}>You were signed out (usually after a period of inactivity), so this pull couldn’t authenticate. Sign back in and it’ll load - no data was lost.</p>
     <button className="set-relink" style={{ marginTop: 12 }} onClick={() => window.location.reload()}>↻ Sign in again</button>
   </div>
   const big = range && (range.preset === 'this_year' || (range.from && range.to && (new Date(range.to) - new Date(range.from)) / 86400000 > 120))
@@ -2730,7 +2730,7 @@ function DeepError({ channel, error, range, onRetry }) {
     <b>Couldn’t load the {channel} breakdown for {range ? rangeLabel(range) : 'this range'}.</b>
     <p style={{ maxWidth: 520, margin: '8px auto 0' }}>{big
       ? 'This is a large window, and the campaign / ad-set / creative pull ran out of time before it finished. Try a shorter range (a month or quarter loads reliably), then retry.'
-      : 'The pull didn’t complete — this is usually a temporary timeout. Retry, or try a shorter range.'}</p>
+      : 'The pull didn’t complete - this is usually a temporary timeout. Retry, or try a shorter range.'}</p>
     {error ? <p className="cap" style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12, opacity: .8 }}>{String(error)}</p> : null}
     {onRetry ? <button className="set-relink" style={{ marginTop: 12 }} onClick={onRetry}>↻ Retry this pull</button> : null}
   </div>
@@ -2809,7 +2809,7 @@ function pipeOfKeyEvent(e) { if (typeof e === 'string') return null; if (e && (e
 // Unscoped events (bare stage strings, or a Won/calendar with no pipeline) are
 // kept but STAMPED with this pipeline, so their reach resolves against this
 // pipeline's stage counts (pipelineId::name) rather than the cross-pipeline
-// total — otherwise a bare stage in a per-pipeline funnel/tile/green column
+// total - otherwise a bare stage in a per-pipeline funnel/tile/green column
 // leaks the summed count across every pipeline. The 'all' view is left untouched
 // (bare events there correctly read the cross-pipeline total).
 function keyEventsForPipe(list, pipe) {
@@ -2955,20 +2955,20 @@ const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
 const ENABLED_KEY = 'caalano_enabled'
-const RESTRICTED_KEY = 'caalano_restricted'       // { clientId: true } — client is visible to Super Admins only
+const RESTRICTED_KEY = 'caalano_restricted'       // { clientId: true } - client is visible to Super Admins only
 const CLIENTS_KEY = 'caalano_clients' // UI-added clients { id: { name, meta, google, ghl } }
 const FORMMETA_KEY = 'caalano_formmeta' // { clientId: { formLabel: { pipeline, notes } } }
 const METACONV_KEY = 'caalano_metaconv' // { clientId: { primary: fieldId, secondary: [fieldId] } }
 const CREATIVEMETA_KEY = 'caalano_creativemeta' // { clientId: { creativeId: { aware, persona, angle, format, dest, cta, copy, notes } } }
-const CREATIVETAX_KEY = 'caalano_creativetax'   // { clientId: { persona: [...], angle: [...], dest: [...] } } — reusable dropdown values
+const CREATIVETAX_KEY = 'caalano_creativetax'   // { clientId: { persona: [...], angle: [...], dest: [...] } } - reusable dropdown values
 const CLIENTCTX_KEY = 'caalano_clientctx'        // { clientId: "free-text context / notes about the client, fed into the client-update prompt" }
-const FATIGUE_KEY = 'caalano_fatigue'            // { _global: { freqMed, freqHigh, ctrDropMed, ctrDropHigh, minImpr } } — creative-fatigue thresholds
-const COMPETITORS_KEY = 'caalano_competitors'    // { clientId: [{ id, name, ig, fb, igAccount, fbAccount }] } — organic-social competitors per client
-const SOCIALKPIS_KEY = 'caalano_socialkpis'      // { clientId: { netFollowers, reach, views, engagement, posts, er } } — monthly organic-social KPI targets
-const OPTLOG_KEY = 'caalano_optlog'              // { clientId: 'https://docs.google.com/spreadsheets/d/…' } — per-client Optimisation Log Google Sheet
-const QUALSTAGE_KEY = 'caalano_qualstage'        // { clientId: { [pipelineId]: stageName } } — the stage that marks a lead "qualified", per pipeline
-const ALIASES_KEY = 'caalano_aliases'            // { clientId: { campaign|medium|content: { oldUtmName: currentName } } } — old-UTM → current-name links (renames)
-const LOGOS_KEY = 'caalano_logos'                // { clientId: { website, logoUrl, logo? } } — business logo (GHL logoUrl / website favicon, + optional manual override) for avatars
+const FATIGUE_KEY = 'caalano_fatigue'            // { _global: { freqMed, freqHigh, ctrDropMed, ctrDropHigh, minImpr } } - creative-fatigue thresholds
+const COMPETITORS_KEY = 'caalano_competitors'    // { clientId: [{ id, name, ig, fb, igAccount, fbAccount }] } - organic-social competitors per client
+const SOCIALKPIS_KEY = 'caalano_socialkpis'      // { clientId: { netFollowers, reach, views, engagement, posts, er } } - monthly organic-social KPI targets
+const OPTLOG_KEY = 'caalano_optlog'              // { clientId: 'https://docs.google.com/spreadsheets/d/…' } - per-client Optimisation Log Google Sheet
+const QUALSTAGE_KEY = 'caalano_qualstage'        // { clientId: { [pipelineId]: stageName } } - the stage that marks a lead "qualified", per pipeline
+const ALIASES_KEY = 'caalano_aliases'            // { clientId: { campaign|medium|content: { oldUtmName: currentName } } } - old-UTM → current-name links (renames)
+const LOGOS_KEY = 'caalano_logos'                // { clientId: { website, logoUrl, logo? } } - business logo (GHL logoUrl / website favicon, + optional manual override) for avatars
 // Durable default key events for clients whose config predates server storage,
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
@@ -2993,7 +2993,7 @@ const SEED_OPTLOG = {
 const CURATOR_KEY = 'caalano_curator_board'
 const PROFILE_KEY = 'caalano_client_profile'
 const DAILYPERF_KEY = 'caalano_dailyperf'
-const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendlyName } } — friendly names for Google Ad IDs
+const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendlyName } } - friendly names for Google Ad IDs
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
 const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), loaded: false }
@@ -3060,14 +3060,14 @@ function saveClientCtx(clientId, text) {
   SETTINGS.clientctx = { ...(SETTINGS.clientctx || {}), [clientId]: text }
   writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); saveSettingsRemote({ clientctx: { [clientId]: text } }); bumpSettings()
 }
-// Client Brand Profile — a structured "everything about this brand" file per
+// Client Brand Profile - a structured "everything about this brand" file per
 // client that feeds the AI features (Creative Curator, and available for more).
 const PROFILE_FIELDS = [
   { k: 'website', label: 'Website', ph: 'https://…', area: false },
   { k: 'oneLiner', label: 'What they do (one line)', ph: 'e.g. Sydney concrete pool builder for premium homes', area: false },
-  { k: 'industry', label: 'Industry / vertical', ph: 'e.g. Home improvement — pools', area: false },
+  { k: 'industry', label: 'Industry / vertical', ph: 'e.g. Home improvement - pools', area: false },
   { k: 'voice', label: 'Brand voice / tone', ph: 'e.g. Confident, warm, plain-English; premium but approachable', area: true },
-  { k: 'icp', label: 'Ideal customer (ICP)', ph: 'Who they sell to — demographics, mindset, buying triggers', area: true },
+  { k: 'icp', label: 'Ideal customer (ICP)', ph: 'Who they sell to - demographics, mindset, buying triggers', area: true },
   { k: 'offer', label: 'Core offer & pricing notes', ph: 'Main services, typical deal size, guarantees, finance', area: true },
   { k: 'differentiators', label: 'Selling points / differentiators', ph: 'Why choose them over competitors', area: true },
   { k: 'objections', label: 'Common objections (+ answers)', ph: 'Price, timing, trust, DIY… and how they’re handled', area: true },
@@ -3084,19 +3084,19 @@ const PROFILE_FIELDS = [
 // competitors, website) is left blank or marked [confirm] so no fabricated
 // claim can leak into an ad. Saved edits always override these seeds.
 const CLIENT_PROFILE_SEEDS = {
-  'pool-haus': { oneLiner: 'Premium custom concrete (inground) pool builder', industry: 'Home improvement — swimming pool construction', voice: 'Confident, premium and reassuring; plain-English; aspirational lifestyle backed by builder credibility', icp: 'Homeowners (mainly Sydney + Central Coast) wanting a custom inground concrete pool; renovators and new-build owners who value quality and a trustworthy builder over the cheapest quote', offer: 'Custom concrete pool design and construction. [Confirm exact inclusions, price range, finance options and warranty]', differentiators: '[Confirm — e.g. in-house build team, fixed-price contract, design service, workmanship warranty]', objections: 'Cost, disruption / mess, how long it takes, trusting the builder to finish well, ongoing maintenance', proof: '[Add real proof: number of pools built, review rating, awards, warranty length]', keywords: 'concrete pool, inground pool, custom pool, pool builder Sydney, backyard transformation, plunge pool', adNotes: 'Before/after backyard transformations, build-process demos, finished-pool lifestyle, warranty & quality reassurance. Angles: aspiration + trust.', notes: 'Sydney + Central Coast. Runs Meta lead forms and website-conversion campaigns.' },
-  'nexia-health': { oneLiner: 'Mental health and allied health care provider', industry: 'Healthcare — mental health & allied health', voice: 'Warm, empathetic, professional and reassuring; non-judgemental; clear and accessible', icp: 'People seeking mental health / allied health support and their families; self-referred or GP-referred; want to feel understood and get timely, quality care', offer: 'Mental health and allied health services. [Confirm disciplines (psychology, counselling, OT, etc.), telehealth vs in-person, and funding: Medicare / NDIS / private]', differentiators: '[Confirm — e.g. multidisciplinary team, short wait times, funding pathways, telehealth]', objections: 'Cost / funding, stigma, wait times, whether it will help, finding the right clinician', proof: '[Add real proof: clinician credentials, accreditations, privacy-safe outcomes]', keywords: 'mental health support, psychology, counselling, allied health, telehealth', avoidWords: 'Keep AHPRA-compliant: no outcome guarantees and no prohibited testimonials', adNotes: 'Empathy-led and educational; gentle book/enquire CTA. Health-advertising compliance matters.', notes: 'Health advertising: follow AHPRA rules (no prohibited testimonials, no outcome claims).' },
-  'finr-advisory': { oneLiner: 'Property-investment finance advisory + buyer’s advocacy', industry: 'Finance — mortgage broking / property investment advisory', voice: 'Credible, educational and confident; numbers-led but jargon-free; wealth-building aspiration with trust', icp: 'Everyday investors and “rentvestors” wanting to buy investment property, lift borrowing capacity, or use equity / CGT strategies; time-poor professionals who want expert guidance', offer: 'Borrowing-capacity and finance advice plus buyer’s advocacy for property investors. [Confirm services, fees and states served]', differentiators: '[Confirm — e.g. combined finance + buyer’s agent, data-led property selection, end-to-end service]', objections: 'Trusting someone with money, fees, market timing / risk, borrowing capacity, “is now a good time”', proof: '[Add real proof: clients helped, properties settled, credit licence / credentials, reviews]', keywords: 'borrowing capacity, investment property, rentvesting, capital gains, buyers agent, property investment, equity', avoidWords: 'Avoid guaranteed-return or personal financial-advice claims; include appropriate credit / finance disclaimers', adNotes: 'Podcast-style education + case studies (e.g. Melbourne rentvestors, CGT, new builds). Two pipelines: FINR Advisory (finance) and Buyers Advocacy.', notes: 'Runs [FIN] FINR Advisory and [BA] Buyers Advocacy pipelines. Finance-advertising compliance applies.' },
-  'psychology-hub': { oneLiner: 'Psychology practice', industry: 'Healthcare — psychology / mental health', voice: 'Warm, professional, reassuring and non-judgemental', icp: 'Adults, teens and parents seeking psychology support; self-referred or GP-referred', offer: 'Psychology and counselling services. [Confirm telehealth vs in-person, Medicare rebates, specialties]', objections: 'Cost / rebates, stigma, wait times, finding the right psychologist', proof: '[Add credentials, Medicare provider status, accreditations]', keywords: 'psychologist, counselling, therapy, mental health, Medicare rebate', avoidWords: 'AHPRA-compliant: no outcome guarantees or prohibited testimonials', adNotes: 'Empathy + education; gentle booking CTA.', notes: 'Health advertising compliance (AHPRA).' },
-  'book-a-midwife': { oneLiner: 'Private midwifery and maternity care', industry: 'Healthcare — midwifery / maternity', voice: 'Warm, nurturing, empowering and professional', icp: 'Expecting parents wanting personalised private midwifery care and continuity of carer', offer: 'Private midwife booking and maternity care. [Confirm: home birth / hospital, antenatal / postnatal, Medicare, service areas]', objections: 'Cost / Medicare, safety, availability, how it works alongside the hospital', proof: '[Add midwife credentials, births supported, reviews]', keywords: 'private midwife, continuity of care, home birth, antenatal, postnatal, maternity care', avoidWords: 'Health-advertising compliant; no birth-outcome guarantees', adNotes: 'Story and empowerment-led; educate on continuity of care; gentle enquiry CTA.' },
-  'rlm-telehealth': { oneLiner: 'Telehealth service', industry: 'Healthcare — telehealth', voice: 'Accessible, convenient, professional and reassuring', icp: 'People wanting convenient remote access to health consults [confirm specialty]', offer: 'Telehealth consultations. [Confirm services / specialty, funding, booking]', objections: 'Is telehealth as good as in-person, cost / rebates, technology, privacy', keywords: 'telehealth, online consult, remote appointment', avoidWords: 'Health-advertising compliant', adNotes: 'Convenience + access angle; educational.', notes: '[Confirm the specialty / services RLM Telehealth provides.]' },
+  'pool-haus': { oneLiner: 'Premium custom concrete (inground) pool builder', industry: 'Home improvement - swimming pool construction', voice: 'Confident, premium and reassuring; plain-English; aspirational lifestyle backed by builder credibility', icp: 'Homeowners (mainly Sydney + Central Coast) wanting a custom inground concrete pool; renovators and new-build owners who value quality and a trustworthy builder over the cheapest quote', offer: 'Custom concrete pool design and construction. [Confirm exact inclusions, price range, finance options and warranty]', differentiators: '[Confirm - e.g. in-house build team, fixed-price contract, design service, workmanship warranty]', objections: 'Cost, disruption / mess, how long it takes, trusting the builder to finish well, ongoing maintenance', proof: '[Add real proof: number of pools built, review rating, awards, warranty length]', keywords: 'concrete pool, inground pool, custom pool, pool builder Sydney, backyard transformation, plunge pool', adNotes: 'Before/after backyard transformations, build-process demos, finished-pool lifestyle, warranty & quality reassurance. Angles: aspiration + trust.', notes: 'Sydney + Central Coast. Runs Meta lead forms and website-conversion campaigns.' },
+  'nexia-health': { oneLiner: 'Mental health and allied health care provider', industry: 'Healthcare - mental health & allied health', voice: 'Warm, empathetic, professional and reassuring; non-judgemental; clear and accessible', icp: 'People seeking mental health / allied health support and their families; self-referred or GP-referred; want to feel understood and get timely, quality care', offer: 'Mental health and allied health services. [Confirm disciplines (psychology, counselling, OT, etc.), telehealth vs in-person, and funding: Medicare / NDIS / private]', differentiators: '[Confirm - e.g. multidisciplinary team, short wait times, funding pathways, telehealth]', objections: 'Cost / funding, stigma, wait times, whether it will help, finding the right clinician', proof: '[Add real proof: clinician credentials, accreditations, privacy-safe outcomes]', keywords: 'mental health support, psychology, counselling, allied health, telehealth', avoidWords: 'Keep AHPRA-compliant: no outcome guarantees and no prohibited testimonials', adNotes: 'Empathy-led and educational; gentle book/enquire CTA. Health-advertising compliance matters.', notes: 'Health advertising: follow AHPRA rules (no prohibited testimonials, no outcome claims).' },
+  'finr-advisory': { oneLiner: 'Property-investment finance advisory + buyer’s advocacy', industry: 'Finance - mortgage broking / property investment advisory', voice: 'Credible, educational and confident; numbers-led but jargon-free; wealth-building aspiration with trust', icp: 'Everyday investors and “rentvestors” wanting to buy investment property, lift borrowing capacity, or use equity / CGT strategies; time-poor professionals who want expert guidance', offer: 'Borrowing-capacity and finance advice plus buyer’s advocacy for property investors. [Confirm services, fees and states served]', differentiators: '[Confirm - e.g. combined finance + buyer’s agent, data-led property selection, end-to-end service]', objections: 'Trusting someone with money, fees, market timing / risk, borrowing capacity, “is now a good time”', proof: '[Add real proof: clients helped, properties settled, credit licence / credentials, reviews]', keywords: 'borrowing capacity, investment property, rentvesting, capital gains, buyers agent, property investment, equity', avoidWords: 'Avoid guaranteed-return or personal financial-advice claims; include appropriate credit / finance disclaimers', adNotes: 'Podcast-style education + case studies (e.g. Melbourne rentvestors, CGT, new builds). Two pipelines: FINR Advisory (finance) and Buyers Advocacy.', notes: 'Runs [FIN] FINR Advisory and [BA] Buyers Advocacy pipelines. Finance-advertising compliance applies.' },
+  'psychology-hub': { oneLiner: 'Psychology practice', industry: 'Healthcare - psychology / mental health', voice: 'Warm, professional, reassuring and non-judgemental', icp: 'Adults, teens and parents seeking psychology support; self-referred or GP-referred', offer: 'Psychology and counselling services. [Confirm telehealth vs in-person, Medicare rebates, specialties]', objections: 'Cost / rebates, stigma, wait times, finding the right psychologist', proof: '[Add credentials, Medicare provider status, accreditations]', keywords: 'psychologist, counselling, therapy, mental health, Medicare rebate', avoidWords: 'AHPRA-compliant: no outcome guarantees or prohibited testimonials', adNotes: 'Empathy + education; gentle booking CTA.', notes: 'Health advertising compliance (AHPRA).' },
+  'book-a-midwife': { oneLiner: 'Private midwifery and maternity care', industry: 'Healthcare - midwifery / maternity', voice: 'Warm, nurturing, empowering and professional', icp: 'Expecting parents wanting personalised private midwifery care and continuity of carer', offer: 'Private midwife booking and maternity care. [Confirm: home birth / hospital, antenatal / postnatal, Medicare, service areas]', objections: 'Cost / Medicare, safety, availability, how it works alongside the hospital', proof: '[Add midwife credentials, births supported, reviews]', keywords: 'private midwife, continuity of care, home birth, antenatal, postnatal, maternity care', avoidWords: 'Health-advertising compliant; no birth-outcome guarantees', adNotes: 'Story and empowerment-led; educate on continuity of care; gentle enquiry CTA.' },
+  'rlm-telehealth': { oneLiner: 'Telehealth service', industry: 'Healthcare - telehealth', voice: 'Accessible, convenient, professional and reassuring', icp: 'People wanting convenient remote access to health consults [confirm specialty]', offer: 'Telehealth consultations. [Confirm services / specialty, funding, booking]', objections: 'Is telehealth as good as in-person, cost / rebates, technology, privacy', keywords: 'telehealth, online consult, remote appointment', avoidWords: 'Health-advertising compliant', adNotes: 'Convenience + access angle; educational.', notes: '[Confirm the specialty / services RLM Telehealth provides.]' },
   'swift-emergency': { oneLiner: 'Rapid emergency-response service', industry: 'Emergency services / trades [confirm exact type]', voice: 'Urgent, reassuring, reliable and fast', icp: 'People with an urgent problem who need fast, trustworthy help right now', offer: 'Rapid emergency response. [Confirm exact service (plumbing / electrical / restoration / other), 24-7 availability, areas, pricing]', objections: 'Response time, call-out cost, trust, availability', keywords: 'emergency, 24/7, fast response, urgent', adNotes: 'Urgency + reliability (“we’re there fast”); call / enquiry CTA.', notes: '[Confirm exactly what emergency service Swift provides.]' },
-  'healan-centre': { oneLiner: 'Allied health / wellness centre [confirm]', industry: 'Healthcare — allied health [confirm]', voice: 'Caring, professional and reassuring', icp: '[Confirm target patients]', offer: '[Confirm services offered]', avoidWords: 'If health services, keep AHPRA-compliant', notes: '[Confirm what Healan Centre offers — inferred as an allied health / wellness centre.]' },
-  'ablycalm': { notes: '[Add brand details — website, what they do, ICP, offer. Name suggests a wellness / calm / mental-health angle; please confirm.]' },
-  'simchat': { notes: '[Add brand details — website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
-  'owl-psa': { notes: '[Add brand details — website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
-  'a2z': { notes: '[Add brand details — website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
-  'ido-ido': { notes: '[Add brand details — website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
+  'healan-centre': { oneLiner: 'Allied health / wellness centre [confirm]', industry: 'Healthcare - allied health [confirm]', voice: 'Caring, professional and reassuring', icp: '[Confirm target patients]', offer: '[Confirm services offered]', avoidWords: 'If health services, keep AHPRA-compliant', notes: '[Confirm what Healan Centre offers - inferred as an allied health / wellness centre.]' },
+  'ablycalm': { notes: '[Add brand details - website, what they do, ICP, offer. Name suggests a wellness / calm / mental-health angle; please confirm.]' },
+  'simchat': { notes: '[Add brand details - website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
+  'owl-psa': { notes: '[Add brand details - website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
+  'a2z': { notes: '[Add brand details - website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
+  'ido-ido': { notes: '[Add brand details - website, what they do, ICP, offer. Not enough info to auto-fill reliably.]' },
 }
 function loadProfile(clientId) { return { ...(CLIENT_PROFILE_SEEDS[clientId] || {}), ...((SETTINGS.profile && SETTINGS.profile[clientId]) || {}) } }
 function saveProfile(clientId, obj) {
@@ -3181,7 +3181,7 @@ function loadQualStage(clientId) { return (SETTINGS.qualstage && SETTINGS.qualst
 function saveQualStage(clientId, map) { SETTINGS.qualstage = { ...SETTINGS.qualstage, [clientId]: map }; writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); saveSettingsRemote({ qualstage: { [clientId]: map } }); bumpSettings() }
 // UTM aliases: old-UTM value → current entity name, per level. Handles renamed
 // campaigns / ad sets / creatives whose historical CRM leads were stamped with the
-// old name — so old + new outcomes aggregate under the current name.
+// old name - so old + new outcomes aggregate under the current name.
 const ALIAS_LEVELS = ['campaign', 'medium', 'content']
 function loadAliases(clientId) { const a = (SETTINGS.aliases && SETTINGS.aliases[clientId]) || {}; return { campaign: a.campaign || {}, medium: a.medium || {}, content: a.content || {} } }
 function saveAliases(clientId, level, map) {
@@ -3207,9 +3207,9 @@ function setAlias(clientId, level, oldName, currentName) {
   if (currentName) m[oldName] = currentName; else delete m[oldName]
   saveAliases(clientId, level, m)
 }
-// "Keep separate" — mark an unmatched UTM as an intentional standalone (a legit
+// "Keep separate" - mark an unmatched UTM as an intentional standalone (a legit
 // paused/other campaign, NOT a rename). It's hidden from the unmatched list and
-// its data stays under its own name — nothing is merged. Stored alongside the
+// its data stays under its own name - nothing is merged. Stored alongside the
 // fold maps under a reserved _keep key so applyAliases never touches it.
 function loadKeep(clientId) { const k = ((SETTINGS.aliases && SETTINGS.aliases[clientId]) || {})._keep || {}; return { campaign: k.campaign || {}, medium: k.medium || {}, content: k.content || {} } }
 function setKeep(clientId, level, name, on) {
@@ -3243,7 +3243,7 @@ function applyAliases(arr, aliasMap) {
 }
 // mkOutcomeMap with a client's aliases for a level applied first. `autoMap`
 // ({ rawUtmValue -> currentName }) is an automatically-derived fold applied
-// BEFORE the manual aliases (manual wins on conflict) — used to resolve numeric
+// BEFORE the manual aliases (manual wins on conflict) - used to resolve numeric
 // Google/Meta campaign IDs in utm_campaign to their live campaign name, from
 // Windsor's campaign_id↔name pairing, so the Caalano360 outcome columns match.
 function aliasedOutcomeMap(clientId, level, arr, autoMap) {
@@ -3320,7 +3320,7 @@ function pipeOfCampaign(clientId, campName, pipes) {
 // Scope a Meta rollup to the campaigns matching keep(name): filter campaigns /
 // ad sets / creatives / ad-daily to that subset and recompute account totals,
 // results breakdown, daily series and prev from it. Reach is summed across
-// campaigns (a mild over-count vs true dedup'd account reach) — flagged in UI.
+// campaigns (a mild over-count vs true dedup'd account reach) - flagged in UI.
 function scopeMetaToPipe(m, keep) {
   const campaigns = (m.campaigns || []).filter((c) => keep(c.name))
   const ok = new Set(campaigns.map((c) => c.name))
@@ -3472,7 +3472,7 @@ function stagePosMap(pipelines) {
 // moves the lead into that stage). An event we can't anchor to a stage position
 // (e.g. a calendar with no linked stage, or a stage that isn't in this pipeline)
 // inherits the PREVIOUS event's position + a tiny step, so it keeps the order it
-// was configured in — next to its neighbours — instead of being dumped at the end.
+// was configured in - next to its neighbours - instead of being dumped at the end.
 // Strip a leading pipeline tag like "[FIN] " / "[BA] " (and any 📅) from a label,
 // so a calendar named "[FIN] Booked Discovery Call" can be matched to the real
 // "Booked Discovery Call" pipeline stage for ordering / merging.
@@ -3544,7 +3544,7 @@ function mergeCalKeyEvents(list) {
   // split as "via calendar" / "via pipeline" in the number + tooltip.
   // A calendar linked to a pipeline stage IS that funnel step, so always show the
   // pipeline STAGE name (the 📅 icon still marks it as calendar-linked) rather than
-  // the calendar's own name — even when the calendar was deliberately [PIPE]-tagged.
+  // the calendar's own name - even when the calendar was deliberately [PIPE]-tagged.
   for (const e of out) if (e.kind === 'calendar' && e.stage) e.label = stripPipeTag(e.stage) || e.stage
   const coveredName = new Set(), coveredPipe = new Set()
   for (const e of out) if (e.kind === 'calendar' && e.stage) { coveredName.add(nzz(e.stage)); if (e.pipeline) coveredPipe.add(e.pipeline + '::' + nzz(e.stage)) }
@@ -3616,7 +3616,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
     } else {
       const has = rmap && (rmap.m.has(k.ref) || (k.pipeline && rmap.m.has(k.pipeline + '::' + k.ref)))
       if (!has) continue
-      // A won deal is assumed to have progressed through EVERY pipeline stage — a
+      // A won deal is assumed to have progressed through EVERY pipeline stage - a
       // deal is often marked Won at an earlier stage (e.g. "15 Minute Call") without
       // the stage being dragged forward, which otherwise shows 0 at later stages like
       // "Payment Collected" despite the deal being won. So each stage's reached count
@@ -3638,14 +3638,14 @@ function calPopRows(r) {
   const parts = r.perCal || []
   if (!parts.length && !r.fromStage) return null
   const rows = parts.map((p) => ({ label: p.occurred ? `${p.name} · ${fmtNumber(p.shown)}/${fmtNumber(p.occurred)} shown` : p.name, value: p.count }))
-  if (r.fromStage) rows.push({ label: 'Reached the stage — no calendar booking', value: r.fromStage, muted: true })
+  if (r.fromStage) rows.push({ label: 'Reached the stage - no calendar booking', value: r.fromStage, muted: true })
   return { title: parts.length > 1 ? `Booked · ${parts.length} calendars` : 'Booked', total: r.fromCal || r.count, rows }
 }
 // Appointment detail for a calendar-linked key-event drill: which calendar the
 // person booked, whether the meeting has occurred (date passed) and whether they
 // showed. Shown as its own column when the drill is a calendar event.
 function CalCell({ cals }) {
-  if (!cals || !cals.length) return <span className="cap">—</span>
+  if (!cals || !cals.length) return <span className="cap">-</span>
   return (
     <div className="kp-cals">
       {cals.map((c, i) => {
@@ -3658,7 +3658,7 @@ function CalCell({ cals }) {
   )
 }
 // One person behind a key event (the drill-down list). Expands to that contact's
-// Caalano Systems notes on click — same pattern as OpenDealRow.
+// Caalano Systems notes on click - same pattern as OpenDealRow.
 function KeyPersonRow({ p, clientId, money, showCal = false }) {
   const [open, setOpen] = useState(false)
   const [notes, setNotes] = useState(null)
@@ -3671,14 +3671,14 @@ function KeyPersonRow({ p, clientId, money, showCal = false }) {
       <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
         <td className="lft">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
         <td className="lft">{statusChip(p.status)}{p.status === 'lost' && p.lostReason ? <div className="kp-lost cap">✕ {p.lostReason}</div> : null}</td>
-        <td className="lft kp-stage">{p.stage || '—'}{p.pipeline && p.pipeline !== 'Pipeline' ? <span className="cap"> · {p.pipeline}</span> : null}</td>
+        <td className="lft kp-stage">{p.stage || '-'}{p.pipeline && p.pipeline !== 'Pipeline' ? <span className="cap"> · {p.pipeline}</span> : null}</td>
         {showCal ? <td className="lft kp-appt"><CalCell cals={p.calendars} /></td> : null}
         <td className="lft"><span className={`mr-src mr-src-${p.channel || 'other'}`}>{p.source}</span> <span className="cap">· {viaLabel}</span></td>
-        <td>{p.value ? money(p.value) : '—'}</td>
-        <td className={p.ageDays != null && p.ageDays > 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '—'}</td>
+        <td>{p.value ? money(p.value) : '-'}</td>
+        <td className={p.ageDays != null && p.ageDays > 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '-'}</td>
       </tr>
       {open && <tr className="u-notes-row"><td colSpan={showCal ? 7 : 6}>
-        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>{[p.email, p.phone].filter(Boolean).join(' · ') || 'No notes on this contact in Caalano Systems.'}</div>}
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>{[p.email, p.phone].filter(Boolean).join(' · ') || 'No notes on this contact in Caalano Systems.'}</div>}
       </td></tr>}
     </React.Fragment>
   )
@@ -3729,7 +3729,7 @@ function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose
         ) : null}
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Loading people…" />
-            : st.status === 'err' ? <div className="cap">Couldn’t load the list — try again.</div>
+            : st.status === 'err' ? <div className="cap">Couldn’t load the list - try again.</div>
               : !people.length ? <div className="cap">No people found for this event in the selected range.</div>
                 : !shown.length ? <div className="cap">No {filter} deals in this group.</div>
                   : <table className="mini-tbl users-tbl kp-tbl">
@@ -3786,9 +3786,9 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
               <span className="kef-step">{cp ? <KeCellPop title={cp.title} total={cp.total} rows={cp.rows}><span className="kef-step-tip">{stepInner}</span></KeCellPop> : stepInner}{s.kind === 'calendar' && s.cancelled ? <span className="c360-canc" title={`${s.cancelled} later cancelled`}> ({s.cancelled}c)</span> : null}{canDrill ? <span className="kef-drill-ind"> ›</span> : null}</span>
               <span className="kef-bar" title={barTip}><span className="kef-fill" style={{ width: `${Math.max(6, (s.count / max) * 100)}%`, background: `hsl(${hue} 68% 52%)` }}>{fmtNumber(s.count)}{s.fromStage ? <span className="kef-p" title={barTip}> +{fmtNumber(s.fromStage)}p</span> : null}</span></span>
               <span className="kef-num" data-l="% leads">{isLead ? '100%' : fmtPct(pct, 0)}</span>
-              <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`} data-l="Next step">{step == null ? '—' : fmtPct(step, 0)}</span>
-              {anyCal ? <span className="kef-num" data-l="Show %" title={s.kind === 'calendar' ? `${fmtNumber(s.shown || 0)} shown of ${fmtNumber(s.occurred || 0)} occurred · ${fmtNumber(s.count)} booked` : undefined}>{showR == null ? '—' : fmtPct(showR, 0)}</span> : null}
-              <span className="kef-num kef-cost" data-l="Cost / event">{isLead ? (spend && s.count ? money(spend / s.count) : '—') : (spend && s.count ? money(spend / s.count) : '—')}</span>
+              <span className={`kef-num ${step == null ? '' : step >= 60 ? 'good' : step < 30 ? 'bad' : ''}`} data-l="Next step">{step == null ? '-' : fmtPct(step, 0)}</span>
+              {anyCal ? <span className="kef-num" data-l="Show %" title={s.kind === 'calendar' ? `${fmtNumber(s.shown || 0)} shown of ${fmtNumber(s.occurred || 0)} occurred · ${fmtNumber(s.count)} booked` : undefined}>{showR == null ? '-' : fmtPct(showR, 0)}</span> : null}
+              <span className="kef-num kef-cost" data-l="Cost / event">{isLead ? (spend && s.count ? money(spend / s.count) : '-') : (spend && s.count ? money(spend / s.count) : '-')}</span>
             </div>
           )
         })}
@@ -3818,7 +3818,7 @@ function useHealth(clientId, range, nonce = 0, reload = 0, wonBasis = 'closed') 
     let alive = true
     setSt({ status: 'loading', data: null })
     const url = `/.netlify/functions/windsor?client=${clientId}&scope=health&${q}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}${reload ? `&_b=${reload}` : ''}`
-    // Heavy build — retry a couple of times with backoff before showing an error,
+    // Heavy build - retry a couple of times with backoff before showing an error,
     // so a transient timeout on a range change self-heals instead of erroring.
     const attempt = (n) => fetch(`${url}&_a=${n}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
@@ -3850,7 +3850,7 @@ function HealthGauge({ score }) {
   return (
     <div className="hs-gauge" style={{ '--v': `${score == null ? 0 : score}%`, '--col': col }}>
       <div className="hs-gauge-inner">
-        <div className="hs-num" style={{ color: col }}>{score == null ? '—' : score}</div>
+        <div className="hs-num" style={{ color: col }}>{score == null ? '-' : score}</div>
         <div className="hs-den">/ 100</div>
       </div>
     </div>
@@ -3861,7 +3861,7 @@ function HealthGauge({ score }) {
 // previous-period reference, and the 0-100 it contributed).
 function PillarRow({ pk, pillar, open, onToggle, money }) {
   const s = pillar ? pillar.score : null
-  const fmtVal = (v, f) => (v == null ? '—' : f === 'money' ? money(Math.round(v)) : f === 'pct' ? `${Math.round(v * 100)}%` : fmtNumber(Math.round(v)))
+  const fmtVal = (v, f) => (v == null ? '-' : f === 'money' ? money(Math.round(v)) : f === 'pct' ? `${Math.round(v * 100)}%` : fmtNumber(Math.round(v)))
   return (
     <div className={`hs-pillar ${open ? 'open' : ''}`}>
       <button className="hs-pillar-head" onClick={onToggle}>
@@ -3875,7 +3875,7 @@ function PillarRow({ pk, pillar, open, onToggle, money }) {
           <div className="hs-comp" key={i}>
             <span className="hs-comp-l">{c.label}</span>
             <span className="hs-comp-v">{fmtVal(c.actual, c.fmt)}<span className="hs-comp-ref"> vs {fmtVal(c.ref, c.fmt)}</span></span>
-            <span className="hs-comp-s" style={{ color: hColor(c.score) }}>{c.score == null ? '—' : c.score}</span>
+            <span className="hs-comp-s" style={{ color: hColor(c.score) }}>{c.score == null ? '-' : c.score}</span>
           </div>
         )) : <div className="cap">No data for this pillar in the selected period.</div>}
       </div>}
@@ -3883,9 +3883,9 @@ function PillarRow({ pk, pillar, open, onToggle, money }) {
   )
 }
 
-// Revenue at risk — aged, still-open deals ranked by value (reuses the Users
+// Revenue at risk - aged, still-open deals ranked by value (reuses the Users
 // open-deal drill, so each row expands to the client's notes for "why stuck").
-// Per-rep performance summary for Caalano360 — leads → won → revenue per rep, plus
+// Per-rep performance summary for Caalano360 - leads → won → revenue per rep, plus
 // each rep's open pipeline, expandable to the open deals (and their CRM notes) so
 // you can see where each person's deals are held up. One scope=users fetch (the
 // same feed AtRiskPanel uses; cached server-side).
@@ -3917,9 +3917,9 @@ function TeamPerformance({ clientId, range, nonce, money }) {
               <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: deals.length ? 'pointer' : 'default' }} onClick={deals.length ? () => setOpen(isOpen ? null : u.id) : undefined}>
                 <td className="lft">{deals.length ? <span className="u-chev">{isOpen ? '▾' : '▸'}</span> : null} {u.name}</td>
                 <td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{fmtNumber(u.won)}</td>
-                <td>{u.winRate == null ? '—' : `${u.winRate}%`}</td><td>{money(u.revenue || 0)}</td>
-                <td>{fmtNumber(u.open || 0)}</td><td>{u.openValue ? money(u.openValue) : '—'}</td>
-                <td>{u.avgCloseDays == null ? '—' : `${u.avgCloseDays}d`}</td>
+                <td>{u.winRate == null ? '-' : `${u.winRate}%`}</td><td>{money(u.revenue || 0)}</td>
+                <td>{fmtNumber(u.open || 0)}</td><td>{u.openValue ? money(u.openValue) : '-'}</td>
+                <td>{u.avgCloseDays == null ? '-' : `${u.avgCloseDays}d`}</td>
               </tr>
               {isOpen && deals.length ? <tr className="u-notes-row"><td colSpan={9}>
                 <div className="tbl-scroll"><table className="mini-tbl users-tbl u-drill-tbl"><colgroup><col className="c-opp" /><col className="c-con" /><col className="c-val" /><col className="c-days" /></colgroup>
@@ -3952,11 +3952,11 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
   if (st.status === 'err' || !d || d.connected === false || !d.measured) return null
   return (
     <div className="card">
-      <div className="exec-panel-h">Speed to lead <span className="sub">· how fast leads get a human reply — one of the strongest conversion predictors</span></div>
+      <div className="exec-panel-h">Speed to lead <span className="sub">· how fast leads get a human reply - one of the strongest conversion predictors</span></div>
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
         <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
-        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '—' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
+        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
         <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{fmtNumber(d.measured)}</b><span className="tm-sub">of {fmtNumber(d.sampled)} sampled</span></div>
         {d.noOutbound ? <div className="tm-sc warn"><span className="tm-lab">No outreach yet</span><b>{fmtNumber(d.noOutbound)}</b><span className="tm-sub">no outbound at all</span></div> : null}
       </div>
@@ -3965,7 +3965,7 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
   )
 }
 
-// Compact lead-location summary for Caalano360 — a map preview + top places, from
+// Compact lead-location summary for Caalano360 - a map preview + top places, from
 // the forms feed (postcode / suburb answers). Renders only when leads carried a
 // location; links out to the full Location tab.
 function LocationSummary({ clientId, range, nonce, onNav }) {
@@ -4029,10 +4029,10 @@ function AtRiskPanel({ clientId, range, nonce, money }) {
   )
 }
 
-// Deterministic priority actions derived from the health payload + at-risk —
+// Deterministic priority actions derived from the health payload + at-risk -
 // no AI. Flags the biggest movers against the previous period.
 // Prioritised summary of what needs attention, read straight from the command
-// centre (spend + CRM) — no health-score pillars. `ca` is the aggregated CRM
+// centre (spend + CRM) - no health-score pillars. `ca` is the aggregated CRM
 // feed (open/lost/lostReasons) from useCrmAgg.
 function priorityActions(h, money, ca) {
   if (!h || !h.kpis) return []
@@ -4040,19 +4040,19 @@ function priorityActions(h, money, ca) {
   const dropPct = (cur, prev) => (prev ? Math.round(((cur - prev) / prev) * 100) : null)
   const spend = k.adSpend || 0
   // Cost per lead movement.
-  if (spend >= 50 && k.cpl != null && pv.leads && pv.adSpend) { const pc = Math.round(pv.adSpend / pv.leads); const dp = dropPct(k.cpl, pc); if (dp != null && dp >= 40) out.push({ sev: 'high', text: `Cost per lead is up ${dp}% on the previous period (${money(pc)} to ${money(k.cpl)}) — review targeting and creative.` }); else if (dp != null && dp >= 20) out.push({ sev: 'med', text: `Cost per lead is climbing, up ${dp}% on the previous period (now ${money(k.cpl)}).` }) }
+  if (spend >= 50 && k.cpl != null && pv.leads && pv.adSpend) { const pc = Math.round(pv.adSpend / pv.leads); const dp = dropPct(k.cpl, pc); if (dp != null && dp >= 40) out.push({ sev: 'high', text: `Cost per lead is up ${dp}% on the previous period (${money(pc)} to ${money(k.cpl)}) - review targeting and creative.` }); else if (dp != null && dp >= 20) out.push({ sev: 'med', text: `Cost per lead is climbing, up ${dp}% on the previous period (now ${money(k.cpl)}).` }) }
   // Lead volume down.
   if (k.leads != null && pv.leads) { const dp = dropPct(k.leads, pv.leads); if (dp != null && dp <= -20) out.push({ sev: dp <= -40 ? 'high' : 'med', text: `Opportunities down ${Math.abs(dp)}% on the previous period (${fmtNumber(pv.leads)} to ${fmtNumber(k.leads)}).` }) }
   // Show rate low (attendance).
-  if (k.booked >= 3 && k.shown != null) { const sr = k.shown / k.booked; if (sr < 0.5) out.push({ sev: 'med', text: `Show rate is ${Math.round(sr * 100)}% — a lot of booked calls aren't being attended. Tighten reminders and confirmations.` }) }
+  if (k.booked >= 3 && k.shown != null) { const sr = k.shown / k.booked; if (sr < 0.5) out.push({ sev: 'med', text: `Show rate is ${Math.round(sr * 100)}% - a lot of booked calls aren't being attended. Tighten reminders and confirmations.` }) }
   // Booking rate low (early-funnel drop).
-  if (k.leads >= 10 && k.booked != null) { const br = k.booked / k.leads; if (br < 0.3) out.push({ sev: 'med', text: `Only ${Math.round(br * 100)}% of opportunities are booking a call — the drop is early in the funnel.` }) }
+  if (k.leads >= 10 && k.booked != null) { const br = k.booked / k.leads; if (br < 0.3) out.push({ sev: 'med', text: `Only ${Math.round(br * 100)}% of opportunities are booking a call - the drop is early in the funnel.` }) }
   // Lost deals + top reason.
   if (ca && ca.lost >= 1) { const top = ca.lostReasons && ca.lostReasons[0]; out.push({ sev: (ca.lostValue && ca.lostValue >= (k.revenue || 0)) ? 'med' : 'low', text: `${fmtNumber(ca.lost)} ${ca.lost === 1 ? 'deal' : 'deals'} lost${ca.lostValue ? ` worth ${money(ca.lostValue)}` : ''}${top ? `, most commonly "${top.reason}"` : ''}.` }) }
   // Open pipeline to chase.
   if (ca && ca.open >= 1 && (k.openValue || ca.openValue)) out.push({ sev: 'low', text: `${money(k.openValue || ca.openValue)} across ${fmtNumber(ca.open)} open ${ca.open === 1 ? 'opportunity' : 'opportunities'} still to chase.` })
   // No wins yet.
-  if (k.won === 0 && k.leads > 0) out.push({ sev: 'low', text: `No deals won yet this period — check where the open deals have reached in the funnel.` })
+  if (k.won === 0 && k.leads > 0) out.push({ sev: 'low', text: `No deals won yet this period - check where the open deals have reached in the funnel.` })
   const rank = { high: 0, med: 1, low: 2 }
   return out.sort((a, b) => rank[a.sev] - rank[b.sev]).slice(0, 6)
 }
@@ -4078,7 +4078,7 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
 }
 const sourceDotChan = (ch) => ch === 'meta' ? '#4f7cff' : ch === 'google' ? '#12b886' : ch === 'other' ? '#e8a13a' : '#9aa1ac'
 
-// One open deal in the bottleneck's open-by-stage list — shows the assigned rep
+// One open deal in the bottleneck's open-by-stage list - shows the assigned rep
 // + lead source, and expands on click to that contact's Caalano Systems notes.
 function BnDealRow({ d, clientId, money }) {
   const [open, setOpen] = useState(false)
@@ -4098,16 +4098,16 @@ function BnDealRow({ d, clientId, money }) {
         <td className="lft">{d.assignedUser || 'Unassigned'}</td>
         <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(d.channel) }} />{d.source}</span></td>
         <td>{money(d.value)}</td>
-        <td className={d.ageDays != null && d.ageDays > 30 ? 'u-stale' : ''}>{d.ageDays != null ? `${d.ageDays}d` : '—'}</td>
+        <td className={d.ageDays != null && d.ageDays > 30 ? 'u-stale' : ''}>{d.ageDays != null ? `${d.ageDays}d` : '-'}</td>
       </tr>
       {open && <tr className="u-notes-row"><td colSpan={5}>
-        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
       </td></tr>}
     </React.Fragment>
   )
 }
 
-// Revenue bottleneck — the whole-account key-event funnel with step conversions,
+// Revenue bottleneck - the whole-account key-event funnel with step conversions,
 // flagging the biggest drop-off, plus a clickable "open pipeline by stage" list
 // (who's still in play, and where they came from). In a paid channel view it also
 // shows cost per stage and the next-step conversion. Calendar show-rate lives in
@@ -4115,7 +4115,7 @@ function BnDealRow({ d, clientId, money }) {
 function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = 'all', stageSpend = 0 }) {
   const [openStage, setOpenStage] = useState(null)
   // Multi-pipeline clients get a pipeline selector (defaults to the biggest
-  // pipeline by leads), with an "All pipelines" option that stacks them — same
+  // pipeline by leads), with an "All pipelines" option that stacks them - same
   // pattern as the Meta / Google Key Events funnels. Reset when the channel or
   // client changes.
   const [bnPipe, setBnPipe] = useState(null)
@@ -4144,7 +4144,7 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   const raw = usingKe
     ? [{ label: 'Leads', v: leadTotal }, ...kef.rows.map((r) => ({ label: r.label, v: r.count }))]
     : chActiveBn
-      // Channel view with no key events resolving (e.g. no opps on this channel) —
+      // Channel view with no key events resolving (e.g. no opps on this channel) -
       // strictly channel-scoped so it reads 0, never account-wide numbers.
       ? [{ label: 'Opportunities', v: chanLeads || 0 }, { label: 'Won', v: chanWon || 0 }]
       : [
@@ -4198,16 +4198,16 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
             <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, (r.v / fnl.top) * 100)}%` }} /></span>
             <span className="bn-count">{fmtNumber(r.v)}</span>
             <span className="bn-conv">{r.conv == null ? '' : `${Math.round(r.conv * 100)}%`}</span>
-            {paidMode ? <span className="bn-cost" title={`${chanLbl} spend ÷ ${r.label} reached`}>{cost != null ? money(Math.round(cost)) : '—'}</span> : null}
-            {paidMode ? <span className="bn-next" title="Conversion into the next step">{r.next == null ? '—' : `→ ${Math.round(r.next * 100)}%`}</span> : null}
+            {paidMode ? <span className="bn-cost" title={`${chanLbl} spend ÷ ${r.label} reached`}>{cost != null ? money(Math.round(cost)) : '-'}</span> : null}
+            {paidMode ? <span className="bn-next" title="Conversion into the next step">{r.next == null ? '-' : `→ ${Math.round(r.next * 100)}%`}</span> : null}
           </div>
         )
       })}
     </div>
   )
-  // Calendar show-rate bars — shown / occurred per calendar (own card).
+  // Calendar show-rate bars - shown / occurred per calendar (own card).
   const showCals = ((cc && cc.bookingByCalendar) || []).filter((c) => c.occurred > 0)
-  // Open pipeline by stage — who's still in play, and where they came from.
+  // Open pipeline by stage - who's still in play, and where they came from.
   const openStages = (cc && cc.openByStage) || []
   const totOpen = openStages.reduce((a, s) => a + s.count, 0)
   const totOpenVal = openStages.reduce((a, s) => a + s.value, 0)
@@ -4249,7 +4249,7 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
           )
         })}
       </div> : null}
-      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost — the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</p>
+      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost - the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</p>
     </div>
     {showCals.length ? <div className="card exec-bottleneck">
       <div className="exec-panel-h">Show rate by calendar <span className="sub">· shown ÷ occurred per booked calendar</span></div>
@@ -4296,7 +4296,7 @@ function useCrmAgg(clientId, range, nonce, channel = 'all') {
   }, [clientId, q, nonce, channel])
   return d
 }
-// Command-centre drill dataset (scope=ccdrill) — backs every clickable tile.
+// Command-centre drill dataset (scope=ccdrill) - backs every clickable tile.
 // Channel-scoped: passing a channel re-pivots the whole drill (funnel, open-by-
 // stage, sources, revenue, lost, close, bookings) to that channel's opportunities.
 function useCcDrill(clientId, range, nonce = 0, channel = 'all') {
@@ -4313,10 +4313,10 @@ function useCcDrill(clientId, range, nonce = 0, channel = 'all') {
   }, [clientId, q, nonce, channel])
   return st
 }
-const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—')
+const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
 const chLabel = (ch) => ch === 'meta' ? 'Meta' : ch === 'google' ? 'Google' : ch === 'other' ? 'Other' : ch
 
-// One lost opportunity — shows the lead's source trail (opportunity source, UTM
+// One lost opportunity - shows the lead's source trail (opportunity source, UTM
 // source, first-touch content) + any form answers, and expands on click to that
 // contact's Caalano Systems notes.
 function LostPersonRow({ p, clientId, money }) {
@@ -4341,7 +4341,7 @@ function LostPersonRow({ p, clientId, money }) {
           {p.utmContent ? <span><b>UTM content:</b> {p.utmContent}</span> : null}
         </div> : null}
         {(p.formAnswers || []).length ? <div style={{ marginTop: 3 }}>{p.formAnswers.map((a, j) => <div key={j}><b>{a.q}:</b> {a.a}</div>)}</div> : <div style={{ marginTop: 3, opacity: .7 }}>No form answers captured.</div>}
-        {open ? <div className="lost-notes">{loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '4px 0 2px' }}>No notes on this contact in Caalano Systems.</div>}</div> : null}
+        {open ? <div className="lost-notes">{loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '4px 0 2px' }}>No notes on this contact in Caalano Systems.</div>}</div> : null}
       </span>
     </div>
   )
@@ -4362,7 +4362,7 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
       title = cal.calendar
       subhead = `${fmtNumber(cal.booked)} booked · ${fmtNumber(cal.occurred)} occurred · ${fmtNumber(cal.shown)} shown`
       body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Contact</th><th>Occurred</th><th>Shown</th></tr></thead>
-        <tbody>{(cal.people || []).map((p, i) => <tr key={i}><td className="lft">{p.name}</td><td>{p.occurred ? '✓' : '—'}</td><td>{p.shown ? '✓' : '—'}</td></tr>)}</tbody></table>
+        <tbody>{(cal.people || []).map((p, i) => <tr key={i}><td className="lft">{p.name}</td><td>{p.occurred ? '✓' : '-'}</td><td>{p.shown ? '✓' : '-'}</td></tr>)}</tbody></table>
     } else {
       const cals = d.bookingByCalendar || []
       subhead = `${fmtNumber(cals.length)} ${cals.length === 1 ? 'calendar' : 'calendars'} · click a calendar for who booked in`
@@ -4374,7 +4374,7 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
     const deals = (d.revenue && d.revenue.deals) || []
     subhead = `${fmtNumber(deals.length)} won ${deals.length === 1 ? 'deal' : 'deals'} · ${money((d.revenue && d.revenue.total) || 0)}`
     body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Closed</th><th>Channel</th></tr></thead>
-      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '—'}</td><td>{chLabel(dl.channel)}</td></tr>)}</tbody></table>
+      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '-'}</td><td>{chLabel(dl.channel)}</td></tr>)}</tbody></table>
       : <div className="cap">No won deals in this period.</div>
   } else if (drill.kind === 'spend') {
     subhead = `${money(spend.total || 0)} total ad spend`
@@ -4389,7 +4389,7 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
       title = s.source
       subhead = `${fmtNumber(s.count)} ${s.count === 1 ? 'opportunity' : 'opportunities'} · ${money(s.value)}`
       body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Contact</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th></tr></thead>
-        <tbody>{(s.opps || []).map((o, i) => <tr key={i}><td className="lft">{o.name}</td><td className="lft">{o.status}</td><td className="lft">{o.stage || '—'}</td><td>{money(o.value)}</td></tr>)}</tbody></table>
+        <tbody>{(s.opps || []).map((o, i) => <tr key={i}><td className="lft">{o.name}</td><td className="lft">{o.status}</td><td className="lft">{o.stage || '-'}</td><td>{money(o.value)}</td></tr>)}</tbody></table>
     } else {
       const src = d.oppsBySource || []
       subhead = `${fmtNumber(src.reduce((a, s) => a + s.count, 0))} opportunities by source · click a source`
@@ -4401,42 +4401,42 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
     subhead = `Paid-attributed · ${fmtNumber(paid.paidLeads || 0)} paid leads from ${money(spend.total || 0)} spend`
     body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Leads</th><th>Cost / lead</th></tr></thead>
       <tbody>
-        <tr><td className="lft">Meta</td><td>{money(spend.meta || 0)}</td><td>{fmtNumber(paid.metaLeads || 0)}</td><td>{paid.metaCpl != null ? money(paid.metaCpl) : '—'}</td></tr>
-        <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{fmtNumber(paid.googleLeads || 0)}</td><td>{paid.googleCpl != null ? money(paid.googleCpl) : '—'}</td></tr>
-        <tr><td className="lft"><b>Paid total</b></td><td>{money(spend.total || 0)}</td><td>{fmtNumber(paid.paidLeads || 0)}</td><td>{paid.paidCpl != null ? money(paid.paidCpl) : '—'}</td></tr>
+        <tr><td className="lft">Meta</td><td>{money(spend.meta || 0)}</td><td>{fmtNumber(paid.metaLeads || 0)}</td><td>{paid.metaCpl != null ? money(paid.metaCpl) : '-'}</td></tr>
+        <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{fmtNumber(paid.googleLeads || 0)}</td><td>{paid.googleCpl != null ? money(paid.googleCpl) : '-'}</td></tr>
+        <tr><td className="lft"><b>Paid total</b></td><td>{money(spend.total || 0)}</td><td>{fmtNumber(paid.paidLeads || 0)}</td><td>{paid.paidCpl != null ? money(paid.paidCpl) : '-'}</td></tr>
       </tbody></table>
   } else if (drill.kind === 'cpwon') {
     subhead = `Paid-attributed · ${fmtNumber(paid.paidWon || 0)} won from paid channels`
     body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Won</th><th>Cost / won</th></tr></thead>
       <tbody>
-        <tr><td className="lft">Meta</td><td>{money(spend.meta || 0)}</td><td>{fmtNumber(paid.metaWon || 0)}</td><td>{paid.metaCpa != null ? money(paid.metaCpa) : '—'}</td></tr>
-        <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{fmtNumber(paid.googleWon || 0)}</td><td>{paid.googleCpa != null ? money(paid.googleCpa) : '—'}</td></tr>
-        <tr><td className="lft"><b>Paid total</b></td><td>{money(spend.total || 0)}</td><td>{fmtNumber(paid.paidWon || 0)}</td><td>{paid.paidCpa != null ? money(paid.paidCpa) : '—'}</td></tr>
+        <tr><td className="lft">Meta</td><td>{money(spend.meta || 0)}</td><td>{fmtNumber(paid.metaWon || 0)}</td><td>{paid.metaCpa != null ? money(paid.metaCpa) : '-'}</td></tr>
+        <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{fmtNumber(paid.googleWon || 0)}</td><td>{paid.googleCpa != null ? money(paid.googleCpa) : '-'}</td></tr>
+        <tr><td className="lft"><b>Paid total</b></td><td>{money(spend.total || 0)}</td><td>{fmtNumber(paid.paidWon || 0)}</td><td>{paid.paidCpa != null ? money(paid.paidCpa) : '-'}</td></tr>
       </tbody></table>
   } else if (drill.kind === 'openvalue') {
     const deals = (d.open && d.open.deals) || []
     subhead = `${fmtNumber((d.open && d.open.total) || 0)} open · ${money((d.open && d.open.value) || 0)} in pipeline`
     body = deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th className="lft">Stage</th><th className="lft">Pipeline</th><th>Age</th></tr></thead>
-      <tbody>{deals.map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td className="lft">{dl.stage || '—'}</td><td className="lft">{dl.pipeline}</td><td>{dl.ageDays != null ? `${dl.ageDays}d` : '—'}</td></tr>)}</tbody></table></div>
+      <tbody>{deals.map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td className="lft">{dl.stage || '-'}</td><td className="lft">{dl.pipeline}</td><td>{dl.ageDays != null ? `${dl.ageDays}d` : '-'}</td></tr>)}</tbody></table></div>
       : <div className="cap">No open deals in this period.</div>
   } else if (drill.kind === 'close') {
     if (sub) {
       const c = sub
-      title = `${chLabel(c.channel)} — won deals`
-      subhead = `${fmtNumber(c.won)} won of ${fmtNumber(c.closed)} closed · ${c.closeRate != null ? c.closeRate + '%' : '—'} close rate`
+      title = `${chLabel(c.channel)} - won deals`
+      subhead = `${fmtNumber(c.won)} won of ${fmtNumber(c.closed)} closed · ${c.closeRate != null ? c.closeRate + '%' : '-'} close rate`
       body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Closed</th></tr></thead>
-        <tbody>{(c.deals || []).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '—'}</td></tr>)}</tbody></table>
+        <tbody>{(c.deals || []).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '-'}</td></tr>)}</tbody></table>
     } else {
       const chans = d.closeByChannel || []
       subhead = 'Close rate by channel · click a channel for its won deals'
       body = chans.length ? chans.map((c, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(c)}>
-        <b>{chLabel(c.channel)}</b> <span className="cc-drill-ans">{fmtNumber(c.won)} won / {fmtNumber(c.closed)} closed · <b>{c.closeRate != null ? c.closeRate + '%' : '—'}</b> close rate</span></button>)
+        <b>{chLabel(c.channel)}</b> <span className="cc-drill-ans">{fmtNumber(c.won)} won / {fmtNumber(c.closed)} closed · <b>{c.closeRate != null ? c.closeRate + '%' : '-'}</b> close rate</span></button>)
         : <div className="cap">No closed deals in this period.</div>
     }
   } else if (drill.kind === 'lost') {
     if (sub) {
       const r = sub
-      title = `Lost — ${r.reason}`
+      title = `Lost - ${r.reason}`
       subhead = `${fmtNumber(r.count)} lost · ${money(r.value || 0)} · click a lead for their notes`
       body = (r.people || []).length ? (r.people || []).map((p, i) => <LostPersonRow key={i} p={p} clientId={clientId} money={money} />)
         : <div className="cap">No people recorded for this reason.</div>
@@ -4469,10 +4469,10 @@ function ChanBar({ meta = 0, google = 0, other = 0 }) {
   return <span className="chanbar">{seg(meta, 'cb-meta', 'Meta')}{seg(google, 'cb-google', 'Google')}{seg(other, 'cb-other', 'Other / direct')}</span>
 }
 
-// Bigger multi-line key-event scorecard for Caalano360 — mirrors the Meta view's
+// Bigger multi-line key-event scorecard for Caalano360 - mirrors the Meta view's
 // per-pipeline tiles but reads ALL-channel CRM: the count (with vs-prev arrow),
-// then stacked sub-lines — % of leads, blended cost per event, and (calendar
-// events) show rate with shown/occurred — each with its own vs-prev delta.
+// then stacked sub-lines - % of leads, blended cost per event, and (calendar
+// events) show rate with shown/occurred - each with its own vs-prev delta.
 function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctLeads, cost, prevCost, costUnit = 'event', show, note, pop, onClick }) {
   const money = (v) => fmtCurrency(v, currency)
   const labelEl = (pop && pop.rows && pop.rows.length)
@@ -4484,13 +4484,13 @@ function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctL
       <div className="kesc-v">{isMoney ? money(value) : fmtNumber(value)}{prev != null ? <MiniDelta cur={value} prev={prev} /> : null}</div>
       {pctLeads != null ? <div className="kesc-line"><span>{Math.round(pctLeads)}% of leads</span>{prevPctLeads != null ? <MiniDelta cur={pctLeads} prev={prevPctLeads} /> : null}</div> : null}
       {cost != null && isFinite(cost) ? <div className="kesc-line"><span>{money(Math.round(cost))}/{costUnit}</span>{prevCost != null && isFinite(prevCost) ? <MiniDelta cur={cost} prev={prevCost} goodWhenDown /> : null}</div> : null}
-      {show ? <div className="kesc-line"><span>{show.rate == null ? '—' : `${Math.round(show.rate)}% show`} · {fmtNumber(show.shown)}/{fmtNumber(show.occurred)} occurred</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
+      {show ? <div className="kesc-line"><span>{show.rate == null ? '-' : `${Math.round(show.rate)}% show`} · {fmtNumber(show.shown)}/{fmtNumber(show.occurred)} occurred</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
       {note ? <div className="kesc-line">{note}</div> : null}
     </div>
   )
 }
 
-// Per-pipeline performance for Caalano360 — the same per-pipeline key-event
+// Per-pipeline performance for Caalano360 - the same per-pipeline key-event
 // scorecards as the Meta view, but counting ALL channels (not just Meta-attributed)
 // from the ccdrill payload, with a Meta/Google/Other contribution bar per pipeline
 // and vs-prev deltas from the previous-period ccdrill. `spend` = { cur, prev } total
@@ -4619,7 +4619,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const actions = priorityActions(h, money, crmAgg)
   return (
     <div className="exec-wrap">
-      {/* Command centre — all of Caalano Systems + spend, pivoting on the range */}
+      {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         const ca = crmAgg || {}
         const chActive = chan !== 'all'
@@ -4657,7 +4657,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const roas = (chanSpend && revV) ? revV / chanSpend : null
         const cpl2 = (!chActive && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
         const tileClick = (drill2) => (cc ? () => setDrill(drill2) : undefined)
-        // Key-event reach as rates — each selected key event as a share of leads.
+        // Key-event reach as rates - each selected key event as a share of leads.
         // Denominator/won come from the ccdrill totals (same opportunity basis as
         // the funnel numerators) in both all and channel views.
         const kefTot = (cc && cc.totals) || null
@@ -4669,32 +4669,32 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           </div>
           <div className="cc-group-lab x-internal">Spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
           <div className="scorecard exec-kpis exec-kpis-4 x-internal">
-            <Kpi label="Ad spend" value={chanSpend != null ? money(chanSpend) : '—'} cur={chActive ? null : k.adSpend} prev={chActive ? null : pv.adSpend} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
-            <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '—'} cur={paidCpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead — paid attributed' })} />
-            <Kpi label="Cost / booked" value={cpBookedV != null ? money(cpBookedV) : '—'} cur={cpBookedV} goodWhenDown />
-            <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : '—'} cur={paidCpa} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won — paid attributed' })} />
+            <Kpi label="Ad spend" value={chanSpend != null ? money(chanSpend) : '-'} cur={chActive ? null : k.adSpend} prev={chActive ? null : pv.adSpend} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+            <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '-'} cur={paidCpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead - paid attributed' })} />
+            <Kpi label="Cost / booked" value={cpBookedV != null ? money(cpBookedV) : '-'} cur={cpBookedV} goodWhenDown />
+            <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : '-'} cur={paidCpa} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won - paid attributed' })} />
           </div>
           <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null} <span className="sub" style={{ fontWeight: 500 }}>· top row is the funnel; the small line under each number is its rate</span></div>
           <div className="scorecard exec-kpis exec-kpis-4">
-            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '—'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
-            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '—'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked — by calendar' })} />
-            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '—'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate — by calendar' })} />
-            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '—'} flat={oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
-            <Kpi label="Revenue" value={revV != null ? money(revV) : '—'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue — won deals' })} />
-            <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '—'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
-            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '—'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
-            <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '—'} flat="won ÷ closed" onClick={tileClick({ kind: 'close', title: 'Close rate — by channel' })} />
+            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '-'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
+            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '-'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked - by calendar' })} />
+            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '-'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate - by calendar' })} />
+            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '-'} flat={oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
+            <Kpi label="Revenue" value={revV != null ? money(revV) : '-'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue - won deals' })} />
+            <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '-'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
+            <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ closed" onClick={tileClick({ kind: 'close', title: 'Close rate - by channel' })} />
           </div>
           {kef.usingKe && kef.rows.length ? <>
             <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· {kef.multi ? "share of each event's pipeline leads" : `share of ${fmtNumber(kef.leadTotal)} ${chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}`}</span></div>
             <div className="scorecard exec-kpis">
-              {kef.rows.map((r, i) => { const base = r.leadBase || kef.leadTotal; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '—'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
+              {kef.rows.map((r, i) => { const base = r.leadBase || kef.leadTotal; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '-'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
             </div>
           </> : null}
         </div>
       })()}
 
-      {/* Pipeline performance — per-pipeline overall key-event scorecards (all
+      {/* Pipeline performance - per-pipeline overall key-event scorecards (all
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
       {cc ? (() => {
         const chn = h.channels || {}
@@ -4703,12 +4703,12 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         return <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />
       })() : null}
 
-      {/* Revenue bottleneck funnel — client key events + calendar show-rate.
+      {/* Revenue bottleneck funnel - client key events + calendar show-rate.
           Passes the selected channel's spend so a paid view shows cost/stage. */}
       {(() => { const chn = h.channels || {}; const bnSpend = chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : chan === 'all' ? (k.adSpend || 0) : 0
         return <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} chan={chan} stageSpend={bnSpend} /> })()}
 
-      {/* Lost reasons — full width so the table never needs to scroll sideways.
+      {/* Lost reasons - full width so the table never needs to scroll sideways.
           Rows are clickable → the per-reason people + their form answers. */}
       <div className="card">
         <div className="exec-panel-h">Lost reasons {crmAgg && crmAgg.lost ? <span className="sub">· {fmtNumber(crmAgg.lost)} lost{crmAgg.lostValue ? `, ${money(crmAgg.lostValue)}` : ''}{cc ? ' · click a reason for who + what they typed' : ''}</span> : null}</div>
@@ -4717,11 +4717,11 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             : <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
               <tbody>{crmAgg.lostReasons.slice(0, 12).map((r, i) => {
                 const ccReason = cc && (cc.lostByReason || []).find((x) => x.reason === r.reason)
-                return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '—'}</td><td>{pctOf(r.count, crmAgg.lost)}</td></tr>
+                return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '-'}</td><td>{pctOf(r.count, crmAgg.lost)}</td></tr>
               })}</tbody></table>}
       </div>
 
-      {/* Channel split (spend is internal — hidden in present mode) */}
+      {/* Channel split (spend is internal - hidden in present mode) */}
       <div className="card x-internal">
         <div className="exec-panel-h">Channel split</div>
         {(() => { const ch = h.channels || {}; const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
@@ -4734,7 +4734,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         })()}
       </div>
 
-      {/* Per-pipeline breakdown — fallback table when the richer per-channel
+      {/* Per-pipeline breakdown - fallback table when the richer per-channel
           Pipeline performance card isn't available (e.g. viewer without ccdrill). */}
       {!cc && h.pipelines && h.pipelines.length > 1 && <div className="card">
         <div className="exec-panel-h">By pipeline <span className="sub">· dive deeper in the CRM tab</span></div>
@@ -4744,27 +4744,27 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         </table></div>
       </div>}
 
-      {/* Priority actions — a prioritised read of the command centre */}
+      {/* Priority actions - a prioritised read of the command centre */}
       <div className="card exec-actions">
         <div className="exec-panel-h">Priority actions</div>
         {actions.length ? <ul className="exec-act-list">{actions.map((a, i) => <li key={i} className={`exec-act sev-${a.sev}`}><span className="exec-act-dot" />{a.text}</li>)}</ul>
-          : <div className="cap">Nothing flagged this period — the numbers are tracking with or ahead of last period.</div>}
+          : <div className="cap">Nothing flagged this period - the numbers are tracking with or ahead of last period.</div>}
         <div className="exec-nav"><button className="link-btn" onClick={() => onNav && onNav('users')}>Open the Users tab →</button></div>
       </div>
 
-      {/* Team performance — per-rep leaders + each rep's held-up open deals (→ notes) */}
+      {/* Team performance - per-rep leaders + each rep's held-up open deals (→ notes) */}
       <TeamPerformance clientId={clientId} range={range} nonce={nonce} money={money} />
 
-      {/* Revenue at risk — account-wide biggest open deals still to chase */}
+      {/* Revenue at risk - account-wide biggest open deals still to chase */}
       <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
 
-      {/* Lead locations — map preview (only shows if leads carried a location) */}
+      {/* Lead locations - map preview (only shows if leads carried a location) */}
       <LocationSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />
 
-      {/* Speed to lead — response-timing summary (only shows if measured) */}
+      {/* Speed to lead - response-timing summary (only shows if measured) */}
       <TimingSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />
 
-      <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only — clients may reply on channels outside Caalano Systems.</div>
+      <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only - clients may reply on channels outside Caalano Systems.</div>
 
       {drill && cc && <CcDrillModal drill={drill} cc={cc} money={money} clientId={clientId} onClose={() => setDrill(null)} />}
     </div>
@@ -4830,7 +4830,7 @@ const prevRange = (r) => {
 
 // Fetch live deep data for the active channel from the Windsor.ai Netlify function.
 // Split a date range into ≤maxDays sub-windows (used to beat the serverless time
-// limit on a big Meta/Google pull — each month loads well inside the budget).
+// limit on a big Meta/Google pull - each month loads well inside the budget).
 function splitRange(range, maxDays = 31) {
   const a = Date.parse(range && range.from), b = Date.parse(range && range.to)
   if (!isFinite(a) || !isFinite(b)) return [{ from: range.from, to: range.to }]
@@ -4868,7 +4868,7 @@ function mergeMetaParts(parts) {
     }
     const arr = [...m.values()]
     // breakdown / prev are per-chunk (would reflect only the first month), so drop
-    // them — the merged count is a true year total, the sub-splits aren't.
+    // them - the merged count is a true year total, the sub-splits aren't.
     for (const e of arr) { e.costPerResult = e.results ? Math.round((e.spend / e.results) * 100) / 100 : null; delete e.breakdown; delete e.prev }
     return arr.sort((a, b) => (b.spend || 0) - (a.spend || 0))
   }
@@ -4894,7 +4894,7 @@ function mergeMetaParts(parts) {
 // Human label for the deep-data loading state, covering the monthly-chunk
 // progress and the auto-retry progress of the single-call path.
 function deepLoadLabel(progress, chLabel, range) {
-  if (progress && progress.retry) return `Taking longer than usual — retrying… (${progress.retry + 1}/${progress.of + 1})`
+  if (progress && progress.retry) return `Taking longer than usual - retrying… (${progress.retry + 1}/${progress.of + 1})`
   if (progress && progress.total) return `Loading ${rangeLabel(range)} ${chLabel} data… ${progress.done}/${progress.total} months`
   return `Loading live ${chLabel} data…`
 }
@@ -4910,7 +4910,7 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
     if (!chunky) {
       // Single-call path with automatic retry + a client-side timeout. Serverless
       // pulls sometimes time out transiently (esp. right after a range change),
-      // and a plain one-shot fetch surfaced the error card immediately — so the
+      // and a plain one-shot fetch surfaced the error card immediately - so the
       // fix used to be "refresh again". Now we retry with backoff before giving up,
       // and abort a hung request so it can't stall the whole tab.
       setState({ status: 'loading', data: null, progress: null })
@@ -4956,7 +4956,7 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
     poolMap(chunks, 4, (c) => fetchChunk(c)).then((parts) => {
       if (!alive) return
       const ok = parts.filter(Boolean)
-      if (!ok.length) { setState({ status: 'err', data: { error: 'The year pull failed for every month — try again, or a shorter range.' }, progress: null }); return }
+      if (!ok.length) { setState({ status: 'err', data: { error: 'The year pull failed for every month - try again, or a shorter range.' }, progress: null }); return }
       setState({ status: 'ok', progress: null, data: { meta: mergeMetaParts(ok), chunked: true, partial: ok.length < chunks.length, monthsLoaded: ok.length, monthsTotal: chunks.length } })
     })
     return () => { alive = false }
@@ -5020,12 +5020,12 @@ function DateRange({ range, onChange, busy }) {
 
 // Global "Won basis" control (header, beside the date range). Flips only the Won /
 // revenue figures between Closed-in-period (banked, by won-date) and Created-in-
-// period (won among the period's leads — the cohort/ROI view). Leads, the funnel
+// period (won among the period's leads - the cohort/ROI view). Leads, the funnel
 // and appointments always stay created-basis.
 function WonBasisToggle({ value, onChange }) {
   return (
     <div className="date-sel wb-sel">
-      <label title="Which Won deals count: those banked in the period (Closed), or those from leads created in the period (Created). Only Won/revenue change — leads & funnel stay created-basis.">Won basis</label>
+      <label title="Which Won deals count: those banked in the period (Closed), or those from leads created in the period (Created). Only Won/revenue change - leads & funnel stay created-basis.">Won basis</label>
       <div className="chan-toggle wb-toggle">
         <button className={value === 'closed' ? 'on' : ''} onClick={() => onChange('closed')} title="Deals marked Won during this period, by their won-date (banked / realised revenue), regardless of when the lead was created.">Closed</button>
         <button className={value === 'created' ? 'on' : ''} onClick={() => onChange('created')} title="Deals from leads created in this period that have since been won (cohort / ROI view). Recent ranges are still maturing.">Created</button>
@@ -5036,7 +5036,7 @@ function WonBasisToggle({ value, onChange }) {
 // Small chip shown on a Won / revenue card so the active basis is never ambiguous.
 function WonBasisChip({ basis }) {
   const closed = basis !== 'created'
-  return <span className={`wb-chip ${closed ? 'closed' : 'created'}`} title={closed ? 'Closed-in-period: deals banked in this range by their won-date. A win-rate vs this range’s leads mixes cohorts — read it as throughput, not conversion.' : 'Created-in-period: won among leads created in this range (cohort/ROI). Recent ranges are still maturing, so this understates.'}>{closed ? 'Closed-in-period' : 'Created-in-period'}</span>
+  return <span className={`wb-chip ${closed ? 'closed' : 'created'}`} title={closed ? 'Closed-in-period: deals banked in this range by their won-date. A win-rate vs this range’s leads mixes cohorts - read it as throughput, not conversion.' : 'Created-in-period: won among leads created in this range (cohort/ROI). Recent ranges are still maturing, so this understates.'}>{closed ? 'Closed-in-period' : 'Created-in-period'}</span>
 }
 function LiveBadge({ mode, label }) {
   const map = { live: { t: `● Live · ${label}`, c: 'tk-full' }, snapshot: { t: 'Snapshot · June 2026', c: 'tk-wins' } }
@@ -5293,7 +5293,7 @@ function PersonRow({ p, clientId, money, cols }) {
         <td className="lft">{p.channel ? (CHAN_LABEL[p.channel] || p.channel) : '-'}</td>
       </tr>
       {open && <tr className="u-notes-row"><td colSpan={cols}>
-        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
       </td></tr>}
     </React.Fragment>
   )
@@ -5303,7 +5303,7 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
   const [sel, setSel] = useState(0)
   const [openAns, setOpenAns] = useState(() => new Set())
   const ke = formKeyEvents(clientId, pipe, pipes)
-  if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form — its submissions only carried contact details (name / email / phone).'}</div>
+  if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form - its submissions only carried contact details (name / email / phone).'}</div>
   const s = segments[Math.min(sel, segments.length - 1)]
   const grouped = groupAnswers(s.answers)
   const chart = grouped.slice(0, 12).map((a) => ({ name: a.value.length > 22 ? a.value.slice(0, 21) + '…' : a.value, leads: a.leads, booked: a.booked, won: a.won }))
@@ -5398,7 +5398,7 @@ function FormMetaPanel({ clientId, form, pipes, onEdit }) {
         <span className="fm-lab">What this form asks</span>
         {questions.length
           ? <span className="fm-qs">{questions.map((q, i) => <span className="fm-q" key={q + i}>{q}</span>)}</span>
-          : <span className="cap">Contact details only — no qualification questions captured.</span>}
+          : <span className="cap">Contact details only - no qualification questions captured.</span>}
       </div>
       <div className="fm-meta-read">
         <div><span className="fm-lab">Pipeline</span><span className="fm-val">{pipeName || <span className="cap">not set</span>}</span></div>
@@ -5423,9 +5423,9 @@ function FormSettingsModal({ clientId, form, pipes, onClose }) {
         <div className="m-body">
           <div className="fm-desc" style={{ marginBottom: 16 }}>
             <span className="fm-lab">What this form asks</span>
-            {questions.length ? <span className="fm-qs">{questions.map((q, i) => <span className="fm-q" key={q + i}>{q}</span>)}</span> : <span className="cap">Contact details only — no qualification questions captured.</span>}
+            {questions.length ? <span className="fm-qs">{questions.map((q, i) => <span className="fm-q" key={q + i}>{q}</span>)}</span> : <span className="cap">Contact details only - no qualification questions captured.</span>}
           </div>
-          {pipes.length > 0 && <div className="set-field" style={{ marginBottom: 14 }}><span className="fm-lab">Pipeline</span><select value={pipe} onChange={(e) => setPipe(e.target.value)}><option value="">— not set —</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}
+          {pipes.length > 0 && <div className="set-field" style={{ marginBottom: 14 }}><span className="fm-lab">Pipeline</span><select value={pipe} onChange={(e) => setPipe(e.target.value)}><option value="">- not set -</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>}
           <div className="set-field"><span className="fm-lab">Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Testing higher qualification to lift show rate…" style={{ minHeight: 72, resize: 'vertical', width: '100%' }} /></div>
           <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 10 }}><button className="set-details-save" onClick={save}>Save</button></div>
         </div>
@@ -5474,10 +5474,10 @@ function FormsSettingsTab({ clientId }) {
               <span className={`fmset-chk ${isDone ? 'on' : ''}`} title={isDone ? 'Reviewed' : 'Not reviewed yet'}>{isDone ? '✓' : '○'}</span>
               <span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span>
               <span className="fmset-nm" title={f.form}>{f.form}</span>
-              {suggested && <span className="fmset-sug" title="Auto-suggested from the naming — pick to confirm">suggested</span>}
+              {suggested && <span className="fmset-sug" title="Auto-suggested from the naming - pick to confirm">suggested</span>}
               {pipes.length > 0 && (
                 <select className="fmset-sel" value={eff || ''} onChange={(e) => setPipe(f, e.target.value)}>
-                  <option value="">— no pipeline —</option>
+                  <option value="">- no pipeline -</option>
                   {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               )}
@@ -5526,8 +5526,8 @@ function useAuDb() {
   return db
 }
 const isPostcodeVal = (v) => /^\d{3,4}$/.test(String(v).trim())
-// Collapse location answers that resolve to the SAME place — e.g. a postcode
-// (2110) and its suburb name (Hunters Hill) — into one entry, summing outcomes
+// Collapse location answers that resolve to the SAME place - e.g. a postcode
+// (2110) and its suburb name (Hunters Hill) - into one entry, summing outcomes
 // and labelling it "Suburb (postcode)". Carries lat/lng so the map plots it
 // directly. Unresolvable junk answers are kept as-is.
 function mergeLocations(locs, db) {
@@ -5576,7 +5576,7 @@ function mergeLocations(locs, db) {
 const LM_BLUE = '#3b82f6', LM_RED = '#f0435b', LM_AMBER = '#f5a524', LM_GREEN = '#17b26a'
 const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : p.lost ? 'lost' : 'lead')
 const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_BLUE : o === 'lost' ? LM_RED : LM_AMBER)
-// Interactive Leaflet map (OpenStreetMap tiles) — real base map with suburb
+// Interactive Leaflet map (OpenStreetMap tiles) - real base map with suburb
 // names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
 function LeadMap({ locs, tall }) {
   const [db, setDb] = useState(undefined)
@@ -5670,7 +5670,7 @@ function LeadMap({ locs, tall }) {
   )
 }
 // Where the leads on a form are located (postcode / suburb answers), ranked +
-// mapped. Collapsed by default — it's a "where is demand coming from" drill-down,
+// mapped. Collapsed by default - it's a "where is demand coming from" drill-down,
 // not a headline, so it only opens when asked for.
 function FormLocations({ form }) {
   const [open, setOpen] = useState(false)
@@ -5699,7 +5699,7 @@ function FormLocations({ form }) {
     </div>
   )
 }
-// Location tab — a full-width map of where every lead is located, aggregated
+// Location tab - a full-width map of where every lead is located, aggregated
 // across all of the client's forms, coloured by outcome (red lead / amber
 // booked / green won). Reuses the forms feed (which already carries per-answer
 // location + outcomes) so it needs no new backend call.
@@ -5914,7 +5914,7 @@ function FormsView({ clientId, currency, range, nonce }) {
           )
         })}
       </table></div>
-      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged — hover an answer to see what it combines.</p>
+      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged - hover an answer to see what it combines.</p>
       {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
     </>
   )
@@ -5947,7 +5947,7 @@ function bucketResultC(C, b) {
 function ApptResultedDrill({ C, onClose, label }) {
   const people = C.people || []
   const bs = C.byStatus || { showed: 0, noshow: 0, cancelled: 0, confirmed: 0, other: 0 }
-  const fmtD = (ms) => { const d = new Date(ms); return isFinite(d.getTime()) ? d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' }
+  const fmtD = (ms) => { const d = new Date(ms); return isFinite(d.getTime()) ? d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' }
   const groups = [['showed', 'Showed', '#12b886'], ['noshow', 'No-show', '#f5a524'], ['cancelled', 'Cancelled', '#ff6b6b'], ['other', 'Other', '#8b5cf6']]
   const occNotRes = people.filter((p) => p.occurred && p.status === 'confirmed')
   const resNotOcc = people.filter((p) => !p.occurred && p.status !== 'confirmed')
@@ -5955,14 +5955,14 @@ function ApptResultedDrill({ C, onClose, label }) {
     <div className="table-wrap"><table className="mini-tbl users-tbl">
       <thead><tr><th className="lft">Name</th><th className="lft">Calendar</th><th>Appt date</th><th>Occurred</th></tr></thead>
       <tbody>{rows.length ? rows.map((p, i) => (
-        <tr key={(p.contactId || 'x') + i}><td className="lft">{p.name}</td><td className="lft">{p.calendar}</td><td>{fmtD(p.start)}</td><td>{p.occurred ? '✓' : '—'}</td></tr>
+        <tr key={(p.contactId || 'x') + i}><td className="lft">{p.name}</td><td className="lft">{p.calendar}</td><td>{fmtD(p.start)}</td><td>{p.occurred ? '✓' : '-'}</td></tr>
       )) : <tr><td colSpan={4} className="cap">No people to show.</td></tr>}</tbody>
     </table></div>
   )
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal appt-drill-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>Resulted appointments{label ? ` · ${label}` : ''} — {fmtNumber(C.resulted)} of {fmtNumber(C.booked)} booked</h3><span className="cap">Outcome recorded (moved out of confirmed). Show rate {C.showRate == null ? '-' : `${C.showRate}%`} of occurred.</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-head"><div><h3>Resulted appointments{label ? ` · ${label}` : ''} - {fmtNumber(C.resulted)} of {fmtNumber(C.booked)} booked</h3><span className="cap">Outcome recorded (moved out of confirmed). Show rate {C.showRate == null ? '-' : `${C.showRate}%`} of occurred.</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
           <div className="appt-drill-counts">
             {groups.map(([k, lbl, col]) => <span key={k} className="appt-drill-pill" style={{ borderColor: col }}><span className="dot" style={{ background: col }} />{lbl} <b>{fmtNumber(bs[k] || 0)}</b></span>)}
@@ -5970,15 +5970,15 @@ function ApptResultedDrill({ C, onClose, label }) {
           </div>
           {!people.length && <p className="cap" style={{ marginTop: 4 }}>Per-person detail is available on the <b>All</b> channel filter.</p>}
           {(C.occurredNotResulted > 0 || occNotRes.length > 0) && <div className="appt-drill-sec warn">
-            <div className="appt-drill-h">⚠ Occurred but still confirmed — {fmtNumber(C.occurredNotResulted)} · reporting errors to fix</div>
+            <div className="appt-drill-h">⚠ Occurred but still confirmed - {fmtNumber(C.occurredNotResulted)} · reporting errors to fix</div>
             {tbl(occNotRes)}
           </div>}
           {(C.resultedNotOccurred > 0 || resNotOcc.length > 0) && <div className="appt-drill-sec">
-            <div className="appt-drill-h">Resulted but not yet occurred — {fmtNumber(C.resultedNotOccurred)} · outcome set before the appt time</div>
+            <div className="appt-drill-h">Resulted but not yet occurred - {fmtNumber(C.resultedNotOccurred)} · outcome set before the appt time</div>
             {tbl(resNotOcc)}
           </div>}
           {groups.map(([k, lbl]) => { const rows = people.filter((p) => p.status === k); if (!(bs[k] || 0) && !rows.length) return null; return (
-            <div className="appt-drill-sec" key={k}><div className="appt-drill-h">{lbl} — {fmtNumber(bs[k] || 0)}</div>{tbl(rows)}</div>
+            <div className="appt-drill-sec" key={k}><div className="appt-drill-h">{lbl} - {fmtNumber(bs[k] || 0)}</div>{tbl(rows)}</div>
           ) })}
         </div>
       </div>
@@ -6040,7 +6040,7 @@ function AppointmentsView({ clientId, range, nonce }) {
   const bd = C.byBookedBy
   return (
     <div className="timing-view">
-      <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments — booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show / win rates and time-to-close. Bookings are counted on the day they were booked{usedNames.length ? ` · based on: ${usedNames.slice(0, 4).join(', ')}${usedNames.length > 4 ? ` +${usedNames.length - 4}` : ''}` : ''}.</p></div>{selectors}</div>
+      <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments - booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show / win rates and time-to-close. Bookings are counted on the day they were booked{usedNames.length ? ` · based on: ${usedNames.slice(0, 4).join(', ')}${usedNames.length > 4 ? ` +${usedNames.length - 4}` : ''}` : ''}.</p></div>{selectors}</div>
       {calChips}
       <div className="timing-scards appt-status-row">
         <div className="tm-sc"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">in period</span></div>
@@ -6051,7 +6051,7 @@ function AppointmentsView({ clientId, range, nonce }) {
       </div>
       {(C.occurredNotResulted > 0 || C.resultedNotOccurred > 0) && (
         <div className={`appt-gap-warn${C.occurredNotResulted > 0 ? '' : ' info'}`}>
-          {C.occurredNotResulted > 0 && <span>⚠ <b>{fmtNumber(C.occurredNotResulted)}</b> occurred but not resulted — needs status updating.</span>}
+          {C.occurredNotResulted > 0 && <span>⚠ <b>{fmtNumber(C.occurredNotResulted)}</b> occurred but not resulted - needs status updating.</span>}
           {C.resultedNotOccurred > 0 && <span className="appt-gap-sub">{C.occurredNotResulted > 0 ? ' · ' : ''}{fmtNumber(C.resultedNotOccurred)} resulted before the appt time (odd).</span>}
           <button type="button" className="appt-gap-link" onClick={() => setApptDrill(true)}>view people</button>
         </div>
@@ -6070,7 +6070,7 @@ function AppointmentsView({ clientId, range, nonce }) {
       </div>
 
       <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Booking lead time — volume, downstream rates &amp; momentum</div>
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Booking lead time - volume, downstream rates &amp; momentum</div>
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={C.buckets} margin={{ left: -8, right: 8, top: 8 }}>
             <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -6100,11 +6100,11 @@ function AppointmentsView({ clientId, range, nonce }) {
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy — read the trend.</p>
+        <p className="caveat" style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy - read the trend.</p>
       </div>
 
       <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>When the call is scheduled — show rate by day &amp; time</div>
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>When the call is scheduled - show rate by day &amp; time</div>
         <div className="appt-when">
           <div className="appt-when-col">
             <div className="cap" style={{ marginBottom: 4 }}>By day of week</div>
@@ -6135,7 +6135,7 @@ function AppointmentsView({ clientId, range, nonce }) {
             </ResponsiveContainer>
           </div>
         </div>
-        <p className="caveat" style={{ marginTop: 8 }}>Bars = appointments that have occurred; line = show rate. Times are in the client's timezone ({dd.tz || '—'}). Use this to spot the days / times leads actually turn up.</p>
+        <p className="caveat" style={{ marginTop: 8 }}>Bars = appointments that have occurred; line = show rate. Times are in the client's timezone ({dd.tz || '-'}). Use this to spot the days / times leads actually turn up.</p>
       </div>
 
       <div className="card">
@@ -6180,7 +6180,7 @@ function AppointmentsView({ clientId, range, nonce }) {
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How self vs staff is decided ({(dd.bookedBySources || []).length} booking sources)</button>
         {showDbg && <>
-          <p className="cap" style={{ marginTop: 8 }}>A booking is <b>staff-booked</b> when the calendar event carries a user id, else <b>self-booked</b>. Below are the event sources seen — use this to confirm the split looks right for this client.</p>
+          <p className="cap" style={{ marginTop: 8 }}>A booking is <b>staff-booked</b> when the calendar event carries a user id, else <b>self-booked</b>. Below are the event sources seen - use this to confirm the split looks right for this client.</p>
           <div className="table-wrap"><table className="mini-tbl"><thead><tr><th>Event source · classification</th><th>Count</th></tr></thead><tbody>{(dd.bookedBySources || []).map((s) => <tr key={s.source}><td>{s.source}</td><td>{s.count}</td></tr>)}{!(dd.bookedBySources || []).length && <tr><td colSpan={2} className="cap">No booking sources in the sample.</td></tr>}</tbody></table></div>
         </>}
       </div>
@@ -6221,13 +6221,13 @@ function TimingDrill({ drill, money, onClose }) {
               </tr></thead>
               <tbody>{deals.map((d, i) => (
                 <tr key={i}>
-                  <td>{d.name || '—'}</td>
+                  <td>{d.name || '-'}</td>
                   <td>{fmtDate(d.createdAt)}</td>
                   <td>{fmtDate(d.statusAt)}</td>
                   <td><span className={`mr-src mr-src-${d.channel || 'other'}`}>{d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : 'Other'}</span></td>
-                  {isLost ? <td>{d.reason || '—'}</td> : null}
-                  <td className="tm-drill-contact">{[d.email, d.phone].filter(Boolean).join(' · ') || '—'}</td>
-                  <td className="r">{d.value ? money(d.value) : '—'}</td>
+                  {isLost ? <td>{d.reason || '-'}</td> : null}
+                  <td className="tm-drill-contact">{[d.email, d.phone].filter(Boolean).join(' · ') || '-'}</td>
+                  <td className="r">{d.value ? money(d.value) : '-'}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -6237,7 +6237,7 @@ function TimingDrill({ drill, money, onClose }) {
     </div>
   )
 }
-// Time in stage — for every OPEN deal, how long it's been sitting in its current
+// Time in stage - for every OPEN deal, how long it's been sitting in its current
 // pipeline stage (measured straight from stage moves). Aggregated per stage /
 // pipeline; the client's configured key-event stages are flagged. Shows where
 // deals are piling up. Self-contained: hides itself if unavailable.
@@ -6258,7 +6258,7 @@ function StageTimingSection({ clientId, nonce }) {
   if (st.status === 'err' || !d || d.connected === false || d.ghl === false) return null
   const pipes = d.pipelines || []
   if (!pipes.length) return null
-  const fmtDays = (n) => (n == null ? '—' : n >= 1 ? `${n < 10 ? n.toFixed(1) : Math.round(n)}d` : `${Math.round(n * 24)}h`)
+  const fmtDays = (n) => (n == null ? '-' : n >= 1 ? `${n < 10 ? n.toFixed(1) : Math.round(n)}d` : `${Math.round(n * 24)}h`)
   return (
     <div className="stagetime" style={{ marginBottom: 18 }}>
       <div className="lvl-title" style={{ marginTop: 0 }}>Time in stage <span className="sub">· {fmtNumber(d.totalOpen)} open deals · how long they've been sitting in their current stage{d.capped ? ' · sampled to 3,000' : ''}</span></div>
@@ -6278,7 +6278,7 @@ function StageTimingSection({ clientId, nonce }) {
           </div>
         )
       })}
-      <p className="cap">This is the age of deals <b>currently</b> in each stage — where they're piling up — measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (GoHighLevel doesn't keep that history).</p>
+      <p className="cap">This is the age of deals <b>currently</b> in each stage - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (GoHighLevel doesn't keep that history).</p>
     </div>
   )
 }
@@ -6287,7 +6287,7 @@ function TimingView({ clientId, range, nonce, currency }) {
   const [scan, setScan] = useState(null) // { status, processed, total, data }
   const [showDbg, setShowDbg] = useState(false)
   const [drill, setDrill] = useState(null) // { kind:'open'|'won'|'lost', title, deals }
-  const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
+  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
   const scanRef = React.useRef({ alive: false })
   useSettingsSync()
   const hrs = loadHours(clientId)
@@ -6327,18 +6327,18 @@ function TimingView({ clientId, range, nonce, currency }) {
     <div className="timing-view">
       <div className="card timing-intro">
         <h3 style={{ margin: '0 0 4px' }}>Speed to Lead</h3>
-        <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message or call</b> made to them. Automated workflow / campaign / bulk sends are excluded, so this reflects how fast a person actually reaches out (an outbound call counts even if the dialer didn't attribute a user). {d.full ? <>Covers the <b>whole date range</b> — {fmtNumber(d.totalLeads)} leads.</> : <>Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</>}</p>
+        <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message or call</b> made to them. Automated workflow / campaign / bulk sends are excluded, so this reflects how fast a person actually reaches out (an outbound call counts even if the dialer didn't attribute a user). {d.full ? <>Covers the <b>whole date range</b> - {fmtNumber(d.totalLeads)} leads.</> : <>Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</>}</p>
         <div className="tm-scan">
           {!scan && <button className="set-relink" onClick={runScan}>⟳ Scan the whole date range (not just a sample)</button>}
           {scan && <>
-            <span className={scan.status === 'done' ? 'tm-scan-done' : ''}>{scan.status === 'done' ? `✓ Full scan complete · ${fmtNumber(scan.total)} leads` : scan.status === 'err' ? '⚠ Scan failed — try again' : `Scanning conversations… ${fmtNumber(scan.processed)} / ${fmtNumber(scan.total)} leads`}</span>
+            <span className={scan.status === 'done' ? 'tm-scan-done' : ''}>{scan.status === 'done' ? `✓ Full scan complete · ${fmtNumber(scan.total)} leads` : scan.status === 'err' ? '⚠ Scan failed - try again' : `Scanning conversations… ${fmtNumber(scan.processed)} / ${fmtNumber(scan.total)} leads`}</span>
             {scanning && <span className="ov-spin" />}
             <button className="set-relink" onClick={stopScan}>{scan.status === 'running' ? 'Stop' : 'Back to sample'}</button>
           </>}
         </div>
         {d.viaAppt > 0 && <div className="tm-hours">📌 <b>{fmtNumber(d.viaAppt)} of {fmtNumber(d.measured)}</b> measured leads had <b>no manual message or call</b>, so their <b>first staff-booked appointment</b> was used as the speed signal instead (automated / self-bookings don't count). Useful for clients who work leads by phone/booking rather than messaging.</div>}
         {d.hours
-          ? <div className="tm-hours on">🕘 Measured within working hours · <b>{fmtHours(d.hours)}</b> — after-hours gaps don't count against response time. Change in Settings → client → Summary.</div>
+          ? <div className="tm-hours on">🕘 Measured within working hours · <b>{fmtHours(d.hours)}</b> - after-hours gaps don't count against response time. Change in Settings → client → Summary.</div>
           : <div className="tm-hours">🕘 Measuring raw round-the-clock time. Set the team's <b>working hours</b> in Settings → client → Summary so overnight leads aren't counted as slow responses.</div>}
       </div>
       <div className="timing-scards">
@@ -6357,13 +6357,13 @@ function TimingView({ clientId, range, nonce, currency }) {
           <div className="card">
             <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Contact rate <span style={{ fontWeight: 400 }}>· manual messages + appointments booked · of {fmtNumber(cr.base)} {d.full ? 'leads (full scan)' : `sampled lead${cr.base === 1 ? '' : 's'}`} · click to see the leads</span></div>
             <div className="tm-contact">
-              <button className="tm-oc rate" onClick={() => dr('contacted', 'Contacted leads (message or appointment)')} disabled={!cr.contacted}><span className="tm-oc-lab">Total contact rate</span><b>{cr.rate == null ? '—' : `${cr.rate}%`}</b><span className="tm-oc-sub">{fmtNumber(cr.contacted)} of {fmtNumber(cr.base)} reached</span></button>
+              <button className="tm-oc rate" onClick={() => dr('contacted', 'Contacted leads (message or appointment)')} disabled={!cr.contacted}><span className="tm-oc-lab">Total contact rate</span><b>{cr.rate == null ? '-' : `${cr.rate}%`}</b><span className="tm-oc-sub">{fmtNumber(cr.contacted)} of {fmtNumber(cr.base)} reached</span></button>
               <button className="tm-oc" onClick={() => dr('messaged', 'Leads reached by a manual message')} disabled={!cr.messaged}><span className="tm-oc-lab">Manual messages</span><b>{fmtNumber(cr.messaged)}</b><span className="tm-oc-sub">human message sent</span></button>
               <button className="tm-oc" onClick={() => dr('booked', 'Leads with an appointment booked')} disabled={!cr.booked}><span className="tm-oc-lab">Appointments booked</span><b>{fmtNumber(cr.booked)}</b><span className="tm-oc-sub">user + customer booked</span></button>
               <button className="tm-oc sub" onClick={() => dr('userBooked', 'Leads with a user-booked appointment')} disabled={!cr.userBooked}><span className="tm-oc-lab">↳ User-booked</span><b>{fmtNumber(cr.userBooked)}</b><span className="tm-oc-sub">staff booked the call</span></button>
               <button className="tm-oc sub" onClick={() => dr('selfBooked', 'Leads with a customer self-booked appointment')} disabled={!cr.selfBooked}><span className="tm-oc-lab">↳ Customer-booked</span><b>{fmtNumber(cr.selfBooked)}</b><span className="tm-oc-sub">lead self-booked</span></button>
             </div>
-            <p className="caveat" style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message or call</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap — the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</p>
+            <p className="caveat" style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message or call</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap - the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</p>
           </div>
         )
       })()}
@@ -6394,10 +6394,10 @@ function TimingView({ clientId, range, nonce, currency }) {
             </div>
           ))}
         </div>
-        <p className="caveat" style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion — the first few minutes matter most.</p>
+        <p className="caveat" style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion - the first few minutes matter most.</p>
       </div>
       <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Does responding faster convert better? — outcomes by response speed</div>
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Does responding faster convert better? - outcomes by response speed</div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl">
           <thead><tr><th className="lft">Response time</th><th>Leads</th><th>Booked</th><th>Book %</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th></tr></thead>
           <tbody>{d.buckets.map((b) => (
@@ -6413,12 +6413,12 @@ function TimingView({ clientId, range, nonce, currency }) {
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Each row is the measured leads whose first human reply fell in that window. Book % = booked ÷ leads, Show % = shown ÷ booked, Win % = won ÷ leads. If the top rows convert best, faster response is paying off. Small samples make single rows noisy — read the trend, not one cell.</p>
+        <p className="caveat" style={{ marginTop: 10 }}>Each row is the measured leads whose first human reply fell in that window. Book % = booked ÷ leads, Show % = shown ÷ booked, Win % = won ÷ leads. If the top rows convert best, faster response is paying off. Small samples make single rows noisy - read the trend, not one cell.</p>
       </div>
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How manual vs automated is decided ({(d.sourceBreakdown || []).length} message sources)</button>
         {showDbg && <>
-          <p className="cap" style={{ marginTop: 8 }}>A message counts as <b>manual</b> only when it's <b>attributed to a user</b> and its source isn't an automation (workflow, campaign, bulk, trigger, API, auto-reply). A send with no user — even one tagged source “app” — is treated as automated. Below is every outbound message source seen in the sample and how it was classified — use this to confirm it looks right for this client.</p>
+          <p className="cap" style={{ marginTop: 8 }}>A message counts as <b>manual</b> only when it's <b>attributed to a user</b> and its source isn't an automation (workflow, campaign, bulk, trigger, API, auto-reply). A send with no user - even one tagged source “app” - is treated as automated. Below is every outbound message source seen in the sample and how it was classified - use this to confirm it looks right for this client.</p>
           <div className="table-wrap"><table className="mini-tbl"><thead><tr><th>Message source · user attribution</th><th>Classified as</th><th>Count</th></tr></thead><tbody>{(d.sourceBreakdown || []).map((s) => <tr key={s.source}><td>{s.source}</td><td><span className={`tm-kind ${s.kind}`}>{s.kind || '-'}</span></td><td>{s.count}</td></tr>)}{!(d.sourceBreakdown || []).length && <tr><td colSpan={3} className="cap">No outbound messages in the sample.</td></tr>}</tbody></table></div>
           <TimingDebug clientId={clientId} range={range} />
         </>}
@@ -6442,14 +6442,14 @@ function TimingDebug({ clientId, range }) {
     <div style={{ marginTop: 12 }}>
       {st.status === 'idle' && <button className="set-relink" onClick={load}>Load message-level detail (sample of leads)</button>}
       {st.status === 'loading' && <Spinner label="Reading a sample of leads' first messages…" />}
-      {st.status === 'err' && <p className="cap">Couldn't load the detail — try again.</p>}
+      {st.status === 'err' && <p className="cap">Couldn't load the detail - try again.</p>}
       {st.status === 'ok' && (!st.rows.length
         ? <p className="cap">No message detail available for the sample.</p>
         : <div className="table-wrap"><table className="mini-tbl tm-dbg"><thead><tr><th>Lead in</th><th>Opp created</th><th>First manual</th><th>First outbound messages (source · user · classify · min after lead-in)</th></tr></thead><tbody>{st.rows.map((r, i) => (
           <tr key={i}>
-            <td>{new Date(r.leadIn).toLocaleString()}</td>
+            <td>{new Date(r.leadIn).toLocaleString('en-AU')}</td>
             <td>{Math.round((Date.parse(r.createdAt) - Date.parse(r.leadIn)) / 60000)}m later</td>
-            <td>{r.firstManualMin == null ? '—' : fmtDuration(r.firstManualMin)}</td>
+            <td>{r.firstManualMin == null ? '-' : fmtDuration(r.firstManualMin)}</td>
             <td>{r.msgs.length ? r.msgs.map((m, j) => <span key={j} className="tm-dbg-msg"><b>{m.source}</b> · {m.hasUser ? 'user' : 'no-user'} · <span className={`tm-kind ${m.kind}`}>{m.kind}</span> · {m.minAfterLeadIn}m</span>) : <span className="cap">no outbound</span>}</td>
           </tr>
         ))}</tbody></table></div>)}
@@ -6479,7 +6479,7 @@ function OpenDealRow({ d, clientId, money, showPipe }) {
         <td className={d.ageDays != null && d.ageDays > 30 ? 'u-stale' : ''}>{d.ageDays != null ? `${fmtNumber(d.ageDays)}d` : '-'}</td>
       </tr>
       {open && <tr className="u-notes-row"><td colSpan={4}>
-        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString()}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
+        {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
       </td></tr>}
     </React.Fragment>
   )
@@ -6499,16 +6499,16 @@ function UserCallActivity({ users, clientId, range, nonce, currency }) {
   if (d.error || !d.byUser || !d.byUser.length) return null
   const nameOf = (r) => r.name || (() => { const u = (users || []).find((x) => x.id === r.userId); return u ? u.name : (r.userId === 'unassigned' ? 'Unassigned / automated' : 'User ' + String(r.userId).slice(-4)) })()
   const rows = [...d.byUser].sort((a, b) => b.outbound - a.outbound)
-  const fmtSpeedHrs = (h) => (h == null ? '—' : h < 1 ? `${Math.round(h * 60)}m` : h < 48 ? `${h < 10 ? h.toFixed(1) : Math.round(h)}h` : `${Math.round(h / 24)}d`)
+  const fmtSpeedHrs = (h) => (h == null ? '-' : h < 1 ? `${Math.round(h * 60)}m` : h < 48 ? `${h < 10 ? h.toFixed(1) : Math.round(h)}h` : `${Math.round(h / 24)}d`)
   // Join call activity with the leaderboard's outcomes (booked/won) so we can show
   // activity-to-outcome ratios: how many outbound calls it took this rep per booked
   // appointment and per won deal. Blank when the client doesn't assign to reps.
   const uById = new Map((users || []).map((u) => [u.id, u]))
-  const fmtRatio = (n, d2) => (!d2 ? '—' : (n / d2).toFixed(n / d2 >= 10 ? 0 : 1))
+  const fmtRatio = (n, d2) => (!d2 ? '-' : (n / d2).toFixed(n / d2 >= 10 ? 0 : 1))
   const money = (v) => fmtCurrency(v, currency)
-  // Revenue per hour of talk time — a rep who wins more from fewer dial-minutes
+  // Revenue per hour of talk time - a rep who wins more from fewer dial-minutes
   // stands out. Blank when we can't join revenue or there's no talk time yet.
-  const revPerHr = (r, u) => (u && u.revenue && r.outboundMinutes ? money(u.revenue / (r.outboundMinutes / 60)) : '—')
+  const revPerHr = (r, u) => (u && u.revenue && r.outboundMinutes ? money(u.revenue / (r.outboundMinutes / 60)) : '-')
   // Coverage flag: reps who have leads assigned but logged no outbound calls this
   // period (they're not appearing in the call rows at all, or with zero outbound).
   const outByUid = new Map(rows.map((r) => [r.userId, r.outbound]))
@@ -6517,9 +6517,9 @@ function UserCallActivity({ users, clientId, range, nonce, currency }) {
   return (
     <div className="card">
       <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Call activity <span style={{ fontWeight: 400 }}>· GoHighLevel dialer · {fmtNumber(d.totalCalls)} calls · {fmtNumber(totOut)} outbound · {fmtNumber(totMin)} talk min</span></div>
-      {idle.length > 0 && <div className="u-idle-flag" title="These reps have leads assigned in this range but no outbound calls logged in the dialer — either they're not calling or not logging calls here.">⚠ {idle.length === 1 ? '1 rep has' : `${idle.length} reps have`} assigned leads but no logged outbound calls: {idle.map((u) => u.name).join(', ')}</div>}
+      {idle.length > 0 && <div className="u-idle-flag" title="These reps have leads assigned in this range but no outbound calls logged in the dialer - either they're not calling or not logging calls here.">⚠ {idle.length === 1 ? '1 rep has' : `${idle.length} reps have`} assigned leads but no logged outbound calls: {idle.map((u) => u.name).join(', ')}</div>}
       <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th><th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th><th title="Share of leads this rep called back within 5 minutes">≤5 min %</th><th title="Outbound calls per appointment booked by this rep">Calls / booked</th><th title="Outbound calls per deal won by this rep">Calls / won</th><th title="Revenue won per hour of this rep's talk time">Rev / talk-hr</th></tr></thead>
-        <tbody>{rows.map((r) => { const u = uById.get(r.userId); return (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{r.sla5Pct == null ? '—' : `${r.sla5Pct}%`}</td><td>{u ? fmtRatio(r.outbound, u.booked) : '—'}</td><td>{u ? fmtRatio(r.outbound, u.won) : '—'}</td><td>{revPerHr(r, u)}</td></tr>) })}</tbody></table></div>
+        <tbody>{rows.map((r) => { const u = uById.get(r.userId); return (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{r.sla5Pct == null ? '-' : `${r.sla5Pct}%`}</td><td>{u ? fmtRatio(r.outbound, u.booked) : '-'}</td><td>{u ? fmtRatio(r.outbound, u.won) : '-'}</td><td>{revPerHr(r, u)}</td></tr>) })}</tbody></table></div>
     </div>
   )
 }
@@ -6538,7 +6538,7 @@ function UserApptActivity({ clientId, range, nonce }) {
   const by = d && d.channels && d.channels.all && d.channels.all.byUser
   const rows = (by || []).filter((u) => u.booked > 0).sort((a, b) => b.booked - a.booked)
   if (!rows.length) return null
-  const pct = (v) => (v == null ? '—' : `${v}%`)
+  const pct = (v) => (v == null ? '-' : `${v}%`)
   return (
     <div className="card">
       <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Appointments by rep <span style={{ fontWeight: 400 }}>· who booked (self vs rep) &amp; who showed</span></div>
@@ -6559,7 +6559,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const money = (v) => fmtCurrency(v, currency)
   // One fetch per client+range now returns EVERY channel × pipeline combo (plus
   // won-in-period + channel spend), so switching channel / pipeline / won-basis is
-  // pure client-side selection — no refetch. Deps deliberately exclude the filters.
+  // pure client-side selection - no refetch. Deps deliberately exclude the filters.
   useEffect(() => {
     let alive = true
     const url = `/.netlify/functions/windsor?scope=users&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`
@@ -6583,13 +6583,13 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
     return () => { alive = false }
   }, [clientId, rangeQuery(range), nonce])
   // Call activity + appointments-by-rep run on their OWN fetches (scope=usercalls /
-  // scope=appts) and must not be held hostage by the (heavier) leaderboard pull —
+  // scope=appts) and must not be held hostage by the (heavier) leaderboard pull -
   // on a big account that can be slow or time out, and the call stats should still
   // show. So we render them below whatever state the leaderboard is in.
   const d = st.data || {}
   // Client-side filter selection: pick the active channel × pipeline combo from the
   // single payload, apply the won-basis overlay (closed = swap in won-in-period per
-  // rep), and scope ad spend to the channel — all with no refetch. Falls back to the
+  // rep), and scope ad spend to the channel - all with no refetch. Falls back to the
   // old flat shape (d.users) for any pre-deploy cached response.
   const overlayBasis = (arr, wbu) => (wonBasis === 'closed' && wbu)
     ? (arr || []).map((u) => { const w = wbu[u.id] || { won: 0, revenue: 0, avgValue: 0 }; return { ...u, won: w.won, revenue: w.revenue, wonValue: w.revenue, avgDeal: w.avgValue, winRate: u.leads ? Math.round((100 * w.won) / u.leads) : null } })
@@ -6600,14 +6600,14 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const totalSpend = (d.spendByChannel && d.spendByChannel[chan] != null) ? d.spendByChannel[chan] : (d.totalSpend || 0)
   const repActivity = <><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></>
   if (st.status === 'loading') return <div className="timing-view"><div className="card"><Spinner label="Loading user performance…" /></div>{repActivity}</div>
-  if (st.status === 'err' || d.connected === false) return <div className="timing-view"><div className="card empty-deep"><div className="big">👤</div><b>Couldn't load the rep leaderboard.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p><p className="cap" style={{ maxWidth: 520, margin: '8px auto 0' }}>The leaderboard (opportunities-heavy) couldn't load for this window — try a smaller range. Call activity still shows below.</p></div>{repActivity}</div>
+  if (st.status === 'err' || d.connected === false) return <div className="timing-view"><div className="card empty-deep"><div className="big">👤</div><b>Couldn't load the rep leaderboard.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p><p className="cap" style={{ maxWidth: 520, margin: '8px auto 0' }}>The leaderboard (opportunities-heavy) couldn't load for this window - try a smaller range. Call activity still shows below.</p></div>{repActivity}</div>
   const pipeSel = pipes.length > 1 && (
     <label className="appt-f"><span>Pipeline</span><select value={pipe} onChange={(e) => { setPipe(e.target.value); setOpen(null) }}><option value="all">All pipelines</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
   )
   const chanSel = (
     <div className="chan-toggle">{[['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-Paid'], ['meta', 'Meta'], ['google', 'Google']].map(([k, lbl]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => { setChan(k); setOpen(null) }}>{lbl}</button>)}</div>
   )
-  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty — but call activity below still shows per rep.</p></div>{repActivity}</div>
+  if (!users.length) return <div className="timing-view"><div className="appt-head"><div><h3 style={{ margin: 0 }}>Users</h3></div>{pipeSel}</div><div className="card empty-deep"><div className="big">👤</div><b>No user-assigned opportunities in this range{pipe !== 'all' ? ' for this pipeline' : ''}.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>This client isn't assigning opportunities to a rep, so the leaderboard is empty - but call activity below still shows per rep.</p></div>{repActivity}</div>
   // Configured stage key events -> matrix columns (stage reach per user), sorted
   // by their real pipeline position so the funnel reads top-to-bottom (and the
   // cumulative step % make sense) instead of following config order.
@@ -6629,7 +6629,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const U_PALETTE = ['#4f7cff', '#12b886', '#f59e0b', '#e64980', '#7950f2', '#38bdf8', '#fa5252', '#20c997', '#fab005', '#845ef7', '#ff6b6b', '#15aabf']
   const aggUsersSorted = [...users].sort((a, b) => b.leads - a.leads)
   const userColorMap = {}; aggUsersSorted.forEach((u, i) => { userColorMap[u.id] = U_PALETTE[i % U_PALETTE.length] })
-  // Synthetic "All users" summary row — pinned to the top of the leaderboard. Its
+  // Synthetic "All users" summary row - pinned to the top of the leaderboard. Its
   // funnel bars are stacked per rep (who has leads at every stage), and its open
   // deals carry the rep name so the drill can tab-filter between reps.
   const ccN = users.reduce((a, u) => a + (u.avgCloseDays != null ? u.won : 0), 0)
@@ -6668,7 +6668,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
       if (pr == null) mv = <span className="u-rank-mv new" title="Not ranked last period">new</span>
       else if (pr > cr) mv = <span className="u-rank-mv up" title={`Up ${pr - cr} from #${pr} last period`}>▲{pr - cr}</span>
       else if (pr < cr) mv = <span className="u-rank-mv down" title={`Down ${cr - pr} from #${pr} last period`}>▼{cr - pr}</span>
-      else mv = <span className="u-rank-mv flat" title="Same rank as last period">—</span>
+      else mv = <span className="u-rank-mv flat" title="Same rank as last period">-</span>
     }
     return <td className="u-rank"><span className="u-rank-n">{cr}</span>{mv}</td>
   }
@@ -6676,7 +6676,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   return (
     <div className="timing-view">
       <div className="appt-head">
-        <div><h3 style={{ margin: '0 0 2px' }}>Users — sales-rep performance</h3><p className="cap" style={{ margin: 0 }}>Opportunities grouped by their <b>assigned user</b>: full funnel, per-stage reach, win rate, revenue and time-to-close. The channel filter scopes each rep's leads by their first-touch UTM; cost figures use the <b>{chan === 'nonpaid' ? 'n/a — no ad spend for non-paid' : chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : chan === 'paid' ? 'Meta + Google' : 'total'}</b> ad spend ÷ that rep's outcomes (blended — spend isn't caused by the rep).</p></div>
+        <div><h3 style={{ margin: '0 0 2px' }}>Users - sales-rep performance</h3><p className="cap" style={{ margin: 0 }}>Opportunities grouped by their <b>assigned user</b>: full funnel, per-stage reach, win rate, revenue and time-to-close. The channel filter scopes each rep's leads by their first-touch UTM; cost figures use the <b>{chan === 'nonpaid' ? 'n/a - no ad spend for non-paid' : chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : chan === 'paid' ? 'Meta + Google' : 'total'}</b> ad spend ÷ that rep's outcomes (blended - spend isn't caused by the rep).</p></div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>{chanSel}{pipeSel}</div>
       </div>
       <div className="timing-scards">
@@ -6729,7 +6729,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                         <div className="u-vc open"><span>Open (live)</span><b>{money(u.openValue || 0)}</b><i>{fmtNumber(u.open)} deals still in play</i></div>
                         <div className="u-vc won"><span>Won</span><b>{money(wv)}</b><i>{fmtNumber(u.won)} deals</i></div>
                         <div className="u-vc lost"><span>Lost</span><b>{money(lv)}</b><i>{fmtNumber(u.lost)} deals</i></div>
-                        <div className="u-vc vwr" title="Won value ÷ (won + lost value) — win rate weighted by deal size, so a few big wins/losses aren't hidden by the count-based win %."><span>Value win rate</span><b>{vwr == null ? '—' : `${vwr}%`}</b><i>of decided value</i></div>
+                        <div className="u-vc vwr" title="Won value ÷ (won + lost value) - win rate weighted by deal size, so a few big wins/losses aren't hidden by the count-based win %."><span>Value win rate</span><b>{vwr == null ? '-' : `${vwr}%`}</b><i>of decided value</i></div>
                       </div>) })()}
                       {u._agg && aggUsersSorted.filter((x) => x.leads > 0).length > 1 && <div className="u-fn-legend">{aggUsersSorted.filter((x) => x.leads > 0).map((x) => <span key={x.id} className="u-fn-leg"><i style={{ background: userColorMap[x.id] }} />{x.name}</span>)}</div>}
                       <div className="u-funnel">
@@ -6756,7 +6756,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                           <div className="u-open-rows">{rows.map(([stage, g]) => <button key={stage} className="u-open-row" onClick={() => { setDrillUser('all'); setDrill({ name: u.name, stage, deals: g.deals }) }}><span className="u-open-st" title={stage}>{stage}</span><span className="u-open-n"><b>{fmtNumber(g.open)}</b> open</span><span className="u-open-v">{money(g.value)}</span><span className="u-open-go">→</span></button>)}</div>
                         </div>
                       })()}
-                      <p className="caveat" style={{ marginTop: 8 }}>Reached is cumulative (a later stage counts the earlier ones). Open pipeline = deals sitting at each stage right now, still in play (not won/lost) — click a stage to drill into the individual live deals.</p>
+                      <p className="caveat" style={{ marginTop: 8 }}>Reached is cumulative (a later stage counts the earlier ones). Open pipeline = deals sitting at each stage right now, still in play (not won/lost) - click a stage to drill into the individual live deals.</p>
                     </div>
                     <div className="u-detail-side">
                       {u.lostReasons && u.lostReasons.length > 0 && <div className="u-lost">
@@ -6774,7 +6774,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
             )
           })}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended — it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</p>
+        <p className="caveat" style={{ marginTop: 10 }}>Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended - it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</p>
       </div>
 
       {stageCols.length > 0 && <div className="card">
@@ -6785,7 +6785,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
             <tr key={u.id}><td className="lft">{u.name}</td><td>{fmtNumber(u.leads)}</td>{stageCols.map((s) => <td key={s}>{fmtNumber(u.stages[s] || 0)}</td>)}<td>{fmtNumber(u.won)}</td></tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>How many of each rep's leads reached each configured key stage (cumulative — reaching a later stage counts the earlier ones). Configure the stages in Settings → the client → Key events.</p>
+        <p className="caveat" style={{ marginTop: 10 }}>How many of each rep's leads reached each configured key stage (cumulative - reaching a later stage counts the earlier ones). Configure the stages in Settings → the client → Key events.</p>
       </div>}
       {drill && (() => {
         const repTabs = [...new Set(drill.deals.map((x) => x.user).filter(Boolean))].sort((a, b) => a.localeCompare(b))
@@ -6794,7 +6794,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
         const showPipe = shown.some((x) => x.pipeline !== (shown[0] && shown[0].pipeline))
         return <div className="modal-bg" onClick={() => setDrill(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(1080px, 96vw)', maxWidth: 'none' }}>
-            <div className="m-head"><div><h3 style={{ margin: 0 }}>Open deals — {drill.stage}</h3><span className="cap">{drill.name} · {fmtNumber(shown.length)} live · {money(shown.reduce((s, d) => s + d.value, 0))}</span></div><button className="icon-btn" onClick={() => setDrill(null)}>✕</button></div>
+            <div className="m-head"><div><h3 style={{ margin: 0 }}>Open deals - {drill.stage}</h3><span className="cap">{drill.name} · {fmtNumber(shown.length)} live · {money(shown.reduce((s, d) => s + d.value, 0))}</span></div><button className="icon-btn" onClick={() => setDrill(null)}>✕</button></div>
             <div className="m-body">
               {multi && <div className="chan-toggle u-drill-tabs"><button className={drillUser === 'all' ? 'on' : ''} onClick={() => setDrillUser('all')}>All ({fmtNumber(drill.deals.length)})</button>{repTabs.map((nm) => <button key={nm} className={drillUser === nm ? 'on' : ''} onClick={() => setDrillUser(nm)}>{nm} ({fmtNumber(drill.deals.filter((x) => x.user === nm).length)})</button>)}</div>}
               <div className="table-wrap"><table className="mini-tbl u-drill-tbl">
@@ -6802,7 +6802,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                 <thead><tr><th className="lft">Opportunity</th><th className="lft">Contact</th><th>Value</th><th>Days in stage</th></tr></thead>
                 <tbody>{shown.slice().sort((a, b) => b.value - a.value).map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe={showPipe} />)}</tbody>
               </table></div>
-              <p className="caveat">Live opportunities currently sitting at this stage (not won/lost), highest value first. <b>Days in stage</b> = time since the deal last moved (amber = 30+ days, likely stalled). <b>Click a deal to read its Caalano Systems notes</b> — the context on why it may be stuck.</p>
+              <p className="caveat">Live opportunities currently sitting at this stage (not won/lost), highest value first. <b>Days in stage</b> = time since the deal last moved (amber = 30+ days, likely stalled). <b>Click a deal to read its Caalano Systems notes</b> - the context on why it may be stuck.</p>
             </div>
           </div>
         </div>
@@ -6866,9 +6866,9 @@ function OptimisationLog({ clientId }) {
   if (!rows.length) return <div className="card empty-deep"><div className="big">🗒️</div><b>The sheet has no entries yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add rows to the Google Sheet and they'll appear here.</p></div>
   const dateCol = columns.find((c) => /date|when|day|timestamp/i.test(c)) || columns[0]
   const otherCols = columns.filter((c) => c !== dateCol)
-  // A cell is "blank" when it's empty or just a dash / n/a placeholder — these are
+  // A cell is "blank" when it's empty or just a dash / n/a placeholder - these are
   // hidden in the timeline.
-  const blank = (v) => { const s = String(v == null ? '' : v).trim(); return s === '' || /^[-–—]+$/.test(s) || /^n\/?a$/i.test(s) }
+  const blank = (v) => { const s = String(v == null ? '' : v).trim(); return s === '' || /^[-–-]+$/.test(s) || /^n\/?a$/i.test(s) }
   // Dates in these sheets are DD/MM/YYYY (or DD-MM-YYYY); parse them explicitly so
   // e.g. 06/12/2026 reads as 6 Dec, not 12 Jun. Falls back to native parsing (ISO,
   // "7 Dec 2026", etc.).
@@ -6879,7 +6879,7 @@ function OptimisationLog({ clientId }) {
     const t = Date.parse(s); return isNaN(t) ? null : t
   }
   // Semantic columns (best-effort by header name) so the timeline can render a rich
-  // card — platform badge, optimisation type, campaign, author and notes.
+  // card - platform badge, optimisation type, campaign, author and notes.
   const platCol = columns.find((c) => /platform|channel/i.test(c))
   const typeCol = columns.find((c) => c !== dateCol && /optimi|type|action|change|task/i.test(c))
   const campCol = columns.find((c) => /campaign|ad ?set|adset|audience/i.test(c))
@@ -6887,7 +6887,7 @@ function OptimisationLog({ clientId }) {
   const known = new Set([dateCol, platCol, typeCol, campCol, noteCol].filter(Boolean))
   const extraCols = otherCols.filter((c) => !known.has(c))
   const platKind = (v) => (/meta|face|insta/i.test(v) ? 'meta' : /google|goog|ppc|search|pmax|youtube/i.test(v) ? 'google' : 'other')
-  // Author initials → name. A leading "U -", "JA –", "AS —" prefix on the notes marks
+  // Author initials → name. A leading "U -", "JA –", "AS -" prefix on the notes marks
   // who made the change.
   const PEOPLE = { u: 'Uma', uma: 'Uma', j: 'Jye', ja: 'Jye', jye: 'Jye', a: 'Alex', as: 'Alex', alex: 'Alex' }
   const authorOf = (note) => { const m = String(note || '').match(/^\s*([A-Za-z]{1,4})\s*[-–—]\s+/); return m ? (PEOPLE[m[1].toLowerCase()] || null) : null }
@@ -6916,14 +6916,14 @@ function OptimisationLog({ clientId }) {
             const author = authorOf(rawNote)
             const note = blank(rawNote) ? '' : stripAuthor(rawNote)
             const extras = extraCols.filter((c) => !blank(r[c]))
-            // Needs a platform PLUS something else to plot — skip "just Meta/Google" rows.
+            // Needs a platform PLUS something else to plot - skip "just Meta/Google" rows.
             const hasContent = !!type || !!camp || !!note || extras.length > 0
             if (!hasContent) return null
             const kind = platKind(platform)
             const d = parseD(r[dateCol])
             return (
               <div className="optlog-item" key={i}>
-                <div className="optlog-when">{d != null ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : (r[dateCol] || '—')}</div>
+                <div className="optlog-when">{d != null ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : (r[dateCol] || '-')}</div>
                 <div className="optlog-line"><span className={`optlog-dot optlog-dot-${kind}`} /></div>
                 <div className={`optlog-body optlog-b-${kind}`}>
                   <div className="optlog-top">
@@ -6953,11 +6953,11 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   const allTabs = [{ id: 'overall', label: 'Caalano360' }]
   if (cfg.ghl) allTabs.push({ id: 'users', label: 'Users' })
   // Only offer a Meta / Google tab when the client actually has that ad account
-  // connected — otherwise a CRM-only client shows an empty ad tab. (Meta was
+  // connected - otherwise a CRM-only client shows an empty ad tab. (Meta was
   // previously added unconditionally, which is why it appeared with no data.)
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
-  // Analytics (GA4) tab — only when the client has a GA4 property linked in Settings.
+  // Analytics (GA4) tab - only when the client has a GA4 property linked in Settings.
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
   if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
@@ -7001,7 +7001,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} />}
         {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Meta', range)} /></div>
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
-            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months — ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months - ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Google', range)} /></div>
           : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
@@ -7127,7 +7127,7 @@ function TrackingHealth({ paid, crmLeads, attribData, channels, periodLabel }) {
         <span className="th-sources-l">Opportunity sources</span>
         {sources.slice(0, 10).map((s) => <span key={s.name} className={`th-src ${s.manual ? 'manual' : ''}`}>{s.name} <b>{fmtNumber(s.count)}</b>{s.manual ? ' ✋' : ''}</span>)}
       </div>}
-      <p className="caveat">Ad-reported leads are what Meta/Google count; CRM opportunities are what landed in Caalano Systems. <b>Manual (CRM UI)</b> opportunities were added by hand in the CRM (not driven by ads), so <b>True variance</b> compares ad-reported leads to CRM <b>excluding</b> those — the real gap. A remaining gap usually means duplicate/again-counted ad conversions, leads not reaching the CRM, or missing UTMs (see source-tag coverage). ✋ = a manually-added source.</p>
+      <p className="caveat">Ad-reported leads are what Meta/Google count; CRM opportunities are what landed in Caalano Systems. <b>Manual (CRM UI)</b> opportunities were added by hand in the CRM (not driven by ads), so <b>True variance</b> compares ad-reported leads to CRM <b>excluding</b> those - the real gap. A remaining gap usually means duplicate/again-counted ad conversions, leads not reaching the CRM, or missing UTMs (see source-tag coverage). ✋ = a manually-added source.</p>
     </div>
   )
 }
@@ -7140,7 +7140,7 @@ function AttributionDiagnostics({ attribData, camps, currency }) {
   const badge = (s) => <span className="src-badge" style={{ background: s === 'Meta' ? '#4f7cff' : '#12b886' }}>{s === 'Meta' ? 'M' : 'G'}</span>
   // Auto-fold numeric Google/Meta campaign IDs in utm_campaign to their live name
   // first (from Windsor's campaign_id↔name pairing), so IDs that resolve to a real
-  // campaign aren't flagged as "unmatched" here — only genuinely orphaned UTMs are.
+  // campaign aren't flagged as "unmatched" here - only genuinely orphaned UTMs are.
   const byCampaign = applyAliases(attribData.byCampaign, attribData.campIdMap)
   const oCamp = mkOutcomeMap(byCampaign)
   const adNames = new Set(camps.map((cc) => unorm(cc.name)).filter(Boolean))
@@ -7254,7 +7254,7 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
   }, [open, cals.status, clientId])
   // Prefer Windsor's blend pipelines (they carry per-stage open-deal counts), but
   // fall back to the direct-GHL pipeline list from the calendars scope when the
-  // blend has none — e.g. a just-linked client Windsor hasn't synced yet, so the
+  // blend has none - e.g. a just-linked client Windsor hasn't synced yet, so the
   // stages still appear immediately instead of "No pipeline stages found".
   const blendPipes = (st.blend && st.blend.pipelines) || []
   const directPipes = cals.pipelines || []
@@ -7378,13 +7378,13 @@ function QualStageEditor({ clientId, nonce }) {
   const setStage = (pid, stage) => { const nx = { ...loadQualStage(clientId) }; if (stage) nx[pid] = stage; else delete nx[pid]; saveQualStage(clientId, nx) }
   return (
     <div className="linker">
-      <p className="cap" style={{ marginTop: 0 }}>Pick the stage that marks a lead <b>qualified</b> for each pipeline — typically just after the discovery call. A lead counts as qualified once it <b>reaches that stage or beyond</b>, and any won deal always counts. Leave a pipeline on “Not set” to keep Qualified off for it. <b>Qualified only appears on the dashboards when at least one pipeline has a stage set here.</b></p>
+      <p className="cap" style={{ marginTop: 0 }}>Pick the stage that marks a lead <b>qualified</b> for each pipeline - typically just after the discovery call. A lead counts as qualified once it <b>reaches that stage or beyond</b>, and any won deal always counts. Leave a pipeline on “Not set” to keep Qualified off for it. <b>Qualified only appears on the dashboards when at least one pipeline has a stage set here.</b></p>
       {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
         : pipes.length ? pipes.map((p) => (
           <div className="camp-row" key={p.id}>
             <span className="camp-nm" title={p.name}>{p.name}</span>
             <select className="camp-lnk" value={map[p.id] || ''} onChange={(e) => setStage(p.id, e.target.value)}>
-              <option value="">Not set — no qualified metric</option>
+              <option value="">Not set - no qualified metric</option>
               {(p.stages || []).slice().sort((a, b) => a.pos - b.pos).map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
             </select>
           </div>
@@ -7439,7 +7439,7 @@ function AliasEditor({ clientId, nonce }) {
     const w = bestMatch(name, candidates)
     return { value: w, by: w ? 'words' : null }
   }
-  // utm values that are organic traffic sources, not ads — never offer them for
+  // utm values that are organic traffic sources, not ads - never offer them for
   // ad-set / creative aliasing.
   const NONAD = new Set(['social', 'organic', 'manual', 'calendar', 'email', 'referral', 'direct', 'none', 'sms', 'whatsapp', 'qr', 'link', 'bio', 'link_in_bio', 'linktree', 'linkinbio', 'profile'])
   const isNonAd = (name) => { const s = String(name || '').trim().toLowerCase(); return NONAD.has(s) || /link.?in.?bio|linktree/.test(s) }
@@ -7469,7 +7469,7 @@ function AliasEditor({ clientId, nonce }) {
   const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
   return (
     <div className="linker">
-      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with — so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown — <b>ignore a row and it keeps its own identity, untouched.</b> If a row is a legit standalone (e.g. a paused campaign) and not a rename, hit <b>Keep separate</b> to clear it from the list without merging anything.</p>
+      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with - so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown - <b>ignore a row and it keeps its own identity, untouched.</b> If a row is a legit standalone (e.g. a paused campaign) and not a rename, hit <b>Keep separate</b> to clear it from the list without merging anything.</p>
       {st.status === 'loading' ? <Spinner label="Scanning for unmatched UTMs (last 90 days)…" />
         : st.status === 'err' ? <p className="cap">Couldn't load campaign / CRM data for this client.</p>
         : !namesLoaded ? <div className="alias-warn"><b>⚠ Couldn't load the current campaign / ad-set / ad names</b> from the ad account, so we can't tell which UTMs are unmatched (everything would look unmatched). This is usually a temporary load issue on a large account.<button className="btn-ghost sm" style={{ marginLeft: 8 }} onClick={() => setSt({ status: 'idle' })}>↻ Retry</button></div>
@@ -7484,9 +7484,9 @@ function AliasEditor({ clientId, nonce }) {
                   <div className="alias-row alias-set" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-arrow">→</span><span className="alias-cur" title={cur}>{cur}</span><button className="alias-x" title="Remove link" onClick={() => setAlias(clientId, lvl, oldN, '')}>✕</button></div>
                 ))}</div>}
                 {keptList.length > 0 && <div className="alias-existing">{keptList.map((oldN) => (
-                  <div className="alias-row alias-kept" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-kept-tag">kept separate</span><button className="alias-x" title="Undo — show this UTM in the unmatched list again" onClick={() => setKeep(clientId, lvl, oldN, false)}>✕</button></div>
+                  <div className="alias-row alias-kept" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-kept-tag">kept separate</span><button className="alias-x" title="Undo - show this UTM in the unmatched list again" onClick={() => setKeep(clientId, lvl, oldN, false)}>✕</button></div>
                 ))}</div>}
-                {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs — everything ties to a current name.'}</p>
+                {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs - everything ties to a current name.'}</p>
                   : un.map((o) => {
                     const oc = adCode(o.name)
                     const cand = curList[lvl].map((x) => x.name)
@@ -7498,15 +7498,15 @@ function AliasEditor({ clientId, nonce }) {
                         <span className="alias-arrow">→</span>
                         <div className="alias-pick">
                           <select className="camp-lnk alias-sel" value="" onChange={(e) => e.target.value && setAlias(clientId, lvl, o.name, e.target.value)}>
-                            <option value="">Not linked — leave as is</option>
+                            <option value="">Not linked - leave as is</option>
                             {[['meta', 'Meta'], ['google', 'Google'], [null, 'Other']].map(([ch, chLbl]) => {
                               const opts = curList[lvl].filter((x) => (ch === null ? !x.channel : x.channel === ch))
                               if (!opts.length) return null
                               return <optgroup key={chLbl} label={chLbl}>{opts.map((x) => { const cc = adCode(x.name); return <option key={x.name} value={x.name}>{cc ? cc.toUpperCase() + ' · ' : ''}{x.name}</option> })}</optgroup>
                             })}
                           </select>
-                          {sug.value ? <button className={`alias-ok ${sug.by === 'code' ? 'by-code' : 'by-words'}`} title={`Approve: ${o.name} → ${sug.value}${sug.by === 'code' ? ` (ad-number match ${(sc || '').toUpperCase()})` : ' (wording guess — verify the ad number first)'}`} onClick={() => setAlias(clientId, lvl, o.name, sug.value)}>✓ {sug.by === 'code' ? `#${(sc || '').toUpperCase()}` : 'Approve'} <span className="alias-ok-tgt">{sug.value}</span></button> : null}
-                          <button className="alias-keep" title="Not a rename — this is a legit standalone (e.g. a paused campaign). Hide it and keep its data under its own name." onClick={() => setKeep(clientId, lvl, o.name, true)}>Keep separate</button>
+                          {sug.value ? <button className={`alias-ok ${sug.by === 'code' ? 'by-code' : 'by-words'}`} title={`Approve: ${o.name} → ${sug.value}${sug.by === 'code' ? ` (ad-number match ${(sc || '').toUpperCase()})` : ' (wording guess - verify the ad number first)'}`} onClick={() => setAlias(clientId, lvl, o.name, sug.value)}>✓ {sug.by === 'code' ? `#${(sc || '').toUpperCase()}` : 'Approve'} <span className="alias-ok-tgt">{sug.value}</span></button> : null}
+                          <button className="alias-keep" title="Not a rename - this is a legit standalone (e.g. a paused campaign). Hide it and keep its data under its own name." onClick={() => setKeep(clientId, lvl, o.name, true)}>Keep separate</button>
                         </div>
                       </div>
                     )
@@ -7691,7 +7691,7 @@ function AddClientModal({ existing, editClient, onClose }) {
   }
   const remove = () => { if (isEdit && confirm(`Remove ${editClient.name} from the dashboard? This only removes the mapping; no CRM/ad data is touched.`)) { removeCustomClient(editClient.id); onClose() } }
   // Picking any account fills the client name from that account (unless the user
-  // typed their own) — so a Meta-only or Google-only client still gets a name.
+  // typed their own) - so a Meta-only or Google-only client still gets a name.
   const fillName = (nm) => { if (nm && !nameEdited) setName(nm) }
   const pickGhl = (id) => { setGhl(id); fillName(nameOf(d.ghl, id)) }
   const pickMeta = (id) => { setMeta(id); fillName(nameOf(d.meta, id)) }
@@ -7699,7 +7699,7 @@ function AddClientModal({ existing, editClient, onClose }) {
   const pickGa4 = (id) => { setGa4(id); fillName(nameOf(d.ga4, id)) }
   // A selected id that isn't in the discovered list (e.g. a brand-new Windsor
   // account not yet backfilled, or an existing link whose account has no recent
-  // activity) still needs to show as selected + be linkable — so the picker also
+  // activity) still needs to show as selected + be linkable - so the picker also
   // takes a manual ID entry and surfaces any off-list selection at the top.
   const Col = ({ title, items, sel, onSel, empty }) => {
     const inList = !!sel && (items || []).some((it) => normId(it.id) === normId(sel))
@@ -7730,20 +7730,20 @@ function AddClientModal({ existing, editClient, onClose }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal addcl-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>{isEdit ? `Edit ${editClient.name}` : 'Add a client'}</h3><span className="cap">Link any mix of Caalano Systems, Meta &amp; Google — you only need one</span></div><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><button className="btn-ghost sm" onClick={refreshAccounts} disabled={refreshing} title="Re-check the Meta / Google / Caalano Systems connections for newly added accounts">{refreshing ? 'Refreshing…' : '⟳ Refresh accounts'}</button><button className="icon-btn" onClick={onClose}>✕</button></div></div>
+        <div className="m-head"><div><h3>{isEdit ? `Edit ${editClient.name}` : 'Add a client'}</h3><span className="cap">Link any mix of Caalano Systems, Meta &amp; Google - you only need one</span></div><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><button className="btn-ghost sm" onClick={refreshAccounts} disabled={refreshing} title="Re-check the Meta / Google / Caalano Systems connections for newly added accounts">{refreshing ? 'Refreshing…' : '⟳ Refresh accounts'}</button><button className="icon-btn" onClick={onClose}>✕</button></div></div>
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Exploring available accounts…" />
-            : st.status === 'err' ? <div className="cap">Couldn’t load available accounts — <button className="btn-ghost sm" onClick={refreshAccounts}>try again</button>.</div>
+            : st.status === 'err' ? <div className="cap">Couldn’t load available accounts - <button className="btn-ghost sm" onClick={refreshAccounts}>try again</button>.</div>
               : <>
                 <div className="addcl-name">
-                  <label>Client name <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· auto-fills from the first account you pick — edit freely</span></label>
+                  <label>Client name <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· auto-fills from the first account you pick - edit freely</span></label>
                   <input value={name} onChange={(e) => { setName(e.target.value); setNameEdited(true) }} placeholder="Type a name, or pick an account below" />
                 </div>
                 <div className="addcl-cols">
                   <Col title="🟢 Caalano Systems" items={d.ghl} sel={ghl} onSel={pickGhl} empty={d.ghlErr || (d.connected === false ? 'Caalano Systems not connected.' : 'No locations found.')} />
-                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty={d.metaErr ? `⚠ Windsor Meta connector error — it may need re-authorising in Windsor: ${d.metaErr}` : 'No Meta accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
-                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty={d.googleErr ? `⚠ Windsor Google connector error — it may need re-authorising in Windsor: ${d.googleErr}` : 'No Google accounts found yet — a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
-                  <Col title="📊 Google Analytics 4" items={d.ga4} sel={ga4} onSel={pickGa4} empty={d.ga4Err ? (/don'?t\s+have\s+this\s+connector/i.test(d.ga4Err) ? `⚠ Windsor doesn't recognise the GA4 connector on this key. Add the "Google Analytics 4" data source in your Windsor account (Data sources → add GA4), then hit Refresh accounts.` : `⚠ Windsor GA4 connector error — it may need re-authorising in Windsor: ${d.ga4Err}`) : 'No GA4 properties found yet from Windsor. Paste the property ID below to link it now.'} />
+                  <Col title="🔵 Meta Ads" items={d.meta} sel={meta} onSel={pickMeta} empty={d.metaErr ? `⚠ Windsor Meta connector error - it may need re-authorising in Windsor: ${d.metaErr}` : 'No Meta accounts found yet - a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
+                  <Col title="🟩 Google Ads" items={d.google} sel={google} onSel={pickGoogle} empty={d.googleErr ? `⚠ Windsor Google connector error - it may need re-authorising in Windsor: ${d.googleErr}` : 'No Google accounts found yet - a just-connected account can take a while to sync. Paste its ID below to link it now.'} />
+                  <Col title="📊 Google Analytics 4" items={d.ga4} sel={ga4} onSel={pickGa4} empty={d.ga4Err ? (/don'?t\s+have\s+this\s+connector/i.test(d.ga4Err) ? `⚠ Windsor doesn't recognise the GA4 connector on this key. Add the "Google Analytics 4" data source in your Windsor account (Data sources → add GA4), then hit Refresh accounts.` : `⚠ Windsor GA4 connector error - it may need re-authorising in Windsor: ${d.ga4Err}`) : 'No GA4 properties found yet from Windsor. Paste the property ID below to link it now.'} />
                 </div>
                 <div className="addcl-status cap">
                   {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems (GHL) not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
@@ -7755,7 +7755,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google || (ga4 || '').trim()) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}${(ga4 || '').trim() ? ' · GA4' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
                   <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
-                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked — a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the GoHighLevel agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> — so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
+                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked - a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the GoHighLevel agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> - so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
               </>}
         </div>
       </div>
@@ -7838,10 +7838,10 @@ function AutoOnboardModal({ existing, onClose }) {
         </div>
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Scanning your Caalano Systems, Meta &amp; Google accounts…" />
-            : st.status === 'err' ? <div className="cap">Couldn’t load accounts — <button className="btn-ghost sm" onClick={() => load(true)}>try again</button>.</div>
+            : st.status === 'err' ? <div className="cap">Couldn’t load accounts - <button className="btn-ghost sm" onClick={() => load(true)}>try again</button>.</div>
               : rows.length === 0 ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>Every Caalano Systems location is already linked to a client.</b><p className="cap">New sub-account? Install the app on it and add its ad account to your Meta Business Manager + Windsor, then hit Refresh.</p></div>
                 : (<>
-                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.{notReady ? <> <b style={{ color: 'var(--warn)' }}>{notReady} can’t be onboarded yet</b> — the marketplace app isn’t installed on those sub-accounts, so the API can’t reach them. Install it (or enable “install on all sub-accounts” in your GHL app) and hit Refresh.</> : null}</p>
+                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.{notReady ? <> <b style={{ color: 'var(--warn)' }}>{notReady} can’t be onboarded yet</b> - the marketplace app isn’t installed on those sub-accounts, so the API can’t reach them. Install it (or enable “install on all sub-accounts” in your GHL app) and hit Refresh.</> : null}</p>
                   <div className="ao-table">
                     <div className="ao-h"><span /><span>Client name</span><span>Caalano Systems</span><span>Meta</span><span>Google</span></div>
                     {rows.map((r, i) => (
@@ -7850,11 +7850,11 @@ function AutoOnboardModal({ existing, onClose }) {
                         <input className="ao-name" value={r.name} onChange={(e) => upd(i, { name: e.target.value })} disabled={r.ready === false} />
                         <span className="ao-ghl" title={r.ghlId}>{r.ghlName}{r.ready === false ? <span className="ao-badge weak" title="Install the marketplace app on this sub-account to enable API access">⚠ app not installed</span> : r.ready === true ? <span className="ao-badge good">✓ API ready</span> : null}</span>
                         <span className="ao-sel">
-                          <select value={r.meta} onChange={(e) => upd(i, { meta: e.target.value })}><option value="">— none —</option>{metaList.map((m) => <option key={m.id} value={m.id}>{m.name}{m.mapped ? ' (in use)' : ''}</option>)}</select>
+                          <select value={r.meta} onChange={(e) => upd(i, { meta: e.target.value })}><option value="">- none -</option>{metaList.map((m) => <option key={m.id} value={m.id}>{m.name}{m.mapped ? ' (in use)' : ''}</option>)}</select>
                           {r.matchM != null && r.meta ? <span className={`ao-badge ${r.matchM >= 60 ? 'good' : 'weak'}`}>{r.matchM}%</span> : null}
                         </span>
                         <span className="ao-sel">
-                          <select value={r.google} onChange={(e) => upd(i, { google: e.target.value })}><option value="">— none —</option>{googleList.map((g) => <option key={g.id} value={g.id}>{g.name}{g.mapped ? ' (in use)' : ''}</option>)}</select>
+                          <select value={r.google} onChange={(e) => upd(i, { google: e.target.value })}><option value="">- none -</option>{googleList.map((g) => <option key={g.id} value={g.id}>{g.name}{g.mapped ? ' (in use)' : ''}</option>)}</select>
                           {r.matchG != null && r.google ? <span className={`ao-badge ${r.matchG >= 60 ? 'good' : 'weak'}`}>{r.matchG}%</span> : null}
                         </span>
                       </div>
@@ -7864,7 +7864,7 @@ function AutoOnboardModal({ existing, onClose }) {
                     <span className="cap">{selected.length} of {rows.length} selected{busy ? ` · creating ${done}/${selected.length}…` : ''}</span>
                     <button className="addcl-save" disabled={!selected.length || busy} onClick={createAll}>{busy ? 'Creating…' : `Create ${selected.length} client${selected.length === 1 ? '' : 's'}`}</button>
                   </div>
-                  <p className="caveat" style={{ marginTop: 10 }}>Matches are by account name — a location with no confident ad-account match is created CRM-only, which is fine (link Meta/Google later). Meta/Google accounts only appear once Windsor has synced them, so add the ad account to your Business Manager + Windsor first if it’s missing.</p>
+                  <p className="caveat" style={{ marginTop: 10 }}>Matches are by account name - a location with no confident ad-account match is created CRM-only, which is fine (link Meta/Google later). Meta/Google accounts only appear once Windsor has synced them, so add the ad account to your Business Manager + Windsor first if it’s missing.</p>
                 </>)}
         </div>
       </div>
@@ -7907,7 +7907,7 @@ function HealthStrip({ c }) {
   return (
     <div className="set-health">
       {clientHealth(c).map((h) => (
-        <span key={h.label} className="sth" title={`${h.label} — ${STATE_TXT[h.state]}`}>
+        <span key={h.label} className="sth" title={`${h.label} - ${STATE_TXT[h.state]}`}>
           <HealthIcon h={h} />
           <span className="sth-lb">{h.short}</span>
           <span className={`sth-mk ${h.state}`}>{h.state === 'ok' ? '✓' : h.state === 'bad' ? '✗' : '●'}</span>
@@ -7925,7 +7925,7 @@ function LogoSyncButton() {
   return <button className="set-add ghost" onClick={go} disabled={state === 'syncing'} title="Pull each business's website + logo from Caalano Systems and use it as their avatar everywhere">{label}</button>
 }
 const SET_FILTERS = [['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive'], ['deleted', 'Deleted']]
-// Global creative-fatigue thresholds — one shared set, applied to every active
+// Global creative-fatigue thresholds - one shared set, applied to every active
 // Meta client's fatigue read (Cockpit badges + the Meta Creative Fatigue tab).
 function FatigueSettings() {
   useSettingsSync()
@@ -7994,7 +7994,7 @@ function SocialKpiSettings({ clients }) {
         {FIELDS.map((f) => (
           <label className="soc-kpiset" key={f.k}>
             <span>{f.label}{f.hint ? <em> · {f.hint}</em> : null}</span>
-            <input type="number" min="0" value={cur[f.k] ?? ''} placeholder="—" onChange={(e) => set(f.k, e.target.value)} />
+            <input type="number" min="0" value={cur[f.k] ?? ''} placeholder="-" onChange={(e) => set(f.k, e.target.value)} />
           </label>
         ))}
       </div>
@@ -8024,7 +8024,7 @@ function DailyPerfSettings({ clients }) {
     return () => { alive = false }
   }, [])
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading Daily Performance clients…" /></div>
-  if (st.status === 'err' || !st.data || !st.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load the Daily Performance client list — try Refresh.</p></div>
+  if (st.status === 'err' || !st.data || !st.data.clients) return <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load the Daily Performance client list - try Refresh.</p></div>
   const tc = st.data.clients
   const list = (clients || [])
     .filter((c) => tc[c.id] && (tc[c.id].hasMeta || tc[c.id].hasGoogle) && !isClientDeleted(c.id))
@@ -8034,7 +8034,7 @@ function DailyPerfSettings({ clients }) {
   return (
     <div className="card dp-set">
       <h3 style={{ marginTop: 0 }}>Daily performance visibility</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Choose which clients appear on the <b>Daily Performance</b> tab — and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server &amp; shared across your team.</p>
+      <p className="cap" style={{ marginTop: -4 }}>Choose which clients appear on the <b>Daily Performance</b> tab - and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server &amp; shared across your team.</p>
       <div className="dp-bar">
         <span className="dp-count">{shown} of {list.length} clients shown</span>
         <div className="dp-bulk"><button onClick={() => setAll(true)}>Show all</button><button onClick={() => setAll(false)}>Hide all</button></div>
@@ -8070,27 +8070,27 @@ function DailyPerfSettings({ clients }) {
   )
 }
 // Parse CHANGELOG.md (bundled at build time) into version entries for the Logs
-// panel. Each release is a `## vX.Y.Z — date · `status` — title` block followed
+// panel. Each release is a `## vX.Y.Z - date · `status` - title` block followed
 // by `- ` bullet lines.
 function parseChangelog(raw) {
   return String(raw || '').split(/\n## /).slice(1).map((block) => {
     const nl = block.indexOf('\n')
     const head = (nl === -1 ? block : block.slice(0, nl)).trim()
     const body = nl === -1 ? '' : block.slice(nl + 1)
-    const m = head.match(/^(v[\d.]+)\s*—\s*([\d-]+)?\s*·?\s*`?([^`—]*?)`?\s*—\s*(.+)$/)
+    const m = head.match(/^(v[\d.]+)\s*-\s*([\d-]+)?\s*·?\s*`?([^`-]*?)`?\s*-\s*(.+)$/)
     const bullets = body.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('- ')).map((l) => l.replace(/^-\s*/, ''))
     return m
       ? { version: m[1], date: (m[2] || '').trim(), status: (m[3] || '').trim(), title: m[4].trim(), bullets }
       : { version: head.split(/\s/)[0], date: '', status: '', title: head, bullets }
   })
 }
-// Logs — Super-Admin only. Two views: build/version history (from CHANGELOG.md)
+// Logs - Super-Admin only. Two views: build/version history (from CHANGELOG.md)
 // and the live reliability failure log (server-side ring buffer).
 function LogsPanel({ clients }) {
   const [tab, setTab] = useState('versions')
-  const nameOf = (id) => { const c = (clients || []).find((x) => x.id === id); return c ? c.name : (id ? `…${String(id).slice(-6)}` : '—') }
+  const nameOf = (id) => { const c = (clients || []).find((x) => x.id === id); return c ? c.name : (id ? `…${String(id).slice(-6)}` : '-') }
   // Load the (large) changelog markdown on demand instead of inlining it into the
-  // main bundle for every visitor — this panel is Super-Admin only.
+  // main bundle for every visitor - this panel is Super-Admin only.
   const [changelogRaw, setChangelogRaw] = useState('')
   useEffect(() => { let alive = true; import('../CHANGELOG.md?raw').then((m) => { if (alive) setChangelogRaw(m.default || '') }).catch(() => {}); return () => { alive = false } }, [])
   const versions = useMemo(() => parseChangelog(changelogRaw), [changelogRaw])
@@ -8105,7 +8105,7 @@ function LogsPanel({ clients }) {
   useEffect(() => { if (tab === 'failures') loadLog() /* eslint-disable-next-line */ }, [tab, days])
   const sevMeta = { error: ['✗', 'bad', 'Error'], 'error-stale': ['◐', 'warn', 'Error (served cached)'], slow: ['⏱', 'warn', 'Slow'], client: ['◱', 'bad', 'Browser'] }
   // Download the current reliability log (with resolved client names) as a JSON
-  // file — so it can be handed off for diagnosis without needing live log access.
+  // file - so it can be handed off for diagnosis without needing live log access.
   const exportLog = (fmt) => {
     const d = (log && log.data) || {}
     const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, error: e.error || null }))
@@ -8177,7 +8177,7 @@ function LogsPanel({ clients }) {
                 <thead><tr><th className="lft">When</th><th className="lft">Type</th><th className="lft">Scope</th><th className="lft">Client</th><th>ms</th><th className="lft">Detail</th></tr></thead>
                 <tbody>{log.data.entries.map((e, i) => { const sm = sevMeta[e.sev] || ['•', '', e.sev]; return (
                   <tr key={i}>
-                    <td className="lft logs-when">{new Date(e.t).toLocaleString()}</td>
+                    <td className="lft logs-when">{new Date(e.t).toLocaleString('en-AU')}</td>
                     <td className="lft"><span className={`logs-chip ${sm[1]}`}>{sm[0]} {sm[2]}</span></td>
                     <td className="lft">{e.scope}</td>
                     <td className="lft">{nameOf(e.client)}</td>
@@ -8186,7 +8186,7 @@ function LogsPanel({ clients }) {
                   </tr>
                 ) })}</tbody>
               </table></div>
-              <p className="caveat" style={{ marginTop: 10 }}>Rolling log, ~400 entries/day, kept ~60 days. <b>Slow</b> = a build over 6s (close to the 10s function ceiling — a caching candidate). <b>Error (served cached)</b> = a rebuild failed but the user still saw the last good data instead of an error.</p>
+              <p className="caveat" style={{ marginTop: 10 }}>Rolling log, ~400 entries/day, kept ~60 days. <b>Slow</b> = a build over 6s (close to the 10s function ceiling - a caching candidate). <b>Error (served cached)</b> = a rebuild failed but the user still saw the last good data instead of an error.</p>
             </>))}
         </div>
       )}
@@ -8301,13 +8301,13 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
             <div className={`set-card ${on ? '' : 'is-off'} ${isRestr(c) ? 'is-restr' : ''}`} key={c.id}>
               <div className="set-card-head">
                 <Avatar id={c.id} name={c.name} i={config.clients.indexOf(c)} />
-                <div className="sc-id"><div className="nm">{c.name}{isRestr(c) ? <span className="restr-badge" title="Super-Admin only — hidden from the rest of the team">🔒</span> : null}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
+                <div className="sc-id"><div className="nm">{c.name}{isRestr(c) ? <span className="restr-badge" title="Super-Admin only - hidden from the rest of the team">🔒</span> : null}</div><div className="ver">{c.industry || (c.deep ? 'Deep dashboards' : 'Summary only')}</div></div>
                 <div className={`toggle ${on ? 'on' : ''}`} title={on ? 'Active - click to hide from the dashboard' : 'Inactive - click to show'} onClick={() => setEnabled((s) => ({ ...s, [c.id]: s[c.id] === false ? true : false }))}><span className="knob" /></div>
               </div>
               <HealthStrip c={c} />
               <div className="set-card-actions">
                 <button className="set-expand" onClick={() => setEditing(c)}>✎ Edit</button>
-                {isSuper && <button className={`set-restr-btn ${isRestr(c) ? 'on' : ''}`} onClick={() => toggleRestr(c)} title={isRestr(c) ? 'Visible to Super Admins only — click to show the whole team' : 'Restrict to Super Admins only'}>{isRestr(c) ? '🔒 Super-Admin only' : '🔓 Visible to team'}</button>}
+                {isSuper && <button className={`set-restr-btn ${isRestr(c) ? 'on' : ''}`} onClick={() => toggleRestr(c)} title={isRestr(c) ? 'Visible to Super Admins only - click to show the whole team' : 'Restrict to Super Admins only'}>{isRestr(c) ? '🔒 Super-Admin only' : '🔓 Visible to team'}</button>}
               </div>
             </div>
           )
@@ -8336,7 +8336,7 @@ function LogoField({ clientId, name }) {
   const [val, setVal] = useState(rec.logo || '')
   useEffect(() => { setVal(loadLogo(clientId).logo || '') }, [clientId, SETTINGS.loaded])
   const src = clientLogoSrc(clientId, 64)
-  const source = rec.logo ? 'Manual override' : rec.logoUrl ? 'Caalano Systems logo' : rec.website ? `Favicon · ${domainOf(rec.website)}` : 'None found — showing initials'
+  const source = rec.logo ? 'Manual override' : rec.logoUrl ? 'Caalano Systems logo' : rec.website ? `Favicon · ${domainOf(rec.website)}` : 'None found - showing initials'
   const save = () => saveLogo(clientId, { logo: val.trim() || null })
   return (
     <div className="set-cycle">
@@ -8345,7 +8345,7 @@ function LogoField({ clientId, name }) {
         {src ? <span className="avatar avatar-img"><img src={src} alt="" /></span> : <span className="avatar" style={{ background: acolor(0) }}>{initials(name)}</span>}
         <div className="set-logo-meta"><span className="cap">{source}</span>{rec.website ? <a className="cap" href={/^https?:/i.test(rec.website) ? rec.website : 'https://' + rec.website} target="_blank" rel="noreferrer">{rec.website}</a> : null}</div>
       </div>
-      <div className="set-field"><label>Override logo URL <span className="cap">· optional — paste a direct image link to force a specific logo</span></label>
+      <div className="set-field"><label>Override logo URL <span className="cap">· optional - paste a direct image link to force a specific logo</span></label>
         <div className="set-logo-in"><input value={val} onChange={(e) => setVal(e.target.value)} placeholder="https://…/logo.png" /><button className="btn-ghost sm" onClick={save} disabled={val === (rec.logo || '')}>Save</button>{rec.logo ? <button className="btn-ghost sm" onClick={() => { setVal(''); saveLogo(clientId, { logo: null }) }}>Clear</button> : null}</div>
       </div>
     </div>
@@ -8369,14 +8369,14 @@ function SalesCycleField({ clientId }) {
   const save = (val) => { setOv(val); saveCloseOverride(clientId, val === '' ? null : Number(val)); setSaved(true); setTimeout(() => setSaved(false), 1200) }
   return (
     <div className="set-cycle">
-      <div className="set-sec-t">Data maturity — average time to close</div>
-      <p className="cap" style={{ marginTop: 0 }}>Calculated automatically by the CRM from your won deals (average days from lead created to won). A <b>20% buffer</b> is added, and any date range shorter than that shows a <b>“Still maturing”</b> flag — a reminder that recent leads haven’t had time to convert yet, so Won / Revenue / ROAS understate the true result. This is never shown on the dashboards as a metric.</p>
+      <div className="set-sec-t">Data maturity - average time to close</div>
+      <p className="cap" style={{ marginTop: 0 }}>Calculated automatically by the CRM from your won deals (average days from lead created to won). A <b>20% buffer</b> is added, and any date range shorter than that shows a <b>“Still maturing”</b> flag - a reminder that recent leads haven’t had time to convert yet, so Won / Revenue / ROAS understate the true result. This is never shown on the dashboards as a metric.</p>
       <div className="set-cycle-grid">
         <div className="set-cycle-stat"><span className="cap">CRM average</span><b>{crm === undefined ? '…' : crm == null ? 'No won deals yet' : `${crm} days`}</b></div>
-        <div className="set-cycle-stat"><span className="cap">With 20% buffer</span><b>{buffered ? `${buffered} days` : '—'}</b></div>
+        <div className="set-cycle-stat"><span className="cap">With 20% buffer</span><b>{buffered ? `${buffered} days` : '-'}</b></div>
         <div className="set-field set-cycle-in"><label>Manual override (days)</label><input type="number" min="0" value={ov} onChange={(e) => save(e.target.value)} placeholder={crm != null ? `${crm} (CRM)` : 'e.g. 40'} />{saved && <span className="set-saved-tick">✓</span>}</div>
       </div>
-      <p className="cap set-cycle-warn">⚠ Leave blank to use the CRM figure. Only override if you know the true sales cycle (e.g. the CRM history is too short) — the 20% buffer is still applied on top of whatever you enter.</p>
+      <p className="cap set-cycle-warn">⚠ Leave blank to use the CRM figure. Only override if you know the true sales cycle (e.g. the CRM history is too short) - the 20% buffer is still applied on top of whatever you enter.</p>
     </div>
   )
 }
@@ -8408,7 +8408,7 @@ function ActiveHoursField({ clientId }) {
   return (
     <div className="set-cycle">
       <div className="set-sec-t">Working hours <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· for Speed to Lead</span>{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</div>
-      <p className="cap" style={{ marginTop: 0 }}>When on, Speed to Lead counts only <b>business minutes</b> — a lead that arrives at 11pm and gets a reply at 9am is a fast response, not a 10-hour one.</p>
+      <p className="cap" style={{ marginTop: 0 }}>When on, Speed to Lead counts only <b>business minutes</b> - a lead that arrives at 11pm and gets a reply at 9am is a fast response, not a 10-hour one.</p>
       <label className="set-hours-en"><input type="checkbox" checked={enabled} onChange={(e) => onEnable(e.target.checked)} /> Measure Speed to Lead within working hours</label>
       <div className={`set-hours ${enabled ? '' : 'off'}`}>
         <div className="set-hours-days">{DOW_LABELS.map((lbl, i) => <button key={i} className={days.includes(i) ? 'on' : ''} onClick={() => toggleDay(i)} disabled={!enabled}>{lbl}</button>)}</div>
@@ -8420,7 +8420,7 @@ function ActiveHoursField({ clientId }) {
       <div className="set-hours-detect">
         {detected === undefined ? <span className="cap">Detecting hours from calendars…</span>
           : detected && detected.detected ? <>Detected from {detected.calendars} calendar{detected.calendars === 1 ? '' : 's'}: <b>{fmtHours({ days: detected.days, startMin: detected.startMin, endMin: detected.endMin })}</b> <button className="set-relink" style={{ padding: '4px 10px', marginLeft: 6 }} onClick={useDetected}>Use detected</button></>
-          : <span className="cap">Couldn't auto-detect hours from calendars — set them manually above.</span>}
+          : <span className="cap">Couldn't auto-detect hours from calendars - set them manually above.</span>}
       </div>
     </div>
   )
@@ -8472,35 +8472,35 @@ function MetaConversionsEditor({ clientId, currency }) {
   const labelOf = (id) => (byId.get(id) || {}).label || id
   return (
     <div className="mconv">
-      <p className="cap" style={{ marginTop: 0 }}>Tick the conversion(s) this client optimises to as its <b>primary result</b> — the headline result &amp; cost-per on the Meta tab, Monthly Report and Daily Performance is the <b>sum</b> of every primary you tick. Tick any <b>secondary</b> events to show alongside (not counted in the headline). Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
+      <p className="cap" style={{ marginTop: 0 }}>Tick the conversion(s) this client optimises to as its <b>primary result</b> - the headline result &amp; cost-per on the Meta tab, Monthly Report and Daily Performance is the <b>sum</b> of every primary you tick. Tick any <b>secondary</b> events to show alongside (not counted in the headline). Standard + previously-fired custom events are listed; add any other <b>custom conversion</b> by name below.</p>
       <div className="mconv-add">
         <input type="text" placeholder="Add a custom conversion by name (e.g. B_Page_View)" value={addName} onChange={(e) => setAddName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') findCustom() }} />
         <button className="btn-ghost sm" onClick={findCustom} disabled={probe.status === 'loading' || !addName.trim()}>{probe.status === 'loading' ? 'Finding…' : 'Find + add'}</button>
-        {probe.status === 'none' ? <span className="cap">No data for that event name in the last 90 days — check the exact custom-conversion name in Ads Manager.</span>
-          : probe.status === 'err' ? <span className="cap">Probe failed — try again.</span>
-            : probe.status === 'ok' ? <span className="cap" style={{ color: '#16a34a' }}>✓ Added — tick it Primary below.</span> : null}
+        {probe.status === 'none' ? <span className="cap">No data for that event name in the last 90 days - check the exact custom-conversion name in Ads Manager.</span>
+          : probe.status === 'err' ? <span className="cap">Probe failed - try again.</span>
+            : probe.status === 'ok' ? <span className="cap" style={{ color: '#16a34a' }}>✓ Added - tick it Primary below.</span> : null}
       </div>
       {st.status === 'ok' ? (
         <div className="mconv-dbg">
           <button className="linker-toggle" onClick={() => setDbg((d) => !d)}>{dbg ? '▾' : '▸'} Not seeing your custom conversion?</button>
           {dbg ? (
             <div className="mconv-dbg-body cap">
-              <div>Detected optimisation goal: <b>{st.goal ? String(st.goal).replace(/_/g, ' ').toLowerCase() : '—'}</b></div>
+              <div>Detected optimisation goal: <b>{st.goal ? String(st.goal).replace(/_/g, ' ').toLowerCase() : '-'}</b></div>
               {st.evNames && st.evNames.length ? <div>Event names on the ad sets: <b>{st.evNames.join(', ')}</b></div> : null}
               {st.customIds && st.customIds.length ? <div>Custom-conversion IDs found: <b>{st.customIds.join(', ')}</b></div> : null}
               {st.promoted ? <div>Ad-set promoted object: <code style={{ fontSize: 10 }}>{typeof st.promoted === 'string' ? st.promoted : JSON.stringify(st.promoted)}</code></div> : null}
               <div style={{ marginTop: 4 }}>Windsor <b>accepts</b> these result fields (valid on this account): <code style={{ fontSize: 10 }}>{(st.acceptedFields || []).length ? st.acceptedFields.join(', ') : 'none of the custom / native `results` variants'}</code></div>
-              <div style={{ marginTop: 4 }}>Custom conversions are counted only if Windsor exposes the exact field. We probed <b>{(st.tried || []).length}</b> field names. If your event still isn't listed, its Windsor field id is non-standard — send the goal / IDs / promoted-object above to your Caalano admin to hard-map it.</div>
+              <div style={{ marginTop: 4 }}>Custom conversions are counted only if Windsor exposes the exact field. We probed <b>{(st.tried || []).length}</b> field names. If your event still isn't listed, its Windsor field id is non-standard - send the goal / IDs / promoted-object above to your Caalano admin to hard-map it.</div>
             </div>
           ) : null}
         </div>
       ) : null}
       {st.status === 'loading' ? <Spinner label="Loading Meta conversions…" />
-        : st.status === 'err' ? <div className="cap">Couldn’t load conversions{st.error ? ` — ${st.error}` : ''}.</div>
+        : st.status === 'err' ? <div className="cap">Couldn’t load conversions{st.error ? ` - ${st.error}` : ''}.</div>
           : !list.length ? (
             <div className="mconv-empty">
               <div className="cap">No Meta conversions were detected firing for this account.{st.spend ? ` (${money(st.spend)} spent in the last 30 days.)` : ''}</div>
-              {(st.goal || (st.evNames && st.evNames.length)) ? <div className="cap" style={{ marginTop: 6 }}>Detected optimisation goal: <b>{st.goal ? String(st.goal).replace(/_/g, ' ').toLowerCase() : '—'}</b>{st.evNames && st.evNames.length ? <> · event(s) named on the ad sets: <b>{st.evNames.join(', ')}</b></> : null}. If your custom conversion (e.g. from Ads Manager’s Results column) should be here but isn’t, its Windsor field name differs from what we tried — send this to your Caalano admin: <code style={{ fontSize: 10 }}>{(st.tried || []).slice(0, 8).join(', ')}{(st.tried || []).length > 8 ? '…' : ''}</code></div> : null}
+              {(st.goal || (st.evNames && st.evNames.length)) ? <div className="cap" style={{ marginTop: 6 }}>Detected optimisation goal: <b>{st.goal ? String(st.goal).replace(/_/g, ' ').toLowerCase() : '-'}</b>{st.evNames && st.evNames.length ? <> · event(s) named on the ad sets: <b>{st.evNames.join(', ')}</b></> : null}. If your custom conversion (e.g. from Ads Manager’s Results column) should be here but isn’t, its Windsor field name differs from what we tried - send this to your Caalano admin: <code style={{ fontSize: 10 }}>{(st.tried || []).slice(0, 8).join(', ')}{(st.tried || []).length > 8 ? '…' : ''}</code></div> : null}
             </div>
           )
             : <>
@@ -8525,7 +8525,7 @@ function MetaConversionsEditor({ clientId, currency }) {
               <div className="mconv-foot">
                 <button className="btn-primary" onClick={save}>{saved ? '✓ Saved' : 'Save conversions'}</button>
                 {(cfg.primary || []).length ? <button className="btn-ghost sm" onClick={() => setCfg({ primary: [], secondary: [] })}>Clear</button> : null}
-                <span className="cap">{(cfg.primary || []).length ? `Primary: ${cfg.primary.map(labelOf).join(' + ')}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}${cfg.primary.length > 1 ? ' · headline = their sum' : ''}` : 'No primary set — the Meta tab shows Leads by default.'}</span>
+                <span className="cap">{(cfg.primary || []).length ? `Primary: ${cfg.primary.map(labelOf).join(' + ')}${(cfg.secondary || []).length ? ` · ${cfg.secondary.length} secondary` : ''}${cfg.primary.length > 1 ? ' · headline = their sum' : ''}` : 'No primary set - the Meta tab shows Leads by default.'}</span>
               </div>
             </>}
     </div>
@@ -8543,7 +8543,7 @@ function ClientProfileEditor({ clientId }) {
   const filled = PROFILE_FIELDS.reduce((n, f) => n + (String(form[f.k] || '').trim() ? 1 : 0), 0)
   return (
     <div className="prof">
-      <p className="cap" style={{ marginTop: 0 }}>Capture everything about this brand: what they do, who they sell to, their voice, offers, proof, objections and the words that work. This becomes the client's context file — the <b>Creative Curator</b> reads it in Client deep-dive mode, and more AI features will use it. Saved to the server and shared with your team.{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</p>
+      <p className="cap" style={{ marginTop: 0 }}>Capture everything about this brand: what they do, who they sell to, their voice, offers, proof, objections and the words that work. This becomes the client's context file - the <b>Creative Curator</b> reads it in Client deep-dive mode, and more AI features will use it. Saved to the server and shared with your team.{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</p>
       <div className="prof-meter"><span className="prof-meter-fill" style={{ width: `${Math.round((filled / PROFILE_FIELDS.length) * 100)}%` }} /></div>
       <div className="prof-meter-lab cap">{filled} / {PROFILE_FIELDS.length} sections filled</div>
       <div className="prof-grid">
@@ -8623,22 +8623,22 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
             {canManageAccounts && (
               <div className="set-danger">
                 <div className="set-sec-t">Delete client</div>
-                <p className="cap" style={{ marginTop: 0 }}>Removes <b>{c.name}</b> from every list — the dashboard, sidebar, Settings and agency aggregates. Its per-client settings (key events, KPIs, notes) are kept in case you re-add it later.{c.custom ? '' : ' This account is defined in the app; deleting hides it everywhere (a Super Admin can restore it).'}</p>
+                <p className="cap" style={{ marginTop: 0 }}>Removes <b>{c.name}</b> from every list - the dashboard, sidebar, Settings and agency aggregates. Its per-client settings (key events, KPIs, notes) are kept in case you re-add it later.{c.custom ? '' : ' This account is defined in the app; deleting hides it everywhere (a Super Admin can restore it).'}</p>
                 {confirmDel
                   ? <div className="set-danger-confirm"><span>Delete <b>{c.name}</b>?</span><button className="set-del-yes" onClick={doDelete}>Yes, delete</button><button className="btn-ghost sm" onClick={() => setConfirmDel(false)}>Cancel</button></div>
                   : <button className="set-del-btn" onClick={() => setConfirmDel(true)}>🗑 Delete client</button>}
               </div>
             )}
           </div>}
-          {tab === 'profile' && <div className="set-tabpane"><div className="set-sec-t">Overview — client brand profile</div><ClientProfileEditor clientId={c.id} /></div>}
+          {tab === 'profile' && <div className="set-tabpane"><div className="set-sec-t">Overview - client brand profile</div><ClientProfileEditor clientId={c.id} /></div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions — primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
+          {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}
-          {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms — link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
-          {tab === 'aliases' && <div className="set-tabpane"><div className="set-sec-t">UTM aliases — link renamed campaigns / ad sets / creatives</div><AliasEditor clientId={c.id} nonce={sig} /></div>}
-          {tab === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead — stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
-          {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log — Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
+          {tab === 'forms' && <div className="set-tabpane"><div className="set-sec-t">Forms - link to a pipeline &amp; add notes</div><p className="cap" style={{ marginTop: 0 }}>Set each form's pipeline and notes here. The client's Forms tab shows these (and its full performance).</p><FormsSettingsTab clientId={c.id} /></div>}
+          {tab === 'aliases' && <div className="set-tabpane"><div className="set-sec-t">UTM aliases - link renamed campaigns / ad sets / creatives</div><AliasEditor clientId={c.id} nonce={sig} /></div>}
+          {tab === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead - stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
+          {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log - Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
           {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
         </div>
       </div>
@@ -8682,7 +8682,7 @@ function AuthShell({ children }) {
     </div>
   )
 }
-// Frontend mirror of the server permission helpers (UI gating only — the API
+// Frontend mirror of the server permission helpers (UI gating only - the API
 // enforces the same rules server-side). A null user = legacy/basic-auth = full.
 const isAdminishFE = (r) => r === 'admin' || r === 'superadmin'
 const RANK_FE = { superadmin: 3, admin: 2, user: 1, viewer: 0 }
@@ -8745,7 +8745,7 @@ function SignupForm({ onBack }) {
   if (done) return (
     <AuthShell><div className="auth-form">
       <h2>Request sent ✓</h2>
-      <p className="auth-sub">Thanks — your access request is with the Caalano team. Once it’s approved you’ll be able to sign in with the email and password you just chose. We’ll be in touch.</p>
+      <p className="auth-sub">Thanks - your access request is with the Caalano team. Once it’s approved you’ll be able to sign in with the email and password you just chose. We’ll be in touch.</p>
       <button className="auth-btn" onClick={onBack}>Back to sign in</button>
     </div></AuthShell>
   )
@@ -8856,9 +8856,9 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
   const isSuper = actorRole === 'superadmin'
   // Only a Super Admin can grant Admin / Super Admin. Keep the current value as a
   // (disabled) option so an existing role still shows even if you can't set it.
-  const opts = [['user', 'User — agency staff'], ['viewer', 'Viewer — client']]
-  if (isSuper) opts.unshift(['superadmin', 'Super Admin — owner control'], ['admin', 'Admin — full control'])
-  else if (isAdminishFE(v.role)) opts.unshift([v.role, ROLE_LABEL[v.role] + ' — (only a Super Admin can change this)'])
+  const opts = [['user', 'User - agency staff'], ['viewer', 'Viewer - client']]
+  if (isSuper) opts.unshift(['superadmin', 'Super Admin - owner control'], ['admin', 'Admin - full control'])
+  else if (isAdminishFE(v.role)) opts.unshift([v.role, ROLE_LABEL[v.role] + ' - (only a Super Admin can change this)'])
   return (
     <div className="alloc">
       <label className="alloc-role">Role
@@ -8871,7 +8871,7 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
       {v.role === 'user' && (<>
         <label className="alloc-check"><input type="checkbox" checked={v.allClients !== false} onChange={(e) => onChange({ ...v, allClients: e.target.checked })} /> Can see all client accounts</label>
         {v.allClients === false && (<><div className="alloc-lab">Allowed accounts</div><ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} /></>)}
-        <p className="alloc-note">Agency staff — sees dashboards for the accounts above, but can’t manage users or settings.</p>
+        <p className="alloc-note">Agency staff - sees dashboards for the accounts above, but can’t manage users or settings.</p>
       </>)}
       {v.role === 'viewer' && (<>
         <div className="alloc-lab">Which clients can they see?</div>
@@ -8879,8 +8879,8 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         <div className="alloc-lab">Which tabs can they see?</div>
         <div className="alloc-chips">{TAB_OPTIONS.map((t) => { const on = v.tabs == null || v.tabs.includes(t.id); return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}`} onClick={() => toggleTab(t.id)}>{t.label}</button> })}</div>
         <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
-        <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> — can view the <b>published</b> monthly reports for the clients above</label>
-        <p className="alloc-note">Client access — only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
+        <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
+        <p className="alloc-note">Client access - only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
       </>)}
     </div>
   )
@@ -8894,7 +8894,7 @@ function PendingRow({ u, clients, onApprove, onReject, actorRole }) {
         <div className="u-pending-who">
           <b>{u.name || u.email}</b> <span className="cap">{u.email}</span>
           {u.note ? <div className="u-note">“{u.note}”</div> : null}
-          <div className="cap">Requested {u.requestedAt ? new Date(u.requestedAt).toLocaleDateString() : 'recently'}</div>
+          <div className="cap">Requested {u.requestedAt ? new Date(u.requestedAt).toLocaleDateString('en-AU') : 'recently'}</div>
         </div>
         <div className="u-actions">
           <button className="btn-primary" disabled={busy || (draft.role !== 'admin' && draft.role !== 'user' && !(draft.clients || []).length)} onClick={async () => { setBusy(true); await onApprove(u, draft); setBusy(false) }}>{busy ? 'Approving…' : 'Approve'}</button>
@@ -8943,9 +8943,9 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal u-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>{isInvite ? 'Invite a person' : `Edit access — ${user.name || user.email}`}</h3><span className="cap">{isInvite ? 'Set their role and exactly what they can see' : user.email}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-head"><div><h3>{isInvite ? 'Invite a person' : `Edit access - ${user.name || user.email}`}</h3><span className="cap">{isInvite ? 'Set their role and exactly what they can see' : user.email}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
-          {self && <div className="auth-err" style={{ marginBottom: 12 }}>This is your own account — you can’t change your own role or access.</div>}
+          {self && <div className="auth-err" style={{ marginBottom: 12 }}>This is your own account - you can’t change your own role or access.</div>}
           <fieldset className="u-modal-fs" disabled={self}>
             {isInvite ? (
               <div className="u-invite" style={{ marginBottom: 12 }}>
@@ -8960,7 +8960,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
           {err && <div className="auth-err" style={{ marginTop: 12 }}>{err}</div>}
           {link && (
             <div className="u-link" style={{ marginTop: 12 }}>
-              <div><b>Invite link{isInvite ? ` for ${email}` : ''}</b> — send it to them; it works once and expires in 7 days.</div>
+              <div><b>Invite link{isInvite ? ` for ${email}` : ''}</b> - send it to them; it works once and expires in 7 days.</div>
               <div className="u-link-row"><code>{link}</code><button className="btn-ghost" onClick={() => copy(link)}>{copied ? 'Copied ✓' : 'Copy link'}</button></div>
             </div>
           )}
@@ -8992,8 +8992,8 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
     <div className="card set-users-off">
       <h3 style={{ marginTop: 0 }}>Team &amp; access</h3>
       <p>The multi-user login system is <b>not enabled yet</b>. The site is currently protected by the single shared password.</p>
-      <p>To switch on individual accounts, add an <code>AUTH_SECRET</code> environment variable in Netlify (any long random string — this signs everyone’s login sessions). Once it’s set and redeployed, reload this page and you’ll be asked to create the first admin account, then you can invite your team here.</p>
-      <p className="cap">Tip: keep the old <code>SITE_PASSWORD</code> set during the switch — it keeps working as a fallback so you can’t get locked out. Remove it once everyone has their own login.</p>
+      <p>To switch on individual accounts, add an <code>AUTH_SECRET</code> environment variable in Netlify (any long random string - this signs everyone’s login sessions). Once it’s set and redeployed, reload this page and you’ll be asked to create the first admin account, then you can invite your team here.</p>
+      <p className="cap">Tip: keep the old <code>SITE_PASSWORD</code> set during the switch - it keeps working as a fallback so you can’t get locked out. Remove it once everyone has their own login.</p>
     </div>
   )
   const actorRole = (authUser && authUser.role) || 'admin'
@@ -9008,7 +9008,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
       {pending.length > 0 && (
         <div className="card u-approvals">
           <h3 style={{ marginTop: 0 }}>Pending approvals <span className="u-badge pend">{pending.length}</span></h3>
-          <p className="cap" style={{ marginTop: -4 }}>People who requested access. Set their role and what they can see, then approve — nothing is granted until you do.</p>
+          <p className="cap" style={{ marginTop: -4 }}>People who requested access. Set their role and what they can see, then approve - nothing is granted until you do.</p>
           {pending.map((u) => <PendingRow key={u.email} u={u} clients={clients} onApprove={approve} onReject={rejectPending} actorRole={actorRole} />)}
         </div>
       )}
@@ -9025,7 +9025,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
             const self = u.email === (authUser && authUser.email)
             return (
               <tr key={u.email}>
-                <td className="lft">{u.name || <span className="cap">—</span>}{self && <span className="u-you">you</span>}</td>
+                <td className="lft">{u.name || <span className="cap">-</span>}{self && <span className="u-you">you</span>}</td>
                 <td className="lft">{u.email}</td>
                 <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
@@ -9071,7 +9071,7 @@ function ChangePasswordCard() {
 // ones to a per-client (or general Research) board. This is v1 - deliberately a
 // strong foundation to build on.
 const CC_FORMATS = [
-  { id: 'video', label: 'Video', emoji: '🎬', hint: 'Short-form vertical — Reels / Stories / TikTok' },
+  { id: 'video', label: 'Video', emoji: '🎬', hint: 'Short-form vertical - Reels / Stories / TikTok' },
   { id: 'image', label: 'Image', emoji: '🖼️', hint: 'Single static graphic or photo' },
   { id: 'carousel', label: 'Carousel', emoji: '🎠', hint: 'Multi-card swipe (great for steps / proof)' },
 ]
@@ -9098,25 +9098,25 @@ const CC_AUD_SUGGEST = ['Cold / new', 'Warm / retargeting', 'Homeowners', 'Busin
 // The researched library of paid-social creative styles for service / lead-gen.
 const CC_STYLES = [
   { id: 'before-after', name: 'Before & After', emoji: '🔄', desc: 'Show the transformation: the old / broken state, then the finished result.', why: 'Transformation is the most scroll-stopping proof a service can show.', formats: ['video', 'image', 'carousel'], ctas: ['enquiry', 'book', 'magnet'], angles: ['aspiration', 'proof', 'curiosity'], hooks: ["You won't believe what this looked like 6 weeks ago…", 'From this… to THIS.', "{aud} thought it couldn't be saved. Watch."], structure: ['Open on the raw "before"', 'Fast cuts of the work in progress', 'Reveal the finished "after"', 'Name the timeframe + result', 'CTA: {cta}'] },
-  { id: 'face-camera', name: 'Face to Camera (UGC)', emoji: '🗣️', desc: 'Founder or happy customer talking straight down the lens, phone-shot, authentic.', why: 'Feels like a friend\'s recommendation, not an ad — beats polished production for cold traffic.', formats: ['video'], ctas: ['book', 'enquiry', 'magnet', 'message'], angles: ['authority', 'pain', 'education'], hooks: ['If you\'re {aud}, stop scrolling — this is for you.', 'Three things I wish every client knew before they started.', 'I need to be honest about something in our industry.'], structure: ['Pattern-interrupt hook, straight to camera', 'One clear problem it solves', 'Proof or quick example', 'What to do next', 'CTA: {cta}'] },
-  { id: 'podcast', name: 'Podcast Clip', emoji: '🎙️', desc: 'A short, punchy clip framed like a podcast / interview moment with captions.', why: 'Conversational authority — feels like earned media, not an ad. Highly bingeable.', formats: ['video'], ctas: ['book', 'magnet', 'visit'], angles: ['authority', 'contrarian', 'education'], hooks: ['"Most {aud} get this completely wrong."', '"Here\'s what nobody tells you about…"', '"The biggest mistake I see every week is…"'], structure: ['Cold open on a bold spoken claim', 'Two-shot / mic-in-frame podcast look', 'One insight, told as a story', 'Big captioned takeaway line', 'CTA: {cta}'] },
-  { id: 'testimonial', name: 'Testimonial / Case Study', emoji: '⭐', desc: 'A real customer tells their story: problem, experience, result.', why: 'Third-party proof lowers risk — the single most persuasive thing a stranger can hear.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry'], angles: ['proof', 'pain', 'aspiration'], hooks: ['"I was nervous to spend the money — here\'s what happened."', 'Meet {aud} who were exactly where you are now.', '"I wish I\'d done this sooner."'], structure: ['Customer names the problem they had', 'What the experience was like', 'The concrete result (numbers if possible)', 'Who it\'s right for', 'CTA: {cta}'] },
-  { id: 'pas', name: 'Problem → Agitate → Solve', emoji: '🎯', desc: 'Name the pain, twist the knife, then present the fix.', why: 'The classic direct-response spine — meets a warm/painful need head-on.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry', 'magnet'], angles: ['pain', 'authority'], hooks: ['Still dealing with {problem}? It only gets worse.', 'The real reason {aud} stay stuck.', 'This one problem is costing you more than you think.'], structure: ['State the problem plainly', 'Agitate: the cost of leaving it', 'Introduce the solution', 'Why it works', 'CTA: {cta}'] },
-  { id: 'how-to', name: 'Educational / How-To', emoji: '📚', desc: 'Teach one genuinely useful thing, fast.', why: 'Value-first builds trust and trains the algorithm on watch time; primes the sale.', formats: ['video', 'carousel'], ctas: ['magnet', 'visit', 'book'], angles: ['education', 'authority'], hooks: ['How to {outcome} without {common pain}.', '3 steps to {outcome} — save this.', 'Do this before you {big decision}.'], structure: ['Promise the takeaway up front', 'Step 1 / 2 / 3 (quick, concrete)', 'A pro tip most people miss', 'Recap', 'CTA: {cta}'] },
-  { id: 'listicle', name: 'Listicle (“3 things…”)', emoji: '🔢', desc: 'A numbered rundown — tips, mistakes, signs, reasons.', why: 'Numbered promises are easy to consume and screenshot — high save + share rate.', formats: ['video', 'carousel'], ctas: ['magnet', 'visit', 'book'], angles: ['education', 'curiosity'], hooks: ['3 signs it\'s time to {action}.', '5 mistakes {aud} make (and how to avoid them).', '4 things to check before you {decision}.'], structure: ['Title card with the number', 'One point per beat / card', 'Keep each punchy + specific', 'Strongest point last', 'CTA: {cta}'] },
-  { id: 'myth-bust', name: 'Myth-busting', emoji: '❌', desc: 'Call out a widely-believed myth and correct it.', why: 'Pattern-interrupt: challenging a belief earns attention and positions you as the expert.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'magnet', 'visit'], angles: ['contrarian', 'authority', 'education'], hooks: ['"{Myth}" — this is completely wrong.', 'Stop believing this about {topic}.', 'Your {provider} won\'t tell you this.'], structure: ['State the myth', 'Why it\'s wrong', 'The truth + proof', 'What to do instead', 'CTA: {cta}'] },
-  { id: 'founder-story', name: 'Founder Story / BTS', emoji: '👔', desc: 'The person and the "why" behind the business; behind-the-scenes.', why: 'People buy from people — story builds brand affinity and trust at the same time.', formats: ['video', 'carousel'], ctas: ['book', 'visit', 'message'], angles: ['authority', 'aspiration'], hooks: ['We started this because we were sick of {industry problem}.', 'Come behind the scenes of a {job} day.', 'Why we do things differently.'], structure: ['Hook on the "why"', 'A quick origin beat', 'How that shapes the work today', 'The standard you hold', 'CTA: {cta}'] },
-  { id: 'demo', name: 'Service / Product Demo', emoji: '🛠️', desc: 'Show the thing working — the process, the tool, the result in motion.', why: 'Seeing is believing; demos de-risk and answer "what do I actually get?".', formats: ['video', 'carousel'], ctas: ['enquiry', 'book', 'visit'], angles: ['proof', 'education'], hooks: ['Here\'s exactly what {service} looks like.', 'Watch this in action.', 'This is how we {do the thing} in {timeframe}.'], structure: ['Set up what you\'re about to show', 'Walk through the process / product', 'Highlight the wow moment', 'The end result', 'CTA: {cta}'] },
-  { id: 'comparison', name: 'Us vs Them / This vs That', emoji: '⚖️', desc: 'Contrast two options — your way vs the common (worse) way.', why: 'Framing choices makes your advantage obvious and easy to remember.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry', 'visit'], angles: ['contrarian', 'authority', 'proof'], hooks: ['The cheap way vs the right way.', 'What most {providers} do vs what we do.', 'Don\'t pick {option A} until you\'ve seen this.'], structure: ['Set up the two options', 'Side-by-side on the key differences', 'Where the common option fails', 'Your advantage', 'CTA: {cta}'] },
-  { id: 'proof-montage', name: 'Social Proof Montage', emoji: '📣', desc: 'Rapid-fire reviews, results, logos, numbers set to music.', why: 'Volume of proof creates a bandwagon effect — "everyone chooses these guys".', formats: ['video', 'image'], ctas: ['book', 'enquiry'], angles: ['proof', 'urgency'], hooks: ['200+ {aud} can\'t be wrong.', 'The reviews say it better than we can.', 'This is what {number} happy clients looks like.'], structure: ['Punchy stat or star rating open', 'Fast cuts of reviews / results', 'One standout testimonial', 'The headline number', 'CTA: {cta}'] },
-  { id: 'objection', name: 'Objection Handling', emoji: '🛡️', desc: 'Name the thing holding them back and dismantle it.', why: 'Removing the #1 objection is often the highest-leverage creative you can run.', formats: ['video', 'carousel'], ctas: ['book', 'enquiry', 'message'], angles: ['pain', 'authority', 'proof'], hooks: ['"Isn\'t it expensive?" Let\'s talk about it.', 'Worried about {objection}? Read this.', 'The real cost of NOT doing it.'], structure: ['State the objection out loud', 'Empathise — it\'s fair to think that', 'Reframe with facts / proof', 'The bigger cost of waiting', 'CTA: {cta}'] },
-  { id: 'faq', name: 'FAQ', emoji: '❓', desc: 'Answer the questions everyone asks before they buy.', why: 'Pre-empting questions shortens the path to enquiry and filters for good-fit leads.', formats: ['video', 'carousel'], ctas: ['enquiry', 'book', 'message'], angles: ['education', 'authority'], hooks: ['The 3 questions {aud} always ask us.', '"How much does it cost?" — honest answer inside.', 'Everything you wanted to ask but didn\'t.'], structure: ['Q1 + straight answer', 'Q2 + straight answer', 'Q3 + straight answer', 'Reassure on the big worry', 'CTA: {cta}'] },
+  { id: 'face-camera', name: 'Face to Camera (UGC)', emoji: '🗣️', desc: 'Founder or happy customer talking straight down the lens, phone-shot, authentic.', why: 'Feels like a friend\'s recommendation, not an ad - beats polished production for cold traffic.', formats: ['video'], ctas: ['book', 'enquiry', 'magnet', 'message'], angles: ['authority', 'pain', 'education'], hooks: ['If you\'re {aud}, stop scrolling - this is for you.', 'Three things I wish every client knew before they started.', 'I need to be honest about something in our industry.'], structure: ['Pattern-interrupt hook, straight to camera', 'One clear problem it solves', 'Proof or quick example', 'What to do next', 'CTA: {cta}'] },
+  { id: 'podcast', name: 'Podcast Clip', emoji: '🎙️', desc: 'A short, punchy clip framed like a podcast / interview moment with captions.', why: 'Conversational authority - feels like earned media, not an ad. Highly bingeable.', formats: ['video'], ctas: ['book', 'magnet', 'visit'], angles: ['authority', 'contrarian', 'education'], hooks: ['"Most {aud} get this completely wrong."', '"Here\'s what nobody tells you about…"', '"The biggest mistake I see every week is…"'], structure: ['Cold open on a bold spoken claim', 'Two-shot / mic-in-frame podcast look', 'One insight, told as a story', 'Big captioned takeaway line', 'CTA: {cta}'] },
+  { id: 'testimonial', name: 'Testimonial / Case Study', emoji: '⭐', desc: 'A real customer tells their story: problem, experience, result.', why: 'Third-party proof lowers risk - the single most persuasive thing a stranger can hear.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry'], angles: ['proof', 'pain', 'aspiration'], hooks: ['"I was nervous to spend the money - here\'s what happened."', 'Meet {aud} who were exactly where you are now.', '"I wish I\'d done this sooner."'], structure: ['Customer names the problem they had', 'What the experience was like', 'The concrete result (numbers if possible)', 'Who it\'s right for', 'CTA: {cta}'] },
+  { id: 'pas', name: 'Problem → Agitate → Solve', emoji: '🎯', desc: 'Name the pain, twist the knife, then present the fix.', why: 'The classic direct-response spine - meets a warm/painful need head-on.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry', 'magnet'], angles: ['pain', 'authority'], hooks: ['Still dealing with {problem}? It only gets worse.', 'The real reason {aud} stay stuck.', 'This one problem is costing you more than you think.'], structure: ['State the problem plainly', 'Agitate: the cost of leaving it', 'Introduce the solution', 'Why it works', 'CTA: {cta}'] },
+  { id: 'how-to', name: 'Educational / How-To', emoji: '📚', desc: 'Teach one genuinely useful thing, fast.', why: 'Value-first builds trust and trains the algorithm on watch time; primes the sale.', formats: ['video', 'carousel'], ctas: ['magnet', 'visit', 'book'], angles: ['education', 'authority'], hooks: ['How to {outcome} without {common pain}.', '3 steps to {outcome} - save this.', 'Do this before you {big decision}.'], structure: ['Promise the takeaway up front', 'Step 1 / 2 / 3 (quick, concrete)', 'A pro tip most people miss', 'Recap', 'CTA: {cta}'] },
+  { id: 'listicle', name: 'Listicle (“3 things…”)', emoji: '🔢', desc: 'A numbered rundown - tips, mistakes, signs, reasons.', why: 'Numbered promises are easy to consume and screenshot - high save + share rate.', formats: ['video', 'carousel'], ctas: ['magnet', 'visit', 'book'], angles: ['education', 'curiosity'], hooks: ['3 signs it\'s time to {action}.', '5 mistakes {aud} make (and how to avoid them).', '4 things to check before you {decision}.'], structure: ['Title card with the number', 'One point per beat / card', 'Keep each punchy + specific', 'Strongest point last', 'CTA: {cta}'] },
+  { id: 'myth-bust', name: 'Myth-busting', emoji: '❌', desc: 'Call out a widely-believed myth and correct it.', why: 'Pattern-interrupt: challenging a belief earns attention and positions you as the expert.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'magnet', 'visit'], angles: ['contrarian', 'authority', 'education'], hooks: ['"{Myth}" - this is completely wrong.', 'Stop believing this about {topic}.', 'Your {provider} won\'t tell you this.'], structure: ['State the myth', 'Why it\'s wrong', 'The truth + proof', 'What to do instead', 'CTA: {cta}'] },
+  { id: 'founder-story', name: 'Founder Story / BTS', emoji: '👔', desc: 'The person and the "why" behind the business; behind-the-scenes.', why: 'People buy from people - story builds brand affinity and trust at the same time.', formats: ['video', 'carousel'], ctas: ['book', 'visit', 'message'], angles: ['authority', 'aspiration'], hooks: ['We started this because we were sick of {industry problem}.', 'Come behind the scenes of a {job} day.', 'Why we do things differently.'], structure: ['Hook on the "why"', 'A quick origin beat', 'How that shapes the work today', 'The standard you hold', 'CTA: {cta}'] },
+  { id: 'demo', name: 'Service / Product Demo', emoji: '🛠️', desc: 'Show the thing working - the process, the tool, the result in motion.', why: 'Seeing is believing; demos de-risk and answer "what do I actually get?".', formats: ['video', 'carousel'], ctas: ['enquiry', 'book', 'visit'], angles: ['proof', 'education'], hooks: ['Here\'s exactly what {service} looks like.', 'Watch this in action.', 'This is how we {do the thing} in {timeframe}.'], structure: ['Set up what you\'re about to show', 'Walk through the process / product', 'Highlight the wow moment', 'The end result', 'CTA: {cta}'] },
+  { id: 'comparison', name: 'Us vs Them / This vs That', emoji: '⚖️', desc: 'Contrast two options - your way vs the common (worse) way.', why: 'Framing choices makes your advantage obvious and easy to remember.', formats: ['video', 'image', 'carousel'], ctas: ['book', 'enquiry', 'visit'], angles: ['contrarian', 'authority', 'proof'], hooks: ['The cheap way vs the right way.', 'What most {providers} do vs what we do.', 'Don\'t pick {option A} until you\'ve seen this.'], structure: ['Set up the two options', 'Side-by-side on the key differences', 'Where the common option fails', 'Your advantage', 'CTA: {cta}'] },
+  { id: 'proof-montage', name: 'Social Proof Montage', emoji: '📣', desc: 'Rapid-fire reviews, results, logos, numbers set to music.', why: 'Volume of proof creates a bandwagon effect - "everyone chooses these guys".', formats: ['video', 'image'], ctas: ['book', 'enquiry'], angles: ['proof', 'urgency'], hooks: ['200+ {aud} can\'t be wrong.', 'The reviews say it better than we can.', 'This is what {number} happy clients looks like.'], structure: ['Punchy stat or star rating open', 'Fast cuts of reviews / results', 'One standout testimonial', 'The headline number', 'CTA: {cta}'] },
+  { id: 'objection', name: 'Objection Handling', emoji: '🛡️', desc: 'Name the thing holding them back and dismantle it.', why: 'Removing the #1 objection is often the highest-leverage creative you can run.', formats: ['video', 'carousel'], ctas: ['book', 'enquiry', 'message'], angles: ['pain', 'authority', 'proof'], hooks: ['"Isn\'t it expensive?" Let\'s talk about it.', 'Worried about {objection}? Read this.', 'The real cost of NOT doing it.'], structure: ['State the objection out loud', 'Empathise - it\'s fair to think that', 'Reframe with facts / proof', 'The bigger cost of waiting', 'CTA: {cta}'] },
+  { id: 'faq', name: 'FAQ', emoji: '❓', desc: 'Answer the questions everyone asks before they buy.', why: 'Pre-empting questions shortens the path to enquiry and filters for good-fit leads.', formats: ['video', 'carousel'], ctas: ['enquiry', 'book', 'message'], angles: ['education', 'authority'], hooks: ['The 3 questions {aud} always ask us.', '"How much does it cost?" - honest answer inside.', 'Everything you wanted to ask but didn\'t.'], structure: ['Q1 + straight answer', 'Q2 + straight answer', 'Q3 + straight answer', 'Reassure on the big worry', 'CTA: {cta}'] },
   { id: 'green-screen', name: 'Green-screen Reaction', emoji: '🟩', desc: 'Talent reacts to / breaks down a screenshot, article, review or competitor ad.', why: 'Reactive, native-feeling content that rides on something topical or relatable.', formats: ['video'], ctas: ['visit', 'book', 'magnet'], angles: ['contrarian', 'education', 'curiosity'], hooks: ['I saw this and had to respond.', 'This {post/review} is exactly why {problem} happens.', 'Let me break down what\'s really going on here.'], structure: ['React to the on-screen thing', 'Point out what\'s wrong / interesting', 'Give your expert take', 'Tie back to the offer', 'CTA: {cta}'] },
   { id: 'text-hook', name: 'Bold Text Hook', emoji: '🔠', desc: 'A big on-screen statement carries the ad; minimal production.', why: 'Cheap to make, easy to test many angles fast; the hook does all the work.', formats: ['image', 'video'], ctas: ['magnet', 'book', 'visit'], angles: ['curiosity', 'contrarian', 'pain'], hooks: ['{aud}: read this before you spend another dollar.', 'The {topic} secret nobody posts about.', 'If you\'re {aud}, this changes everything.'], structure: ['Bold statement fills the frame', 'One supporting line', 'Micro-proof', 'CTA: {cta}'] },
-  { id: 'pov', name: '“POV:” Relatable', emoji: '🎭', desc: 'A relatable point-of-view scenario your audience instantly recognises.', why: 'Relatability drives shares and comments — cheap reach and warm intent.', formats: ['video'], ctas: ['book', 'message', 'visit'], angles: ['pain', 'aspiration', 'curiosity'], hooks: ['POV: you finally {desired outcome}.', 'POV: it\'s 2am and you\'re still {problem}.', 'Tell me you\'re {aud} without telling me.'], structure: ['Set the POV scene', 'Play out the relatable moment', 'Twist to the solution', 'CTA: {cta}'] },
+  { id: 'pov', name: '“POV:” Relatable', emoji: '🎭', desc: 'A relatable point-of-view scenario your audience instantly recognises.', why: 'Relatability drives shares and comments - cheap reach and warm intent.', formats: ['video'], ctas: ['book', 'message', 'visit'], angles: ['pain', 'aspiration', 'curiosity'], hooks: ['POV: you finally {desired outcome}.', 'POV: it\'s 2am and you\'re still {problem}.', 'Tell me you\'re {aud} without telling me.'], structure: ['Set the POV scene', 'Play out the relatable moment', 'Twist to the solution', 'CTA: {cta}'] },
   { id: 'checklist', name: 'Checklist / Guide', emoji: '✅', desc: 'A save-worthy checklist or mini-guide, ideal as a carousel.', why: 'High-value, high-save; perfect vehicle for a lead magnet CTA.', formats: ['carousel', 'image'], ctas: ['magnet', 'quiz', 'visit'], angles: ['education', 'authority'], hooks: ['The {topic} checklist to save before you start.', 'Steal our {n}-point {process} checklist.', 'Don\'t {action} without checking these.'], structure: ['Cover card: the promise', 'One checklist item per card', 'A "most people miss this" card', 'Offer the full version', 'CTA: {cta}'] },
-  { id: 'offer', name: 'Offer / Promo', emoji: '🏷️', desc: 'A clear, time-bound offer or seasonal hook.', why: 'Direct-response workhorse for warm audiences and seasonal pushes.', formats: ['image', 'video', 'carousel'], ctas: ['enquiry', 'book', 'event'], angles: ['urgency', 'aspiration'], hooks: ['This month only: {offer}.', '{Season} is coming — book before it\'s gone.', 'We\'ve got {n} spots left this {period}.'], structure: ['Lead with the offer', 'What\'s included / the value', 'The deadline / scarcity', 'Reassure (guarantee / proof)', 'CTA: {cta}'] },
-  { id: 'stat', name: 'Stat / Data-led', emoji: '📊', desc: 'A surprising statistic anchors the message.', why: 'A sharp number earns instant credibility and curiosity.', formats: ['image', 'video', 'carousel'], ctas: ['magnet', 'book', 'visit'], angles: ['authority', 'curiosity', 'education'], hooks: ['87% of {aud} don\'t know this.', '{Big number} — here\'s what it means for you.', 'The number that should worry every {aud}.'], structure: ['Reveal the stat', 'Why it matters to them', 'What it means for their decision', 'CTA: {cta}'] },
+  { id: 'offer', name: 'Offer / Promo', emoji: '🏷️', desc: 'A clear, time-bound offer or seasonal hook.', why: 'Direct-response workhorse for warm audiences and seasonal pushes.', formats: ['image', 'video', 'carousel'], ctas: ['enquiry', 'book', 'event'], angles: ['urgency', 'aspiration'], hooks: ['This month only: {offer}.', '{Season} is coming - book before it\'s gone.', 'We\'ve got {n} spots left this {period}.'], structure: ['Lead with the offer', 'What\'s included / the value', 'The deadline / scarcity', 'Reassure (guarantee / proof)', 'CTA: {cta}'] },
+  { id: 'stat', name: 'Stat / Data-led', emoji: '📊', desc: 'A surprising statistic anchors the message.', why: 'A sharp number earns instant credibility and curiosity.', formats: ['image', 'video', 'carousel'], ctas: ['magnet', 'book', 'visit'], angles: ['authority', 'curiosity', 'education'], hooks: ['87% of {aud} don\'t know this.', '{Big number} - here\'s what it means for you.', 'The number that should worry every {aud}.'], structure: ['Reveal the stat', 'Why it matters to them', 'What it means for their decision', 'CTA: {cta}'] },
 ]
 const ccFindF = (id) => CC_FORMATS.find((x) => x.id === id)
 const ccFindC = (id) => CC_CTAS.find((x) => x.id === id)
@@ -9225,7 +9225,7 @@ function CreativeCuratorPage({ clients }) {
           {(format || styleId || cta || angle || audience) && <button className="cc-clear" onClick={() => { setFormat(null); setStyleId(null); setCta(null); setAngle(null); setAudience('') }}>Clear</button>}
         </div>
       </div>
-      {ai.status === 'err' && <div className="card"><p className="cap" style={{ margin: 0 }}>AI couldn’t generate this time: {ai.error}. The instant library still works — hit “Generate ideas”.</p></div>}
+      {ai.status === 'err' && <div className="card"><p className="cap" style={{ margin: 0 }}>AI couldn’t generate this time: {ai.error}. The instant library still works - hit “Generate ideas”.</p></div>}
       {ai.status === 'ok' && ai.text && <div className="card cc-ai"><div className="cc-ai-h">🤖 AI concepts <span className="cap">· {scope === 'client' && client ? client.name : 'research'}</span></div><MdText text={ai.text} /></div>}
       {concepts.length > 0 && <>
         <div className="lvl-title" style={{ marginTop: 16 }}>Concepts <span className="sub">· from the library · click ☆ to save to your board</span></div>
@@ -9233,7 +9233,7 @@ function CreativeCuratorPage({ clients }) {
       </>}
       {concepts.length === 0 && ai.status === 'idle' && <div className="card cc-empty"><div className="big">🎨</div><b>Pick any mix of Format · Style · CTA · Angle · Audience</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>…then hit <b>Generate ideas</b> for instant concept briefs from the library, or <b>Generate with AI</b> for bespoke ones. Leave anything on “Any” to range wider. Star the good ones to build your board.</p></div>}
       <div className="lvl-title" style={{ marginTop: 18 }}>★ Saved board <span className="sub">· {scope === 'client' && client ? client.name : 'Research'} · {board.length} concept{board.length === 1 ? '' : 's'}</span></div>
-      {board.length === 0 ? <div className="card"><p className="cap" style={{ margin: 0 }}>Nothing saved yet. Star concepts above to collect them here — the board is saved and shared with your team.</p></div>
+      {board.length === 0 ? <div className="card"><p className="cap" style={{ margin: 0 }}>Nothing saved yet. Star concepts above to collect them here - the board is saved and shared with your team.</p></div>
         : <div className="cc-grid">{board.map((c) => <div className="cc-card cc-card-saved" key={c.id}>
             <div className="cc-card-h"><span className="cc-card-style">{c.emoji} {c.styleName}</span><button className="cc-star on" title="Remove from board" onClick={() => removeSaved(c.id)}>✕ Remove</button></div>
             <div className="cc-badges">{ccFindF(c.format) && <span className="cc-badge">{ccFindF(c.format).emoji} {ccFindF(c.format).label}</span>}{ccFindC(c.cta) && <span className="cc-badge cc-badge-cta">{ccFindC(c.cta).label}</span>}{ccFindA(c.angle) && <span className="cc-badge cc-badge-ang">{ccFindA(c.angle).label}</span>}{c.audience && <span className="cc-badge cc-badge-aud">{c.audience}</span>}</div>
@@ -9357,9 +9357,9 @@ function FatigueClientCard({ client, currency, range, nonce, onSummary }) {
                 <td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name}>{c.name}<span className="cap"> · {c.adset || c.campaign}</span></span></td>
                 <td className="lft"><FatigueBadge fat={c} /></td>
                 <td>{money(c.spend)}</td>
-                <td>{c.frequency != null ? `${c.frequency}x` : '—'}</td>
-                <td>{c.ctrDrop != null ? <span className={c.ctrDrop > 0 ? 'fat-down' : 'fat-up'}>{c.ctrDrop > 0 ? '▼' : '▲'} {Math.abs(c.ctrDrop)}%</span> : '—'}</td>
-                <td>{c.quality && c.quality !== 'UNKNOWN' ? titleCaseWord(c.quality) : '—'}</td>
+                <td>{c.frequency != null ? `${c.frequency}x` : '-'}</td>
+                <td>{c.ctrDrop != null ? <span className={c.ctrDrop > 0 ? 'fat-down' : 'fat-up'}>{c.ctrDrop > 0 ? '▼' : '▲'} {Math.abs(c.ctrDrop)}%</span> : '-'}</td>
+                <td>{c.quality && c.quality !== 'UNKNOWN' ? titleCaseWord(c.quality) : '-'}</td>
               </tr>)}</tbody>
             </table></div>}
     </div>
@@ -9383,7 +9383,7 @@ function MetaFatiguePage({ clients, currency, range, nonce }) {
         <Sc label="Watch (Medium)" value={fmtNumber(agg.medium)} />
         <Sc label="Creatives scanned" value={fmtNumber(agg.total)} />
       </div>
-      <p className="caveat">A creative-fatigue proxy computed live from Meta delivery: frequency (impressions ÷ reach), CTR decline across the first vs second half of the window, and Meta’s quality ranking. Scored to <b>High 🔥</b> (refresh now), <b>Medium 👀</b> (watch) or ok. Thresholds are shared across clients and set in <b>Settings → Creative fatigue</b>. Not Meta’s official webhook signal (that needs a Meta App with App Review) — this is our best on-platform read of the same signals.</p>
+      <p className="caveat">A creative-fatigue proxy computed live from Meta delivery: frequency (impressions ÷ reach), CTR decline across the first vs second half of the window, and Meta’s quality ranking. Scored to <b>High 🔥</b> (refresh now), <b>Medium 👀</b> (watch) or ok. Thresholds are shared across clients and set in <b>Settings → Creative fatigue</b>. Not Meta’s official webhook signal (that needs a Meta App with App Review) - this is our best on-platform read of the same signals.</p>
       <div className="fat-grid">{ordered.map((c) => <FatigueClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
     </>
   )
@@ -9409,7 +9409,7 @@ function AnomalyClientCard({ client, currency, range, nonce, onSummary }) {
     const good = goodDown ? ch < 0 : ch > 0
     return <span className={good ? 'fat-up' : 'fat-down'}> · {ch > 0 ? '▲' : '▼'}{Math.abs(ch)}%</span>
   }
-  const fmtCtr = (v) => v == null ? '—' : `${(v * 100).toFixed(2)}%`
+  const fmtCtr = (v) => v == null ? '-' : `${(v * 100).toFixed(2)}%`
   return (
     <div className="card fat-card">
       <div className="fat-card-h">
@@ -9424,14 +9424,14 @@ function AnomalyClientCard({ client, currency, range, nonce, onSummary }) {
             {m && <div className="anom-strip">
               <span>Spend <b>{money(m.cur.spend)}</b>{pctChip('spend')}</span>
               <span>Leads <b>{fmtNumber(m.cur.leads)}</b>{pctChip('leads')}</span>
-              <span>CPL <b>{m.cur.cpl != null ? money(m.cur.cpl) : '—'}</b>{pctChip('cpl')}</span>
+              <span>CPL <b>{m.cur.cpl != null ? money(m.cur.cpl) : '-'}</b>{pctChip('cpl')}</span>
               <span>CTR <b>{fmtCtr(m.cur.ctr)}</b>{pctChip('ctr')}</span>
-              <span>Freq <b>{m.cur.freq != null ? `${m.cur.freq.toFixed(1)}x` : '—'}</b>{pctChip('freq')}</span>
+              <span>Freq <b>{m.cur.freq != null ? `${m.cur.freq.toFixed(1)}x` : '-'}</b>{pctChip('freq')}</span>
             </div>}
-            {!alerts.length ? <div className="cap" style={{ marginTop: 8 }}>No anomalies in this window — delivery looks steady. ✅</div>
+            {!alerts.length ? <div className="cap" style={{ marginTop: 8 }}>No anomalies in this window - delivery looks steady. ✅</div>
               : <div className="anom-list">{alerts.map((a, i) => <div key={i} className={`anom-row anom-${a.severity}`}>
                 <span className="anom-ic">{SEV_ICON[a.severity]}</span>
-                <span className="anom-txt"><b>{a.title}</b> — {a.detail}</span>
+                <span className="anom-txt"><b>{a.title}</b> - {a.detail}</span>
               </div>)}</div>}
             {d.zeroLeadAds && d.zeroLeadAds.length ? <div className="anom-ads">
               <div className="cap" style={{ marginBottom: 4 }}>Spending with no leads:</div>
@@ -9456,7 +9456,7 @@ function MetaAnomaliesPage({ clients, currency, range, nonce }) {
         <Sc label="Watch (🟠)" value={fmtNumber(agg.med)} />
         <Sc label="Meta clients" value={fmtNumber(metaClients.length)} />
       </div>
-      <p className="caveat">Each active Meta client compared to the equal prior window: cost per lead, click-through rate, frequency, and spend-vs-leads movement, plus delivery stalls and any ad spending with zero leads. Computed live from Meta delivery data — no Meta App required. Clients needing attention float to the top.</p>
+      <p className="caveat">Each active Meta client compared to the equal prior window: cost per lead, click-through rate, frequency, and spend-vs-leads movement, plus delivery stalls and any ad spending with zero leads. Computed live from Meta delivery data - no Meta App required. Clients needing attention float to the top.</p>
       <div className="fat-grid">{ordered.map((c) => <AnomalyClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
     </>
   )
@@ -9477,13 +9477,13 @@ function FatigueWebhookCard({ client, range, nonce, onStatus }) {
         <div className="fat-card-nm">{client.name}</div>
         {d.summary ? <div className="fat-counts"><span className="fat-c fat-high">{d.summary.high} High</span><span className="fat-c fat-med">{d.summary.medium} Med</span><span className="fat-c fat-low">{d.summary.low} Low</span></div> : null}
       </div>
-      {!creatives.length ? <div className="cap">Connected — waiting for Meta’s first fatigue event on this account.</div>
+      {!creatives.length ? <div className="cap">Connected - waiting for Meta’s first fatigue event on this account.</div>
         : <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
           <thead><tr><th className="lft">Creative</th><th className="lft">Meta verdict</th><th className="lft">Updated</th></tr></thead>
           <tbody>{creatives.map((c) => <tr key={c.adId}>
             <td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name || c.adId}>{c.name || `Ad ${c.adId}`}</span></td>
             <td className="lft"><span className={`fat-badge ${c.level === 'High' ? 'fat-high' : c.level === 'Medium' ? 'fat-med' : ''}`}>{c.level === 'High' ? '🔥 High' : c.level === 'Medium' ? '👀 Medium' : `✅ ${c.level}`}</span></td>
-            <td className="lft cap">{c.ts ? new Date(c.ts).toLocaleDateString() : '—'}</td>
+            <td className="lft cap">{c.ts ? new Date(c.ts).toLocaleDateString('en-AU') : '-'}</td>
           </tr>)}</tbody>
         </table></div>}
     </div>
@@ -9515,7 +9515,7 @@ function WebhookStatusPanel({ nonce }) {
       {open && n ? <div className="wh-events">
         <div className="cap" style={{ marginBottom: 4 }}>Last {n} event{n === 1 ? '' : 's'} Meta sent us:</div>
         <table className="mini-tbl users-tbl"><thead><tr><th className="lft">When</th><th className="lft">Account</th><th className="lft">Field</th><th className="lft">Ad</th><th className="lft">Verdict</th></tr></thead>
-          <tbody>{d.events.map((e, i) => <tr key={i}><td className="lft cap">{e.ts ? new Date(e.ts).toLocaleString() : '—'}</td><td className="lft">{e.client || e.acct || '—'}</td><td className="lft">{e.field || '—'}</td><td className="lft">{e.adId || '—'}</td><td className="lft">{e.level || '—'}</td></tr>)}</tbody>
+          <tbody>{d.events.map((e, i) => <tr key={i}><td className="lft cap">{e.ts ? new Date(e.ts).toLocaleString('en-AU') : '-'}</td><td className="lft">{e.client || e.acct || '-'}</td><td className="lft">{e.field || '-'}</td><td className="lft">{e.adId || '-'}</td><td className="lft">{e.level || '-'}</td></tr>)}</tbody>
         </table>
       </div> : null}
     </div>
@@ -9533,19 +9533,19 @@ function MetaFatigueWebhookPage({ clients, range, nonce }) {
       <WebhookStatusPanel nonce={nonce} />
       {!anyConnected && <div className="card mi-setup">
         <div className="mi-setup-h">🔌 No per-account verdicts yet</div>
-        <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict — pushed by webhook, not computed. Once an ad account is <b>subscribed</b> (see the setup doc) and Meta detects fatigue on a live creative, its verdict appears here as a per-account card.</p>
-        <p className="cap">Test events from Meta’s dashboard show in the receiver panel above (proving the pipe works) but won’t map to a client card — they carry a placeholder account id. Setup + subscription commands: <code>META-WEBHOOK-SETUP.md</code>. Meanwhile the <b>Creative fatigue · proxy</b> tab covers every client live.</p>
+        <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict - pushed by webhook, not computed. Once an ad account is <b>subscribed</b> (see the setup doc) and Meta detects fatigue on a live creative, its verdict appears here as a per-account card.</p>
+        <p className="cap">Test events from Meta’s dashboard show in the receiver panel above (proving the pipe works) but won’t map to a client card - they carry a placeholder account id. Setup + subscription commands: <code>META-WEBHOOK-SETUP.md</code>. Meanwhile the <b>Creative fatigue · proxy</b> tab covers every client live.</p>
       </div>}
       {anyConnected && <p className="caveat">Meta’s official verdicts for the {connectedCount} account{connectedCount === 1 ? '' : 's'} that have sent events so far. A card appears once Meta pushes its first event for an account; verdicts fill in as creatives tire. Compare against the proxy tab, which explains the “why”.</p>}
       <div className="fat-grid">{metaClients.map((c) => <FatigueWebhookCard key={c.id} client={c} range={range} nonce={nonce} onStatus={onStatus} />)}</div>
       {(() => {
-        // Meta clients that have resolved but sent no events yet — surfaced so
+        // Meta clients that have resolved but sent no events yet - surfaced so
         // subscribed-but-quiet accounts are visible rather than silently hidden.
         const awaiting = metaClients.filter((c) => status[c.id] && !status[c.id].connected)
         if (!awaiting.length) return null
         return <div className="card mi-await">
           <b>Awaiting Meta’s first event · {awaiting.length}</b>
-          <p className="cap" style={{ margin: '4px 0 8px' }}>Set up, but Meta hasn’t pushed anything for these yet — they’ll move up as cards the moment it does (fatigue events are sparse and event-driven). If one never appears, re-check that its ad account is subscribed (<code>subscribed_apps</code>).</p>
+          <p className="cap" style={{ margin: '4px 0 8px' }}>Set up, but Meta hasn’t pushed anything for these yet - they’ll move up as cards the moment it does (fatigue events are sparse and event-driven). If one never appears, re-check that its ad account is subscribed (<code>subscribed_apps</code>).</p>
           <div className="mi-await-list">{awaiting.map((c) => <span key={c.id} className="mi-await-chip">{c.name}</span>)}</div>
         </div>
       })()}
@@ -9571,7 +9571,7 @@ function RecommendationsPage({ clients, nonce }) {
   return (
     <>
       <div className="lvl-title">Ad recommendations · Meta’s signal <span className="sub">· pushed by webhook</span></div>
-      <p className="caveat">Meta’s own optimisation recommendations, delivered by webhook as they’re issued (the <code>ad_recommendations</code> field, per subscribed account). Each entry flags that Meta has a suggestion for an ad or account — open Ads Manager for the full write-up. Newest first.</p>
+      <p className="caveat">Meta’s own optimisation recommendations, delivered by webhook as they’re issued (the <code>ad_recommendations</code> field, per subscribed account). Each entry flags that Meta has a suggestion for an ad or account - open Ads Manager for the full write-up. Newest first.</p>
       {st.status === 'loading' ? <div className="card"><Spinner label="Loading recommendations…" /></div>
         : !groups.length ? <div className="card empty-deep"><div className="big">💡</div><b>No recommendations received yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>They’ll appear here as Meta pushes them for your subscribed accounts. Make sure the <code>ad_recommendations</code> field is subscribed for each account.</p></div>
           : <div className="fat-grid">{groups.map((g, i) => (
@@ -9579,10 +9579,10 @@ function RecommendationsPage({ clients, nonce }) {
               <div className="fat-card-h"><div className="fat-card-nm">{nameById[g.client] || g.client || `Account ${g.acct}`}</div><span className="fat-c fat-low">{g.count} recommendation{g.count === 1 ? '' : 's'}</span></div>
               <div className="rec-list">{g.items.map((it, j) => (
                 <div className="rec-row" key={j}>
-                  <div className="rec-when cap">{it.ts ? new Date(it.ts).toLocaleString() : '—'}</div>
+                  <div className="rec-when cap">{it.ts ? new Date(it.ts).toLocaleString('en-AU') : '-'}</div>
                   <div className="rec-body">
                     {it.detail && it.detail.type ? <span className="rec-type">{it.detail.type}</span> : null}
-                    {it.detail && it.detail.message ? <span className="rec-msg">{it.detail.message}</span> : <span className="cap">Meta flagged a recommendation{it.adId ? ` for ad ${it.adId}` : ''} — open Ads Manager for the detail.</span>}
+                    {it.detail && it.detail.message ? <span className="rec-msg">{it.detail.message}</span> : <span className="cap">Meta flagged a recommendation{it.adId ? ` for ad ${it.adId}` : ''} - open Ads Manager for the detail.</span>}
                     {it.detail && it.detail.extra && it.detail.extra.length ? <div className="cap rec-extra">{it.detail.extra.join(' · ')}</div> : null}
                   </div>
                 </div>
@@ -9615,7 +9615,7 @@ function OpportunityCard({ client, nonce, onConfig }) {
     <div className="card fat-card">
       <div className="fat-card-h"><div className="fat-card-nm">{client.name}</div>{score != null ? <div className={`opp-score ${cls}`}>{score}<span>/100</span></div> : <span className="cap">no score returned</span>}</div>
       {d.error ? <div className="cap" style={{ color: 'var(--neg)' }}>Meta: {d.error}</div>
-        : !d.recommendations || !d.recommendations.length ? <div className="cap">No open recommendations — Meta considers this account well optimised. ✅</div>
+        : !d.recommendations || !d.recommendations.length ? <div className="cap">No open recommendations - Meta considers this account well optimised. ✅</div>
           : <div className="opp-list">{d.recommendations.map((r, i) => (
             <div className="opp-row" key={i}>
               <span className={`opp-pts ${r.points ? '' : 'opp-pts-0'}`}>{r.points ? `+${r.points}` : '·'}</span>
@@ -9643,13 +9643,13 @@ function OpportunityPage({ clients, nonce }) {
         ? <div className="card mi-setup"><div className="mi-setup-h">🔌 Meta token not configured</div>
           <p>The opportunity score is pulled live from Meta’s Graph API, which needs your <b>System User token</b> stored on the server. Add an env var <code>META_SYSTEM_TOKEN</code> in Netlify (Site configuration → Environment variables) with the token you generated, then redeploy.</p>
           <p className="cap">It’s used for read-only calls only. Full steps are in <code>META-WEBHOOK-SETUP.md</code>.</p></div>
-        : <p className="caveat">Meta’s own 0–100 opportunity score per account, with its top recommendations ranked by expected <b>point lift</b>. Pulled live from the Graph API — higher means better aligned with Meta’s best practices. This is account-level, never per-campaign.</p>}
+        : <p className="caveat">Meta’s own 0–100 opportunity score per account, with its top recommendations ranked by expected <b>point lift</b>. Pulled live from the Graph API - higher means better aligned with Meta’s best practices. This is account-level, never per-campaign.</p>}
       <div className="fat-grid">{metaClients.map((c) => <OpportunityCard key={c.id} client={c} nonce={nonce} onConfig={onConfig} />)}</div>
     </>
   )
 }
 
-/* ============ Meta Insights — hub for everything Meta-derived ============ */
+/* ============ Meta Insights - hub for everything Meta-derived ============ */
 // Sub-tabbed like the client workspace. Fatigue + Anomalies ship today (computed
 // from Windsor data); the Meta-App-gated reads (opportunity score, benchmarks,
 // recommendations, Ad Library) are listed as coming so the roadmap is visible.
@@ -9676,7 +9676,7 @@ function MetaInsightsPage({ clients, currency, range, nonce }) {
       {!cur.ready && <div className="card mi-soon-card">
         <div className="big">🔒</div>
         <b>{cur.label} needs a Meta App connection.</b>
-        <p style={{ maxWidth: 520, margin: '8px auto 0' }}>{tab === 'fatigue-webhook' ? 'Meta’s official creative-fatigue signal is push-only — it arrives via webhook, not a query. It needs a Meta App (System User token + App Review) that subscribes each client ad account. Once connected, Meta’s Low/Med/High verdict shows here beside our proxy read on the other tab.' : tab === 'benchmarks' ? 'Meta computes industry and auction benchmarks from cross-advertiser data we can’t replicate locally — this needs a Meta App with a System User token.' : tab === 'opportunity' ? 'The 0–100 opportunity score and Meta’s own recommendations are generated by Meta and require a direct Graph API connection (Meta App).' : 'Searching any advertiser’s live ads for inspiration needs the public Ad Library API, which requires a verified Meta App.'} Once the Meta App is set up, this tab lights up automatically.</p>
+        <p style={{ maxWidth: 520, margin: '8px auto 0' }}>{tab === 'fatigue-webhook' ? 'Meta’s official creative-fatigue signal is push-only - it arrives via webhook, not a query. It needs a Meta App (System User token + App Review) that subscribes each client ad account. Once connected, Meta’s Low/Med/High verdict shows here beside our proxy read on the other tab.' : tab === 'benchmarks' ? 'Meta computes industry and auction benchmarks from cross-advertiser data we can’t replicate locally - this needs a Meta App with a System User token.' : tab === 'opportunity' ? 'The 0–100 opportunity score and Meta’s own recommendations are generated by Meta and require a direct Graph API connection (Meta App).' : 'Searching any advertiser’s live ads for inspiration needs the public Ad Library API, which requires a verified Meta App.'} Once the Meta App is set up, this tab lights up automatically.</p>
       </div>}
     </>
   )
@@ -9761,7 +9761,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   const tot = rows.reduce((a, c) => ({ spend: a.spend + c.spend, leads: a.leads + (c.crm ? c.crm.leads : c.leads), bk: a.bk + c.bk, tagged: a.tagged + (c.aware || c.persona || c.angle ? 1 : 0) }), { spend: 0, leads: 0, bk: 0, tagged: 0 })
 
-  // "What's working" — rank the chosen dimension's values by cost per booked call
+  // "What's working" - rank the chosen dimension's values by cost per booked call
   // (the concrete, per-pipeline metric), not the fuzzier qualified-lead heuristic.
   const dimFn = { aware: (c) => c.aware, persona: (c) => c.persona, angle: (c) => c.angle, format: (c) => c.format, dest: (c) => c.dest }[dim]
   const buildRollup = (fn) => { const m = new Map(); for (const c of rows) { const k = fn(c); if (!k) continue; const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, bk: 0, wn: 0 }; e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.bk += c.bk; e.wn += c.wn; m.set(k, e) } return [...m.values()].map((e) => ({ ...e, cpb: e.bk ? Math.round(e.spend / e.bk) : null })).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb)) }
@@ -9799,21 +9799,21 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <Sc label="Tagged" value={`${fmtNumber(tot.tagged)} / ${fmtNumber(all.length)}`} />
       </div>
 
-      {/* What's working — dimension rollup ranked by cost per booked call */}
+      {/* What's working - dimension rollup ranked by cost per booked call */}
       <div className="card cc-work">
         <div className="cc-work-h">What’s working <span className="sub">· ranked by cost / booked call · by</span>
           <div className="chan-toggle cc-dim">{[['aware', 'Awareness'], ['persona', 'Persona'], ['angle', 'Angle'], ['format', 'Format'], ['dest', 'Destination']].map(([k, l]) => <button key={k} className={dim === k ? 'on' : ''} onClick={() => setDim(k)}>{l}</button>)}</div>
         </div>
         {rollup.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl">
           <thead><tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}</tr></thead>
-          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '—'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
+          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '-'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
         </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
       </div>
 
       {/* AI creative strategy */}
       <div className="card ai-card cc-strategy">
         <div className="ai-head">
-          <div className="ai-title">✨ AI creative strategy {strat ? <span className="sub">· {strat.period} · generated {new Date(strat.generatedAt).toLocaleString()}</span> : <span className="sub">· Claude reads the tagged performance and tells you what to make next</span>}</div>
+          <div className="ai-title">✨ AI creative strategy {strat ? <span className="sub">· {strat.period} · generated {new Date(strat.generatedAt).toLocaleString('en-AU')}</span> : <span className="sub">· Claude reads the tagged performance and tells you what to make next</span>}</div>
           <button className="ai-btn" onClick={genStrategy} disabled={stratBusy}>{stratBusy ? 'Generating…' : strat ? '↻ Regenerate' : '✨ Generate strategy'}</button>
         </div>
         {stratErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{stratErr}</p>}
@@ -9830,7 +9830,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <select value={f.persona} onChange={(e) => set({ persona: e.target.value })}><option value="">All personas</option>{personaOpts.map((o) => <option key={o}>{o}</option>)}</select>
         <select value={f.angle} onChange={(e) => set({ angle: e.target.value })}><option value="">All angles</option>{angleOpts.map((o) => <option key={o}>{o}</option>)}</select>
         <select value={f.dest} onChange={(e) => set({ dest: e.target.value })}><option value="">All destinations</option>{destOpts.map((o) => <option key={o}>{o}</option>)}</select>
-        <select value={f.fat} onChange={(e) => set({ fat: e.target.value })}><option value="">All fatigue</option><option value="High">🔥 Fatiguing</option><option value="Medium">👀 Watch</option><option value="Low">✅ OK</option><option value="None">— No signal</option></select>
+        <select value={f.fat} onChange={(e) => set({ fat: e.target.value })}><option value="">All fatigue</option><option value="High">🔥 Fatiguing</option><option value="Medium">👀 Watch</option><option value="Low">✅ OK</option><option value="None">- No signal</option></select>
         {(f.aware || f.persona || f.angle || f.format || f.dest || f.fat || f.q) ? <button className="link-btn sm" onClick={() => setF({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })}>Clear</button> : null}
       </div>
 
@@ -9843,8 +9843,8 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         </tr></thead>
         <tbody>{sorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
       </table></div>
-      <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative — values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.</p>
-      {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad — likely paused or renamed creatives.</p> : null}
+      <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.</p>
+      {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad - likely paused or renamed creatives.</p> : null}
     </>
   )
 }
@@ -9853,7 +9853,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
 // that expands to the full tag editor + ad preview link.
 function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destOpts, open, onToggle }) {
   const save = (patch) => saveCreativeMeta(clientId, c.id, patch)
-  const chip = (v) => v ? <span className="cc-chip">{v}</span> : <span className="cc-none">—</span>
+  const chip = (v) => v ? <span className="cc-chip">{v}</span> : <span className="cc-none">-</span>
   const [ai, setAi] = useState({ busy: false, err: null, reason: null })
   const suggest = async () => {
     if (ai.busy) return
@@ -9877,11 +9877,11 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
         <td className="lft">{chip(c.aware)}</td>
         <td className="lft">{chip(c.persona)}</td>
         <td className="lft">{chip(c.angle)}</td>
-        <td className="lft">{c.fat ? (c.fat.level === 'Low' ? <span className="fat-ok">✅ OK</span> : <FatigueBadge fat={c.fat} />) : <span className="cc-none">—</span>}</td>
+        <td className="lft">{c.fat ? (c.fat.level === 'Low' ? <span className="fat-ok">✅ OK</span> : <FatigueBadge fat={c.fat} />) : <span className="cc-none">-</span>}</td>
         <td>{money(c.spend)}</td>
         <td>{fmtNumber(c.crm ? c.crm.leads : c.leads)}</td>
         {hasCrm && <td>{fmtNumber(c.bk)}</td>}
-        {hasCrm && <td>{c.cpb != null ? money(c.cpb) : '—'}</td>}
+        {hasCrm && <td>{c.cpb != null ? money(c.cpb) : '-'}</td>}
       </tr>
       {open && <tr className="cc-edit-row"><td colSpan={hasCrm ? 10 : 8}>
         <div className="cc-edit" onClick={(e) => e.stopPropagation()}>
@@ -9891,11 +9891,11 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
             <button className="ai-btn sm" onClick={suggest} disabled={ai.busy} title="Let Claude suggest awareness / persona / angle from the copy">{ai.busy ? 'Thinking…' : '✨ Suggest tags'}</button>
             {c.igUrl && <a className="cc-view" href={c.igUrl} target="_blank" rel="noreferrer">↗ View ad on Instagram</a>}
           </div>
-          {c.fat && c.fat.level !== 'Low' && <div className="cap cc-fat-reason"><FatigueBadge fat={c.fat} /> {c.fat.frequency != null ? `frequency ${c.fat.frequency}x` : ''}{c.fat.ctrDrop != null ? ` · CTR ${c.fat.ctrDrop >= 0 ? 'down' : 'up'} ${Math.abs(c.fat.ctrDrop)}% over the period` : ''}{(c.fat.reasons && c.fat.reasons.length) ? ` · ${c.fat.reasons.join(' · ')}` : ''} — consider a fresh variation.</div>}
+          {c.fat && c.fat.level !== 'Low' && <div className="cap cc-fat-reason"><FatigueBadge fat={c.fat} /> {c.fat.frequency != null ? `frequency ${c.fat.frequency}x` : ''}{c.fat.ctrDrop != null ? ` · CTR ${c.fat.ctrDrop >= 0 ? 'down' : 'up'} ${Math.abs(c.fat.ctrDrop)}% over the period` : ''}{(c.fat.reasons && c.fat.reasons.length) ? ` · ${c.fat.reasons.join(' · ')}` : ''} - consider a fresh variation.</div>}
           {ai.err && <div className="cap" style={{ color: 'var(--neg)' }}>{ai.err}</div>}
-          {ai.reason && <div className="cap cc-ai-reason">✨ {ai.reason} <span className="cc-ai-note">· suggested — edit anything below</span></div>}
+          {ai.reason && <div className="cap cc-ai-reason">✨ {ai.reason} <span className="cc-ai-note">· suggested - edit anything below</span></div>}
           <div className="cc-fields">
-            <label>Awareness<select value={c.aware} onChange={(e) => save({ aware: e.target.value })}><option value="">—</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select></label>
+            <label>Awareness<select value={c.aware} onChange={(e) => save({ aware: e.target.value })}><option value="">-</option>{AWARENESS_OPTS.map((o) => <option key={o}>{o}</option>)}</select></label>
             <label>Persona<TagCombo value={c.persona} onChange={(v) => save({ persona: v })} options={personaOpts} listId={`cc-persona-${clientId}`} placeholder="e.g. First-home buyer" /></label>
             <label>Angle<TagCombo value={c.angle} onChange={(v) => save({ angle: v })} options={angleOpts} listId={`cc-angle-${clientId}`} placeholder="e.g. Save on tax" /></label>
             <label>Destination {c.autoDest && !c.t.dest ? <span className="cc-auto">auto</span> : null}<TagCombo value={c.dest} onChange={(v) => save({ dest: v })} options={destOpts} listId={`cc-dest-${clientId}`} placeholder="Where traffic lands" /></label>
@@ -9968,19 +9968,19 @@ function ThumbZoom({ src }) {
 function MetaGroupRows({ groups, adsFor, money, level }) {
   const [open, setOpen] = useState(() => new Set())
   const toggle = (n) => setOpen((p) => { const s = new Set(p); s.has(n) ? s.delete(n) : s.add(n); return s })
-  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '—')
+  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '-')
   return groups.map((g) => {
     const isOpen = open.has(g.name); const kids = isOpen ? adsFor(g.name) : []
     return (
       <React.Fragment key={g.name}>
         <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => toggle(g.name)}>
           <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {g.name}</td>
-          <td>{money(g.spend)}</td><td>{fmtNumber(g.leads)}</td><td>{g.booked != null ? fmtNumber(g.booked) : '—'}</td><td>{g.booked ? cpr(g.spend, g.booked) : '—'}</td>
+          <td>{money(g.spend)}</td><td>{fmtNumber(g.leads)}</td><td>{g.booked != null ? fmtNumber(g.booked) : '-'}</td><td>{g.booked ? cpr(g.spend, g.booked) : '-'}</td>
         </tr>
         {isOpen && kids.map((a, i) => (
           <tr className="ud-child" key={a.name + i}>
             <td className="lft"><ThumbZoom src={a.thumb} /> <span className="cc-nm" title={a.name}>{a.name}</span>{a.previewUrl ? <a className="ud-prev" href={a.previewUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>↗</a> : null}</td>
-            <td>{money(a.spend)}</td><td>{fmtNumber(a.leads)}</td><td>{fmtNumber(a.booked)}</td><td>{a.booked ? cpr(a.spend, a.booked) : '—'}</td>
+            <td>{money(a.spend)}</td><td>{fmtNumber(a.leads)}</td><td>{fmtNumber(a.booked)}</td><td>{a.booked ? cpr(a.spend, a.booked) : '-'}</td>
           </tr>
         ))}
         {isOpen && !kids.length && <tr className="ud-child"><td colSpan={5} className="cap">No ads found in this {level}.</td></tr>}
@@ -10009,10 +10009,10 @@ function UpdateDataDashboard({ st, currency }) {
   const gg = google && google.google
   // Meta campaign rollup from the creatives (UTM-blended bookings).
   const campMap = new Map()
-  for (const c of cre) { const key = c.campaign || '—'; const e = campMap.get(key) || { name: key, spend: 0, leads: 0, booked: 0 }; e.spend += c.spend || 0; e.leads += (c.crm ? c.crm.leads : c.leads) || 0; e.booked += (c.crm ? c.crm.booked : 0) || 0; campMap.set(key, e) }
+  for (const c of cre) { const key = c.campaign || '-'; const e = campMap.get(key) || { name: key, spend: 0, leads: 0, booked: 0 }; e.spend += c.spend || 0; e.leads += (c.crm ? c.crm.leads : c.leads) || 0; e.booked += (c.crm ? c.crm.booked : 0) || 0; campMap.set(key, e) }
   const metaCamps = [...campMap.values()].sort((a, b) => b.spend - a.spend)
   const topCre = [...cre].sort((a, b) => ((b.crm ? b.crm.booked : 0) - (a.crm ? a.crm.booked : 0)) || (b.spend - a.spend)).slice(0, 12)
-  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '—')
+  const cpr = (spend, n) => (n ? money(Math.round(spend / n)) : '-')
   // Flat ad rows (per campaign/ad set/creative) for the drill-down.
   const ads = (creatives && creatives.ads) || []
   const adsInCampaign = (name) => ads.filter((a) => a.campaign === name).sort((a, b) => b.spend - a.spend)
@@ -10027,26 +10027,26 @@ function UpdateDataDashboard({ st, currency }) {
         <Sc label="Ad spend" value={money(k.adSpend || 0)} />
         {twoChannels ? <>
           <Sc label="Meta leads" value={fmtNumber(ch.metaLeads || 0)} />
-          <Sc label="Meta cost/lead" value={metaCpl != null ? money(metaCpl) : '—'} />
+          <Sc label="Meta cost/lead" value={metaCpl != null ? money(metaCpl) : '-'} />
           <Sc label="Google conv." value={fmtNumber(ch.googleConv || 0)} />
-          <Sc label="Google cost/conv" value={googCpc != null ? money(googCpc) : '—'} />
+          <Sc label="Google cost/conv" value={googCpc != null ? money(googCpc) : '-'} />
         </> : <>
           <Sc label="Leads (ads)" value={fmtNumber(adLeads)} />
-          <Sc label="Cost / lead" value={adCpl != null ? money(adCpl) : '—'} />
+          <Sc label="Cost / lead" value={adCpl != null ? money(adCpl) : '-'} />
         </>}
         <Sc label="Booked calls" value={fmtNumber(k.booked || 0)} />
-        <Sc label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '—'} />
+        <Sc label="Cost / booked" value={k.cpBooked != null ? money(k.cpBooked) : '-'} />
         <Sc label="Won" value={fmtNumber(k.won || 0)} />
         <Sc label="Revenue" value={money(k.revenue || 0)} />
       </div>
       {twoChannels
-        ? <p className="cap"><b>Two channels are running this period.</b> Meta and Google are shown separately above so each matches its own platform (Meta form/website leads vs Google conversions, which aren’t always the same thing). Combined that’s {fmtNumber(adLeads)} leads at {adCpl != null ? money(adCpl) : '—'} blended. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>
+        ? <p className="cap"><b>Two channels are running this period.</b> Meta and Google are shown separately above so each matches its own platform (Meta form/website leads vs Google conversions, which aren’t always the same thing). Combined that’s {fmtNumber(adLeads)} leads at {adCpl != null ? money(adCpl) : '-'} blended. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>
         : <p className="cap">Leads and cost per lead are ad-reported (Meta {fmtNumber(ch.metaLeads || 0)}, Google {fmtNumber(ch.googleConv || 0)}) so they match Ads Manager. Booked calls and wins are Caalano Systems, attributed to the ads by UTM. The CRM logged {fmtNumber(k.leads || 0)} opportunities across all sources.</p>}
       {ap && <p className="cap">Appointments: {fmtNumber(ap.attended)} attended, {fmtNumber(ap.noShow)} no-shows, {fmtNumber(ap.upcoming)} still upcoming, {fmtNumber(ap.occurred)} calls have happened.{ap.stageOnlyShown > 0 ? ` ${fmtNumber(ap.stageOnlyShown)} advanced past the show stage but weren’t marked attended (reporting gap).` : ''}</p>}
 
       {/* Pipelines */}
       {pls.length > 0 && <>
-        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Pipeline — where leads are at</div>
+        <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Pipeline - where leads are at</div>
         <div className="ud-pipes">{pls.map((p) => {
           const maxOpen = Math.max(1, ...(p.stages || []).map((s) => s.open))
           return (
@@ -10060,7 +10060,7 @@ function UpdateDataDashboard({ st, currency }) {
         })}</div>
       </>}
 
-      {/* Meta Ads — campaign / ad set rows drill into their ads */}
+      {/* Meta Ads - campaign / ad set rows drill into their ads */}
       {(metaCamps.length > 0 || segs.length > 0) && <>
         <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Meta Ads <span className="sub">· click a campaign or ad set to see its ads · hover a thumbnail to enlarge</span></div>
         <div className="ud-tbls">
@@ -10070,7 +10070,7 @@ function UpdateDataDashboard({ st, currency }) {
         {topCre.length > 0 && <div className="tbl-scroll ud-tbl"><div className="ud-tbl-h">Top creatives</div><table className="mini-tbl users-tbl cc-tbl"><thead><tr><th className="lft">Creative</th><th className="lft">Format</th><th>Spend</th><th>Leads</th><th>Cost/lead</th><th>Booked</th><th>Cost/book</th></tr></thead><tbody>{topCre.map((c) => { const cl = c.crm ? c.crm.leads : c.leads, bkd = c.crm ? c.crm.booked : 0; return <tr key={c.id}><td className="lft"><ThumbZoom src={c.thumb} /> <span className="cc-nm" title={c.name}>{c.name}</span></td><td className="lft"><span className={`cc-fmt ${c.format === 'Video' ? 'vid' : 'img'}`}>{c.format}</span></td><td>{money(c.spend)}</td><td>{fmtNumber(cl)}</td><td>{cpr(c.spend, cl)}</td><td>{fmtNumber(bkd)}</td><td>{cpr(c.spend, bkd)}</td></tr> })}</tbody></table></div>}
       </>}
 
-      {/* Which ads drove the bookings — traced through the lead UTMs */}
+      {/* Which ads drove the bookings - traced through the lead UTMs */}
       {(k.booked || 0) > 0 && <>
         <div className="lvl-title" style={{ fontSize: 13, marginTop: 16 }}>Which ads drove the {fmtNumber(k.booked)} booked calls <span className="sub">· traced through the lead UTMs</span></div>
         {(bkContent.length > 0 || bkMedium.length > 0) ? <>
@@ -10187,7 +10187,7 @@ function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
         </div>
         <button className="ai-btn cu-gen" onClick={generate} disabled={busy}>{busy ? 'Generating…' : rec ? '↻ Regenerate update' : '✨ Generate update'}</button>
       </div>
-      <p className="cap" style={{ marginTop: 2 }}>Pulls this client's computed results for <b>{rangeLabel(range)}</b> (spend, leads, booked calls, revenue, cost per result, best-performing ads) and writes a client-ready update. Set the period with the date range up top. Nothing is invented — it only uses the numbers on the dashboard.</p>
+      <p className="cap" style={{ marginTop: 2 }}>Pulls this client's computed results for <b>{rangeLabel(range)}</b> (spend, leads, booked calls, revenue, cost per result, best-performing ads) and writes a client-ready update. Set the period with the date range up top. Nothing is invented - it only uses the numbers on the dashboard.</p>
       <details className="cu-ctx" open={!!ctx}>
         <summary>Client context &amp; notes {ctx ? <span className="cu-ctx-on">· saved</span> : <span className="cap">· optional background the AI uses for tone &amp; framing</span>}</summary>
         <textarea className="cu-ctx-ta" rows={4} value={ctx} placeholder="Anything the AI should know about this client: their business, tone to use, what they care about, current focus, sensitivities, offers running, seasonality, relationship notes… This is fed into the update as background (it never invents numbers). Saved to this client and shared with the team." onChange={(e) => setCtx(e.target.value)} onBlur={() => sel && saveClientCtx(sel.id, ctx)} />
@@ -10196,7 +10196,7 @@ function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
       {err && <div className="card empty-deep" style={{ padding: 18 }}><b>Couldn’t generate.</b><p className="cap" style={{ marginTop: 6 }}>{err}</p></div>}
       {busy && <div className="card"><Spinner label="Pulling the numbers and writing the update…" /></div>}
       {!busy && rec && (rec.email || rec.whatsapp) && <>
-        <div className="cu-meta cap">{err ? 'Showing your last saved update — the new one didn’t generate (see the error above). ' : ''}Last generated {new Date(rec.generatedAt).toLocaleString()} · {rec.period}</div>
+        <div className="cu-meta cap">{err ? 'Showing your last saved update - the new one didn’t generate (see the error above). ' : ''}Last generated {new Date(rec.generatedAt).toLocaleString('en-AU')} · {rec.period}</div>
         <div className="cu-grid">
           <div className="card cu-panel">
             <div className="cu-panel-h">💬 WhatsApp <span className="sub">· casual</span><CopyBtn text={rec.whatsapp} /></div>
@@ -10216,7 +10216,7 @@ function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
 }
 
 // ---------------------------------------------------------------------------
-// Monthly Report — a full-page, one-client, one-month slide deck built from a
+// Monthly Report - a full-page, one-client, one-month slide deck built from a
 // FROZEN snapshot. Wins/revenue are attributed by close month (won date), not
 // lead-created date, so late-closing leads land in the month they closed.
 // Exports via native print (Save-as-PDF) and a direct jsPDF download.
@@ -10239,7 +10239,7 @@ function periodOf(a, b) {
   const label = single ? monthBounds(lo).label : `${monthBounds(lo).label} – ${monthBounds(hi).label}`
   return { from, to, label, key: single ? lo : `${lo}_${hi}`, single, lo, hi }
 }
-// Pretty label for a stored snapshot key — a single month ("2026-07") or a
+// Pretty label for a stored snapshot key - a single month ("2026-07") or a
 // range ("2026-06_2026-07"). Used by the reports lists / month pickers.
 function snapLabel(key) {
   if (!key) return ''
@@ -10263,7 +10263,7 @@ const MR_MONTHS = (back = 18) => {
 
 // Display an ISO (YYYY-MM-DD) date as DD/MM/YYYY.
 function fmtDate(s) {
-  if (!s) return '—'
+  if (!s) return '-'
   const p = String(s).slice(0, 10).split('-')
   return (p.length === 3 && p[0]) ? `${p[2]}/${p[1]}/${p[0]}` : String(s)
 }
@@ -10308,9 +10308,9 @@ async function assembleMonthlyReport(client, period) {
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
     meta, google, blend, attribution: attrTrim, trend: trendR || [], deals: dealsR || null,
     // ID→name folds so Google's utm_campaign / utm_content (which carry the numeric
-    // campaign / ad-group ID, not the name) resolve to the live campaign name — the
+    // campaign / ad-group ID, not the name) resolve to the live campaign name - the
     // exact map the Meta/Google views pass to aliasedOutcomeMap. Without it the
-    // report's per-campaign key-event columns show "—" for Google (Meta matches by
+    // report's per-campaign key-event columns show "-" for Google (Meta matches by
     // name so it was unaffected).
     campIdMap: (attribution && attribution.campIdMap) || {},
     mediumIdMap: (attribution && attribution.mediumIdMap) || {},
@@ -10318,8 +10318,8 @@ async function assembleMonthlyReport(client, period) {
     // the Caalano360 green key-event columns + costings by campaign, same as the
     // Meta Ads view. Top 40 by leads keeps the frozen blob lean.
     campOutcomes: (attribution && Array.isArray(attribution.byCampaign)) ? attribution.byCampaign.slice(0, 40) : [],
-    // Per-source CRM outcome entities (utm_source) — same key-event fields as the
-    // campaign ones — so the report can break the non-paid "other sources" into
+    // Per-source CRM outcome entities (utm_source) - same key-event fields as the
+    // campaign ones - so the report can break the non-paid "other sources" into
     // named channels (organic / direct / referral / email / social / CRM). The heavy
     // nested `detail`/`opps` are dropped to keep the frozen blob lean.
     srcOutcomes: (attribution && Array.isArray(attribution.bySource)) ? attribution.bySource.slice(0, 40).map((s) => { const { detail, opps, ...rest } = s; return rest }) : [],
@@ -10365,12 +10365,12 @@ function MRTable({ cols, rows, empty = 'No data for this period.', max }) {
 }
 // Three compact month-over-month charts (Spend, Leads, CPL) for the Meta slide.
 function MRTrend({ trend, currency }) {
-  if (!trend || trend.length < 2) return <div className="mr-empty">Not enough history yet for a trend — this fills in as months accrue.</div>
+  if (!trend || trend.length < 2) return <div className="mr-empty">Not enough history yet for a trend - this fills in as months accrue.</div>
   const money = (v) => fmtCurrency(v, currency)
   const charts = [
     { key: 'spend', label: 'Ad spend', kind: 'bar', color: '#6d5efc', fmt: money },
     { key: 'leads', label: 'Results', kind: 'bar', color: '#22b07d', fmt: (v) => fmtNumber(v) },
-    { key: 'cpl', label: 'Cost per result', kind: 'line', color: '#e0803a', fmt: (v) => (v == null ? '—' : money(v)) },
+    { key: 'cpl', label: 'Cost per result', kind: 'line', color: '#e0803a', fmt: (v) => (v == null ? '-' : money(v)) },
   ]
   return (
     <div className="mr-trend">
@@ -10415,9 +10415,9 @@ function ClientReports({ clients, currency }) {
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null)
   const deckRef = useRef(null)
-  const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
-  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
-  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '—')
+  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
+  const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
+  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '-')
   useEffect(() => {
     if (!client) { setMonths(null); return }
     let alive = true; setMonths(null); setMonth('')
@@ -10465,12 +10465,12 @@ function ClientReports({ clients, currency }) {
           {months && months.length ? months.map((m) => <option key={m.month} value={m.month}>{snapLabel(m.month)}</option>) : <option value="">No published reports</option>}
         </select>
         <div className="mr-bar-spacer" />
-        {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString()}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString()}</span>}
+        {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString('en-AU')}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString('en-AU')}</span>}
         <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
       </div>
       {months && !months.length && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No published reports yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>When your agency publishes a monthly report for {client ? client.name : 'your account'}, it will appear here.</p></div>}
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
-      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report — please try again shortly.</div>}
+      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report - please try again shortly.</div>}
       {rep && <div className="mr-deck" ref={deckRef}><div className="mr-track">{deck}</div></div>}
       {drill && <MRDrill drill={drill} currency={currency} onClose={() => setDrill(null)} />}
     </div>
@@ -10499,9 +10499,9 @@ function MonthlyReport({ clients, currency, authUser }) {
   const [fs, setFs] = useState(false)
   const present = () => { const el = pageRef.current; if (!el) return; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {}) }
   useEffect(() => { const on = () => setFs(!!document.fullscreenElement); document.addEventListener('fullscreenchange', on); return () => document.removeEventListener('fullscreenchange', on) }, [])
-  const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
-  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
-  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '—')
+  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
+  const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
+  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '-')
 
   // Load the frozen snapshot whenever client or the selected period changes.
   useEffect(() => {
@@ -10602,12 +10602,12 @@ function MonthlyReport({ clients, currency, authUser }) {
         </select>
         <button className="mr-btn primary" onClick={generate} disabled={busy}>{busy ? 'Generating…' : (saved ? 'Refresh snapshot' : 'Generate snapshot')}</button>
         {saved && (saved.published
-          ? <button className="mr-btn" onClick={() => publishAction(period.key, 'unpublish')} disabled={pubBusy} title={`Published ${saved.publishedAt ? new Date(saved.publishedAt).toLocaleString() : ''}${saved.publishedBy ? ' by ' + saved.publishedBy : ''} — click to hide from clients`}>{pubBusy ? '…' : (saved.edited ? '● Re-publish' : '✕ Unpublish')}</button>
+          ? <button className="mr-btn" onClick={() => publishAction(period.key, 'unpublish')} disabled={pubBusy} title={`Published ${saved.publishedAt ? new Date(saved.publishedAt).toLocaleString('en-AU') : ''}${saved.publishedBy ? ' by ' + saved.publishedBy : ''} - click to hide from clients`}>{pubBusy ? '…' : (saved.edited ? '● Re-publish' : '✕ Unpublish')}</button>
           : <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="Make this frozen report visible to clients with Monthly Reports access">{pubBusy ? '…' : '▲ Publish'}</button>)}
-        {saved && saved.published && saved.edited && <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="You've regenerated since publishing — push the new version to clients">↻ Push update</button>}
+        {saved && saved.published && saved.edited && <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="You've regenerated since publishing - push the new version to clients">↻ Push update</button>}
         <button className={`mr-btn${showList ? ' on' : ''}`} onClick={() => setShowList((v) => !v)} title="Show every generated report for this client">☰ Reports{snapList && snapList.length ? ` (${snapList.length})` : ''}</button>
         <div className="mr-bar-spacer" />
-        {saved && <span className={`mr-saved${saved.published ? ' pub' : ''}`} title={`Frozen ${new Date(saved.savedAt).toLocaleString()}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>{saved.published ? (saved.edited ? '🟠 Published (edited since)' : '🟢 Published') : '🔒 Frozen — not published'} {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString() : ''}</span>}
+        {saved && <span className={`mr-saved${saved.published ? ' pub' : ''}`} title={`Frozen ${new Date(saved.savedAt).toLocaleString('en-AU')}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>{saved.published ? (saved.edited ? '🟠 Published (edited since)' : '🟢 Published') : '🔒 Frozen - not published'} {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString('en-AU') : ''}</span>}
         <div className="mr-viewtoggle" title="Slides = one section per page · Scroll = continuous">
           <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
           <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
@@ -10627,7 +10627,7 @@ function MonthlyReport({ clients, currency, authUser }) {
                   const isCur = r.month === period.key
                   return (<tr key={r.month} className={isCur ? 'row-sel' : ''}>
                     <td className="lft"><button className="mr-linkbtn" onClick={() => { const k = String(r.month); const [lo, hi] = k.includes('_') ? k.split('_') : [k, k]; setFromMonth(lo); setToMonth(hi) }} title="Open this report">{snapLabel(r.month)}</button></td>
-                    <td className="lft">{r.savedAt ? new Date(r.savedAt).toLocaleDateString() : '—'}{r.savedBy ? ` · ${r.savedBy}` : ''}</td>
+                    <td className="lft">{r.savedAt ? new Date(r.savedAt).toLocaleDateString('en-AU') : '-'}{r.savedBy ? ` · ${r.savedBy}` : ''}</td>
                     <td className="lft">{r.published ? (r.edited ? <span className="mr-pill-sec">🟠 Published · edited since</span> : <span className="mr-pill-pri">🟢 Published</span>) : <span className="cap">Not published</span>}</td>
                     <td className="lft">{r.published
                       ? <>{r.edited && <button className="mr-btn sm" disabled={pubBusy} onClick={() => publishAction(r.month, 'publish')}>Push update</button>} <button className="mr-btn sm" disabled={pubBusy} onClick={() => publishAction(r.month, 'unpublish')}>Unpublish</button></>
@@ -10639,7 +10639,7 @@ function MonthlyReport({ clients, currency, authUser }) {
 
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
-      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won — so late-closing leads show in the month they closed.</p></div>}
+      {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}
 
       {rep && view === 'slides' && total > 0 && (
         <div className="mr-nav no-print">
@@ -10665,7 +10665,7 @@ function MonthlyReport({ clients, currency, authUser }) {
 // figures can be sense-checked live with the client (who, when the lead came in,
 // when it closed, value, source). Screen-only (never in the PDF).
 function MRDrill({ drill, currency, onClose }) {
-  const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
+  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
@@ -10702,12 +10702,12 @@ function MRDrill({ drill, currency, onClose }) {
                   <td>{d.name}</td>
                   <td>{fmtDate(d.createdAt)}</td>
                   <td>{fmtDate(d.statusAt)}</td>
-                  {!isLost && <td className="r">{days == null ? '—' : days}</td>}
-                  {isLost && <td>{d.reason || '—'}</td>}
+                  {!isLost && <td className="r">{days == null ? '-' : days}</td>}
+                  {isLost && <td>{d.reason || '-'}</td>}
                   <td><span className={`mr-src mr-src-${d.channel || 'other'}`}>{d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : 'Other'}</span></td>
-                  {hasAd && <td className="mr-drill-ad">{d.ad || d.campaign ? <span title={[d.campaign, d.ad].filter(Boolean).join(' · ')}>{d.ad || d.campaign}</span> : '—'}</td>}
-                  <td>{[d.pipeline, d.stage].filter(Boolean).join(' · ') || '—'}</td>
-                  <td>{d.userName || '—'}</td>
+                  {hasAd && <td className="mr-drill-ad">{d.ad || d.campaign ? <span title={[d.campaign, d.ad].filter(Boolean).join(' · ')}>{d.ad || d.campaign}</span> : '-'}</td>}
+                  <td>{[d.pipeline, d.stage].filter(Boolean).join(' · ') || '-'}</td>
+                  <td>{d.userName || '-'}</td>
                   <td className="r">{money(d.value)}</td>
                 </tr>
               )})}</tbody>
@@ -10759,10 +10759,10 @@ function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
           <div className="mr-cre-metrics">
             <div><b>{money(a.spend)}</b><span>Spend</span></div>
             <div><b>{n0(a.impressions)}</b><span>Impr</span></div>
-            <div><b>{ctrV == null ? '—' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
-            <div><b>{freqV != null ? freqV.toFixed(1) + 'x' : '—'}</b><span>Freq</span></div>
+            <div><b>{ctrV == null ? '-' : fmtPct(ctrV, 2)}</b><span>CTR</span></div>
+            <div><b>{freqV != null ? freqV.toFixed(1) + 'x' : '-'}</b><span>Freq</span></div>
             <div><b>{n0(results)}</b><span>{a.resultType || 'Results'}</span></div>
-            <div><b>{cprV == null ? '—' : money(cprV)}</b><span>Cost/result</span></div>
+            <div><b>{cprV == null ? '-' : money(cprV)}</b><span>Cost/result</span></div>
           </div>
         </div>
       </div>
@@ -10796,10 +10796,10 @@ function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
                     <tr key={i} className={`${cls}${rowDrill ? ' mr-ketbl-clickable' : ''}`} onClick={openDrill} title={rowDrill ? 'Click to see the people behind this' : undefined}>
                       <td title={e.label}>{e.label}{isCal && e.shown != null ? <small> · {n0(e.shown)} shown</small> : null}{rowDrill ? <span className="mr-ketbl-chev"> ›</span> : null}</td>
                       <td className="r">{n0(e.count)}</td>
-                      <td className="r">{costEv == null ? '—' : money(costEv)}</td>
-                      <td className="r">{e.kind === 'lead' ? '100%' : pctLeads == null ? '—' : fmtPct(pctLeads, 0)}</td>
-                      <td className="r">{nextStep == null ? '—' : fmtPct(nextStep, 0)}</td>
-                      <td className="r">{isCal && e.showRate != null ? fmtPct(e.showRate, 0) : '—'}</td>
+                      <td className="r">{costEv == null ? '-' : money(costEv)}</td>
+                      <td className="r">{e.kind === 'lead' ? '100%' : pctLeads == null ? '-' : fmtPct(pctLeads, 0)}</td>
+                      <td className="r">{nextStep == null ? '-' : fmtPct(nextStep, 0)}</td>
+                      <td className="r">{isCal && e.showRate != null ? fmtPct(e.showRate, 0) : '-'}</td>
                     </tr>
                   )
                 })}
@@ -10808,8 +10808,8 @@ function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
           </div>
           <div className="mr-cre-cash">
             <div><b>{money(revenue)}</b><span>Revenue</span></div>
-            <div><b>{cpw == null ? '—' : money(cpw)}</b><span>Cost / won</span></div>
-            <div><b>{roas == null ? '—' : roas.toFixed(1) + 'x'}</b><span>ROAS</span></div>
+            <div><b>{cpw == null ? '-' : money(cpw)}</b><span>Cost / won</span></div>
+            <div><b>{roas == null ? '-' : roas.toFixed(1) + 'x'}</b><span>ROAS</span></div>
           </div>
         </div>
       ) : <div className="mr-cre-ke mr-cre-ke-empty">No CRM-attributed leads matched this creative’s UTM (utm_content).</div>}
@@ -10827,14 +10827,14 @@ function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
   )
 }
 
-// Status Change vs Created On revenue matrix — the same figures side by side so
+// Status Change vs Created On revenue matrix - the same figures side by side so
 // the client can see cash banked this month vs how this month's leads are doing.
 function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
   const cell = (v, deals, title) => onDrill && deals && deals.length
     ? <button className="mr-cellbtn" onClick={() => onDrill({ title, deals })}>{v}</button> : v
-  const days = (v) => (v == null ? '—' : `${v} day${v === 1 ? '' : 's'}`)
-  const roas = (rev) => (spend ? (rev / spend).toFixed(1) + 'x' : '—')
-  const cac = (paidWon) => (spend && paidWon ? money(spend / paidWon) : '—')
+  const days = (v) => (v == null ? '-' : `${v} day${v === 1 ? '' : 's'}`)
+  const roas = (rev) => (spend ? (rev / spend).toFixed(1) + 'x' : '-')
+  const cac = (paidWon) => (spend && paidWon ? money(spend / paidWon) : '-')
   return (
     <table className="mr-table mr-revmatrix">
       <thead><tr><th></th><th className="r">Status change<small>closed this month</small></th><th className="r">Created on<small>leads created this month</small></th></tr></thead>
@@ -10843,8 +10843,8 @@ function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
         <tr><td>Paid revenue</td><td className="r">{money(sc.paid.revenue)}</td><td className="r">{money(co.paid.revenue)}</td></tr>
         <tr><td>Paid ROAS</td><td className="r">{roas(sc.paid.revenue)}</td><td className="r">{roas(co.paid.revenue)}</td></tr>
         <tr><td>CAC (cost / paid won)</td><td className="r">{cac(sc.paid.count)}</td><td className="r">{cac(co.paid.count)}</td></tr>
-        <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won — closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won — leads created this month')}</td></tr>
-        <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '—'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '—'}</td></tr>
+        <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won - closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won - leads created this month')}</td></tr>
+        <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '-'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '-'}</td></tr>
         <tr><td>Avg time to close</td><td className="r">{days(sc.avgCloseDays)}</td><td className="r">{days(co.avgCloseDays)}</td></tr>
       </tbody>
     </table>
@@ -10898,7 +10898,7 @@ function MRDonut({ data, money }) {
     </div>
   )
 }
-// Creative performance — visual cards (big thumbnail + all stats + the client's
+// Creative performance - visual cards (big thumbnail + all stats + the client's
 // configured key events), with a sort control and pagination (10 per page).
 function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency, showTable = false, clientId, range, channel }) {
   const groups = o360cols ? o360cols.groups : []
@@ -10948,7 +10948,7 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
   })
   // Sort chips span the UNION of every pipeline's key events (shared o360cols); a
   // creative without that event just sorts as 0.
-  // Dedupe event chips by label — the union spans every pipeline, so the same
+  // Dedupe event chips by label - the union spans every pipeline, so the same
   // stage name (e.g. "Booked Discovery Call") can appear in more than one pipeline.
   const uniqGroups = [...new Map(groups.map((g) => [g.label, g])).values()]
   // Volume sort chips (by count, high→low) + a parallel set of "cheapest cost per
@@ -11017,10 +11017,10 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
               <td>{a.type}</td>
               <td>{money(a.spend)}</td>
               <td>{n0(a.impressions)}</td>
-              <td>{a.ctrV == null ? '—' : fmtPct(a.ctrV, 2)}</td>
-              <td>{a.freqV == null ? '—' : a.freqV.toFixed(1) + 'x'}</td>
+              <td>{a.ctrV == null ? '-' : fmtPct(a.ctrV, 2)}</td>
+              <td>{a.freqV == null ? '-' : a.freqV.toFixed(1) + 'x'}</td>
               <td>{n0(a.leads)}</td>
-              <td>{a.cpl == null ? '—' : money(a.cpl)}</td>
+              <td>{a.cpl == null ? '-' : money(a.cpl)}</td>
               {o360cols && o360Cells(a, currency, o360cols)}
             </tr>
           ))}</tbody>
@@ -11033,14 +11033,14 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
           <optgroup label="Performance">
             {METRICS.filter((x) => x.evLabel == null && x.costEvLabel == null).map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
           </optgroup>
-          {evMetrics.length ? <optgroup label="Key event — volume reached">
+          {evMetrics.length ? <optgroup label="Key event - volume reached">
             {evMetrics.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
           </optgroup> : null}
           {costMetrics.length ? <optgroup label="Cheapest cost per event">
             {costMetrics.map((x) => <option key={x.k} value={x.k}>Cost / {x.label}</option>)}
           </optgroup> : null}
         </select>
-        <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) — click for highest first' : 'Descending (highest first) — click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
+        <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) - click for highest first' : 'Descending (highest first) - click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
       </div>
       <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
       {pages > 1 && (
@@ -11067,7 +11067,7 @@ function renderMonthlyDeck(rep, h) {
   const users = (blend && blend.users) || []
   const totalSpend = paid.adSpend || (((meta && meta.totals && meta.totals.spend) || 0) + ((google && google.totals && google.totals.cost) || 0))
   // Paid leads = Meta's optimised RESULTS (sum of each campaign's own objective
-  // result, matching Ads Manager) + Google conversions — not native lead-form
+  // result, matching Ads Manager) + Google conversions - not native lead-form
   // leads only, which under-count website/conversion campaigns.
   const metaResults = (meta && meta.totals && meta.totals.results != null) ? meta.totals.results : ((paid.metaLeads) || 0)
   const gConv = (google && google.totals && google.totals.conversions) || paid.googleConv || 0
@@ -11108,15 +11108,15 @@ function renderMonthlyDeck(rep, h) {
     { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
     { k: 'impr', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
     { k: 'reach', label: 'Reach', align: 'r', render: (r) => n0(r.reach) },
-    { k: 'freq', label: 'Freq.', align: 'r', render: (r) => { const f = freq(r); return f == null ? '—' : f.toFixed(1) + 'x' } },
-    { k: 'cpm', label: 'CPM', align: 'r', render: (r) => { const v = cpm(r); return v == null ? '—' : money(v) } },
-    { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = ctr(r); return v == null ? '—' : fmtPct(v, 2) } },
-    { k: 'results', label: 'Results', align: 'r', render: (r) => (r.results ? `${n0(r.results)}${r.resultType ? ' ' + r.resultType : ''}` : '—') },
+    { k: 'freq', label: 'Freq.', align: 'r', render: (r) => { const f = freq(r); return f == null ? '-' : f.toFixed(1) + 'x' } },
+    { k: 'cpm', label: 'CPM', align: 'r', render: (r) => { const v = cpm(r); return v == null ? '-' : money(v) } },
+    { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = ctr(r); return v == null ? '-' : fmtPct(v, 2) } },
+    { k: 'results', label: 'Results', align: 'r', render: (r) => (r.results ? `${n0(r.results)}${r.resultType ? ' ' + r.resultType : ''}` : '-') },
     { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
-    { k: 'cpl', label: 'CPL', align: 'r', render: (r) => { const v = cpl(r); return v == null ? '—' : money(v) } },
+    { k: 'cpl', label: 'CPL', align: 'r', render: (r) => { const v = cpl(r); return v == null ? '-' : money(v) } },
   ]
 
-  // Caalano360 green key-event setup — shared by the creative table, the
+  // Caalano360 green key-event setup - shared by the creative table, the
   // key-events-by-campaign slide and the CRM slides. Position map comes from the
   // full pipeline registry (allPipelines) so every key event orders by its real
   // funnel position; the blend pipelines are activity-derived and can omit stages.
@@ -11165,7 +11165,7 @@ function renderMonthlyDeck(rep, h) {
         {rep.client.industry && <p className="mr-cover-ind">{rep.client.industry}</p>}
         <div className="mr-cover-month">{b.label}</div>
       </div>
-      <div className="mr-cover-foot">Generated {new Date(rep.generatedAt).toLocaleDateString()} · Wins &amp; revenue attributed to the month each deal was marked won.</div>
+      <div className="mr-cover-foot">Generated {new Date(rep.generatedAt).toLocaleDateString('en-AU')} · Wins &amp; revenue attributed to the month each deal was marked won.</div>
     </section>
   )
 
@@ -11178,9 +11178,9 @@ function renderMonthlyDeck(rep, h) {
       { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
       { k: 'impr', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
       { k: 'reach', label: 'Reach', align: 'r', render: (r) => n0(r.reach) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = ctr(r); return v == null ? '—' : fmtPct(v, 2) } },
+      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = ctr(r); return v == null ? '-' : fmtPct(v, 2) } },
       { k: 'results', label: 'Results', align: 'r', render: (r) => n0(r.results != null ? r.results : r.leads) },
-      { k: 'cpl', label: 'Cost/res', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return res ? money(r.spend / res) : '—' } },
+      { k: 'cpl', label: 'Cost/res', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return res ? money(r.spend / res) : '-' } },
     ]
     const adsetsOf = (campName) => (meta.adsets || []).filter((a) => a.campaign === campName)
     push(
@@ -11189,10 +11189,10 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Spend" value={money(t.spend)} />
           <MRKpi label="Impressions" value={n0(t.impressions)} />
           <MRKpi label="Reach" value={n0(t.reach)} />
-          <MRKpi label="Frequency" value={t.reach ? (t.impressions / t.reach).toFixed(1) + 'x' : '—'} />
-          <MRKpi label="CTR" value={t.impressions ? fmtPct((t.clicks / t.impressions) * 100, 2) : '—'} />
+          <MRKpi label="Frequency" value={t.reach ? (t.impressions / t.reach).toFixed(1) + 'x' : '-'} />
+          <MRKpi label="CTR" value={t.impressions ? fmtPct((t.clicks / t.impressions) * 100, 2) : '-'} />
           <MRKpi label="Results" value={n0(t.results != null ? t.results : t.leads)} sub={t.resultBreakdown && t.resultBreakdown.length > 1 ? 'mixed objectives' : (t.resultBreakdown && t.resultBreakdown[0] ? t.resultBreakdown[0].label : null)} />
-          <MRKpi label="Cost / result" value={(t.results != null ? t.results : t.leads) ? money(t.spend / (t.results != null ? t.results : t.leads)) : '—'} strong />
+          <MRKpi label="Cost / result" value={(t.results != null ? t.results : t.leads) ? money(t.spend / (t.results != null ? t.results : t.leads)) : '-'} strong />
         </div>
         <MRDrillTable
           cols={metaDrillCols('Campaign')} rows={meta.campaigns || []} max={16}
@@ -11215,7 +11215,7 @@ function renderMonthlyDeck(rep, h) {
     )
   }
 
-  // ---- Key events by campaign (Caalano360 green columns) — right after creative ----
+  // ---- Key events by campaign (Caalano360 green columns) - right after creative ----
   if (rep.hasCrm && o360cols) {
     const campSrc = []
     for (const c of (meta && meta.campaigns) || []) campSrc.push({ name: c.name, channel: 'meta', spend: c.spend || 0, leads: (c.results != null ? c.results : c.leads) || 0 })
@@ -11228,7 +11228,7 @@ function renderMonthlyDeck(rep, h) {
     const headIdx = gWonIdx >= 0 ? gWonIdx : o360cols.groups.length - 1
     const headKey = firstCols[headIdx] ? firstCols[headIdx].key : null
     const headLabel = o360cols.groups[headIdx] ? o360cols.groups[headIdx].label.replace(/^📅 /, '') : 'Key event'
-    const shortName = (s) => (s && s.length > 24 ? s.slice(0, 22) + '…' : (s || '—'))
+    const shortName = (s) => (s && s.length > 24 ? s.slice(0, 22) + '…' : (s || '-'))
     const PIEK = ['#6d5efc', '#12b886', '#e0803a', '#4285f4', '#e1306c', '#f59e0b', '#9b8cff', '#ef4444']
     const barData = campRows.filter((c) => c._has360)
       .map((c) => ({ name: shortName(c.name), full: c.name, leads: c.leads || 0, event: headKey ? (c[headKey] || 0) : 0 }))
@@ -11283,11 +11283,11 @@ function renderMonthlyDeck(rep, h) {
     })()
     if ((rep.campOutcomes || []).length && campTables.length) {
       push(
-        <MRSlide key="c360-camp" kicker="Caalano360" title="Key events by campaign" sub="Which campaigns are driving the key events — with the cost of each. CRM outcomes (utm_campaign) matched to paid spend.">
+        <MRSlide key="c360-camp" kicker="Caalano360" title="Key events by campaign" sub="Which campaigns are driving the key events - with the cost of each. CRM outcomes (utm_campaign) matched to paid spend.">
           {barData.length ? (
             <div className="mr-two mr-two-viz">
               <div>
-                <div className="mr-viz-lab">Leads vs {headLabel} — top campaigns</div>
+                <div className="mr-viz-lab">Leads vs {headLabel} - top campaigns</div>
                 <ResponsiveContainer width="100%" height={Math.max(180, barData.length * 40)}>
                   <BarChart data={barData} layout="vertical" margin={{ top: 4, right: 18, left: 4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
@@ -11301,13 +11301,13 @@ function renderMonthlyDeck(rep, h) {
                 </ResponsiveContainer>
               </div>
               <div>
-                <div className="mr-viz-lab">{headLabel} — share by campaign</div>
+                <div className="mr-viz-lab">{headLabel} - share by campaign</div>
                 {donutData.length ? <MRDonut data={donutData} money={money} /> : <div className="mr-empty">No {headLabel.toLowerCase()} attributed to a campaign yet.</div>}
               </div>
             </div>
           ) : null}
           {campTables}
-          <p className="mr-foot-note">Green columns are the client's configured <b>key events</b> — the count reached and the cost per each — plus the Won revenue block and ROAS. Scroll right to see every event. Matched by <b>utm_campaign</b>; “-” means no CRM leads carried that campaign's UTM.{multiPipe ? ' Each pipeline shows only its own key events (from the campaign→pipeline links in Settings); unmapped campaigns show all events.' : ''}</p>
+          <p className="mr-foot-note">Green columns are the client's configured <b>key events</b> - the count reached and the cost per each - plus the Won revenue block and ROAS. Scroll right to see every event. Matched by <b>utm_campaign</b>; “-” means no CRM leads carried that campaign's UTM.{multiPipe ? ' Each pipeline shows only its own key events (from the campaign→pipeline links in Settings); unmapped campaigns show all events.' : ''}</p>
         </MRSlide>
       )
     }
@@ -11324,30 +11324,30 @@ function renderMonthlyDeck(rep, h) {
       { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
       { k: 'impressions', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
       { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '—' : fmtPct(v, 2) } },
-      { k: 'cpc', label: 'CPC', align: 'r', render: (r) => { const v = gcpc(r); return v == null ? '—' : money(v) } },
+      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '-' : fmtPct(v, 2) } },
+      { k: 'cpc', label: 'CPC', align: 'r', render: (r) => { const v = gcpc(r); return v == null ? '-' : money(v) } },
       { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-      { k: 'cpa', label: 'Cost / conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '—' : money(v) } },
+      { k: 'cpa', label: 'Cost / conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '-' : money(v) } },
     ]
     // Conversion actions grouped by the campaign they were attributed to.
     const caByCamp = {}
-    for (const r of (google.conversionActions || [])) { const cn = r.campaign || '—'; (caByCamp[cn] = caByCamp[cn] || []).push(r) }
+    for (const r of (google.conversionActions || [])) { const cn = r.campaign || '-'; (caByCamp[cn] = caByCamp[cn] || []).push(r) }
     const aggCa = (rows) => { const m = new Map(); for (const r of rows) { const e = m.get(r.name) || { name: r.name, category: r.category, conversions: 0, allConversions: 0, value: 0 }; e.conversions += r.conversions || 0; e.allConversions += r.allConversions || 0; e.value += r.value || 0; m.set(r.name, e) } return [...m.values()].sort((a, b) => b.allConversions - a.allConversions) }
     const gDrillCols = [
       { k: 'name', label: 'Campaign', render: (r) => <span className="mr-name">{r.name}</span> },
       { k: 'cost', label: 'Cost', align: 'r', render: (r) => money(r.cost) },
       { k: 'impressions', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
       { k: 'clicks', label: 'Clicks', align: 'r', render: (r) => n0(r.clicks) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '—' : fmtPct(v, 2) } },
+      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = gctr(r); return v == null ? '-' : fmtPct(v, 2) } },
       { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
-      { k: 'cpa', label: 'Cost/conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '—' : money(v) } },
+      { k: 'cpa', label: 'Cost/conv.', align: 'r', render: (r) => { const v = gcpa(r); return v == null ? '-' : money(v) } },
     ]
     // Primary conversion actions are the ones counted in Google's "Conversions"
     // column (conversions > 0); secondary actions only report All-conversions.
     const caCols = [
       { k: 'name', label: 'Conversion action', render: (r) => <span className="mr-name">{r.name}</span> },
       { k: 'primary', label: 'Type', render: (r) => (r.conversions > 0 ? <span className="mr-pill-pri">Primary</span> : <span className="mr-pill-sec">Secondary</span>) },
-      { k: 'category', label: 'Category', render: (r) => <span className="mr-ca-cat">{r.category || '—'}</span> },
+      { k: 'category', label: 'Category', render: (r) => <span className="mr-ca-cat">{r.category || '-'}</span> },
       { k: 'conversions', label: 'Conv.', align: 'r', render: (r) => n0(r.conversions) },
       { k: 'allConversions', label: 'All conv.', align: 'r', render: (r) => n0(r.allConversions) },
       { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
@@ -11360,13 +11360,13 @@ function renderMonthlyDeck(rep, h) {
           <MRKpi label="Cost" value={money(gt.cost)} />
           <MRKpi label="Impressions" value={n0(gt.impressions)} />
           <MRKpi label="Clicks" value={n0(gt.clicks)} />
-          <MRKpi label="CTR" value={gt.impressions ? fmtPct((gt.clicks / gt.impressions) * 100, 2) : '—'} />
+          <MRKpi label="CTR" value={gt.impressions ? fmtPct((gt.clicks / gt.impressions) * 100, 2) : '-'} />
           <MRKpi label="Conversions" value={n0(gt.conversions)} />
-          <MRKpi label="Cost / conv." value={gt.conversions ? money(gt.cost / gt.conversions) : '—'} strong />
+          <MRKpi label="Cost / conv." value={gt.conversions ? money(gt.cost / gt.conversions) : '-'} strong />
         </div>
         {gDaily.length > 1 && (
           <div className="soc-chart">
-            <div className="mr-trend-lab">Daily — cost (bars) vs conversions (line)</div>
+            <div className="mr-trend-lab">Daily - cost (bars) vs conversions (line)</div>
             <ResponsiveContainer width="100%" height={190}>
               <ComposedChart data={gDaily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -11421,17 +11421,17 @@ function renderMonthlyDeck(rep, h) {
     const rmap = reachedByStage(pipelines)
     const calMap = attribution ? calCountMap(attribution, 'all') : new Map()
     const keyEventsRaw = resolveKeyEvents(loadKeyEvents(rep.client.id), stagePos)
-    // Pass the RAW key events to keyEventRows — it resolves internally, and
+    // Pass the RAW key events to keyEventRows - it resolves internally, and
     // double-resolving drops bare stage events (Won, Shown, …), which is why the
     // funnel previously showed only Leads + the calendar-linked stage.
-    // Use the deal-level created-on won count (coWon) — NOT the blend aggregate
-    // crm.won — so the funnel's "Client Won" matches the "Deals won · created" KPI
+    // Use the deal-level created-on won count (coWon) - NOT the blend aggregate
+    // crm.won - so the funnel's "Client Won" matches the "Deals won · created" KPI
     // and the status donut above (they can differ by a deal at the month boundary).
     const funnelRows = keyEventRows(loadKeyEvents(rep.client.id), rmap, calMap, stagePos, coWon.count || 0)
     // Per-pipeline funnels: for multi-pipeline clients (FINR = BA + Finance, Nexia =
     // ADHD + Allied Health, …) render ONE funnel per pipeline. Scoping the key events
     // via keyEventsForPipe means each calendar merges cleanly with its own pipeline's
-    // stage (the union view otherwise showed the same step twice — 📅 calendar AND
+    // stage (the union view otherwise showed the same step twice - 📅 calendar AND
     // plain stage). Single-pipeline clients keep the one account-level funnel.
     const funnelPipeSpec = multiPipe ? pipelines : [null]
     const funnelPipes = funnelPipeSpec.map((p) => {
@@ -11448,7 +11448,7 @@ function renderMonthlyDeck(rep, h) {
     const funnelSpendOf = (f) => (funnelPipes.length > 1 && funnelLeadTotal ? totalSpend * (f.leads / funnelLeadTotal) : totalSpend)
     // Paid vs all-sources per key event. "All" = the total funnel above (every lead
     // source in Caalano Systems). "Paid" = CRM outcomes attributed (via utm_campaign)
-    // to a real Meta/Google campaign — aggregated across every paid campaign, then
+    // to a real Meta/Google campaign - aggregated across every paid campaign, then
     // read through the same green-column engine so paid ⊆ total at each step.
     const aggOutcome = (arr) => {
       const o = { booked: 0, cancelled: 0, shown: 0, shownStage: 0, won: 0, revenue: 0, wonNoVal: 0, leads: 0, stages: {}, cals: {}, calsShown: {}, calsOccurred: {} }
@@ -11489,7 +11489,7 @@ function renderMonthlyDeck(rep, h) {
     }
     // Break the non-paid "other sources" into named channels (organic / direct /
     // referral / email / social / CRM-manual), measured per key event from the
-    // utm_source outcomes — same green-column engine as "paid". Each bucket's reach
+    // utm_source outcomes - same green-column engine as "paid". Each bucket's reach
     // is scaled to fill exactly the non-paid remainder (total − paid) so the stacked
     // bar still reconciles to the funnel. Falls back to plain Paid-vs-Other if the
     // per-source data isn't in the (older) snapshot.
@@ -11527,7 +11527,7 @@ function renderMonthlyDeck(rep, h) {
         else { for (const b of bucketDefs) seg[b.key] = 0; seg.untracked = other }
         return { label: pr.label, total: pr.total, paid: pr.paid, seg }
       })
-      // Bucket leads totals (for the table) — measured, not scaled.
+      // Bucket leads totals (for the table) - measured, not scaled.
       const bucketLeads = bucketDefs.map((b) => ({ ...b, leads: Math.round((bucketReach.get(b.key) || { leads: 0 }).leads || 0) })).filter((b) => b.leads > 0 || b.key === 'untracked')
       srcCmp = { rows, buckets: bucketDefs, bucketLeads }
     }
@@ -11602,7 +11602,7 @@ function renderMonthlyDeck(rep, h) {
           ...bundle.ke.map((k) => ({ k: 'ev_' + k.ref, label: k.label, align: 'r', render: (r) => n0(r.evReach[k.ref] || 0) })),
           { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => n0(r.cohortWon) },
           { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
-          { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} — closed this month${pname ? ` · ${pname}` : ''}`, deals: userDealsPipe(r.id, pname) })}>{n0(r.closed)}</button> : '—') },
+          { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} - closed this month${pname ? ` · ${pname}` : ''}`, deals: userDealsPipe(r.id, pname) })}>{n0(r.closed)}</button> : '-') },
           { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
         ]}
         rows={bundle.rows} max={16}
@@ -11610,7 +11610,7 @@ function renderMonthlyDeck(rep, h) {
       />
     )
     push(
-      <MRSlide key="users" kicker="Caalano360 · Team" title="User performance & lost reasons" sub="Team performance this month, and why this month's closed-lost deals were lost — shown as two separate panels.">
+      <MRSlide key="users" kicker="Caalano360 · Team" title="User performance & lost reasons" sub="Team performance this month, and why this month's closed-lost deals were lost - shown as two separate panels.">
         <section className="mr-bubble">
           <div className="mr-bubble-lab">👥 User performance</div>
           <p className="mr-bubble-sub">Ranked by revenue closed this month. Leads and key-event columns are each user's created-on cohort; “Closed this mo” is deals they marked won this month.</p>
@@ -11631,7 +11631,7 @@ function renderMonthlyDeck(rep, h) {
               )
             })
             : <UserPerfTable bundle={{ ke, rows: urows }} pname={null} />}
-          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in — click a number to see the deals.{multiPipe ? ' Each table is scoped to that pipeline.' : ''}</p>
+          <p className="mr-foot-note">“Won (cohort)” counts this month's leads that are already won; “Closed this mo” counts deals won this month regardless of when the lead came in - click a number to see the deals.{multiPipe ? ' Each table is scoped to that pipeline.' : ''}</p>
         </section>
 
         <section className="mr-bubble">
@@ -11655,7 +11655,7 @@ function renderMonthlyDeck(rep, h) {
                       <div className="mr-pipe-head"><span className="c360-dot" /> {g.name} <span className="cap">· {n0(g.count)} lost · {money(g.value)}</span></div>
                       <MRTable
                         cols={[
-                          { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost — ${r.name} · ${g.name}`, kind: 'lost', deals: g.deals.filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
+                          { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost - ${r.name} · ${g.name}`, kind: 'lost', deals: g.deals.filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
                           { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
                           { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
                           { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, g.count) },
@@ -11670,7 +11670,7 @@ function renderMonthlyDeck(rep, h) {
                   {lost.byReason && lost.byReason.length ? (
                     <MRTable
                       cols={[
-                        { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost — ${r.name}`, kind: 'lost', deals: (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
+                        { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost - ${r.name}`, kind: 'lost', deals: (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
                         { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
                         { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
                         { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
@@ -11699,22 +11699,22 @@ function renderMonthlyDeck(rep, h) {
       close: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].avgCloseDays != null) ? scWon.byChannel[cKey].avgCloseDays : null,
     })).filter((r) => r.spend || r.rev)
     push(
-      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub="Ad platform + CRM. Spend & leads are this month's; ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM — never total business.">
+      <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub="Ad platform + CRM. Spend & leads are this month's; ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM - never total business.">
         <div className="mr-kpirow mr-kpirow-wide">
           <MRKpi label="Total ad spend" value={money(totalSpend)} />
           <MRKpi label="Paid results" value={n0(paidLeads)} sub="Meta results + Google conv · not CRM leads" />
-          <MRKpi label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '—'} sub="spend ÷ ad results" />
+          <MRKpi label="Cost / result" value={paidLeads ? money(totalSpend / paidLeads) : '-'} sub="spend ÷ ad results" />
           <MRKpi label="Deals won · created" value={n0(coWon.count)} sub="this month's leads" />
           <MRKpi label="Deals won · closed" value={n0(dealsWon)} sub="closed this month" />
           <MRKpi label="Paid revenue" value={money(paidRev)} strong sub="closed this month" />
-          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '—'} sub="cash / status change" />
-          <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '—'} />
-          <MRKpi label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '—'} sub="lead → won" />
+          <MRKpi label="ROAS (paid)" value={roas != null ? roas.toFixed(1) + 'x' : '-'} sub="cash / status change" />
+          <MRKpi label="Cost / won (paid)" value={paidWon ? money(totalSpend / paidWon) : '-'} />
+          <MRKpi label="Avg time to close" value={scWon.avgCloseDays != null ? `${scWon.avgCloseDays} days` : '-'} sub="lead → won" />
           <MRKpi label="Open pipeline" value={money(crm.openValue)} sub={`${n0(crm.open)} open`} />
         </div>
         <div className="mr-two mr-two-viz">
           <div>
-            <div className="mr-section-lab">Revenue — status change vs created on</div>
+            <div className="mr-section-lab">Revenue - status change vs created on</div>
             <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} /></div>
             {roiRows.length > 0 && (
               <>
@@ -11725,8 +11725,8 @@ function renderMonthlyDeck(rep, h) {
                     { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
                     { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
                     { k: 'rev', label: 'Revenue', align: 'r', render: (r) => money(r.rev) },
-                    { k: 'roas', label: 'ROAS', align: 'r', render: (r) => (r.spend ? (r.rev / r.spend).toFixed(1) + 'x' : '—') },
-                    { k: 'close', label: 'Avg close', align: 'r', render: (r) => (r.close != null ? `${r.close} days` : '—') },
+                    { k: 'roas', label: 'ROAS', align: 'r', render: (r) => (r.spend ? (r.rev / r.spend).toFixed(1) + 'x' : '-') },
+                    { k: 'close', label: 'Avg close', align: 'r', render: (r) => (r.close != null ? `${r.close} days` : '-') },
                   ]}
                   rows={roiRows}
                 />
@@ -11748,15 +11748,15 @@ function renderMonthlyDeck(rep, h) {
                 <div className="mr-funnel-big" key={f.pipe.id}>
                   <KeyEventsFunnel rows={f.rows} total={f.leads} spend={funnelSpendOf(f)} currency={currency}
                     title={f.pipe.name} sub={`${n0(f.leads)} leads created this month in this pipeline · spend allocated by lead share`}
-                    caveat="One cohort: this pipeline's leads created this month and how far they've progressed. “Cost / event” spreads that pipeline's share of ad spend across every event — a blended guide, not paid-only CAC." />
+                    caveat="One cohort: this pipeline's leads created this month and how far they've progressed. “Cost / event” spreads that pipeline's share of ad spend across every event - a blended guide, not paid-only CAC." />
                 </div>
               ))}
             </div>
             : <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelPipes[0].rows} total={funnelPipes[0].leads} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." /></div>)
-          : <div className="mr-empty">No key events configured — set them in Settings → Key events.</div>}
+          : <div className="mr-empty">No key events configured - set them in Settings → Key events.</div>}
         {paidCmp && paidCmp.rows.length ? (
           <>
-            <div className="mr-section-lab">Paid vs all lead sources — key events</div>
+            <div className="mr-section-lab">Paid vs all lead sources - key events</div>
             <div className="mr-two mr-two-viz">
               <div>
                 <div className="mr-viz-lab">Every step: paid (green){srcCmp ? ' + non-paid sources' : ''} within all Caalano Systems{srcCmp ? '' : ' (grey)'}</div>
@@ -11787,7 +11787,7 @@ function renderMonthlyDeck(rep, h) {
                 />
                 <p className="mr-foot-note" style={{ marginTop: 6 }}>“Paid” = leads whose CRM record carries a Meta/Google campaign UTM; “All sources” includes organic, referral, direct and untracked. The gap is business you're winning beyond ad spend.</p>
                 {srcCmp && srcCmp.bucketLeads.length ? (
-                  <p className="mr-foot-note" style={{ marginTop: 4 }}>Non-paid lead mix: {srcCmp.bucketLeads.map((b) => `${b.label} ${n0(b.leads)}`).join(' · ')}. Each source is its own colour on the bar — hover a step to see the split.</p>
+                  <p className="mr-foot-note" style={{ marginTop: 4 }}>Non-paid lead mix: {srcCmp.bucketLeads.map((b) => `${b.label} ${n0(b.leads)}`).join(' · ')}. Each source is its own colour on the bar - hover a step to see the split.</p>
                 ) : null}
               </div>
             </div>
@@ -11810,11 +11810,11 @@ function aggConvActions(rows) {
 }
 
 // ---------------------------------------------------------------------------
-// Organic Social Media dashboard — Instagram + Facebook Page organic, per client.
+// Organic Social Media dashboard - Instagram + Facebook Page organic, per client.
 // ---------------------------------------------------------------------------
 function SocPost({ p, platform }) {
   const [playing, setPlaying] = useState(false)
-  const n = (v) => (v == null ? '—' : fmtNumber(v))
+  const n = (v) => (v == null ? '-' : fmtNumber(v))
   const img = platform === 'ig' ? p.thumb : p.picture
   const text = platform === 'ig' ? p.caption : p.message
   const canPlay = platform === 'ig' && !!p.video
@@ -11837,7 +11837,7 @@ function SocPost({ p, platform }) {
           </> : <>
             <span title="Impressions">👁 {n(p.impressions)}</span><span title="Reactions">❤ {n(p.reactions)}</span><span title="Comments">💬 {n(p.comments)}</span><span title="Shares">↗ {n(p.shares)}</span><span title="Link clicks">🔗 {n(p.clicks)}</span>
           </>}
-          <span className="soc-post-er" title="Engagement rate">{p.er != null ? `${p.er}% ER` : '—'}</span>
+          <span className="soc-post-er" title="Engagement rate">{p.er != null ? `${p.er}% ER` : '-'}</span>
         </div>
         {p.permalink && <a className="soc-post-open no-print" href={p.permalink} target="_blank" rel="noreferrer">Open on {platform === 'ig' ? 'Instagram' : 'Facebook'} ↗</a>}
       </div>
@@ -11862,7 +11862,7 @@ function SocBars({ data, labelKey, valueKey, color, fmt }) {
 function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove, onData }) {
   const [m, setM] = useState(null)
   const [postSort, setPostSort] = useState('engagement')
-  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
   useEffect(() => {
     if (!comp.igAcct) { setM(null); return }
     let alive = true; setM('loading')
@@ -11884,7 +11884,7 @@ function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove, onD
       <div className="soc-comp-map no-print">
         <label>Windsor IG account
           <select value={comp.igAcct || ''} onChange={(e) => onMap({ igAcct: e.target.value || null, igConn: e.target.value ? igConnector : null })}>
-            <option value="">{igList.length ? '— not mapped —' : 'none available'}</option>
+            <option value="">{igList.length ? '- not mapped -' : 'none available'}</option>
             {igList.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </label>
@@ -11897,14 +11897,14 @@ function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove, onD
                 <MRKpi label="Followers" value={n0(ig.followers)} sub="current" strong />
                 <MRKpi label="Posts" value={n0(ig.postCount)} sub="this period" />
                 <MRKpi label="Engagement" value={n0(ig.engagement)} sub="likes + comments" />
-                <MRKpi label="Est. eng. rate" value={ig.er != null ? `${ig.er}%` : '—'} sub="per post ÷ followers" />
+                <MRKpi label="Est. eng. rate" value={ig.er != null ? `${ig.er}%` : '-'} sub="per post ÷ followers" />
                 <MRKpi label="Avg / post" value={`${n0(ig.avgLikes)}❤ ${n0(ig.avgComments)}💬`} sub={`${n0(ig.avgEng)} eng/post`} />
                 <MRKpi label="Total" value={`${n0(ig.likes)}❤`} sub={`${n0(ig.comments)} comments`} />
               </div>
               {fmt && <div className="soc-comp-sub">Format mix: {fmt}{bestDay ? ` · Best day: ${bestDay.name} (${n0(bestDay.avgEng)} avg eng)` : ''}</div>}
               {ig.daily && ig.daily.length > 1 && (
                 <div className="soc-chart">
-                  <div className="mr-trend-lab">Posting cadence &amp; engagement — posts per day (bars) vs engagement per day (line)</div>
+                  <div className="mr-trend-lab">Posting cadence &amp; engagement - posts per day (bars) vs engagement per day (line)</div>
                   <ResponsiveContainer width="100%" height={200}>
                     <ComposedChart data={ig.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -11921,7 +11921,7 @@ function CompetitorCard({ comp, range, igList, igConnector, onMap, onRemove, onD
               )}
               {ig.weekday && ig.weekday.some((d) => d.posts) && (
                 <div className="soc-chart">
-                  <div className="mr-trend-lab">Posting cadence by weekday — posts (bars) vs avg engagement (line)</div>
+                  <div className="mr-trend-lab">Posting cadence by weekday - posts (bars) vs avg engagement (line)</div>
                   <ResponsiveContainer width="100%" height={170}>
                     <ComposedChart data={ig.weekday} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -11982,7 +11982,7 @@ function CompetitorsView({ client, range }) {
     setPick('')
   }
   const remove = (id) => saveCompetitors(client.id, comps.filter((c) => c.id !== id))
-  // "You vs competitors" — compare on public-comparable metrics only (likes +
+  // "You vs competitors" - compare on public-comparable metrics only (likes +
   // comments), so the client's private saves/shares don't unfairly inflate it.
   const rowFor = (nm, cig, isSelf) => {
     if (!cig) return null
@@ -11997,7 +11997,7 @@ function CompetitorsView({ client, range }) {
   const benchRows = [rowFor(client.name + ' (you)', self, true), ...comps.map((c) => rowFor(c.name, compData[c.id], false))].filter(Boolean)
   const bench = benchRows.length >= 2 ? benchRows.slice().sort((a, b) => (a.isSelf ? -1 : b.isSelf ? 1 : b.followers - a.followers)) : null
   const maxOf = bench ? { followers: Math.max(...bench.map((r) => r.followers)), er: Math.max(...bench.map((r) => r.er || 0)), avgEng: Math.max(...bench.map((r) => r.avgEng)), posts: Math.max(...bench.map((r) => r.posts)) } : null
-  const nB = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  const nB = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
   return (
     <div className="soc-comp">
       <div className="soc-comp-add">
@@ -12020,7 +12020,7 @@ function CompetitorsView({ client, range }) {
                   <td className={'r' + (r.posts === maxOf.posts ? ' soc-vs-win' : '')}>{nB(r.posts)}</td>
                   <td className="r">{nB(r.eng)}</td>
                   <td className={'r' + (r.avgEng === maxOf.avgEng ? ' soc-vs-win' : '')}>{nB(r.avgEng)}</td>
-                  <td className={'r' + (r.er != null && r.er === maxOf.er ? ' soc-vs-win' : '')}>{r.er != null ? `${r.er}%` : '—'}</td>
+                  <td className={'r' + (r.er != null && r.er === maxOf.er ? ' soc-vs-win' : '')}>{r.er != null ? `${r.er}%` : '-'}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -12032,8 +12032,8 @@ function CompetitorsView({ client, range }) {
         <div className="soc-comp-grid">
           {comps.map((c) => <CompetitorCard key={c.id} comp={c} range={range} igList={igList} igConnector={accts && accts.ig ? accts.ig.connector : null} onMap={(patch) => setMap(c.id, patch)} onRemove={() => remove(c.id)} onData={onData} />)}
         </div>
-      ) : <div className="mr-empty">No competitors yet — add {client.name}’s competitors above to start benchmarking.</div>}
-      {accts && !igList.length && <p className="mr-foot-note" style={{ color: 'var(--neg)' }}>No public Instagram accounts found via Windsor{accts.ig && accts.ig.connector ? '' : ' (couldn’t find the public connector slug)'} — tell me the connector name you used in Windsor and I’ll point the mapping at it.</p>}
+      ) : <div className="mr-empty">No competitors yet - add {client.name}’s competitors above to start benchmarking.</div>}
+      {accts && !igList.length && <p className="mr-foot-note" style={{ color: 'var(--neg)' }}>No public Instagram accounts found via Windsor{accts.ig && accts.ig.connector ? '' : ' (couldn’t find the public connector slug)'} - tell me the connector name you used in Windsor and I’ll point the mapping at it.</p>}
       <p className="mr-foot-note">Map each competitor to its <b>Windsor public Instagram account</b>. Metrics are pulled from public data (followers, posts, likes, comments); engagement rate is <b>estimated</b> (avg likes+comments per post ÷ followers) since reach/impressions stay private to the account owner. Facebook can be added later.</p>
     </div>
   )
@@ -12055,8 +12055,8 @@ function SocTrends({ client, range, nonce }) {
       .catch((e) => { if (alive) setSt({ status: 'err', error: String(e.message || e) }) })
     return () => { alive = false }
   }, [client && client.id, months, nonce])
-  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
-  const signed = (v) => (v == null || isNaN(v) ? '—' : (v >= 0 ? '+' : '') + fmtNumber(Math.round(v)))
+  const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
+  const signed = (v) => (v == null || isNaN(v) ? '-' : (v >= 0 ? '+' : '') + fmtNumber(Math.round(v)))
   const data = st.status === 'ok' ? st.data : null
   const raw = (data && data.months) || []
   const hasIg = data && data.hasIg, hasFb = data && data.hasFb
@@ -12080,7 +12080,7 @@ function SocTrends({ client, range, nonce }) {
     { k: 'impressions', label: 'Impressions (FB)', fmt: n0, fbOnly: true },
     { k: 'engagement', label: 'Engagement', fmt: n0 },
     { k: 'posts', label: 'Posts', fmt: n0 },
-    { k: 'er', label: 'Eng. rate %', fmt: (v) => (v == null ? '—' : `${v}%`) },
+    { k: 'er', label: 'Eng. rate %', fmt: (v) => (v == null ? '-' : `${v}%`) },
   ].filter((mt) => !(mt.fbOnly && plat === 'ig'))
   const CHARTS = [
     { k: 'followersEnd', label: 'Total followers', kind: 'line', color: '#0ea5e9' },
@@ -12099,7 +12099,7 @@ function SocTrends({ client, range, nonce }) {
   return (
     <div className="soc-trends">
       <div className="soc-trend-head no-print">
-        <div><h3>Monthly KPIs &amp; rolling trend <span className="soc-organic-badge">Organic only</span></h3><p className="cap">All figures are <b>organic</b> (paid-boosted reach/impressions excluded). Actuals shown for the latest month ({latest ? latest.label : '—'}); charts roll the last {rows.length || months} months. Targets are managed in <b>Settings → Organic KPIs</b> (per client) and compared on the Blended view.</p></div>
+        <div><h3>Monthly KPIs &amp; rolling trend <span className="soc-organic-badge">Organic only</span></h3><p className="cap">All figures are <b>organic</b> (paid-boosted reach/impressions excluded). Actuals shown for the latest month ({latest ? latest.label : '-'}); charts roll the last {rows.length || months} months. Targets are managed in <b>Settings → Organic KPIs</b> (per client) and compared on the Blended view.</p></div>
         <label className="soc-trend-months">Months
           <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>{[3, 6, 9, 12].map((m) => <option key={m} value={m}>{m}</option>)}</select>
         </label>
@@ -12116,7 +12116,7 @@ function SocTrends({ client, range, nonce }) {
       {data && !rows.length && <div className="mr-note mr-empty-deep"><div className="big">📈</div><b>No monthly data yet for this client.</b></div>}
 
       {rows.length > 0 && (<>
-        {/* KPI targets (from Settings) vs latest-month actuals — attainment only on Blended */}
+        {/* KPI targets (from Settings) vs latest-month actuals - attainment only on Blended */}
         <div className="soc-kpi-grid">
           {METRICS.map((mt) => {
             const actual = latest ? latest[mt.k] : null
@@ -12139,7 +12139,7 @@ function SocTrends({ client, range, nonce }) {
         {/* Paid vs organic followers (Facebook / blended) */}
         {plat !== 'ig' && (
           <div className="soc-paidorg">
-            <div className="soc-subhead"><h4>New followers — paid vs organic {plat === 'blended' ? '(Facebook ad-driven)' : ''}</h4>{paidPct != null && <span className="soc-dm-note">{paidPct}% of new followers came from paid over the last {rows.length} months</span>}</div>
+            <div className="soc-subhead"><h4>New followers - paid vs organic {plat === 'blended' ? '(Facebook ad-driven)' : ''}</h4>{paidPct != null && <span className="soc-dm-note">{paidPct}% of new followers came from paid over the last {rows.length} months</span>}</div>
             {paidKnown ? (
               <div className="soc-paidorg-grid">
                 <div className="mr-kpirow">
@@ -12148,7 +12148,7 @@ function SocTrends({ client, range, nonce }) {
                   <MRKpi label="Total net new" value={n0((paidSum || 0) + (orgSum || 0))} sub={`last ${rows.length} months`} />
                 </div>
                 <div className="soc-chart">
-                  <div className="mr-trend-lab">New followers per month — paid vs organic</div>
+                  <div className="mr-trend-lab">New followers per month - paid vs organic</div>
                   <ResponsiveContainer width="100%" height={190}>
                     <BarChart data={rows} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -12165,7 +12165,7 @@ function SocTrends({ client, range, nonce }) {
             ) : <div className="mr-note">Paid vs organic follower split isn't available from the connector for this account{data && data.followerSplitField ? '' : ' (no paid-fan field returned)'}. It appears once the Facebook page has ad-driven follows in the period.</div>}
           </div>
         )}
-        {plat === 'ig' && <div className="mr-note">Instagram doesn't expose a paid-vs-organic follower split — new followers here are total net growth. The paid split is available on the Facebook / Blended view.</div>}
+        {plat === 'ig' && <div className="mr-note">Instagram doesn't expose a paid-vs-organic follower split - new followers here are total net growth. The paid split is available on the Facebook / Blended view.</div>}
 
         {/* Rolling trend charts */}
         <div className="soc-trend-charts">
@@ -12205,18 +12205,18 @@ function SocTrends({ client, range, nonce }) {
                 <td><b>{m.label}</b></td>
                 <td className="r"><b>{n0(m.followersEnd)}</b>{m.followersStart != null ? <small className="soc-fol-start"> from {n0(m.followersStart)}</small> : null}</td>
                 <td className="r">{signed(m.netFollowers)}</td>
-                {paidKnown && <td className="r">{m.paid != null ? n0(m.paid) : '—'}</td>}
+                {paidKnown && <td className="r">{m.paid != null ? n0(m.paid) : '-'}</td>}
                 <td className="r">{n0(m.reach)}</td>
                 <td className="r">{n0(m.views)}</td>
                 {plat !== 'ig' && <td className="r">{n0(m.impressions)}</td>}
                 <td className="r">{n0(m.engagement)}</td>
                 <td className="r">{n0(m.posts)}</td>
-                <td className="r">{m.er != null ? `${m.er}%` : '—'}</td>
+                <td className="r">{m.er != null ? `${m.er}%` : '-'}</td>
               </tr>
             ))}</tbody>
           </table>
         </div>
-        <p className="mr-foot-note"><b>Total followers</b> = audience at each month-end (reconstructed from today's count back through the monthly net gains). <b>Net followers</b> = follows minus unfollows. <b>Paid</b> = new followers attributed to ad campaigns (Facebook); the rest are organic. Reach / views / engagement are organic only — Facebook paid-boosted reach &amp; impressions are excluded. Instagram reports reach &amp; views (not impressions), so the Impressions column is Facebook only.</p>
+        <p className="mr-foot-note"><b>Total followers</b> = audience at each month-end (reconstructed from today's count back through the monthly net gains). <b>Net followers</b> = follows minus unfollows. <b>Paid</b> = new followers attributed to ad campaigns (Facebook); the rest are organic. Reach / views / engagement are organic only - Facebook paid-boosted reach &amp; impressions are excluded. Instagram reports reach &amp; views (not impressions), so the Impressions column is Facebook only.</p>
       </>)}
     </div>
   )
@@ -12247,7 +12247,7 @@ function SocialDashboard({ clients, range, nonce }) {
     return () => { alive = false }
   }, [clientId, range.from, range.to, nonce])
 
-  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
   const data = st.status === 'ok' ? st.data : null
   const ig = data && data.ig, fb = data && data.fb
   const igPosts = ig ? [...ig.posts].sort((a, b) => (b[postSort] || 0) - (a[postSort] || 0)).slice(0, 12) : []
@@ -12323,7 +12323,7 @@ function SocialDashboard({ clients, range, nonce }) {
 
       <div className="soc-deck" ref={socRef}>
       {data && (ig || fb) && (
-        <div className="soc-cover"><div><span className="soc-cover-brand">Caalano<b>360</b></span><h2>{client ? client.name : ''} — Organic Social</h2><p>{rangeLabel(range)}{ig && ig.profile.username ? ` · @${ig.profile.username}` : ''}</p></div></div>
+        <div className="soc-cover"><div><span className="soc-cover-brand">Caalano<b>360</b></span><h2>{client ? client.name : ''} - Organic Social</h2><p>{rangeLabel(range)}{ig && ig.profile.username ? ` · @${ig.profile.username}` : ''}</p></div></div>
       )}
 
       {dm && dm.total > 0 && (
@@ -12361,12 +12361,12 @@ function SocialDashboard({ clients, range, nonce }) {
             <MRKpi label="Net new audience" value={(overall.newAud >= 0 ? '+' : '') + n0(overall.newAud)} sub="this period" />
             <MRKpi label="Total reach" value={n0(overall.reach)} />
             <MRKpi label="Total engagement" value={n0(overall.engagement)} />
-            <MRKpi label="Engagement rate" value={overall.er != null ? `${overall.er}%` : '—'} sub="blended" />
+            <MRKpi label="Engagement rate" value={overall.er != null ? `${overall.er}%` : '-'} sub="blended" />
             <MRKpi label="Posts published" value={n0(overall.posts)} />
           </div>
           {overall.daily.length > 1 && (
             <div className="soc-chart">
-              <div className="mr-trend-lab">Combined — posts per day (bars) · net new audience &amp; engagement (lines), Instagram + Facebook</div>
+              <div className="mr-trend-lab">Combined - posts per day (bars) · net new audience &amp; engagement (lines), Instagram + Facebook</div>
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={overall.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -12393,7 +12393,7 @@ function SocialDashboard({ clients, range, nonce }) {
             <MRKpi label="Reach" value={n0(ig.totals.reach)} sub="accounts reached" />
             <MRKpi label="Views" value={n0(ig.totals.views)} />
             <MRKpi label="Engagement" value={n0(ig.totals.engagement)} sub="likes+comments+saves+shares" />
-            <MRKpi label="Engagement rate" value={ig.totals.er != null ? `${ig.totals.er}%` : '—'} sub="vs reach" />
+            <MRKpi label="Engagement rate" value={ig.totals.er != null ? `${ig.totals.er}%` : '-'} sub="vs reach" />
             <MRKpi label="Profile link taps" value={n0(ig.totals.linkTaps)} sub="→ website/contact" />
             <MRKpi label="Posts" value={n0(ig.posts.length)} />
           </div>
@@ -12422,7 +12422,7 @@ function SocialDashboard({ clients, range, nonce }) {
           )}
           {ig.daily && ig.daily.length > 1 && (
             <div className="soc-chart">
-              <div className="mr-trend-lab">Posting cadence &amp; follower growth — posts per day (bars) vs new followers per day (line)</div>
+              <div className="mr-trend-lab">Posting cadence &amp; follower growth - posts per day (bars) vs new followers per day (line)</div>
               <ResponsiveContainer width="100%" height={200}>
                 <ComposedChart data={ig.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -12439,7 +12439,7 @@ function SocialDashboard({ clients, range, nonce }) {
           )}
           {ig.daily && ig.daily.length > 1 && (
             <div className="soc-chart">
-              <div className="mr-trend-lab">Engagement breakdown per day — likes · comments · saves · shares · replies</div>
+              <div className="mr-trend-lab">Engagement breakdown per day - likes · comments · saves · shares · replies</div>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={ig.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -12486,7 +12486,7 @@ function SocialDashboard({ clients, range, nonce }) {
           </div>
           {fb.daily && fb.daily.length > 1 && (
             <div className="soc-chart">
-              <div className="mr-trend-lab">Impressions — organic vs paid</div>
+              <div className="mr-trend-lab">Impressions - organic vs paid</div>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={fb.daily} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -12501,7 +12501,7 @@ function SocialDashboard({ clients, range, nonce }) {
           )}
           {fb.daily && fb.daily.length > 1 && (
             <div className="soc-chart">
-              <div className="mr-trend-lab">Posting cadence &amp; follower growth — posts per day (bars) vs net new followers (line)</div>
+              <div className="mr-trend-lab">Posting cadence &amp; follower growth - posts per day (bars) vs net new followers (line)</div>
               <ResponsiveContainer width="100%" height={200}>
                 <ComposedChart data={fb.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -12518,7 +12518,7 @@ function SocialDashboard({ clients, range, nonce }) {
           )}
           {fb.daily && fb.daily.length > 1 && (fb.daily.some((d) => (d.reactions || d.comments || d.shares))) && (
             <div className="soc-chart">
-              <div className="mr-trend-lab">Engagement breakdown per day — reactions · comments · shares</div>
+              <div className="mr-trend-lab">Engagement breakdown per day - reactions · comments · shares</div>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={fb.daily} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -12544,7 +12544,7 @@ function SocialDashboard({ clients, range, nonce }) {
 }
 
 // Monochrome sidebar icons (stroke = currentColor), so every nav item reads as
-// one colour and matches the text weight — no multicolour emoji.
+// one colour and matches the text weight - no multicolour emoji.
 function NavIcon({ name }) {
   const P = {
     overview: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
@@ -12602,7 +12602,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
               return (
                 <button key={c.id} className={`csw-item ${sel ? 'sel' : ''}`} role="option" aria-selected={sel} onClick={() => pick(c)}>
                   <Avatar id={c.id} name={c.name} i={idxOf(c)} sm />
-                  <span className="csw-txt"><b>{c.name}</b><small>{c.industry || '—'}</small></span>
+                  <span className="csw-txt"><b>{c.name}</b><small>{c.industry || '-'}</small></span>
                   {sel && <span className="csw-tick">✓</span>}
                 </button>
               )
@@ -12623,7 +12623,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'dark' } catch { return 'dark' } })
   const [range, setRange] = useState(() => presetRange('last_30d'))
   // Won basis: 'closed' (banked in the period, by won-date) or 'created' (won
-  // among leads created in the period — the cohort/ROI view). Global + persisted.
+  // among leads created in the period - the cohort/ROI view). Global + persisted.
   // Only Won/revenue/ROAS flip; leads, funnel and appointments stay created-basis.
   const [wonBasis, setWonBasis] = useState(() => { try { return localStorage.getItem('caalano_wonbasis') === 'created' ? 'created' : 'closed' } catch { return 'closed' } })
   useEffect(() => { try { localStorage.setItem('caalano_wonbasis', wonBasis) } catch {} }, [wonBasis])
@@ -12632,7 +12632,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('caalano_sb') === '1' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('caalano_sb', collapsed ? '1' : '0') } catch {} }, [collapsed])
   // Present mode: hide agency-internal (cost / spend / margin) figures so the
-  // dashboard is safe to screen-share with a client. Not persisted — always
+  // dashboard is safe to screen-share with a client. Not persisted - always
   // starts off so it can never be left on by accident.
   const [present, setPresent] = useState(false)
   const agency = useAgencyLive(range, refreshKey, wonBasis)
@@ -12690,7 +12690,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
   const openClient = (c) => { setPicked(c); setView('clients'); setNavOpen(false) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
-  // views — they land straight in their assigned client(s).
+  // views - they land straight in their assigned client(s).
   const role = authEnabled && authUser ? authUser.role : 'admin'
   const isViewer = role === 'viewer'
   const myClients = visibleClients
@@ -12731,9 +12731,9 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             {canReports && <button className={curView === 'reports' ? 'active' : ''} onClick={() => go('reports')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Reports</button>}
             {hasDashTabs && <>
               <div className="nav-lab">My dashboards</div>
-              {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic"><NavIcon name="report" /></span>{c.name}</button>) : <div className="nav-empty">No dashboards assigned yet — your admin will set these up.</div>}
+              {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic"><NavIcon name="report" /></span>{c.name}</button>) : <div className="nav-empty">No dashboards assigned yet - your admin will set these up.</div>}
             </>}
-            {!hasDashTabs && !canReports && <div className="nav-empty">No access assigned yet — your admin will set these up.</div>}
+            {!hasDashTabs && !canReports && <div className="nav-empty">No access assigned yet - your admin will set these up.</div>}
           </>}
         </nav>
         <div className="side-foot">
@@ -12752,7 +12752,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         <div className="head">
           <div>
             <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client — followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports — frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client - campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}

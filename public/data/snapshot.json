@@ -3,7 +3,7 @@
   "period": { "label": "June 2026", "start": "2026-06-01", "end": "2026-06-30" },
   "compareLabel": "May 2026",
   "currency": "AUD",
-  "source": "Windsor.ai — Meta Ads, Google Ads, Caalano Systems",
+  "source": "Windsor.ai - Meta Ads, Google Ads, Caalano Systems",
   "rosterNote": "Active client roster (13) per the lead-pipeline-analysis brief.",
   "clients": [
     {
@@ -73,7 +73,7 @@
     }
   ],
   "ghl": {
-    "locationName": "Caalano Digital — Agency HQ",
+    "locationName": "Caalano Digital - Agency HQ",
     "pipelineName": "0. Lead to Sales Pipeline",
     "trackedNotInvoiced": true,
     "summary": {

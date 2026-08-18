@@ -43,7 +43,7 @@ body {
 /* Shell */
 .shell { display: grid; grid-template-columns: 244px 1fr; min-height: 100vh; }
 @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } }
-/* Desktop sidebar collapse — widen the main area for more room / screen shares */
+/* Desktop sidebar collapse - widen the main area for more room / screen shares */
 .sb-toggle, .sb-expand { display: none; }
 @media (min-width: 901px) {
   .shell.sb-collapsed { grid-template-columns: 1fr; --drill-gutter: 76px; }
@@ -80,7 +80,7 @@ body {
   display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 19px;
   box-shadow: 0 6px 18px rgba(109,94,252,.45);
 }
-/* 360 mark — gradient ring + tight "360" */
+/* 360 mark - gradient ring + tight "360" */
 .logo-360 {
   position: relative; background: radial-gradient(120% 120% at 30% 20%, #9b8cff 0%, #6d5efc 45%, #12b886 120%);
   overflow: hidden;
@@ -341,7 +341,7 @@ tbody tr:hover { background: var(--panel-2); }
 .settings-btn:hover { background: var(--panel-2); color: var(--text); }
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 100; padding: 20px; }
 .modal { background: var(--panel); border: 1px solid var(--border-2); border-radius: 18px; box-shadow: var(--shadow); width: min(1040px, 96vw); max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
-/* Settings modal carries many tabs + wide content, so give it the most room —
+/* Settings modal carries many tabs + wide content, so give it the most room -
    wide enough that the tab strip never has to scroll sideways. */
 .set-modal { width: min(1240px, 96vw); }
 .modal .m-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
@@ -360,7 +360,7 @@ tbody tr:hover { background: var(--panel-2); }
 .toggle.on .knob { left: 19px; }
 .set-note { font-size: 12px; color: var(--muted); background: var(--panel-2); border-radius: 10px; padding: 12px 14px; line-height: 1.5; margin-bottom: 16px; }
 .set-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
-/* Full-page Settings — use the full available width (dynamic to screen size). */
+/* Full-page Settings - use the full available width (dynamic to screen size). */
 .settings-page { max-width: none; }
 .set-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
 .set-search { flex: 1 1 220px; max-width: 320px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 8px 12px; color: var(--text); font-size: 13px; }
@@ -552,7 +552,7 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .u-fn-track { height: 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .u-fn-fill { display: flex; align-items: center; justify-content: flex-end; height: 100%; background: var(--brand); color: #fff; font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 5px; min-width: 22px; box-sizing: border-box; font-variant-numeric: tabular-nums; }
 .u-fn-rate { font-size: 11px; font-weight: 700; color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
-/* "All users" summary row — stacked per-rep funnel + legend */
+/* "All users" summary row - stacked per-rep funnel + legend */
 .u-agg-row > td { background: color-mix(in srgb, var(--brand) 7%, var(--panel)); font-weight: 700; }
 .u-agg-row > td.lft { border-left: 3px solid var(--brand); }
 .u-fn-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 9px; }
@@ -604,7 +604,7 @@ tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bott
 .load-dot.bad { background: #f0435b; }
 .load-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--brand) 30%, transparent); border-top-color: var(--brand); animation: load-spin .7s linear infinite; flex: 0 0 auto; }
 @keyframes load-spin { to { transform: rotate(360deg); } }
-/* App-wide load status pill — fixed, bottom-right; shows while anything is
+/* App-wide load status pill - fixed, bottom-right; shows while anything is
    loading, then flashes "All data is in" once everything settles. */
 .gload { position: fixed; right: 18px; bottom: 18px; z-index: 4000; display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); box-shadow: 0 6px 22px rgba(0,0,0,.16); animation: gload-in .22s ease-out; }
 .gload.loading { border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); color: var(--text); }
@@ -1190,7 +1190,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kef-clickable:hover { background: var(--hover, rgba(79,124,255,.07)); }
 .kef-drill-ind { color: var(--muted); font-weight: 800; opacity: 0; }
 .kef-clickable:hover .kef-drill-ind { opacity: .65; }
-/* Key-event people drill modal — wide enough that nothing scrolls sideways */
+/* Key-event people drill modal - wide enough that nothing scrolls sideways */
 .kp-modal { max-width: 1120px; width: 94vw; }
 .kp-tbl { width: 100%; table-layout: auto; }
 .kp-tbl th, .kp-tbl td { white-space: nowrap; }
@@ -1228,7 +1228,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .kef-row { grid-template-columns: minmax(96px, 1.3fr) minmax(70px, 1.6fr) 44px 52px 62px; gap: 7px; font-size: 11.5px; }
   .kef.kef-show .kef-row { grid-template-columns: minmax(84px, 1.2fr) minmax(60px, 1.4fr) 40px 48px 40px 56px; gap: 5px; }
 }
-/* Phones: the 6-column funnel can't fit — reflow each step into a self-labelled
+/* Phones: the 6-column funnel can't fit - reflow each step into a self-labelled
    card (name + bar on top, metric chips below) so nothing gets cut off. */
 @media (max-width: 600px) {
   .kef-row.kef-head { display: none; }
@@ -1422,7 +1422,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .cre-grid { grid-template-columns: 1fr; }
 }
 
-/* ===== Mobile hardening pass — newer components + toolbars + edge cases ===== */
+/* ===== Mobile hardening pass - newer components + toolbars + edge cases ===== */
 @media (max-width: 900px) {
   /* Safety net: wide content has its own scroll container (.table-wrap, the map,
      charts), so nothing should scroll the whole page sideways on a phone. */
@@ -1460,7 +1460,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .tm-sc b { font-size: 19px; }
 }
 
-/* ===== Settings config modal — mobile ===== */
+/* ===== Settings config modal - mobile ===== */
 @media (max-width: 640px) {
   /* Top-level Settings tab pill: scroll WITHIN its frame instead of pushing the
      whole page sideways to reach the last tab. */
@@ -1605,7 +1605,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .auth-btn:disabled { opacity: .55; cursor: default; }
 .auth-err { background: color-mix(in srgb, var(--neg) 14%, transparent); border: 1px solid color-mix(in srgb, var(--neg) 40%, transparent); color: var(--neg); font-size: 12.5px; font-weight: 600; padding: 8px 11px; border-radius: 9px; }
 
-/* Sidebar signed-in user — slim, blended-in row (no card box). */
+/* Sidebar signed-in user - slim, blended-in row (no card box). */
 .side-user { display: flex; align-items: center; gap: 9px; min-width: 0; margin: 2px 2px; padding: 7px 12px; border-radius: 10px; }
 .side-user:hover { background: var(--panel-2); }
 .side-user-av { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--brand) 82%, var(--panel)); color: #fff; font-weight: 700; font-size: 11.5px; }
@@ -1774,7 +1774,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .exec-kpis { margin: 0; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 @media (max-width: 1100px) { .exec-kpis { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 640px) { .exec-kpis { grid-template-columns: repeat(2, 1fr); } }
-/* Fewer, roomier tiles — 4 across so the pipeline group reads as two clean rows
+/* Fewer, roomier tiles - 4 across so the pipeline group reads as two clean rows
    (funnel on top, money below) instead of a dense 7-wide strip. */
 .exec-kpis.exec-kpis-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 900px) { .exec-kpis.exec-kpis-4 { grid-template-columns: repeat(2, 1fr); } }
@@ -1846,7 +1846,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .bn-head .bn-count, .bn-head .bn-conv, .bn-head .bn-cost, .bn-head .bn-next { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 @media (max-width: 640px) { .bn-row.bn-row-paid, .bn-paid .bn-row.bn-head { grid-template-columns: 70px 1fr 40px 34px 52px 42px; gap: 6px; } }
 
-/* Open pipeline by stage — clickable accordion of who's still in play. */
+/* Open pipeline by stage - clickable accordion of who's still in play. */
 .bn-open { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
 .bn-open-h { font-size: 12.5px; font-weight: 700; margin-bottom: 8px; }
 .bn-open-item { margin-bottom: 6px; }
@@ -1924,7 +1924,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .cu-body { white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.55; color: var(--text); margin: 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
 @media (max-width: 900px) { .cu-grid { grid-template-columns: 1fr; } }
 
-/* ============ Client Update — supporting data dashboard ============ */
+/* ============ Client Update - supporting data dashboard ============ */
 .ud-wrap { margin-top: 8px; }
 .ud-pipes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .ud-pipe-h { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
@@ -1952,13 +1952,13 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .ud-child .cc-nm { max-width: 260px; }
 .ud-prev { margin-left: 6px; color: var(--brand); font-weight: 700; }
 
-/* Client Update — editable client context panel */
+/* Client Update - editable client context panel */
 .cu-ctx { margin: 8px 0 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); padding: 8px 12px; }
 .cu-ctx > summary { cursor: pointer; font-size: 12.5px; font-weight: 650; padding: 2px 0; }
 .cu-ctx-on { color: var(--pos, #17b26a); font-weight: 600; font-size: 11.5px; }
 .cu-ctx-ta { width: 100%; margin-top: 8px; background: var(--panel); border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 9px 11px; font-size: 12.5px; font-family: inherit; line-height: 1.5; resize: vertical; box-sizing: border-box; }
 
-/* Creative fatigue — badges, agency tab, settings */
+/* Creative fatigue - badges, agency tab, settings */
 .fat-badge { display: inline-block; margin-left: 8px; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
 .fat-badge.fat-high { background: color-mix(in srgb, #e5484d 16%, transparent); color: #e5484d; }
 .fat-badge.fat-med { background: color-mix(in srgb, #d9920a 16%, transparent); color: #cf8a00; }
@@ -1985,7 +1985,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .fat-ok { font-size: 11px; color: var(--muted); font-weight: 600; }
 .fat-badge + .fat-badge, td .fat-badge { margin-left: 0; }
 
-/* Meta Insights — sub-tab hub + delivery-health / anomaly cards */
+/* Meta Insights - sub-tab hub + delivery-health / anomaly cards */
 .mi-soon { margin-left: 6px; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 6px; vertical-align: middle; }
 .mi-soon-card { text-align: center; padding: 40px 20px; }
 .mi-soon-card .big { font-size: 34px; margin-bottom: 8px; }
@@ -2037,7 +2037,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .exec-cc { margin: 4px 0 12px; }
 .cc-group-lab { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin: 10px 0 6px; }
 .cc-group-lab:first-of-type { margin-top: 4px; }
-/* Present mode — hide agency-internal cost/spend figures for client screen shares */
+/* Present mode - hide agency-internal cost/spend figures for client screen shares */
 .present .x-internal { display: none !important; }
 .lr-tbl { width: 100%; }
 .lr-tbl td.lft, .lr-tbl th.lft { white-space: normal; }
@@ -2120,16 +2120,16 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 
 .mr-deck { display: block; }
 .mr-track { display: flex; flex-direction: column; gap: 20px; }
-/* Slides mode — one section per page, horizontal carousel */
+/* Slides mode - one section per page, horizontal carousel */
 .mr-deck.mr-slides { overflow: hidden; border-radius: 16px; }
 .mr-deck.mr-slides .mr-track { flex-direction: row; align-items: flex-start; gap: 0; transition: transform .35s cubic-bezier(.4,0,.2,1); will-change: transform; }
 .mr-deck.mr-slides .mr-track > .mr-slide { flex: 0 0 100%; width: 100%; }
-/* Export override — lay every slide out in a normal column for html2canvas */
+/* Export override - lay every slide out in a normal column for html2canvas */
 .mr-deck.mr-exporting { overflow: visible; }
 .mr-deck.mr-exporting .mr-track { flex-direction: column !important; gap: 20px !important; transform: none !important; }
 .mr-deck.mr-exporting .mr-track > .mr-slide { flex: 1 1 auto !important; width: 100% !important; min-height: 0; }
 /* Wide Caalano360 green tables (union key-event columns) must fit the page for
-   export/print, not clip inside their scroll container — drop the fixed layout
+   export/print, not clip inside their scroll container - drop the fixed layout
    + fixed column widths and shrink type so every column is captured. Shared by
    the html2canvas export (.mr-exporting) and native print (@media print). */
 .mr-exporting .table-wrap, .mr-exporting .tbl-scroll { overflow: visible !important; }
@@ -2203,7 +2203,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-creative-name { font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-creative-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* Monthly Report — big vertical creative cards with CRM key events + 9:16 playback */
+/* Monthly Report - big vertical creative cards with CRM key events + 9:16 playback */
 .mr-cre-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
 /* Card stacks: thumbnail + platform metrics on top, full-width key-event table below. */
 .mr-cre { display: flex; flex-direction: column; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
@@ -2291,7 +2291,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-kids-inner { padding: 4px 10px 10px 30px; }
 .mr-kids-lab { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); margin: 6px 0 4px; }
 .mr-deck.mr-exporting .mr-kids { display: table-row !important; }
-/* Combined slides — two-column viz + donuts + creative table thumbnails */
+/* Combined slides - two-column viz + donuts + creative table thumbnails */
 .mr-two-viz { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start; }
 @media (max-width: 900px) { .mr-two-viz { grid-template-columns: 1fr; } }
 .mr-viz-lab { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 2px 0 6px; }
@@ -2372,13 +2372,13 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-cretbl-play:hover { background: rgba(0,0,0,.75); }
 .mr-cretbl td { vertical-align: middle; }
 .mr-funnel-big { transform: none; }
-/* Monthly Report — per-pipeline funnels + per-pipeline user/lost blocks */
+/* Monthly Report - per-pipeline funnels + per-pipeline user/lost blocks */
 .mr-funnel-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
 .mr-pipe-block { margin: 10px 0 16px; }
 .mr-pipe-block:first-child { margin-top: 2px; }
 .mr-pipe-head { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 12.5px; color: var(--text); margin: 0 0 6px; padding-bottom: 4px; border-bottom: 1px dashed var(--border); }
 .mr-pipe-head .cap { font-weight: 600; color: var(--muted); }
-/* Creative slide — sort control + pager */
+/* Creative slide - sort control + pager */
 .mr-cre-sort { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
 .mr-cre-sort > span { font-weight: 800; color: var(--faint); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; margin-right: 2px; }
 .mr-cre-sort button { border: 1px solid var(--border); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -2441,11 +2441,11 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
   .mr-slide .o360-tbl col { width: auto !important; }
   .mr-slide .o360-tbl th, .mr-slide .o360-tbl td { padding: 3px 4px !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
   .mr-slide .o360-tbl .cre-th { width: 18px !important; height: 18px !important; }
-  /* Landscape only for the monthly deck — leaves the Caalano360 export portrait. */
+  /* Landscape only for the monthly deck - leaves the Caalano360 export portrait. */
   @page mrdeck { size: A4 landscape; margin: 8mm; }
 }
 
-/* Monthly Report — drill-downs, revenue matrix, clickable cells */
+/* Monthly Report - drill-downs, revenue matrix, clickable cells */
 .mr-cellbtn { background: none; border: 0; color: var(--brand); font: inherit; font-weight: 700; cursor: pointer; padding: 0; border-bottom: 1px dashed color-mix(in srgb, var(--brand) 50%, transparent); }
 .mr-cellbtn:hover { color: var(--text); }
 .mr-cellbtn-l { font-weight: 600; }
@@ -2465,7 +2465,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 
 .mr-drill-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 24px; }
 /* Width scales with the column count (~118px/col + chrome) so drills with an Ad
-   column or extra fields get room instead of scrolling — capped at 96vw. */
+   column or extra fields get room instead of scrolling - capped at 96vw. */
 .mr-drill { width: min(calc(var(--mr-drill-cols, 8) * 118px + 40px), 96vw); max-width: 96vw; max-height: 86vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: 0 24px 70px rgba(0,0,0,.45); overflow: hidden; }
 .mr-drill-ad { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-drill-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
@@ -2519,7 +2519,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .soc-bar-val { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text); }
 .soc-empty { padding: 18px; text-align: center; color: var(--faint); font-size: 13px; background: var(--panel-2); border-radius: 10px; }
 
-/* Social — reel playback, overall accent, cover, PDF/print */
+/* Social - reel playback, overall accent, cover, PDF/print */
 .soc-play { position: absolute; inset: 0; margin: auto; width: 52px; height: 52px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 18px; cursor: pointer; display: grid; place-items: center; padding-left: 3px; }
 .soc-play:hover { background: rgba(0,0,0,.72); }
 .soc-post-thumb { position: relative; }
@@ -2545,7 +2545,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .soc-dm-note { font-size: 11px; color: var(--faint); margin-left: auto; }
 .soc-dm { border-color: color-mix(in srgb, var(--brand) 24%, var(--border)); }
 
-/* Social — tabs + competitors */
+/* Social - tabs + competitors */
 .soc-tabs { display: inline-flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
 .soc-tabs button { border: 0; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 700; padding: 6px 14px; border-radius: 8px; cursor: pointer; }
 .soc-tabs button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
@@ -2584,7 +2584,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .soc-comp-post img { width: 100%; height: 100%; object-fit: cover; }
 .soc-comp-post-eng { position: absolute; bottom: 3px; right: 4px; font-size: 10px; font-weight: 700; color: #fff; background: rgba(0,0,0,.6); padding: 1px 5px; border-radius: 10px; }
 
-/* Organic social — monthly KPIs + rolling trend */
+/* Organic social - monthly KPIs + rolling trend */
 .soc-trends { display: flex; flex-direction: column; gap: 18px; }
 .soc-trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .soc-trend-head h3 { margin: 0 0 3px; }
@@ -2687,7 +2687,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .prof-field input:focus, .prof-field textarea:focus { outline: none; border-color: var(--brand); }
 @media (max-width: 640px) { .prof-grid { grid-template-columns: 1fr; } }
 
-/* ============ Daily Performance — biggest movers ============ */
+/* ============ Daily Performance - biggest movers ============ */
 .mov-panel { padding: 14px 16px; }
 .mov-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .mov-head b { font-size: 14px; }
@@ -2708,7 +2708,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .tr-movers-lab { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
 .tr-mover { font-size: 12px; color: var(--muted); }
 
-/* Movers — expandable creative breakdown */
+/* Movers - expandable creative breakdown */
 .mov-item2 { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .mov-item2.open { border-color: var(--brand); }
 .mov-item-h { display: flex; align-items: stretch; }
@@ -2723,7 +2723,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mov-drill-item { font-size: 12px; color: var(--muted); }
 .mov-drill-item b { color: var(--text); font-weight: 700; }
 
-/* Daily Performance — 28-day graph + source table */
+/* Daily Performance - 28-day graph + source table */
 .tr-graph { margin: 4px 0 10px; }
 .tr-src { width: 100%; font-size: 12px; }
 .tr-src th, .tr-src td { padding: 6px 8px; }

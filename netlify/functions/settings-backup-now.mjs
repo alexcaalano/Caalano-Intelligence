@@ -1,4 +1,4 @@
-// On-demand settings backup — the HTTP-invokable twin of the daily scheduled
+// On-demand settings backup - the HTTP-invokable twin of the daily scheduled
 // `settings-backup` function (scheduled functions can't be triggered over HTTP).
 // Visit /.netlify/functions/settings-backup-now to run a backup immediately and
 // confirm the GitHub token / repo env vars are set up correctly.

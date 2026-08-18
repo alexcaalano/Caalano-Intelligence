@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.270.0 - 2026-08-18 · `PENDING` - Australian dates + em dashes removed everywhere
+- **Dates now DD/MM/YYYY everywhere.** Any date/time that previously rendered in the viewer's browser locale (which
+  showed American MM/DD/YYYY for some clients) is now pinned to Australian formatting (`en-AU`) - across the client
+  Monthly Reports view, drill-downs, notes, logs, and every internal panel.
+- **Em dashes removed across all of Caalano360.** Every `—` in the app (client-facing and internal) is replaced with a
+  plain hyphen - in prose/labels it reads as a separator, and empty-value "no data" markers now show `-`. Applied to
+  the SPA, styles, the server-side report/label strings (Meta field labels, alert copy, contact-name fallbacks) and the
+  seed snapshot. The GHL note author-prefix parser still recognises em-dash-separated authors in external CRM notes.
+
 ## v3.269.0 — 2026-08-18 · `PENDING` — Monthly Reports: client drill-downs + prettier ranges
 - **Client-facing drill-downs.** In the client's Monthly Reports view, every headline number in the deck is now
   clickable and opens the same drill-down modal as the agency view — the client can see the individual deals /

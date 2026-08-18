@@ -37,7 +37,7 @@ export default async (req) => {
     const r = await fetch(url, { redirect: 'follow' })
     const text = await r.text()
     // Google serves an HTML sign-in / error page (not CSV) when the sheet isn't
-    // viewable by link — detect that so we can give a clear instruction.
+    // viewable by link - detect that so we can give a clear instruction.
     if (!r.ok || /^\s*</.test(text) || /accounts\.google\.com|google-site-verification/i.test(text.slice(0, 600))) {
       return json({ ok: false, error: 'Could not read this sheet. In Google Sheets: Share → General access → Anyone with the link → Viewer, then try again.' }, 403)
     }

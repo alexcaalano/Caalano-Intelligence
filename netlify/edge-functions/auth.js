@@ -55,7 +55,7 @@ export default async (request, context) => {
   const secret = Netlify.env.get('AUTH_SECRET')
   const url = new URL(request.url)
 
-  // Legacy mode — behave exactly as before.
+  // Legacy mode - behave exactly as before.
   if (!secret) {
     const pass = Netlify.env.get('SITE_PASSWORD')
     if (!pass) return

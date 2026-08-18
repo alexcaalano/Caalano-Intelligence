@@ -1,4 +1,4 @@
-// GoHighLevel (Caalano Systems) direct API — the UTM/attribution layer that
+// GoHighLevel (Caalano Systems) direct API - the UTM/attribution layer that
 // Windsor can't provide. Agency OAuth: one company token is stored in Netlify
 // Blobs, then per-sub-account "location tokens" are minted on demand to read
 // each client's contacts (attributionSource = first-touch UTMs) + opportunities.
@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 // can't stall the whole function, and retries transient failures (429 / 5xx /
 // network resets) a couple of times with a short backoff. A 429 with a
 // Retry-After header waits that long (capped). Timeouts (AbortError) are NOT
-// retried — they're already slow, so we fail fast rather than burn another full
+// retried - they're already slow, so we fail fast rather than burn another full
 // timeout. Non-retryable 4xx responses are returned as-is for the caller's
 // r.ok check. Shared by the GHL helpers here and by windsor.mjs.
 export async function resilientFetch(url, opts = {}, { timeoutMs = 9000, retries = 2, label = 'fetch' } = {}) {
@@ -46,12 +46,12 @@ export async function resilientFetch(url, opts = {}, { timeoutMs = 9000, retries
 // scope pages /opportunities/search independently, and when several fire at once
 // (agency overview = one ovrow per client; a client dashboard opening users +
 // ccdrill + appts + speed + blend + attribution) we blow the burst limit and get
-// 429 storms — which the old fixed-backoff retry only made worse. This governor:
+// 429 storms - which the old fixed-backoff retry only made worse. This governor:
 //   1. caps concurrent GHL requests within an invocation (tames the fan-outs), and
 //   2. on ANY 429, sets a short module-wide cooldown so every other in-flight /
 //      queued GHL call waits too, instead of all retrying into the same wall.
 // (Cross-invocation request VOLUME is cut separately by caching the opportunity
-// snapshot so scopes stop re-fetching the same list — see allOpportunities.)
+// snapshot so scopes stop re-fetching the same list - see allOpportunities.)
 const GHL_MAX_CONCURRENT = 5
 let _ghlActive = 0; const _ghlWaiters = []; let _ghlCooldownUntil = 0
 function _ghlSlot() { return new Promise((res) => { const go = () => { if (_ghlActive < GHL_MAX_CONCURRENT) { _ghlActive++; res() } else _ghlWaiters.push(go) }; go() }) }
@@ -227,7 +227,7 @@ export async function periodBounds(locationId, from, to) {
 
 // --- data pulls (paged, bounded) ---
 // opportunities/search returns the opportunity, its contact AND an inline
-// `attributions` array (first/last touch, UTMs) — one call, no N+1 lookups.
+// `attributions` array (first/last touch, UTMs) - one call, no N+1 lookups.
 // Raw pager: hits GHL /opportunities/search directly for [from,to]. This is the
 // primitive; most callers go through allOpportunities() which serves from the
 // shared per-location snapshot to avoid re-paging the same list per scope.
@@ -246,7 +246,7 @@ async function _pageOpportunities(locTok, locationId, from, to, cap = 1500, opts
   const effCap = (cap >= 1000 && spanDays > 120) ? Math.min(5000, spanDays > 300 ? 5000 : 3500) : cap
   const maxPages = Math.min(55, Math.max(25, Math.ceil(effCap / 100) + 3))
   // Wall-clock guard: on a big account a wide window can page dozens of sequential
-  // requests and blow the ~10s Netlify function budget — which used to surface as a
+  // requests and blow the ~10s Netlify function budget - which used to surface as a
   // 502 (nothing loads) or a cached blank. Stop paging once we've spent the budget
   // and return what we have (an undercount, flagged by the existing `capped` logic
   // in callers) instead of killing the whole function. Callers that need the full
@@ -273,13 +273,13 @@ async function _pageOpportunities(locTok, locationId, from, to, cap = 1500, opts
 // --- Shared per-location opportunity snapshot ------------------------------
 // The reliability log showed the 429 storms come from many scopes (users, blend,
 // attribution, appts, speed, ccdrill, forms, updateextra…) each paging THIS
-// location's opportunities independently — the same list fetched 6-15x per view.
+// location's opportunities independently - the same list fetched 6-15x per view.
 // So we pull one WIDE per-location snapshot (last ~430 days) and share it: an
 // in-memory copy dedupes calls within/near an invocation, and a Netlify Blobs
 // copy (best-effort) dedupes across invocations for ~10 min. allOpportunities()
 // then serves any window WITHIN the snapshot's coverage from memory instead of
 // re-paging GHL. A window older than the snapshot, or a snapshot that couldn't be
-// built/cached, falls back to a direct page — identical to the old behaviour.
+// built/cached, falls back to a direct page - identical to the old behaviour.
 const OPP_SNAP_MEM_MS = 120000     // in-memory freshness
 const OPP_SNAP_BLOB_MS = 600000    // cross-invocation (Blobs) freshness
 const OPP_SNAP_DAYS = 430          // how far back the snapshot reaches
@@ -310,7 +310,7 @@ async function oppSnapshot(locTok, locationId) {
     // Bound warm-lambda memory: keep only the most recent handful of locations.
     if (_oppSnapMem.size > 16) { const oldest = [..._oppSnapMem.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, 8); for (const [k] of oldest) _oppSnapMem.delete(k) }
     _oppSnapMem.set(locationId, snap)
-    try { await _oppStore().setJSON(locationId, raw) } catch { /* payload too big / blobs unavailable — memory copy still serves */ }
+    try { await _oppStore().setJSON(locationId, raw) } catch { /* payload too big / blobs unavailable - memory copy still serves */ }
     return snap
   })()
   _oppSnapInflight.set(locationId, build)
@@ -318,7 +318,7 @@ async function oppSnapshot(locTok, locationId) {
 }
 async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
   // Serve from the shared snapshot when it provably covers the requested window;
-  // otherwise page directly (unchanged behaviour). Conservative on purpose — a
+  // otherwise page directly (unchanged behaviour). Conservative on purpose - a
   // wrong "covered" call would undercount CRM numbers, so we only trust the
   // snapshot when the window start is at/after the snapshot's oldest opportunity.
   if (!opts.noSnapshot) {
@@ -369,14 +369,14 @@ async function pipelineStageIndex(locTok, locationId) {
   return stageIndexFrom(await fetchPipelines(locTok, locationId))
 }
 
-// "Qualified lead" — a definition that scales across every business with zero
+// "Qualified lead" - a definition that scales across every business with zero
 // per-client setup. The signal is human intent: a lead is qualified once someone
 // has actively advanced it past the pipeline's entry stage, OR it was won, OR it
 // has a booked appointment, OR a deal value was set. Stage naming is irrelevant,
 // so it works on any GoHighLevel pipeline out of the box. An optional per-client
 // override (qualStagePos) names a specific stage position that must be reached
 // instead of "past entry"; with the override set, only the stage (or a win)
-// counts — the appointment / value shortcuts are ignored so the definition stays
+// counts - the appointment / value shortcuts are ignored so the definition stays
 // exactly what was configured.
 export function isQualified({ status, pos, entryPos, hasAppt, value, qualStagePos }) {
   if (String(status || '').toLowerCase() === 'won') return true
@@ -400,11 +400,11 @@ function utmOf(opp) {
   const content = a.utmContent || a.utm_content || null
   const term = a.utmTerm || a.utm_term || a.utmKeyword || null
   // Google templates can carry the ad id in its own param (utm_ad_id) and the
-  // keyword's match type (utm_matchtype = e/p/b) — used to key ad-level outcomes
+  // keyword's match type (utm_matchtype = e/p/b) - used to key ad-level outcomes
   // and to split a keyword's outcomes by match type (Exact vs Phrase).
   const ad = a.utmAdId || a.utm_ad_id || a.utmAdid || a.ad_id || a.adId || null
   const matchType = a.utmMatchtype || a.utm_matchtype || a.utmMatchType || a.matchtype || a.matchType || null
-  // First-touch landing page (clean url, no query/hash) — lets us map CRM
+  // First-touch landing page (clean url, no query/hash) - lets us map CRM
   // outcomes to the Google Landing Page Performance report by URL.
   const url = a.url || a.pageUrl || null
   // Every string on the attribution that could fingerprint the channel, so
@@ -420,7 +420,7 @@ function utmOf(opp) {
 // Landing Page Performance report (which is cleaned to origin+path server-side).
 const urlKey = (u) => { if (!u) return null; let s = String(u).trim().toLowerCase().split('#')[0].split('?')[0]; s = s.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, ''); return s || null }
 // Key an opportunity's keyword outcome by keyword text + match-type initial
-// (e/p/b), so "adhd" Exact and "adhd" Phrase are separate — only when the CRM
+// (e/p/b), so "adhd" Exact and "adhd" Phrase are separate - only when the CRM
 // actually carries a match type; otherwise null (falls back to text-only byTerm).
 const termMatchKey = (u) => (u && u.term && u.matchType) ? `${u.term}||${String(u.matchType).trim().charAt(0).toLowerCase()}` : null
 
@@ -631,7 +631,7 @@ export async function listCalendars(locationId) {
   return cals.map((c) => ({ id: c.id || c._id || c.calendarId, name: c.name || c.calendarName || 'Calendar' })).filter((c) => c.id)
 }
 // Pipelines + their stages straight from the GoHighLevel API (not Windsor), so
-// the Key-events editor can list stages the moment a client is linked — before
+// the Key-events editor can list stages the moment a client is linked - before
 // Windsor has backfilled any opportunity data for the account. Shape matches the
 // blend feed's pipelines (id, name, stages:[{id,name,pos}]) so the editor can use
 // either interchangeably.
@@ -647,7 +647,7 @@ export async function listPipelines(locationId) {
 // --- Direct-API shape adapters -------------------------------------------
 // Return GoHighLevel data in the SAME row shape Windsor's `gohighlevel`
 // connector produces, so the aggregation builders (blend, weekly, …) can read
-// straight from the API instead of Windsor — no builder-logic changes, and no
+// straight from the API instead of Windsor - no builder-logic changes, and no
 // waiting for Windsor to backfill a newly-linked account. Single-account, so no
 // account_id filtering is needed downstream.
 export async function ghlOpportunityRows(locationId, from, to) {
@@ -660,7 +660,7 @@ export async function ghlOpportunityRows(locationId, from, to) {
     opportunity_pipeline_stage_id: o.pipelineStageId || null,
     opportunity_monetary_value: num(o.monetaryValue),
     opportunity_created_at: o.createdAt || null,
-    // Won-date (status last changed) — for closed-in-period bucketing. Windsor
+    // Won-date (status last changed) - for closed-in-period bucketing. Windsor
     // doesn't expose this; the direct API does.
     opportunity_won_at: o.lastStatusChangeAt || o.lastStageChangeAt || null,
     opportunity_assigned_to: o.assignedTo || null,
@@ -1017,7 +1017,7 @@ function rollupSubset(opps, idx, reasonName) {
 }
 
 // Booked opportunities over a window, each tagged with its created date and
-// first-touch paid channel (meta / google / other) — powers UTM-split
+// first-touch paid channel (meta / google / other) - powers UTM-split
 // cost-per-booked in the Daily Performance rolling windows.
 export async function bookedTrends(locationId, from, to) {
   const locTok = await locationToken(locationId)
@@ -1041,7 +1041,7 @@ export async function bookedTrends(locationId, from, to) {
 // Richer CRM trends (direct API) for the Daily Performance key-events breakdown:
 // per opportunity, the created date, its first-touch UTM channel (meta / google /
 // other=non-paid), pipeline, and the pipeline STAGE NAMES it has reached (cumulative;
-// a won opp reached them all). This is the accurate, UTM-based channel split — the
+// a won opp reached them all). This is the accurate, UTM-based channel split - the
 // Windsor `opportunity_source` classification is only a fallback when the app isn't
 // connected. Returns one record per opp so the caller can bucket into 56-day windows.
 export async function crmTrends(locationId, from, to) {
@@ -1109,13 +1109,13 @@ export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
   }
 }
 
-// Deal-level lists for the Monthly Report — powers drill-downs, the Lost Reasons
+// Deal-level lists for the Monthly Report - powers drill-downs, the Lost Reasons
 // view and the Status-Change vs Created-On revenue split. Two won bases:
 //   statusChange = deals whose status became "won" IN the month (any lead date)
 //   createdOn    = deals whose LEAD was created in the month and are now won
 // plus lost deals (marked lost in the month) with reasons. Each deal carries the
 // contact name, lead-created date, status-change (won/lost) date, value, source
-// channel, pipeline/stage and assigned user — everything needed to sense-check.
+// channel, pipeline/stage and assigned user - everything needed to sense-check.
 export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
   const locTok = await locationToken(locationId)
   const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
@@ -1194,7 +1194,7 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
   }
 }
 
-// Opportunity custom fields for a location, date/time ones first — powers the
+// Opportunity custom fields for a location, date/time ones first - powers the
 // Settings dropdown that links a Key Event stage to the timestamp field GHL
 // stamps when a deal enters it. GHL v2 tags each field with a `model`
 // (contact|opportunity); if that's absent we keep all and just flag date types.
@@ -1214,7 +1214,7 @@ export async function oppTimestampFields(locationId) {
     .sort((a, b) => (Number(b.date) - Number(a.date)) || String(a.name).localeCompare(String(b.name)))
 }
 
-// Inbound social DMs from the GoHighLevel inbox — how many conversations were
+// Inbound social DMs from the GoHighLevel inbox - how many conversations were
 // started via Instagram / Facebook Messenger in the period. GHL tags each
 // conversation/message with a channel type (TYPE_INSTAGRAM / TYPE_FACEBOOK).
 // We page conversations newest-first and count those whose channel is IG/FB and
@@ -1352,7 +1352,7 @@ export async function deriveBusinessHours(locationId) {
   return { tz, detected, calendars: cals.length, days: detected ? [...days].sort((a, b) => a - b) : [1, 2, 3, 4, 5], startMin: detected ? minOpen : 540, endMin: detected ? maxClose : 1020 }
 }
 // Shared deal shape for the Timing outcome / contact-rate drill lists.
-function speedDealOf(l) { return { name: l.name || '—', value: Math.round(l.value || 0), reason: l.reason || null, channel: l.channel, createdAt: new Date(l.leadIn).toISOString(), statusAt: l.statusAtISO || null, email: l.email || null, phone: l.phone || null } }
+function speedDealOf(l) { return { name: l.name || '-', value: Math.round(l.value || 0), reason: l.reason || null, channel: l.channel, createdAt: new Date(l.leadIn).toISOString(), statusAt: l.statusAtISO || null, email: l.email || null, phone: l.phone || null } }
 // Fold one processed lead's flags into a contact-rate accumulator (shared by the
 // sampled build and the whole-range scan).
 function contactAccrue(cr, l, hasMsg) {
@@ -1385,7 +1385,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   ])
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
-  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' ').trim())) || o.contactName || o.name || '—'
+  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' ').trim())) || o.contactName || o.name || '-'
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const seen = new Set(); const leads = []
   for (const o of opps) {
@@ -1452,7 +1452,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
       }
     }
     // Message-only manual timestamp, before the appointment fallback overwrites it
-    // — so the contact-rate breakdown can separate "messaged" from "booked".
+    // - so the contact-rate breakdown can separate "messaged" from "booked".
     const msgMs = manual
     // Fallback for clients with no messaging: if there's no manual MESSAGE, use
     // the first STAFF-booked appointment (a manual action) as the speed signal.
@@ -1497,7 +1497,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     } else if (r.any != null) onlyAuto++
     else noOutbound++
   }
-  // Contact rate: of the sampled leads, how many did we make human contact with —
+  // Contact rate: of the sampled leads, how many did we make human contact with -
   // a manual message OR any appointment booked. Appointments split into
   // user-booked (a staff member booked it) vs customer self-booked. A lead can be
   // both messaged and booked, so the breakdowns overlap; the total counts each
@@ -1576,7 +1576,7 @@ export async function speedLeadList(locationId, from, to) {
   ])
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
-  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' ').trim())) || o.contactName || o.name || '—'
+  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' ').trim())) || o.contactName || o.name || '-'
   const apptByContact = appts && appts.byContact instanceof Map ? appts.byContact : new Map()
   const seen = new Set(); const leads = []
   for (const o of opps) {
@@ -1862,7 +1862,7 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
 // by contact), won / revenue / lost / open, average close time, and a per-
 // pipeline split. Used by the client's Users tab. Optionally scoped to one
 // pipeline. Ad-cost-per-outcome is added by the caller (spend isn't per-user).
-// Page OPEN opportunities only (status filter), with NO date window — "how long
+// Page OPEN opportunities only (status filter), with NO date window - "how long
 // is this deal sitting in its current stage" is about live pipeline state, not
 // when the deal was created, so we must see every open deal (including old ones
 // that are stuck). The status filter keeps us off the huge closed history.
@@ -1887,11 +1887,11 @@ async function openOpportunities(locTok, locationId, cap = 3000) {
   }
   return out
 }
-// "Time in stage" — for every deal currently OPEN in the pipeline, how long it
+// "Time in stage" - for every deal currently OPEN in the pipeline, how long it
 // has been sitting in its current stage (now − lastStageChangeAt), aggregated per
 // stage per pipeline (avg / median / p90 / oldest + count). Measured straight from
 // the pipeline stages; no appointment/creation inference. NOTE: this is the age of
-// deals CURRENTLY in each stage (right-censored) — it shows where deals are piling
+// deals CURRENTLY in each stage (right-censored) - it shows where deals are piling
 // up, not the completed duration of deals that already moved on (GHL doesn't keep
 // that history).
 export async function buildStageTiming(locationId) {
@@ -1942,7 +1942,7 @@ export async function buildUserCalls(locationId, from, to) {
   // The call export is the CORE payload. Speed-to-lead / SLA also need each
   // contact's lead-in time (their earliest opportunity's createdAt), but on large
   // accounts that opps pull pages back through weeks of newer deals and can eat the
-  // whole ~10s function budget — which used to time out and blank the entire call
+  // whole ~10s function budget - which used to time out and blank the entire call
   // section. So we fire it off CONCURRENTLY here and only wait a short grace window
   // for it after the calls are in; if it isn't ready, call stats still ship and
   // speed-to-lead is simply omitted for this load.
@@ -1998,7 +1998,7 @@ export async function buildUserCalls(locationId, from, to) {
   return { connected: true, totalCalls: total, byUser: users, speedAvailable }
 }
 // The channel / pipeline / won-basis filters on the Users tab only change WHICH
-// opportunities are counted — every expensive fetch (opps, appointments,
+// opportunities are counted - every expensive fetch (opps, appointments,
 // pipelines, users, lost-reasons) is identical across all filter combos. So we
 // fetch those inputs ONCE here, then aggregate per combo in-memory. buildUser-
 // PerformanceCombos uses this to return every combo in a single response, so the
@@ -2041,7 +2041,7 @@ function _aggregateUserPerf(inp, opts = {}) {
   if (chan) cohort = cohort.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
   const U = new Map()
   const nowMs = Date.now()
-  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
+  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '-'
   const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, qualified: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, totalValue: 0, openValue: 0, lostValue: 0, stages: new Map(), stageOpen: new Map(), reasons: new Map(), openList: [], byPipe: new Map() }; U.set(uid, u) } return u }
   const qualStagePos = opts.qualStagePos != null ? opts.qualStagePos : null
   let totQualified = 0
@@ -2060,7 +2060,7 @@ function _aggregateUserPerf(inp, opts = {}) {
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
     if (pi) for (const s of pi.stages) { if (st === 'won' || (pos >= 0 && s.pos <= pos)) u.stages.set(s.name, (u.stages.get(s.name) || 0) + 1) }
     // Deals sitting OPEN at their current stage right now (live, still capturable)
-    // — per-stage counts/values, plus the individual deals for the drill-down.
+    // - per-stage counts/values, plus the individual deals for the drill-down.
     if (isOpen && stg) {
       const so = u.stageOpen.get(stg.name) || { open: 0, value: 0 }; so.open++; so.value += val; u.stageOpen.set(stg.name, so)
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
@@ -2069,7 +2069,7 @@ function _aggregateUserPerf(inp, opts = {}) {
     const pid = o.pipelineId || 'none'; let bp = u.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, won: 0, revenue: 0 }; u.byPipe.set(pid, bp) } bp.leads++; if (st === 'won') { bp.won++; bp.revenue += val }
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
     if (f) { if (f.bookedInPeriod) u.booked++; if (f.shownByStatus) u.shown++; if (f.cancelledInPeriod) u.cancelled++ }
-    // Qualified lead (scalable definition — see isQualified). Counted per rep and
+    // Qualified lead (scalable definition - see isQualified). Counted per rep and
     // for the whole client so the funnel can show Lead → Qualified → Booked → Won.
     const entryPos = pi && pi.stages.length ? pi.stages[0].pos : 0
     if (isQualified({ status: st, pos, entryPos, hasAppt: !!(f && f.bookedInPeriod), value: val, qualStagePos })) { u.qualified++; totQualified++ }
@@ -2174,7 +2174,7 @@ async function formAnswersByContact(locTok, locationId, from, to) {
   return out
 }
 
-// Command Centre drill dataset — assembles, from a single load of the client's
+// Command Centre drill dataset - assembles, from a single load of the client's
 // opportunities + pipelines + calendar appointments + form answers, the tables
 // behind every clickable command-centre tile: opportunities by source, won
 // revenue deals, open deals, lost-by-reason (joined to form answers), per-
@@ -2203,21 +2203,21 @@ export async function buildCcDrill(locationId, from, to, channel) {
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const nowMs = Date.now()
-  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
+  const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '-'
   // Optional channel filter (first-touch UTM): all | paid | nonpaid | meta | google.
   // When set, the whole drill (funnel, open-by-stage, sources, revenue, lost,
   // close, and calendar bookings) reflects only opportunities on that channel.
   const chan = channel && channel !== 'all' ? channel : null
   let opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
   if (chan) opps = opps.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
-  // Contacts that belong to this channel — used to scope calendar bookings, which
+  // Contacts that belong to this channel - used to scope calendar bookings, which
   // aren't UTM-tagged themselves, to the same channel as the opportunities.
   const chanContacts = chan ? new Set(opps.map((o) => contactIdOf(o)).filter(Boolean)) : null
   // Name lookup for booked contacts: prefer the appointment's own contact name,
   // then any opportunity in the wide window (not just the in-period cohort) so a
   // lead booked this period whose opp was created earlier still resolves.
   const apptNames = appts && appts.nameByContact instanceof Map ? appts.nameByContact : new Map()
-  const oppNameById = new Map(); for (const o of wideOpps) { const cid = contactIdOf(o); if (cid) { const nm = contactNameOf(o); if (nm && nm !== '—' && !oppNameById.has(cid)) oppNameById.set(cid, nm) } }
+  const oppNameById = new Map(); for (const o of wideOpps) { const cid = contactIdOf(o); if (cid) { const nm = contactNameOf(o); if (nm && nm !== '-' && !oppNameById.has(cid)) oppNameById.set(cid, nm) } }
   // Friendly source label + kind from the first-touch UTMs. Paid channels map to
   // Paid Social / Paid Search; everything else reads from the utm source.
   const capFirst = (s) => { const t = String(s || '').trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t }
@@ -2241,7 +2241,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
   const stageAt = new Map() // pipelineId -> Map(stageId -> count), for the key-events funnel
   const stageAtChan = new Map() // pipelineId -> Map(stageId -> {meta,google,other}) for the per-channel funnel
   const chBucket = (ch) => (ch === 'meta' ? 'meta' : ch === 'google' ? 'google' : 'other')
-  // Per-pipeline top-line contribution + Meta/Google/other split — so Caalano360
+  // Per-pipeline top-line contribution + Meta/Google/other split - so Caalano360
   // can show how much each channel drives each pipeline without extra fetches.
   const pipeAgg = new Map() // pipelineId -> aggregate
   for (const o of opps) {
@@ -2290,7 +2290,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
       const ageDays = isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null
       if (openDeals.length < 150) openDeals.push({ name, value: Math.round(val), stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || 'Pipeline', source: label, channel: ch, ageDays })
-      // Open deals grouped by their CURRENT stage — the "who's sitting where, still
+      // Open deals grouped by their CURRENT stage - the "who's sitting where, still
       // in play" view. Full counts/values; a generous per-stage people cap.
       if (o.pipelineId && o.pipelineStageId) {
         const key = o.pipelineId + '::' + o.pipelineStageId
@@ -2372,7 +2372,7 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   // matches exactly what the creative card counted, so it takes precedence.
   if (adKey) opps = opps.filter((o) => unorm(utmOf(o).content) === adKey)
   else if (chan) opps = opps.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
-  const nameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '—'
+  const nameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '-'
   const emailOf = (o) => (o.contact && o.contact.email) || o.email || null
   const phoneOf = (o) => (o.contact && o.contact.phone) || o.phone || null
   const srcOf = (o) => { const u = utmOf(o); const c = channelOf(u); return c === 'meta' ? 'Meta' : c === 'google' ? 'Google' : (u.source ? String(u.source).slice(0, 30) : 'Direct') }
@@ -2437,7 +2437,7 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
 
 // Per-creative CRM performance for the Creative Cockpit: group every
 // opportunity by the creative that brought it in (first-touch utm_content) and
-// compute the real funnel — leads, qualified, booked, won, revenue — so each ad
+// compute the real funnel - leads, qualified, booked, won, revenue - so each ad
 // can be ranked by cost per qualified / booked / won. Keyed by the raw
 // utm_content string; the caller joins it to the Meta ad name.
 export async function buildCreativePerf(locationId, from, to, opts = {}) {
@@ -2563,7 +2563,7 @@ export async function buildUpdateExtra(locationId, from, to) {
   }
 }
 
-// GHL note bodies are often HTML — convert to clean text (lists → bullets,
+// GHL note bodies are often HTML - convert to clean text (lists → bullets,
 // block tags → line breaks, entities decoded) rather than render markup.
 function htmlToText(s) {
   return String(s || '')
@@ -2575,7 +2575,7 @@ function htmlToText(s) {
     .replace(/&#0?39;|&apos;|&rsquo;/gi, '’').replace(/&quot;/gi, '"').replace(/&#(\d+);/g, (_, d) => String.fromCharCode(+d))
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim()
 }
-// Notes on a deal's contact (Caalano Systems), newest first — the on-demand
+// Notes on a deal's contact (Caalano Systems), newest first - the on-demand
 // "why is this stuck?" context for the Users open-deal drill-down.
 export async function fetchOppNotes(locationId, { contactId }) {
   if (!contactId) return { notes: [] }
@@ -2967,7 +2967,7 @@ export async function buildCohorts(locationId, from, to, weekCount, weekIndexOf)
   }
 }
 
-// Full CRM rollup straight from GoHighLevel — richer than Windsor (named lost
+// Full CRM rollup straight from GoHighLevel - richer than Windsor (named lost
 // reasons, exact timestamps, per-user). User names come from Windsor for now
 // (users.readonly deferred); assignedTo ids are returned for the caller to map.
 // Aggregate one opportunity subset (whole account, or one pipeline) into
@@ -3015,7 +3015,7 @@ function aggregateCrm(opps, idx, reasonName) {
 }
 
 // A full CRM board (totals + ordered per-pipeline funnels + lost reasons + per
-// user) for an opportunity subset — the whole account, or one user's slice.
+// user) for an opportunity subset - the whole account, or one user's slice.
 function crmBoard(opps, idx, reasonName) {
   const agg = aggregateCrm(opps, idx, reasonName)
   const byPipe = new Map()

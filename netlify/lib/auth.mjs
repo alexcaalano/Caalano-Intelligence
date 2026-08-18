@@ -96,12 +96,12 @@ export function randomToken(bytes = 24) {
 }
 
 // ---- roles & permissions ----
-// superadmin — everything admin has PLUS: manage admins, add/remove/relink
+// superadmin - everything admin has PLUS: manage admins, add/remove/relink
 //              client accounts, system panel. Can only be managed by a superadmin.
-// admin      — full day-to-day control (all clients, all tabs, settings, manage
+// admin      - full day-to-day control (all clients, all tabs, settings, manage
 //              users/viewers, diagnostics) but NOT the superadmin-only areas.
-// user       — agency staff; dashboards for allowed accounts, no settings/invites
-// viewer     — client; only assigned clients + only allowed sub-tabs
+// user       - agency staff; dashboards for allowed accounts, no settings/invites
+// viewer     - client; only assigned clients + only allowed sub-tabs
 export const ROLES = ['superadmin', 'admin', 'user', 'viewer']
 const normRole = (r) => (ROLES.includes(r) ? r : 'viewer')
 export const ALL_TABS = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'appts', 'timing']
@@ -168,12 +168,12 @@ export async function ensureSuperadmin() {
 }
 
 // ---- operations ----
-// Create the very first account — a SUPER ADMIN (the owner). Only succeeds when
+// Create the very first account - a SUPER ADMIN (the owner). Only succeeds when
 // no users exist yet.
 export async function bootstrapAdmin({ email, name, password }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
   if (!password || String(password).length < 8) return { error: 'Password must be at least 8 characters.' }
-  if (await countUsers() > 0) return { error: 'Setup already complete — sign in instead.' }
+  if (await countUsers() > 0) return { error: 'Setup already complete - sign in instead.' }
   const { hash, salt } = await hashPassword(password)
   const u = await saveUser({
     email: normEmail(email), name: String(name || '').trim(), role: 'superadmin', status: 'active',
@@ -191,7 +191,7 @@ function normAlloc(patch = {}) {
   if (typeof patch.allClients === 'boolean') out.allClients = patch.allClients
   if (patch.tabs === null) out.tabs = null
   else if (Array.isArray(patch.tabs)) out.tabs = patch.tabs.filter((t) => ALL_TABS.includes(t))
-  // Monthly Reports capability — a separate grant (mainly for viewers/clients) that
+  // Monthly Reports capability - a separate grant (mainly for viewers/clients) that
   // lets them see PUBLISHED monthly reports for their allocated clients. Admins and
   // agency users always have it implicitly (canSeeReports), so it's stored only as
   // an explicit viewer grant.
@@ -200,7 +200,7 @@ function normAlloc(patch = {}) {
 }
 // Can this user access Monthly Reports at all? Admins + agency users always can;
 // a viewer only if explicitly granted. (Client-visibility is further limited to
-// PUBLISHED reports for their allocated clients — enforced at the data layer.)
+// PUBLISHED reports for their allocated clients - enforced at the data layer.)
 export function canSeeReports(user) {
   if (!user) return false
   if (isAdminish(user.role) || user.role === 'user') return true
@@ -303,7 +303,7 @@ export async function updateUser(email, patch, actor) {
   const em = normEmail(email)
   const actorRole = (actor && actor.role) || 'admin'
   const self = em === normEmail((actor && actor.email) || '')
-  // An admin can't touch an admin or super admin — only a super admin can.
+  // An admin can't touch an admin or super admin - only a super admin can.
   if (!canManageRole(actorRole, u.role)) return { error: u.role === 'superadmin' ? 'Only a Super Admin can manage a Super Admin.' : 'Only a Super Admin can manage an Admin.' }
   if (patch.role && ROLES.includes(patch.role)) {
     if (!canManageRole(actorRole, patch.role)) return { error: 'Only a Super Admin can grant Admin / Super Admin access.' }

@@ -111,7 +111,7 @@ Be specific and numeric. Keep it under 280 words. Do not use em-dashes or en-das
   return { ...out, period: period || 'selected period', generatedAt: new Date().toISOString() }
 }
 
-// Creative Cockpit — suggest categorisation tags for ONE creative from its copy
+// Creative Cockpit - suggest categorisation tags for ONE creative from its copy
 // + format + performance. Returns strict JSON (awareness / persona / angle) that
 // the UI drops into the editor for the user to confirm. Reuses the client's
 // existing persona / angle lists so tagging stays consistent.
@@ -138,7 +138,7 @@ ${c.transcript ? `Video transcript: ${String(c.transcript).slice(0, 2000)}` : ''
   return { suggestion: { aware: AW.includes(parsed.aware) ? parsed.aware : '', persona: String(parsed.persona || '').slice(0, 60), angle: String(parsed.angle || '').slice(0, 60), reason: String(parsed.reason || '').slice(0, 240) }, model: out.model, generatedAt: new Date().toISOString() }
 }
 
-// Creative Cockpit — a strategy briefing over the whole tagged + performance set:
+// Creative Cockpit - a strategy briefing over the whole tagged + performance set:
 // what's working, what to double down on, and new concepts to test. Every number
 // is supplied; Claude only interprets it.
 // Creative Curator: brainstorm ready-to-brief paid-social creative concepts from
@@ -277,7 +277,7 @@ Please let me know if you have any questions.
 Kind regards,
 Andie`
 
-// Client Update generator — a client-facing account update for a period, in two
+// Client Update generator - a client-facing account update for a period, in two
 // formats: a casual WhatsApp message and a formal structured email. Every figure
 // is supplied; Claude only writes it up. Returns strict JSON {subject, email,
 // whatsapp}. Australian spelling, no em dashes, from Caalano Digital.
@@ -318,7 +318,7 @@ async function clientUpdate(apiKey, body) {
   if (k.avgDeal) lines.push(`Average deal value $${n0(k.avgDeal)}`)
   if (avgCloseDays != null) lines.push(`Historically a won deal takes on average ${avgCloseDays} days from lead to close.${(k.won === 0 && periodDays && periodDays < avgCloseDays) ? ` The leads this period are only ${periodDays} days old at most, which is less than the typical close time, so no wins YET is an expected result for a cohort this recent, not a concern.` : ''}`)
   if (lr && lr.length) lines.push(`Lost reasons this period (reason: count): ${lr.map((r) => `${r.reason} (${r.count})`).join(', ')}.`)
-  // Stalled deals (open, no movement 30+ days) from the Users/pipeline data —
+  // Stalled deals (open, no movement 30+ days) from the Users/pipeline data -
   // used to ask the client informed questions about where things are stuck.
   if (stl && stl.length) lines.push(`Deals currently stalled (still open, no movement for 30 or more days), by stage: ${stl.map((s) => `${n0(s.count)} at "${s.stage}"${s.pipeline ? ` in ${s.pipeline}` : ''}${s.value ? ` worth $${n0(s.value)}` : ''} (oldest ${n0(s.maxAge)} days)`).join('; ')}. Use these to ask the client, gently, whether we can help move them or get context on where they are at.`)
   // --- Additional context (geo / appointments / speed-to-lead / cohorts / forms) ---
@@ -337,7 +337,7 @@ async function clientUpdate(apiKey, body) {
     const sits = (p.stages || []).slice(0, 8).map((s) => `${n0(s.open)} at "${s.name}"`).join(', ')
     return `- ${p.name}: ${n0(p.leads)} leads, ${n0(p.booked)} booked${bookRate != null ? ` (${bookRate}% booking rate)` : ''}, ${n0(p.won)} won${p.revenue ? `, $${n0(p.revenue)} revenue` : ''}${p.openValue ? `, $${n0(p.openValue)} still open` : ''}.${sits ? ` Open deals sit (funnel order): ${sits}.` : ''}`
   }).join('\n')}` : ''
-  // Ad-set segments (sub-campaigns) — identify the theme from each ad set name.
+  // Ad-set segments (sub-campaigns) - identify the theme from each ad set name.
   const segTop = (segs || []).filter((s) => (s.leads || 0) > 0 || (s.spend || 0) > 0).slice(0, 10)
   const segBlock = segTop.length ? `\nAd set segments (work out the audience/theme from each ad set name, e.g. names containing "Health Professionals", "Borrowing Capacity" and "Buyers Advocacy" are separate segments; group the ad sets into these named segments):\n${segTop.map((s) => `- ${s.name}: $${n0(s.spend)} spend, ${n0(s.leads)} leads${s.booked != null ? `, ${n0(s.booked)} booked` : ''}${s.won ? `, ${n0(s.won)} won` : ''}`).join('\n')}` : ''
   // A sample of notes from leads who did NOT book, for cause detection only.

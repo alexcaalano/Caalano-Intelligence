@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.275.0 - 2026-08-18 · `PENDING` - Date range + Won-basis in the URL too
+- **The date range now lives in the URL**, finishing the deep-link set. It's smart about relative vs frozen: a **preset**
+  ("Last 30 days", "This month"…) stays **relative** - the link carries `?r=last_30d`, so a shared link always means the
+  recipient's own last 30 days. A **custom** range **freezes** to its exact dates (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). The
+  default (Last 30 days) is left out to keep plain links tidy.
+- **Won basis** (Closed / Created) is carried as `?wb=created` when it's not the default, so a shared link reproduces the
+  same view. On load a URL value wins over the saved preference; otherwise your saved choice still applies.
+- Both restore correctly on refresh and through Back / Forward.
+
 ## v3.274.0 - 2026-08-18 · `PENDING` - Deep-linkable URLs (refresh keeps your place)
 - **Every screen now has its own URL.** The current section, open client and client sub-tab are mirrored into the query
   string (`?v=…&c=…&t=…`). So a **refresh keeps you exactly where you were** instead of dropping back to the default

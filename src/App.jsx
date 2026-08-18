@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.274.0'
+const APP_VERSION = '3.275.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -12694,19 +12694,36 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // link to a client you can't see simply returns 403 and falls back to home.
 const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
 function readNavUrl() {
-  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t') } } catch { return { v: null, c: null, t: null } }
+  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb') } } catch { return {} }
 }
-function writeNavUrl({ v, c, t }, push) {
+// writeNavUrl takes a PATCH: each key is set (truthy) or deleted (falsy); keys not
+// present are left untouched, so partial writers (view vs range vs won-basis) compose
+// and unowned params (e.g. ?invite=) survive.
+function writeNavUrl(patch, push) {
   try {
-    const p = new URLSearchParams(window.location.search) // preserve anything we don't own (e.g. ?invite=)
-    v ? p.set('v', v) : p.delete('v')
-    c ? p.set('c', c) : p.delete('c')
-    t ? p.set('t', t) : p.delete('t')
+    const p = new URLSearchParams(window.location.search)
+    for (const [k, val] of Object.entries(patch)) { val ? p.set(k, String(val)) : p.delete(k) }
     const qs = p.toString()
     const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
     if (push) window.history.pushState(null, '', url); else window.history.replaceState(null, '', url)
   } catch { /* history API unavailable - navigation still works, just not deep-linked */ }
 }
+// A preset range stays RELATIVE in the URL (?r=last_30d re-derives on load, so a
+// shared "last 30 days" link always means the recipient's last 30 days). A custom
+// range FREEZES (?from=&to= exact dates). The default (last_30d) is left out to
+// keep plain links clean.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+function rangePatch(range) {
+  if (range && range.preset && range.preset !== 'last_30d') return { r: range.preset, from: null, to: null }
+  if (range && !range.preset && range.from && range.to) return { r: null, from: range.from, to: range.to }
+  return { r: null, from: null, to: null }
+}
+function rangeFromUrl(u) {
+  if (u.r && PRESETS.some((x) => x.id === u.r)) return presetRange(u.r)
+  if (u.from && u.to && DATE_RE.test(u.from) && DATE_RE.test(u.to)) return { from: u.from, to: u.to, label: `${u.from} → ${u.to}` }
+  return null
+}
+const wbPatch = (wb) => ({ wb: wb === 'created' ? 'created' : null })
 
 function Dashboard({ authUser, authEnabled, onLogout }) {
   const [data, setData] = useState(null)
@@ -12719,12 +12736,18 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const [clientTab, setClientTab] = useState(() => readNavUrl().t || 'overall')
   const navInitRef = useRef(false)
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'dark' } catch { return 'dark' } })
-  const [range, setRange] = useState(() => presetRange('last_30d'))
+  const [range, setRange] = useState(() => rangeFromUrl(readNavUrl()) || presetRange('last_30d'))
   // Won basis: 'closed' (banked in the period, by won-date) or 'created' (won
   // among leads created in the period - the cohort/ROI view). Global + persisted.
   // Only Won/revenue/ROAS flip; leads, funnel and appointments stay created-basis.
-  const [wonBasis, setWonBasis] = useState(() => { try { return localStorage.getItem('caalano_wonbasis') === 'created' ? 'created' : 'closed' } catch { return 'closed' } })
+  const [wonBasis, setWonBasis] = useState(() => {
+    const wb = readNavUrl().wb; if (wb === 'created' || wb === 'closed') return wb // URL wins on a shared link
+    try { return localStorage.getItem('caalano_wonbasis') === 'created' ? 'created' : 'closed' } catch { return 'closed' }
+  })
   useEffect(() => { try { localStorage.setItem('caalano_wonbasis', wonBasis) } catch {} }, [wonBasis])
+  // Mirror range + won-basis into the URL (replace, so they don't spam history).
+  useEffect(() => { writeNavUrl(rangePatch(range), false) }, [range])
+  useEffect(() => { writeNavUrl(wbPatch(wonBasis), false) }, [wonBasis])
   const [refreshKey, setRefreshKey] = useState(0)
   const [navOpen, setNavOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('caalano_sb') === '1' } catch { return false } })
@@ -12773,10 +12796,12 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // Browser Back / Forward: re-read the URL and re-apply it to state.
   useEffect(() => {
     const onPop = () => {
-      const { v, c, t } = readNavUrl()
-      setView(v && NAV_VIEWS.has(v) ? v : 'overview')
-      setClientTab(t || 'overall')
-      if (c) { const raw = (data && (data.clients || []).find((x) => x.id === c)) || (customClientList() || []).find((x) => x.id === c); setPicked(raw || null) }
+      const u = readNavUrl()
+      setView(u.v && NAV_VIEWS.has(u.v) ? u.v : 'overview')
+      setClientTab(u.t || 'overall')
+      setRange(rangeFromUrl(u) || presetRange('last_30d'))
+      if (u.wb === 'created' || u.wb === 'closed') setWonBasis(u.wb)
+      if (u.c) { const raw = (data && (data.clients || []).find((x) => x.id === u.c)) || (customClientList() || []).find((x) => x.id === u.c); setPicked(raw || null) }
       else setPicked(null)
     }
     window.addEventListener('popstate', onPop)

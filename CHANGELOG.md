@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.273.0 - 2026-08-18 · `PENDING` - Sortable Team & access table
+- **Team & access table is now sortable.** Click any column header (Name, Email, Role, Access, Status) to sort by it;
+  click again to reverse. An arrow shows the active column and direction.
+- **Defaults to Role in order of access** - Super Admin, then Admin, User, Viewer - so the most privileged people sit at
+  the top. Access sorts by breadth (all-clients first), Status by active-first.
+
 ## v3.272.0 - 2026-08-18 · `PENDING` - Fix Command Centre scorecards reading 0 with unassigned opps
 - **Scorecards now populate to match the drills.** The Caalano360 Command Centre tiles (Opportunities, Booked, Shown,
   Won, Revenue, Open pipeline, Lost) were summed **per assigned rep**, so a client whose opportunities have no owner

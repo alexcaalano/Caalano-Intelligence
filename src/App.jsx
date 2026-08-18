@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.272.0'
+const APP_VERSION = '3.273.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9031,6 +9031,8 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
 function UsersAdmin({ authUser, authEnabled, clients }) {
   const [state, setState] = useState({ status: 'loading', users: [] })
   const [modal, setModal] = useState(null) // { user } to edit, { invite: true } to invite
+  // Team table sort - defaults to Role in order of access (Super Admin first).
+  const [sort, setSort] = useState({ key: 'role', dir: 'asc' })
   const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
   useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
   const rejectPending = async (u) => { if (!window.confirm(`Reject ${u.name || u.email}’s request?`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
@@ -9051,6 +9053,25 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
     : `${(u.clients || []).length} client${(u.clients || []).length === 1 ? '' : 's'}${Array.isArray(u.tabs) ? ` · ${u.tabs.length} tab${u.tabs.length === 1 ? '' : 's'}` : ' · all tabs'}`
   const pending = state.users.filter((u) => u.status === 'pending')
   const team = state.users.filter((u) => u.status !== 'pending')
+  // Sort the team table by the clicked column. Role sorts by access order
+  // (Super Admin -> Admin -> User -> Viewer); Access sorts by breadth of access.
+  const ROLE_RANK = { superadmin: 0, admin: 1, user: 2, viewer: 3 }
+  const STATUS_RANK = { active: 0, invited: 1, pending: 2, disabled: 3 }
+  const sortVal = (u, key) => {
+    if (key === 'role') return ROLE_RANK[u.role] != null ? ROLE_RANK[u.role] : 9
+    if (key === 'status') return STATUS_RANK[u.status] != null ? STATUS_RANK[u.status] : 9
+    if (key === 'access') return isAdminishFE(u.role) ? 1e9 : (u.role === 'user' ? (u.allClients !== false ? 1e8 : (u.clients || []).length) : (u.clients || []).length)
+    if (key === 'email') return (u.email || '').toLowerCase()
+    return (u.name || u.email || '').toLowerCase()
+  }
+  const sortedTeam = [...team].sort((a, b) => {
+    const av = sortVal(a, sort.key), bv = sortVal(b, sort.key)
+    let c = (typeof av === 'number' && typeof bv === 'number') ? av - bv : String(av).localeCompare(String(bv))
+    if (c === 0) c = (a.name || a.email || '').toLowerCase().localeCompare((b.name || b.email || '').toLowerCase())
+    return sort.dir === 'asc' ? c : -c
+  })
+  const onSort = (key) => setSort((s) => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' })
+  const Th = ({ k, label }) => <th className={`lft th-sort${sort.key === k ? ' on' : ''}`} onClick={() => onSort(k)} title="Sort by this column">{label}<span className="th-arrow">{sort.key === k ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</span></th>
   return (
     <div className="u-wrap">
       {pending.length > 0 && (
@@ -9068,8 +9089,8 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
         </div>
 
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
-          <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Access</th><th className="lft">Status</th><th className="lft"></th></tr></thead>
-          <tbody>{state.status === 'loading' ? <tr><td colSpan={6}><Spinner label="Loading team…" /></td></tr> : team.map((u) => {
+          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" /><Th k="status" label="Status" /><th className="lft"></th></tr></thead>
+          <tbody>{state.status === 'loading' ? <tr><td colSpan={6}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
             const self = u.email === (authUser && authUser.email)
             return (
               <tr key={u.email}>

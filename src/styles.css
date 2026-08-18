@@ -498,6 +498,11 @@ tbody tr:hover { background: var(--panel-2); }
 /* Numeric header + body cells right-align together (override .mini-tbl's left). */
 .users-tbl th.num, .users-tbl th:not(.lft), .users-tbl td:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
 .users-tbl th.lft, .users-tbl td.lft { text-align: left; }
+/* Sortable column headers (Team & access). */
+th.th-sort { cursor: pointer; user-select: none; transition: color .12s; }
+th.th-sort:hover { color: var(--text); }
+th.th-sort.on { color: var(--brand); }
+.th-arrow { font-size: 9px; }
 .u-chev { display: inline-block; width: 12px; color: var(--muted); font-size: 11px; }
 /* The rep detail spans a 12-col table that scrolls, so it inherits that wide
    scroll-width. Pin it to the left edge and clamp it to the visible area so the

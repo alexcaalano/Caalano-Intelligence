@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.276.0 - 2026-08-18 · `PENDING` - Instant tab / filter switching (no reload)
+- **Switching sub-tabs and filters no longer reloads.** Added a stale-while-revalidate cache that keeps parsed
+  responses in memory across tab switches (React state was thrown away on unmount before). Re-opening a tab or flipping
+  the All / Paid / Non-paid / Google / Meta filter you've already viewed is now **instant, with no spinner** - it shows
+  the cached view immediately and quietly refreshes in the background.
+- **Filter prefetch on client open.** When you open a client, the other four filter channels are warmed in the
+  background (staggered, low-priority) so even the *first* click on a filter is instant. Deliberately scoped to filters
+  only, throttled so it never competes with the active view or trips GHL rate limits.
+- **Reliability:** the cache also keeps the last good view on screen through a transient refetch failure (on top of the
+  existing 10-min server cache, 6-hour stale-on-error fallback, retry/backoff, GHL governor and opportunity snapshot),
+  so momentary upstream hiccups no longer flash an error or a blank.
+- The main tab pulls (Meta / Google / Analytics) seed from the same cache, so revisiting a tab in a session is instant too.
+
 ## v3.275.0 - 2026-08-18 · `PENDING` - Date range + Won-basis in the URL too
 - **The date range now lives in the URL**, finishing the deep-link set. It's smart about relative vs frozen: a **preset**
   ("Last 30 days", "This month"…) stays **relative** - the link carries `?r=last_30d`, so a shared link always means the

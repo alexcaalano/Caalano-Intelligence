@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.275.0'
+const APP_VERSION = '3.276.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -521,6 +521,50 @@ function dedupeFetch(url, ttl = 45000) {
   _getInflight.set(url, { at: now, p })
   p.then((r) => { if (!r.ok) _getInflight.delete(url) }, () => _getInflight.delete(url))
   return p.then((r) => r.clone())
+}
+
+// ---- Stale-while-revalidate cache (instant tab / filter switching) ----------
+// A module-level cache of PARSED responses keyed by URL that survives component
+// unmounts (React state doesn't). A hook seeds from it synchronously - so revisiting
+// a tab or filter you've already loaded shows instantly with no spinner - then
+// revalidates in the background. Errors are never cached (a stale-but-good value is
+// kept on failure). prefetchSwr() warms entries the user hasn't opened yet. The
+// server's own 10-min cache sits behind this, so revalidation is cheap.
+const _swr = new Map()       // url -> { at, data }
+const _swrSubs = new Map()   // url -> Set<fn>
+function swrPeek(url) { const e = _swr.get(url); return e ? e.data : undefined }
+function swrSet(url, data) { _swr.set(url, { at: Date.now(), data }); const s = _swrSubs.get(url); if (s) for (const fn of s) fn(data) }
+function prefetchSwr(url, transform) {
+  if (!url || _swr.has(url)) return
+  dedupeFetch(url).then((r) => r.json()).then((j) => { if (j && !j.error) swrSet(url, transform ? transform(j) : j) }).catch(() => {})
+}
+// useSwrJson(url, { transform, freshMs }) -> { status, data }
+// status: 'idle' (no url) | 'loading' (no cached value yet) | 'ok' | 'err'.
+function useSwrJson(url, opts = {}) {
+  const { transform, freshMs = 60000 } = opts
+  const [state, setState] = useState(() => {
+    if (!url) return { status: 'idle', data: null }
+    const c = swrPeek(url); return c !== undefined ? { status: 'ok', data: c } : { status: 'loading', data: null }
+  })
+  useEffect(() => {
+    if (!url) { setState({ status: 'idle', data: null }); return }
+    let alive = true
+    const cached = swrPeek(url)
+    setState(cached !== undefined ? { status: 'ok', data: cached } : { status: 'loading', data: null })
+    const onUpdate = (d) => { if (alive) setState({ status: 'ok', data: d }) }
+    let subs = _swrSubs.get(url); if (!subs) { subs = new Set(); _swrSubs.set(url, subs) } subs.add(onUpdate)
+    const entry = _swr.get(url)
+    const fresh = entry && (Date.now() - entry.at) < freshMs
+    if (!fresh) {
+      dedupeFetch(url).then((r) => r.json()).then((j) => {
+        if (!alive) return
+        if (j && j.error) { if (cached === undefined) setState({ status: 'err', data: null }); return } // keep stale on error
+        swrSet(url, transform ? transform(j) : j)
+      }).catch(() => { if (alive && cached === undefined) setState({ status: 'err', data: null }) })
+    }
+    return () => { alive = false; const s = _swrSubs.get(url); if (s) s.delete(onUpdate) }
+  }, [url])
+  return state
 }
 function useAgencyLive(range, nonce = 0, wonBasis = 'closed') {
   const [state, setState] = useState({ status: 'idle', data: null })
@@ -4272,46 +4316,31 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
 // Aggregates the per-user CRM feed (scope=users) into whole-account totals for
 // the command centre: open / lost counts + values and the merged lost-reason
 // breakdown (with names), which the health payload doesn't carry.
+// Aggregate the scope=users feed into the command-centre CRM rollup. Pure so it can
+// be a stale-while-revalidate transform (cached across tab/filter switches).
+function aggUsersToCrm(j) {
+  const us = (j && j.users) || []
+  const a = { opps: 0, open: 0, openValue: 0, lost: 0, lostValue: 0, won: 0, revenue: 0, booked: 0, shown: 0 }
+  const rs = {}
+  for (const u of us) {
+    a.opps += u.leads || 0; a.open += u.open || 0; a.openValue += u.openValue || 0
+    a.lost += u.lost || 0; a.lostValue += u.lostValue || 0; a.won += u.won || 0; a.revenue += u.revenue || 0
+    a.booked += u.booked || 0; a.shown += u.shown || 0
+    for (const r of (u.lostReasons || [])) { const e = rs[r.reason] || { reason: r.reason, count: 0, value: 0 }; e.count += r.count; e.value += r.value || 0; rs[r.reason] = e }
+  }
+  a.lostReasons = Object.values(rs).sort((x, y) => y.count - x.count)
+  return a
+}
+const crmAggUrl = (clientId, range, nonce, channel) => clientId ? `/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
 function useCrmAgg(clientId, range, nonce, channel = 'all') {
-  const [d, setD] = useState(null)
-  const q = rangeQuery(range)
-  useEffect(() => {
-    let alive = true; setD(null)
-    dedupeFetch(`/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => r.json()).then((j) => {
-        if (!alive) return
-        const us = (j && j.users) || []
-        const a = { opps: 0, open: 0, openValue: 0, lost: 0, lostValue: 0, won: 0, revenue: 0, booked: 0, shown: 0 }
-        const rs = {}
-        for (const u of us) {
-          a.opps += u.leads || 0; a.open += u.open || 0; a.openValue += u.openValue || 0
-          a.lost += u.lost || 0; a.lostValue += u.lostValue || 0; a.won += u.won || 0; a.revenue += u.revenue || 0
-          a.booked += u.booked || 0; a.shown += u.shown || 0
-          for (const r of (u.lostReasons || [])) { const e = rs[r.reason] || { reason: r.reason, count: 0, value: 0 }; e.count += r.count; e.value += r.value || 0; rs[r.reason] = e }
-        }
-        a.lostReasons = Object.values(rs).sort((x, y) => y.count - x.count)
-        setD(a)
-      }).catch(() => { if (alive) setD(null) })
-    return () => { alive = false }
-  }, [clientId, q, nonce, channel])
-  return d
+  return useSwrJson(crmAggUrl(clientId, range, nonce, channel), { transform: aggUsersToCrm }).data
 }
 // Command-centre drill dataset (scope=ccdrill) - backs every clickable tile.
 // Channel-scoped: passing a channel re-pivots the whole drill (funnel, open-by-
 // stage, sources, revenue, lost, close, bookings) to that channel's opportunities.
+const ccDrillUrl = (clientId, range, nonce, channel) => clientId ? `/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
 function useCcDrill(clientId, range, nonce = 0, channel = 'all') {
-  const [st, setSt] = useState({ status: 'loading', data: null })
-  const q = rangeQuery(range)
-  useEffect(() => {
-    let alive = true
-    setSt({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
-      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
-    return () => { alive = false }
-  }, [clientId, q, nonce, channel])
-  return st
+  return useSwrJson(ccDrillUrl(clientId, range, nonce, channel))
 }
 const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
 const chLabel = (ch) => ch === 'meta' ? 'Meta' : ch === 'google' ? 'Google' : ch === 'other' ? 'Other' : ch
@@ -4593,6 +4622,19 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const crmAgg = useCrmAgg(clientId, range, nonce, chan)
   const ccDrill = useCcDrill(clientId, range, nonce, chan)
   const cc = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
+  // Phase-2 prefetch: warm the other filter channels (Paid / Non-paid / Google /
+  // Meta) in the background so the toggle switches instantly on first click. Delayed
+  // + staggered so it never competes with the active view or trips GHL rate limits.
+  const rq = rangeQuery(range)
+  useEffect(() => {
+    if (!clientId) return
+    const others = CC_CHANS.map((c) => c[0]).filter((c) => c !== 'all')
+    const timers = others.map((ch, i) => setTimeout(() => {
+      prefetchSwr(crmAggUrl(clientId, range, nonce, ch), aggUsersToCrm)
+      prefetchSwr(ccDrillUrl(clientId, range, nonce, ch))
+    }, 1200 + i * 700))
+    return () => timers.forEach(clearTimeout)
+  }, [clientId, rq, nonce])
   // Previous-period CRM drill, so the per-pipeline key-event scorecards can show
   // vs-prev deltas (same shape, one period back).
   const prevRange = prevRangeOf(range)
@@ -4961,8 +5003,11 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
       // and a plain one-shot fetch surfaced the error card immediately - so the
       // fix used to be "refresh again". Now we retry with backoff before giving up,
       // and abort a hung request so it can't stall the whole tab.
-      setState({ status: 'loading', data: null, progress: null })
       const base = `/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}`
+      // Seed instantly from the SWR cache (e.g. switching back to a tab you've already
+      // opened) so there's no spinner; otherwise show loading and fetch.
+      const seed = swrPeek(base)
+      setState(seed !== undefined ? { status: 'ok', data: seed, progress: null } : { status: 'loading', data: null, progress: null })
       const MAX = 2 // up to 3 attempts total
       const permanent = (j) => /no\s+\w+\s+account|not connected|connect your/i.test(String((j && j.error) || ''))
       const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
@@ -4976,9 +5021,10 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
         } catch (e) { j = { error: 'Network error / timeout reaching the data function.' } }
         finally { clearTimeout(timer) }
         if (!alive) return
-        if (j && !j.error) { setState({ status: 'ok', data: j, progress: null }); return }
-        if (permanent(j) || n >= MAX) { setState({ status: 'err', data: j || null, progress: null }); return }
-        setState({ status: 'loading', data: null, progress: { retry: n + 1, of: MAX } })
+        if (j && !j.error) { swrSet(base, j); setState({ status: 'ok', data: j, progress: null }); return }
+        // On a hard failure or exhausted retries, keep the cached copy if we have one.
+        if (permanent(j) || n >= MAX) { setState(seed !== undefined ? { status: 'ok', data: seed, progress: null } : { status: 'err', data: j || null, progress: null }); return }
+        setState(seed !== undefined ? { status: 'ok', data: seed, progress: { retry: n + 1, of: MAX } } : { status: 'loading', data: null, progress: { retry: n + 1, of: MAX } })
         await sleep(1200 * (n + 1))
         if (!alive) return
         return attempt(n + 1)
@@ -4986,8 +5032,10 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
       attempt(0)
       return () => { alive = false }
     }
+    const ckey = `/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}&chunky=1`
+    const cseed = swrPeek(ckey)
     const chunks = splitRange(range, 31)
-    setState({ status: 'loading', data: null, progress: { done: 0, total: chunks.length } })
+    setState(cseed !== undefined ? { status: 'ok', data: cseed, progress: null } : { status: 'loading', data: null, progress: { done: 0, total: chunks.length } })
     let done = 0
     const bump = () => { done++; if (alive) setState((s) => (s.status === 'loading' ? { ...s, progress: { done, total: chunks.length } } : s)) }
     const fetchChunk = async (c, attempt = 0) => {
@@ -5004,8 +5052,10 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
     poolMap(chunks, 4, (c) => fetchChunk(c)).then((parts) => {
       if (!alive) return
       const ok = parts.filter(Boolean)
-      if (!ok.length) { setState({ status: 'err', data: { error: 'The year pull failed for every month - try again, or a shorter range.' }, progress: null }); return }
-      setState({ status: 'ok', progress: null, data: { meta: mergeMetaParts(ok), chunked: true, partial: ok.length < chunks.length, monthsLoaded: ok.length, monthsTotal: chunks.length } })
+      if (!ok.length) { setState(cseed !== undefined ? { status: 'ok', data: cseed, progress: null } : { status: 'err', data: { error: 'The year pull failed for every month - try again, or a shorter range.' }, progress: null }); return }
+      const merged = { meta: mergeMetaParts(ok), chunked: true, partial: ok.length < chunks.length, monthsLoaded: ok.length, monthsTotal: chunks.length }
+      if (!merged.partial) swrSet(ckey, merged) // only cache a fully-merged year
+      setState({ status: 'ok', progress: null, data: merged })
     })
     return () => { alive = false }
   }, [clientId, channel, q, nonce, chunky])

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.271.0'
+const APP_VERSION = '3.272.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4673,15 +4673,24 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         // / scope=users) in BOTH the all and channel views, so the scorecard, the
         // funnel and every drill always agree on the opportunity count. Health (k)
         // is only a fallback while crmAgg is still loading.
-        const oppsV = ca.opps != null ? ca.opps : k.leads
-        const bookedV = ca.booked != null ? ca.booked : k.booked
-        const shownV = ca.shown != null ? ca.shown : k.shown
-        const wonV = ca.won != null ? ca.won : k.won
-        const revV = ca.revenue != null ? ca.revenue : k.revenue
-        const avgV = wonV ? Math.round((revV || 0) / wonV) : (ca.won != null ? null : k.avgDeal)
-        const openV = ca.open != null ? ca.open : null
-        const openValV = ca.openValue != null ? ca.openValue : (k.openValue != null ? k.openValue : null)
-        const lost = ca.lost != null ? ca.lost : null
+        // Headline CRM counts come from the ccdrill feed (cc) when present - it
+        // counts EVERY opportunity in the period, including UNASSIGNED ones, so the
+        // scorecard always matches the drill it opens. crmAgg (ca) sums per assigned
+        // rep, so it silently drops opps with no owner (that's why a client whose
+        // opps aren't assigned showed 0 on the tiles but 35 in the drill). crmAgg /
+        // health (k) remain the fallback for viewers / while ccdrill is still loading.
+        const ccTot = (cc && cc.totals) || null
+        const ccBooked = cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.booked || 0), 0) : null
+        const ccShown = cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.shown || 0), 0) : null
+        const oppsV = ccTot ? ccTot.leads : (ca.opps != null ? ca.opps : k.leads)
+        const bookedV = ccBooked != null ? ccBooked : (ca.booked != null ? ca.booked : k.booked)
+        const shownV = ccShown != null ? ccShown : (ca.shown != null ? ca.shown : k.shown)
+        const wonV = ccTot ? ccTot.won : (ca.won != null ? ca.won : k.won)
+        const revV = (cc && cc.revenue) ? cc.revenue.total : (ca.revenue != null ? ca.revenue : k.revenue)
+        const avgV = wonV ? Math.round((revV || 0) / wonV) : ((ccTot || ca.won != null) ? null : k.avgDeal)
+        const openV = ccTot ? ccTot.open : (ca.open != null ? ca.open : null)
+        const openValV = (cc && cc.open) ? cc.open.value : (ca.openValue != null ? ca.openValue : (k.openValue != null ? k.openValue : null))
+        const lost = ccTot ? ccTot.lost : (ca.lost != null ? ca.lost : null)
         const cpBookedV = (chanSpend && bookedV) ? Math.round(chanSpend / bookedV) : (chActive ? null : k.cpBooked)
         const roas = (chanSpend && revV) ? revV / chanSpend : null
         const cpl2 = (!chActive && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
@@ -4740,14 +4749,24 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       {/* Lost reasons - full width so the table never needs to scroll sideways.
           Rows are clickable → the per-reason people + their form answers. */}
       <div className="card">
-        <div className="exec-panel-h">Lost reasons {crmAgg && crmAgg.lost ? <span className="sub">· {fmtNumber(crmAgg.lost)} lost{crmAgg.lostValue ? `, ${money(crmAgg.lostValue)}` : ''}{cc ? ' · click a reason for who + what they typed' : ''}</span> : null}</div>
-        {!crmAgg ? <Spinner label="" />
-          : !(crmAgg.lostReasons && crmAgg.lostReasons.length) ? <div className="cap">No lost opportunities recorded this period. ✅</div>
-            : <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
-              <tbody>{crmAgg.lostReasons.slice(0, 12).map((r, i) => {
-                const ccReason = cc && (cc.lostByReason || []).find((x) => x.reason === r.reason)
-                return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '-'}</td><td>{pctOf(r.count, crmAgg.lost)}</td></tr>
-              })}</tbody></table>}
+        {(() => {
+          // Prefer the ccdrill lost breakdown (counts unassigned opps too) so this
+          // panel's total matches the Lost scorecard; fall back to crmAgg per-rep.
+          const useCc = !!(cc && cc.lostByReason)
+          const lostRows = useCc ? cc.lostByReason : ((crmAgg && crmAgg.lostReasons) || null)
+          const lostTot = useCc ? ((cc.totals ? cc.totals.lost : 0) || lostRows.reduce((s, r) => s + (r.count || 0), 0)) : (crmAgg ? crmAgg.lost : 0)
+          const lostVal = useCc ? lostRows.reduce((s, r) => s + (r.value || 0), 0) : (crmAgg ? crmAgg.lostValue : 0)
+          return <>
+            <div className="exec-panel-h">Lost reasons {lostTot ? <span className="sub">· {fmtNumber(lostTot)} lost{lostVal ? `, ${money(lostVal)}` : ''}{cc ? ' · click a reason for who + what they typed' : ''}</span> : null}</div>
+            {!lostRows ? <Spinner label="" />
+              : !lostRows.length ? <div className="cap">No lost opportunities recorded this period. ✅</div>
+                : <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
+                  <tbody>{lostRows.slice(0, 12).map((r, i) => {
+                    const ccReason = cc && (cc.lostByReason || []).find((x) => x.reason === r.reason)
+                    return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '-'}</td><td>{pctOf(r.count, lostTot)}</td></tr>
+                  })}</tbody></table>}
+          </>
+        })()}
       </div>
 
       {/* Channel split (spend is internal - hidden in present mode) */}

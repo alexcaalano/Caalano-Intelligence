@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.272.0 - 2026-08-18 · `PENDING` - Fix Command Centre scorecards reading 0 with unassigned opps
+- **Scorecards now populate to match the drills.** The Caalano360 Command Centre tiles (Opportunities, Booked, Shown,
+  Won, Revenue, Open pipeline, Lost) were summed **per assigned rep**, so a client whose opportunities have no owner
+  showed **0** on the tiles even though the drill behind them listed all 35. The tiles now read from the same
+  all-opportunity ccdrill feed the drills use, so tile and drill always agree - including unassigned opportunities.
+- The **Lost reasons** panel was aligned to the same feed so its total matches the Lost tile.
+- Per-rep figures (the Users tab, Team performance) are unchanged - those are *meant* to be per assigned rep.
+
 ## v3.271.0 - 2026-08-18 · `PENDING` - Opportunities drill: status-first + source pills; "Resulted" rename
 - **Opportunities drill reworked.** Clicking the Opportunities tile now opens the full list of every opportunity in the
   period up front, instead of a channel-first "click a source" menu. Filter chips across the top switch between **All /

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.267.0'
+const APP_VERSION = '3.268.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8878,13 +8878,15 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
         <div className="alloc-lab">Which tabs can they see?</div>
         <div className="alloc-chips">{TAB_OPTIONS.map((t) => { const on = v.tabs == null || v.tabs.includes(t.id); return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}`} onClick={() => toggleTab(t.id)}>{t.label}</button> })}</div>
-        <p className="alloc-note">Client access — only the ticked clients and tabs, and no agency-wide views.</p>
+        <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
+        <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> — can view the <b>published</b> monthly reports for the clients above</label>
+        <p className="alloc-note">Client access — only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>
       </>)}
     </div>
   )
 }
 function PendingRow({ u, clients, onApprove, onReject, actorRole }) {
-  const [draft, setDraft] = useState({ role: 'viewer', clients: [], allClients: true, tabs: null })
+  const [draft, setDraft] = useState({ role: 'viewer', clients: [], allClients: true, tabs: null, reports: false })
   const [busy, setBusy] = useState(false)
   return (
     <div className="u-pending">
@@ -8912,8 +8914,8 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
   const [name, setName] = useState(isInvite ? '' : (user.name || ''))
   const [email, setEmail] = useState(isInvite ? '' : user.email)
   const [draft, setDraft] = useState(isInvite
-    ? { role: 'viewer', clients: [], allClients: true, tabs: null }
-    : { role: user.role, clients: user.clients || [], allClients: user.allClients !== false, tabs: user.tabs })
+    ? { role: 'viewer', clients: [], allClients: true, tabs: null, reports: false }
+    : { role: user.role, clients: user.clients || [], allClients: user.allClients !== false, tabs: user.tabs, reports: user.reports === true })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [link, setLink] = useState(null)
@@ -8924,7 +8926,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
     if (isInvite && !email) return setErr('Enter an email address.')
     if (draft.role === 'viewer' && !(draft.clients || []).length) return setErr('Pick at least one client for a Viewer.')
     setBusy(true)
-    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs }
+    const payload = { role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true }
     if (isInvite) {
       const r = await authApi('invite', { method: 'POST', body: JSON.stringify({ name, email, ...payload }) })
       setBusy(false)
@@ -8935,7 +8937,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
       if (r.ok) { onChanged(); onClose() } else setErr(r.error || 'Could not save changes.')
     }
   }
-  const resend = async () => { const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: user.email, name: user.name, role: user.role, clients: user.clients, allClients: user.allClients, tabs: user.tabs }) }); if (r.ok) setLink(r.inviteUrl) }
+  const resend = async () => { const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: user.email, name: user.name, role: user.role, clients: user.clients, allClients: user.allClients, tabs: user.tabs, reports: user.reports === true }) }); if (r.ok) setLink(r.inviteUrl) }
   const toggleStatus = async () => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: user.email, status: user.status === 'disabled' ? 'active' : 'disabled' }) }); onChanged(); onClose() }
   const remove = async () => { if (!window.confirm(`Remove ${user.name || user.email}? They’ll lose access immediately.`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: user.email }) }); onChanged(); onClose() }
   return (
@@ -8984,7 +8986,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
   const load = () => authApi('users').then((r) => setState(r && r.ok ? { status: 'ok', users: r.users || [] } : { status: r && r.enabled === false ? 'off' : 'err', error: r && r.error, users: [] }))
   useEffect(() => { if (authEnabled) load(); else setState({ status: 'off', users: [] }) }, [authEnabled])
   const rejectPending = async (u) => { if (!window.confirm(`Reject ${u.name || u.email}’s request?`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: u.email }) }); load() }
-  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs }) }); if (r.ok) load() }
+  const approve = async (u, draft) => { const r = await authApi('approve', { method: 'POST', body: JSON.stringify({ email: u.email, role: draft.role, clients: draft.clients, allClients: draft.allClients, tabs: draft.tabs, reports: draft.reports === true }) }); if (r.ok) load() }
 
   if (state.status === 'off') return (
     <div className="card set-users-off">
@@ -10392,6 +10394,78 @@ function MRTrend({ trend, currency }) {
   )
 }
 
+// Client-facing Monthly Reports: read-only, PUBLISHED frozen reports only, for the
+// clients the viewer is allocated. No generate / refresh / publish controls. Reuses
+// the same deck renderer as the agency Monthly Report, in continuous (scroll) view.
+function ClientReports({ clients, currency }) {
+  const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
+  const [clientId, setClientId] = useState(list[0] ? list[0].id : '')
+  const client = list.find((c) => c.id === clientId) || list[0] || null
+  const [months, setMonths] = useState(null) // [{ month, publishedAt }]
+  const [month, setMonth] = useState('')
+  const [st, setSt] = useState({ status: 'idle' })
+  const [exporting, setExporting] = useState(false)
+  const deckRef = useRef(null)
+  const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
+  const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
+  const pc = (a, b) => (b ? fmtPct((a / b) * 100, 1) : '—')
+  useEffect(() => {
+    if (!client) { setMonths(null); return }
+    let alive = true; setMonths(null); setMonth('')
+    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&list=1`)
+      .then((r) => { if (!alive) return; const ms = ((r && r.months) || []).map((x) => (typeof x === 'string' ? { month: x } : x)); setMonths(ms); setMonth(ms[0] ? ms[0].month : '') })
+      .catch(() => { if (alive) setMonths([]) })
+    return () => { alive = false }
+  }, [clientId])
+  useEffect(() => {
+    if (!client || !month) { setSt({ status: 'idle' }); return }
+    let alive = true; setSt({ status: 'loading' })
+    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&month=${encodeURIComponent(month)}`)
+      .then((r) => { if (!alive) return; if (r && r.saved && r.report) setSt({ status: 'ok', report: r.report, publishedAt: r.publishedAt }); else setSt({ status: 'empty' }) })
+      .catch(() => { if (alive) setSt({ status: 'err' }) })
+    return () => { alive = false }
+  }, [clientId, month])
+  const rep = st.status === 'ok' ? st.report : null
+  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: () => {} }) : []), [rep, currency])
+  async function downloadPdf() {
+    if (!deckRef.current) return
+    setExporting(true); deckRef.current.classList.add('mr-exporting')
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
+      const slides = [...deckRef.current.querySelectorAll('.mr-slide')]
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+      const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight()
+      const bg = getComputedStyle(document.body).backgroundColor || '#fff'
+      for (let i = 0; i < slides.length; i++) {
+        const canvas = await html2canvas(slides[i], { scale: 2, backgroundColor: bg, useCORS: true, logging: false })
+        const img = canvas.toDataURL('image/jpeg', 0.92)
+        const rr = Math.min(pw / canvas.width, ph / canvas.height); const w = canvas.width * rr, h = canvas.height * rr
+        if (i) pdf.addPage(); pdf.addImage(img, 'JPEG', (pw - w) / 2, (ph - h) / 2, w, h)
+      }
+      pdf.save(`${((client && client.name) || 'report').replace(/[^\w]+/g, '-')}-${month}.pdf`)
+    } catch (e) { alert('PDF export failed: ' + (e.message || e)) }
+    if (deckRef.current) deckRef.current.classList.remove('mr-exporting')
+    setExporting(false)
+  }
+  if (!list.length) return <div className="mr-page"><div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No reports assigned yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your account has Monthly Reports access, but no client is linked to it yet. Your agency will set this up.</p></div></div>
+  return (
+    <div className="mr-page">
+      <div className="mr-bar no-print">
+        {list.length > 1 && <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
+        <select className="mr-select" value={month} onChange={(e) => setMonth(e.target.value)} disabled={!months || !months.length}>
+          {months && months.length ? months.map((m) => <option key={m.month} value={m.month}>{monthBounds(m.month).label}</option>) : <option value="">No published reports</option>}
+        </select>
+        <div className="mr-bar-spacer" />
+        {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString()}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString()}</span>}
+        <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
+      </div>
+      {months && !months.length && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No published reports yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>When your agency publishes a monthly report for {client ? client.name : 'your account'}, it will appear here.</p></div>}
+      {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
+      {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report — please try again shortly.</div>}
+      {rep && <div className="mr-deck" ref={deckRef}><div className="mr-track">{deck}</div></div>}
+    </div>
+  )
+}
 function MonthlyReport({ clients, currency, authUser }) {
   const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
   const [clientId, setClientId] = useState(list[0] ? list[0].id : '')
@@ -10400,8 +10474,12 @@ function MonthlyReport({ clients, currency, authUser }) {
   const [toMonth, setToMonth] = useState(lastCompleteMonth())
   const period = periodOf(fromMonth, toMonth)
   const [st, setSt] = useState({ status: 'idle' }) // idle|loading|ok|err|empty ; {report, frozen}
-  const [saved, setSaved] = useState(null) // {savedAt, savedBy}
+  const [saved, setSaved] = useState(null) // {savedAt, savedBy, published, publishedAt, publishedBy, edited}
   const [busy, setBusy] = useState(false)
+  const [pubBusy, setPubBusy] = useState(false)
+  const [snapList, setSnapList] = useState(null) // [{month, savedAt, publishedAt, published, edited}]
+  const [snapBump, setSnapBump] = useState(0)    // re-fetch trigger after publish/generate
+  const [showList, setShowList] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null) // {title, kind, deals}
   const [view, setView] = useState('slides') // slides (one page at a time) | scroll (continuous)
@@ -10421,10 +10499,28 @@ function MonthlyReport({ clients, currency, authUser }) {
     let alive = true
     setSt({ status: 'loading' }); setSaved(null)
     mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&month=${period.key}`)
-      .then((r) => { if (!alive) return; if (r && r.saved) { setSaved({ savedAt: r.savedAt, savedBy: r.savedBy }); setSt({ status: 'ok', report: r.report, frozen: true }) } else setSt({ status: 'empty' }) })
+      .then((r) => { if (!alive) return; if (r && r.saved) { setSaved({ savedAt: r.savedAt, savedBy: r.savedBy, published: !!r.published, publishedAt: r.publishedAt || null, publishedBy: r.publishedBy || null, edited: !!r.edited }); setSt({ status: 'ok', report: r.report, frozen: true }) } else setSt({ status: 'empty' }) })
       .catch(() => { if (alive) setSt({ status: 'empty' }) })
     return () => { alive = false }
-  }, [clientId, period.key])
+  }, [clientId, period.key, snapBump])
+  // Per-client list of every generated report + its saved/published status.
+  useEffect(() => {
+    if (!client) { setSnapList(null); return }
+    let alive = true
+    mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&list=1`)
+      .then((r) => { if (alive) setSnapList(Array.isArray(r && r.rows) ? r.rows : []) })
+      .catch(() => { if (alive) setSnapList([]) })
+    return () => { alive = false }
+  }, [clientId, snapBump])
+  // Publish / unpublish a generated month for the client's Reports view.
+  async function publishAction(month, action) {
+    if (!client) return
+    setPubBusy(true)
+    try {
+      const r = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month, action }) }).then((x) => x.json()).catch(() => null)
+      if (r && r.ok) setSnapBump((n) => n + 1)
+    } finally { setPubBusy(false) }
+  }
 
   async function generate() {
     if (!client) return
@@ -10433,7 +10529,7 @@ function MonthlyReport({ clients, currency, authUser }) {
       const report = await assembleMonthlyReport(client, period)
       setSt({ status: 'ok', report, frozen: false })
       const save = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month: period.key, report }) }).then((x) => x.json()).catch(() => null)
-      if (save && save.ok) { setSaved({ savedAt: save.savedAt, savedBy: save.savedBy }); setSt({ status: 'ok', report, frozen: true }) }
+      if (save && save.ok) { setSaved({ savedAt: save.savedAt, savedBy: save.savedBy, published: !!save.publishedAt, publishedAt: save.publishedAt || null, edited: !!save.publishedAt }); setSt({ status: 'ok', report, frozen: true }); setSnapBump((n) => n + 1) }
     } catch (e) { setSt({ status: 'err', error: String(e.message || e) }) }
     setBusy(false)
   }
@@ -10495,8 +10591,13 @@ function MonthlyReport({ clients, currency, authUser }) {
           {MR_MONTHS().map((m) => <option key={m} value={m}>{monthBounds(m).label}</option>)}
         </select>
         <button className="mr-btn primary" onClick={generate} disabled={busy}>{busy ? 'Generating…' : (saved ? 'Refresh snapshot' : 'Generate snapshot')}</button>
+        {saved && (saved.published
+          ? <button className="mr-btn" onClick={() => publishAction(period.key, 'unpublish')} disabled={pubBusy} title={`Published ${saved.publishedAt ? new Date(saved.publishedAt).toLocaleString() : ''}${saved.publishedBy ? ' by ' + saved.publishedBy : ''} — click to hide from clients`}>{pubBusy ? '…' : (saved.edited ? '● Re-publish' : '✕ Unpublish')}</button>
+          : <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="Make this frozen report visible to clients with Monthly Reports access">{pubBusy ? '…' : '▲ Publish'}</button>)}
+        {saved && saved.published && saved.edited && <button className="mr-btn primary" onClick={() => publishAction(period.key, 'publish')} disabled={pubBusy} title="You've regenerated since publishing — push the new version to clients">↻ Push update</button>}
+        <button className={`mr-btn${showList ? ' on' : ''}`} onClick={() => setShowList((v) => !v)} title="Show every generated report for this client">☰ Reports{snapList && snapList.length ? ` (${snapList.length})` : ''}</button>
         <div className="mr-bar-spacer" />
-        {saved && <span className="mr-saved" title={`Frozen ${new Date(saved.savedAt).toLocaleString()}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>🔒 Snapshot frozen {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString() : ''}</span>}
+        {saved && <span className={`mr-saved${saved.published ? ' pub' : ''}`} title={`Frozen ${new Date(saved.savedAt).toLocaleString()}${saved.savedBy ? ' by ' + saved.savedBy : ''}`}>{saved.published ? (saved.edited ? '🟠 Published (edited since)' : '🟢 Published') : '🔒 Frozen — not published'} {saved.savedAt ? new Date(saved.savedAt).toLocaleDateString() : ''}</span>}
         <div className="mr-viewtoggle" title="Slides = one section per page · Scroll = continuous">
           <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
           <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
@@ -10505,6 +10606,26 @@ function MonthlyReport({ clients, currency, authUser }) {
         <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
         <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
       </div>
+
+      {showList && (
+        <div className="mr-snaplist card">
+          <div className="cap" style={{ fontWeight: 700, marginBottom: 6 }}>Generated reports · {client ? client.name : ''} <span style={{ fontWeight: 400 }}>· {(snapList || []).length} · a report is only visible to clients once <b>Published</b></span></div>
+          {snapList == null ? <Spinner label="Loading…" />
+            : snapList.length === 0 ? <p className="cap" style={{ margin: 0 }}>No reports generated for this client yet.</p>
+              : <div className="table-wrap"><table className="mini-tbl"><thead><tr><th className="lft">Month</th><th className="lft">Generated</th><th className="lft">Status</th><th /></tr></thead>
+                <tbody>{snapList.map((r) => {
+                  const isCur = r.month === period.key
+                  return (<tr key={r.month} className={isCur ? 'row-sel' : ''}>
+                    <td className="lft"><button className="mr-linkbtn" onClick={() => { setFromMonth(r.month); setToMonth(r.month) }} title="Open this month">{monthBounds(r.month).label}</button></td>
+                    <td className="lft">{r.savedAt ? new Date(r.savedAt).toLocaleDateString() : '—'}{r.savedBy ? ` · ${r.savedBy}` : ''}</td>
+                    <td className="lft">{r.published ? (r.edited ? <span className="mr-pill-sec">🟠 Published · edited since</span> : <span className="mr-pill-pri">🟢 Published</span>) : <span className="cap">Not published</span>}</td>
+                    <td className="lft">{r.published
+                      ? <>{r.edited && <button className="mr-btn sm" disabled={pubBusy} onClick={() => publishAction(r.month, 'publish')}>Push update</button>} <button className="mr-btn sm" disabled={pubBusy} onClick={() => publishAction(r.month, 'unpublish')}>Unpublish</button></>
+                      : <button className="mr-btn sm primary" disabled={pubBusy} onClick={() => publishAction(r.month, 'publish')}>Publish</button>}</td>
+                  </tr>)
+                })}</tbody></table></div>}
+        </div>
+      )}
 
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
@@ -12563,7 +12684,14 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   const role = authEnabled && authUser ? authUser.role : 'admin'
   const isViewer = role === 'viewer'
   const myClients = visibleClients
-  const curView = isViewer ? (view === 'settings' ? 'settings' : 'clients') : view
+  // Monthly Reports capability (client-facing published reports). Viewers get it
+  // only when granted; a viewer can be reports-only (no dashboard tabs).
+  const canReports = isViewer ? !!(authUser && authUser.reports) : false
+  const hasDashTabs = !isViewer || authUser.tabs == null || (Array.isArray(authUser.tabs) && authUser.tabs.length > 0)
+  const viewerView = view === 'settings' ? 'settings'
+    : (view === 'reports' && canReports) ? 'reports'
+      : (hasDashTabs ? 'clients' : (canReports ? 'reports' : 'clients'))
+  const curView = isViewer ? viewerView : view
   const curPicked = curView === 'clients'
     ? ((picked && baseClients.some((c) => c.id === picked.id) && canSeeClientFE(authUser, picked.id) && (seeRestricted || !restricted[picked.id])) ? picked : (isViewer ? myClients[0] : picked))
     : picked
@@ -12575,7 +12703,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
       {collapsed && <button className="sb-expand" onClick={() => setCollapsed(false)} aria-label="Show sidebar" title="Show sidebar">»</button>}
       <aside className={`side ${navOpen ? 'open' : ''}`}>
         <div className="brand"><div className="logo logo-360"><span>360</span></div><div><h1 className="brand-name">Caalano<span className="b360">360</span></h1><p>360° Reporting</p></div><button className="sb-toggle" onClick={() => setCollapsed(true)} aria-label="Collapse sidebar" title="Collapse sidebar">«</button><button className="side-close" onClick={() => setNavOpen(false)} aria-label="Close menu">✕</button></div>
-        {(!isViewer || myClients.length > 1) && myClients.length > 0 && (
+        {(!isViewer || (myClients.length > 1 && hasDashTabs)) && myClients.length > 0 && (
           <ClientSwitcher clients={myClients} active={curView === 'clients' ? curPicked : null} onPick={openClient} idxOf={(c) => Math.max(0, baseClients.findIndex((x) => x.id === c.id))} />
         )}
         <nav className="nav">
@@ -12590,8 +12718,12 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'social' ? 'active' : ''} onClick={() => go('social')}><span className="ic"><NavIcon name="social" /></span>Organic Social Media</button>
           </>}
           {isViewer && <>
-            <div className="nav-lab">My reports</div>
-            {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic"><NavIcon name="report" /></span>{c.name}</button>) : <div className="nav-empty">No reports assigned yet — your admin will set these up.</div>}
+            {canReports && <button className={curView === 'reports' ? 'active' : ''} onClick={() => go('reports')}><span className="ic"><NavIcon name="monthly" /></span>Monthly Reports</button>}
+            {hasDashTabs && <>
+              <div className="nav-lab">My dashboards</div>
+              {myClients.length ? myClients.map((c) => <button key={c.id} className={curView === 'clients' && curPicked && curPicked.id === c.id ? 'active' : ''} onClick={() => openClient(c)}><span className="ic"><NavIcon name="report" /></span>{c.name}</button>) : <div className="nav-empty">No dashboards assigned yet — your admin will set these up.</div>}
+            </>}
+            {!hasDashTabs && !canReports && <div className="nav-empty">No access assigned yet — your admin will set these up.</div>}
           </>}
         </nav>
         <div className="side-foot">
@@ -12609,13 +12741,13 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client — followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client — campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client — followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports — frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
-          {curView !== 'settings' && curView !== 'monthly' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
+          {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
           {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
-          {curView !== 'monthly' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
+          {curView !== 'monthly' && curView !== 'reports' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
         <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => { setPicked(null); setView(isViewer ? 'clients' : 'overview') }}>
           {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={(c) => { setPicked(c); setView('clients') }} />}
@@ -12625,6 +12757,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
+          {curView === 'reports' && isViewer && canReports && <ClientReports clients={myClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
           {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
           {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} wonBasis={wonBasis} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}

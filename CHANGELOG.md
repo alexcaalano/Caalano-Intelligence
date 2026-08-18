@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.268.0 — 2026-08-18 · `PENDING` — Monthly Reports: client access + publish barrier
+- **New "Monthly Reports" permission** (Team & access → viewer): grant a client access to their **published** monthly
+  reports for the clients they're allocated. Can be granted on its own (a reports-only client) or alongside dashboard
+  tabs. Admins/agency users always have report access.
+- **Publish barrier.** Generating/refreshing a report is internal. A new **Publish** button on the Monthly Report
+  makes that frozen month visible to permitted clients; **Unpublish** hides it. Clients only ever see published,
+  frozen snapshots — never live data, never drafts.
+- **Edit safety:** re-generating a published month does **not** change what the client sees — the report is flagged
+  "🟠 Published · edited since" and clients keep seeing the last published version until you hit **Push update** /
+  Re-publish. Two copies are kept server-side (the working draft and the published copy).
+- **Agency reports list:** a **☰ Reports** panel on the Monthly Report lists every generated month per client — when it
+  was generated, and whether it's published — with per-row Publish / Unpublish / Push-update controls.
+- **Client view:** a dedicated **Monthly Reports** screen for permitted clients — pick their client (if more than one),
+  choose a published month, read the report on screen, download the PDF. No agency controls.
+
 ## v3.267.0 — 2026-08-18 · `PENDING` — Monthly Report: break "other sources" into named channels (colour-coded)
 - On the **Paid vs all lead sources** chart, the non-paid grey "Other sources" block is now **split into named channels**
   — Organic search, Referral, Social (organic), Email, Direct, CRM / manual, and Untracked / other — each its **own

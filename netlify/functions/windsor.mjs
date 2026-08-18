@@ -11,7 +11,7 @@
 
 import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
-import { currentUser, canSeeClient } from '../lib/auth.mjs'
+import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
 function parseHours(url) {
   const bhStart = url.searchParams.get('bhStart'), bhEnd = url.searchParams.get('bhEnd'), bhDays = url.searchParams.get('bhDays')
@@ -1987,6 +1987,10 @@ function viewerAllowed(me, scope, channel) {
   // Attribution loads at the workspace shell on every tab, so it's always allowed
   // for a client the viewer can see (the client check runs separately).
   if (channel === 'attribution') return true
+  // Monthly Reports: a viewer with the reports grant may reach the monthlysnap
+  // scope. The handler itself restricts them to PUBLISHED reads (no drafts, no
+  // publishing) for the client they're allowed to see.
+  if (scope === 'monthlysnap') return me.reports === true
   const kkey = scope ? 'scope:' + scope : (channel ? 'channel:' + channel : null)
   const permit = kkey && VIEWER_REQ_TABS[kkey]
   if (!permit) return false // agency/admin scope, or an unmapped request → deny
@@ -2220,24 +2224,80 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'monthlysnap') {
     if (!client) return json({ error: 'client required' }, 400)
     const store = monthlyStore()
-    const idxKey = `index:${client}`
+    const idxKey = `index:${client}`      // months that have been generated (staff)
+    const metaKey = `meta:${client}`      // per-month headers: savedAt/publishedAt/etc
+    const pubIdxKey = `pubindex:${client}` // months a client may see (published)
+    const pubKey = (m) => `pub:${client}:${m}` // frozen PUBLISHED copy (client-facing)
+    const isViewer = !!(me && me.role === 'viewer')
+    const loadMeta = async () => { const m = await store.get(metaKey, { type: 'json' }).catch(() => null); return (m && typeof m === 'object') ? m : {} }
+
+    // ---- Client (viewer): PUBLISHED reports only, for a client they can see ----
+    if (isViewer) {
+      if (req.method === 'POST') return json({ error: 'Not authorised.' }, 403)
+      if (url.searchParams.get('list')) {
+        const pubIdx = await store.get(pubIdxKey, { type: 'json' }).catch(() => null)
+        const months = Array.isArray(pubIdx) ? pubIdx : []
+        const meta = await loadMeta()
+        return json({ months: months.map((m) => ({ month: m, publishedAt: (meta[m] && meta[m].publishedAt) || null })) })
+      }
+      const month = url.searchParams.get('month')
+      if (!month) return json({ error: 'month required' }, 400)
+      const pub = await store.get(pubKey(month), { type: 'json' }).catch(() => null)
+      return json(pub ? { saved: true, published: true, month, report: pub.report, publishedAt: pub.publishedAt, publishedBy: pub.publishedBy } : { saved: false })
+    }
+
+    // ---- Staff (admin / user / owner): generate, list-with-status, publish ----
     if (req.method === 'POST') {
       let body; try { body = await req.json() } catch { body = null }
+      const action = body && body.action
+      // Publish / unpublish an already-generated month.
+      if (action === 'publish' || action === 'unpublish') {
+        const m = body && body.month; if (!m) return json({ error: 'month required' }, 400)
+        const meta = await loadMeta()
+        let pubIdx = await store.get(pubIdxKey, { type: 'json' }).catch(() => null); if (!Array.isArray(pubIdx)) pubIdx = []
+        const rec = await store.get(monthKey(client, m), { type: 'json' }).catch(() => null)
+        if (action === 'publish') {
+          if (!rec || !rec.report) return json({ error: 'Generate the report before publishing.' }, 400)
+          const at = new Date().toISOString(), by = (me && (me.name || me.email)) || null
+          await store.setJSON(pubKey(m), { client, month: m, report: rec.report, publishedAt: at, publishedBy: by, savedAt: rec.savedAt || null })
+          meta[m] = { ...(meta[m] || {}), savedAt: rec.savedAt || (meta[m] && meta[m].savedAt) || null, publishedAt: at, publishedBy: by }
+          await store.setJSON(metaKey, meta)
+          if (!pubIdx.includes(m)) { pubIdx.push(m); pubIdx.sort().reverse(); await store.setJSON(pubIdxKey, pubIdx) }
+          return json({ ok: true, month: m, published: true, publishedAt: at, publishedBy: by })
+        }
+        await store.delete(pubKey(m)).catch(() => {})
+        pubIdx = pubIdx.filter((x) => x !== m); await store.setJSON(pubIdxKey, pubIdx)
+        meta[m] = { ...(meta[m] || {}), publishedAt: null, publishedBy: null }; await store.setJSON(metaKey, meta)
+        return json({ ok: true, month: m, published: false })
+      }
+      // Default POST = generate/freeze a month (does NOT touch the published copy —
+      // a re-generated report stays on the previously-published version for clients
+      // until it's re-published).
       if (!body || !body.month || !body.report) return json({ error: 'month + report required' }, 400)
-      const rec = { client, month: body.month, report: body.report, savedAt: new Date().toISOString(), savedBy: (me && (me.name || me.email)) || null }
+      const at = new Date().toISOString(), by = (me && (me.name || me.email)) || null
+      const meta = await loadMeta()
+      const rec = { client, month: body.month, report: body.report, savedAt: at, savedBy: by }
       await store.setJSON(monthKey(client, body.month), rec)
+      meta[body.month] = { ...(meta[body.month] || {}), savedAt: at, savedBy: by }
+      await store.setJSON(metaKey, meta)
       let idx = await store.get(idxKey, { type: 'json' }).catch(() => null); if (!Array.isArray(idx)) idx = []
       if (!idx.includes(body.month)) { idx.push(body.month); idx.sort().reverse(); await store.setJSON(idxKey, idx) }
-      return json({ ok: true, savedAt: rec.savedAt, savedBy: rec.savedBy })
+      return json({ ok: true, savedAt: at, savedBy: by, publishedAt: (meta[body.month] && meta[body.month].publishedAt) || null })
     }
+    // Staff list: every generated month with its saved + published status (from the
+    // light meta header, so we never read the heavy report blobs to build the list).
     if (url.searchParams.get('list')) {
       const idx = await store.get(idxKey, { type: 'json' }).catch(() => null)
-      return json({ months: Array.isArray(idx) ? idx : [] })
+      const months = Array.isArray(idx) ? idx : []
+      const meta = await loadMeta()
+      const rows = months.map((m) => { const h = meta[m] || {}; return { month: m, savedAt: h.savedAt || null, savedBy: h.savedBy || null, publishedAt: h.publishedAt || null, publishedBy: h.publishedBy || null, published: !!h.publishedAt, edited: !!(h.publishedAt && h.savedAt && h.savedAt > h.publishedAt) } })
+      return json({ months, rows })
     }
     const month = url.searchParams.get('month')
     if (!month) return json({ error: 'month required' }, 400)
     const rec = await store.get(monthKey(client, month), { type: 'json' }).catch(() => null)
-    return json(rec ? { saved: true, ...rec } : { saved: false })
+    const meta = await loadMeta(); const h = meta[month] || {}
+    return json(rec ? { saved: true, ...rec, published: !!h.publishedAt, publishedAt: h.publishedAt || null, publishedBy: h.publishedBy || null, edited: !!(h.publishedAt && rec.savedAt && rec.savedAt > h.publishedAt) } : { saved: false })
   }
 
   // Realised wins for the report month, attributed by WON DATE (regardless of

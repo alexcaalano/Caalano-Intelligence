@@ -135,7 +135,7 @@ const publicUser = (u) => u && ({
   email: u.email, name: u.name || '', role: normRole(u.role), status: u.status || 'active',
   createdAt: u.createdAt || null, invitedBy: u.invitedBy || null, lastLogin: u.lastLogin || null,
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
-  tabs: Array.isArray(u.tabs) ? u.tabs : null, requestedAt: u.requestedAt || null, note: u.note || '',
+  tabs: Array.isArray(u.tabs) ? u.tabs : null, reports: u.reports === true, requestedAt: u.requestedAt || null, note: u.note || '',
 })
 export { publicUser }
 
@@ -191,7 +191,20 @@ function normAlloc(patch = {}) {
   if (typeof patch.allClients === 'boolean') out.allClients = patch.allClients
   if (patch.tabs === null) out.tabs = null
   else if (Array.isArray(patch.tabs)) out.tabs = patch.tabs.filter((t) => ALL_TABS.includes(t))
+  // Monthly Reports capability — a separate grant (mainly for viewers/clients) that
+  // lets them see PUBLISHED monthly reports for their allocated clients. Admins and
+  // agency users always have it implicitly (canSeeReports), so it's stored only as
+  // an explicit viewer grant.
+  if (typeof patch.reports === 'boolean') out.reports = patch.reports
   return out
+}
+// Can this user access Monthly Reports at all? Admins + agency users always can;
+// a viewer only if explicitly granted. (Client-visibility is further limited to
+// PUBLISHED reports for their allocated clients — enforced at the data layer.)
+export function canSeeReports(user) {
+  if (!user) return false
+  if (isAdminish(user.role) || user.role === 'user') return true
+  return user.role === 'viewer' && user.reports === true
 }
 
 // A client requests access. Creates a PENDING account (with their chosen
@@ -238,7 +251,7 @@ export async function authenticate(email, password) {
 }
 
 // Admin creates an invite. Returns the token + the pending user record.
-export async function createInvite({ email, name, role, clients, allClients, tabs, invitedBy, actor }) {
+export async function createInvite({ email, name, role, clients, allClients, tabs, reports, invitedBy, actor }) {
   if (!isEmail(email)) return { error: 'A valid email is required.' }
   const actorRole = (actor && actor.role) || 'admin'
   if (role && !canManageRole(actorRole, role)) return { error: 'Only a Super Admin can invite an Admin.' }
@@ -248,7 +261,7 @@ export async function createInvite({ email, name, role, clients, allClients, tab
   const token = randomToken()
   const now = new Date().toISOString()
   const expires = Date.now() + 7 * 86400 * 1000
-  const alloc = normAlloc({ role, clients, allClients, tabs })
+  const alloc = normAlloc({ role, clients, allClients, tabs, reports })
   const u = {
     email: em, name: String(name || '').trim(), role: normRole(role),
     status: 'invited', passwordHash: null, passwordSalt: null, createdAt: existing ? existing.createdAt : now,
@@ -298,7 +311,7 @@ export async function updateUser(email, patch, actor) {
     if (u.role === 'superadmin' && patch.role !== 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t remove the last Super Admin.' }
     u.role = patch.role
   }
-  Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs }))
+  Object.assign(u, normAlloc({ clients: patch.clients, allClients: patch.allClients, tabs: patch.tabs, reports: patch.reports }))
   if (patch.status && (patch.status === 'active' || patch.status === 'disabled')) {
     if (self && patch.status === 'disabled') return { error: 'You can’t disable your own account.' }
     if (patch.status === 'disabled' && u.role === 'superadmin' && (await countActiveRole('superadmin')) <= 1) return { error: 'You can’t disable the last Super Admin.' }

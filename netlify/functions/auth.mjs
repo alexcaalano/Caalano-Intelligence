@@ -76,23 +76,23 @@ export default async (req) => {
 
     if (action === 'users') return json({ ok: true, users: await listUsers(), me })
     if (action === 'invite' && req.method === 'POST') {
-      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, actor: me })
+      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports, actor: me })
       if (r.error) return json({ ok: false, error: r.error }, 400)
       const link = `${url.origin}/?invite=${encodeURIComponent(r.token)}`
       return json({ ok: true, user: r.user, token: r.token, inviteUrl: link, expires: r.expires })
     }
     if (action === 'resend-invite' && req.method === 'POST') {
-      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, actor: me })
+      const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports, actor: me })
       if (r.error) return json({ ok: false, error: r.error }, 400)
       const link = `${url.origin}/?invite=${encodeURIComponent(r.token)}`
       return json({ ok: true, user: r.user, inviteUrl: link, expires: r.expires })
     }
     if (action === 'approve' && req.method === 'POST') {
-      const r = await approveUser(body.email, { role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me)
+      const r = await approveUser(body.email, { role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports }, me)
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
     }
     if (action === 'update-user' && req.method === 'POST') {
-      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name, clients: body.clients, allClients: body.allClients, tabs: body.tabs }, me)
+      const r = await updateUser(body.email, { role: body.role, status: body.status, name: body.name, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports }, me)
       return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, user: r.user })
     }
     if (action === 'delete-user' && req.method === 'POST') {

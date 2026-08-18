@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.270.0'
+const APP_VERSION = '3.271.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4346,9 +4346,48 @@ function LostPersonRow({ p, clientId, money }) {
     </div>
   )
 }
+// A coloured "where it came from" pill. Meta/Google keep their brand colours;
+// every other source (Direct, CRM UI, Organic, Referral…) gets its own stable
+// colour from a hash of its label so each reads as visually distinct, not grey.
+function srcHue(s) { let h = 0; const str = String(s || ''); for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; return h % 360 }
+function SourcePill({ source, channel, className = '' }) {
+  const ch = channel || 'other'
+  const label = source || (ch === 'meta' ? 'Meta' : ch === 'google' ? 'Google' : 'Other')
+  if (ch === 'meta') return <span className={`mr-src mr-src-meta ${className}`}>{label}</span>
+  if (ch === 'google') return <span className={`mr-src mr-src-google ${className}`}>{label}</span>
+  const h = srcHue(label)
+  return <span className={`mr-src ${className}`} style={{ background: `color-mix(in srgb, hsl(${h} 62% 50%) 18%, transparent)`, color: `hsl(${h} 55% 46%)` }}>{label}</span>
+}
+
+// Opportunities drill - a flat, status-filtered list of every opportunity in the
+// window (NOT pre-grouped by channel). Status chips on top; each row carries a
+// coloured source pill so you see where each deal came from inline, plus a
+// per-source count callout. Mirrors the KeyPeople drill for a consistent feel.
+function CcOppsList({ src, money }) {
+  const [status, setStatus] = useState('all')
+  const opps = React.useMemo(() => (src || []).flatMap((s) => (s.opps || []).map((o) => ({ ...o, source: o.source || s.source, channel: o.channel || s.channel }))), [src])
+  const counts = { all: opps.length, open: 0, won: 0, lost: 0 }
+  for (const o of opps) counts[o.status] = (counts[o.status] || 0) + 1
+  const TABS = [['all', 'All'], ['open', 'Open'], ['won', 'Won'], ['lost', 'Lost']]
+  const shown = status === 'all' ? opps : opps.filter((o) => o.status === status)
+  const perSrc = (src || []).slice().sort((a, b) => b.count - a.count)
+  return (
+    <div className="cc-opps">
+      <div className="kp-filters" style={{ padding: '0 0 10px' }}>
+        {TABS.map(([k, lbl]) => <button key={k} className={`kp-filter${status === k ? ' on' : ''}`} onClick={() => setStatus(k)} disabled={!counts[k]}>{lbl}<span className="kp-filter-n">{fmtNumber(counts[k] || 0)}</span></button>)}
+      </div>
+      <div className="cc-srccounts">{perSrc.map((s, i) => <span key={i} className="cc-srccount"><SourcePill source={s.source} channel={s.channel} /> <b>{fmtNumber(s.count)}</b> · {money(s.value)}</span>)}</div>
+      {shown.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl kp-tbl">
+        <thead><tr><th className="lft">Contact</th><th className="lft">Status</th><th className="lft">Source</th><th className="lft">Stage</th><th>Value</th></tr></thead>
+        <tbody>{shown.map((o, i) => <tr key={i}><td className="lft">{o.name}</td><td className="lft">{statusChip(o.status)}</td><td className="lft"><SourcePill source={o.source} channel={o.channel} /></td><td className="lft">{o.stage || '-'}</td><td>{money(o.value)}</td></tr>)}</tbody>
+      </table></div> : <div className="cap">No {status === 'all' ? '' : status + ' '}opportunities in this period.</div>}
+    </div>
+  )
+}
+
 // One reusable modal for every command-centre drill. `drill` = { kind, title }.
 // Reads the ccdrill payload and renders the right table; supports one level of
-// nested drill-in (calendar -> people, source -> opps, channel -> won deals).
+// nested drill-in (calendar -> people, channel -> won deals).
 function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   const [sub, setSub] = useState(null)
   useEffect(() => { setSub(drill && drill.preselect ? drill.preselect : null) }, [drill])
@@ -4373,8 +4412,8 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   } else if (drill.kind === 'revenue') {
     const deals = (d.revenue && d.revenue.deals) || []
     subhead = `${fmtNumber(deals.length)} won ${deals.length === 1 ? 'deal' : 'deals'} · ${money((d.revenue && d.revenue.total) || 0)}`
-    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Closed</th><th>Channel</th></tr></thead>
-      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '-'}</td><td>{chLabel(dl.channel)}</td></tr>)}</tbody></table>
+    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Won on</th><th className="lft">Source</th></tr></thead>
+      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '-'}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
       : <div className="cap">No won deals in this period.</div>
   } else if (drill.kind === 'spend') {
     subhead = `${money(spend.total || 0)} total ad spend`
@@ -4384,19 +4423,9 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
         <tr><td className="lft">Google</td><td>{money(spend.google || 0)}</td><td>{pctOf(spend.google, spend.total)}</td></tr>
       </tbody></table>
   } else if (drill.kind === 'opps') {
-    if (sub) {
-      const s = sub
-      title = s.source
-      subhead = `${fmtNumber(s.count)} ${s.count === 1 ? 'opportunity' : 'opportunities'} · ${money(s.value)}`
-      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Contact</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th></tr></thead>
-        <tbody>{(s.opps || []).map((o, i) => <tr key={i}><td className="lft">{o.name}</td><td className="lft">{o.status}</td><td className="lft">{o.stage || '-'}</td><td>{money(o.value)}</td></tr>)}</tbody></table>
-    } else {
-      const src = d.oppsBySource || []
-      subhead = `${fmtNumber(src.reduce((a, s) => a + s.count, 0))} opportunities by source · click a source`
-      body = src.length ? src.map((s, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(s)}>
-        <b>{s.source}</b> <span className="cc-drill-ans">{fmtNumber(s.count)} {s.count === 1 ? 'opp' : 'opps'} · {money(s.value)} · {s.kind}</span></button>)
-        : <div className="cap">No opportunities in this period.</div>
-    }
+    const src = d.oppsBySource || []
+    subhead = `${fmtNumber(src.reduce((a, s) => a + s.count, 0))} opportunities · filter by status, coloured by source`
+    body = src.length ? <CcOppsList src={src} money={money} /> : <div className="cap">No opportunities in this period.</div>
   } else if (drill.kind === 'cpl') {
     subhead = `Paid-attributed · ${fmtNumber(paid.paidLeads || 0)} paid leads from ${money(spend.total || 0)} spend`
     body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Leads</th><th>Cost / lead</th></tr></thead>
@@ -4416,22 +4445,22 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   } else if (drill.kind === 'openvalue') {
     const deals = (d.open && d.open.deals) || []
     subhead = `${fmtNumber((d.open && d.open.total) || 0)} open · ${money((d.open && d.open.value) || 0)} in pipeline`
-    body = deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th className="lft">Stage</th><th className="lft">Pipeline</th><th>Age</th></tr></thead>
-      <tbody>{deals.map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td className="lft">{dl.stage || '-'}</td><td className="lft">{dl.pipeline}</td><td>{dl.ageDays != null ? `${dl.ageDays}d` : '-'}</td></tr>)}</tbody></table></div>
+    body = deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th className="lft">Source</th><th className="lft">Stage</th><th className="lft">Pipeline</th><th>Age</th></tr></thead>
+      <tbody>{deals.map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td><td className="lft">{dl.stage || '-'}</td><td className="lft">{dl.pipeline}</td><td>{dl.ageDays != null ? `${dl.ageDays}d` : '-'}</td></tr>)}</tbody></table></div>
       : <div className="cap">No open deals in this period.</div>
   } else if (drill.kind === 'close') {
     if (sub) {
       const c = sub
       title = `${chLabel(c.channel)} - won deals`
-      subhead = `${fmtNumber(c.won)} won of ${fmtNumber(c.closed)} closed · ${c.closeRate != null ? c.closeRate + '%' : '-'} close rate`
-      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Closed</th></tr></thead>
+      subhead = `${fmtNumber(c.won)} won of ${fmtNumber(c.closed)} resulted · ${c.closeRate != null ? c.closeRate + '%' : '-'} result rate`
+      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Won on</th></tr></thead>
         <tbody>{(c.deals || []).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '-'}</td></tr>)}</tbody></table>
     } else {
       const chans = d.closeByChannel || []
-      subhead = 'Close rate by channel · click a channel for its won deals'
+      subhead = 'Result rate by channel · resulted = won + lost · click a channel for its won deals'
       body = chans.length ? chans.map((c, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(c)}>
-        <b>{chLabel(c.channel)}</b> <span className="cc-drill-ans">{fmtNumber(c.won)} won / {fmtNumber(c.closed)} closed · <b>{c.closeRate != null ? c.closeRate + '%' : '-'}</b> close rate</span></button>)
-        : <div className="cap">No closed deals in this period.</div>
+        <b>{chLabel(c.channel)}</b> <span className="cc-drill-ans">{fmtNumber(c.won)} won / {fmtNumber(c.closed)} resulted · <b>{c.closeRate != null ? c.closeRate + '%' : '-'}</b> result rate</span></button>)
+        : <div className="cap">No resulted deals in this period.</div>
     }
   } else if (drill.kind === 'lost') {
     if (sub) {
@@ -4683,7 +4712,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Revenue" value={revV != null ? money(revV) : '-'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue - won deals' })} />
             <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '-'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
-            <Kpi label="Close rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ closed" onClick={tileClick({ kind: 'close', title: 'Close rate - by channel' })} />
+            <Kpi label="Result rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ resulted" onClick={tileClick({ kind: 'close', title: 'Result rate - by channel' })} />
           </div>
           {kef.usingKe && kef.rows.length ? <>
             <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· {kef.multi ? "share of each event's pipeline leads" : `share of ${fmtNumber(kef.leadTotal)} ${chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}`}</span></div>
@@ -11640,7 +11669,7 @@ function renderMonthlyDeck(rep, h) {
           <div className="mr-kpirow">
             <MRKpi label="Deals lost" value={n0(lost.total.count)} sub="closed-lost this month" />
             <MRKpi label="Value lost" value={money(lost.total.value)} />
-            <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ closed this month" />
+            <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ resulted this month" />
             <MRKpi label="Still open" value={n0(crm.open)} sub={`${money(crm.openValue)} in pipeline`} />
           </div>
           <div className="mr-two mr-two-viz">

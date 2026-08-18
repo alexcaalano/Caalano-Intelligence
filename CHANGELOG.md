@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.271.0 - 2026-08-18 · `PENDING` - Opportunities drill: status-first + source pills; "Resulted" rename
+- **Opportunities drill reworked.** Clicking the Opportunities tile now opens the full list of every opportunity in the
+  period up front, instead of a channel-first "click a source" menu. Filter chips across the top switch between **All /
+  Open / Won / Lost** (by status, not by channel), each with its own count, and every row carries a coloured **source
+  pill** so you see where each deal came from inline. A per-source count callout (pill · count · value) sits above the
+  list. Meta and Google keep their brand colours; every other source (Direct, CRM UI, Organic, Referral…) gets its own
+  stable colour so they're each distinct.
+- **Consistent source pills** added to the Won-deals and Open-pipeline drills too, replacing the plain channel text.
+- **"Closed" renamed to "Resulted."** The close-rate metric is now **Result rate** and its bucket **resulted** (= won +
+  lost), because "closed" reads as "won" - so "won ÷ resulted" is clearer. Applies to the Command Centre tile + drill and
+  the Monthly Report Win-rate caption. The top **Won basis: Closed / Created** toggle is unchanged (there "Closed"
+  genuinely means closed-won).
+
 ## v3.270.0 - 2026-08-18 · `PENDING` - Australian dates + em dashes removed everywhere
 - **Dates now DD/MM/YYYY everywhere.** Any date/time that previously rendered in the viewer's browser locale (which
   showed American MM/DD/YYYY for some clients) is now pinned to Australian formatting (`en-AU`) - across the client

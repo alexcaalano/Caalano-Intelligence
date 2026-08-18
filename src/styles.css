@@ -163,6 +163,10 @@ body {
 .cc-src-line b { color: var(--text); font-weight: 700; }
 .cc-drill-row.cc-click:hover { border-color: var(--brand); }
 .lost-notes { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
+/* Opportunities drill - per-source count callout above the status-filtered list. */
+.cc-srccounts { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 2px 0 12px; margin-bottom: 10px; border-bottom: 1px solid var(--border-2); }
+.cc-srccount { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.cc-srccount b { color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
 
 .section-title { font-size: 14px; font-weight: 700; margin: 26px 2px 13px; display: flex; align-items: baseline; gap: 9px; }
 .section-title .sub { font-size: 12px; color: var(--muted); font-weight: 500; }

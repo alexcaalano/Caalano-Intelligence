@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.267.0 — 2026-08-18 · `PENDING` — Monthly Report: break "other sources" into named channels (colour-coded)
+- On the **Paid vs all lead sources** chart, the non-paid grey "Other sources" block is now **split into named channels**
+  — Organic search, Referral, Social (organic), Email, Direct, CRM / manual, and Untracked / other — each its **own
+  colour**, stacked alongside the green Paid segment. **Hover any step to see the full split**, and a "Non-paid lead
+  mix" line under the table lists the lead count per source.
+- Measured, not guessed: each source bucket's per-key-event reach is computed with the **same green-column engine** as
+  "Paid" (from the `utm_source` outcomes), then scaled to fill exactly the non-paid remainder so the stacked bar still
+  reconciles to the funnel total. Kept the existing two-panel layout for consistency.
+- Backend now carries `srcOutcomes` (per-source outcome entities, heavy detail stripped) in the report snapshot.
+  **Regenerate the report (Refresh snapshot)** to populate it on already-frozen months; older snapshots fall back to
+  the previous Paid-vs-Other bar.
+
 ## v3.266.0 — 2026-08-18 · `PENDING` — Monthly Report: fix Google key-events by campaign + time-to-close per channel
 - **Fix:** on the Monthly Report's **Key events by campaign** slide, Google campaigns showed "—" for every key event
   even though the live Google Ads view matched them fine. Cause: Google's `utm_campaign` carries the numeric campaign

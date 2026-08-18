@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.264.0'
+const APP_VERSION = '3.265.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3616,7 +3616,14 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
     } else {
       const has = rmap && (rmap.m.has(k.ref) || (k.pipeline && rmap.m.has(k.pipeline + '::' + k.ref)))
       if (!has) continue
-      rows.push({ label: k.label, count: stageReachOf(rmap, k.pipeline, k.ref), kind: 'stage', pipeline: k.pipeline || null })
+      // A won deal is assumed to have progressed through EVERY pipeline stage — a
+      // deal is often marked Won at an earlier stage (e.g. "15 Minute Call") without
+      // the stage being dragged forward, which otherwise shows 0 at later stages like
+      // "Payment Collected" despite the deal being won. So each stage's reached count
+      // is at least the won total. (Reach is cumulative + monotonic, and wonTotal is
+      // constant across stages, so this can't invert the funnel.)
+      const reach = stageReachOf(rmap, k.pipeline, k.ref)
+      rows.push({ label: k.label, count: Math.max(reach, wonTotal || 0), kind: 'stage', pipeline: k.pipeline || null })
     }
   }
   return rows

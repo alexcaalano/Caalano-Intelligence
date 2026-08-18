@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.265.0 — 2026-08-18 · `PENDING` — Funnels: a Won deal now counts as having reached every pipeline stage
+- **Fix:** in the funnel key-event steps (Monthly Report cohort funnel, Meta/Google funnels, Command Centre, Daily
+  Performance breakdown), a **won deal is now credited with reaching every pipeline stage**. Previously a deal marked
+  **Won at an earlier stage** (e.g. "15 Minute Call") without the pipeline stage being dragged forward showed **0 at
+  later stages** like "Payment Collected" — even though the deal was won. Now each stage step counts at least the number
+  of won deals, so a won deal flows through to the end of the funnel.
+- This matches how the Users-tab funnel already treated won deals, so the two views now agree. Reach stays cumulative
+  and monotonic (won total is constant across stages), so the funnel can't invert.
+- Note: this is a display/attribution rule in the report, not a change to your CRM. Advancing deals through the stages
+  in GoHighLevel when you mark them won is still the cleanest source of truth — but the report no longer under-reports
+  the final stages when that hasn't happened.
+
 ## v3.264.0 — 2026-08-17 · `PENDING` — Users tab: instant filters (no reload on channel / pipeline / won-basis)
 - The Users tab used to **refetch** every time you changed the **All/Paid/Non-Paid/Meta/Google** toggle, the **pipeline
   selector**, or the **Created/Closed won-basis** — a spinner each time. But those filters only change *which

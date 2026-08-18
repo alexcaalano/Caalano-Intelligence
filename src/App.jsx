@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.265.0'
+const APP_VERSION = '3.266.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10297,6 +10297,13 @@ async function assembleMonthlyReport(client, period) {
     month: period.key, period: b, currency: undefined,
     hasMeta: !!client.meta, hasGoogle: !!client.google, hasCrm: !!client.ghl,
     meta, google, blend, attribution: attrTrim, trend: trendR || [], deals: dealsR || null,
+    // ID→name folds so Google's utm_campaign / utm_content (which carry the numeric
+    // campaign / ad-group ID, not the name) resolve to the live campaign name — the
+    // exact map the Meta/Google views pass to aliasedOutcomeMap. Without it the
+    // report's per-campaign key-event columns show "—" for Google (Meta matches by
+    // name so it was unaffected).
+    campIdMap: (attribution && attribution.campIdMap) || {},
+    mediumIdMap: (attribution && attribution.mediumIdMap) || {},
     // Per-campaign CRM outcome entities (utm_campaign) so the report can render
     // the Caalano360 green key-event columns + costings by campaign, same as the
     // Meta Ads view. Top 40 by leads keeps the frozen blob lean.
@@ -10980,7 +10987,7 @@ function renderMonthlyDeck(rep, h) {
   const stagePos = stagePosMap([...((attribution && attribution.allPipelines) || []), ...pipelines])
   const calNames = new Map(((attribution && attribution.appointments && attribution.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
   const o360cols = rep.hasCrm ? buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calNames) : null
-  const oCamp = aliasedOutcomeMap(rep.client.id, 'campaign', rep.campOutcomes || [])
+  const oCamp = aliasedOutcomeMap(rep.client.id, 'campaign', rep.campOutcomes || [], rep.campIdMap)
   const oCre = aliasedOutcomeMap(rep.client.id, 'content', rep.creOutcomes || [])
   // Per-pipeline key events: multi-pipeline clients show only the key events for
   // the pipeline attached (in Settings → campaign map) to a creative's / campaign's
@@ -11509,6 +11516,7 @@ function renderMonthlyDeck(rep, h) {
       spend: (cKey === 'meta' ? paid.metaSpend : paid.googleSpend) || 0,
       rev: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].revenue) || 0,
       won: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].count) || 0,
+      close: (scWon.byChannel && scWon.byChannel[cKey] && scWon.byChannel[cKey].avgCloseDays != null) ? scWon.byChannel[cKey].avgCloseDays : null,
     })).filter((r) => r.spend || r.rev)
     push(
       <MRSlide key="c360" kicker="Caalano360" title="Account summary & ROI" sub="Ad platform + CRM. Spend & leads are this month's; ROAS is measured only on revenue from deals attributed to a paid channel (Meta/Google) via UTM — never total business.">
@@ -11538,6 +11546,7 @@ function renderMonthlyDeck(rep, h) {
                     { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
                     { k: 'rev', label: 'Revenue', align: 'r', render: (r) => money(r.rev) },
                     { k: 'roas', label: 'ROAS', align: 'r', render: (r) => (r.spend ? (r.rev / r.spend).toFixed(1) + 'x' : '—') },
+                    { k: 'close', label: 'Avg close', align: 'r', render: (r) => (r.close != null ? `${r.close} days` : '—') },
                   ]}
                   rows={roiRows}
                 />

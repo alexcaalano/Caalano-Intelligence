@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.266.0 — 2026-08-18 · `PENDING` — Monthly Report: fix Google key-events by campaign + time-to-close per channel
+- **Fix:** on the Monthly Report's **Key events by campaign** slide, Google campaigns showed "—" for every key event
+  even though the live Google Ads view matched them fine. Cause: Google's `utm_campaign` carries the numeric campaign
+  **ID**, not the name, and the report wasn't given the **ID→name fold** (`campIdMap`) that the live views pass to the
+  matcher — the frozen snapshot had trimmed it out. The report now captures `campIdMap` (and `mediumIdMap`) and passes
+  it, so Google campaigns resolve to their name and their key-event columns populate. (Meta was unaffected — it matches
+  by name.) **Regenerate the report (Refresh snapshot) to pick this up** on already-frozen months.
+- **New:** the **ROI by channel** table (Account summary & ROI slide) now shows **Avg close** — average time-to-close
+  (lead → won) **per channel** (Meta vs Google), alongside spend / won / revenue / ROAS. Backend computes it per channel
+  on the same span basis as the overall figure.
+
 ## v3.265.0 — 2026-08-18 · `PENDING` — Funnels: a Won deal now counts as having reached every pipeline stage
 - **Fix:** in the funnel key-event steps (Monthly Report cohort funnel, Meta/Google funnels, Command Centre, Daily
   Performance breakdown), a **won deal is now credited with reaching every pipeline stage**. Previously a deal marked

@@ -1161,13 +1161,15 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
   const sumV = (arr) => arr.reduce((s, d) => s + d.value, 0)
   const aggWon = (deals) => {
     const paid = deals.filter((d) => isPaid(d.channel))
-    const byUser = {}, byChannel = { meta: { count: 0, revenue: 0 }, google: { count: 0, revenue: 0 }, other: { count: 0, revenue: 0 } }
+    const byUser = {}, byChannel = { meta: { count: 0, revenue: 0, closeSum: 0, closeN: 0 }, google: { count: 0, revenue: 0, closeSum: 0, closeN: 0 }, other: { count: 0, revenue: 0, closeSum: 0, closeN: 0 } }
     for (const d of deals) {
       const u = byUser[d.userId] = byUser[d.userId] || { count: 0, revenue: 0 }; u.count++; u.revenue += d.value
       const c = byChannel[isPaid(d.channel) ? d.channel : 'other']; c.count++; c.revenue += d.value
+      // Per-channel time-to-close (lead created → won), same span basis as the overall.
+      const cr = Date.parse(d.createdAt), sa = Date.parse(d.statusAt); if (isFinite(cr) && isFinite(sa) && sa >= cr) { c.closeSum += (sa - cr) / 86400000; c.closeN++ }
     }
     for (const k in byUser) byUser[k].revenue = Math.round(byUser[k].revenue)
-    for (const k in byChannel) byChannel[k].revenue = Math.round(byChannel[k].revenue)
+    for (const k in byChannel) { byChannel[k].revenue = Math.round(byChannel[k].revenue); byChannel[k].avgCloseDays = byChannel[k].closeN ? Math.round(byChannel[k].closeSum / byChannel[k].closeN) : null; delete byChannel[k].closeSum; delete byChannel[k].closeN }
     // Average time to close = days from lead created → deal won, across deals that
     // have both dates.
     const spans = deals.map((d) => { const c = Date.parse(d.createdAt), s = Date.parse(d.statusAt); return (isFinite(c) && isFinite(s) && s >= c) ? (s - c) / 86400000 : null }).filter((v) => v != null)

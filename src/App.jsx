@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.268.0'
+const APP_VERSION = '3.269.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10239,6 +10239,14 @@ function periodOf(a, b) {
   const label = single ? monthBounds(lo).label : `${monthBounds(lo).label} – ${monthBounds(hi).label}`
   return { from, to, label, key: single ? lo : `${lo}_${hi}`, single, lo, hi }
 }
+// Pretty label for a stored snapshot key — a single month ("2026-07") or a
+// range ("2026-06_2026-07"). Used by the reports lists / month pickers.
+function snapLabel(key) {
+  if (!key) return ''
+  const s = String(key)
+  const [lo, hi] = s.includes('_') ? s.split('_') : [s, s]
+  return periodOf(lo, hi).label
+}
 // Default month = last complete calendar month.
 function lastCompleteMonth() {
   const d = new Date()
@@ -10405,6 +10413,7 @@ function ClientReports({ clients, currency }) {
   const [month, setMonth] = useState('')
   const [st, setSt] = useState({ status: 'idle' })
   const [exporting, setExporting] = useState(false)
+  const [drill, setDrill] = useState(null)
   const deckRef = useRef(null)
   const money = (v) => (v == null || isNaN(v) ? '—' : fmtCurrency(v, currency))
   const n0 = (v) => (v == null || isNaN(v) ? '—' : fmtNumber(Math.round(v)))
@@ -10426,7 +10435,7 @@ function ClientReports({ clients, currency }) {
     return () => { alive = false }
   }, [clientId, month])
   const rep = st.status === 'ok' ? st.report : null
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: () => {} }) : []), [rep, currency])
+  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d) }) : []), [rep, currency])
   async function downloadPdf() {
     if (!deckRef.current) return
     setExporting(true); deckRef.current.classList.add('mr-exporting')
@@ -10453,7 +10462,7 @@ function ClientReports({ clients, currency }) {
       <div className="mr-bar no-print">
         {list.length > 1 && <select className="mr-select" value={clientId} onChange={(e) => setClientId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
         <select className="mr-select" value={month} onChange={(e) => setMonth(e.target.value)} disabled={!months || !months.length}>
-          {months && months.length ? months.map((m) => <option key={m.month} value={m.month}>{monthBounds(m.month).label}</option>) : <option value="">No published reports</option>}
+          {months && months.length ? months.map((m) => <option key={m.month} value={m.month}>{snapLabel(m.month)}</option>) : <option value="">No published reports</option>}
         </select>
         <div className="mr-bar-spacer" />
         {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString()}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString()}</span>}
@@ -10463,6 +10472,7 @@ function ClientReports({ clients, currency }) {
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report — please try again shortly.</div>}
       {rep && <div className="mr-deck" ref={deckRef}><div className="mr-track">{deck}</div></div>}
+      {drill && <MRDrill drill={drill} currency={currency} onClose={() => setDrill(null)} />}
     </div>
   )
 }
@@ -10616,7 +10626,7 @@ function MonthlyReport({ clients, currency, authUser }) {
                 <tbody>{snapList.map((r) => {
                   const isCur = r.month === period.key
                   return (<tr key={r.month} className={isCur ? 'row-sel' : ''}>
-                    <td className="lft"><button className="mr-linkbtn" onClick={() => { setFromMonth(r.month); setToMonth(r.month) }} title="Open this month">{monthBounds(r.month).label}</button></td>
+                    <td className="lft"><button className="mr-linkbtn" onClick={() => { const k = String(r.month); const [lo, hi] = k.includes('_') ? k.split('_') : [k, k]; setFromMonth(lo); setToMonth(hi) }} title="Open this report">{snapLabel(r.month)}</button></td>
                     <td className="lft">{r.savedAt ? new Date(r.savedAt).toLocaleDateString() : '—'}{r.savedBy ? ` · ${r.savedBy}` : ''}</td>
                     <td className="lft">{r.published ? (r.edited ? <span className="mr-pill-sec">🟠 Published · edited since</span> : <span className="mr-pill-pri">🟢 Published</span>) : <span className="cap">Not published</span>}</td>
                     <td className="lft">{r.published

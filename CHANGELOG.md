@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.269.0 — 2026-08-18 · `PENDING` — Monthly Reports: client drill-downs + prettier ranges
+- **Client-facing drill-downs.** In the client's Monthly Reports view, every headline number in the deck is now
+  clickable and opens the same drill-down modal as the agency view — the client can see the individual deals /
+  records behind each figure, straight from the frozen published snapshot.
+- **Prettified month labels.** The report month picker (client + agency) and the agency reports list now render
+  multi-month reports as a proper range label (e.g. "Jun–Jul 2026") via a shared `snapLabel` helper, instead of a
+  raw `YYYY-MM_YYYY-MM` key. Clicking a range row in the agency reports list restores both the from- and to-month.
+
 ## v3.268.0 — 2026-08-18 · `PENDING` — Monthly Reports: client access + publish barrier
 - **New "Monthly Reports" permission** (Team & access → viewer): grant a client access to their **published** monthly
   reports for the clients they're allocated. Can be granted on its own (a reports-only client) or alongside dashboard

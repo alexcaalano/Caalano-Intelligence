@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, warmOppSnapshot, resilientFetch } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -467,6 +467,23 @@ export async function runHealthSnapshots(dates) {
     }
   }
   return { ok: true, count: results.length, results }
+}
+
+// Scheduled warmer: refresh every CRM client's shared opportunity snapshot so the
+// interactive scopes (users / ccdrill / speed / appts / forms / health) read the
+// Blobs cache instead of each re-paging /opportunities/search. That endpoint is the
+// source of nearly every 429 in the reliability log; keeping the snapshot hot moves
+// the opp pulls off the user path and out of concurrent bursts. Sequential on
+// purpose - one gentle pull at a time, never a fan-out - and resilient per client.
+export async function runOppWarm() {
+  try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
+  const results = []
+  for (const [id, cc] of Object.entries(CLIENTS)) {
+    if (!cc.ghl) continue
+    try { const r = await warmOppSnapshot(cc.ghl); results.push({ client: id, ...r }) }
+    catch (e) { results.push({ client: id, error: String(e.message || e).slice(0, 120) }) }
+  }
+  return { ok: true, count: results.length, warmed: results.filter((r) => !r.error).length, results }
 }
 
 async function buildMeta(accountId, from, to, preset, key, fallback) {

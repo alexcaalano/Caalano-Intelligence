@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.277.0 - 2026-08-18 · `PENDING` - Kill the /opportunities/search 429 storms (scheduled warmer)
+- **Root cause from the reliability log:** nearly every failure was `GET /opportunities/search 429`. Many scopes
+  (users, ccdrill, speed, appts, forms, health) each page that endpoint, and when they fire as concurrent cold
+  serverless calls with no warm snapshot they all hit GHL at once and get rate-limited.
+- **Scheduled opportunity-snapshot warmer.** A new `opp-warm` function runs every ~5 min and force-refreshes each CRM
+  client's shared opportunity snapshot (Blobs cache, TTL raised 10→15 min). Interactive scopes now read that warm cache
+  instead of each re-paging GHL, so the opp pulls happen once per client off the user path - not in bursts on every
+  click. Run `/.netlify/functions/opp-warm-now` to warm on demand and watch the counts.
+- **Prefetch made 429-safe.** The filter-channel prefetch (v3.276) now waits for the primary view to load (which warms
+  the snapshot) and runs **serially**, so warming Paid/Non-paid/Google/Meta reads the snapshot and can never add to a
+  429 burst.
+
 ## v3.276.0 - 2026-08-18 · `PENDING` - Instant tab / filter switching (no reload)
 - **Switching sub-tabs and filters no longer reloads.** Added a stale-while-revalidate cache that keeps parsed
   responses in memory across tab switches (React state was thrown away on unmount before). Re-opening a tab or flipping

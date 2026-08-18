@@ -281,7 +281,9 @@ async function _pageOpportunities(locTok, locationId, from, to, cap = 1500, opts
 // re-paging GHL. A window older than the snapshot, or a snapshot that couldn't be
 // built/cached, falls back to a direct page - identical to the old behaviour.
 const OPP_SNAP_MEM_MS = 120000     // in-memory freshness
-const OPP_SNAP_BLOB_MS = 600000    // cross-invocation (Blobs) freshness
+const OPP_SNAP_BLOB_MS = 900000    // cross-invocation (Blobs) freshness - 15 min; a
+                                   // scheduled warmer (every ~5 min) keeps it hot so
+                                   // interactive scopes read Blobs instead of paging.
 const OPP_SNAP_DAYS = 430          // how far back the snapshot reaches
 const OPP_SNAP_CAP = 4000          // max opps held (bounds Blobs payload)
 const _oppSnapMem = new Map()      // locationId -> snapshot
@@ -294,14 +296,17 @@ function _snapWrap(hit) {
   for (const o of hit.opps) { const ms = Date.parse(o.createdAt); if (ms < oldestMs) oldestMs = ms }
   return { at: hit.at, opps: hit.opps, oldestMs, truncated: hit.opps.length >= OPP_SNAP_CAP }
 }
-async function oppSnapshot(locTok, locationId) {
+async function oppSnapshot(locTok, locationId, opts = {}) {
+  const force = !!opts.force // scheduled warmer: pull fresh + rewrite regardless of age
   const now = Date.now()
-  const mem = _oppSnapMem.get(locationId)
-  if (mem && now - mem.at < OPP_SNAP_MEM_MS) return mem
-  if (_oppSnapInflight.has(locationId)) return _oppSnapInflight.get(locationId)
+  if (!force) {
+    const mem = _oppSnapMem.get(locationId)
+    if (mem && now - mem.at < OPP_SNAP_MEM_MS) return mem
+    if (_oppSnapInflight.has(locationId)) return _oppSnapInflight.get(locationId)
+  }
   const build = (async () => {
-    // Cross-invocation cache first.
-    try { const hit = await _oppStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.opps) && (now - hit.at) < OPP_SNAP_BLOB_MS) { const snap = _snapWrap(hit); _oppSnapMem.set(locationId, snap); return snap } } catch { /* fall through */ }
+    // Cross-invocation cache first (skipped on a forced warm so the copy is rewritten).
+    if (!force) { try { const hit = await _oppStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.opps) && (now - hit.at) < OPP_SNAP_BLOB_MS) { const snap = _snapWrap(hit); _oppSnapMem.set(locationId, snap); return snap } } catch { /* fall through */ } }
     const to = new Date(now).toISOString().slice(0, 10)
     const from = new Date(now - OPP_SNAP_DAYS * 86400000).toISOString().slice(0, 10)
     const opps = await _pageOpportunities(locTok, locationId, from, to, OPP_SNAP_CAP, { deadlineMs: 7000 })
@@ -315,6 +320,16 @@ async function oppSnapshot(locTok, locationId) {
   })()
   _oppSnapInflight.set(locationId, build)
   try { return await build } finally { _oppSnapInflight.delete(locationId) }
+}
+// Warm the shared opportunity snapshot for one location. Used by the scheduled
+// warmer so interactive scopes (users / ccdrill / speed / appts / forms / health)
+// read the Blobs cache instead of each re-paging /opportunities/search - which is
+// what causes the concurrent-cold-invocation 429 bursts. Force-refreshes past the
+// in-memory window so the scheduled run always writes a fresh cross-invocation copy.
+export async function warmOppSnapshot(locationId) {
+  const locTok = await locationToken(locationId)
+  const snap = await oppSnapshot(locTok, locationId, { force: true })
+  return { opps: snap ? snap.opps.length : 0, truncated: !!(snap && snap.truncated) }
 }
 async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
   // Serve from the shared snapshot when it provably covers the requested window;

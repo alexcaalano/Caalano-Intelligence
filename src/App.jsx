@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.276.0'
+const APP_VERSION = '3.277.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -535,8 +535,8 @@ const _swrSubs = new Map()   // url -> Set<fn>
 function swrPeek(url) { const e = _swr.get(url); return e ? e.data : undefined }
 function swrSet(url, data) { _swr.set(url, { at: Date.now(), data }); const s = _swrSubs.get(url); if (s) for (const fn of s) fn(data) }
 function prefetchSwr(url, transform) {
-  if (!url || _swr.has(url)) return
-  dedupeFetch(url).then((r) => r.json()).then((j) => { if (j && !j.error) swrSet(url, transform ? transform(j) : j) }).catch(() => {})
+  if (!url || _swr.has(url)) return Promise.resolve()
+  return dedupeFetch(url).then((r) => r.json()).then((j) => { if (j && !j.error) swrSet(url, transform ? transform(j) : j) }).catch(() => {})
 }
 // useSwrJson(url, { transform, freshMs }) -> { status, data }
 // status: 'idle' (no url) | 'loading' (no cached value yet) | 'ok' | 'err'.
@@ -4626,15 +4626,25 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // Meta) in the background so the toggle switches instantly on first click. Delayed
   // + staggered so it never competes with the active view or trips GHL rate limits.
   const rq = rangeQuery(range)
+  const primeReady = ccDrill.status === 'ok'
   useEffect(() => {
-    if (!clientId) return
-    const others = CC_CHANS.map((c) => c[0]).filter((c) => c !== 'all')
-    const timers = others.map((ch, i) => setTimeout(() => {
-      prefetchSwr(crmAggUrl(clientId, range, nonce, ch), aggUsersToCrm)
-      prefetchSwr(ccDrillUrl(clientId, range, nonce, ch))
-    }, 1200 + i * 700))
-    return () => timers.forEach(clearTimeout)
-  }, [clientId, rq, nonce])
+    if (!clientId || !primeReady) return
+    let cancelled = false
+    ;(async () => {
+      // Warm the other filter channels ONLY after the primary 'all' view has loaded
+      // - that pull warms the server-side opportunity snapshot, so these channel
+      // pulls read that snapshot instead of each re-paging GHL. Serial (one at a
+      // time) so the prefetch can never contribute to a /opportunities/search 429
+      // burst - it's the reason we gate on primeReady, not a timer.
+      for (const ch of ['paid', 'nonpaid', 'google', 'meta']) {
+        if (cancelled) return
+        await prefetchSwr(crmAggUrl(clientId, range, nonce, ch), aggUsersToCrm)
+        if (cancelled) return
+        await prefetchSwr(ccDrillUrl(clientId, range, nonce, ch))
+      }
+    })()
+    return () => { cancelled = true }
+  }, [clientId, rq, nonce, primeReady])
   // Previous-period CRM drill, so the per-pipeline key-event scorecards can show
   // vs-prev deltas (same shape, one period back).
   const prevRange = prevRangeOf(range)

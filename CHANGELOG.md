@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.274.0 - 2026-08-18 · `PENDING` - Deep-linkable URLs (refresh keeps your place)
+- **Every screen now has its own URL.** The current section, open client and client sub-tab are mirrored into the query
+  string (`?v=…&c=…&t=…`). So a **refresh keeps you exactly where you were** instead of dropping back to the default
+  page, browser **Back/Forward** work, and you can **paste a link that opens the exact screen** (e.g. a client's Meta Ads
+  tab). Deep links resolve as soon as the client list loads, with no flash of the empty state.
+- **Security is unchanged - by design.** The URL is not an authorisation boundary: every data request is still checked
+  server-side (role + client allocation), so a link to a client you can't access simply returns 403 and falls back to
+  your home screen. Added a `strict-origin` referrer policy so the client id in the URL is never sent to external
+  ad-thumbnail / embed hosts.
+- Date range and Won-basis are **not** in the URL yet (deliberately deferred - relative ranges like "last 30 days" need a
+  design decision on whether a shared link should stay relative or freeze to dates).
+
 ## v3.273.0 - 2026-08-18 · `PENDING` - Sortable Team & access table
 - **Team & access table is now sortable.** Click any column header (Name, Email, Role, Access, Status) to sort by it;
   click again to reverse. An arrow shows the active column and direction.

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.273.0'
+const APP_VERSION = '3.274.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6989,9 +6989,9 @@ function OptimisationLog({ clientId }) {
     </div>
   )
 }
-function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser }) {
+function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser, initialTab, onTabChange }) {
   useSettingsSync()
-  const [tab, setTab] = useState('overall')
+  const [tab, setTab] = useState(initialTab || 'overall')
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
   useEffect(() => { setBaked(undefined); setCrmAvgClose(null); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
@@ -7011,6 +7011,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
+  // Report the active tab up so the URL (?t=) tracks it, incl. any allowed-tab
+  // fallback (e.g. a viewer deep-linked to a tab they can't see).
+  useEffect(() => { onTabChange && onTabChange(curTab) }, [curTab])
   const channel = curTab === 'meta' ? 'meta' : curTab === 'google' ? 'google' : curTab === 'analytics' ? 'ganalytics' : curTab === 'overall' ? 'blend' : null
   // Local retry bump so a failed deep pull (e.g. a large window that timed out)
   // can be re-attempted without a full-app Refresh. Combined with the app nonce.
@@ -12683,12 +12686,38 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
   )
 }
 
+// ---- Deep-linkable navigation (URL <-> app state) --------------------------
+// The whole app is a single page; these helpers mirror "where you are" into the
+// query string (?v=view&c=clientId&t=tab) so a refresh restores the exact screen,
+// Back/Forward work, and any screen can be linked to. The URL is never an
+// authorisation boundary - every data request is still checked server-side, so a
+// link to a client you can't see simply returns 403 and falls back to home.
+const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
+function readNavUrl() {
+  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t') } } catch { return { v: null, c: null, t: null } }
+}
+function writeNavUrl({ v, c, t }, push) {
+  try {
+    const p = new URLSearchParams(window.location.search) // preserve anything we don't own (e.g. ?invite=)
+    v ? p.set('v', v) : p.delete('v')
+    c ? p.set('c', c) : p.delete('c')
+    t ? p.set('t', t) : p.delete('t')
+    const qs = p.toString()
+    const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
+    if (push) window.history.pushState(null, '', url); else window.history.replaceState(null, '', url)
+  } catch { /* history API unavailable - navigation still works, just not deep-linked */ }
+}
+
 function Dashboard({ authUser, authEnabled, onLogout }) {
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
   const [err, setErr] = useState(null)
-  const [view, setView] = useState('overview')
+  const [view, setView] = useState(() => { const { v } = readNavUrl(); return v && NAV_VIEWS.has(v) ? v : 'overview' })
   const [picked, setPicked] = useState(null)
+  // The client sub-tab (Caalano360 / Users / Meta Ads…) lives here too so the URL
+  // can carry it; ClientWorkspace seeds from initialTab and reports changes back.
+  const [clientTab, setClientTab] = useState(() => readNavUrl().t || 'overall')
+  const navInitRef = useRef(false)
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'dark' } catch { return 'dark' } })
   const [range, setRange] = useState(() => presetRange('last_30d'))
   // Won basis: 'closed' (banked in the period, by won-date) or 'created' (won
@@ -12730,6 +12759,29 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
     fetch('data/snapshot.json').then((r) => { if (!r.ok) throw new Error('snapshot not found'); return r.json() }).then(setData).catch((e) => setErr(e.message))
     fetch('data/config.json').then((r) => r.ok ? r.json() : null).then(setConfig).catch(() => {})
   }, [])
+  // Resolve a ?c=<clientId> deep link to the picked client once the client list
+  // has loaded (the list is async, so this can't run at first render).
+  useEffect(() => {
+    if (navInitRef.current || !data) return
+    navInitRef.current = true
+    const { c } = readNavUrl()
+    if (c) {
+      const raw = (data.clients || []).find((x) => x.id === c) || (customClientList() || []).find((x) => x.id === c)
+      if (raw) { setPicked(raw); setView('clients') }
+    }
+  }, [data])
+  // Browser Back / Forward: re-read the URL and re-apply it to state.
+  useEffect(() => {
+    const onPop = () => {
+      const { v, c, t } = readNavUrl()
+      setView(v && NAV_VIEWS.has(v) ? v : 'overview')
+      setClientTab(t || 'overall')
+      if (c) { const raw = (data && (data.clients || []).find((x) => x.id === c)) || (customClientList() || []).find((x) => x.id === c); setPicked(raw || null) }
+      else setPicked(null)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [data])
 
   if (err) return <div className="main"><div className="card">Failed to load data: {err}</div></div>
   if (!data) return <div className="main"><div className="card">Loading dashboard…</div></div>
@@ -12756,8 +12808,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // Config for the Settings page keeps deleted clients (so the Deleted filter can
   // restore them); the main app's baseClients above already hides them everywhere else.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
-  const go = (v) => { setView(v); setPicked(null); setNavOpen(false) }
-  const openClient = (c) => { setPicked(c); setView('clients'); setNavOpen(false) }
+  const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null }, true) }
+  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall' }, true) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
   // views - they land straight in their assigned client(s).
   const role = authEnabled && authUser ? authUser.role : 'admin'
@@ -12771,8 +12823,13 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
     : (view === 'reports' && canReports) ? 'reports'
       : (hasDashTabs ? 'clients' : (canReports ? 'reports' : 'clients'))
   const curView = isViewer ? viewerView : view
+  // Resolve a deep-linked ?c= client synchronously here too (not just in the async
+  // effect) so a refresh straight onto a client URL doesn't flash the empty state.
+  const urlClientId = readNavUrl().c
   const curPicked = curView === 'clients'
-    ? ((picked && baseClients.some((c) => c.id === picked.id) && canSeeClientFE(authUser, picked.id) && (seeRestricted || !restricted[picked.id])) ? picked : (isViewer ? myClients[0] : picked))
+    ? ((picked && baseClients.some((c) => c.id === picked.id) && canSeeClientFE(authUser, picked.id) && (seeRestricted || !restricted[picked.id])) ? picked
+      : (isViewer ? myClients[0]
+        : ((urlClientId && baseClients.find((c) => c.id === urlClientId && canSeeClientFE(authUser, c.id) && (seeRestricted || !restricted[c.id]))) || picked)))
     : picked
   const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0
 
@@ -12828,9 +12885,9 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {(curView === 'overview' || curView === 'weekly' || (curView === 'clients' && curPicked)) && <WonBasisToggle value={wonBasis} onChange={setWonBasis} />}
           {curView !== 'monthly' && curView !== 'reports' && <button className="refresh-btn" title="Refresh live data" onClick={() => setRefreshKey((k) => k + 1)}><span className={agency.status === 'loading' ? 'spin sm' : ''} style={{ display: 'inline-block' }}>⟳</span> Refresh</button>}
         </div>
-        <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => { setPicked(null); setView(isViewer ? 'clients' : 'overview') }}>
-          {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={(c) => { setPicked(c); setView('clients') }} />}
-          {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={(c) => { setPicked(c); setView('clients') }} />}
+        <ErrorBoundary key={curView + '|' + (curPicked && curPicked.id || '')} onHome={() => go(isViewer ? 'clients' : 'overview')}>
+          {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={openClient} />}
+          {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={openClient} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} wonBasis={wonBasis} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
@@ -12838,8 +12895,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'monthly' && !isViewer && <MonthlyReport clients={visibleClients} currency={data.currency} authUser={authUser} />}
           {curView === 'reports' && isViewer && canReports && <ClientReports clients={myClients} currency={data.currency} authUser={authUser} />}
           {curView === 'social' && !isViewer && <SocialDashboard clients={visibleClients} range={range} nonce={refreshKey} />}
-          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => { const full = baseClients.find((x) => x.id === c.id) || c; setPicked(full); setView('clients') }} />}
-          {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} wonBasis={wonBasis} authUser={authUser} onBack={isViewer ? null : () => { setPicked(null); setView('overview') }} />}
+          {curView === 'settings' && <SettingsPage config={cfgMerged} enabled={enabled} setEnabled={setEnabled} restricted={restricted} setRestricted={setRestricted} currency={data.currency} authUser={authUser} authEnabled={authEnabled} theme={theme} setTheme={setTheme} onPick={(c) => openClient(baseClients.find((x) => x.id === c.id) || c)} />}
+          {curView === 'clients' && curPicked && <ClientWorkspace client={curPicked} index={idx} data={data} config={cfgMerged} range={range} nonce={refreshKey} wonBasis={wonBasis} authUser={authUser} initialTab={clientTab} onTabChange={(t) => { setClientTab(t); writeNavUrl({ v: 'clients', c: curPicked.id, t }, false) }} onBack={isViewer ? null : () => go('overview')} />}
           {curView === 'clients' && !curPicked && <div className="card empty-deep"><div className="big">👋</div><b>No report is assigned to your account yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Your Caalano admin will assign your client dashboard shortly.</p></div>}
         </ErrorBoundary>
       </main>

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.294.0'
+const APP_VERSION = '3.295.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4135,6 +4135,27 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
 }
 const sourceDotChan = (ch) => ch === 'meta' ? '#4f7cff' : ch === 'google' ? '#12b886' : ch === 'other' ? '#e8a13a' : '#9aa1ac'
 
+// Per-channel key-event reach for the Channel-split table. Remaps each pipeline
+// stage's count to that channel's own count (from ccdrill's pipelinesFunnel, which
+// carries meta / google / other splits) and resolves the client's configured key
+// events over it. Calendar events resolve via their linked stage (per channel).
+// Returns { labels:[{label,kind}], meta:[counts], google:[counts] } or null.
+function channelKeyEvents(cc, clientId) {
+  const pipes = (cc && cc.pipelinesFunnel) || []
+  const keList = clientId ? loadKeyEvents(clientId) : []
+  if (!keList.length || !pipes.length) return null
+  const wonByCh = {}; for (const c of (cc.closeByChannel || [])) wonByCh[c.channel] = c.won || 0
+  const rowsFor = (chanKey) => {
+    const cp = pipes.map((p) => ({ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: chanKey === 'all' ? (s.count || 0) : (s[chanKey] || 0) })) }))
+    return keyEventRows(keList, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0))
+  }
+  const allRows = rowsFor('all')
+  if (!allRows.length) return null
+  const labels = allRows.map((r) => ({ label: r.label, kind: r.kind }))
+  const countsFor = (chanKey) => { const bl = new Map(rowsFor(chanKey).map((r) => [r.label, r.count])); return labels.map((l) => bl.get(l.label) || 0) }
+  return { labels, meta: countsFor('meta'), google: countsFor('google') }
+}
+
 // One open deal in the bottleneck's open-by-stage list - shows the assigned rep
 // + lead source, and expands on click to that contact's Caalano Systems notes.
 function BnDealRow({ d, clientId, money }) {
@@ -4169,7 +4190,7 @@ function BnDealRow({ d, clientId, money }) {
 // (who's still in play, and where they came from). In a paid channel view it also
 // shows cost per stage and the next-step conversion. Calendar show-rate lives in
 // its own card below. Built from the ccdrill payload (no extra fetch).
-function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = 'all', stageSpend = 0 }) {
+function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = 'all', stageSpend = 0, onNav }) {
   const [openStage, setOpenStage] = useState(null)
   // Multi-pipeline clients get a pipeline selector (defaults to the biggest
   // pipeline by leads), with an "All pipelines" option that stacks them - same
@@ -4231,7 +4252,9 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   // Pipeline selector state: default to the biggest pipeline by leads (proxy for
   // ad spend, which this component doesn't carry); '__all' stacks every pipeline.
   const bnHasSel = !!(bnGroups && bnGroups.length > 1)
-  const bnDefault = bnHasSel ? [...bnGroups].sort((a, b) => ((b.rows[0] && b.rows[0].v) || 0) - ((a.rows[0] && a.rows[0].v) || 0))[0].id : null
+  // Default multi-pipeline clients to one funnel PER pipeline (clearer than picking
+  // one), with the selector still offering a single pipeline.
+  const bnDefault = bnHasSel ? '__all' : null
   const bnSel = bnHasSel ? ((bnPipe === '__all' || (bnPipe != null && bnGroups.some((g) => g.id === bnPipe))) ? bnPipe : bnDefault) : null
   const bnShown = bnHasSel ? (bnSel === '__all' ? bnGroups : bnGroups.filter((g) => g.id === bnSel)) : null
   const single = makeFunnel(raw)
@@ -4242,10 +4265,13 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   // Render one funnel's bars (shared by the single and per-pipeline layouts).
   const funnelBlock = (fnl) => (
     <div className={`bn-funnel${paidMode ? ' bn-paid' : ''}`}>
-      {paidMode ? <div className="bn-row bn-head">
+      <div className={`bn-row bn-head${paidMode ? ' bn-row-paid' : ''}`}>
         <span className="bn-lab" /><span className="bn-track" /><span className="bn-count">Reached</span>
-        <span className="bn-conv">Step</span><span className="bn-cost">Cost</span><span className="bn-next">→ Next</span>
-      </div> : null}
+        <span className="bn-total" title="Share of all leads that reached this step">% total</span>
+        <span className="bn-conv" title="Conversion from the previous step">Step</span>
+        {paidMode ? <span className="bn-cost">Cost</span> : null}
+        <span className="bn-next" title="Conversion into the next step">→ Next</span>
+      </div>
       {fnl.rows.map((r, i) => {
         const isWorst = fnl.worst && r === fnl.worst
         const cost = (stageSpend && r.v) ? stageSpend / r.v : null
@@ -4254,9 +4280,10 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
             <span className="bn-lab">{r.label}</span>
             <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, (r.v / fnl.top) * 100)}%` }} /></span>
             <span className="bn-count">{fmtNumber(r.v)}</span>
-            <span className="bn-conv">{r.conv == null ? '' : `${Math.round(r.conv * 100)}%`}</span>
+            <span className="bn-total" title="Share of all leads">{fnl.top ? `${Math.round((r.v / fnl.top) * 100)}%` : ''}</span>
+            <span className="bn-conv" title="From the previous step">{r.conv == null ? '' : `${Math.round(r.conv * 100)}%`}</span>
             {paidMode ? <span className="bn-cost" title={`${chanLbl} spend ÷ ${r.label} reached`}>{cost != null ? money(Math.round(cost)) : '-'}</span> : null}
-            {paidMode ? <span className="bn-next" title="Conversion into the next step">{r.next == null ? '-' : `→ ${Math.round(r.next * 100)}%`}</span> : null}
+            <span className="bn-next" title="Conversion into the next step">{r.next == null ? '-' : `${Math.round(r.next * 100)}%`}</span>
           </div>
         )
       })}
@@ -4309,18 +4336,19 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
       <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost - the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</p>
     </div>
     {showCals.length ? <div className="card exec-bottleneck">
-      <div className="exec-panel-h">Show rate by calendar <span className="sub">· shown ÷ occurred per booked calendar</span></div>
-      <div className="bn-funnel">
-        {showCals.map((c, i) => { const sr = c.occurred ? c.shown / c.occurred : 0; return (
-          <div className="bn-row" key={i}>
+      <div className="exec-panel-h">Show rate by calendar <span className="sub">· shown ÷ occurred per booked calendar{onNav ? ' · click a calendar to open every appointment, per user' : ''}</span></div>
+      <div className="bn-funnel bn-cal">
+        {showCals.map((c, i) => { const sr = c.occurred ? c.shown / c.occurred : 0; const RowTag = onNav ? 'button' : 'div'; return (
+          <RowTag className={`bn-row bn-cal-row${onNav ? ' is-link' : ''}`} key={i} onClick={onNav ? () => onNav('appts') : undefined} title={onNav ? `Open the Appointments tab to see every ${c.calendar} appointment, filterable by user` : c.calendar}>
             <span className="bn-lab" title={c.calendar}>{c.calendar}</span>
             <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, sr * 100)}%`, background: sr >= 0.6 ? '#12b886' : sr >= 0.4 ? 'var(--brand)' : '#d64545' }} /></span>
             <span className="bn-count">{fmtNumber(c.shown)}/{fmtNumber(c.occurred)}</span>
             <span className="bn-conv">{Math.round(sr * 100)}%</span>
-          </div>
+            {onNav ? <span className="bn-cal-go">→</span> : null}
+          </RowTag>
         ) })}
       </div>
-      <p className="caveat">Show rate is how many booked calls actually happened. Green ≥ 60%, red &lt; 40%.</p>
+      <p className="caveat">Show rate is how many booked calls actually happened. Green ≥ 60%, red &lt; 40%.{onNav ? ' Click a calendar to open the Appointments tab, where you can filter every appointment by user and see who booked / showed.' : ''}</p>
     </div> : null}
     </>
   )
@@ -4806,10 +4834,45 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         return <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />
       })() : null}
 
+      {/* Channel split - per-channel spend → key events → wins & efficiency. Above
+          the bottleneck so the channel scoreboard reads first. (Internal figures.) */}
+      <div className="card x-internal">
+        <div className="exec-panel-h">Channel split <span className="sub">· spend → key events → wins &amp; efficiency, per paid channel</span></div>
+        {(() => {
+          const ch = h.channels || {}
+          const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
+          if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
+          const cbc = {}; for (const c of ((cc && cc.closeByChannel) || [])) cbc[c.channel] = c
+          const cke = channelKeyEvents(cc, clientId)
+          const evLabels = cke ? cke.labels : []
+          const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
+          const rows = [
+            { key: 'meta', label: 'Meta', spend: ch.metaSpend || 0, adLeads: ch.metaLeads || 0, ke: cke ? cke.meta : [] },
+            { key: 'google', label: 'Google', spend: ch.googleSpend || 0, adLeads: ch.googleConv || 0, ke: cke ? cke.google : [] },
+          ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, leads: c.leads || 0, won, revenue, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
+          return <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+            <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th></tr></thead>
+            <tbody>{rows.map((r) => (
+              <tr key={r.key}>
+                <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
+                <td>{money(r.spend)}</td>
+                <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
+                {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
+                <td>{fmtNumber(r.won)}</td>
+                <td>{money(r.revenue)}</td>
+                <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
+                <td>{r.cac != null ? money(Math.round(r.cac)) : '-'}</td>
+                <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        })()}
+      </div>
+
       {/* Revenue bottleneck funnel - client key events + calendar show-rate.
           Passes the selected channel's spend so a paid view shows cost/stage. */}
       {(() => { const chn = h.channels || {}; const bnSpend = chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : chan === 'all' ? (k.adSpend || 0) : 0
-        return <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} chan={chan} stageSpend={bnSpend} /> })()}
+        return <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} chan={chan} stageSpend={bnSpend} onNav={onNav} /> })()}
 
       {/* Lost reasons - full width so the table never needs to scroll sideways.
           Rows are clickable → the per-reason people + their form answers. */}
@@ -4831,19 +4894,6 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
                     return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '-'}</td><td>{pctOf(r.count, lostTot)}</td></tr>
                   })}</tbody></table>}
           </>
-        })()}
-      </div>
-
-      {/* Channel split (spend is internal - hidden in present mode) */}
-      <div className="card x-internal">
-        <div className="exec-panel-h">Channel split</div>
-        {(() => { const ch = h.channels || {}; const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
-          if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
-          return <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Channel</th><th>Spend</th><th>Leads / conv</th></tr></thead>
-            <tbody>
-              <tr><td className="lft">Meta</td><td>{money(ch.metaSpend || 0)}</td><td>{fmtNumber(ch.metaLeads || 0)}</td></tr>
-              <tr><td className="lft">Google</td><td>{money(ch.googleSpend || 0)}</td><td>{fmtNumber(ch.googleConv || 0)}</td></tr>
-            </tbody></table>
         })()}
       </div>
 

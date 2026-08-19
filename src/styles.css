@@ -1918,22 +1918,31 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 
 /* Revenue bottleneck funnel */
 .bn-funnel { display: flex; flex-direction: column; gap: 7px; margin-bottom: 4px; }
-.bn-row { display: grid; grid-template-columns: 78px 1fr 56px 46px; align-items: center; gap: 10px; }
+/* Funnel row: Label | bar | Reached | % total leads | Step % | → Next %. */
+.bn-row { display: grid; grid-template-columns: 84px 1fr 52px 48px 44px 48px; align-items: center; gap: 10px; }
 .bn-lab { font-size: 12.5px; font-weight: 600; }
 .bn-track { height: 18px; border-radius: 6px; background: var(--border); overflow: hidden; }
 .bn-fill { display: block; height: 100%; border-radius: 6px; background: var(--brand); transition: width .3s; }
 .bn-count { font-size: 12.5px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-.bn-conv { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.bn-total { font-size: 12px; font-weight: 600; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.bn-conv, .bn-next { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .bn-worst .bn-fill { background: #d64545; }
 .bn-worst .bn-lab, .bn-worst .bn-conv { color: #d64545; font-weight: 700; }
-@media (max-width: 640px) { .bn-row { grid-template-columns: 64px 1fr 48px 40px; gap: 7px; } }
+@media (max-width: 640px) { .bn-row { grid-template-columns: 66px 1fr 44px 40px 36px 40px; gap: 6px; } }
 
-/* Paid-channel funnel view: adds Cost per stage + next-step conversion columns. */
-.bn-row.bn-row-paid, .bn-paid .bn-row.bn-head { grid-template-columns: 92px 1fr 50px 44px 66px 54px; }
+/* Paid-channel funnel view: adds a Cost-per-stage column before → Next. */
+.bn-row.bn-row-paid, .bn-paid .bn-row.bn-head.bn-row-paid { grid-template-columns: 90px 1fr 48px 46px 42px 58px 46px; }
 .bn-cost { font-size: 12.5px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
-.bn-next { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .bn-row.bn-head { align-items: end; }
-.bn-head .bn-count, .bn-head .bn-conv, .bn-head .bn-cost, .bn-head .bn-next { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.bn-head .bn-count, .bn-head .bn-total, .bn-head .bn-conv, .bn-head .bn-cost, .bn-head .bn-next { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+/* Show-rate-by-calendar rows: their own 4/5-col layout (no % total / next), and
+   clickable to open the per-user Appointments tab. */
+.bn-cal .bn-row { grid-template-columns: 140px 1fr 62px 44px 16px; gap: 10px; }
+button.bn-cal-row.is-link { background: none; border: none; font: inherit; color: inherit; text-align: left; width: 100%; cursor: pointer; padding: 3px 5px; border-radius: 7px; transition: background .12s; }
+button.bn-cal-row.is-link:hover { background: color-mix(in srgb, var(--brand) 8%, transparent); }
+.bn-cal-go { color: var(--faint); text-align: right; font-size: 12px; }
+button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
+@media (max-width: 640px) { .bn-cal .bn-row { grid-template-columns: 96px 1fr 52px 38px 14px; gap: 6px; } }
 @media (max-width: 640px) { .bn-row.bn-row-paid, .bn-paid .bn-row.bn-head { grid-template-columns: 70px 1fr 40px 34px 52px 42px; gap: 6px; } }
 
 /* Open pipeline by stage - clickable accordion of who's still in play. */

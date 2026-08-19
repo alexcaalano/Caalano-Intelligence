@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.295.0 - 2026-08-19 · `PENDING` - Caalano360: richer Channel split, funnel % of total, per-pipeline bottleneck
+- **Revenue bottleneck funnel now shows % of total leads AND next-step conversion** on every stage, alongside the existing
+  step %, with a header row - so you see both "share of all leads still here" and "conversion into the next step".
+- **Multi-pipeline clients default to one funnel per pipeline** (instead of picking the biggest), so each pipeline's
+  bottleneck reads clearly; the selector still lets you focus a single pipeline.
+- **Channel split rebuilt and moved above the bottleneck.** It now shows, per paid channel: Spend, CRM Leads, each
+  configured **key event** reached, **Won**, **Revenue**, **Close %**, **CAC** (spend ÷ won) and **Avg deal** - a full
+  per-channel scoreboard instead of just spend + leads.
+- **"Show rate by calendar" is clickable** - click a calendar to jump to the Appointments tab and see every appointment,
+  filterable by user (who booked / who showed).
+- Backend: the CRM drill now returns per-channel revenue + lead counts for the channel scoreboard.
+
 ## v3.294.0 - 2026-08-19 · `PENDING` - Forms: readable answer viz, sortable, full-width charts + report match
 - **Form tab charts use the full width.** The donut + "key events by form" share the top row and the "conversion" chart now
   spans the whole width underneath, so the busy multi-series bars are legible instead of squeezed into a third of the screen.

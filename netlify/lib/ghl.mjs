@@ -2375,14 +2375,15 @@ export async function buildCcDrill(locationId, from, to, channel) {
     let bs = bySource.get(label); if (!bs) { bs = { source: label, channel: ch, kind, count: 0, value: 0, opps: [] }; bySource.set(label, bs) }
     bs.count++; bs.value += val
     if (bs.opps.length < 100) bs.opps.push({ name, status: isWon ? 'won' : isLost ? 'lost' : 'open', stage: stg ? stg.name : null, value: Math.round(val), channel: ch })
-    let cc = closeByChannel.get(ch); if (!cc) { cc = { channel: ch, won: 0, lost: 0, deals: [] }; closeByChannel.set(ch, cc) }
+    let cc = closeByChannel.get(ch); if (!cc) { cc = { channel: ch, won: 0, lost: 0, leads: 0, revenue: 0, deals: [] }; closeByChannel.set(ch, cc) }
+    cc.leads++
     if (isWon) {
       revenueTotal += val
       if (ch === 'meta') { metaWon++; paidWon++ } else if (ch === 'google') { googleWon++; paidWon++ }
       const closeMs = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)
       const closeDate = isFinite(closeMs) ? new Date(closeMs).toISOString().slice(0, 10) : null
       if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, channel: ch })
-      cc.won++; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })
+      cc.won++; cc.revenue += val; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })
     } else if (isLost) {
       cc.lost++
       const rn = lostReasonOf(o)
@@ -2418,7 +2419,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
     }
     return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, shown, people }
   }).filter((c) => c.booked || c.occurred || c.shown).sort((a, b) => b.booked - a.booked)
-  const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
+  const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, leads: c.leads, revenue: Math.round(c.revenue), closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
   openDeals.sort((a, b) => b.value - a.value)
   // Per-pipeline stage AT-counts (funnel order) so the frontend key-events
   // funnel can compute cumulative reach via reachedByStage().

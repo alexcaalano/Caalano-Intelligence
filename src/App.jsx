@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.296.0'
+const APP_VERSION = '3.297.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4014,7 +4014,7 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
         <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
         <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
         <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
-        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{fmtNumber(d.measured)}</b><span className="tm-sub">of {fmtNumber(d.sampled)} sampled</span></div>
+        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{fmtNumber(d.measured)}</b><span className="tm-sub">of {fmtNumber(d.sampled)} {d.full ? 'leads (full range)' : 'sampled'}</span></div>
         {d.noOutbound ? <div className="tm-sc warn"><span className="tm-lab">No outreach yet</span><b>{fmtNumber(d.noOutbound)}</b><span className="tm-sub">no outbound at all</span></div> : null}
       </div>
       {onNav ? <div className="exec-nav"><button className="link-btn" onClick={() => onNav('timing')}>Open the Timing tab →</button></div> : null}
@@ -5989,6 +5989,8 @@ function LocationView({ clientId, range, nonce, currency }) {
   const st = useForms(clientId, range, nonce)
   const db = useAuDb()
   const [pipe, setPipe] = useState('all')
+  const [locMetric, setLocMetric] = useState('leads') // which outcome/key event ranks the "by location" list
+  const [locDrill, setLocDrill] = useState(null) // a location clicked from the key-events ranking
   const money = (v) => fmtCurrency(v, currency)
   const pipes = (st.data && st.data.pipelines) || []
   // Project each form's location answers to the selected pipeline (using the
@@ -6025,6 +6027,49 @@ function LocationView({ clientId, range, nonce, currency }) {
         <Sc label="Lost" value={fmtNumber(tot.lost)} />
       </div>
       <LeadMap locs={locs} tall clientId={clientId} currency={currency} />
+      {/* Which locations fire the most of a chosen outcome / key event. The pipeline
+          filter above scopes both the map and this ranking; the metric dropdown adds
+          every configured key event on top of Leads / Booked / Won / Lost. */}
+      {(() => {
+        const ke = formKeyEvents(clientId, pipe, pipes)
+        const events = ke.events || []
+        const opts = [
+          { key: 'leads', label: 'Leads' },
+          ...events.map((e, i) => ({ key: 'ke:' + i, label: (e.kind === 'calendar' ? '📅 ' : '') + e.label })),
+          { key: 'booked', label: 'Booked' }, { key: 'won', label: 'Won' }, { key: 'lost', label: 'Lost' },
+        ]
+        const cur = opts.find((o) => o.key === locMetric) || opts[0]
+        const valOf = (l) => {
+          if (locMetric === 'leads') return l.leads || 0
+          if (locMetric === 'booked') return l.booked || 0
+          if (locMetric === 'won') return l.won || 0
+          if (locMetric === 'lost') return l.lost || 0
+          const i = +locMetric.slice(3); const k = events[i]; return k ? (l.people || []).reduce((n, p) => n + (ke.reached(p, k) ? 1 : 0), 0) : 0
+        }
+        const ranked = locs.map((l) => ({ l, v: valOf(l) })).filter((r) => r.v > 0).sort((a, b) => b.v - a.v).slice(0, 20)
+        const rmax = Math.max(1, ...ranked.map((r) => r.v))
+        const isKe = locMetric.startsWith('ke:')
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <span>Key events by location <span className="sub">· which suburbs / postcodes fire the most <b>{cur.label}</b>{pipe !== 'all' ? ' · this pipeline' : (pipes.length > 1 ? ' · all pipelines (filter above)' : '')} · click a place for its leads</span></span>
+              <select className="kef-pipe-sel" value={locMetric} onChange={(e) => setLocMetric(e.target.value)} title="Rank locations by this outcome or key event">
+                {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </div>
+            {ranked.length
+              ? <div className="loc-rank">{ranked.map(({ l, v }) => (
+                <button className="loc-rank-row" key={l.value} onClick={() => setLocDrill(l)} title={`Open the ${l.value} leads`}>
+                  <span className="loc-rank-name">{l.value}</span>
+                  <span className="loc-rank-track"><span className="loc-rank-fill" style={{ width: `${Math.max(3, (v / rmax) * 100)}%` }} /></span>
+                  <span className="loc-rank-v">{fmtNumber(v)}<small> of {fmtNumber(l.leads)}</small></span>
+                </button>
+              ))}</div>
+              : <div className="cap">No {cur.label.toLowerCase()} recorded across these locations.</div>}
+            {isKe ? <p className="caveat" style={{ marginTop: 8 }}>Key-event counts are over the leads we captured per location (people are sampled per location server-side), so treat them as directional where a suburb has a very large lead count.</p> : null}
+          </div>
+        )
+      })()}
       <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>Every location <span className="sub">· ranked by leads</span></div>
       <div className="fm-loc-list" style={{ marginTop: 8 }}>
         {locs.slice(0, 120).map((l) => (
@@ -6036,6 +6081,7 @@ function LocationView({ clientId, range, nonce, currency }) {
         ))}
       </div>
       {locs.length > 120 && <div className="cap">+{locs.length - 120} more</div>}
+      {locDrill && <LocationLeadsModal loc={locDrill} clientId={clientId} currency={currency} onClose={() => setLocDrill(null)} />}
     </>
   )
 }
@@ -6627,7 +6673,7 @@ function TimingView({ clientId, range, nonce, currency }) {
         <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
         <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
         <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
-        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{d.measured}</b><span className="tm-sub">of {d.sampled} sampled</span></div>
+        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{d.measured}</b><span className="tm-sub">of {d.sampled} {d.full ? 'leads (full range)' : 'sampled'}</span></div>
         <div className="tm-sc warn"><span className="tm-lab">Only automation</span><b>{d.onlyAuto}</b><span className="tm-sub">no human message yet</span></div>
         <div className="tm-sc warn"><span className="tm-lab">No outreach</span><b>{d.noOutbound}</b><span className="tm-sub">no outbound at all</span></div>
       </div>

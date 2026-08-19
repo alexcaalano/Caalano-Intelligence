@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.297.0 - 2026-08-19 · `PENDING` - Location key events + Speed to Lead now covers the full list
+- **Key events by location.** The Location tab has a new ranked panel: pick any outcome or **configured key event** from the
+  dropdown and see which suburbs / postcodes fire it the most (click a place for its leads). The pipeline filter above
+  scopes it, so multi-pipeline clients see it per pipeline.
+- **Speed to Lead now reads the full list, not a sample.** Instead of sampling ~60 leads and fetching each one's
+  conversation history, it reads every lead's first manual outbound (call or SMS) from the bulk message export - a few
+  paged requests for the whole location - so the median, average, ≤5-min and contacted figures cover **every** lead in the
+  range. (Falls back to the sampled scan if the export is unavailable.)
+
 ## v3.296.0 - 2026-08-19 · `PENDING` - Bottleneck: open pipeline list split per pipeline
 - **Each pipeline's funnel now has its own "open pipeline by stage" list directly underneath it** (multi-pipeline clients),
   so the live deals line up with the funnel they belong to instead of one merged list. Single-pipeline clients keep the one

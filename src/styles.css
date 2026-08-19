@@ -1123,6 +1123,16 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .fm-loc-bar { height: 7px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
 .fm-loc-bar span { display: block; height: 100%; background: var(--brand); border-radius: 4px; }
 .fm-loc-n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Key events by location - ranked, clickable bar list. */
+.loc-rank { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.loc-rank-row { display: grid; grid-template-columns: 190px 1fr 88px; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 7px 11px; cursor: pointer; font: inherit; color: var(--text); transition: border-color .12s, background .12s; }
+.loc-rank-row:hover { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 6%, var(--panel)); }
+.loc-rank-name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loc-rank-track { height: 12px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+.loc-rank-fill { display: block; height: 100%; background: var(--brand); border-radius: 6px; }
+.loc-rank-v { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.loc-rank-v small { color: var(--faint); font-weight: 500; }
+@media (max-width: 640px) { .loc-rank-row { grid-template-columns: 120px 1fr 72px; gap: 8px; } }
 .fm-meta-read { display: flex; align-items: flex-start; gap: 22px; flex: 2 1 320px; flex-wrap: wrap; }
 .fm-meta-read > div { min-width: 0; }
 .fm-val { font-size: 13px; color: var(--text); font-weight: 600; }

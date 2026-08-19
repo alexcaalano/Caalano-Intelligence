@@ -1422,6 +1422,44 @@ function contactAccrue(cr, l, hasMsg) {
 function contactSummarise(cr, base) {
   return { base, contacted: cr.contacted.length, rate: base ? Math.round((cr.contacted.length / base) * 100) : null, messaged: cr.messaged.length, booked: cr.booked.length, userBooked: cr.userBooked.length, selfBooked: cr.selfBooked.length, none: cr.none.length, deals: cr }
 }
+// Whole-cohort first-outbound map via the bulk message export (the same efficient
+// endpoint the call report uses) - a few paged requests for the entire location
+// instead of a per-contact conversation fetch each. Returns contactId -> { manual,
+// any } (earliest ms) plus the source-classification tallies. Covers SMS + Call
+// (the manual outreach channels; email is auto-excluded by classifyOutbound). This
+// is what lets Speed to Lead read the FULL list, not a sample.
+async function speedFirstOutboundMap(locTok, locationId, startIso, endIso, started, budgetMs) {
+  const map = new Map()
+  const srcCounts = {}
+  for (const channel of ['Call', 'SMS']) {
+    let cursor = null, guard = 0
+    while (guard++ < 10) {
+      if (Date.now() - started > budgetMs) break
+      const q = { channel, limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }
+      if (startIso) q.startDate = startIso
+      if (endIso) q.endDate = endIso
+      if (cursor) q.cursor = cursor
+      const j = await ghlGet(locTok, '/conversations/messages/export', q).catch(() => null)
+      if (!j) break
+      const msgs = j.messages || []
+      for (const m of msgs) {
+        if (String(m.direction || '').toLowerCase() !== 'outbound') continue
+        const cid = m.contactId; if (!cid) continue
+        const ms = Date.parse(m.dateAdded || m.dateUpdated || m.createdAt); if (!isFinite(ms)) continue
+        const kind = classifyOutbound(m)
+        const sk = `${String(m.source || 'none').toLowerCase()} · ${msgUserId(m) ? 'user' : 'no-user'}`
+        if (!srcCounts[sk]) srcCounts[sk] = { count: 0, kind }
+        srcCounts[sk].count++
+        let e = map.get(cid); if (!e) { e = { manual: null, any: null }; map.set(cid, e) }
+        if (e.any == null || ms < e.any) e.any = ms
+        if (kind === 'manual' && (e.manual == null || ms < e.manual)) e.manual = ms
+      }
+      cursor = j.nextCursor
+      if (!cursor || msgs.length < 1000) break
+    }
+  }
+  return { map, srcCounts }
+}
 export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   const sample = Math.min(opts.sample || 60, 120)
   const budgetMs = opts.budgetMs || 22000
@@ -1476,9 +1514,17 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   }
   for (const k of ['open', 'won', 'lost']) { outcome[k].value = Math.round(outcome[k].value); outcome[k].deals.sort((a, b) => (b.value || 0) - (a.value || 0)).splice(500) }
   leads.sort((a, b) => b.leadIn - a.leadIn)
-  const pick = leads.slice(0, sample)
   const srcCounts = {} // key: "<source> · user|no-user" -> { count, kind }
   const debugRows = []
+  // Full-coverage path: read the first manual outbound for EVERY lead from the bulk
+  // message export (Call + SMS), not a per-contact sample. Extend the window past
+  // `to` so a late lead still catches a reply made shortly after it came in.
+  const startIso = fromMs != null ? new Date(fromMs).toISOString() : null
+  const endIso = new Date(Math.min(Date.now(), (toMs != null ? toMs : Date.now()) + 7 * 86400000)).toISOString()
+  let bulk = null
+  try { bulk = await speedFirstOutboundMap(locTok, locationId, startIso, endIso, started, Math.min(budgetMs, 7500)) } catch { bulk = null }
+  const useBulk = !!(bulk && bulk.map.size)
+  const pick = useBulk ? leads : leads.slice(0, sample)
   // First manual (and first any) outbound message timestamp for one contact.
   const firstOutbound = async (lead) => {
     if (Date.now() - started > budgetMs) return { ...lead, skipped: true }
@@ -1526,7 +1572,21 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
     }
     return { ...lead, manual, any, via, msgMs }
   }
-  const results = (await mapPool(pick, 6, firstOutbound)).filter(Boolean)
+  let results
+  if (useBulk) {
+    for (const [k, v] of Object.entries(bulk.srcCounts)) { if (!srcCounts[k]) srcCounts[k] = { count: 0, kind: v.kind }; srcCounts[k].count += v.count }
+    results = leads.map((lead) => {
+      const e = bulk.map.get(lead.cid) || {}
+      let manual = (e.manual != null && e.manual >= lead.leadIn - 60000) ? e.manual : null
+      const any = (e.any != null && e.any >= lead.leadIn - 60000) ? e.any : null
+      const msgMs = manual
+      let via = manual != null ? 'message' : null
+      if (manual == null && lead.staffBookedMs != null && lead.staffBookedMs >= lead.leadIn - 60000) { manual = lead.staffBookedMs; via = 'appt' }
+      return { ...lead, manual, any, via, msgMs }
+    })
+  } else {
+    results = (await mapPool(pick, 6, firstOutbound)).filter(Boolean)
+  }
   // Buckets of manual response time (minutes). "No manual yet" = a lead we saw
   // that has had no human outbound (may have had only automation).
   const BUCKETS = [
@@ -1567,8 +1627,8 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   const within5 = mins.length ? mins.filter((m) => m < 5).length / mins.length : null
   const pct = (n, d) => (d ? Math.round((n / d) * 100) : null)
   return {
-    connected: true, tz,
-    totalLeads: leads.length, sampled: pick.length - skipped, skipped,
+    connected: true, tz, full: useBulk,
+    totalLeads: leads.length, sampled: useBulk ? leads.length : (pick.length - skipped), skipped,
     outcome, contactRate,
     measured, onlyAuto, noOutbound, viaAppt, viaMessage: measured - viaAppt,
     medianMin: median == null ? null : Math.round(median),

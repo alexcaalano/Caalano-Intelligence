@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.305.0'
+const APP_VERSION = '3.306.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6671,7 +6671,7 @@ function StageTimingSection({ clientId, nonce }) {
   const fmtDays = (n) => (n == null ? '-' : n >= 1 ? `${n < 10 ? n.toFixed(1) : Math.round(n)}d` : `${Math.round(n * 24)}h`)
   return (
     <div className="stagetime" style={{ marginBottom: 18 }}>
-      <div className="lvl-title" style={{ marginTop: 0 }}>Time in stage <span className="sub">· {fmtNumber(d.totalOpen)} open deals · how long they've been sitting in their current stage{d.capped ? ' · sampled to 3,000' : ''}</span></div>
+      <div className="lvl-title" style={{ marginTop: 0 }}>Time in stage <span className="sub">· {fmtNumber(d.totalOpen)} open deals{d.windowDays ? ` created in the last ${d.windowDays} days` : ''} · how long they've been sitting in their current stage{d.capped ? ' · sampled to 3,000' : ''}</span></div>
       {pipes.map((p) => {
         const maxAvg = Math.max(1, ...p.stages.map((s) => s.avgDays))
         return (
@@ -6688,7 +6688,7 @@ function StageTimingSection({ clientId, nonce }) {
           </div>
         )
       })}
-      <p className="cap">This is the age of deals <b>currently</b> in each stage - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (Caalano Systems doesn't keep that history).</p>
+      <p className="cap">This is the age of deals <b>currently</b> in each stage{d.windowDays ? <>, for deals created in the <b>last {d.windowDays} days</b></> : ''} - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (Caalano Systems doesn't keep that history).</p>
     </div>
   )
 }

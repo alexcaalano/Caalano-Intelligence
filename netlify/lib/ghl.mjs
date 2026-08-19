@@ -1981,7 +1981,7 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
 // is this deal sitting in its current stage" is about live pipeline state, not
 // when the deal was created, so we must see every open deal (including old ones
 // that are stuck). The status filter keeps us off the huge closed history.
-async function openOpportunities(locTok, locationId, cap = 3000) {
+async function openOpportunities(locTok, locationId, cap = 3000, sinceMs = null) {
   const out = []; let startAfter, startAfterId, guard = 0
   const maxPages = Math.min(35, Math.ceil(cap / 100) + 3)
   while (guard++ < maxPages && out.length < cap) {
@@ -1992,8 +1992,13 @@ async function openOpportunities(locTok, locationId, cap = 3000) {
     for (const o of batch) {
       // Defensive: only keep opens even if the API ignored the status filter.
       if (String(o.status || '').toLowerCase() !== 'open') continue
+      // Rolling window: keep only deals created within `sinceMs`.
+      if (sinceMs != null) { const c = Date.parse(o.createdAt); if (isFinite(c) && c < sinceMs) continue }
       out.push({ pipelineId: o.pipelineId, stageId: o.pipelineStageId, at: o.lastStageChangeAt || o.createdAt, created: o.createdAt })
     }
+    // order=added_desc, so once a page's oldest deal predates the window, every
+    // later page does too - stop early (also bounds the load).
+    if (sinceMs != null) { const last = Date.parse((batch[batch.length - 1] || {}).createdAt); if (isFinite(last) && last < sinceMs) break }
     const meta = j.meta || {}
     const nextId = meta.startAfterId || (batch.length ? batch[batch.length - 1].id : null)
     const nextAfter = meta.startAfter || (batch.length ? (batch[batch.length - 1].sort || [])[0] : null)
@@ -2009,13 +2014,17 @@ async function openOpportunities(locTok, locationId, cap = 3000) {
 // deals CURRENTLY in each stage (right-censored) - it shows where deals are piling
 // up, not the completed duration of deals that already moved on (GHL doesn't keep
 // that history).
-export async function buildStageTiming(locationId) {
+export async function buildStageTiming(locationId, days = 90) {
   const locTok = await locationToken(locationId)
+  const now = Date.now(), DAY = 86400000
+  // Rolling window: only deals created in the last `days` days, so the board
+  // reflects the current cohort (and the load stays bounded) rather than every
+  // open deal ever.
+  const sinceMs = days ? now - days * DAY : null
   const [opps, pipelines] = await Promise.all([
-    openOpportunities(locTok, locationId),
+    openOpportunities(locTok, locationId, 3000, sinceMs),
     fetchPipelines(locTok, locationId),
   ])
-  const now = Date.now(), DAY = 86400000
   const stageMeta = new Map(); const pipeName = {}
   for (const p of pipelines) {
     pipeName[p.id] = p.name
@@ -2042,7 +2051,7 @@ export async function buildStageTiming(locationId) {
   const pipelinesOut = [...pipes.values()]
     .map((p) => ({ ...p, stages: p.stages.sort((a, b) => a.pos - b.pos), openCount: p.stages.reduce((s, x) => s + x.count, 0) }))
     .sort((a, b) => b.openCount - a.openCount)
-  return { connected: true, totalOpen: opps.length, capped: opps.length >= 3000, pipelines: pipelinesOut }
+  return { connected: true, totalOpen: opps.length, windowDays: days, capped: opps.length >= 3000, pipelines: pipelinesOut }
 }
 // Per-user call activity from GoHighLevel's dialer: outbound volume, talk
 // minutes, connect rate, and inbound handled. Uses the bulk message export

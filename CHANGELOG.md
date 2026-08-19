@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.306.0 - 2026-08-19 · `PENDING` - Time in stage → rolling 90 days; Daily Performance custom conversions now exact
+- **Time in stage (Timing board) now only considers open deals created in the last 90 days**, and says so in the header and
+  caveat. Previously it loaded every open deal ever (sampled to 3,000), so ancient/stale deals skewed the dwell times and
+  the pull was heavier. The window is applied at the source (paging stops once it passes 90 days back), so it's lighter too.
+- **Daily Performance custom-conversion Results are now exact per day.** The first pass (v3.304.0) spread a client's
+  whole-window custom count across days by spend share, which under/over-counted short windows (e.g. Feel Better Medical's
+  last-7-days showed 5 where Meta showed 7). Windsor serves custom conversions by **day + campaign**, so each day now takes
+  its real count, matching Ads Manager for every rolling window (3/7/14/21/28-day). Matched by the single action-name each
+  primary maps to, so no double counting.
+
 ## v3.305.0 - 2026-08-19 · `PENDING` - "GoHighLevel / GHL" renamed to "Caalano Systems" in the UI
 - **All user-facing mentions of GoHighLevel / GHL now read "Caalano Systems"** - the forms caveat, the Time-in-stage note,
   the Call-activity dialer label, the add-client "not connected" status, the auto-onboard copy, the social inbox note, and

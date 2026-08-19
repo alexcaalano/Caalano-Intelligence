@@ -952,26 +952,28 @@ async function buildTrends(key) {
   const ensureCamp = (m, name) => { let a = m.get(name); if (!a) { a = mk(); m.set(name, a) } return a }
   for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const ld = metaResultOf(id, r); e.metaSpend[di] += sp; e.metaLeads[di] += ld; if (r.campaign) { ensureCamp(e.campMeta, r.campaign)[di] += sp; ensureCamp(e.campMetaLeads, r.campaign)[di] += ld } }
   // Custom-conversion primaries aren't insights columns, so the metaResultOf sum
-  // above misses them. For each client whose primary includes a custom conversion,
-  // fetch its custom conversions by campaign over the window and spread each
-  // campaign's count across days by that campaign's daily Meta-spend share, adding
-  // to the daily Meta results. Add-only, per-client try/catch, parallel; only runs
-  // for clients that actually configured a custom-conversion primary.
+  // above misses them. Windsor DOES serve custom conversions by day + campaign via
+  // its Custom Conversions table, so for each client whose primary includes a
+  // custom conversion, fetch the EXACT per-day-per-campaign counts and add them to
+  // the daily Meta results (and the per-campaign daily). Match only the action-name
+  // each primary maps to (the friendly name OR the offsite_conversion_custom_<id>
+  // alias - never both) so a conversion is never double-counted. Add-only,
+  // per-client try/catch, parallel; only runs for custom-primary clients.
   const ccTrendClients = Object.entries(metaPrimaryByClient).filter(([, fs]) => fs.some(isCustomConvField))
   if (ccTrendClients.length) {
     await Promise.all(ccTrendClients.map(async ([id, fs]) => {
       const cfg = CLIENTS[id]; const e = cl[id]; if (!cfg || !cfg.meta || !e) return
-      const ccFields = fs.filter(isCustomConvField)
-      let perCamp
-      try { perCamp = (await fetchCustomConvCounts(cfg, dstr(start), dstr(today), key, true)).perCamp } catch { return }
-      for (const [camp, m] of perCamp) {
-        const cust = ccFields.reduce((s, f) => { const an = ccActionName(f); return s + (an ? (m.get(an) || 0) : 0) }, 0)
-        if (!cust) continue
-        const dailySpend = e.campMeta.get(camp); if (!dailySpend) continue
-        let tot = 0; for (let i = 0; i < 56; i++) tot += dailySpend[i]
-        if (tot <= 0) continue
-        const cml = e.campMetaLeads.get(camp)
-        for (let i = 0; i < 56; i++) { const add = cust * (dailySpend[i] / tot); e.metaLeads[i] += add; if (cml) cml[i] += add }
+      const tset = new Set(fs.filter(isCustomConvField).map(ccActionName).filter(Boolean).map((t) => t.toLowerCase()))
+      if (!tset.size) return
+      let rows
+      try { rows = await windsorFetch('facebook', ['account_id', 'date', 'campaign', 'custom_conversion_action_name', 'custom_conversion_action_count'], dstr(start), dstr(today), null, key) } catch { return }
+      for (const r of rows) {
+        if (r.account_id && !acctEq(r.account_id, cfg.meta)) continue
+        if (!tset.has(String(r.custom_conversion_action_name || '').trim().toLowerCase())) continue
+        const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue
+        const c = num(r.custom_conversion_action_count)
+        e.metaLeads[di] += c
+        if (r.campaign) { const cml = e.campMetaLeads.get(r.campaign); if (cml) cml[di] += c }
       }
     }))
   }

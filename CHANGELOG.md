@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.301.0 - 2026-08-19 · `PENDING` - Custom conversions now count (Windsor Custom Conversions table); Logs load robustly; Creative Curator hidden
+- **Custom Meta conversions now show their real count** (Settings → Meta conversions). They were always reading 0 because
+  the app asked Windsor for per-id insights columns (`conversions_offsite_conversion_custom_<id>`) that Windsor doesn't
+  expose - custom conversions live in Windsor's separate **Custom Conversions** table (`custom_conversion_action_name` +
+  `custom_conversion_action_count`). Verified against Nexia: `A_event_pageview` = 77 for 23 Jul–19 Aug (matches Ads
+  Manager), where the app previously showed 0. The detect + "Find + add by name" flows now read that table, so detected,
+  saved and by-name custom conversions all show the correct count and cost/action. Custom-conversion ids are also no longer
+  sent to Windsor as insights columns (they never resolved there). *(Note: the headline Results total on the Meta tab /
+  Monthly Report still needs the same table wired in - that's the next step; the Settings screen is now correct.)*
+- **Logs → Build versions no longer shows a blank "0 releases".** The changelog loads as its own lazy chunk; after a fresh
+  deploy an older cached page points at the rotated chunk hash, which 404s. That failure was swallowed silently. It now
+  shows a clear "couldn't load - hard-refresh" message with a Retry / reload, and a spinner while loading, instead of an
+  empty history.
+- **Creative Curator is hidden for now** (not good enough yet) - the Creative Cockpit shows just Creative Breakdown. Easily
+  resurfaced later via a single flag.
+
 ## v3.300.0 - 2026-08-19 · `PENDING` - Caalano360 Key event reach split per pipeline; light mode is now the default
 - **Caalano360 "Key event reach" cards now split per pipeline** (multi-pipeline clients), matching the Meta Ads view.
   Instead of one union row that repeated the same stage once per pipeline (e.g. "15 Minute Call" twice), each pipeline gets

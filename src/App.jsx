@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.300.0'
+const APP_VERSION = '3.301.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3038,6 +3038,9 @@ const SEED_OPTLOG = {
   'psychology-hub': 'https://docs.google.com/spreadsheets/d/1vg7Y0KSH7dcIkH1HkFxjarct5SjSzIVmF46MK6h_QDA/edit',
 }
 const CURATOR_KEY = 'caalano_curator_board'
+// Creative Curator is hidden for now (not good enough yet). Flip to true to
+// resurface its subtab in the Creative Cockpit.
+const CURATOR_ENABLED = false
 const PROFILE_KEY = 'caalano_client_profile'
 const DAILYPERF_KEY = 'caalano_dailyperf'
 const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendlyName } } - friendly names for Google Ad IDs
@@ -8546,7 +8549,18 @@ function LogsPanel({ clients }) {
   // Load the (large) changelog markdown on demand instead of inlining it into the
   // main bundle for every visitor - this panel is Super-Admin only.
   const [changelogRaw, setChangelogRaw] = useState('')
-  useEffect(() => { let alive = true; import('../CHANGELOG.md?raw').then((m) => { if (alive) setChangelogRaw(m.default || '') }).catch(() => {}); return () => { alive = false } }, [])
+  const [clState, setClState] = useState('loading') // loading | ok | err
+  // The changelog ships as its own lazy chunk. After a fresh deploy a browser can
+  // still be running the previous index.html, which points at the OLD chunk hash -
+  // that 404s and, if swallowed silently, the panel just shows "0 releases". Load
+  // it explicitly with a visible error + retry so a stale page is obvious (and a
+  // reload fixes it) instead of looking like the history vanished.
+  const clAlive = useRef(true)
+  const loadChangelog = React.useCallback(() => {
+    setClState('loading')
+    import('../CHANGELOG.md?raw').then((m) => { if (clAlive.current) { setChangelogRaw(m.default || ''); setClState((m.default || '').trim() ? 'ok' : 'err') } }).catch(() => { if (clAlive.current) setClState('err') })
+  }, [])
+  useEffect(() => { clAlive.current = true; loadChangelog(); return () => { clAlive.current = false } }, [loadChangelog])
   const versions = useMemo(() => parseChangelog(changelogRaw), [changelogRaw])
   const [log, setLog] = useState({ status: 'idle' })
   const [days, setDays] = useState(3)
@@ -8592,7 +8606,19 @@ function LogsPanel({ clients }) {
       </div>
       {tab === 'versions' && (
         <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Version history <span style={{ fontWeight: 400 }}>· {versions.length} releases · current <b>v{APP_VERSION}</b></span></div>
+          <div className="cap" style={{ fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>Version history <span style={{ fontWeight: 400 }}>· {clState === 'ok' ? `${versions.length} releases · ` : ''}current <b>v{APP_VERSION}</b></span></span>
+            {clState === 'err' && <button className="set-add" onClick={loadChangelog}>↻ Retry</button>}
+          </div>
+          {clState === 'loading' && <Spinner label="Loading version history…" />}
+          {clState === 'err' && (
+            <div className="cap" style={{ padding: '4px 2px 8px', lineHeight: 1.5 }}>
+              Couldn't load the changelog. This usually means the page is running an older cached build after a fresh
+              deploy - the version file it points to has rotated. <b>Hard-refresh</b> the app (Cmd/Ctrl+Shift+R), or
+              <button className="btn-ghost sm" style={{ margin: '0 4px' }} onClick={() => window.location.reload()}>reload now</button>
+              then reopen this panel.
+            </div>
+          )}
           <div className="logs-ver">
             {versions.map((v) => (
               <div className="logs-verrow" key={v.version}>
@@ -10163,13 +10189,19 @@ function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
   const [sub, setSub] = useState('breakdown')
   const sel = list.find((c) => c.id === selId) || list[0]
   if (!list.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No clients with a Meta account yet.</b></div>
+  // Creative Curator is temporarily hidden (flip CURATOR_ENABLED back to true to
+  // resurface its subtab). While off, the Cockpit shows only Creative Breakdown
+  // with no subtab bar.
+  const showCurator = CURATOR_ENABLED && sub === 'curator'
   return (
     <>
-      <div className="subtabs">
-        <button className={sub === 'breakdown' ? 'active' : ''} onClick={() => setSub('breakdown')}>Creative Breakdown</button>
-        <button className={sub === 'curator' ? 'active' : ''} onClick={() => setSub('curator')}>Creative Curator</button>
-      </div>
-      {sub === 'breakdown' ? <>
+      {CURATOR_ENABLED && (
+        <div className="subtabs">
+          <button className={sub === 'breakdown' ? 'active' : ''} onClick={() => setSub('breakdown')}>Creative Breakdown</button>
+          <button className={sub === 'curator' ? 'active' : ''} onClick={() => setSub('curator')}>Creative Curator</button>
+        </div>
+      )}
+      {!showCurator ? <>
         <div className="c360-head" style={{ marginTop: 0 }}>
           <div className="pipe-sel"><label>Client</label>
             <select value={(sel && sel.id) || ''} onChange={(e) => setSelId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>

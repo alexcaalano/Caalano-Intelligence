@@ -159,6 +159,39 @@ const customConvCandidates = (name) => {
   ])]
 }
 const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+// Windsor exposes Meta custom conversions ONLY through its separate "Custom
+// Conversions" table (custom_conversion_action_name + custom_conversion_action_count).
+// The per-id insights columns the app used to probe
+// (conversions_offsite_conversion_custom_<id>) are unknown fields that Windsor
+// rejects, which is why a custom conversion always read 0. This helper reads that
+// table for one account and returns { total, perCamp } name→count maps. Both the
+// friendly name ("A_event_pageview") and Meta's action-type name
+// ("offsite_conversion_custom_<id>") appear as rows, so callers can look up by either.
+async function fetchCustomConvCounts(cc, from, to, key, byCampaign = false) {
+  if (!cc || !cc.meta) return { total: new Map(), perCamp: new Map(), spendByCamp: new Map() }
+  const flds = ['account_id', 'custom_conversion_action_name', 'custom_conversion_action_count']
+  if (byCampaign) flds.splice(1, 0, 'campaign')
+  const rows = (await windsorFetch('facebook', flds, from, to, null, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+  const total = new Map(); const perCamp = new Map()
+  for (const r of rows) {
+    const nm = String(r.custom_conversion_action_name || '').trim().toLowerCase(); if (!nm) continue
+    const n = num(r.custom_conversion_action_count)
+    total.set(nm, (total.get(nm) || 0) + n)
+    if (byCampaign && r.campaign) { let m = perCamp.get(r.campaign); if (!m) { m = new Map(); perCamp.set(r.campaign, m) } m.set(nm, (m.get(nm) || 0) + n) }
+  }
+  return { total, perCamp }
+}
+// Resolve a stored custom-conversion FIELD id to its Custom-Conversions-table
+// action-name key. Handles the legacy insights-style ids the app stored
+// (conversions_/actions_offsite_conversion_[fb_pixel_]custom_<id>) and the new
+// cc:<name> scheme. Returns null for non-custom fields.
+function ccActionName(fieldId) {
+  const s = String(fieldId || '')
+  let m = s.match(/^cc:(.+)$/i); if (m) return m[1].trim().toLowerCase()
+  m = s.match(/offsite_conversion_(?:fb_pixel_)?custom_(\d{6,})/i); if (m) return `offsite_conversion_custom_${m[1]}`.toLowerCase()
+  return null
+}
+const isCustomConvField = (f) => ccActionName(f) != null
 // Auto-detect a row's result field + Ads-Manager-style label from its ad set
 // optimisation goal + destination + promoted object. Returns null when it can't
 // be resolved (e.g. a custom conversion), so the caller falls back to the
@@ -374,7 +407,11 @@ async function readMetaPrimary(clientId) {
       // captured explicitly so resultCount can read them - return them as `extra`.
       const ids = [...primary, ...(mc.secondary || [])].filter(Boolean)
       const std = new Set(META_RESULT_FIELDS)
-      const extra = [...new Set(ids.filter((f) => !std.has(f)))]
+      // Custom-conversion ids are NOT real Windsor insights columns (Windsor serves
+      // custom conversions only via its separate Custom Conversions table), so never
+      // request them as columns - they'd null out at best and can error the query at
+      // worst. They still travel in `fields` for labelling / future table injection.
+      const extra = [...new Set(ids.filter((f) => !std.has(f) && !isCustomConvField(f)))]
       const label = primary.length === 1 ? cap1(prettyField(primary[0])) : `${cap1(prettyField(primary[0]))} +${primary.length - 1} more`
       return { field: primary[0], fields: primary, label, extra }
     }
@@ -3113,17 +3150,28 @@ export default async (req) => {
     const cc = CLIENTS[client]
     const event = url.searchParams.get('event') || ''
     if (!cc || !cc.meta) return json({ scope: 'metaprobe', client, meta: false, found: [] })
-    const cands = customConvCandidates(event)
-    if (!cands.length) return json({ scope: 'metaprobe', client, found: [], error: 'Enter a conversion event name.' })
+    const ev = event.trim()
+    if (!ev) return json({ scope: 'metaprobe', client, found: [], error: 'Enter a conversion event name.' })
     const DAY = 86400000
     const f90 = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10)
     const t0 = new Date().toISOString().slice(0, 10)
     try {
-      const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...cands], f90, t0, null, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
-      let spend = 0; const sums = {}
-      for (const r of rows) { spend += num(r.spend); for (const id of cands) sums[id] = (sums[id] || 0) + num(r[id]) }
-      const found = cands.map((id) => ({ id, label: prettyField(id), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null })).filter((a) => a.count > 0)
-      return json({ scope: 'metaprobe', client, event, window: { from: f90, to: t0 }, tried: cands, found }, 200, false)
+      // Primary source: Windsor's Custom Conversions table (the only place custom
+      // conversions live - the per-id insights columns don't exist). Match the typed
+      // name against the friendly name, its slug, or the offsite_conversion_custom_<id>
+      // alias, case-insensitively.
+      const { total } = await fetchCustomConvCounts(cc, f90, t0, key, false).catch(() => ({ total: new Map() }))
+      const want = ev.toLowerCase(); const wantSlug = customConvSnake(ev)
+      const found = []
+      for (const [nm, cnt] of total) {
+        if (nm === want || customConvSnake(nm) === wantSlug) { found.push({ id: `cc:${ev}`, label: `${ev} (custom conversion)`, count: Math.round(cnt || 0), costPer: null, custom: true }); break }
+      }
+      if (found.length) {
+        let spend = 0
+        try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], f90, t0, null, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta)); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
+        for (const a of found) a.costPer = a.count ? Math.round((spend / a.count) * 100) / 100 : null
+      }
+      return json({ scope: 'metaprobe', client, event: ev, window: { from: f90, to: t0 }, found }, 200, false)
     } catch (e) { return json({ scope: 'metaprobe', client, error: String(e.message || e).slice(0, 200), found: [] }, 200) }
   }
 
@@ -3175,6 +3223,21 @@ export default async (req) => {
     const auto = resolveMetaResult({ adset_optimization_goal: goal })
     let spend = 0
     try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], from, t0, null, key)).filter(acct); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
+    // Real custom-conversion counts come from Windsor's Custom Conversions table
+    // (the per-id insights columns are unknown fields → always 0). Keyed by both the
+    // friendly name and the offsite_conversion_custom_<id> alias.
+    const ccCounts = await fetchCustomConvCounts(cc, from, t0, key, false).catch(() => ({ total: new Map() }))
+    // This client's saved primary/secondary custom-conversion fields, so a saved
+    // choice (e.g. A_event_pageview) shows its real count even if it isn't the
+    // account's current optimisation event (so not in convById).
+    let savedCustomIds = []
+    try { const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }); const mc = s && s.metaconv && s.metaconv[client]; if (mc) savedCustomIds = [...(mc.primary || []), ...(mc.secondary || [])].filter(Boolean).filter(isCustomConvField) } catch { /* ignore */ }
+    const ccLookup = (fieldId, evName) => {
+      const an = ccActionName(fieldId)
+      let v = an != null ? ccCounts.total.get(an) : undefined
+      if ((v == null || v === 0) && evName) v = ccCounts.total.get(String(evName).trim().toLowerCase())
+      return Math.round(v || 0)
+    }
     const sums = {}
     // 2a. Known-good standard candidates - safe to batch 8-at-a-time.
     const stdCands = META_CONV_CANDIDATES.map(([id]) => id)
@@ -3207,14 +3270,24 @@ export default async (req) => {
     // event and should be selectable / auto-suggested.
     for (const [id, evName] of convById) {
       const f = convField(id)
-      if (expStatus[f] === 'invalid') continue
-      if (!actions.some((a) => a.id === f)) actions.push({ id: f, label: `${evName} (custom conversion)`, count: Math.round(sums[f] || 0), costPer: sums[f] ? Math.round((spend / sums[f]) * 100) / 100 : null, custom: true, optimised: !!(optConv && optConv.id === id) })
-      else { const ex = actions.find((a) => a.id === f); ex.label = `${evName} (custom conversion)`; ex.optimised = !!(optConv && optConv.id === id) }
+      const cnt = ccLookup(f, evName)
+      if (!actions.some((a) => a.id === f)) actions.push({ id: f, label: `${evName} (custom conversion)`, count: cnt, costPer: cnt ? Math.round((spend / cnt) * 100) / 100 : null, custom: true, optimised: !!(optConv && optConv.id === id) })
+      else { const ex = actions.find((a) => a.id === f); ex.label = `${evName} (custom conversion)`; ex.count = cnt; ex.costPer = cnt ? Math.round((spend / cnt) * 100) / 100 : null; ex.optimised = !!(optConv && optConv.id === id) }
+    }
+    // Saved custom conversions (from Settings) that aren't the current optimisation
+    // event: surface them with their real count from the Custom Conversions table.
+    for (const f of savedCustomIds) {
+      if (actions.some((a) => a.id === f)) continue
+      const cnt = ccLookup(f, null)
+      const lab = prettyField(f).replace(/^(Conversions|Actions)\s+/i, '')
+      actions.push({ id: f, label: `${lab} (custom conversion)`, count: cnt, costPer: cnt ? Math.round((spend / cnt) * 100) / 100 : null, custom: true })
     }
     const autoField = auto && auto.field && auto.field !== 'leads_native' ? auto.field : (auto && auto.field === 'leads_native' ? 'actions_leadgen_grouped' : null)
     // Prefer the detected optimisation custom conversion (the real per-campaign Results
     // event) as the suggested primary; else the objective's field; else top-firing.
-    const optConvField = optConv && expStatus[convField(optConv.id)] !== 'invalid' ? convField(optConv.id) : null
+    // The optimisation custom conversion is resolvable via the Custom Conversions
+    // table (its insights column doesn't exist), so suggest it whenever detected.
+    const optConvField = optConv ? convField(optConv.id) : null
     const suggest = optConvField || ((autoField && actions.some((a) => a.id === autoField)) ? autoField : (actions[0] ? actions[0].id : null))
     // Which experimental fields Windsor ACCEPTED (valid, even if zero) - the shortlist of
     // real fields we can use; 'invalid' ones don't exist on the connector.

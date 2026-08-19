@@ -2845,6 +2845,9 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .tr-brk-grid > * { min-width: 0; }
 .tr-src-drillbox { overflow-x: auto; }
 .tr-src-drillbox > table { min-width: 320px; }
+/* Google conversion-actions drill: full width under the breakdown grid. */
+.tr-brk-convdrill { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-2); }
+.tr-brk-convdrill .tr-src-drillbox { padding: 4px 0 0; }
 
 /* ---- Won-basis header control + chip ---- */
 .wb-sel .chan-toggle.wb-toggle { margin: 0; }

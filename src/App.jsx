@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.283.0'
+const APP_VERSION = '3.284.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1265,7 +1265,6 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
                     <tr className={isG ? 'tr-src-click' : ''} onClick={isG ? () => setGOpen((o) => !o) : undefined} title={isG ? 'Click for the Google conversion actions in this window' : undefined}>
                       <td className="lft">{r.label}{isG ? <span className="tr-src-more">{gOpen ? '▾' : '▸'} conversion actions</span> : null}</td><td>{money(r.spend)}</td><td>{fmtNumber(r.results)}</td><td>{cpr(r.spend, r.results)}</td>
                     </tr>
-                    {isG && gOpen ? <tr className="tr-src-drillrow"><td colSpan={4}><GoogleConvDrill clientId={clientId} days={w.n} money={money} /></td></tr> : null}
                   </React.Fragment>
                 )
               }) : <tr><td className="lft" colSpan={4}><span className="cap">No ad spend in this window.</span></td></tr>}
@@ -1296,6 +1295,10 @@ function WindowBreakdown({ w, clientId, pipeId, stagePos, currency }) {
           </>) : <p className="cap" style={{ margin: '4px 0 0' }}>Unlinked ad spend isn't tied to a pipeline, so it has no CRM key events.</p>}
         </div>
       </div>
+      {/* Google conversion-actions drill renders full-width BELOW the two-column grid -
+          its wide table won't fit a half-width cell (it used to overlap the key-events
+          column). */}
+      {canGDrill && gOpen ? <div className="tr-brk-convdrill"><div className="tr-brk-lab">Google conversion actions · last {w.n} days</div><GoogleConvDrill clientId={clientId} days={w.n} money={money} /></div> : null}
       {drill ? <KeyPeopleModal event={{ ...drill, pipeline: drill.pipeline || (pipeId && pipeId !== 'all' ? pipeId : null) }} clientId={clientId} channel={src} range={winRange} currency={currency} onClose={() => setDrill(null)} /> : null}
     </div>
   )
@@ -10390,9 +10393,17 @@ async function exportSlidesToPdf(slides, fileName) {
     }
     // Taller than a page: paginate. Break only at block-level element edges (not inline
     // text), so table rows / cards aren't cut. Require each page to fill >=50% first.
+    // Re-measure the slide top NOW (after html2canvas) so it matches the descendant
+    // rects measured just below - html2canvas can shift scroll during its async render.
+    const elTop = el.getBoundingClientRect().top
     const factor = canvas.width / (el.offsetWidth || 1)
     const cutSet = new Set([canvas.height])
-    el.querySelectorAll('*').forEach((n) => { const r = n.getBoundingClientRect(); if (r.height < 14) return; const d = getComputedStyle(n).display; if (d === 'inline' || d === 'none') return; cutSet.add(Math.round((r.bottom - top) * factor)) })
+    const addEdge = (n) => { const r = n.getBoundingClientRect(); if (r.height > 0) cutSet.add(Math.round((r.bottom - elTop) * factor)) }
+    // Table rows / cards / funnel rows are the safe break points - collect them
+    // unconditionally (compressed export rows can be <14px, so no height filter here).
+    el.querySelectorAll('tr, .mr-cre, .card, .kef-row, .mr-block, .pp-block, .mr-cretbl-row').forEach(addEdge)
+    // Plus any other non-inline block with real height, as a fallback for other layouts.
+    el.querySelectorAll('*').forEach((n) => { const r = n.getBoundingClientRect(); if (r.height < 8) return; const d = getComputedStyle(n).display; if (d === 'inline' || d === 'none') return; cutSet.add(Math.round((r.bottom - elTop) * factor)) })
     const cuts = [...cutSet].filter((v) => v > 0 && v <= canvas.height).sort((a, b) => a - b)
     const pageHpx = Math.floor(A4L_H / fit) // source px that fill one A4 page
     let y = 0; buf.width = canvas.width

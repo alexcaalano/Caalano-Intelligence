@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.284.0 - 2026-08-18 · `PENDING` - PDF page breaks land on rows; fix Daily conversion-actions overlap
+- **PDF: table rows no longer cut across a page break.** The break detector now (1) re-measures the slide's position
+  *after* html2canvas renders (its async pass could shift scroll and throw the break points off by a bit), and
+  (2) collects table-row / card edges unconditionally - the compressed 8px export rows were under the old height filter,
+  so on a long table there were no row edges to snap to and it hard-cut mid-row. Long tables now break cleanly between
+  rows on A4.
+- **Daily Performance: fixed the conversion-actions glitch.** In a window tile's breakdown, clicking "conversion
+  actions" expanded a wide table inside the narrow left column, overlapping the "Key events by source" panel. It now
+  renders full-width **below** the two-column grid, where it has room.
+
 ## v3.283.0 - 2026-08-18 · `PENDING` - PDF export back to standard A4 (landscape)
 - **PDF now exports as standard A4** (landscape), so it prints and shares like a normal document. Each slide is fit to
   the full page width (kept readable - not shrunk to cram a tall slide onto one page). A slide that fits sits on one page

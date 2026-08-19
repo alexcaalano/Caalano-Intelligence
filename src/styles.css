@@ -1201,6 +1201,25 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .kef-clickable:hover .kef-drill-ind { opacity: .65; }
 /* Key-event people drill modal - wide enough that nothing scrolls sideways */
 .kp-modal { max-width: 1120px; width: 94vw; }
+/* Location "leads behind this dot" drill - a vertical card list, everything wraps so
+   it never scrolls sideways (per the no-horizontal-scroll rule). */
+.loc-modal { width: min(640px, 94vw); }
+.loc-people { display: flex; flex-direction: column; gap: 8px; }
+.loc-lead { border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2, var(--panel)); overflow: hidden; }
+.loc-lead-head { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 10px 12px; background: none; border: none; cursor: pointer; color: var(--text); text-align: left; }
+.loc-lead-head:hover { background: color-mix(in srgb, var(--brand) 6%, transparent); }
+.loc-lead-name { font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.loc-lead-meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.loc-lead-stage { color: var(--muted); }
+.loc-lead-age { color: var(--muted); font-variant-numeric: tabular-nums; }
+.loc-lead-age.u-stale { color: #f0435b; }
+.loc-lead-val { font-weight: 800; font-variant-numeric: tabular-nums; }
+.loc-lead-body { padding: 6px 12px 12px; border-top: 1px dashed var(--border); }
+.loc-answers { display: flex; flex-direction: column; gap: 5px; margin: 6px 0 4px; }
+.loc-answer { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; }
+.loc-answer-q { color: var(--muted); font-weight: 600; }
+.loc-answer-a { color: var(--text); overflow-wrap: anywhere; }
+.loc-notes { margin-top: 4px; }
 .kp-tbl { width: 100%; table-layout: auto; }
 .kp-tbl th, .kp-tbl td { white-space: nowrap; }
 .kp-tbl td.kp-stage { white-space: normal; min-width: 220px; }

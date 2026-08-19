@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.285.0 - 2026-08-18 · `PENDING` - Location map: click a dot for the leads behind it
+- **Click any postcode/suburb dot on the Location map** to open a breakdown of the leads that make it up. Each lead
+  shows its **status, value, pipeline stage and how long it's sat in that stage**, and expands to reveal **what they
+  answered on their first form submission** and their **Caalano Systems notes** (loaded on demand).
+- Built as a vertical card list that **never scrolls sideways** on any screen (per the no-horizontal-scroll rule).
+- Backend: the Forms feed now attaches the per-lead detail (funnel fields + form answers) to each location, deduped by
+  contact and capped. It's live data - press **Refresh** if a just-opened dot shows no detail yet.
+
 ## v3.284.0 - 2026-08-18 · `PENDING` - PDF page breaks land on rows; fix Daily conversion-actions overlap
 - **PDF: table rows no longer cut across a page break.** The break detector now (1) re-measures the slide's position
   *after* html2canvas renders (its async pass could shift scroll and throw the break points off by a bit), and

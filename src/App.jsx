@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.284.0'
+const APP_VERSION = '3.285.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4040,7 +4040,7 @@ function LocationSummary({ clientId, range, nonce, onNav }) {
   return (
     <div className="card">
       <div className="exec-panel-h">Lead locations <span className="sub">· {fmtNumber(locs.length)} places · {fmtNumber(tot.leads)} leads mapped · {fmtNumber(tot.won)} won</span></div>
-      <LeadMap locs={locs} />
+      <LeadMap locs={locs} clientId={clientId} />
       <div className="fm-loc-list" style={{ marginTop: 8 }}>
         {locs.slice(0, 8).map((l) => (
           <div className="fm-loc" key={l.value} title={`${l.leads} leads · ${l.booked || 0} booked · ${l.won || 0} won`}>
@@ -5677,9 +5677,10 @@ function mergeLocations(locs, db) {
     if (!c) { kept.push(l); continue }
     const key = c[0].toFixed(3) + ',' + c[1].toFixed(3)
     let g = groups.get(key)
-    if (!g) { g = { lat: c[0], lng: c[1], leads: 0, booked: 0, shown: 0, won: 0, lost: 0, members: [] }; groups.set(key, g) }
+    if (!g) { g = { lat: c[0], lng: c[1], leads: 0, booked: 0, shown: 0, won: 0, lost: 0, members: [], people: [] }; groups.set(key, g) }
     g.leads += l.leads || 0; g.booked += l.booked || 0; g.shown += l.shown || 0; g.won += l.won || 0; g.lost += l.lost || 0
     if (l.members) g.members.push(...l.members); else g.members.push({ value: l.value, leads: l.leads || 0 })
+    if (Array.isArray(l.people)) g.people.push(...l.people)
   }
   const merged = [...groups.values()].map((g) => {
     const vals = [...new Set(g.members.map((m) => String(m.value).trim()))]
@@ -5687,7 +5688,10 @@ function mergeLocations(locs, db) {
     const names = [...new Set(vals.filter((v) => !isPostcodeVal(v)))]
     const label = names.length && pcs.length ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''} (${pcs.join('/')})`
       : names.length ? names.join(' / ') : pcs.join(' / ')
-    return { value: label, leads: g.leads, booked: g.booked, shown: g.shown, won: g.won, lost: g.lost, lat: g.lat, lng: g.lng, merged: g.members.length > 1, members: g.members }
+    // Dedupe the lead list by contact (a lead can match a postcode AND a suburb answer).
+    const seen = new Set(); const people = []
+    for (const p of g.people) { if (p && p.contactId && !seen.has(p.contactId)) { seen.add(p.contactId); people.push(p) } }
+    return { value: label, leads: g.leads, booked: g.booked, shown: g.shown, won: g.won, lost: g.lost, lat: g.lat, lng: g.lng, merged: g.members.length > 1, members: g.members, people }
   })
   return [...merged, ...kept].sort((a, b) => b.leads - a.leads)
 }
@@ -5699,10 +5703,12 @@ const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : p.lost ? 'lost' 
 const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_BLUE : o === 'lost' ? LM_RED : LM_AMBER)
 // Interactive Leaflet map (OpenStreetMap tiles) - real base map with suburb
 // names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
-function LeadMap({ locs, tall }) {
+function LeadMap({ locs, tall, clientId, currency }) {
   const [db, setDb] = useState(undefined)
   const [filter, setFilter] = useState('all') // all | lead | booked | won
   const [ready, setReady] = useState(false)
+  const [sel, setSel] = useState(null) // clicked location -> leads modal
+  const selRef = useRef(null); selRef.current = setSel
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const layerRef = useRef(null)
@@ -5766,8 +5772,8 @@ function LeadMap({ locs, tall }) {
       const col = outcomeColor(o)
       const r = 5 + Math.sqrt(p.leads / maxLeads) * 20
       const m = L.circleMarker([p.lat, p.lng], { radius: r, color: col, weight: 1.5, fillColor: col, fillOpacity: 0.55 })
-      m.bindPopup(`<b>${p.value}</b><br/>${p.leads} lead${p.leads === 1 ? '' : 's'} · ${p.booked || 0} booked · ${p.won || 0} won · ${p.lost || 0} lost`)
-      m.bindTooltip(`${p.value}: ${p.leads}L / ${p.booked || 0}B / ${p.won || 0}W / ${p.lost || 0}Lost`)
+      m.bindTooltip(`${p.value}: ${p.leads}L / ${p.booked || 0}B / ${p.won || 0}W / ${p.lost || 0}Lost · click for leads`)
+      m.on('click', () => selRef.current && selRef.current(p)) // open the leads breakdown
       m.addTo(layer); latlngs.push([p.lat, p.lng])
     }
     if (latlngs.length) { try { map.fitBounds(latlngs, { padding: [34, 34], maxZoom: 13 }) } catch { /* single point */ } }
@@ -5786,7 +5792,60 @@ function LeadMap({ locs, tall }) {
         </div>
         <div ref={elRef} className={`lead-map-leaflet${tall ? ' lead-map-tall' : ''}`} />
       </div>
-      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the breakdown{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
+      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the leads{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
+      {sel && <LocationLeadsModal loc={sel} clientId={clientId} currency={currency} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+// The leads behind one map dot (a postcode / suburb): each lead's status, value,
+// pipeline stage and how long they've sat there, expandable to their initial form
+// answers + Caalano Systems notes. Deliberately a vertical card list (no table) so
+// it never scrolls sideways on any screen.
+function LocationLeadsModal({ loc, clientId, currency, onClose }) {
+  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
+  const people = (loc && loc.people) || []
+  useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') onClose() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
+  const won = people.filter((p) => p.status === 'won').length
+  const lost = people.filter((p) => p.status === 'lost').length
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal loc-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="m-head">
+          <div><h3 style={{ margin: 0 }}>📍 {loc.value}</h3><span className="cap">{fmtNumber(loc.leads)} lead{loc.leads === 1 ? '' : 's'} · {fmtNumber(loc.booked || 0)} booked · {won} won · {lost} lost{people.length < loc.leads ? ` · showing ${people.length}` : ''}</span></div>
+          <button className="icon-btn" onClick={onClose}>✕</button>
+        </div>
+        <div className="m-body">
+          {people.length ? <div className="loc-people">{people.map((p, i) => <LocationLeadRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</div>
+            : <div className="cap">No lead detail for this location yet{loc.leads ? ' - press Refresh to load the latest' : ''}.</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+// One lead card in the location drill: headline row (name · status · stage · age ·
+// value), the initial form answers, and a click-to-load notes trail.
+function LocationLeadRow({ p, clientId, money }) {
+  const [open, setOpen] = useState(false)
+  const [notes, setNotes] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const answers = p.answers && typeof p.answers === 'object' ? Object.entries(p.answers) : []
+  const load = () => { setLoading(true); const q = new URLSearchParams({ scope: 'oppnotes', client: clientId }); if (p.contactId) q.set('contact', p.contactId); fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false)) }
+  const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && clientId && p.contactId) load() }
+  return (
+    <div className={`loc-lead${open ? ' open' : ''}`}>
+      <button className="loc-lead-head" onClick={toggle} title="Show form answers + notes">
+        <span className="loc-lead-name">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name || 'Lead'}</span>
+        <span className="loc-lead-meta">{statusChip(p.status)}{p.stageName ? <span className="loc-lead-stage">{p.stageName}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</span> : null}{p.ageDays != null ? <span className={`loc-lead-age${p.ageDays > 30 ? ' u-stale' : ''}`}>{fmtNumber(p.ageDays)}d in stage</span> : null}<span className="loc-lead-val">{p.value ? money(p.value) : '-'}</span></span>
+      </button>
+      {open && <div className="loc-lead-body">
+        {answers.length ? <div className="loc-answers">{answers.map(([q, a], j) => <div className="loc-answer" key={j}><span className="loc-answer-q">{q}</span><span className="loc-answer-a">{a}</span></div>)}</div>
+          : <div className="cap">No form answers captured for this lead.</div>}
+        <div className="loc-notes">
+          {loading ? <Spinner label="Loading notes…" />
+            : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div>
+              : notes ? <div className="cap">No notes on this contact in Caalano Systems.</div> : null}
+        </div>
+      </div>}
     </div>
   )
 }
@@ -5835,7 +5894,7 @@ function LocationView({ clientId, range, nonce, currency }) {
   const locs = useMemo(() => {
     const forms = (st.data && st.data.forms) || []
     const raw = forms.flatMap((f) => f.locations || [])
-    const proj = pipe === 'all' ? raw : raw.map((l) => { const b = l.byPipe && l.byPipe[pipe]; return b && b.leads ? { value: l.value, leads: b.leads, booked: b.booked, won: b.won, lost: b.lost } : null }).filter(Boolean)
+    const proj = pipe === 'all' ? raw : raw.map((l) => { const b = l.byPipe && l.byPipe[pipe]; return b && b.leads ? { value: l.value, leads: b.leads, booked: b.booked, won: b.won, lost: b.lost, people: (l.people || []).filter((p) => p.pipelineId === pipe) } : null }).filter(Boolean)
     if (!proj.length) return []
     return mergeLocations(groupAnswers(proj), db)
   }, [st.data, db, pipe])
@@ -5863,7 +5922,7 @@ function LocationView({ clientId, range, nonce, currency }) {
         <Sc label="Won" value={fmtNumber(tot.won)} />
         <Sc label="Lost" value={fmtNumber(tot.lost)} />
       </div>
-      <LeadMap locs={locs} tall />
+      <LeadMap locs={locs} tall clientId={clientId} currency={currency} />
       <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>Every location <span className="sub">· ranked by leads</span></div>
       <div className="fm-loc-list" style={{ marginTop: 8 }}>
         {locs.slice(0, 120).map((l) => (

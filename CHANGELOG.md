@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.280.0 - 2026-08-18 · `PENDING` - Enforce the Content-Security-Policy
+- **CSP is now enforcing.** After a full app tour (Meta embeds, maps, drill-downs, PDF export) in report-only mode
+  produced **zero** CSP violations, the header was switched from `Content-Security-Policy-Report-Only` to
+  `Content-Security-Policy`. The dashboard now blocks any script/frame/connection outside the allow-list, closing off the
+  main injected-content / XSS avenues. Instant rollback if ever needed: append `-Report-Only` back onto the header name.
+
 ## v3.279.0 - 2026-08-18 · `PENDING` - Security hardening pass 2: login throttle + CSP (report-only)
 - **Login brute-force throttle.** Failed logins are now counted per email; after 5 failures in 15 min the account is
   temporarily locked with an escalating cooldown (1 → 5 → 15 → 30 min), returning HTTP 429. A successful login clears the

@@ -329,7 +329,12 @@ async function oppSnapshot(locTok, locationId, opts = {}) {
 export async function warmOppSnapshot(locationId) {
   const locTok = await locationToken(locationId)
   const snap = await oppSnapshot(locTok, locationId, { force: true })
-  return { opps: snap ? snap.opps.length : 0, truncated: !!(snap && snap.truncated) }
+  // Also refresh the pipelines cache so interactive loads never hit the live
+  // /opportunities/pipelines call (the one that, when rate-limited, blanked the
+  // funnel + stage reach). Best-effort - a miss just means the next load fetches it.
+  let pipes = 0
+  try { pipes = (await fetchPipelines(locTok, locationId)).length } catch { /* ignore */ }
+  return { opps: snap ? snap.opps.length : 0, truncated: !!(snap && snap.truncated), pipelines: pipes }
 }
 async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
   // Serve from the shared snapshot when it provably covers the requested window;
@@ -360,9 +365,36 @@ async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts =
 const BOOK_RE = /(book|appointment|\bappt\b|discovery call|consult|scheduled)/i
 const SHOW_RE = /(attend|showed|\bheld\b|payment collect|\bpaid\b|qualified|onboard|welcome)/i
 const STAGE_EXC = /(cancel|no.?show|no.?answer|disqualif|lost)/i
+// Pipelines change rarely (a client's stage list is edited maybe once a month),
+// but the funnel / stage-reach / open-pipeline-by-stage panels ALL depend on them.
+// Unlike opportunities (served from the warm snapshot), this used to hit GHL live on
+// every load - so under the same rate-limit pressure the snapshot exists to avoid, it
+// would 429, fall back to [], and silently blank every stage number while the
+// snapshot-served counts (leads / won / open) still showed. Cache it, and on a failed
+// live pull serve the last-good copy rather than an empty list.
+const PIPE_MEM_MS = 600000     // 10 min in-memory freshness
+const PIPE_BLOB_MS = 86400000  // 24h cross-invocation freshness (pipelines rarely change)
+const _pipeMem = new Map()     // locationId -> { at, pipelines }
+const _pipeStore = () => getStore({ name: 'caalano-pipecache', consistency: 'strong' })
 async function fetchPipelines(locTok, locationId) {
-  const j = await ghlGet(locTok, '/opportunities/pipelines', { locationId }).catch(() => ({ pipelines: [] }))
-  return j.pipelines || []
+  const now = Date.now()
+  const mem = _pipeMem.get(locationId)
+  if (mem && now - mem.at < PIPE_MEM_MS) return mem.pipelines
+  let cached = null
+  try { const hit = await _pipeStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.pipelines)) cached = hit } catch { /* blobs unavailable */ }
+  if (cached && now - cached.at < PIPE_BLOB_MS) { _pipeMem.set(locationId, cached); return cached.pipelines }
+  let pipelines = null
+  try { const j = await ghlGet(locTok, '/opportunities/pipelines', { locationId }); if (j && Array.isArray(j.pipelines)) pipelines = j.pipelines } catch { /* fall through to stale */ }
+  if (pipelines && pipelines.length) {
+    const rec = { at: now, pipelines }
+    _pipeMem.set(locationId, rec)
+    try { await _pipeStore().setJSON(locationId, rec) } catch { /* ignore */ }
+    return pipelines
+  }
+  // Live pull failed or came back empty: serve the last-good copy (even if older than
+  // the freshness window) so a transient 429 doesn't blank the funnel + stage reach.
+  if (cached && Array.isArray(cached.pipelines)) { _pipeMem.set(locationId, cached); return cached.pipelines }
+  return pipelines || []
 }
 function stageIndexFrom(pipelines) {
   const idx = new Map()

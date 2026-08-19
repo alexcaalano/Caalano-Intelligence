@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.292.0 - 2026-08-19 · `PENDING` - Fix: rep funnel + "open pipeline by stage" going blank
+- **Fixed: the rep leaderboard's funnel and "open pipeline by stage" (where each rep's open leads are sitting) were
+  showing 0 / empty.** Opportunities are served from the warm snapshot so their counts (leads / won / lost / open) always
+  loaded, but the pipeline definitions were fetched live on every load with no cache - so under the same GoHighLevel
+  rate-limiting the snapshot exists to avoid, that call would 429 and fall back to an empty list, which silently zeroed
+  every stage-reach number and dropped the open-deals-by-stage panel.
+- Pipelines are now cached per client (in-memory + 24h cross-invocation) with a **stale fallback** - a transient 429 serves
+  the last-good copy instead of blanking the funnel - and the scheduled warmer refreshes them alongside the opportunity
+  snapshot, so interactive loads never depend on the live call.
+
 ## v3.291.0 - 2026-08-19 · `PENDING` - Call Reporting tab + fix: dialer calls were always blank
 - **Fixed: call activity was always empty.** The GoHighLevel message-export API validates its date filters as full ISO 8601
   datetimes (`YYYY-MM-DDTHH:mm:ss.sssZ`); we were sending bare `YYYY-MM-DD`, which the API accepts with HTTP 200 but

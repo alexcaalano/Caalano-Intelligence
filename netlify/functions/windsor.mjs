@@ -594,9 +594,18 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
         roll.totals.resultBreakdown = Object.entries(bd).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
         roll.totals.costPerResult = roll.totals.results ? Math.round((roll.totals.spend / roll.totals.results) * 100) / 100 : null
       }
+      const campCustom = new Map(); const campSpend = new Map()
       for (const c of roll.campaigns || []) {
         const add = sumFor(perCamp.get(c.name))
-        if (add > 0) { c.results = (c.results || 0) + add; c.costPerResult = c.results ? Math.round((c.spend / c.results) * 100) / 100 : null }
+        campSpend.set(c.name, c.spend || 0)
+        if (add > 0) { campCustom.set(c.name, add); c.results = (c.results || 0) + add; c.costPerResult = c.results ? Math.round((c.spend / c.results) * 100) / 100 : null }
+      }
+      // Windsor breaks custom conversions down only to campaign, so allocate each
+      // campaign's count to its ad sets / ads by spend share - the drill-downs then
+      // reflect the custom conversion too, and each campaign's total stays exact.
+      if (campCustom.size) {
+        const allocate = (rows) => { for (const r of rows || []) { const cust = campCustom.get(r.campaign); if (!cust) continue; const cs = campSpend.get(r.campaign) || 0; const add = Math.round(cust * (cs > 0 ? (r.spend || 0) / cs : 0)); if (add > 0) { r.results = (r.results || 0) + add; r.costPerResult = r.results ? Math.round((r.spend / r.results) * 100) / 100 : null } } }
+        allocate(roll.adsets); allocate(roll.ads)
       }
     } catch { /* leave standard results unchanged on any failure */ }
   }
@@ -942,6 +951,30 @@ async function buildTrends(key) {
   const ensurePipe = (e, pid, name) => { let p = e.pipe.get(pid); if (!p) { p = { id: pid, name: name || 'Pipeline', leads: mk(), booked: mk(), won: mk(), leadsCh: { meta: mk(), google: mk(), other: mk() }, wonCh: { meta: mk(), google: mk(), other: mk() } }; e.pipe.set(pid, p) } else if (name && (!p.name || p.name === 'Pipeline')) p.name = name; return p }
   const ensureCamp = (m, name) => { let a = m.get(name); if (!a) { a = mk(); m.set(name, a) } return a }
   for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const ld = metaResultOf(id, r); e.metaSpend[di] += sp; e.metaLeads[di] += ld; if (r.campaign) { ensureCamp(e.campMeta, r.campaign)[di] += sp; ensureCamp(e.campMetaLeads, r.campaign)[di] += ld } }
+  // Custom-conversion primaries aren't insights columns, so the metaResultOf sum
+  // above misses them. For each client whose primary includes a custom conversion,
+  // fetch its custom conversions by campaign over the window and spread each
+  // campaign's count across days by that campaign's daily Meta-spend share, adding
+  // to the daily Meta results. Add-only, per-client try/catch, parallel; only runs
+  // for clients that actually configured a custom-conversion primary.
+  const ccTrendClients = Object.entries(metaPrimaryByClient).filter(([, fs]) => fs.some(isCustomConvField))
+  if (ccTrendClients.length) {
+    await Promise.all(ccTrendClients.map(async ([id, fs]) => {
+      const cfg = CLIENTS[id]; const e = cl[id]; if (!cfg || !cfg.meta || !e) return
+      const ccFields = fs.filter(isCustomConvField)
+      let perCamp
+      try { perCamp = (await fetchCustomConvCounts(cfg, dstr(start), dstr(today), key, true)).perCamp } catch { return }
+      for (const [camp, m] of perCamp) {
+        const cust = ccFields.reduce((s, f) => { const an = ccActionName(f); return s + (an ? (m.get(an) || 0) : 0) }, 0)
+        if (!cust) continue
+        const dailySpend = e.campMeta.get(camp); if (!dailySpend) continue
+        let tot = 0; for (let i = 0; i < 56; i++) tot += dailySpend[i]
+        if (tot <= 0) continue
+        const cml = e.campMetaLeads.get(camp)
+        for (let i = 0; i < 56; i++) { const add = cust * (dailySpend[i] / tot); e.metaLeads[i] += add; if (cml) cml[i] += add }
+      }
+    }))
+  }
   for (const r of gg) { const id = googleId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const cv = num(r.conversions); e.gSpend[di] += sp; e.gConv[di] += cv; if (r.campaign) { ensureCamp(e.campGoogle, r.campaign)[di] += sp; ensureCamp(e.campGoogleConv, r.campaign)[di] += cv } }
   // Windsor blended booked (fallback when the GHL app isn't connected / a client's fetch fails)
   const idxByAcct = {}; const pipeNameByAcct = {}
@@ -2670,10 +2703,17 @@ export default async (req) => {
             .then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,cc.meta)))
             .catch(() => [])
         ))
+        // Custom-conversion primaries aren't insights columns, so add each month's
+        // count from the Custom Conversions table (same as the headline).
+        const ccPrimary = ((fallback && fallback.fields) || []).filter(isCustomConvField)
+        const ccPerMonth = ccPrimary.length
+          ? await Promise.all(monthList.map((k) => fetchCustomConvCounts(cc, `${k}-01`, lastDay(k), key, false).then((d) => d.total).catch(() => new Map())))
+          : null
         monthList.forEach((k, i) => {
           const b = buckets.get(k); if (!b) return
           let results = 0, spend = 0
           for (const a of aggMeta(perMonth[i], 'adset_name')) { const rr = rowResult(a, fallback); results += resultCount(a, rr.field) || 0; spend += a.spend }
+          if (ccPerMonth) { const tm = ccPerMonth[i]; for (const f of ccPrimary) { const an = ccActionName(f); results += an ? (tm.get(an) || 0) : 0 } }
           b.spend = spend; b.leads = results
         })
       }

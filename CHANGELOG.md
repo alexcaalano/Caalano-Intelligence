@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.304.0 - 2026-08-19 · `PENDING` - Custom conversions now count in every Meta Results surface
+- **Custom-conversion primaries now flow through to every Meta Results view**, not just the campaign table + account total:
+  - **Ad-set & ad drill-downs** (Meta tab + Monthly Report): each campaign's custom count is allocated to its ad sets / ads
+    by spend share (Windsor only breaks custom conversions to campaign), so drill-downs reflect it and campaign totals stay
+    exact.
+  - **6-month Results trend** (Meta slide): each month adds its custom-conversion count from the Custom Conversions table.
+  - **Daily Performance** (rolling 3/7/14/21/28-day trends): each custom-primary client's custom conversions are fetched by
+    campaign and spread across days by daily Meta-spend share, added to the daily Meta results.
+  - All add-only and gated on the client having a custom-conversion primary; no other client's numbers change.
+- Agency Overview and Weekly Traffic Light intentionally still show native Meta **leads** (a blended leads view, not a
+  per-client-primary Results view), so they're unchanged.
+
 ## v3.303.0 - 2026-08-19 · `PENDING` - Caalano360 Channel split now breaks out per pipeline
 - **Channel split splits per pipeline for multi-pipeline clients** - no more duplicated key-event columns (e.g. "15 Minute
   Call" / "Payment Collected" appearing twice). Each pipeline gets its own Meta/Google table with only that pipeline's key

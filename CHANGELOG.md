@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.294.0 - 2026-08-19 · `PENDING` - Forms: readable answer viz, sortable, full-width charts + report match
+- **Form tab charts use the full width.** The donut + "key events by form" share the top row and the "conversion" chart now
+  spans the whole width underneath, so the busy multi-series bars are legible instead of squeezed into a third of the screen.
+- **The per-answer breakdown is redesigned.** Expanding a question now shows a **🏆 Top answers by wins** scoreboard beside a
+  **Key events by answer** chart (your configured key events per answer, not the generic Leads/Booked/Won) - so a wide,
+  hard-to-read bar is replaced by two compact, quantifiable panels.
+- **The answer table is sortable** - click any column header (Leads, Won, a key event, Revenue…) to rank by it.
+- **Monthly report Form performance now matches the client view** - Leads → each configured key event (count + % of the
+  form's leads) → Revenue → Avg deal, instead of the generic booked/shown/won columns. (Needs a fresh snapshot - hit
+  **Refresh snapshot**; older reports keep the simple table.)
+
 ## v3.293.0 - 2026-08-19 · `PENDING` - Leaderboard: status filter (open/won/lost), no side-scroll, tab reorder
 - **The rep expansion now filters by status.** The Total pipeline / Open / Won / Lost cards are **clickable** - pick one and
   the by-stage panel below shows exactly those deals per stage: **Open** = where live deals are sitting, **Won** = the stage

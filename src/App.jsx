@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.293.0'
+const APP_VERSION = '3.294.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5423,19 +5423,37 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
   const money = (v) => fmtCurrency(v, currency)
   const [sel, setSel] = useState(0)
   const [openAns, setOpenAns] = useState(() => new Set())
+  const [sort, setSort] = useState({ key: 'leads', dir: -1 })
   const ke = formKeyEvents(clientId, pipe, pipes)
   if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form - its submissions only carried contact details (name / email / phone).'}</div>
   const s = segments[Math.min(sel, segments.length - 1)]
-  const grouped = groupAnswers(s.answers)
-  const chart = grouped.slice(0, 12).map((a) => ({ name: a.value.length > 22 ? a.value.slice(0, 21) + '…' : a.value, leads: a.leads, booked: a.booked, won: a.won }))
-  const totalLeads = grouped.reduce((t, a) => t + a.leads, 0)
   const events = ke.events || []
+  const hasKe = events.length > 0
   // Per-answer count of people who reached each key event (people are capped
   // server-side, so this reflects the sampled people list for the answer).
   const keCount = (a, k) => (a.people || []).reduce((n, p) => n + (ke.reached(p, k) ? 1 : 0), 0)
-  const keTotals = events.map((k) => grouped.reduce((n, a) => n + keCount(a, k), 0))
+  // Attach derived rates + per-key-event counts to every answer so the table sorts
+  // on any column and the charts read from the same numbers.
+  const grouped = groupAnswers(s.answers).map((a) => {
+    const keArr = events.map((k) => keCount(a, k))
+    const row = { ...a, bookRate: a.leads ? (a.booked / a.leads) * 100 : null, winRate: a.leads ? (a.won / a.leads) * 100 : null }
+    keArr.forEach((c, i) => { row['ke' + i] = c })
+    return row
+  })
+  const totalLeads = grouped.reduce((t, a) => t + a.leads, 0)
+  const keTotals = events.map((k, i) => grouped.reduce((n, a) => n + (a['ke' + i] || 0), 0))
   const toggleAns = (v) => setOpenAns((prev) => { const n = new Set(prev); n.has(v) ? n.delete(v) : n.add(v); return n })
   const totalCols = 10 + events.length // chevron, answer, leads, %, booked, book%, shown, won, win%, revenue + key events
+  const setKey = (k) => setSort((st) => ({ key: k, dir: st.key === k ? -st.dir : -1 }))
+  const sortedAns = [...grouped].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; return (av - bv) * sort.dir })
+  const Th = ({ k, children, l }) => <th className={l ? '' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }} title="Sort by this column">{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
+  // Viz: a "top answers by wins" scoreboard + a key-events-by-answer chart (the
+  // client's real key events per answer, not the generic Leads/Booked/Won).
+  const anyWon = grouped.some((a) => a.won > 0)
+  const wonRanked = [...grouped].sort((a, b) => (b.won - a.won) || (b.leads - a.leads))
+  const topByLeads = [...grouped].sort((a, b) => b.leads - a.leads).slice(0, 8)
+  const keChartData = topByLeads.map((a) => { const o = { name: a.value.length > 16 ? a.value.slice(0, 15) + '…' : a.value, full: a.value, Leads: a.leads }; events.forEach((k, i) => { o[k.label] = a['ke' + i] }); return o })
+  const legacyChart = grouped.slice(0, 12).map((a) => ({ name: a.value.length > 22 ? a.value.slice(0, 21) + '…' : a.value, Leads: a.leads, Booked: a.booked, Won: a.won }))
   return (
     <div className="fseg">
       <div className="fseg-sel">
@@ -5451,26 +5469,51 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
       </div>
       <div className="fseg-body">
         <div className="fseg-head">{s.question}<span className="fseg-total">{fmtNumber(totalLeads)} leads · {grouped.length} distinct answer{grouped.length === 1 ? '' : 's'}</span></div>
-        {chart.length > 1 && <div className="fseg-chart">
-          <ResponsiveContainer width="100%" height={Math.max(120, chart.length * 30 + 20)}>
-            <BarChart data={chart} layout="vertical" margin={{ left: 8, right: 20, top: 4, bottom: 4 }}>
+        {grouped.length > 1 && (hasKe ? (
+          <div className="fseg-viz">
+            <div className="fseg-board">
+              <div className="fseg-board-h">🏆 Top answers by wins</div>
+              {anyWon
+                ? <ol className="fseg-rank">{wonRanked.filter((a) => a.won > 0).slice(0, 8).map((a) => (
+                    <li key={a.value}><span className="fr-ans" title={a.value}>{a.value}</span><span className="fr-metric"><b>{fmtNumber(a.won)}</b> won</span><span className="fr-sub">{fmtNumber(a.leads)} leads · {a.winRate != null ? fmtPct(a.winRate, 0) : '-'} win</span></li>
+                  ))}</ol>
+                : <div className="fseg-board-empty">No wins recorded for these answers yet — ranked by lead volume:<ol className="fseg-rank">{topByLeads.slice(0, 6).map((a) => (<li key={a.value}><span className="fr-ans" title={a.value}>{a.value}</span><span className="fr-metric muted"><b>{fmtNumber(a.leads)}</b> leads</span></li>))}</ol></div>}
+            </div>
+            <div className="fseg-kechart">
+              <div className="fseg-board-h">Key events by answer <span className="fseg-board-sub">· top {keChartData.length} by leads</span></div>
+              <ResponsiveContainer width="100%" height={Math.max(210, keChartData.length * 42)}>
+                <BarChart data={keChartData} margin={{ left: -12, right: 8, top: 6, bottom: 46 }}>
+                  <CartesianGrid stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="name" fontSize={9.5} stroke="var(--muted)" interval={0} angle={-20} textAnchor="end" height={56} />
+                  <YAxis fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+                  <Tooltip formatter={(v, n) => [fmtNumber(v), n]} labelFormatter={(l, p) => (p && p[0] && p[0].payload ? p[0].payload.full : l)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Leads" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={15} />
+                  {events.map((k, i) => <Bar key={k.label} dataKey={k.label} fill={KE_COLORS[i % KE_COLORS.length]} radius={[3, 3, 0, 0]} maxBarSize={15} />)}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ) : (legacyChart.length > 1 && <div className="fseg-chart">
+          <ResponsiveContainer width="100%" height={Math.max(120, legacyChart.length * 30 + 20)}>
+            <BarChart data={legacyChart} layout="vertical" margin={{ left: 8, right: 20, top: 4, bottom: 4 }}>
               <CartesianGrid stroke="var(--border)" horizontal={false} />
               <XAxis type="number" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
               <YAxis type="category" dataKey="name" width={150} fontSize={11} stroke="var(--muted)" interval={0} />
               <Tooltip formatter={(v, n) => [fmtNumber(v), n]} />
-              <Bar dataKey="leads" name="Leads" fill="#4f7cff" radius={[0, 3, 3, 0]} maxBarSize={18} />
-              <Bar dataKey="booked" name="Booked" fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={18} />
-              <Bar dataKey="won" name="Won" fill="#f5a524" radius={[0, 3, 3, 0]} maxBarSize={18} />
+              <Bar dataKey="Leads" fill="#4f7cff" radius={[0, 3, 3, 0]} maxBarSize={18} />
+              <Bar dataKey="Booked" fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={18} />
+              <Bar dataKey="Won" fill="#f5a524" radius={[0, 3, 3, 0]} maxBarSize={18} />
             </BarChart>
           </ResponsiveContainer>
-        </div>}
+        </div>))}
         <div className="tbl-scroll">
         <table className="form-seg-t fseg-tbl">
           <thead>
-            <tr><th style={{ width: 18 }} /><th>Answer</th><th className="num">Leads</th><th className="num">% of leads</th><th className="num">Booked</th><th className="num">Book %</th><th className="num">Shown</th><th className="num">Won</th><th className="num">Win %</th><th className="num">Revenue</th>{events.map((k, i) => <th key={i} className="num fke-col" title={`Reached: ${k.label}`}>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</th>)}</tr>
+            <tr><th style={{ width: 18 }} /><Th k="value" l>Answer</Th><Th k="leads">Leads</Th><Th k="leads">% of leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th>{events.map((k, i) => <th key={i} className="num fke-col th-ke" onClick={() => setKey('ke' + i)} style={{ cursor: 'pointer' }} title={`Reached: ${k.label} · sort`}>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}{sort.key === 'ke' + i ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>)}</tr>
             {events.length ? <tr className="fseg-tot-row"><td /><td>All answers</td><td className="num">{fmtNumber(totalLeads)}</td><td className="num">-</td><td className="num">{fmtNumber(grouped.reduce((t, a) => t + a.booked, 0))}</td><td className="num">-</td><td className="num">{fmtNumber(grouped.reduce((t, a) => t + a.shown, 0))}</td><td className="num">{fmtNumber(grouped.reduce((t, a) => t + a.won, 0))}</td><td className="num">-</td><td className="num">{money(grouped.reduce((t, a) => t + a.revenue, 0))}</td>{keTotals.map((n, i) => <td key={i} className="num fke-col">{fmtNumber(n)}</td>)}</tr> : null}
           </thead>
-          <tbody>{grouped.map((a) => {
+          <tbody>{sortedAns.map((a) => {
             const isOpen = openAns.has(a.value)
             const people = a.people || []
             const clickable = people.length > 0
@@ -5487,7 +5530,7 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
                   <td className="num">{fmtNumber(a.won)}</td>
                   <td className="num">{a.leads ? fmtPct((a.won / a.leads) * 100, 0) : '-'}</td>
                   <td className="num">{money(a.revenue)}</td>
-                  {events.map((k, i) => <td key={i} className="num fke-col">{fmtNumber(keCount(a, k))}</td>)}
+                  {events.map((k, i) => <td key={i} className="num fke-col">{fmtNumber(a['ke' + i] || 0)}</td>)}
                 </tr>
                 {isOpen && clickable && <tr className="form-people-row"><td /><td colSpan={totalCols - 1}>
                   <div className="tbl-scroll"><table className="mini-tbl users-tbl fp-tbl">
@@ -10675,7 +10718,7 @@ async function assembleMonthlyReport(client, period) {
     section('CRM attribution', client.ghl, `channel=attribution&${q}`, (r) => r.attribution),
     section('Meta 6-month trend', client.meta, `scope=monthlytrend&months=6&${q}`, (r) => r.trend),
     section('CRM deals', client.ghl, `scope=monthlydeals&${q}`, (r) => r.deals),
-    section('Form performance', client.ghl, `scope=forms&${q}`, (r) => r.forms),
+    section('Form performance', client.ghl, `scope=forms&${q}`, (r) => ({ forms: r.forms, pipelines: r.pipelines })),
   ])
   // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
   // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
@@ -10692,6 +10735,23 @@ async function assembleMonthlyReport(client, period) {
   if (google && Array.isArray(google.conversionActions)) google.conversionActions = google.conversionActions.slice(0, 200)
   const attrTrim = attribution && attribution.appointments ? { appointments: { byCalendar: attribution.appointments.byCalendar || [] } } : null
   if (meta) delete meta.adDaily
+  // Form performance: compute the client's configured key-event reach PER FORM at
+  // freeze time (same helper the live Forms tab uses), so the report slide matches
+  // the client view - Leads → each key event → Revenue - instead of the generic
+  // booked/shown/won. Store only the counts (not the heavy per-lead people arrays).
+  let formsRich = [], formKe = []
+  try {
+    const fArr = formsR && Array.isArray(formsR.forms) ? formsR.forms : (Array.isArray(formsR) ? formsR : [])
+    if (fArr.length) {
+      const fke = formKeyEvents(client.id, 'all', (formsR && formsR.pipelines) || [])
+      const evs = fke.events || []
+      formKe = evs.map((k) => ({ label: k.label, kind: k.kind || 'stage' }))
+      formsRich = fArr.filter((f) => (f.leads || 0) > 0).slice(0, 30).map((f) => ({
+        form: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, shown: f.shown || 0, won: f.won || 0, revenue: f.revenue || 0,
+        ke: evs.map((k) => (f.people || []).reduce((n, p) => n + (fke.reached(p, k) ? 1 : 0), 0)),
+      }))
+    }
+  } catch { formsRich = []; formKe = [] }
   return {
     v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
     month: period.key, period: b, currency: undefined,
@@ -10722,9 +10782,10 @@ async function assembleMonthlyReport(client, period) {
     // the client's full configured key events per creative, not just leads/booked/won.
     creOutcomes: (attribution && Array.isArray(attribution.byCreative)) ? attribution.byCreative.slice(0, 120) : [],
     wonClosed: (blend && blend.wonClosed) || null,
-    // Per-form performance (leads → booked → shown → won → revenue) for the Form
-    // Performance slide. Lean: headline funnel only, top 30 by leads.
-    forms: Array.isArray(formsR) ? formsR.filter((f) => (f.leads || 0) > 0).slice(0, 30).map((f) => ({ form: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, shown: f.shown || 0, won: f.won || 0, revenue: f.revenue || 0 })) : [],
+    // Per-form performance for the Form Performance slide: leads + the client's
+    // configured key-event reach counts per form (formKe = the column labels), top
+    // 30 by leads - so the slide mirrors the live Forms tab.
+    forms: formsRich, formKe,
     generatedAt: new Date().toISOString(),
     _incomplete: failed, // sections that failed after retries (transient, for a UI warning)
   }
@@ -11898,25 +11959,47 @@ function renderMonthlyDeck(rep, h) {
   if (keCampSlide) push(keCampSlide)
 
   // ---- Form performance ---- (right after key events, before the team slide)
+  // Mirrors the live Forms tab: Leads → each configured key event (count + % of the
+  // form's leads) → Revenue → Avg deal. Falls back to the booked/shown/won table for
+  // older snapshots frozen before per-form key events were stored.
   if (rep.forms && rep.forms.length) {
     const forms = rep.forms
-    const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), booked: a.booked + (f.booked || 0), shown: a.shown + (f.shown || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
+    const fke = rep.formKe || []
+    const hasFke = fke.length > 0
     const frate = (x, y) => (y ? fmtPct((x / y) * 100, 0) : '-')
     const fkind = (k) => (k === 'facebook' ? 'Meta Lead Form' : k === 'website' ? 'Website form' : (k || ''))
+    const evLbl = (k) => (k.kind === 'calendar' ? '📅 ' : '') + k.label
+    const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), booked: a.booked + (f.booked || 0), shown: a.shown + (f.shown || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0), ke: a.ke.map((v, i) => v + ((f.ke && f.ke[i]) || 0)) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, ke: fke.map(() => 0) })
     push(
-      <MRSlide key="forms" kicker="Caalano360 · Forms" title="Form performance" sub="Every lead form this month, from leads through to won - so you can compare friction vs quality (fewer but higher-converting vs more but lower-quality).">
+      <MRSlide key="forms" kicker="Caalano360 · Forms" title="Form performance" sub={hasFke ? "Every lead form this month, from leads through your configured key events - so you can compare friction vs quality (fewer but higher-converting vs more but lower-quality)." : "Every lead form this month, from leads through to won - so you can compare friction vs quality."}>
         <div className="mr-tablewrap"><table className="mr-table mr-forms-tbl">
-          <thead><tr><th className="lft">Form</th><th className="r">Leads</th><th className="r">Booked</th><th className="r">Book %</th><th className="r">Shown</th><th className="r">Won</th><th className="r">Win %</th><th className="r">Revenue</th></tr></thead>
-          <tbody>
-            {forms.map((f, i) => (
-              <tr key={i}>
-                <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
-                <td className="r">{n0(f.leads)}</td><td className="r">{n0(f.booked)}</td><td className="r">{frate(f.booked, f.leads)}</td>
-                <td className="r">{n0(f.shown)}</td><td className="r">{n0(f.won)}</td><td className="r">{frate(f.won, f.leads)}</td><td className="r">{money(f.revenue)}</td>
-              </tr>
-            ))}
-            <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td><td className="r">{n0(ftot.booked)}</td><td className="r">{frate(ftot.booked, ftot.leads)}</td><td className="r">{n0(ftot.shown)}</td><td className="r">{n0(ftot.won)}</td><td className="r">{frate(ftot.won, ftot.leads)}</td><td className="r">{money(ftot.revenue)}</td></tr>
-          </tbody>
+          {hasFke ? <>
+            <thead><tr><th className="lft">Form</th><th className="r">Leads</th>{fke.map((k, i) => <th key={i} className="r">{evLbl(k)}</th>)}<th className="r">Revenue</th><th className="r">Avg deal</th></tr></thead>
+            <tbody>
+              {forms.map((f, i) => (
+                <tr key={i}>
+                  <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
+                  <td className="r">{n0(f.leads)}</td>
+                  {fke.map((k, j) => { const c = (f.ke && f.ke[j]) || 0; return <td key={j} className="r">{n0(c)}{f.leads ? <small className="mr-fpct"> {fmtPct((c / f.leads) * 100, 0)}</small> : null}</td> })}
+                  <td className="r">{money(f.revenue)}</td>
+                  <td className="r">{f.won ? money(f.revenue / f.won) : '-'}</td>
+                </tr>
+              ))}
+              <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td>{ftot.ke.map((v, i) => <td key={i} className="r">{n0(v)}</td>)}<td className="r">{money(ftot.revenue)}</td><td className="r">{ftot.won ? money(ftot.revenue / ftot.won) : '-'}</td></tr>
+            </tbody>
+          </> : <>
+            <thead><tr><th className="lft">Form</th><th className="r">Leads</th><th className="r">Booked</th><th className="r">Book %</th><th className="r">Shown</th><th className="r">Won</th><th className="r">Win %</th><th className="r">Revenue</th></tr></thead>
+            <tbody>
+              {forms.map((f, i) => (
+                <tr key={i}>
+                  <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
+                  <td className="r">{n0(f.leads)}</td><td className="r">{n0(f.booked)}</td><td className="r">{frate(f.booked, f.leads)}</td>
+                  <td className="r">{n0(f.shown)}</td><td className="r">{n0(f.won)}</td><td className="r">{frate(f.won, f.leads)}</td><td className="r">{money(f.revenue)}</td>
+                </tr>
+              ))}
+              <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td><td className="r">{n0(ftot.booked)}</td><td className="r">{frate(ftot.booked, ftot.leads)}</td><td className="r">{n0(ftot.shown)}</td><td className="r">{n0(ftot.won)}</td><td className="r">{frate(ftot.won, ftot.leads)}</td><td className="r">{money(ftot.revenue)}</td></tr>
+            </tbody>
+          </>}
         </table></div>
       </MRSlide>
     )

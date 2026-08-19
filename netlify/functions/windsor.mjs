@@ -246,7 +246,9 @@ function rowResult(entity, fallback) {
   // Multiple configured primary conversions → sum them; the field becomes an array.
   const fields = (fallback && fallback.fields && fallback.fields.length) ? fallback.fields : (fallback && fallback.field ? [fallback.field] : [])
   if (fields.length > 1) return { field: fields, label: fallback.label || 'Results', auto: false }
-  if (fields.length === 1) return { field: fields[0], label: cap1(prettyField(fields[0])), auto: false }
+  // Prefer the fallback's (name-resolved) label so a single custom-conversion
+  // primary reads e.g. "B_Page_View" rather than "Offsite Conversion Custom <id>".
+  if (fields.length === 1) return { field: fields[0], label: (fallback && fallback.label) || cap1(prettyField(fields[0])), auto: false }
   return { field: null, label: 'Leads', auto: false }
 }
 // 'leads_native' = Instant Form + on-Facebook leads (matches Ads Manager's

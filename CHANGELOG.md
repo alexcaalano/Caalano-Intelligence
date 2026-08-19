@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.308.0 - 2026-08-19 · `PENDING` - Fix: single custom-conversion primary still showed the id
+- **Follow-up to v3.307.0.** A client with a SINGLE custom conversion as its primary (e.g. Feel Better Medical → B_Page_View)
+  still showed "Offsite Conversion Custom <id>" because the single-field result path built its label straight from the field
+  id, bypassing the name-resolved label. It now uses the resolved label, so single-primary clients read the real name too
+  (multi-primary clients were already fixed).
+
 ## v3.307.0 - 2026-08-19 · `PENDING` - Custom conversions labelled by their real name
 - **Custom conversions now show their name (e.g. "B_Page_View") instead of "Offsite Conversion Custom 1339475751097032".**
   Windsor's Custom Conversion Definition table maps each conversion id to its name; the Meta tab / Monthly Report Results

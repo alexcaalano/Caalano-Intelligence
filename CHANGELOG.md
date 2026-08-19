@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.298.0 - 2026-08-19 · `PENDING` - Fix: purple report buttons went blank on hover
+- **Fixed the Monthly Report toolbar / Publish buttons "going white" on hover.** The generic light hover applied to every
+  `.mr-btn`, including the purple (primary / on) ones - so hovering Publish, Refresh snapshot, Reports or the PDF toggle
+  swapped the fill to a light colour while the text stayed white, making the label vanish. Coloured buttons now darken the
+  brand on hover instead, so they stay readable.
+
 ## v3.297.0 - 2026-08-19 · `PENDING` - Location key events + Speed to Lead now covers the full list
 - **Key events by location.** The Location tab has a new ranked panel: pick any outcome or **configured key event** from the
   dropdown and see which suburbs / postcodes fire it the most (click a place for its leads). The pipeline filter above

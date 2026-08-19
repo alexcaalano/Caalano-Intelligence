@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.298.0'
+const APP_VERSION = '3.299.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10844,19 +10844,43 @@ async function assembleMonthlyReport(client, period) {
   // freeze time (same helper the live Forms tab uses), so the report slide matches
   // the client view - Leads → each key event → Revenue - instead of the generic
   // booked/shown/won. Store only the counts (not the heavy per-lead people arrays).
-  let formsRich = [], formKe = []
+  let formsRich = [], formKe = [], formKeByPipe = null
   try {
     const fArr = formsR && Array.isArray(formsR.forms) ? formsR.forms : (Array.isArray(formsR) ? formsR : [])
     if (fArr.length) {
-      const fke = formKeyEvents(client.id, 'all', (formsR && formsR.pipelines) || [])
-      const evs = fke.events || []
-      formKe = evs.map((k) => ({ label: k.label, kind: k.kind || 'stage' }))
-      formsRich = fArr.filter((f) => (f.leads || 0) > 0).slice(0, 30).map((f) => ({
-        form: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, shown: f.shown || 0, won: f.won || 0, revenue: f.revenue || 0,
-        ke: evs.map((k) => (f.people || []).reduce((n, p) => n + (fke.reached(p, k) ? 1 : 0), 0)),
-      }))
+      const pipesArr = (formsR && formsR.pipelines) || []
+      const liveForms = fArr.filter((f) => (f.leads || 0) > 0)
+      // Build a Leads → key-event reach block for a pipeline scope. 'all' = the
+      // union across every pipeline (single-pipeline clients / back-compat); a real
+      // pipeline id scopes both the key-event COLUMNS and each form's reach to that
+      // pipeline, so multi-pipeline clients get one clean table per pipeline with no
+      // duplicated columns. pipeLeads = the form's leads whose opp sits in this
+      // pipeline (the denominator for that table); union keeps the raw lead count.
+      const buildBlock = (pipeKey) => {
+        const fke = formKeyEvents(client.id, pipeKey, pipesArr)
+        const evs = fke.events || []
+        const events = evs.map((k) => ({ label: k.label, kind: k.kind || 'stage' }))
+        const forms = liveForms.map((f) => ({
+          form: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, shown: f.shown || 0, won: f.won || 0, revenue: f.revenue || 0,
+          ke: evs.map((k) => (f.people || []).reduce((n, p) => n + (fke.reached(p, k) ? 1 : 0), 0)),
+          pipeLeads: pipeKey === 'all' ? (f.leads || 0) : (f.people || []).reduce((n, p) => n + (p && p.pipelineId === pipeKey ? 1 : 0), 0),
+        }))
+        return { events, forms }
+      }
+      const uni = buildBlock('all')
+      formKe = uni.events
+      formsRich = uni.forms.slice(0, 30).map(({ pipeLeads, ...f }) => f)
+      if (pipesArr.length > 1) {
+        formKeByPipe = pipesArr.map((p) => {
+          const b = buildBlock(p.id)
+          const forms = b.forms.filter((f) => f.pipeLeads > 0).sort((a, b2) => b2.pipeLeads - a.pipeLeads).slice(0, 30)
+            .map(({ pipeLeads, ...f }) => ({ ...f, leads: pipeLeads }))
+          return { pipelineId: p.id, pipelineName: p.name, events: b.events, forms }
+        }).filter((blk) => blk.events.length && blk.forms.length)
+        if (formKeByPipe.length < 2) formKeByPipe = null
+      }
     }
-  } catch { formsRich = []; formKe = [] }
+  } catch { formsRich = []; formKe = []; formKeByPipe = null }
   return {
     v: 1, client: { id: client.id, name: client.name, industry: client.industry || null },
     month: period.key, period: b, currency: undefined,
@@ -10890,7 +10914,7 @@ async function assembleMonthlyReport(client, period) {
     // Per-form performance for the Form Performance slide: leads + the client's
     // configured key-event reach counts per form (formKe = the column labels), top
     // 30 by leads - so the slide mirrors the live Forms tab.
-    forms: formsRich, formKe,
+    forms: formsRich, formKe, formKeByPipe,
     generatedAt: new Date().toISOString(),
     _incomplete: failed, // sections that failed after retries (transient, for a UI warning)
   }
@@ -11500,6 +11524,75 @@ function MRDonut({ data, money }) {
 }
 // Creative performance - visual cards (big thumbnail + all stats + the client's
 // configured key events), with a sort control and pagination (10 per page).
+// One page-through grid of creative cards. Owns its own paging so, in a
+// multi-pipeline deck, each pipeline's card block pages independently. The
+// parent hands down a `doSort` that ranks by the shared sort chip, and a
+// `sortToken` that resets paging to the first page whenever the sort changes.
+function MRCreativeCards({ ads, doSort, sortToken, sortLabel, label, money, n0, currency, clientId, range, channel }) {
+  const [page, setPage] = useState(0)
+  const PER = 10
+  useEffect(() => { setPage(0) }, [sortToken])
+  const sorted = doSort(ads)
+  const pages = Math.max(1, Math.ceil(sorted.length / PER))
+  const cur = Math.min(page, pages - 1)
+  const pageAds = sorted.slice(cur * PER, cur * PER + PER)
+  return (
+    <>
+      {label && <div className="mr-pipe-head" style={{ marginTop: 14 }}><span className="c360-dot" /> {label} <span className="cap">· {sorted.length} creative(s)</span></div>}
+      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
+      {pages > 1 && (
+        <div className="mr-cre-pager no-print">
+          <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
+          <span>Page {cur + 1} / {pages} · {sorted.length} creatives · sorted by {sortLabel}</span>
+          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next ›</button>
+        </div>
+      )}
+    </>
+  )
+}
+
+// One creative data-table (the sortable green Caalano360 table). In a
+// multi-pipeline deck each pipeline gets its own table under an optional label;
+// the header sort (tsort/onTsort) is shared so every table sorts together.
+function MRCreativeTable({ rows, o360cols, tsort, onTsort, currency, money, n0, label }) {
+  const tableRows = sortRows(rows, tsort)
+  return (
+    <>
+      <div className="mr-section-lab" style={{ marginTop: 18 }}>{label ? `Creative table · ${label}` : 'Creative table'}</div>
+      <div className="table-wrap"><table className="o360-tbl">
+        <O360ColGroup left={8} green={!!o360cols} cols={o360cols} />
+        <thead>
+          {o360cols && <C360GrpRow left={8} cols={o360cols} />}
+          <tr>
+            <SortTh k="name" sort={tsort} on={onTsort}>Creative</SortTh>
+            <SortTh k="type" sort={tsort} on={onTsort}>Type</SortTh>
+            <SortTh k="spend" sort={tsort} on={onTsort}>Spend</SortTh>
+            <SortTh k="impressions" sort={tsort} on={onTsort}>Impr.</SortTh>
+            <SortTh k="ctrV" sort={tsort} on={onTsort}>CTR</SortTh>
+            <SortTh k="freqV" sort={tsort} on={onTsort}>Freq</SortTh>
+            <SortTh k="leads" sort={tsort} on={onTsort}>{tableRows[0] && tableRows[0].resultType ? tableRows[0].resultType : 'Results'}</SortTh>
+            <SortTh k="cpl" sort={tsort} on={onTsort}>Cost/res</SortTh>
+            {o360cols && <O360Head sort={tsort} on={onTsort} cols={o360cols} />}
+          </tr>
+        </thead>
+        <tbody>{tableRows.map((a) => (
+          <tr key={a.name}>
+            <td title={a.name}><div className="cre-cell">{a.thumb ? <img className="cre-th" src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none' }} /> : <span className="cre-th cre-th-none" />}<span className="cre-cell-nm">{a.name}</span></div></td>
+            <td>{a.type}</td>
+            <td>{money(a.spend)}</td>
+            <td>{n0(a.impressions)}</td>
+            <td>{a.ctrV == null ? '-' : fmtPct(a.ctrV, 2)}</td>
+            <td>{a.freqV == null ? '-' : a.freqV.toFixed(1) + 'x'}</td>
+            <td>{n0(a.leads)}</td>
+            <td>{a.cpl == null ? '-' : money(a.cpl)}</td>
+            {o360cols && o360Cells(a, currency, o360cols)}
+          </tr>
+        ))}</tbody>
+      </table></div>
+    </>
+  )
+}
+
 function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, money, n0, currency, showTable = false, clientId, range, channel }) {
   const groups = o360cols ? o360cols.groups : []
   // Enrich each creative: platform metrics + the per-client key-event counts + cash.
@@ -11570,85 +11663,69 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
   const natDir = (mm) => (mm && (mm.asc || mm.costEvLabel != null) ? 'asc' : 'desc')
   const [sortK, setSortK] = useState('spend')
   const [dir, setDir] = useState('desc')
-  const [page, setPage] = useState(0)
-  const PER = 10
   const m = METRICS.find((x) => x.k === sortK) || METRICS[0]
-  const pickMetric = (k) => { setSortK(k); setPage(0); setDir(natDir(METRICS.find((x) => x.k === k))) }
+  const pickMetric = (k) => { setSortK(k); setDir(natDir(METRICS.find((x) => x.k === k))) }
   const valOf = (a) => {
     if (m.evLabel != null) return (a.evByLabel && a.evByLabel.get(m.evLabel)) || 0
     if (m.costEvLabel != null) { const c = (a.evByLabel && a.evByLabel.get(m.costEvLabel)) || 0; return c > 0 && a.spend ? a.spend / c : NOCOST }
     return a[m.k] || 0
   }
-  const sorted = [...enriched].sort((x, y) => (dir === 'asc' ? valOf(x) - valOf(y) : valOf(y) - valOf(x)))
-  const pages = Math.max(1, Math.ceil(sorted.length / PER))
-  const cur = Math.min(page, pages - 1)
-  const pageAds = sorted.slice(cur * PER, cur * PER + PER)
+  const doSort = (list) => [...list].sort((x, y) => (dir === 'asc' ? valOf(x) - valOf(y) : valOf(y) - valOf(x)))
   // Data-table view (same sortable green Caalano360 table as the Meta ads view).
-  // The table uses the UNION key-event columns (o360cols) for every creative, so
-  // the columns line up across pipelines; the cards below stay pipeline-scoped.
+  // Header sort is shared, so every pipeline's table sorts together.
   const [tsort, onTsort] = useSort('spend')
-  const tableRows = sortRows(enriched.map((a) => ({
-    ...a, freqV: a.reach ? a.impressions / a.reach : null,
-    ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads, o360cols),
-  })), tsort)
+  const mapRow = (a) => ({ ...a, freqV: a.reach ? a.impressions / a.reach : null, ...o360Fields(oCre.get(unorm(a.name)), a.spend, a.leads, o360cols) })
+  // Multi-pipeline decks split the whole screen by pipeline: every pipeline's
+  // cards first (Cards P1, Cards P2 …), then every pipeline's table (Table P1,
+  // Table P2 …). A creative's pipeline comes from its campaign (pipeLabelFor);
+  // creatives whose campaign maps to no pipeline collect into a trailing
+  // "Unattributed" group. Single-pipeline decks (pipeLabelFor null, or only one
+  // pipeline actually present) keep the flat layout.
+  const pipeGroups = (() => {
+    if (!pipeLabelFor) return null
+    const by = new Map()
+    for (const a of enriched) { const k = a.pipeName || '__none__'; if (!by.has(k)) by.set(k, []); by.get(k).push(a) }
+    if ([...by.keys()].filter((k) => k !== '__none__').length < 2) return null
+    const arr = [...by.entries()].map(([k, items]) => ({ key: k, label: k === '__none__' ? 'Unattributed' : k, items, spend: items.reduce((s, a) => s + (a.spend || 0), 0) }))
+    arr.sort((a, b) => (a.key === '__none__' ? 1 : b.key === '__none__' ? -1 : b.spend - a.spend))
+    return arr
+  })()
+  const sortToken = sortK + '|' + dir
+  const sortCtl = (
+    <div className="mr-cre-sort no-print">
+      <span>Sort by</span>
+      <select className="mr-cre-sort-sel" value={sortK} onChange={(e) => pickMetric(e.target.value)}>
+        <optgroup label="Performance">
+          {METRICS.filter((x) => x.evLabel == null && x.costEvLabel == null).map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
+        </optgroup>
+        {evMetrics.length ? <optgroup label="Key event - volume reached">
+          {evMetrics.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
+        </optgroup> : null}
+        {costMetrics.length ? <optgroup label="Cheapest cost per event">
+          {costMetrics.map((x) => <option key={x.k} value={x.k}>Cost / {x.label}</option>)}
+        </optgroup> : null}
+      </select>
+      <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) - click for highest first' : 'Descending (highest first) - click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
+    </div>
+  )
+  if (pipeGroups) {
+    return (
+      <>
+        {sortCtl}
+        {pipeGroups.map((g) => (
+          <MRCreativeCards key={'c-' + g.key} ads={g.items} doSort={doSort} sortToken={sortToken} sortLabel={m.label} label={g.label} money={money} n0={n0} currency={currency} clientId={clientId} range={range} channel={channel} />
+        ))}
+        {showTable && pipeGroups.map((g) => (
+          <MRCreativeTable key={'t-' + g.key} rows={g.items.map(mapRow)} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} label={g.label} />
+        ))}
+      </>
+    )
+  }
   return (
     <>
-      <div className="mr-cre-sort no-print">
-        <span>Sort by</span>
-        <select className="mr-cre-sort-sel" value={sortK} onChange={(e) => pickMetric(e.target.value)}>
-          <optgroup label="Performance">
-            {METRICS.filter((x) => x.evLabel == null && x.costEvLabel == null).map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
-          </optgroup>
-          {evMetrics.length ? <optgroup label="Key event - volume reached">
-            {evMetrics.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
-          </optgroup> : null}
-          {costMetrics.length ? <optgroup label="Cheapest cost per event">
-            {costMetrics.map((x) => <option key={x.k} value={x.k}>Cost / {x.label}</option>)}
-          </optgroup> : null}
-        </select>
-        <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) - click for highest first' : 'Descending (highest first) - click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
-      </div>
-      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
-      {pages > 1 && (
-        <div className="mr-cre-pager no-print">
-          <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
-          <span>Page {cur + 1} / {pages} · {sorted.length} creatives · sorted by {m.label}</span>
-          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next ›</button>
-        </div>
-      )}
-      {showTable && <>
-        <div className="mr-section-lab" style={{ marginTop: 18 }}>Creative table</div>
-        <div className="table-wrap"><table className="o360-tbl">
-          <O360ColGroup left={8} green={!!o360cols} cols={o360cols} />
-          <thead>
-            {o360cols && <C360GrpRow left={8} cols={o360cols} />}
-            <tr>
-              <SortTh k="name" sort={tsort} on={onTsort}>Creative</SortTh>
-              <SortTh k="type" sort={tsort} on={onTsort}>Type</SortTh>
-              <SortTh k="spend" sort={tsort} on={onTsort}>Spend</SortTh>
-              <SortTh k="impressions" sort={tsort} on={onTsort}>Impr.</SortTh>
-              <SortTh k="ctrV" sort={tsort} on={onTsort}>CTR</SortTh>
-              <SortTh k="freqV" sort={tsort} on={onTsort}>Freq</SortTh>
-              <SortTh k="leads" sort={tsort} on={onTsort}>{tableRows[0] && tableRows[0].resultType ? tableRows[0].resultType : 'Results'}</SortTh>
-              <SortTh k="cpl" sort={tsort} on={onTsort}>Cost/res</SortTh>
-              {o360cols && <O360Head sort={tsort} on={onTsort} cols={o360cols} />}
-            </tr>
-          </thead>
-          <tbody>{tableRows.map((a) => (
-            <tr key={a.name}>
-              <td title={a.name}><div className="cre-cell">{a.thumb ? <img className="cre-th" src={a.thumb} alt="" loading="lazy" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none' }} /> : <span className="cre-th cre-th-none" />}<span className="cre-cell-nm">{a.name}</span></div></td>
-              <td>{a.type}</td>
-              <td>{money(a.spend)}</td>
-              <td>{n0(a.impressions)}</td>
-              <td>{a.ctrV == null ? '-' : fmtPct(a.ctrV, 2)}</td>
-              <td>{a.freqV == null ? '-' : a.freqV.toFixed(1) + 'x'}</td>
-              <td>{n0(a.leads)}</td>
-              <td>{a.cpl == null ? '-' : money(a.cpl)}</td>
-              {o360cols && o360Cells(a, currency, o360cols)}
-            </tr>
-          ))}</tbody>
-        </table></div>
-      </>}
+      {sortCtl}
+      <MRCreativeCards ads={enriched} doSort={doSort} sortToken={sortToken} sortLabel={m.label} money={money} n0={n0} currency={currency} clientId={clientId} range={range} channel={channel} />
+      {showTable && <MRCreativeTable rows={enriched.map(mapRow)} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} />}
     </>
   )
 }
@@ -11850,8 +11927,13 @@ function renderMonthlyDeck(rep, h) {
     // key-event columns matched by utm_medium. Returns null if no CRM data matched.
     const CampKeyEventsTable = ({ rows, cols, label }) => {
       const [open, setOpen] = useState(() => new Set())
+      // Click any column header to sort the campaigns by it (name / spend / leads
+      // or any green key-event column). The top-16-by-spend selection is fixed;
+      // the chosen column only reorders what's shown.
+      const [tsort, onTsort] = useSort('spend')
       const withF = rows.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
       if (!cols || !withF.some((c) => c._has360)) return null
+      const shown = sortRows(withF, tsort)
       // Ad sets (Meta) / ad groups (Google) under a campaign, each with its own green
       // columns. Kept if it has spend, leads or any matched key event.
       const kidsOf = (c) => {
@@ -11864,7 +11946,7 @@ function renderMonthlyDeck(rep, h) {
           .sort((a, b2) => b2.spend - a.spend).slice(0, 20)
       }
       const toggle = (name) => setOpen((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n })
-      const rowsWithKids = withF.map((c) => ({ c, kids: kidsOf(c) }))
+      const rowsWithKids = shown.map((c) => ({ c, kids: kidsOf(c) }))
       return (
         <div key={label || 'all'} className="mr-camp-block">
           {label ? <div className="mr-section-lab">{label}</div> : null}
@@ -11876,7 +11958,12 @@ function renderMonthlyDeck(rep, h) {
               </colgroup>
               <thead>
                 <C360GrpRow left={3} cols={cols} />
-                <tr><th>Campaign</th><th className="r">Spend</th><th className="r">Leads</th><O360Head cols={cols} /></tr>
+                <tr>
+                  <SortTh k="name" sort={tsort} on={onTsort}>Campaign</SortTh>
+                  <SortTh k="spend" sort={tsort} on={onTsort} className="r">Spend</SortTh>
+                  <SortTh k="leads" sort={tsort} on={onTsort} className="r">Leads</SortTh>
+                  <O360Head sort={tsort} on={onTsort} cols={cols} />
+                </tr>
               </thead>
               <tbody>{rowsWithKids.map(({ c, kids }, i) => {
                 const hasKids = kids.length > 0
@@ -12068,44 +12155,78 @@ function renderMonthlyDeck(rep, h) {
   // form's leads) → Revenue → Avg deal. Falls back to the booked/shown/won table for
   // older snapshots frozen before per-form key events were stored.
   if (rep.forms && rep.forms.length) {
-    const forms = rep.forms
-    const fke = rep.formKe || []
-    const hasFke = fke.length > 0
     const frate = (x, y) => (y ? fmtPct((x / y) * 100, 0) : '-')
     const fkind = (k) => (k === 'facebook' ? 'Meta Lead Form' : k === 'website' ? 'Website form' : (k || ''))
     const evLbl = (k) => (k.kind === 'calendar' ? '📅 ' : '') + k.label
-    const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), booked: a.booked + (f.booked || 0), shown: a.shown + (f.shown || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0), ke: a.ke.map((v, i) => v + ((f.ke && f.ke[i]) || 0)) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, ke: fke.map(() => 0) })
-    push(
-      <MRSlide key="forms" kicker="Caalano360 · Forms" title="Form performance" sub={hasFke ? "Every lead form this month, from leads through your configured key events - so you can compare friction vs quality (fewer but higher-converting vs more but lower-quality)." : "Every lead form this month, from leads through to won - so you can compare friction vs quality."}>
+    // One "Leads → each key event → Revenue → Avg deal" table for a set of forms
+    // and its own column list. Multi-pipeline decks render one of these per
+    // pipeline (each pipeline's own key events, no duplicated columns).
+    const keTable = (events, forms) => {
+      const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0), ke: a.ke.map((v, i) => v + ((f.ke && f.ke[i]) || 0)) }), { leads: 0, won: 0, revenue: 0, ke: events.map(() => 0) })
+      return (
         <div className="mr-tablewrap"><table className="mr-table mr-forms-tbl">
-          {hasFke ? <>
-            <thead><tr><th className="lft">Form</th><th className="r">Leads</th>{fke.map((k, i) => <th key={i} className="r">{evLbl(k)}</th>)}<th className="r">Revenue</th><th className="r">Avg deal</th></tr></thead>
-            <tbody>
-              {forms.map((f, i) => (
-                <tr key={i}>
-                  <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
-                  <td className="r">{n0(f.leads)}</td>
-                  {fke.map((k, j) => { const c = (f.ke && f.ke[j]) || 0; return <td key={j} className="r">{n0(c)}{f.leads ? <small className="mr-fpct"> {fmtPct((c / f.leads) * 100, 0)}</small> : null}</td> })}
-                  <td className="r">{money(f.revenue)}</td>
-                  <td className="r">{f.won ? money(f.revenue / f.won) : '-'}</td>
-                </tr>
-              ))}
-              <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td>{ftot.ke.map((v, i) => <td key={i} className="r">{n0(v)}</td>)}<td className="r">{money(ftot.revenue)}</td><td className="r">{ftot.won ? money(ftot.revenue / ftot.won) : '-'}</td></tr>
-            </tbody>
-          </> : <>
-            <thead><tr><th className="lft">Form</th><th className="r">Leads</th><th className="r">Booked</th><th className="r">Book %</th><th className="r">Shown</th><th className="r">Won</th><th className="r">Win %</th><th className="r">Revenue</th></tr></thead>
-            <tbody>
-              {forms.map((f, i) => (
-                <tr key={i}>
-                  <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
-                  <td className="r">{n0(f.leads)}</td><td className="r">{n0(f.booked)}</td><td className="r">{frate(f.booked, f.leads)}</td>
-                  <td className="r">{n0(f.shown)}</td><td className="r">{n0(f.won)}</td><td className="r">{frate(f.won, f.leads)}</td><td className="r">{money(f.revenue)}</td>
-                </tr>
-              ))}
-              <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td><td className="r">{n0(ftot.booked)}</td><td className="r">{frate(ftot.booked, ftot.leads)}</td><td className="r">{n0(ftot.shown)}</td><td className="r">{n0(ftot.won)}</td><td className="r">{frate(ftot.won, ftot.leads)}</td><td className="r">{money(ftot.revenue)}</td></tr>
-            </tbody>
-          </>}
+          <thead><tr><th className="lft">Form</th><th className="r">Leads</th>{events.map((k, i) => <th key={i} className="r">{evLbl(k)}</th>)}<th className="r">Revenue</th><th className="r">Avg deal</th></tr></thead>
+          <tbody>
+            {forms.map((f, i) => (
+              <tr key={i}>
+                <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
+                <td className="r">{n0(f.leads)}</td>
+                {events.map((k, j) => { const c = (f.ke && f.ke[j]) || 0; return <td key={j} className="r">{n0(c)}{f.leads ? <small className="mr-fpct"> {fmtPct((c / f.leads) * 100, 0)}</small> : null}</td> })}
+                <td className="r">{money(f.revenue)}</td>
+                <td className="r">{f.won ? money(f.revenue / f.won) : '-'}</td>
+              </tr>
+            ))}
+            <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td>{ftot.ke.map((v, i) => <td key={i} className="r">{n0(v)}</td>)}<td className="r">{money(ftot.revenue)}</td><td className="r">{ftot.won ? money(ftot.revenue / ftot.won) : '-'}</td></tr>
+          </tbody>
         </table></div>
+      )
+    }
+    // Legacy booked/shown/won table (snapshots frozen before per-form key events).
+    const legacyTable = (forms) => {
+      const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), booked: a.booked + (f.booked || 0), shown: a.shown + (f.shown || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
+      return (
+        <div className="mr-tablewrap"><table className="mr-table mr-forms-tbl">
+          <thead><tr><th className="lft">Form</th><th className="r">Leads</th><th className="r">Booked</th><th className="r">Book %</th><th className="r">Shown</th><th className="r">Won</th><th className="r">Win %</th><th className="r">Revenue</th></tr></thead>
+          <tbody>
+            {forms.map((f, i) => (
+              <tr key={i}>
+                <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
+                <td className="r">{n0(f.leads)}</td><td className="r">{n0(f.booked)}</td><td className="r">{frate(f.booked, f.leads)}</td>
+                <td className="r">{n0(f.shown)}</td><td className="r">{n0(f.won)}</td><td className="r">{frate(f.won, f.leads)}</td><td className="r">{money(f.revenue)}</td>
+              </tr>
+            ))}
+            <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td><td className="r">{n0(ftot.booked)}</td><td className="r">{frate(ftot.booked, ftot.leads)}</td><td className="r">{n0(ftot.shown)}</td><td className="r">{n0(ftot.won)}</td><td className="r">{frate(ftot.won, ftot.leads)}</td><td className="r">{money(ftot.revenue)}</td></tr>
+          </tbody>
+        </table></div>
+      )
+    }
+    // Merge duplicate key-event columns by label+kind (a union table built before
+    // per-pipeline blocks existed can list the same event once per pipeline). The
+    // per-pipeline reach is disjoint, so stage counts sum; won-kind reach isn't
+    // pipeline-scoped, so take the max to avoid double counting.
+    const dedupeUnion = (events, forms) => {
+      const idxOf = new Map(); const merged = []; const groups = []
+      events.forEach((k, i) => { const key = (k.kind || 'stage') + '|' + k.label; if (!idxOf.has(key)) { idxOf.set(key, merged.length); merged.push(k); groups.push([i]) } else groups[idxOf.get(key)].push(i) })
+      if (merged.length === events.length) return { events, forms }
+      const mForms = forms.map((f) => ({ ...f, ke: groups.map((g, gi) => { const vals = g.map((i) => (f.ke && f.ke[i]) || 0); return merged[gi].kind === 'won' ? Math.max(0, ...vals) : vals.reduce((s, v) => s + v, 0) }) }))
+      return { events: merged, forms: mForms }
+    }
+    const byPipe = (rep.formKeByPipe && rep.formKeByPipe.length > 1) ? rep.formKeByPipe : null
+    const uniFke = rep.formKe || []
+    const hasFke = uniFke.length > 0
+    const uni = hasFke ? dedupeUnion(uniFke, rep.forms) : null
+    push(
+      <MRSlide key="forms" kicker="Caalano360 · Forms" title="Form performance" sub={hasFke ? `Every lead form this month, from leads through your configured key events - so you can compare friction vs quality (fewer but higher-converting vs more but lower-quality).${byPipe ? ' Split per pipeline - each shows only that pipeline’s key events.' : ''}` : "Every lead form this month, from leads through to won - so you can compare friction vs quality."}>
+        {byPipe
+          ? byPipe.map((blk, bi) => (
+              <div key={bi} className="mr-camp-block">
+                <div className="mr-pipe-head" style={{ marginTop: bi ? 16 : 0 }}><span className="c360-dot" /> {blk.pipelineName || 'Pipeline'} <span className="cap">· {blk.forms.length} form(s)</span></div>
+                {keTable(blk.events, blk.forms)}
+              </div>
+            ))
+          : hasFke
+            ? keTable(uni.events, uni.forms)
+            : legacyTable(rep.forms)}
       </MRSlide>
     )
   }
@@ -12423,6 +12544,7 @@ function renderMonthlyDeck(rep, h) {
                     { k: 'won', label: 'Won', align: 'r', render: (r) => n0(r.won) },
                     { k: 'rev', label: 'Revenue', align: 'r', render: (r) => money(r.rev) },
                     { k: 'roas', label: 'ROAS', align: 'r', render: (r) => (r.spend ? (r.rev / r.spend).toFixed(1) + 'x' : '-') },
+                    { k: 'cac', label: 'CAC', align: 'r', render: (r) => (r.won ? money(r.spend / r.won) : '-') },
                     { k: 'close', label: 'Avg close', align: 'r', render: (r) => (r.close != null ? `${r.close} days` : '-') },
                   ]}
                   rows={roiRows}

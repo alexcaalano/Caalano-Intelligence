@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.299.0 - 2026-08-19 · `PENDING` - Creative screen split by pipeline, sortable key-events-by-campaign, CAC on ROI by channel, Form performance split by pipeline
+- **Form performance (monthly report) now splits per pipeline — no more duplicated columns.** For multi-pipeline clients
+  the union view listed the same key event once per pipeline (e.g. "15 Minute Call" and "Payment Collected" twice). The
+  slide now renders one table per pipeline, each under its own heading with only that pipeline's key-event columns and its
+  forms/leads scoped to it. Single-pipeline clients keep the one table; older snapshots that only stored the union get their
+  duplicate columns merged. (Re-freeze the snapshot to get the full per-pipeline split.)
+- **Creative performance now splits by pipeline (multi-pipeline clients).** Every pipeline's creative cards come first
+  (Cards for pipeline #1, then #2 …), then every pipeline's creative table underneath (Table #1, then #2 …), each under its
+  own pipeline heading. Single-pipeline clients keep the flat cards-then-table layout. Each pipeline's card block pages
+  independently; the sort chip and the table header sort apply across all of them.
+- **Key events by campaign — columns are now clickable to sort.** On the Caalano360 "Key events by campaign" slide, click
+  any column header (Campaign, Spend, Leads, or any green key-event / cost column) to reorder the campaigns by it. The
+  top-16-by-spend selection is unchanged; the click only re-ranks what's shown.
+- **CAC added to "ROI by channel".** The Caalano360 account-summary "ROI by channel (closed this month)" table now has a
+  CAC column (ad spend ÷ deals won) for Meta and Google, next to ROAS.
+
 ## v3.298.0 - 2026-08-19 · `PENDING` - Fix: purple report buttons went blank on hover
 - **Fixed the Monthly Report toolbar / Publish buttons "going white" on hover.** The generic light hover applied to every
   `.mr-btn`, including the purple (primary / on) ones - so hovering Publish, Refresh snapshot, Reports or the PDF toggle

@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.286.0 - 2026-08-18 · `PENDING` - Monthly Report generate no longer needs a few refreshes
+- **"Generate snapshot" now retries each section** (Meta / Google / Overview / CRM attribution / trend / deals) before
+  giving up, instead of silently baking a `null` section into the frozen report on a cold-cache first click. That's why
+  it used to take a couple of refreshes to pull everything in.
+- If a section still fails after retries, a **warning** names it ("Meta Ads didn't load…") so you know to refresh,
+  rather than freezing an incomplete report without telling you.
+
 ## v3.285.0 - 2026-08-18 · `PENDING` - Location map: click a dot for the leads behind it
 - **Click any postcode/suburb dot on the Location map** to open a breakdown of the leads that make it up. Each lead
   shows its **status, value, pipeline stage and how long it's sat in that stage**, and expands to reveal **what they

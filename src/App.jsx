@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.285.0'
+const APP_VERSION = '3.286.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10530,19 +10530,45 @@ async function mrFetch(qs) {
   if (!r.ok) { let e; try { e = (await r.json()).error } catch {} throw new Error(e || `HTTP ${r.status}`) }
   return r.json()
 }
+// Resilient fetch for report assembly: retries a section that times out / 429s /
+// returns a soft error, so a cold-cache first "Generate" doesn't freeze a snapshot
+// with missing sections (which is why it used to take a few refreshes). Aborts a
+// hung request so one slow pull can't stall the whole generate.
+async function mrFetchTry(qs, { tries = 3, timeoutMs = 22000 } = {}) {
+  let lastErr = null
+  for (let i = 0; i < tries; i++) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+      const r = await fetch(`/.netlify/functions/windsor?${qs}`, { signal: ctrl.signal })
+      const j = await r.json().catch(() => null)
+      if (r.ok && j && !j.error) return j
+      lastErr = new Error((j && j.error) || `HTTP ${r.status}`)
+    } catch (e) { lastErr = e }
+    finally { clearTimeout(timer) }
+    if (i < tries - 1) await new Promise((res) => setTimeout(res, 1500 * (i + 1)))
+  }
+  throw lastErr || new Error('failed')
+}
 
 // Pull every scope the deck needs for one client + month, in parallel, and
 // shape the frozen report payload.
 async function assembleMonthlyReport(client, period) {
   const b = { from: period.from, to: period.to, label: period.label }
   const q = `client=${encodeURIComponent(client.id)}&${rangeQuery(b)}`
+  // Each section retries before giving up; a section that STILL fails is recorded so
+  // the UI can warn instead of silently freezing an incomplete report.
+  const failed = []
+  const section = (label, want, qs2, pick) => want
+    ? mrFetchTry(qs2).then(pick).catch(() => { failed.push(label); return null })
+    : Promise.resolve(null)
   const [meta, google, blend, attribution, trendR, dealsR] = await Promise.all([
-    client.meta ? mrFetch(`channel=meta&${q}`).then((r) => r.meta).catch(() => null) : Promise.resolve(null),
-    client.google ? mrFetch(`channel=google&${q}`).then((r) => r.google).catch(() => null) : Promise.resolve(null),
-    mrFetch(`channel=blend&${q}`).then((r) => r.blend).catch(() => null),
-    client.ghl ? mrFetch(`channel=attribution&${q}`).then((r) => r.attribution).catch(() => null) : Promise.resolve(null),
-    client.meta ? mrFetch(`scope=monthlytrend&months=6&${q}`).then((r) => r.trend).catch(() => null) : Promise.resolve(null),
-    client.ghl ? mrFetch(`scope=monthlydeals&${q}`).then((r) => r.deals).catch(() => null) : Promise.resolve(null),
+    section('Meta Ads', client.meta, `channel=meta&${q}`, (r) => r.meta),
+    section('Google Ads', client.google, `channel=google&${q}`, (r) => r.google),
+    section('Overview', true, `channel=blend&${q}`, (r) => r.blend),
+    section('CRM attribution', client.ghl, `channel=attribution&${q}`, (r) => r.attribution),
+    section('Meta 6-month trend', client.meta, `scope=monthlytrend&months=6&${q}`, (r) => r.trend),
+    section('CRM deals', client.ghl, `scope=monthlydeals&${q}`, (r) => r.deals),
   ])
   // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
   // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
@@ -10585,6 +10611,7 @@ async function assembleMonthlyReport(client, period) {
     creOutcomes: (attribution && Array.isArray(attribution.byCreative)) ? attribution.byCreative.slice(0, 120) : [],
     wonClosed: (blend && blend.wonClosed) || null,
     generatedAt: new Date().toISOString(),
+    _incomplete: failed, // sections that failed after retries (transient, for a UI warning)
   }
 }
 
@@ -10740,6 +10767,7 @@ function MonthlyReport({ clients, currency, authUser }) {
   const [snapList, setSnapList] = useState(null) // [{month, savedAt, publishedAt, published, edited}]
   const [snapBump, setSnapBump] = useState(0)    // re-fetch trigger after publish/generate
   const [showList, setShowList] = useState(false)
+  const [genWarn, setGenWarn] = useState(null) // sections that failed on the last generate
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null) // {title, kind, deals}
   const [view, setView] = useState('slides') // slides (one page at a time) | scroll (continuous)
@@ -10784,9 +10812,12 @@ function MonthlyReport({ clients, currency, authUser }) {
 
   async function generate() {
     if (!client) return
-    setBusy(true); setSt({ status: 'loading' })
+    setBusy(true); setSt({ status: 'loading' }); setGenWarn(null)
     try {
       const report = await assembleMonthlyReport(client, period)
+      const incomplete = report._incomplete || []
+      delete report._incomplete // transient - don't freeze it into the snapshot
+      setGenWarn(incomplete.length ? incomplete : null)
       setSt({ status: 'ok', report, frozen: false })
       const save = await fetch(`/.netlify/functions/windsor?scope=monthlysnap&client=${encodeURIComponent(client.id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ month: period.key, report }) }).then((x) => x.json()).catch(() => null)
       if (save && save.ok) { setSaved({ savedAt: save.savedAt, savedBy: save.savedBy, published: !!save.publishedAt, publishedAt: save.publishedAt || null, edited: !!save.publishedAt }); setSt({ status: 'ok', report, frozen: true }); setSnapBump((n) => n + 1) }
@@ -10877,6 +10908,7 @@ function MonthlyReport({ clients, currency, authUser }) {
         </div>
       )}
 
+      {genWarn && <div className="mr-note mr-warn">⚠ These sections didn’t load after a few tries: <b>{genWarn.join(', ')}</b>. They may be missing from this snapshot - click <b>Refresh snapshot</b> to try again (the data is usually cached by now).</div>}
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t build the report: {st.error}</div>}
       {st.status === 'empty' && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No snapshot for {period.label} yet.</b><p>Pick the client and period (one month, or a range via the two pickers), then <b>Generate snapshot</b> to freeze these numbers. Wins are captured by the month a deal was marked won - so late-closing leads show in the month they closed.</p></div>}

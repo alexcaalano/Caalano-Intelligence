@@ -2141,6 +2141,8 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-snaplist .mini-tbl td, .mr-snaplist .mini-tbl th { padding: 7px 10px; }
 .mr-note { padding: 24px; text-align: center; color: var(--muted); }
 .mr-note.mr-err { color: var(--neg); }
+.mr-note.mr-warn { padding: 12px 16px; text-align: left; color: #92600b; background: color-mix(in srgb, #f5a524 14%, transparent); border: 1px solid color-mix(in srgb, #f5a524 40%, transparent); border-radius: 10px; margin: 8px 0; font-size: 13px; }
+@media (prefers-color-scheme: dark) { .mr-note.mr-warn { color: #f5c877; } }
 .mr-empty-deep { padding: 44px 24px; text-align: center; }
 .mr-empty-deep .big { font-size: 40px; }
 .mr-empty-deep b { display: block; margin-top: 8px; font-size: 16px; color: var(--text); }

@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.288.0 - 2026-08-19 · `PENDING` - Monthly Report: Form performance slide, reordered decks, clickable cohort wins, no side-scroll
+- **New "Form performance" slide.** Added between Key events and User performance: every lead form this month with Leads →
+  Booked → Book % → Shown → Won → Win % → Revenue, plus a totals row, so you can compare form friction vs lead quality.
+  (Meta Lead Form vs Website form are labelled.)
+- **Deck reorder.** "Key events by campaign" now sits **after** the Google ad-group performance slide and **before** User
+  performance, so the campaign-level story flows straight into the per-user story.
+- **"Won (cohort)" is now clickable**, just like "Closed this mo" - click the number to open the deals drill for that
+  user's cohort wins (this month's leads that are already won, whenever they closed).
+- **No horizontal scroll** on the User performance and Form performance tables: long headers and names now wrap to fit the
+  slide instead of forcing a sideways scroll (figures stay on one line). The deal drill pop-up already wraps (v3.287).
+- Note: the Form performance slide only appears on **newly generated** snapshots - hit **Refresh snapshot** on an existing
+  month to pull it in.
+
 ## v3.287.0 - 2026-08-18 · `PENDING` - Monthly Report deal drill: no side-scroll, real names + sources
 - **No more horizontal scrolling** in the deals drill (the "Deals won / lost" pop-up): the window is bigger and every
   cell wraps, so the long Pipeline · stage and campaign names fit instead of forcing a sideways scroll.

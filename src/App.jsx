@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.287.0'
+const APP_VERSION = '3.288.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10562,13 +10562,14 @@ async function assembleMonthlyReport(client, period) {
   const section = (label, want, qs2, pick) => want
     ? mrFetchTry(qs2).then(pick).catch(() => { failed.push(label); return null })
     : Promise.resolve(null)
-  const [meta, google, blend, attribution, trendR, dealsR] = await Promise.all([
+  const [meta, google, blend, attribution, trendR, dealsR, formsR] = await Promise.all([
     section('Meta Ads', client.meta, `channel=meta&${q}`, (r) => r.meta),
     section('Google Ads', client.google, `channel=google&${q}`, (r) => r.google),
     section('Overview', true, `channel=blend&${q}`, (r) => r.blend),
     section('CRM attribution', client.ghl, `channel=attribution&${q}`, (r) => r.attribution),
     section('Meta 6-month trend', client.meta, `scope=monthlytrend&months=6&${q}`, (r) => r.trend),
     section('CRM deals', client.ghl, `scope=monthlydeals&${q}`, (r) => r.deals),
+    section('Form performance', client.ghl, `scope=forms&${q}`, (r) => r.forms),
   ])
   // Join CRM key-event outcomes (utm_content) onto each Meta creative so the
   // creative slide can show Leads → Booked → Shown → Won → Revenue per ad, the
@@ -10610,6 +10611,9 @@ async function assembleMonthlyReport(client, period) {
     // the client's full configured key events per creative, not just leads/booked/won.
     creOutcomes: (attribution && Array.isArray(attribution.byCreative)) ? attribution.byCreative.slice(0, 120) : [],
     wonClosed: (blend && blend.wonClosed) || null,
+    // Per-form performance (leads → booked → shown → won → revenue) for the Form
+    // Performance slide. Lean: headline funnel only, top 30 by leads.
+    forms: Array.isArray(formsR) ? formsR.filter((f) => (f.leads || 0) > 0).slice(0, 30).map((f) => ({ form: f.form, kind: f.kind, leads: f.leads || 0, booked: f.booked || 0, shown: f.shown || 0, won: f.won || 0, revenue: f.revenue || 0 })) : [],
     generatedAt: new Date().toISOString(),
     _incomplete: failed, // sections that failed after retries (transient, for a UI warning)
   }
@@ -10634,11 +10638,11 @@ function MRSlide({ n, total, kicker, title, sub, children, tone }) {
 function MRKpi({ label, value, sub, strong }) {
   return <div className={`mr-kpi ${strong ? 'mr-kpi-strong' : ''}`}><span className="mr-kpi-lab">{label}</span><b className="mr-kpi-val">{value}</b>{sub != null && <span className="mr-kpi-sub">{sub}</span>}</div>
 }
-function MRTable({ cols, rows, empty = 'No data for this period.', max }) {
+function MRTable({ cols, rows, empty = 'No data for this period.', max, wrapClass = '' }) {
   const data = max ? rows.slice(0, max) : rows
   if (!rows || !rows.length) return <div className="mr-empty">{empty}</div>
   return (
-    <div className="mr-tablewrap">
+    <div className={'mr-tablewrap' + (wrapClass ? ' ' + wrapClass : '')}>
       <table className="mr-table">
         <thead><tr>{cols.map((c) => <th key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.label}</th>)}</tr></thead>
         <tbody>{data.map((row, i) => <tr key={i}>{cols.map((c) => <td key={c.k} className={c.align === 'r' ? 'r' : ''}>{c.render ? c.render(row) : row[c.k]}</td>)}</tr>)}</tbody>
@@ -11393,6 +11397,9 @@ function renderMonthlyDeck(rep, h) {
   // Slide list (Google slides only when connected).
   const slides = []
   const push = (el) => slides.push(el)
+  // "Key events by campaign" is built in place but pushed later (after the Google ad
+  // groups, before Users) so the deck reads platform → key events → forms → team.
+  let keCampSlide = null
 
   // Meta metric helpers
   const cpm = (r) => (r.impressions ? (r.spend / r.impressions) * 1000 : null)
@@ -11578,7 +11585,7 @@ function renderMonthlyDeck(rep, h) {
       return out
     })()
     if ((rep.campOutcomes || []).length && campTables.length) {
-      push(
+      keCampSlide = (
         <MRSlide key="c360-camp" kicker="Caalano360" title="Key events by campaign" sub="Which campaigns are driving the key events - with the cost of each. CRM outcomes (utm_campaign) matched to paid spend.">
           {barData.length ? (
             <div className="mr-two mr-two-viz">
@@ -11708,6 +11715,34 @@ function renderMonthlyDeck(rep, h) {
             <MRTable cols={kwCols('Search term')} rows={google.searchTerms || []} max={12} />
           </div>
         </div>
+      </MRSlide>
+    )
+  }
+
+  // ---- Key events by campaign (moved here: after the Google ad groups) ----
+  if (keCampSlide) push(keCampSlide)
+
+  // ---- Form performance ---- (right after key events, before the team slide)
+  if (rep.forms && rep.forms.length) {
+    const forms = rep.forms
+    const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), booked: a.booked + (f.booked || 0), shown: a.shown + (f.shown || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
+    const frate = (x, y) => (y ? fmtPct((x / y) * 100, 0) : '-')
+    const fkind = (k) => (k === 'facebook' ? 'Meta Lead Form' : k === 'website' ? 'Website form' : (k || ''))
+    push(
+      <MRSlide key="forms" kicker="Caalano360 · Forms" title="Form performance" sub="Every lead form this month, from leads through to won - so you can compare friction vs quality (fewer but higher-converting vs more but lower-quality).">
+        <div className="mr-tablewrap"><table className="mr-table mr-forms-tbl">
+          <thead><tr><th className="lft">Form</th><th className="r">Leads</th><th className="r">Booked</th><th className="r">Book %</th><th className="r">Shown</th><th className="r">Won</th><th className="r">Win %</th><th className="r">Revenue</th></tr></thead>
+          <tbody>
+            {forms.map((f, i) => (
+              <tr key={i}>
+                <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
+                <td className="r">{n0(f.leads)}</td><td className="r">{n0(f.booked)}</td><td className="r">{frate(f.booked, f.leads)}</td>
+                <td className="r">{n0(f.shown)}</td><td className="r">{n0(f.won)}</td><td className="r">{frate(f.won, f.leads)}</td><td className="r">{money(f.revenue)}</td>
+              </tr>
+            ))}
+            <tr className="mr-tot"><td className="lft">Total</td><td className="r">{n0(ftot.leads)}</td><td className="r">{n0(ftot.booked)}</td><td className="r">{frate(ftot.booked, ftot.leads)}</td><td className="r">{n0(ftot.shown)}</td><td className="r">{n0(ftot.won)}</td><td className="r">{frate(ftot.won, ftot.leads)}</td><td className="r">{money(ftot.revenue)}</td></tr>
+          </tbody>
+        </table></div>
       </MRSlide>
     )
   }
@@ -11856,6 +11891,8 @@ function renderMonthlyDeck(rep, h) {
       .filter((k) => k.kind === 'stage' || (k.kind === 'calendar' && k.stage)).slice(0, 5)
     // Closed-this-month deals for a user, optionally scoped to a pipeline by name.
     const userDealsPipe = (uid, pname) => (scWon.deals || []).filter((d) => d.userId === uid && (pname == null || d.pipeline === pname))
+    // Cohort-won deals for a rep: this-month's leads (created-on cohort) that are won.
+    const userCohortDealsPipe = (uid, pname) => (coWon.deals || []).filter((d) => d.userId === uid && (pname == null || d.pipeline === pname))
     const buildUrows = (P) => {
       const kelist = P ? keFor(P.id) : ke
       const rows = users.map((u) => {
@@ -11896,13 +11933,14 @@ function renderMonthlyDeck(rep, h) {
           { k: 'name', label: 'User', render: (r) => <span className="mr-name">{r.name}</span> },
           { k: 'leads', label: 'Leads', align: 'r', render: (r) => n0(r.leads) },
           ...bundle.ke.map((k) => ({ k: 'ev_' + k.ref, label: k.label, align: 'r', render: (r) => n0(r.evReach[k.ref] || 0) })),
-          { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => n0(r.cohortWon) },
+          { k: 'cohortWon', label: 'Won (cohort)', align: 'r', render: (r) => (r.cohortWon ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} - won (cohort, leads created this month)${pname ? ` · ${pname}` : ''}`, deals: userCohortDealsPipe(r.id, pname) })}>{n0(r.cohortWon)}</button> : '-') },
           { k: 'winrate', label: 'Cohort win %', align: 'r', render: (r) => pc(r.cohortWon, r.leads) },
           { k: 'closed', label: 'Closed this mo', align: 'r', render: (r) => (r.closed ? <button className="mr-cellbtn" onClick={() => openDrill({ title: `${r.name} - closed this month${pname ? ` · ${pname}` : ''}`, deals: userDealsPipe(r.id, pname) })}>{n0(r.closed)}</button> : '-') },
           { k: 'revenue', label: 'Revenue (closed)', align: 'r', render: (r) => money(r.revenue) },
         ]}
         rows={bundle.rows} max={16}
         empty="No assigned-user data for this pipeline."
+        wrapClass="mr-userperf"
       />
     )
     push(

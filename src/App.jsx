@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.288.0'
+const APP_VERSION = '3.289.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10602,6 +10602,11 @@ async function assembleMonthlyReport(client, period) {
     // the Caalano360 green key-event columns + costings by campaign, same as the
     // Meta Ads view. Top 40 by leads keeps the frozen blob lean.
     campOutcomes: (attribution && Array.isArray(attribution.byCampaign)) ? attribution.byCampaign.slice(0, 40) : [],
+    // Per-ad-set / ad-group CRM outcome entities (utm_medium) so the "Key events by
+    // campaign" slide can expand a campaign into its ad sets (Meta) / ad groups
+    // (Google) with the same green key-event columns. Google's utm_medium carries the
+    // numeric ad-group ID, folded to its name via mediumIdMap in aliasedOutcomeMap.
+    medOutcomes: (attribution && Array.isArray(attribution.byMedium)) ? attribution.byMedium.slice(0, 80).map((m) => { const { detail, opps, ...rest } = m; return rest }) : [],
     // Per-source CRM outcome entities (utm_source) - same key-event fields as the
     // campaign ones - so the report can break the non-paid "other sources" into
     // named channels (organic / direct / referral / email / social / CRM). The heavy
@@ -11428,6 +11433,11 @@ function renderMonthlyDeck(rep, h) {
   const o360cols = rep.hasCrm ? buildO360Cols(loadKeyEvents(rep.client.id), stagePos, calNames) : null
   const oCamp = aliasedOutcomeMap(rep.client.id, 'campaign', rep.campOutcomes || [], rep.campIdMap)
   const oCre = aliasedOutcomeMap(rep.client.id, 'content', rep.creOutcomes || [])
+  // Ad-set / ad-group key-event maps for the "Key events by campaign" drill.
+  // Meta ad sets match byMedium by name; Google ad groups match byMedium+byCreative
+  // with the numeric utm_medium folded to its ad-group name (same as the live views).
+  const oMedMeta = aliasedOutcomeMap(rep.client.id, 'medium', rep.medOutcomes || [])
+  const oMedGoogle = aliasedOutcomeMap(rep.client.id, 'medium', [...(rep.medOutcomes || []), ...(rep.creOutcomes || [])], rep.mediumIdMap)
   // Per-pipeline key events: multi-pipeline clients show only the key events for
   // the pipeline attached (in Settings → campaign map) to a creative's / campaign's
   // campaign. Single-pipeline clients (or unmapped campaigns → "All") keep the full
@@ -11538,10 +11548,26 @@ function renderMonthlyDeck(rep, h) {
       .sort((a, b2) => (b2.event - a.event) || (b2.leads - a.leads)).slice(0, 8)
     const donutData = barData.filter((d) => d.event > 0).map((d, i) => ({ name: d.name, value: d.event, color: PIEK[i % PIEK.length] }))
     // A green key-events-by-campaign table for a set of campaigns + a column
-    // descriptor (its pipeline's key events). Returns null if no CRM data matched.
-    const renderCampTable = (rows, cols, label) => {
+    // descriptor (its pipeline's key events). Each campaign row is expandable into
+    // its ad sets (Meta) / ad groups (Google) - shown by name, with the same green
+    // key-event columns matched by utm_medium. Returns null if no CRM data matched.
+    const CampKeyEventsTable = ({ rows, cols, label }) => {
+      const [open, setOpen] = useState(() => new Set())
       const withF = rows.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
       if (!cols || !withF.some((c) => c._has360)) return null
+      // Ad sets (Meta) / ad groups (Google) under a campaign, each with its own green
+      // columns. Kept if it has spend, leads or any matched key event.
+      const kidsOf = (c) => {
+        const src = c.channel === 'meta'
+          ? ((meta && meta.adsets) || []).filter((a) => a.campaign === c.name).map((a) => ({ name: a.name, channel: 'meta', spend: a.spend || 0, leads: (a.results != null ? a.results : a.leads) || 0 }))
+          : ((google && google.adGroups) || []).filter((a) => a.campaign === c.name).map((a) => ({ name: a.name, channel: 'google', spend: a.cost || 0, leads: a.conversions || 0 }))
+        const oMed = c.channel === 'meta' ? oMedMeta : oMedGoogle
+        return src.map((k) => ({ ...k, ...o360Fields(oMed.get(unorm(k.name)), k.spend, k.leads, cols) }))
+          .filter((k) => k.spend > 0 || k.leads > 0 || k._has360)
+          .sort((a, b2) => b2.spend - a.spend).slice(0, 20)
+      }
+      const toggle = (name) => setOpen((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n })
+      const rowsWithKids = withF.map((c) => ({ c, kids: kidsOf(c) }))
       return (
         <div key={label || 'all'} className="mr-camp-block">
           {label ? <div className="mr-section-lab">{label}</div> : null}
@@ -11555,17 +11581,35 @@ function renderMonthlyDeck(rep, h) {
                 <C360GrpRow left={3} cols={cols} />
                 <tr><th>Campaign</th><th className="r">Spend</th><th className="r">Leads</th><O360Head cols={cols} /></tr>
               </thead>
-              <tbody>{withF.map((c, i) => (
-                <tr key={i}>
-                  <td className="mr-o360-name" title={c.name}><span className={`mr-src mr-src-${c.channel}`}>{c.channel === 'meta' ? 'Meta' : 'Google'}</span> {c.name}</td>
-                  <td className="r">{money(c.spend)}</td><td className="r">{n0(c.leads)}</td>
-                  {o360Cells(c, currency, cols)}
-                </tr>
-              ))}</tbody>
+              <tbody>{rowsWithKids.map(({ c, kids }, i) => {
+                const hasKids = kids.length > 0
+                const isOpen = open.has(c.name)
+                return (
+                  <React.Fragment key={i}>
+                    <tr className={'mr-o360-camprow' + (hasKids ? ' has-kids' : '')} onClick={hasKids ? () => toggle(c.name) : undefined}>
+                      <td className="mr-o360-name" title={c.name}><span className={'mr-o360-exp' + (hasKids ? '' : ' mr-o360-exp-none')}>{hasKids ? (isOpen ? '▾' : '▸') : ''}</span><span className={`mr-src mr-src-${c.channel}`}>{c.channel === 'meta' ? 'Meta' : 'Google'}</span> {c.name}</td>
+                      <td className="r">{money(c.spend)}</td><td className="r">{n0(c.leads)}</td>
+                      {o360Cells(c, currency, cols)}
+                    </tr>
+                    {isOpen ? kids.map((k, j) => (
+                      <tr key={'k' + j} className="mr-o360-kid">
+                        <td className="mr-o360-name mr-o360-kidname" title={k.name}><span className="mr-o360-kidtick" />{k.name}</td>
+                        <td className="r">{money(k.spend)}</td><td className="r">{n0(k.leads)}</td>
+                        {o360Cells(k, currency, cols)}
+                      </tr>
+                    )) : null}
+                  </React.Fragment>
+                )
+              })}</tbody>
             </table>
           </div>
         </div>
       )
+    }
+    const renderCampTable = (rows, cols, label) => {
+      const withF = rows.map((c) => ({ ...c, ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, cols) })).sort((a, b2) => b2.spend - a.spend).slice(0, 16)
+      if (!cols || !withF.some((c) => c._has360)) return null
+      return <CampKeyEventsTable key={label || 'all'} rows={rows} cols={cols} label={label} />
     }
     // Multi-pipeline: one table per pipeline (campaigns grouped by their mapped
     // pipeline); unmapped campaigns fall back to a union table. Single-pipeline: one.
@@ -11610,7 +11654,7 @@ function renderMonthlyDeck(rep, h) {
             </div>
           ) : null}
           {campTables}
-          <p className="mr-foot-note">Green columns are the client's configured <b>key events</b> - the count reached and the cost per each - plus the Won revenue block and ROAS. Scroll right to see every event. Matched by <b>utm_campaign</b>; “-” means no CRM leads carried that campaign's UTM.{multiPipe ? ' Each pipeline shows only its own key events (from the campaign→pipeline links in Settings); unmapped campaigns show all events.' : ''}</p>
+          <p className="mr-foot-note"><b>▸ Click a campaign</b> to break it into its ad sets (Meta) / ad groups (Google) - by name, with the same key-event columns. Green columns are the client's configured <b>key events</b> - the count reached and the cost per each - plus the Won revenue block and ROAS. Scroll right to see every event. Matched by <b>utm_campaign</b> (ad sets by <b>utm_medium</b>); “-” means no CRM leads carried that UTM.{multiPipe ? ' Each pipeline shows only its own key events (from the campaign→pipeline links in Settings); unmapped campaigns show all events.' : ''}</p>
         </MRSlide>
       )
     }

@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.289.0 - 2026-08-19 · `PENDING` - Monthly Report: click a campaign to drill into ad sets / ad groups
+- **"Key events by campaign" is now expandable.** Click any campaign row (▸) to break it into its **ad sets** (Meta) or
+  **ad groups** (Google) - shown **by name, not ID** - each with the same green key-event columns (count reached, cost per
+  each, Won revenue, ROAS), matched by **utm_medium**.
+- Google's ad-group UTM (a numeric ID) is folded to the live ad-group name via the same mediumIdMap the Google view uses,
+  so the drill reads in plain names.
+- Ad sets / ad groups are sorted by spend and limited to the top 20 per campaign; only those with spend, leads or a matched
+  key event are shown.
+- Backend: the report snapshot now carries a lean per-ad-set/ad-group outcome list (top 80 by utm_medium) so this works
+  offline from the frozen report.
+- Note: this only appears on **newly generated** snapshots - hit **Refresh snapshot** on an existing month to pull it in.
+
 ## v3.288.0 - 2026-08-19 · `PENDING` - Monthly Report: Form performance slide, reordered decks, clickable cohort wins, no side-scroll
 - **New "Form performance" slide.** Added between Key events and User performance: every lead form this month with Leads →
   Booked → Book % → Shown → Won → Win % → Revenue, plus a totals row, so you can compare form friction vs lead quality.

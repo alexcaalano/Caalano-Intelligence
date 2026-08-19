@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.299.0'
+const APP_VERSION = '3.300.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4129,9 +4129,10 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   // divides by ITS OWN pipeline's leads, not the grand total across all pipelines.
   const multi = pipes.length > 1
   const pipeLeads = new Map()
-  for (const p of pipes) if (p.id) pipeLeads.set(p.id, (p.stages || []).reduce((s, x) => s + (x.count || 0), 0))
+  const pipeNames = new Map()
+  for (const p of pipes) if (p.id) { pipeLeads.set(p.id, (p.stages || []).reduce((s, x) => s + (x.count || 0), 0)); pipeNames.set(p.id, p.name || 'Pipeline') }
   for (const r of rows) r.leadBase = (multi && r.pipeline && pipeLeads.get(r.pipeline)) ? pipeLeads.get(r.pipeline) : leadTotal
-  return { rows, leadTotal, usingKe: rows.length > 0, multi }
+  return { rows, leadTotal, usingKe: rows.length > 0, multi, pipeNames }
 }
 const sourceDotChan = (ch) => ch === 'meta' ? '#4f7cff' : ch === 'google' ? '#12b886' : ch === 'other' ? '#e8a13a' : '#9aa1ac'
 
@@ -4827,9 +4828,25 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           </div>
           {kef.usingKe && kef.rows.length ? <>
             <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· {kef.multi ? "share of each event's pipeline leads" : `share of ${fmtNumber(kef.leadTotal)} ${chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}`}</span></div>
-            <div className="scorecard exec-kpis">
-              {kef.rows.map((r, i) => { const base = r.leadBase || kef.leadTotal; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '-'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
-            </div>
+            {kef.multi
+              ? (() => {
+                  // Split the reach cards by pipeline (same as the Meta Ads view) so a
+                  // multi-pipeline client sees each pipeline's key events on their own
+                  // row instead of one union list with the same stage repeated.
+                  const byPipe = new Map()
+                  for (const r of kef.rows) { const k = r.pipeline || '__all__'; if (!byPipe.has(k)) byPipe.set(k, []); byPipe.get(k).push(r) }
+                  const groups = [...byPipe.entries()].map(([pid, rs]) => ({ pid, name: pid === '__all__' ? 'All pipelines' : ((kef.pipeNames && kef.pipeNames.get(pid)) || 'Pipeline'), rows: rs, leads: (rs[0] && rs[0].leadBase) || kef.leadTotal }))
+                  groups.sort((a, b) => (a.pid === '__all__' ? 1 : b.pid === '__all__' ? -1 : b.leads - a.leads))
+                  return groups.map((g) => <div key={g.pid}>
+                    <div className="cc-pipe-lab"><span className="c360-dot" /> {g.name} <span className="sub" style={{ fontWeight: 500 }}>· {fmtNumber(g.leads)} leads</span></div>
+                    <div className="scorecard exec-kpis">
+                      {g.rows.map((r, i) => { const base = r.leadBase || g.leads; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '-'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
+                    </div>
+                  </div>)
+                })()
+              : <div className="scorecard exec-kpis">
+                  {kef.rows.map((r, i) => { const base = r.leadBase || kef.leadTotal; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '-'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
+                </div>}
           </> : null}
         </div>
       })()}
@@ -13482,7 +13499,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // can carry it; ClientWorkspace seeds from initialTab and reports changes back.
   const [clientTab, setClientTab] = useState(() => readNavUrl().t || 'overall')
   const navInitRef = useRef(false)
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'dark' } catch { return 'dark' } })
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('caalano_theme') || 'light' } catch { return 'light' } })
   const [range, setRange] = useState(() => rangeFromUrl(readNavUrl()) || presetRange('last_30d'))
   // Won basis: 'closed' (banked in the period, by won-date) or 'created' (won
   // among leads created in the period - the cohort/ROI view). Global + persisted.

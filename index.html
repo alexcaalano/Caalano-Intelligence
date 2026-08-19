@@ -7,10 +7,16 @@
     <!-- Deep-link URLs carry a client id (?c=). Send only the origin (no path/query)
          to external hosts so ad-thumbnail / embed requests never leak client ids. -->
     <meta name="referrer" content="strict-origin" />
-    <meta name="theme-color" content="#0b0e14" />
+    <meta name="theme-color" content="#f4f5f8" />
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
     <meta name="googlebot" content="noindex, nofollow" />
     <title>Caalano360 · Reporting</title>
+    <!-- Apply the saved theme (default LIGHT) before the bundle loads so there's
+         no flash of the dark palette on first paint. -->
+    <script>
+      try { document.documentElement.setAttribute('data-theme', localStorage.getItem('caalano_theme') || 'light') }
+      catch (e) { document.documentElement.setAttribute('data-theme', 'light') }
+    </script>
   </head>
   <body>
     <div id="root"></div>

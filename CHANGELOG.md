@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.300.0 - 2026-08-19 · `PENDING` - Caalano360 Key event reach split per pipeline; light mode is now the default
+- **Caalano360 "Key event reach" cards now split per pipeline** (multi-pipeline clients), matching the Meta Ads view.
+  Instead of one union row that repeated the same stage once per pipeline (e.g. "15 Minute Call" twice), each pipeline gets
+  its own labelled row of key-event reach cards, each measured against that pipeline's own leads. Single-pipeline clients
+  are unchanged.
+- **Light mode is now the default theme** across the whole app. New sessions (no saved preference) open in light; the theme
+  is applied before first paint so there's no flash of dark. Anyone who previously chose a theme keeps their choice, and the
+  Light/Dark toggle in Settings still works.
+
 ## v3.299.0 - 2026-08-19 · `PENDING` - Creative screen split by pipeline, sortable key-events-by-campaign, CAC on ROI by channel, Form performance split by pipeline
 - **Form performance (monthly report) now splits per pipeline — no more duplicated columns.** For multi-pipeline clients
   the union view listed the same key event once per pipeline (e.g. "15 Minute Call" and "Payment Collected" twice). The

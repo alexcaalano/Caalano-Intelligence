@@ -1161,7 +1161,11 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
       statusAt: isFinite(whenMs) ? new Date(whenMs).toISOString().slice(0, 10) : null,
       value: num(o.monetaryValue), channel: channelOf(u),
       pipeline: p ? p.name : null, stage: stg ? stg.name : null,
-      ad: u.content || null, campaign: u.campaign || null,
+      // ad = utm_content, campaign = utm_campaign, medium = utm_medium (ad group).
+      // For Google these are numeric IDs the frontend folds to names via campIdMap /
+      // mediumIdMap. source = the opportunity's own source (e.g. "CRM UI") or utm_source,
+      // so a non-paid "Other" lead can show where it actually came from.
+      ad: u.content || null, campaign: u.campaign || null, medium: u.medium || null, source: o.source || u.source || null,
       userId: o.assignedTo || 'unassigned', reason: o.lostReasonId ? (reasonName[o.lostReasonId] || 'Other') : null,
     }
   }

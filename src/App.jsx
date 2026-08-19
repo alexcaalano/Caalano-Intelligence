@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.286.0'
+const APP_VERSION = '3.287.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10747,7 +10747,7 @@ function ClientReports({ clients, currency }) {
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report - please try again shortly.</div>}
       {rep && <div className="mr-deck" ref={deckRef}><div className="mr-track">{deck}</div></div>}
-      {drill && <MRDrill drill={drill} currency={currency} onClose={() => setDrill(null)} />}
+      {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
     </div>
   )
 }
@@ -10928,7 +10928,7 @@ function MonthlyReport({ clients, currency, authUser }) {
           <div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div>
         </div>
       )}
-      {drill && <MRDrill drill={drill} currency={currency} onClose={() => setDrill(null)} />}
+      {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
     </div>
   )
 }
@@ -10936,7 +10936,29 @@ function MonthlyReport({ clients, currency, authUser }) {
 // Drill-down modal: a scrollable list of the actual deals behind a number, so
 // figures can be sense-checked live with the client (who, when the lead came in,
 // when it closed, value, source). Screen-only (never in the PDF).
-function MRDrill({ drill, currency, onClose }) {
+// A non-paid "Other" lead's real source (from the opportunity source / utm_source):
+// CRM UI, Organic, Referral, Direct, etc. - so the drill isn't just "Other".
+function mrPrettySource(s) {
+  const t = String(s || '').trim(); if (!t) return 'Other'
+  const l = t.toLowerCase()
+  if (/crm|manual|admin|import|internal|\badded\b|bulk|migrat/.test(l)) return 'CRM UI'
+  if (/organic|seo|(?:^|[^a-z])search/.test(l)) return 'Organic'
+  if (/referr/.test(l)) return 'Referral'
+  if (/email|newsletter|mailchimp|klaviyo/.test(l)) return 'Email'
+  if (/facebook|instagram|\bfb\b|\big\b|social|tiktok|linkedin|youtube/.test(l)) return 'Social'
+  if (/direct|type.?in|\(none\)|\(not\s*set\)|^none$/.test(l)) return 'Direct'
+  return t.length > 24 ? t.slice(0, 24) + '…' : t.charAt(0).toUpperCase() + t.slice(1)
+}
+// Google reports campaign / ad-group / content as numeric IDs in the UTMs; fold them
+// to the live names via the same campIdMap / mediumIdMap the Caalano360 green columns
+// use. Meta already carries readable names.
+function mrAdDetail(d, campMap, medMap) {
+  const camp = (campMap && campMap[d.campaign]) || d.campaign
+  const grp = (medMap && medMap[d.medium]) || d.medium
+  if (d.channel === 'google') { const parts = [camp, grp].filter(Boolean); return parts.length ? parts.join(' · ') : (d.ad || null) }
+  return d.ad || camp || null
+}
+function MRDrill({ drill, currency, campMap, medMap, onClose }) {
   const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -10964,11 +10986,13 @@ function MRDrill({ drill, currency, onClose }) {
                 <th>Contact</th><th>Lead created</th><th>{isLost ? 'Lost' : 'Won'}</th>
                 {!isLost && <th className="r">Days to close</th>}
                 {isLost && <th>Reason</th>}<th>Source</th>
-                {hasAd && <th>Ad / creative</th>}
+                {hasAd && <th>Campaign / creative</th>}
                 <th>Pipeline · stage</th><th>Owner</th><th className="r">Value</th>
               </tr></thead>
               <tbody>{deals.map((d, i) => {
                 const days = (d.createdAt && d.statusAt) ? Math.max(0, Math.round((Date.parse(d.statusAt) - Date.parse(d.createdAt)) / 86400000)) : null
+                const srcTxt = d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : mrPrettySource(d.source)
+                const adTxt = mrAdDetail(d, campMap, medMap)
                 return (
                 <tr key={i}>
                   <td>{d.name}</td>
@@ -10976,8 +11000,8 @@ function MRDrill({ drill, currency, onClose }) {
                   <td>{fmtDate(d.statusAt)}</td>
                   {!isLost && <td className="r">{days == null ? '-' : days}</td>}
                   {isLost && <td>{d.reason || '-'}</td>}
-                  <td><span className={`mr-src mr-src-${d.channel || 'other'}`}>{d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : 'Other'}</span></td>
-                  {hasAd && <td className="mr-drill-ad">{d.ad || d.campaign ? <span title={[d.campaign, d.ad].filter(Boolean).join(' · ')}>{d.ad || d.campaign}</span> : '-'}</td>}
+                  <td><span className={`mr-src mr-src-${d.channel || 'other'}`} title={d.channel === 'other' && d.source ? d.source : undefined}>{srcTxt}</span></td>
+                  {hasAd && <td className="mr-drill-ad">{adTxt ? <span title={adTxt}>{adTxt}</span> : '-'}</td>}
                   <td>{[d.pipeline, d.stage].filter(Boolean).join(' · ') || '-'}</td>
                   <td>{d.userName || '-'}</td>
                   <td className="r">{money(d.value)}</td>

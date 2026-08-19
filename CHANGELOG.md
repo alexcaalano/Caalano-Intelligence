@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.287.0 - 2026-08-18 · `PENDING` - Monthly Report deal drill: no side-scroll, real names + sources
+- **No more horizontal scrolling** in the deals drill (the "Deals won / lost" pop-up): the window is bigger and every
+  cell wraps, so the long Pipeline · stage and campaign names fit instead of forcing a sideways scroll.
+- **Google campaign / ad group shown by name, not ID.** The Campaign/creative column folds Google's numeric
+  utm_campaign / utm_medium IDs to their live names via the same campIdMap / mediumIdMap the Caalano360 green columns
+  use. (Meta already showed names.)
+- **"Other" now shows the real source** - CRM UI, Organic, Referral, Direct, Email, Social - from the opportunity's own
+  source / utm_source, instead of a generic "Other".
+- Note: the new source / ad-group detail only appears on **newly generated** snapshots - hit **Refresh snapshot** on an
+  existing month to pull it in.
+
 ## v3.286.0 - 2026-08-18 · `PENDING` - Monthly Report generate no longer needs a few refreshes
 - **"Generate snapshot" now retries each section** (Meta / Google / Overview / CRM attribution / trend / deals) before
   giving up, instead of silently baking a `null` section into the frozen report on a cold-cache first click. That's why

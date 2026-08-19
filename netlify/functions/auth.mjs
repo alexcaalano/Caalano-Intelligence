@@ -6,6 +6,7 @@ import {
   bootstrapAdmin, authenticate, createInvite, inviteInfo, acceptInvite,
   listUsers, updateUser, deleteUser, changePassword, currentUser, countUsers,
   signupRequest, approveUser, ensureSuperadmin, isAdminish, signSession, sessionCookie, clearCookie, COOKIE,
+  checkLoginAllowed, recordLoginResult,
 } from '../lib/auth.mjs'
 
 const SESSION_MS = 14 * 86400 * 1000
@@ -41,7 +42,10 @@ export default async (req) => {
       return json({ ok: true, user: r.user }, 200, sessionCookie(await mint(r.user)))
     }
     if (action === 'login' && req.method === 'POST') {
+      const gate = await checkLoginAllowed(body.email)
+      if (!gate.ok) return json({ ok: false, error: `Too many failed attempts. Try again in ${Math.max(1, Math.ceil(gate.retryMs / 60000))} min.` }, 429)
       const user = await authenticate(body.email, body.password)
+      await recordLoginResult(body.email, !!user)
       if (!user) return json({ ok: false, error: 'Wrong email or password, or the account isn’t active.' }, 401)
       return json({ ok: true, user }, 200, sessionCookie(await mint(user)))
     }

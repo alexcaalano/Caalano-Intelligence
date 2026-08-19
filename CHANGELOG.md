@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.279.0 - 2026-08-18 · `PENDING` - Security hardening pass 2: login throttle + CSP (report-only)
+- **Login brute-force throttle.** Failed logins are now counted per email; after 5 failures in 15 min the account is
+  temporarily locked with an escalating cooldown (1 → 5 → 15 → 30 min), returning HTTP 429. A successful login clears the
+  counter. Best-effort (fails open if the store is unavailable), so it can't lock legitimate users out during an outage.
+- **Content-Security-Policy (report-only).** Added a CSP in **report-only** mode - it never blocks, it only logs
+  violations to the browser console - scoped to what the app actually loads: self-hosted bundle (`script-src 'self'`),
+  inline styles, `https:` images (ad thumbnails / map tiles / favicons), and Instagram embeds. Once we confirm no false
+  positives in the console, this flips to an enforcing `Content-Security-Policy`.
+- Verified (no change needed): the auth API gates every privileged action server-side - session check, then admin/role
+  check, then per-action role hierarchy - so nothing relies on the client to hide buttons.
+
 ## v3.278.0 - 2026-08-18 · `PENDING` - Security hardening pass
 - **Security headers** added site-wide (netlify.toml): `X-Frame-Options: SAMEORIGIN` (anti-clickjacking),
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security`

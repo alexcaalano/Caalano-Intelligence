@@ -369,3 +369,39 @@ export async function requireOpsAdmin(req) {
   if (me && me.role === 'superadmin') return null
   return new Response(JSON.stringify({ error: 'Forbidden - superadmin only.' }), { status: 403, headers: { 'content-type': 'application/json' } })
 }
+
+// ---- login brute-force throttle -------------------------------------------
+// Per-email failure counter with an escalating lockout, so PBKDF2's cost isn't the
+// only thing standing between an attacker and online password guessing. Best-effort
+// (Blobs): if the store is unavailable it fails open rather than locking people out.
+const throttleStore = () => getStore({ name: 'caalano-auth-throttle', consistency: 'strong' })
+const LOGIN_MAX_FAILS = 5              // failures within the window before the first lock
+const LOGIN_WINDOW_MS = 15 * 60 * 1000 // rolling window that groups the failures
+const _throttleKey = (email) => 'f_' + String(email || '').toLowerCase().trim()
+// Returns { ok:true } to proceed, or { ok:false, retryMs } if currently locked out.
+export async function checkLoginAllowed(email) {
+  const k = _throttleKey(email); if (k === 'f_') return { ok: true }
+  try {
+    const rec = await throttleStore().get(k, { type: 'json' })
+    if (rec && rec.lockedUntil && rec.lockedUntil > Date.now()) return { ok: false, retryMs: rec.lockedUntil - Date.now() }
+  } catch { /* store down - fail open */ }
+  return { ok: true }
+}
+// Record the outcome: clear on success, escalate the lockout on failure.
+export async function recordLoginResult(email, success) {
+  const k = _throttleKey(email); if (k === 'f_') return
+  const store = throttleStore()
+  if (success) { try { await store.delete(k) } catch { /* ignore */ } return }
+  try {
+    const now = Date.now()
+    let rec = await store.get(k, { type: 'json' }).catch(() => null)
+    if (!rec || (now - (rec.first || 0)) > LOGIN_WINDOW_MS) rec = { fails: 0, first: now, lockedUntil: 0 }
+    rec.fails++
+    if (rec.fails >= LOGIN_MAX_FAILS) {
+      const over = rec.fails - LOGIN_MAX_FAILS       // escalate: 1 → 5 → 15 → 30 min
+      const mins = over < 5 ? 1 : over < 10 ? 5 : over < 15 ? 15 : 30
+      rec.lockedUntil = now + mins * 60000
+    }
+    await store.setJSON(k, rec)
+  } catch { /* store down - don't block the flow */ }
+}

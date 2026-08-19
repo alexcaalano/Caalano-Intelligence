@@ -2135,7 +2135,10 @@ function _aggregateUserPerf(inp, opts = {}) {
   const U = new Map()
   const nowMs = Date.now()
   const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '-'
-  const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, qualified: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, totalValue: 0, openValue: 0, lostValue: 0, stages: new Map(), stageOpen: new Map(), reasons: new Map(), openList: [], byPipe: new Map() }; U.set(uid, u) } return u }
+  const getU = (uid) => { let u = U.get(uid); if (!u) { u = { id: uid, leads: 0, qualified: 0, won: 0, revenue: 0, lost: 0, open: 0, booked: 0, shown: 0, cancelled: 0, closeSum: 0, closeN: 0, totalValue: 0, openValue: 0, lostValue: 0, stages: new Map(), stageOpen: new Map(), reasons: new Map(), openList: [], wonList: [], lostList: [], byPipe: new Map() }; U.set(uid, u) } return u }
+  // One deal record (shared by the open / won / lost stage panels). `whenMs` is the
+  // instant we age from - stage-change for open, status-change for won/lost.
+  const dealRec = (o, stg, val, whenMs) => ({ id: o.id || o._id || null, contactId: contactIdOf(o), name: o.name || o.title || '(unnamed opportunity)', contact: contactNameOf(o), value: Math.round(val), stage: stg.name, stagePos: stg.pos, pipeline: pipeName[o.pipelineId] || 'Pipeline', ageDays: isFinite(whenMs) ? Math.max(0, Math.round((nowMs - whenMs) / DAY)) : null, email: (o.contact && o.contact.email) || null, phone: (o.contact && o.contact.phone) || null })
   const qualStagePos = opts.qualStagePos != null ? opts.qualStagePos : null
   let totQualified = 0
   for (const o of cohort) {
@@ -2154,10 +2157,17 @@ function _aggregateUserPerf(inp, opts = {}) {
     if (pi) for (const s of pi.stages) { if (st === 'won' || (pos >= 0 && s.pos <= pos)) u.stages.set(s.name, (u.stages.get(s.name) || 0) + 1) }
     // Deals sitting OPEN at their current stage right now (live, still capturable)
     // - per-stage counts/values, plus the individual deals for the drill-down.
+    // Per-stage deal lists by status, so the UI can show where deals are OPEN, were
+    // WON, and were LOST (the stage a lost deal died at). Won's stage is its current
+    // (won) stage; lost's is where it sat when marked lost/abandoned.
+    if (stg) {
+      if (st === 'won') u.wonList.push(dealRec(o, stg, val, Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)))
+      else if (st === 'lost' || st === 'abandoned') u.lostList.push(dealRec(o, stg, val, Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)))
+    }
     if (isOpen && stg) {
       const so = u.stageOpen.get(stg.name) || { open: 0, value: 0 }; so.open++; so.value += val; u.stageOpen.set(stg.name, so)
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
-      u.openList.push({ id: o.id || o._id || null, contactId: contactIdOf(o), name: o.name || o.title || '(unnamed opportunity)', contact: contactNameOf(o), value: Math.round(val), stage: stg.name, stagePos: stg.pos, pipeline: pipeName[o.pipelineId] || 'Pipeline', ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null, email: (o.contact && o.contact.email) || null, phone: (o.contact && o.contact.phone) || null })
+      u.openList.push(dealRec(o, stg, val, aMs))
     }
     const pid = o.pipelineId || 'none'; let bp = u.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, won: 0, revenue: 0 }; u.byPipe.set(pid, bp) } bp.leads++; if (st === 'won') { bp.won++; bp.revenue += val }
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
@@ -2180,6 +2190,8 @@ function _aggregateUserPerf(inp, opts = {}) {
     stages: Object.fromEntries(u.stages),
     stageOpen: Object.fromEntries([...u.stageOpen.entries()].map(([k, v]) => [k, { open: v.open, value: Math.round(v.value) }])),
     openDeals: u.openList.slice().sort((a, b) => (a.stagePos - b.stagePos) || (b.value - a.value)),
+    wonDeals: u.wonList.slice().sort((a, b) => (a.stagePos - b.stagePos) || (b.value - a.value)).slice(0, 300),
+    lostDeals: u.lostList.slice().sort((a, b) => (a.stagePos - b.stagePos) || (b.value - a.value)).slice(0, 300),
     lostReasons: [...u.reasons.entries()].map(([reason, v]) => ({ reason, count: v.count, value: Math.round(v.value) })).sort((a, b) => b.count - a.count),
     byPipeline: [...u.byPipe.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue) })).sort((a, b) => b.leads - a.leads),
   })).sort((a, b) => b.leads - a.leads)

@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.293.0 - 2026-08-19 · `PENDING` - Leaderboard: status filter (open/won/lost), no side-scroll, tab reorder
+- **The rep expansion now filters by status.** The Total pipeline / Open / Won / Lost cards are **clickable** - pick one and
+  the by-stage panel below shows exactly those deals per stage: **Open** = where live deals are sitting, **Won** = the stage
+  each win closed at, **Lost** = where lost/abandoned deals died (lost + abandoned combined). "All" shows open/won/lost side
+  by side per stage. So you can finally see *where the most leads are lost, won, and still open*. Won and Lost drills open
+  the same deal list, click-through to notes.
+- **Won is now visually distinct** - its funnel row is green (an outcome, not a pipeline stage), no longer blending into the
+  stage-reach bars.
+- **No more horizontal scroll** on the leaderboard - cell spacing and type tightened so the full ~14-column table fits the
+  screen, and the expanded rep panel no longer runs off the right edge.
+- **Client-view tabs reordered**: Caalano360 · Meta Ads · Google Ads · Analytics · Cohorts · Users · Call Reporting · Forms
+  · Location · Appointments · Timing · Optimisation Log.
+- Backend: the Users scope now returns per-rep won/lost deal lists (with their stage) alongside the existing open list.
+
 ## v3.292.0 - 2026-08-19 · `PENDING` - Fix: rep funnel + "open pipeline by stage" going blank
 - **Fixed: the rep leaderboard's funnel and "open pipeline by stage" (where each rep's open leads are sitting) were
   showing 0 / empty.** Opportunities are served from the warm snapshot so their counts (leads / won / lost / open) always

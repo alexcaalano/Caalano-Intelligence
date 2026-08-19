@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.292.0'
+const APP_VERSION = '3.293.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6815,7 +6815,8 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const [chan, setChan] = useState('all')
   const [sort, setSort] = useState({ key: 'won', dir: -1 })
   const [open, setOpen] = useState(null) // expanded user id
-  const [drill, setDrill] = useState(null) // { name, stage, deals } for the open-deals modal
+  const [statusView, setStatusView] = useState('open') // all | open | won | lost - which status the by-stage panel shows
+  const [drill, setDrill] = useState(null) // { name, stage, deals } for the deals modal
   const [drillUser, setDrillUser] = useState('all') // rep-filter tab inside the drill
   const [prevData, setPrevData] = useState(null) // previous equal-length period payload, for rank movement
   const money = (v) => fmtCurrency(v, currency)
@@ -6906,6 +6907,8 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
     pipelineValue: users.reduce((a, u) => a + (u.pipelineValue || 0), 0),
     stages: aggStages,
     openDeals: users.flatMap((u) => (u.openDeals || []).map((d) => ({ ...d, user: u.name, userId: u.id }))),
+    wonDeals: users.flatMap((u) => (u.wonDeals || []).map((d) => ({ ...d, user: u.name, userId: u.id }))),
+    lostDeals: users.flatMap((u) => (u.lostDeals || []).map((d) => ({ ...d, user: u.name, userId: u.id }))),
     bookRate: tot.leads ? Math.round((tot.booked / tot.leads) * 100) : null,
     showRate: tot.booked ? Math.round((tot.shown / tot.booked) * 100) : null,
     winRate: tot.leads ? Math.round((tot.won / tot.leads) * 100) : null,
@@ -6987,38 +6990,59 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                     <div className="u-detail-main">
                       {(() => { const wv = u.wonValue != null ? u.wonValue : u.revenue; const lv = u.lostValue || 0; const decided = wv + lv; const vwr = decided ? Math.round((wv / decided) * 100) : null; return (
                       <div className="u-val-cards">
-                        <div className="u-vc"><span>Total pipeline</span><b>{money(u.pipelineValue || 0)}</b><i>{fmtNumber(u.leads)} deals</i></div>
-                        <div className="u-vc open"><span>Open (live)</span><b>{money(u.openValue || 0)}</b><i>{fmtNumber(u.open)} deals still in play</i></div>
-                        <div className="u-vc won"><span>Won</span><b>{money(wv)}</b><i>{fmtNumber(u.won)} deals</i></div>
-                        <div className="u-vc lost"><span>Lost</span><b>{money(lv)}</b><i>{fmtNumber(u.lost)} deals</i></div>
+                        <button type="button" className={`u-vc${statusView === 'all' ? ' on' : ''}`} onClick={() => setStatusView('all')}><span>Total pipeline</span><b>{money(u.pipelineValue || 0)}</b><i>{fmtNumber(u.leads)} deals</i></button>
+                        <button type="button" className={`u-vc open${statusView === 'open' ? ' on' : ''}`} onClick={() => setStatusView('open')}><span>Open (live)</span><b>{money(u.openValue || 0)}</b><i>{fmtNumber(u.open)} still in play</i></button>
+                        <button type="button" className={`u-vc won${statusView === 'won' ? ' on' : ''}`} onClick={() => setStatusView('won')}><span>Won</span><b>{money(wv)}</b><i>{fmtNumber(u.won)} deals</i></button>
+                        <button type="button" className={`u-vc lost${statusView === 'lost' ? ' on' : ''}`} onClick={() => setStatusView('lost')}><span>Lost</span><b>{money(lv)}</b><i>{fmtNumber(u.lost)} deals</i></button>
                         <div className="u-vc vwr" title="Won value ÷ (won + lost value) - win rate weighted by deal size, so a few big wins/losses aren't hidden by the count-based win %."><span>Value win rate</span><b>{vwr == null ? '-' : `${vwr}%`}</b><i>of decided value</i></div>
                       </div>) })()}
+                      <div className="u-stage-hint">Showing <b>{statusView === 'all' ? 'all statuses' : statusView}</b> below · click a card to switch</div>
                       {u._agg && aggUsersSorted.filter((x) => x.leads > 0).length > 1 && <div className="u-fn-legend">{aggUsersSorted.filter((x) => x.leads > 0).map((x) => <span key={x.id} className="u-fn-leg"><i style={{ background: userColorMap[x.id] }} />{x.name}</span>)}</div>}
                       <div className="u-funnel">
                         <div className="u-fn-head"><span /><span>reached</span><span title="Conversion from the previous stage">step</span><span title="Conversion from all leads">total</span></div>
                         {(stageCols.length ? [['Leads', u.leads], ...stageCols.map((s) => [s, (u.stages && u.stages[s]) || 0]), ['Won', u.won]] : [['Leads', u.leads], ['Booked', u.booked], ['Shown', u.shown], ['Won', u.won]]).map(([lbl, n], i, arr) => {
-                          const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null
+                          const max = Math.max(1, u.leads); const prev = i > 0 ? arr[i - 1][1] : null; const isWonRow = lbl === 'Won'
                           let track
                           if (u._agg) {
                             const acc = lbl === 'Leads' ? (x) => x.leads : lbl === 'Won' ? (x) => x.won : lbl === 'Booked' ? (x) => x.booked : lbl === 'Shown' ? (x) => x.shown : (x) => (x.stages && x.stages[lbl]) || 0
                             const segs = aggUsersSorted.map((x) => ({ id: x.id, name: x.name, value: acc(x), color: userColorMap[x.id] })).filter((s) => s.value > 0)
-                            track = <span className="u-fn-track u-fn-stack">{segs.map((s) => <span key={s.id} className="u-fn-seg" title={`${s.name}: ${fmtNumber(s.value)}`} style={{ width: `${(s.value / max) * 100}%`, background: s.color }} />)}<span className="u-fn-stack-n">{fmtNumber(n)}</span></span>
+                            track = <span className="u-fn-track u-fn-stack">{segs.map((s) => <span key={s.id} className="u-fn-seg" title={`${s.name}: ${fmtNumber(s.value)}`} style={{ width: `${(s.value / max) * 100}%`, background: isWonRow ? '#12b886' : s.color }} />)}<span className="u-fn-stack-n">{fmtNumber(n)}</span></span>
                           } else {
-                            track = <span className="u-fn-track"><span className="u-fn-fill" style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span>
+                            track = <span className="u-fn-track"><span className={'u-fn-fill' + (isWonRow ? ' won' : '')} style={{ width: `${Math.max(5, (n / max) * 100)}%` }}>{fmtNumber(n)}</span></span>
                           }
-                          return <div className="u-fn-row" key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span>{track}<span className="u-fn-rate" title="vs previous stage">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span><span className="u-fn-tot" title="vs all leads">{u.leads ? `${Math.round((n / u.leads) * 100)}%` : ''}</span></div>
+                          return <div className={'u-fn-row' + (isWonRow ? ' won' : '')} key={lbl}><span className="u-fn-lab" title={lbl}>{lbl}</span>{track}<span className="u-fn-rate" title="vs previous stage">{prev == null ? '' : prev ? `${Math.round((n / prev) * 100)}%` : ''}</span><span className="u-fn-tot" title="vs all leads">{u.leads ? `${Math.round((n / u.leads) * 100)}%` : ''}</span></div>
                         })}
                       </div>
-                      {u.openDeals && u.openDeals.length > 0 && (() => {
-                        const byStage = {}
-                        for (const dl of u.openDeals) { const g = byStage[dl.stage] || { open: 0, value: 0, deals: [] }; g.open++; g.value += dl.value; g.deals.push(dl); byStage[dl.stage] = g }
-                        const rows = Object.entries(byStage).sort((a, b) => ((stageRank[a[0]] != null ? stageRank[a[0]] : 9999) - (stageRank[b[0]] != null ? stageRank[b[0]] : 9999)))
-                        return <div className="u-open-panel">
-                          <div className="cap" style={{ fontWeight: 700, margin: '2px 0 5px' }}>Open pipeline by stage <span style={{ fontWeight: 400 }}>· {fmtNumber(u.open)} live · {money(u.openValue || 0)} · click a stage to see the deals</span></div>
-                          <div className="u-open-rows">{rows.map(([stage, g]) => <button key={stage} className="u-open-row" onClick={() => { setDrillUser('all'); setDrill({ name: u.name, stage, deals: g.deals }) }}><span className="u-open-st" title={stage}>{stage}</span><span className="u-open-n"><b>{fmtNumber(g.open)}</b> open</span><span className="u-open-v">{money(g.value)}</span><span className="u-open-go">→</span></button>)}</div>
+                      {(() => {
+                        const rank = (s) => (stageRank[s] != null ? stageRank[s] : 9999)
+                        const groupBy = (list) => { const m = {}; for (const dl of (list || [])) { const g = m[dl.stage] || { n: 0, value: 0, deals: [] }; g.n++; g.value += dl.value; g.deals.push(dl); m[dl.stage] = g } return Object.entries(m).sort((a, b) => rank(a[0]) - rank(b[0])) }
+                        if (statusView === 'all') {
+                          const stages = {}
+                          const add = (list, key) => { for (const dl of (list || [])) { const g = stages[dl.stage] || { open: 0, won: 0, lost: 0, deals: { open: [], won: [], lost: [] } }; g[key]++; g.deals[key].push(dl); stages[dl.stage] = g } }
+                          add(u.openDeals, 'open'); add(u.wonDeals, 'won'); add(u.lostDeals, 'lost')
+                          const rows = Object.entries(stages).sort((a, b) => rank(a[0]) - rank(b[0]))
+                          if (!rows.length) return <div className="u-stage-panel"><div className="cap u-stage-h">Pipeline by stage</div><p className="cap u-stage-empty">No deals with a stage for this rep in range.</p></div>
+                          return <div className="u-stage-panel sv-all">
+                            <div className="cap u-stage-h">Pipeline by stage <span>· open · won · lost per stage · click a number to see those deals</span></div>
+                            <div className="u-stage-rows">{rows.map(([stage, g]) => <div key={stage} className="u-stage-row allrow">
+                              <span className="u-stage-name" title={stage}>{stage}</span>
+                              <button type="button" className="u-chip open" disabled={!g.open} onClick={() => { setDrillUser('all'); setDrill({ name: u.name, stage, status: 'open', deals: g.deals.open }) }}><b>{fmtNumber(g.open)}</b> open</button>
+                              <button type="button" className="u-chip won" disabled={!g.won} onClick={() => { setDrillUser('all'); setDrill({ name: u.name, stage, status: 'won', deals: g.deals.won }) }}><b>{fmtNumber(g.won)}</b> won</button>
+                              <button type="button" className="u-chip lost" disabled={!g.lost} onClick={() => { setDrillUser('all'); setDrill({ name: u.name, stage, status: 'lost', deals: g.deals.lost }) }}><b>{fmtNumber(g.lost)}</b> lost</button>
+                            </div>)}</div>
+                          </div>
+                        }
+                        const list = statusView === 'won' ? u.wonDeals : statusView === 'lost' ? u.lostDeals : u.openDeals
+                        const rows = groupBy(list)
+                        const label = statusView === 'won' ? 'Won by stage' : statusView === 'lost' ? 'Lost / abandoned by stage' : 'Open pipeline by stage'
+                        if (!rows.length) return <div className={`u-stage-panel sv-${statusView}`}><div className="cap u-stage-h">{label}</div><p className="cap u-stage-empty">No {statusView} deals for this rep in range.</p></div>
+                        const totN = rows.reduce((a, [, g]) => a + g.n, 0), totV = rows.reduce((a, [, g]) => a + g.value, 0)
+                        return <div className={`u-stage-panel sv-${statusView}`}>
+                          <div className="cap u-stage-h">{label} <span>· {fmtNumber(totN)} {statusView} · {money(totV)} · click a stage to see the deals</span></div>
+                          <div className="u-stage-rows">{rows.map(([stage, g]) => <button type="button" key={stage} className={`u-stage-row ${statusView}`} onClick={() => { setDrillUser('all'); setDrill({ name: u.name, stage, status: statusView, deals: g.deals }) }}><span className="u-stage-name" title={stage}>{stage}</span><span className="u-stage-n"><b>{fmtNumber(g.n)}</b> {statusView}</span><span className="u-stage-v">{money(g.value)}</span><span className="u-stage-go">→</span></button>)}</div>
                         </div>
                       })()}
-                      <p className="caveat" style={{ marginTop: 8 }}>Reached is cumulative (a later stage counts the earlier ones). Open pipeline = deals sitting at each stage right now, still in play (not won/lost) - click a stage to drill into the individual live deals.</p>
+                      <p className="caveat" style={{ marginTop: 8 }}>Funnel: reached is cumulative (a later stage counts the earlier ones). The by-stage panel below follows the card you select - <b>Open</b> = where live deals are sitting, <b>Won</b> = the stage each win closed at, <b>Lost</b> = where lost/abandoned deals died - click a stage (or a number) to drill into those deals.</p>
                     </div>
                     <div className="u-detail-side">
                       {u.lostReasons && u.lostReasons.length > 0 && <div className="u-lost">
@@ -7056,7 +7080,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
         const showPipe = shown.some((x) => x.pipeline !== (shown[0] && shown[0].pipeline))
         return <div className="modal-bg" onClick={() => setDrill(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(1080px, 96vw)', maxWidth: 'none' }}>
-            <div className="m-head"><div><h3 style={{ margin: 0 }}>Open deals - {drill.stage}</h3><span className="cap">{drill.name} · {fmtNumber(shown.length)} live · {money(shown.reduce((s, d) => s + d.value, 0))}</span></div><button className="icon-btn" onClick={() => setDrill(null)}>✕</button></div>
+            <div className="m-head"><div><h3 style={{ margin: 0 }}>{drill.status === 'won' ? 'Won deals' : drill.status === 'lost' ? 'Lost / abandoned deals' : 'Open deals'} - {drill.stage}</h3><span className="cap">{drill.name} · {fmtNumber(shown.length)} {drill.status === 'won' ? 'won' : drill.status === 'lost' ? 'lost' : 'live'} · {money(shown.reduce((s, d) => s + d.value, 0))}</span></div><button className="icon-btn" onClick={() => setDrill(null)}>✕</button></div>
             <div className="m-body">
               {multi && <div className="chan-toggle u-drill-tabs"><button className={drillUser === 'all' ? 'on' : ''} onClick={() => setDrillUser('all')}>All ({fmtNumber(drill.deals.length)})</button>{repTabs.map((nm) => <button key={nm} className={drillUser === nm ? 'on' : ''} onClick={() => setDrillUser(nm)}>{nm} ({fmtNumber(drill.deals.filter((x) => x.user === nm).length)})</button>)}</div>}
               <div className="table-wrap"><table className="mini-tbl u-drill-tbl">
@@ -7064,7 +7088,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                 <thead><tr><th className="lft">Opportunity</th><th className="lft">Contact</th><th>Value</th><th>Days in stage</th></tr></thead>
                 <tbody>{shown.slice().sort((a, b) => b.value - a.value).map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe={showPipe} />)}</tbody>
               </table></div>
-              <p className="caveat">Live opportunities currently sitting at this stage (not won/lost), highest value first. <b>Days in stage</b> = time since the deal last moved (amber = 30+ days, likely stalled). <b>Click a deal to read its Caalano Systems notes</b> - the context on why it may be stuck.</p>
+              <p className="caveat">{drill.status === 'won' ? 'Deals won at this stage' : drill.status === 'lost' ? 'Deals lost / abandoned at this stage' : 'Live opportunities currently sitting at this stage (not won/lost)'}, highest value first. <b>Days in stage</b> = time since the deal last moved{drill.status === 'won' || drill.status === 'lost' ? '' : ' (amber = 30+ days, likely stalled)'}. <b>Click a deal to read its Caalano Systems notes.</b></p>
             </div>
           </div>
         </div>
@@ -7212,16 +7236,15 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // Build this client's tab set, then narrow it to what the viewer is allowed to
   // see (admins/users: everything). curTab keeps a hidden tab from being active.
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
+  // Tab order: ad platforms first (Meta / Google / Analytics), then the CRM tabs
+  // (Cohorts → Users → Call Reporting → Forms → Location → Appointments → Timing).
+  // Each is still gated on the client actually having that source connected, so a
+  // CRM-only client shows no empty ad tab and vice-versa.
   const allTabs = [{ id: 'overall', label: 'Caalano360' }]
-  if (cfg.ghl) allTabs.push({ id: 'users', label: 'Users' })
-  // Only offer a Meta / Google tab when the client actually has that ad account
-  // connected - otherwise a CRM-only client shows an empty ad tab. (Meta was
-  // previously added unconditionally, which is why it appeared with no data.)
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
-  // Analytics (GA4) tab - only when the client has a GA4 property linked in Settings.
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calls', label: 'Call Reporting' }, { id: 'timing', label: 'Timing' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
@@ -9105,10 +9128,10 @@ function AcceptInvite({ token, onSignedIn }) {
 }
 // Team & access manager, shown inside Settings for admins.
 const TAB_OPTIONS = [
-  { id: 'overall', label: 'Caalano360' }, { id: 'users', label: 'Users' }, { id: 'meta', label: 'Meta Ads' },
-  { id: 'google', label: 'Google Ads' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' },
-  { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calls', label: 'Call Reporting' }, { id: 'timing', label: 'Timing' },
-  { id: 'optlog', label: 'Optimisation Log' },
+  { id: 'overall', label: 'Caalano360' }, { id: 'meta', label: 'Meta Ads' }, { id: 'google', label: 'Google Ads' },
+  { id: 'analytics', label: 'Analytics' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' },
+  { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
+  { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' }, { id: 'optlog', label: 'Optimisation Log' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>

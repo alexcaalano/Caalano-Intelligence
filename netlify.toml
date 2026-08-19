@@ -12,6 +12,17 @@
   for = "/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet, noimageindex"
+    # Clickjacking: don't allow the dashboard to be framed by other origins.
+    X-Frame-Options = "SAMEORIGIN"
+    # Stop MIME-sniffing responses into executable types.
+    X-Content-Type-Options = "nosniff"
+    # Send only the origin (never the path/query, which carries ?c=<clientId>) to
+    # other sites - so ad-thumbnail / embed requests can't leak client ids.
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # Force HTTPS for two years (Netlify already serves HTTPS).
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+    # This tool uses none of these device APIs - deny them outright.
+    Permissions-Policy = "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
 
 # Always revalidate the HTML so a new deploy's hashed bundle is picked up
 # immediately; the hashed assets themselves can cache forever.

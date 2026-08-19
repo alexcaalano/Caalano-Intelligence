@@ -3,8 +3,10 @@
 // over HTTP). Visit /.netlify/functions/health-snapshot-now to compute today's
 // trailing-30-day health point for every client immediately.
 import { runHealthSnapshots } from './windsor.mjs'
+import { requireOpsAdmin } from '../lib/auth.mjs'
 
-export default async () => {
+export default async (req) => {
+  const deny = await requireOpsAdmin(req); if (deny) return deny
   try { return Response.json(await runHealthSnapshots()) }
   catch (e) { return Response.json({ ok: false, error: String((e && e.message) || e).slice(0, 300) }, { status: 500 }) }
 }

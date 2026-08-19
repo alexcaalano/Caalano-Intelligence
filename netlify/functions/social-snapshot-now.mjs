@@ -3,8 +3,10 @@
 // to capture today's metrics for every connected client immediately; the first
 // run per client also backfills ~90 days of whatever the API still returns.
 import { runSocialSnapshots } from './windsor.mjs'
+import { requireOpsAdmin } from '../lib/auth.mjs'
 
-export default async () => {
+export default async (req) => {
+  const deny = await requireOpsAdmin(req); if (deny) return deny
   try { return Response.json(await runSocialSnapshots()) }
   catch (e) { return Response.json({ ok: false, error: String((e && e.message) || e).slice(0, 300) }, { status: 500 }) }
 }

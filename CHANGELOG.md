@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.278.0 - 2026-08-18 · `PENDING` - Security hardening pass
+- **Security headers** added site-wide (netlify.toml): `X-Frame-Options: SAMEORIGIN` (anti-clickjacking),
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security`
+  (2-yr HSTS), and a `Permissions-Policy` denying geolocation/camera/mic/payment/USB (the app uses none).
+- **Owner-only ops endpoints locked down.** The on-demand `opp-warm-now`, `health-snapshot-now`, `social-snapshot-now`
+  and `settings-backup-now` endpoints now require a **superadmin** session (new `requireOpsAdmin` guard). Previously any
+  authenticated user - including a client/viewer - could trigger agency-wide work or the GitHub settings backup. (Legacy
+  single-password mode is unchanged: still behind the shared-password gate.)
+- **Dependency fix:** bumped the transitive DOMPurify to a patched version (moderate XSS advisory). Production audit is
+  now clean; the only remaining advisories are dev-only build tooling that never ships.
+- **`.gitignore`** now excludes `.env*` so local secrets can never be accidentally committed.
+- No change to the core model, which was already sound: every function is behind the edge auth gate, `windsor` re-checks
+  role + client access per request, passwords are PBKDF2-salted with timing-safe compare, sessions are HMAC-signed
+  HttpOnly/Secure/SameSite cookies, no secrets are shipped to the browser, and the `client` param can only resolve to a
+  known location (no SSRF).
+
 ## v3.277.0 - 2026-08-18 · `PENDING` - Kill the /opportunities/search 429 storms (scheduled warmer)
 - **Root cause from the reliability log:** nearly every failure was `GET /opportunities/search 429`. Many scopes
   (users, ccdrill, speed, appts, forms, health) each page that endpoint, and when they fire as concurrent cold

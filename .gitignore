@@ -3,3 +3,7 @@ dist/
 .DS_Store
 *.log
 .netlify/
+# Secrets - never commit local env files (WINDSOR_API_KEY, AUTH_SECRET, GHL tokens…)
+.env
+.env.*
+!.env.example

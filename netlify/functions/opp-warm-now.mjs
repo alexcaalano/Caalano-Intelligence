@@ -3,8 +3,10 @@
 // /.netlify/functions/opp-warm-now to warm every CRM client's opportunity snapshot
 // immediately and see how many opps each holds.
 import { runOppWarm } from './windsor.mjs'
+import { requireOpsAdmin } from '../lib/auth.mjs'
 
-export default async () => {
+export default async (req) => {
+  const deny = await requireOpsAdmin(req); if (deny) return deny
   try { return Response.json(await runOppWarm()) }
   catch (e) { return Response.json({ ok: false, error: String((e && e.message) || e).slice(0, 300) }, { status: 500 }) }
 }

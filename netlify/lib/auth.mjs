@@ -355,3 +355,17 @@ export async function currentUser(req, secret) {
   if (!u || u.status !== 'active') return null
   return publicUser(u)
 }
+
+// HTTP guard for owner-only ops endpoints (the on-demand warmers / backup twins).
+// When multi-user auth is on, require a superadmin session so a logged-in staff
+// member or client can't trigger agency-wide work or external side effects. In
+// legacy single-password mode the shared-password edge gate already restricts
+// access, so we allow through. Returns a Response to send on denial, or null to
+// proceed.
+export async function requireOpsAdmin(req) {
+  const secret = process.env.AUTH_SECRET
+  if (!secret) return null // legacy mode: already behind the shared-password edge gate
+  const me = await currentUser(req, secret).catch(() => null)
+  if (me && me.role === 'superadmin') return null
+  return new Response(JSON.stringify({ error: 'Forbidden - superadmin only.' }), { status: 403, headers: { 'content-type': 'application/json' } })
+}

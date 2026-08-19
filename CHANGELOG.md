@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.302.0 - 2026-08-19 · `PENDING` - Custom conversions now count in the headline Results (Meta tab, Monthly Report)
+- **Custom-conversion primaries now count toward Results everywhere**, not just in Settings. The Meta tab's Results KPI,
+  the campaign table, and the Monthly Report's Meta slide add each configured custom PRIMARY conversion's real count (from
+  Windsor's Custom Conversions table) - per campaign and to the account total - on top of the standard results. Example
+  (Nexia, Aug): `CD_12_Page_View_A` went from **0 → its A_event_pageview count**, and the account Results total now
+  includes A_event_pageview instead of dropping it. Add-only and scoped to clients with a custom-conversion primary, so no
+  other client's numbers change, and (because the insights value for a custom field is always 0) it can never double-count.
+  *Re-refresh a Monthly Report snapshot to pick it up.* (Daily Performance uses a separate per-day builder and is the next
+  step.)
+
 ## v3.301.0 - 2026-08-19 · `PENDING` - Custom conversions now count (Windsor Custom Conversions table); Logs load robustly; Creative Curator hidden
 - **Custom Meta conversions now show their real count** (Settings → Meta conversions). They were always reading 0 because
   the app asked Windsor for per-id insights columns (`conversions_offsite_conversion_custom_<id>`) that Windsor doesn't

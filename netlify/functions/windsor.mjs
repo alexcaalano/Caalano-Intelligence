@@ -167,11 +167,11 @@ const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 // table for one account and returns { total, perCamp } name→count maps. Both the
 // friendly name ("A_event_pageview") and Meta's action-type name
 // ("offsite_conversion_custom_<id>") appear as rows, so callers can look up by either.
-async function fetchCustomConvCounts(cc, from, to, key, byCampaign = false) {
-  if (!cc || !cc.meta) return { total: new Map(), perCamp: new Map(), spendByCamp: new Map() }
+async function fetchCustomConvCounts(cc, from, to, key, byCampaign = false, preset = null) {
+  if (!cc || !cc.meta) return { total: new Map(), perCamp: new Map() }
   const flds = ['account_id', 'custom_conversion_action_name', 'custom_conversion_action_count']
   if (byCampaign) flds.splice(1, 0, 'campaign')
-  const rows = (await windsorFetch('facebook', flds, from, to, null, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+  const rows = (await windsorFetch('facebook', flds, from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
   const total = new Map(); const perCamp = new Map()
   for (const r of rows) {
     const nm = String(r.custom_conversion_action_name || '').trim().toLowerCase(); if (!nm) continue
@@ -192,6 +192,12 @@ function ccActionName(fieldId) {
   return null
 }
 const isCustomConvField = (f) => ccActionName(f) != null
+// Human label for a custom-conversion field id. cc:<name> keeps the name; a legacy
+// insights-style id has no friendly name to recover, so fall back to a generic.
+function ccLabel(fieldId) {
+  const m = String(fieldId || '').match(/^cc:(.+)$/i)
+  return m ? m[1].trim() : 'Custom conversion'
+}
 // Auto-detect a row's result field + Ads-Manager-style label from its ad set
 // optimisation goal + destination + promoted object. Returns null when it can't
 // be resolved (e.g. a custom conversion), so the caller falls back to the
@@ -568,6 +574,32 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   ])
   const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra)
   roll.prev = metaTotals(prevRows)
+  // Custom-conversion RESULTS injection. Windsor serves custom conversions only via
+  // its separate Custom Conversions table, so they never reach the insights rollup
+  // above (every custom field reads 0 there). For a client whose configured PRIMARY
+  // includes a custom conversion, add that conversion's real count - per campaign and
+  // to the account total - on top of the standard results, honouring the Settings
+  // promise "headline = the sum of every primary you tick". Add-only: since the
+  // insights value for a custom field is always 0, this can never double-count.
+  const ccPrimary = ((fallback && fallback.fields) || []).filter(isCustomConvField)
+  if (ccPrimary.length) {
+    try {
+      const { total, perCamp } = await fetchCustomConvCounts({ meta: accountId }, from, to, key, true, preset)
+      const sumFor = (m) => ccPrimary.reduce((s, f) => { const an = ccActionName(f); return s + (an && m ? (m.get(an) || 0) : 0) }, 0)
+      const addTotal = sumFor(total)
+      if (addTotal > 0) {
+        const bd = { ...(Object.fromEntries((roll.totals.resultBreakdown || []).map((b) => [b.label, b.count]))) }
+        for (const f of ccPrimary) { const an = ccActionName(f); const c = an ? (total.get(an) || 0) : 0; if (c > 0) { const lab = ccLabel(f); bd[lab] = (bd[lab] || 0) + c } }
+        roll.totals.results = (roll.totals.results || 0) + addTotal
+        roll.totals.resultBreakdown = Object.entries(bd).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
+        roll.totals.costPerResult = roll.totals.results ? Math.round((roll.totals.spend / roll.totals.results) * 100) / 100 : null
+      }
+      for (const c of roll.campaigns || []) {
+        const add = sumFor(perCamp.get(c.name))
+        if (add > 0) { c.results = (c.results || 0) + add; c.costPerResult = c.results ? Math.round((c.spend / c.results) * 100) / 100 : null }
+      }
+    } catch { /* leave standard results unchanged on any failure */ }
+  }
   roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name || null, ad: r.ad_name || null, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && (r.ad || r.campaign))
   roll.adDailyLevel = bigWin ? 'campaign' : 'ad'
   return roll

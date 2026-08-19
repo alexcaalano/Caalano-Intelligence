@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.303.0 - 2026-08-19 · `PENDING` - Caalano360 Channel split now breaks out per pipeline
+- **Channel split splits per pipeline for multi-pipeline clients** - no more duplicated key-event columns (e.g. "15 Minute
+  Call" / "Payment Collected" appearing twice). Each pipeline gets its own Meta/Google table with only that pipeline's key
+  events, plus its per-channel leads/won/revenue/avg-deal (from the CRM's per-pipeline channel split). Each channel's spend
+  is allocated to a pipeline by its share of that channel's leads (there's no native per-pipeline spend), and CAC follows.
+  Single-pipeline clients keep the one account-wide table. Backend `buildCcDrill` now exposes `pipeContribution`.
+
 ## v3.302.0 - 2026-08-19 · `PENDING` - Custom conversions now count in the headline Results (Meta tab, Monthly Report)
 - **Custom-conversion primaries now count toward Results everywhere**, not just in Settings. The Meta tab's Results KPI,
   the campaign table, and the Monthly Report's Meta slide add each configured custom PRIMARY conversion's real count (from

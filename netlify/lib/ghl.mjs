@@ -2500,6 +2500,9 @@ export async function buildCcDrill(locationId, from, to, channel) {
     bookingByCalendar,
     closeByChannel: closeArr,
     pipelinesFunnel,
+    // Per-pipeline leads/won/revenue with a Meta/Google/other split, so the
+    // Channel split can break out per pipeline (not just account-wide by channel).
+    pipeContribution,
     wonByChannel: { paidWon, metaWon, googleWon },
   }
 }

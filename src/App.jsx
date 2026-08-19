@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.302.0'
+const APP_VERSION = '3.303.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4160,6 +4160,30 @@ function channelKeyEvents(cc, clientId) {
   return { labels, meta: countsFor('meta'), google: countsFor('google') }
 }
 
+// Per-pipeline version of channelKeyEvents: one entry per pipeline, each with its
+// OWN key events (scoped via keyEventsForPipe, so no duplicated columns across
+// pipelines) and per-channel counts. Used to split the Channel-split table by
+// pipeline for multi-pipeline clients.
+function channelKeyEventsByPipe(cc, clientId) {
+  const pipes = (cc && cc.pipelinesFunnel) || []
+  const keList = clientId ? loadKeyEvents(clientId) : []
+  if (!keList.length || !pipes.length) return []
+  const contrib = new Map(((cc && cc.pipeContribution) || []).map((p) => [p.id, p]))
+  return pipes.map((p) => {
+    const pc = contrib.get(p.id)
+    const wonByCh = { meta: (pc && pc.chan && pc.chan.meta.won) || 0, google: (pc && pc.chan && pc.chan.google.won) || 0 }
+    const kev = keyEventsForPipe(keList, p.id)
+    const rowsFor = (chanKey) => {
+      const cp = [{ ...p, stages: (p.stages || []).map((s) => ({ ...s, count: chanKey === 'all' ? (s.count || 0) : (s[chanKey] || 0) })) }]
+      return keyEventRows(kev, reachedByStage(cp), new Map(), stagePosMap(cp), chanKey === 'all' ? undefined : (wonByCh[chanKey] || 0))
+    }
+    const allRows = rowsFor('all')
+    const labels = allRows.map((r) => ({ label: r.label, kind: r.kind }))
+    const countsFor = (ck) => { const bl = new Map(rowsFor(ck).map((r) => [r.label, r.count])); return labels.map((l) => bl.get(l.label) || 0) }
+    return { pipeId: p.id, name: p.name, labels, meta: countsFor('meta'), google: countsFor('google') }
+  }).filter((x) => x.labels.length)
+}
+
 // One open deal in the bottleneck's open-by-stage list - shows the assigned rep
 // + lead source, and expands on click to that contact's Caalano Systems notes.
 function BnDealRow({ d, clientId, money }) {
@@ -4871,30 +4895,68 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           const ch = h.channels || {}
           const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
           if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
+          const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
+          const renderTable = (evLabels, rows) => (
+            <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+              <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th></tr></thead>
+              <tbody>{rows.map((r) => (
+                <tr key={r.key}>
+                  <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
+                  <td>{money(r.spend)}</td>
+                  <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
+                  {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
+                  <td>{fmtNumber(r.won)}</td>
+                  <td>{money(r.revenue)}</td>
+                  <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
+                  <td>{r.cac != null ? money(Math.round(r.cac)) : '-'}</td>
+                  <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          )
+          const pipesN = ((cc && cc.pipelinesFunnel) || []).length
+          // Multi-pipeline: one Channel-split table per pipeline, each with that
+          // pipeline's own key events (no duplicated columns) + its per-channel
+          // leads/won/revenue (from pipeContribution). Spend is allocated to each
+          // pipeline by its share of that channel's leads (no per-pipeline spend
+          // exists natively). Close% needs per-pipeline lost-by-channel, which we
+          // don't carry, so it shows "-" here.
+          if (pipesN > 1) {
+            const byPipe = channelKeyEventsByPipe(cc, clientId)
+            if (!byPipe.length) return <div className="cap">No key events configured for these pipelines.</div>
+            const contrib = new Map(((cc && cc.pipeContribution) || []).map((p) => [p.id, p]))
+            const totMeta = [...contrib.values()].reduce((s, p) => s + ((p.chan && p.chan.meta.leads) || 0), 0)
+            const totGoogle = [...contrib.values()].reduce((s, p) => s + ((p.chan && p.chan.google.leads) || 0), 0)
+            return <>
+              <p className="cap" style={{ marginTop: 0 }}>Split by pipeline · each channel's spend is allocated to a pipeline by its share of that channel's leads.</p>
+              {byPipe.map((pk) => {
+                const pc = contrib.get(pk.pipeId)
+                const mk = (key, label, ke, adSpendTot, leadTot) => {
+                  const cch = (pc && pc.chan && pc.chan[key]) || { leads: 0, won: 0, revenue: 0 }
+                  const spend = leadTot ? adSpendTot * ((cch.leads || 0) / leadTot) : 0
+                  const won = cch.won || 0, revenue = cch.revenue || 0
+                  return { key, label, spend, leads: cch.leads || 0, ke, won, revenue, closeRate: null, cac: won ? spend / won : null, avgDeal: won ? revenue / won : null }
+                }
+                const rows = [
+                  mk('meta', 'Meta', pk.meta, ch.metaSpend || 0, totMeta),
+                  mk('google', 'Google', pk.google, ch.googleSpend || 0, totGoogle),
+                ]
+                return <div key={pk.pipeId} style={{ marginTop: 12 }}>
+                  <div className="cc-pipe-lab"><span className="c360-dot" /> {pk.name}</div>
+                  {renderTable(pk.labels, rows)}
+                </div>
+              })}
+            </>
+          }
+          // Single-pipeline (or none): account-wide table by channel.
           const cbc = {}; for (const c of ((cc && cc.closeByChannel) || [])) cbc[c.channel] = c
           const cke = channelKeyEvents(cc, clientId)
           const evLabels = cke ? cke.labels : []
-          const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
           const rows = [
             { key: 'meta', label: 'Meta', spend: ch.metaSpend || 0, adLeads: ch.metaLeads || 0, ke: cke ? cke.meta : [] },
             { key: 'google', label: 'Google', spend: ch.googleSpend || 0, adLeads: ch.googleConv || 0, ke: cke ? cke.google : [] },
           ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, leads: c.leads || 0, won, revenue, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
-          return <div className="tbl-scroll"><table className="mini-tbl users-tbl">
-            <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th></tr></thead>
-            <tbody>{rows.map((r) => (
-              <tr key={r.key}>
-                <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
-                <td>{money(r.spend)}</td>
-                <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
-                {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
-                <td>{fmtNumber(r.won)}</td>
-                <td>{money(r.revenue)}</td>
-                <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
-                <td>{r.cac != null ? money(Math.round(r.cac)) : '-'}</td>
-                <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>
+          return renderTable(evLabels, rows)
         })()}
       </div>
 

@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.283.0 - 2026-08-18 · `PENDING` - PDF export back to standard A4 (landscape)
+- **PDF now exports as standard A4** (landscape), so it prints and shares like a normal document. Each slide is fit to
+  the full page width (kept readable - not shrunk to cram a tall slide onto one page). A slide that fits sits on one page
+  centred vertically; a taller slide (e.g. the big creative table) flows across as many A4 pages as it needs, with every
+  page break snapped to a block-level edge (row / card / section) so nothing is sliced mid-content. Landscape chosen over
+  portrait because the slides are wide - it keeps text larger. (Supersedes the dynamic per-slide page heights, which
+  weren't a standard paper size.)
+
 ## v3.282.0 - 2026-08-18 · `PENDING` - PDF: one page per slide, sized to content; per-client download
 - **Each PDF page is now sized to its slide** - fixed width, natural height, one page per slide. No shrinking, no
   content sliced mid-row/card, and **no trailing white space** (the page ends where the card ends). The cover's tall

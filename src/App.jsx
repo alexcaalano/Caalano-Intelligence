@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.282.0'
+const APP_VERSION = '3.283.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10364,51 +10364,49 @@ function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
 // Exports via native print (Save-as-PDF) and a direct jsPDF download.
 // ---------------------------------------------------------------------------
 
-// PDF export: ONE page per slide, each page sized to that slide's content - fixed
-// width, natural height. Nothing is shrunk to fit and nothing is cut mid-content,
-// and there's no trailing white space (the page ends where the card ends). A slide
-// taller than the PDF page limit (rare) is split at element edges as a fallback.
-const PDF_PAGE_W = 900 // pt - consistent page width; height follows each slide
-const PDF_MAX_H = 14000 // pt - PDF hard limit is 14400
+// PDF export: standard A4 landscape pages. Each slide is fit to the full page WIDTH
+// (kept readable, never shrunk to fit a whole tall slide onto one page). A slide that
+// fits within one page is centred vertically; a taller slide flows across as many A4
+// pages as it needs, with every page break snapped to a block-level element edge (row
+// / card / section) so nothing is sliced through the middle.
+const A4L_W = 842, A4L_H = 595 // A4 landscape, points
 async function exportSlidesToPdf(slides, fileName) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
   const bg = getComputedStyle(document.body).backgroundColor || '#ffffff'
   const buf = document.createElement('canvas'); const bctx = buf.getContext('2d')
-  let pdf = null
-  const addPage = (w, h) => {
-    if (!pdf) pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'pt', format: [w, h] })
-    else pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait')
-  }
+  let started = false
+  const page = () => { if (started) pdf.addPage('a4', 'landscape'); started = true }
   for (const el of slides) {
     const top = el.getBoundingClientRect().top
     const canvas = await html2canvas(el, { scale: 2, backgroundColor: bg, useCORS: true, logging: false })
-    const fit = PDF_PAGE_W / canvas.width // px -> pt
+    const fit = A4L_W / canvas.width // canvas px -> pt at full page width
     const fullH = canvas.height * fit
-    if (fullH <= PDF_MAX_H) {
-      // Common case: the whole slide is one page, exactly its own height.
-      addPage(PDF_PAGE_W, fullH)
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, PDF_PAGE_W, fullH)
+    if (fullH <= A4L_H + 1) {
+      // Fits one page: place at full width, centred vertically.
+      page()
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, (A4L_H - fullH) / 2, A4L_W, fullH)
       continue
     }
-    // Fallback for an unusually long slide: split into <=max-height pages, breaking on
-    // block-level element edges (not inline text) so rows / cards aren't cut.
+    // Taller than a page: paginate. Break only at block-level element edges (not inline
+    // text), so table rows / cards aren't cut. Require each page to fill >=50% first.
     const factor = canvas.width / (el.offsetWidth || 1)
     const cutSet = new Set([canvas.height])
     el.querySelectorAll('*').forEach((n) => { const r = n.getBoundingClientRect(); if (r.height < 14) return; const d = getComputedStyle(n).display; if (d === 'inline' || d === 'none') return; cutSet.add(Math.round((r.bottom - top) * factor)) })
     const cuts = [...cutSet].filter((v) => v > 0 && v <= canvas.height).sort((a, b) => a - b)
-    const pageHpx = Math.floor(PDF_MAX_H / fit)
+    const pageHpx = Math.floor(A4L_H / fit) // source px that fill one A4 page
     let y = 0; buf.width = canvas.width
     while (y < canvas.height) {
       let end = Math.min(y + pageHpx, canvas.height)
-      if (end < canvas.height) { const safe = cuts.filter((c) => c > y + pageHpx * 0.35 && c <= end); if (safe.length) end = safe[safe.length - 1] }
+      if (end < canvas.height) { const safe = cuts.filter((c) => c > y + pageHpx * 0.5 && c <= end); if (safe.length) end = safe[safe.length - 1] }
       const h = end - y
       buf.height = h; bctx.fillStyle = bg; bctx.fillRect(0, 0, buf.width, h); bctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h)
-      addPage(PDF_PAGE_W, h * fit)
-      pdf.addImage(buf.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, PDF_PAGE_W, h * fit)
+      page()
+      pdf.addImage(buf.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, A4L_W, h * fit) // top-aligned
       y = end
     }
   }
-  if (pdf) pdf.save(fileName)
+  if (started) pdf.save(fileName)
 }
 
 // Bounds + label for a 'YYYY-MM' month string (UTC-safe).

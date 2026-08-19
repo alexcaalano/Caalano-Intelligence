@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.289.0'
+const APP_VERSION = '3.290.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10700,14 +10700,20 @@ function MRTrend({ trend, currency }) {
 // the same deck renderer as the agency Monthly Report, in continuous (scroll) view.
 function ClientReports({ clients, currency }) {
   const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  const [clientId, setClientId] = useState(list[0] ? list[0].id : '')
+  // Deep link: ?c= client, ?m= published report month - so a shared link opens
+  // straight onto that report.
+  const nav0 = readNavUrl()
+  const [clientId, setClientId] = useState((nav0.c && list.some((c) => c.id === nav0.c)) ? nav0.c : (list[0] ? list[0].id : ''))
   const client = list.find((c) => c.id === clientId) || list[0] || null
   const [months, setMonths] = useState(null) // [{ month, publishedAt }]
-  const [month, setMonth] = useState('')
+  const [month, setMonth] = useState(nav0.m || '')
+  const wantMonthRef = useRef(nav0.m || '') // honour the URL month on first load only
   const [canDownload, setCanDownload] = useState(false) // agency-controlled (server flag)
   const [st, setSt] = useState({ status: 'idle' })
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null)
+  const [copied, setCopied] = useState(false)
+  const copyLink = () => { try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ } }
   const deckRef = useRef(null)
   const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
   const n0 = (v) => (v == null || isNaN(v) ? '-' : fmtNumber(Math.round(v)))
@@ -10715,11 +10721,14 @@ function ClientReports({ clients, currency }) {
   useEffect(() => {
     if (!client) { setMonths(null); return }
     let alive = true; setMonths(null); setMonth('')
+    const want = wantMonthRef.current; wantMonthRef.current = '' // URL month applies to the first load only
     mrFetch(`scope=monthlysnap&client=${encodeURIComponent(client.id)}&list=1`)
-      .then((r) => { if (!alive) return; const ms = ((r && r.months) || []).map((x) => (typeof x === 'string' ? { month: x } : x)); setMonths(ms); setMonth(ms[0] ? ms[0].month : ''); setCanDownload(!!(r && r.downloadAllowed)) })
+      .then((r) => { if (!alive) return; const ms = ((r && r.months) || []).map((x) => (typeof x === 'string' ? { month: x } : x)); setMonths(ms); const pick = (want && ms.some((x) => x.month === want)) ? want : (ms[0] ? ms[0].month : ''); setMonth(pick); setCanDownload(!!(r && r.downloadAllowed)) })
       .catch(() => { if (alive) { setMonths([]); setCanDownload(false) } })
     return () => { alive = false }
   }, [clientId])
+  // Mirror client + report into the URL (the shareable deep link).
+  useEffect(() => { if (client && month) writeNavUrl({ v: 'reports', c: client.id, m: month }, false) }, [clientId, month])
   useEffect(() => {
     if (!client || !month) { setSt({ status: 'idle' }); return }
     let alive = true; setSt({ status: 'loading' })
@@ -10750,6 +10759,7 @@ function ClientReports({ clients, currency }) {
         </select>
         <div className="mr-bar-spacer" />
         {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString('en-AU')}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString('en-AU')}</span>}
+        {rep && <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this report">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>}
         {canDownload && <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>}
       </div>
       {months && !months.length && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No published reports yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>When your agency publishes a monthly report for {client ? client.name : 'your account'}, it will appear here.</p></div>}
@@ -10764,11 +10774,23 @@ function MonthlyReport({ clients, currency, authUser }) {
   useSettingsSync() // re-render when the client-download flag is toggled
   const canToggleDownload = isAdminishFE(authUser && authUser.role) // admin / super-admin only
   const list = (clients || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }))
-  const [clientId, setClientId] = useState(list[0] ? list[0].id : '')
+  // Seed client + report month from the URL (?c=&m=) so a shared link opens
+  // straight onto that client's report. m is a snapshot key: "2026-07" or a range
+  // "2026-05_2026-07".
+  const nav0 = readNavUrl()
+  const urlM = nav0.m && /^\d{4}-\d{2}(_\d{4}-\d{2})?$/.test(nav0.m) ? nav0.m : null
+  const [clientId, setClientId] = useState((nav0.c && list.some((c) => c.id === nav0.c)) ? nav0.c : (list[0] ? list[0].id : ''))
   const client = list.find((c) => c.id === clientId) || list[0] || null
-  const [fromMonth, setFromMonth] = useState(lastCompleteMonth())
-  const [toMonth, setToMonth] = useState(lastCompleteMonth())
+  const [fromMonth, setFromMonth] = useState(urlM ? urlM.split('_')[0] : lastCompleteMonth())
+  const [toMonth, setToMonth] = useState(urlM ? (urlM.includes('_') ? urlM.split('_')[1] : urlM.split('_')[0]) : lastCompleteMonth())
   const period = periodOf(fromMonth, toMonth)
+  // Mirror the selected client + report into the URL (replace, so it doesn't spam
+  // history) - this is the shareable deep link.
+  useEffect(() => { if (client) writeNavUrl({ v: 'monthly', c: client.id, m: period.key }, false) }, [clientId, period.key])
+  const [copied, setCopied] = useState(false)
+  const copyLink = () => {
+    try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ }
+  }
   const [st, setSt] = useState({ status: 'idle' }) // idle|loading|ok|err|empty ; {report, frozen}
   const [saved, setSaved] = useState(null) // {savedAt, savedBy, published, publishedAt, publishedBy, edited}
   const [busy, setBusy] = useState(false)
@@ -10891,6 +10913,7 @@ function MonthlyReport({ clients, currency, authUser }) {
           <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
         </div>
         {canToggleDownload && client && <button className={`mr-btn${clientDownloadOn(client.id) ? ' on' : ''}`} onClick={() => setClientDownload(client.id, !clientDownloadOn(client.id))} title={`Allow ${client.name} to download the PDF of their published reports. Off by default - per client.`}>{clientDownloadOn(client.id) ? `✓ ${client.name} PDF: On` : `⃠ ${client.name} PDF: Off`}</button>}
+        <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this client + report - share it and it opens right here">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>
         <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
         <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
         <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>
@@ -11298,8 +11321,31 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
   })), tsort)
   return (
     <>
+      <div className="mr-cre-sort no-print">
+        <span>Sort by</span>
+        <select className="mr-cre-sort-sel" value={sortK} onChange={(e) => pickMetric(e.target.value)}>
+          <optgroup label="Performance">
+            {METRICS.filter((x) => x.evLabel == null && x.costEvLabel == null).map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
+          </optgroup>
+          {evMetrics.length ? <optgroup label="Key event - volume reached">
+            {evMetrics.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
+          </optgroup> : null}
+          {costMetrics.length ? <optgroup label="Cheapest cost per event">
+            {costMetrics.map((x) => <option key={x.k} value={x.k}>Cost / {x.label}</option>)}
+          </optgroup> : null}
+        </select>
+        <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) - click for highest first' : 'Descending (highest first) - click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
+      </div>
+      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
+      {pages > 1 && (
+        <div className="mr-cre-pager no-print">
+          <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
+          <span>Page {cur + 1} / {pages} · {sorted.length} creatives · sorted by {m.label}</span>
+          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next ›</button>
+        </div>
+      )}
       {showTable && <>
-        <div className="mr-section-lab">Creative table</div>
+        <div className="mr-section-lab" style={{ marginTop: 18 }}>Creative table</div>
         <div className="table-wrap"><table className="o360-tbl">
           <O360ColGroup left={8} green={!!o360cols} cols={o360cols} />
           <thead>
@@ -11330,31 +11376,7 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
             </tr>
           ))}</tbody>
         </table></div>
-        <div className="mr-section-lab" style={{ marginTop: 14 }}>Creative cards</div>
       </>}
-      <div className="mr-cre-sort no-print">
-        <span>Sort by</span>
-        <select className="mr-cre-sort-sel" value={sortK} onChange={(e) => pickMetric(e.target.value)}>
-          <optgroup label="Performance">
-            {METRICS.filter((x) => x.evLabel == null && x.costEvLabel == null).map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
-          </optgroup>
-          {evMetrics.length ? <optgroup label="Key event - volume reached">
-            {evMetrics.map((x) => <option key={x.k} value={x.k}>{x.label}</option>)}
-          </optgroup> : null}
-          {costMetrics.length ? <optgroup label="Cheapest cost per event">
-            {costMetrics.map((x) => <option key={x.k} value={x.k}>Cost / {x.label}</option>)}
-          </optgroup> : null}
-        </select>
-        <button className="mr-cre-sort-dir" onClick={() => setDir((d) => (d === 'asc' ? 'desc' : 'asc'))} title={dir === 'asc' ? 'Ascending (lowest first) - click for highest first' : 'Descending (highest first) - click for lowest first'}>{dir === 'asc' ? '↑ Low→High' : '↓ High→Low'}</button>
-      </div>
-      <div className="mr-cre-grid">{pageAds.map((a) => <MRCreative key={a.name} a={a} money={money} n0={n0} clientId={clientId} range={range} channel={channel} currency={currency} />)}</div>
-      {pages > 1 && (
-        <div className="mr-cre-pager no-print">
-          <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
-          <span>Page {cur + 1} / {pages} · {sorted.length} creatives · sorted by {m.label}</span>
-          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next ›</button>
-        </div>
-      )}
     </>
   )
 }
@@ -11486,12 +11508,15 @@ function renderMonthlyDeck(rep, h) {
   if (rep.hasMeta && meta) {
     const t = meta.totals || {}
     // Compact platform columns for the campaign→ad-set drill table.
+    // Link-click CTR, conversion rate (results ÷ link clicks) and CPM read truer than
+    // impressions / reach / all-click CTR for lead campaigns - and ad-set reach comes
+    // back 0 from Meta's per-adset breakdown, so drop it here.
     const metaDrillCols = (nameLabel) => [
       { k: 'name', label: nameLabel, render: (r) => <span className="mr-name">{r.name}</span> },
       { k: 'spend', label: 'Spend', align: 'r', render: (r) => money(r.spend) },
-      { k: 'impr', label: 'Impr.', align: 'r', render: (r) => n0(r.impressions) },
-      { k: 'reach', label: 'Reach', align: 'r', render: (r) => n0(r.reach) },
-      { k: 'ctr', label: 'CTR', align: 'r', render: (r) => { const v = ctr(r); return v == null ? '-' : fmtPct(v, 2) } },
+      { k: 'lctr', label: 'Link CTR', align: 'r', render: (r) => (r.impressions ? fmtPct((r.linkClicks / r.impressions) * 100, 2) : '-') },
+      { k: 'cvr', label: 'Conv. rate', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return r.linkClicks ? fmtPct((res / r.linkClicks) * 100, 1) : '-' } },
+      { k: 'cpm', label: 'CPM', align: 'r', render: (r) => (r.impressions ? money((r.spend / r.impressions) * 1000) : '-') },
       { k: 'results', label: 'Results', align: 'r', render: (r) => n0(r.results != null ? r.results : r.leads) },
       { k: 'cpl', label: 'Cost/res', align: 'r', render: (r) => { const res = r.results != null ? r.results : r.leads; return res ? money(r.spend / res) : '-' } },
     ]
@@ -13000,7 +13025,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // link to a client you can't see simply returns 403 and falls back to home.
 const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
 function readNavUrl() {
-  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb') } } catch { return {} }
+  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
 }
 // writeNavUrl takes a PATCH: each key is set (truthy) or deleted (falsy); keys not
 // present are left untouched, so partial writers (view vs range vs won-basis) compose
@@ -13139,8 +13164,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // Config for the Settings page keeps deleted clients (so the Deleted filter can
   // restore them); the main app's baseClients above already hides them everywhere else.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
-  const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null }, true) }
-  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall' }, true) }
+  const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, m: null }, true) }
+  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', m: null }, true) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
   // views - they land straight in their assigned client(s).
   const role = authEnabled && authUser ? authUser.role : 'admin'

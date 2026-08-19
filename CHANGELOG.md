@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.290.0 - 2026-08-19 · `PENDING` - Monthly Report: shareable links, truer Meta metrics, page-view results, creative order
+- **Shareable report links.** The Monthly Report (admin) and Monthly Reports (client) views now carry the selected client
+  and report in the URL (`?c=&m=`), and there's a **🔗 Copy link** button. Send the link and it opens straight onto that
+  client's report - deep-linkable, just like the rest of the app.
+- **Meta campaign / ad-set columns rebuilt.** The campaign → ad-set drill table now shows **Link CTR**, **Conv. rate**
+  (results ÷ link clicks) and **CPM** instead of Impressions / Reach / all-click CTR - truer signals for lead campaigns,
+  and it removes the ad-set **Reach** column (Meta returns 0 there).
+- **Page-view campaigns now show their own Results.** A campaign optimised to landing-page views (e.g. a "Page View"
+  campaign) counts those views as its result + cost per result, instead of reading 0 against a lead primary.
+- **Creative performance: cards first.** The creative cards now sit above the data table, with the table underneath.
+- Note: the Meta results + green ad-set columns only refresh on **newly generated** snapshots - hit **Refresh snapshot**.
+
 ## v3.289.0 - 2026-08-19 · `PENDING` - Monthly Report: click a campaign to drill into ad sets / ad groups
 - **"Key events by campaign" is now expandable.** Click any campaign row (▸) to break it into its **ad sets** (Meta) or
   **ad groups** (Google) - shown **by name, not ID** - each with the same green key-event columns (count reached, cost per

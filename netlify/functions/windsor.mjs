@@ -104,6 +104,7 @@ const META_CONV_CANDIDATES = [
   ['actions_initiate_checkout', 'Initiate checkout'],
   ['actions_add_to_cart', 'Add to cart'],
   ['actions_onsite_conversion_messaging_conversation_started_7d', 'Messaging conversation started'],
+  ['actions_landing_page_view', 'Landing page views'],
   ['actions_click_to_call_call_confirm', 'Click to call - confirmed'],
   ['conversions_offsite_conversion_fb_pixel_custom_new_lead', 'New lead (custom pixel)'],
   ['conversions_offsite_conversion_fb_pixel_custom_booked_appointment', 'Booked appointment (custom pixel)'],
@@ -120,7 +121,7 @@ const META_RESULT_FIELDS = [
   'conversions_schedule_total', 'actions_leadgen_grouped', 'actions_onsite_conversion_lead_grouped',
   'actions_offsite_conversion_fb_pixel_lead', 'actions_purchase', 'conversions_contact_total',
   'actions_onsite_conversion_messaging_conversation_started_7d', 'actions_complete_registration',
-  'conversions_submit_application_total',
+  'conversions_submit_application_total', 'actions_landing_page_view',
 ]
 // Meta standard event (from the ad set's promoted_object.custom_event_type) →
 // [result field, event noun]. The noun is combined with the ad set's destination
@@ -178,6 +179,9 @@ function resolveMetaResult(row) {
     return { field: m[0], label: `${prefix} ${m[1]}` }
   }
   if (goal === 'LINK_CLICKS') return { field: 'inline_link_clicks', label: 'Link clicks' }
+  // Traffic campaigns optimised to landing-page views (e.g. a "Page View" campaign)
+  // count those views as their result - so they don't read as 0 against a lead primary.
+  if (goal === 'LANDING_PAGE_VIEWS') return { field: 'actions_landing_page_view', label: 'Landing page views' }
   return null
 }
 // Resolve a row's result using auto-detect first, then the client's configured

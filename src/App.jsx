@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.295.0'
+const APP_VERSION = '3.296.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4293,9 +4293,36 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
   const showCals = ((cc && cc.bookingByCalendar) || []).filter((c) => c.occurred > 0)
   // Open pipeline by stage - who's still in play, and where they came from.
   const openStages = (cc && cc.openByStage) || []
-  const totOpen = openStages.reduce((a, s) => a + s.count, 0)
-  const totOpenVal = openStages.reduce((a, s) => a + s.value, 0)
   const multiPipe = new Set(openStages.map((s) => s.pipeline)).size > 1
+  // One open-by-stage list (shared by the single funnel and each per-pipeline
+  // funnel). showPipe tags each row with its pipeline (only useful in the single,
+  // mixed-pipeline view - per-pipeline lists sit under their own pipeline heading).
+  const openPanel = (stages, showPipe) => {
+    if (!stages.length) return null
+    const tOpen = stages.reduce((a, s) => a + s.count, 0)
+    const tVal = stages.reduce((a, s) => a + s.value, 0)
+    return (
+      <div className="bn-open">
+        <div className="bn-open-h">Open pipeline by stage <span className="sub">· {fmtNumber(tOpen)} live · {money(tVal)} · click a stage to see who’s in it · click a lead for their notes</span></div>
+        {stages.map((s) => {
+          const on = openStage === s.key
+          return (
+            <div key={s.key} className="bn-open-item">
+              <button className={`bn-open-row${on ? ' on' : ''}`} onClick={() => setOpenStage(on ? null : s.key)}>
+                <span className="bn-open-stage">{s.stage}{showPipe ? <span className="bn-open-pipe"> · {s.pipeline}</span> : null}</span>
+                <span className="bn-open-meta"><b>{fmtNumber(s.count)}</b> open · <b>{money(s.value)}</b></span>
+                <span className="bn-open-caret">{on ? '▾' : '→'}</span>
+              </button>
+              {on ? <div className="bn-open-deals"><table className="mini-tbl users-tbl">
+                <thead><tr><th className="lft">Contact</th><th className="lft">Assigned</th><th className="lft">Source</th><th>Value</th><th>Days in stage</th></tr></thead>
+                <tbody>{s.deals.map((d, i) => <BnDealRow key={i} d={d} clientId={clientId} money={money} />)}</tbody>
+              </table></div> : null}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
   return (
     <>
     <div className="card exec-bottleneck">
@@ -4311,28 +4338,10 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
           <div className="bn-pipe-grp" key={g.id}>
             <div className="bn-pipe-lab">{g.name} <span className="sub">· {fmtNumber(g.rows[0].v)} leads{g.worst ? ` · biggest drop: ${g.rows[g.rows.indexOf(g.worst) - 1].label} → ${g.worst.label} (${Math.round(g.worst.conv * 100)}%)` : ''}</span></div>
             {funnelBlock(g)}
+            {openPanel(openStages.filter((s) => s.pipelineId === g.id), false)}
           </div>
         ))
-        : funnelBlock(single)}
-      {openStages.length ? <div className="bn-open">
-        <div className="bn-open-h">Open pipeline by stage <span className="sub">· {fmtNumber(totOpen)} live · {money(totOpenVal)} · click a stage to see who’s in it · click a lead for their notes</span></div>
-        {openStages.map((s) => {
-          const on = openStage === s.key
-          return (
-            <div key={s.key} className="bn-open-item">
-              <button className={`bn-open-row${on ? ' on' : ''}`} onClick={() => setOpenStage(on ? null : s.key)}>
-                <span className="bn-open-stage">{s.stage}{multiPipe ? <span className="bn-open-pipe"> · {s.pipeline}</span> : null}</span>
-                <span className="bn-open-meta"><b>{fmtNumber(s.count)}</b> open · <b>{money(s.value)}</b></span>
-                <span className="bn-open-caret">{on ? '▾' : '→'}</span>
-              </button>
-              {on ? <div className="bn-open-deals"><table className="mini-tbl users-tbl">
-                <thead><tr><th className="lft">Contact</th><th className="lft">Assigned</th><th className="lft">Source</th><th>Value</th><th>Days in stage</th></tr></thead>
-                <tbody>{s.deals.map((d, i) => <BnDealRow key={i} d={d} clientId={clientId} money={money} />)}</tbody>
-              </table></div> : null}
-            </div>
-          )
-        })}
-      </div> : null}
+        : <>{funnelBlock(single)}{openPanel(openStages, multiPipe)}</>}
       <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost - the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</p>
     </div>
     {showCals.length ? <div className="card exec-bottleneck">

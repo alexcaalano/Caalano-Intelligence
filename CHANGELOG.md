@@ -17,6 +17,11 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.296.0 - 2026-08-19 · `PENDING` - Bottleneck: open pipeline list split per pipeline
+- **Each pipeline's funnel now has its own "open pipeline by stage" list directly underneath it** (multi-pipeline clients),
+  so the live deals line up with the funnel they belong to instead of one merged list. Single-pipeline clients keep the one
+  combined list.
+
 ## v3.295.0 - 2026-08-19 · `PENDING` - Caalano360: richer Channel split, funnel % of total, per-pipeline bottleneck
 - **Revenue bottleneck funnel now shows % of total leads AND next-step conversion** on every stage, alongside the existing
   step %, with a header row - so you see both "share of all leads still here" and "conversion into the next step".

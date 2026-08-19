@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.281.0 - 2026-08-18 · `PENDING` - Better PDF export + report list dates + client-download control
+- **PDF export keeps full width and spills over pages.** Previously a dense page was shrunk to fit one page (tiny).
+  Now every slide fills the full page width at its natural height, and when it's taller than a page it flows onto extra
+  pages - with page breaks snapped to the nearest element edge so cards / charts / table rows aren't sliced in half.
+  Applies to both the agency Monthly Report and the client-facing Reports download.
+- **Reports list: added a "Published to client" date column** next to "Generated" (which is when the snapshot was last
+  built / refreshed). So you can see, per month, when it was generated vs when the client actually got it.
+- **Client PDF-download control.** A new agency-wide toggle (**Client PDF: On/Off** on the Monthly Report toolbar,
+  admin/super-admin only) decides whether clients/viewers get a Download button on their published reports. **Off by
+  default** - so a client can never download unless you switch it on, and it's enforced server-side (a viewer can't force
+  it). Ties report downloads to your control, alongside the existing Monthly Reports access permission.
+
 ## v3.280.0 - 2026-08-18 · `PENDING` - Enforce the Content-Security-Policy
 - **CSP is now enforcing.** After a full app tour (Meta embeds, maps, drill-downs, PDF export) in report-only mode
   produced **zero** CSP violations, the header was switched from `Content-Security-Policy-Report-Only` to

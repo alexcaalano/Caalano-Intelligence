@@ -2255,7 +2255,11 @@ export default async (req) => {
         const pubIdx = await store.get(pubIdxKey, { type: 'json' }).catch(() => null)
         const months = Array.isArray(pubIdx) ? pubIdx : []
         const meta = await loadMeta()
-        return json({ months: months.map((m) => ({ month: m, publishedAt: (meta[m] && meta[m].publishedAt) || null })) })
+        // Whether the client may download the PDF is an agency-wide, admin-toggled
+        // flag (default OFF). Read it server-side so a viewer can't force it on.
+        const settings = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).catch(() => null)
+        const downloadAllowed = !!(settings && settings.flags && settings.flags.clientPdfDownload)
+        return json({ months: months.map((m) => ({ month: m, publishedAt: (meta[m] && meta[m].publishedAt) || null })), downloadAllowed })
       }
       const month = url.searchParams.get('month')
       if (!month) return json({ error: 'month required' }, 400)

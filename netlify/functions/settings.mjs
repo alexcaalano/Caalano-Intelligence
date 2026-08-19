@@ -8,7 +8,7 @@ import { currentUser } from '../lib/auth.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
-const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames']
+const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'flags']
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 })

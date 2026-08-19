@@ -1958,6 +1958,13 @@ export async function buildStageTiming(locationId) {
 // per contact. Keyed by userId (the frontend joins names from the users scope).
 export async function buildUserCalls(locationId, from, to) {
   const locTok = await locationToken(locationId)
+  // The message-export endpoint validates startDate/endDate as ISO 8601 datetimes
+  // (YYYY-MM-DDTHH:mm:ss.sssZ). A bare YYYY-MM-DD is accepted with HTTP 200 but
+  // silently matches ZERO messages - which is why call activity was always blank.
+  // Convert the window to timezone-correct ISO bounds (Sydney day edges).
+  const tz = await locationTimezone(locationId)
+  const startIso = from ? new Date(zonedStartMs(from, tz)).toISOString() : null
+  const endIso = to ? new Date(zonedEndMs(to, tz)).toISOString() : null
   // Resolve rep names up front so this works even when a client assigns no
   // opportunities to users (the leaderboard would be empty, but calls still exist).
   const userRows = await ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => [])
@@ -1972,12 +1979,14 @@ export async function buildUserCalls(locationId, from, to) {
   const oppsP = allOpportunities(locTok, locationId, from, to, 2000).then((o) => o).catch(() => null)
   const firstOut = new Map() // contactId -> { ms, uid } first outbound call
   const byUser = new Map()
-  const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0, speed: [] }; byUser.set(uid, e) } return e }
+  const allContacts = new Set()
+  const dayMap = new Map() // YYYY-MM-DD -> { outbound, inbound, seconds }
+  const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0, inboundSec: 0, longestSec: 0, contacts: new Set(), speed: [] }; byUser.set(uid, e) } return e }
   let cursor = null, guard = 0, total = 0
   while (guard++ < 8) {
     const q = { channel: 'Call', limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }
-    if (from) q.startDate = from
-    if (to) q.endDate = to
+    if (startIso) q.startDate = startIso
+    if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor
     const j = await ghlGet(locTok, '/conversations/messages/export', q).catch(() => null)
     if (!j) break
@@ -1985,12 +1994,18 @@ export async function buildUserCalls(locationId, from, to) {
     for (const m of msgs) {
       const uid = m.userId || 'unassigned'
       const dur = num(m.meta && m.meta.call && m.meta.call.duration)
-      const connected = String(m.status || '').toLowerCase() === 'completed'
+      const connected = String((m.meta && m.meta.call && m.meta.call.status) || m.status || '').toLowerCase() === 'completed'
       const e = ent(uid)
+      if (m.contactId) { e.contacts.add(m.contactId); allContacts.add(m.contactId) }
+      if (dur > e.longestSec) e.longestSec = dur
+      const day = String(m.dateAdded || '').slice(0, 10)
+      const dE = dayMap.get(day) || { outbound: 0, inbound: 0, seconds: 0 }
       if (m.direction === 'outbound') {
-        e.outbound++; if (connected) e.outboundConnected++; e.outboundSec += dur
+        e.outbound++; dE.outbound++; if (connected) { e.outboundConnected++; e.outboundSec += dur }
         if (m.contactId) { const cms = Date.parse(m.dateAdded); if (isFinite(cms)) { const cur = firstOut.get(m.contactId); if (!cur || cms < cur.ms) firstOut.set(m.contactId, { ms: cms, uid }) } }
-      } else { e.inbound++; if (connected) e.inboundConnected++ }
+      } else { e.inbound++; dE.inbound++; if (connected) { e.inboundConnected++; e.inboundSec += dur } }
+      dE.seconds += dur
+      if (day) dayMap.set(day, dE)
       total++
     }
     cursor = j.nextCursor
@@ -2011,14 +2026,37 @@ export async function buildUserCalls(locationId, from, to) {
   const users = [...byUser.values()].map((e) => ({
     userId: e.userId, name: userName[e.userId] || (e.userId === 'unassigned' ? 'Unassigned / automated' : null), outbound: e.outbound, inbound: e.inbound,
     outboundMinutes: Math.round(e.outboundSec / 60),
+    inboundMinutes: Math.round(e.inboundSec / 60),
+    talkMinutes: Math.round((e.outboundSec + e.inboundSec) / 60),
     connectRate: e.outbound ? (e.outboundConnected / e.outbound) * 100 : 0,
     avgTalkMin: e.outboundConnected ? Math.round((e.outboundSec / e.outboundConnected / 60) * 10) / 10 : 0,
+    longestMin: e.longestSec ? Math.round((e.longestSec / 60) * 10) / 10 : 0,
+    contacts: e.contacts.size,
+    missedInbound: e.inbound - e.inboundConnected,
     speedToLeadHrs: e.speed.length ? Math.round(med(e.speed) * 10) / 10 : null, speedSamples: e.speed.length,
     // Response-time SLA: share of leads this rep called back within 5 minutes
     // (the classic speed-to-lead benchmark). null when there are no timed leads.
     sla5Pct: e.speed.length ? Math.round((e.speed.filter((g) => g <= 5 / 60).length / e.speed.length) * 100) : null,
   })).sort((a, b) => b.outbound - a.outbound)
-  return { connected: true, totalCalls: total, byUser: users, speedAvailable }
+  // Sub-account rollups for the scorecards.
+  const sum = (f) => [...byUser.values()].reduce((a, e) => a + f(e), 0)
+  const tOut = sum((e) => e.outbound), tIn = sum((e) => e.inbound)
+  const tOutConn = sum((e) => e.outboundConnected), tInConn = sum((e) => e.inboundConnected)
+  const tOutSec = sum((e) => e.outboundSec), tInSec = sum((e) => e.inboundSec)
+  const totals = {
+    calls: total, outbound: tOut, inbound: tIn,
+    outboundConnected: tOutConn, inboundConnected: tInConn,
+    outboundMinutes: Math.round(tOutSec / 60), inboundMinutes: Math.round(tInSec / 60),
+    talkMinutes: Math.round((tOutSec + tInSec) / 60),
+    connectRate: tOut ? (tOutConn / tOut) * 100 : 0,
+    avgCallMin: tOutConn ? Math.round((tOutSec / tOutConn / 60) * 10) / 10 : 0,
+    uniqueContacts: allContacts.size,
+    missedInbound: tIn - tInConn,
+    activeReps: [...byUser.values()].filter((e) => e.userId !== 'unassigned' && e.outbound > 0).length,
+  }
+  const daily = [...dayMap.entries()].filter(([d]) => d).sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, v]) => ({ date, outbound: v.outbound, inbound: v.inbound, minutes: Math.round(v.seconds / 60) }))
+  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable }
 }
 // The channel / pipeline / won-basis filters on the Users tab only change WHICH
 // opportunities are counted - every expensive fetch (opps, appointments,

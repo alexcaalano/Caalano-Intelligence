@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.291.0 - 2026-08-19 · `PENDING` - Call Reporting tab + fix: dialer calls were always blank
+- **Fixed: call activity was always empty.** The GoHighLevel message-export API validates its date filters as full ISO 8601
+  datetimes (`YYYY-MM-DDTHH:mm:ss.sssZ`); we were sending bare `YYYY-MM-DD`, which the API accepts with HTTP 200 but
+  silently matches **zero** calls. Now sends timezone-correct ISO day bounds - so the dialer's calls actually come through
+  (e.g. Nexia has ~1,500 calls/month that were invisible).
+- **New "Call Reporting" tab** on every CRM-connected client:
+  - **Sub-account scorecards** - total calls, outbound vs inbound, time on the phone, connect rate, average call length,
+    unique contacts reached, calls per active day, active reps, and missed inbound.
+  - **Call volume by day** - a stacked outbound/inbound trend chart.
+  - **Per-rep scoreboard** - ranked by outbound, with talk time, connect %, avg &amp; longest call, contacts dialed,
+    speed-to-lead, ≤5-minute callback rate and missed inbound; ★ marks the top caller.
+- Backend `buildUserCalls` now also returns sub-account totals, a daily series, inbound talk time, unique contacts and
+  missed-inbound counts.
+
 ## v3.290.0 - 2026-08-19 · `PENDING` - Monthly Report: shareable links, truer Meta metrics, page-view results, creative order
 - **Shareable report links.** The Monthly Report (admin) and Monthly Reports (client) views now carry the selected client
   and report in the URL (`?c=&m=`), and there's a **🔗 Copy link** button. Send the link and it opens straight onto that

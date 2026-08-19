@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.290.0'
+const APP_VERSION = '3.291.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6727,6 +6727,88 @@ function UserApptActivity({ clientId, range, nonce }) {
     </div>
   )
 }
+// Dedicated Call Reporting tab: sub-account dialer totals, a daily call-volume
+// trend, and a per-rep scoreboard. Reads scope=usercalls (GHL dialer message
+// export, channel=Call). Shows an empty state when no calls are logged.
+function CallReportView({ clientId, range, nonce }) {
+  const [d, setD] = useState(null)
+  useEffect(() => {
+    let alive = true; setD(null)
+    dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setD(j || { error: true }) }).catch(() => { if (alive) setD({ error: true }) })
+    return () => { alive = false }
+  }, [clientId, rangeQuery(range), nonce])
+  if (!d) return <div className="card"><Spinner label="Loading call reporting…" /></div>
+  if (d.ghl === false) return <div className="card empty-deep"><div className="big">📞</div><b>No CRM connected.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>Call reporting reads from the Caalano Systems dialer, so it needs the CRM linked for this client.</p></div>
+  if (d.error) return <div className="card empty-deep"><div className="big">📞</div><b>Couldn't load call reporting.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{typeof d.error === 'string' ? d.error : 'Please try again shortly.'}</p></div>
+  const t = d.totals || {}
+  const rows = [...(d.byUser || [])].sort((a, b) => b.outbound - a.outbound)
+  if (!rows.length || !(t.calls > 0)) return <div className="card empty-deep"><div className="big">📞</div><b>No dialer calls in this period.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>No calls were logged in the Caalano Systems dialer for {rangeLabel(range)}. Try a wider date range.</p></div>
+  const fmtMin = (m) => (m == null ? '-' : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`)
+  const fmtSpeedHrs = (h) => (h == null ? '-' : h < 1 ? `${Math.round(h * 60)}m` : h < 48 ? `${h < 10 ? h.toFixed(1) : Math.round(h)}h` : `${Math.round(h / 24)}d`)
+  const nDays = (d.daily || []).length
+  const perDay = nDays ? Math.round(t.calls / nDays) : t.calls
+  const nameOf = (r) => r.name || (r.userId === 'unassigned' ? 'Unassigned / automated' : 'User ' + String(r.userId).slice(-4))
+  return (
+    <>
+      <div className="card">
+        <div className="exec-panel-h">Call activity <span className="sub">· Caalano Systems dialer · {rangeLabel(range)}</span></div>
+        <div className="timing-scards">
+          <div className="tm-sc hero"><span className="tm-lab">Total calls</span><b>{fmtNumber(t.calls)}</b><span className="tm-sub">{fmtNumber(t.outbound)} out · {fmtNumber(t.inbound)} in</span></div>
+          <div className="tm-sc"><span className="tm-lab">Time on the phone</span><b>{fmtMin(t.talkMinutes)}</b><span className="tm-sub">connected talk time</span></div>
+          <div className="tm-sc"><span className="tm-lab">Connect rate</span><b>{fmtPct(t.connectRate, 0)}</b><span className="tm-sub">outbound answered</span></div>
+          <div className="tm-sc"><span className="tm-lab">Avg call</span><b>{t.avgCallMin ? `${t.avgCallMin}m` : '-'}</b><span className="tm-sub">per connected call</span></div>
+          <div className="tm-sc"><span className="tm-lab">Contacts reached</span><b>{fmtNumber(t.uniqueContacts)}</b><span className="tm-sub">unique people dialed</span></div>
+          <div className="tm-sc"><span className="tm-lab">Calls / active day</span><b>{fmtNumber(perDay)}</b><span className="tm-sub">across {nDays || 1} day(s)</span></div>
+          <div className="tm-sc"><span className="tm-lab">Active reps</span><b>{fmtNumber(t.activeReps)}</b><span className="tm-sub">made ≥1 outbound</span></div>
+          {t.missedInbound ? <div className="tm-sc warn"><span className="tm-lab">Missed inbound</span><b>{fmtNumber(t.missedInbound)}</b><span className="tm-sub">unanswered / voicemail</span></div> : null}
+        </div>
+      </div>
+      {d.daily && d.daily.length > 1 && (
+        <div className="card">
+          <div className="exec-panel-h">Call volume by day <span className="sub">· outbound vs inbound</span></div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={d.daily} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(v) => String(v).slice(5)} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={34} allowDecimals={false} />
+              <Tooltip contentStyle={{ fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="outbound" name="Outbound" stackId="a" fill="#6d5efc" maxBarSize={26} />
+              <Bar dataKey="inbound" name="Inbound" stackId="a" fill="#22b07d" radius={[3, 3, 0, 0]} maxBarSize={26} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <div className="card">
+        <div className="exec-panel-h">Rep scoreboard <span className="sub">· ranked by outbound volume · ★ top caller</span></div>
+        <div className="table-wrap"><table className="mini-tbl appt-tbl">
+          <thead><tr>
+            <th style={{ textAlign: 'left' }}>#</th><th style={{ textAlign: 'left' }}>Rep</th>
+            <th>Outbound</th><th>Inbound</th><th>Talk time</th><th>Connect %</th><th>Avg call</th><th title="This rep's single longest call">Longest</th>
+            <th title="Unique contacts this rep dialed">Contacts</th>
+            <th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th>
+            <th title="Share of this rep's leads called back within 5 minutes">≤5 min %</th>
+            <th title="Inbound calls to this rep left unanswered / voicemail">Missed in</th>
+          </tr></thead>
+          <tbody>{rows.map((r, i) => (
+            <tr key={r.userId}>
+              <td style={{ textAlign: 'left' }}>{i + 1}</td>
+              <td style={{ textAlign: 'left' }}>{i === 0 ? '★ ' : ''}{nameOf(r)}</td>
+              <td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.inbound)}</td><td>{fmtMin(r.talkMinutes)}</td>
+              <td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin ? `${r.avgTalkMin}m` : '-'}</td><td>{r.longestMin ? `${r.longestMin}m` : '-'}</td>
+              <td>{fmtNumber(r.contacts)}</td>
+              <td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td>
+              <td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{r.sla5Pct == null ? '-' : `${r.sla5Pct}%`}</td>
+              <td>{fmtNumber(r.missedInbound)}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        {!d.speedAvailable && <p className="cap" style={{ margin: '8px 2px 0' }}>Speed-to-lead is omitted this load (the lead-timing pull didn't finish in time) - refresh to try again.</p>}
+      </div>
+    </>
+  )
+}
 function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [pipe, setPipe] = useState('all')
@@ -7139,7 +7221,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   // Analytics (GA4) tab - only when the client has a GA4 property linked in Settings.
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calls', label: 'Call Reporting' }, { id: 'timing', label: 'Timing' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
@@ -7195,6 +7277,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
+        {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'timing' && <><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
         {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
       </div>
@@ -9024,7 +9107,7 @@ function AcceptInvite({ token, onSignedIn }) {
 const TAB_OPTIONS = [
   { id: 'overall', label: 'Caalano360' }, { id: 'users', label: 'Users' }, { id: 'meta', label: 'Meta Ads' },
   { id: 'google', label: 'Google Ads' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'forms', label: 'Forms' },
-  { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' },
+  { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calls', label: 'Call Reporting' }, { id: 'timing', label: 'Timing' },
   { id: 'optlog', label: 'Optimisation Log' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {

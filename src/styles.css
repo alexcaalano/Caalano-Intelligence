@@ -2137,6 +2137,9 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .mr-deck.mr-exporting { overflow: visible; }
 .mr-deck.mr-exporting .mr-track { flex-direction: column !important; gap: 20px !important; transform: none !important; }
 .mr-deck.mr-exporting .mr-track > .mr-slide { flex: 1 1 auto !important; width: 100% !important; min-height: 0; }
+/* Export sizes each PDF page to its slide, so collapse the cover's tall min-height
+   + space-between gap - otherwise it exports as a near-empty title page. */
+.mr-deck.mr-exporting .mr-cover { min-height: 0 !important; justify-content: flex-start !important; gap: 30px; }
 /* Wide Caalano360 green tables (union key-event columns) must fit the page for
    export/print, not clip inside their scroll container - drop the fixed layout
    + fixed column widths and shrink type so every column is captured. Shared by

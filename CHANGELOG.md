@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.282.0 - 2026-08-18 · `PENDING` - PDF: one page per slide, sized to content; per-client download
+- **Each PDF page is now sized to its slide** - fixed width, natural height, one page per slide. No shrinking, no
+  content sliced mid-row/card, and **no trailing white space** (the page ends where the card ends). The cover's tall
+  min-height is collapsed on export so it's no longer a near-empty title page. An unusually long slide (beyond the PDF
+  page-size limit) still splits, but only at element edges. Replaces the fixed-A4 approach that shrank dense pages.
+- **Client PDF download is now per-client** (was agency-wide). The toolbar toggle names the selected client
+  (e.g. "A2Z PDF: Off") and controls only that client. Still **off by default** and enforced server-side, so a client
+  gets the download button only for a client an admin has explicitly switched on.
+
 ## v3.281.0 - 2026-08-18 · `PENDING` - Better PDF export + report list dates + client-download control
 - **PDF export keeps full width and spills over pages.** Previously a dense page was shrunk to fit one page (tiny).
   Now every slide fills the full page width at its natural height, and when it's taller than a page it flows onto extra

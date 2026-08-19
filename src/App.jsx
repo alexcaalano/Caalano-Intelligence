@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.281.0'
+const APP_VERSION = '3.282.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3038,10 +3038,10 @@ const CURATOR_KEY = 'caalano_curator_board'
 const PROFILE_KEY = 'caalano_client_profile'
 const DAILYPERF_KEY = 'caalano_dailyperf'
 const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendlyName } } - friendly names for Google Ad IDs
-const FLAGS_KEY = 'caalano_flags'                // { clientPdfDownload: bool } - agency-wide feature flags (admin-toggled)
+const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), flags: readLS(FLAGS_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -3050,13 +3050,14 @@ function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete
 function saveSettingsRemote(patch) {
   try { fetch('/.netlify/functions/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }).catch(() => {}) } catch {}
 }
-// Agency-wide feature flags (admin-toggled, server-synced). Client PDF download is
-// OFF by default: viewers/clients never get the download button unless an admin
-// switches it on - so cutting a client's report access also cuts their downloads.
-const flagOn = (k) => !!(SETTINGS.flags && SETTINGS.flags[k])
-function setFlag(k, v) {
-  SETTINGS.flags = { ...(SETTINGS.flags || {}), [k]: !!v }
-  writeLS(FLAGS_KEY, SETTINGS.flags); saveSettingsRemote({ flags: { [k]: !!v } }); bumpSettings()
+// Per-client "clients may download the PDF" allow-list (admin-toggled, server-synced).
+// OFF by default for every client: a viewer/client only gets the download button for
+// a client an admin has switched on - so cutting a client's access also cuts downloads.
+const clientDownloadOn = (id) => !!(id && SETTINGS.pdfdl && SETTINGS.pdfdl[id])
+function setClientDownload(id, v) {
+  if (!id) return
+  SETTINGS.pdfdl = { ...(SETTINGS.pdfdl || {}), [id]: !!v }
+  writeLS(PDFDL_KEY, SETTINGS.pdfdl); saveSettingsRemote({ pdfdl: { [id]: !!v } }); bumpSettings()
 }
 let _hydrated = false
 async function hydrateSettings() {
@@ -3070,8 +3071,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'flags']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(FLAGS_KEY, SETTINGS.flags)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -10363,54 +10364,51 @@ function ClientUpdatePage({ clients, currency, range, nonce, authUser }) {
 // Exports via native print (Save-as-PDF) and a direct jsPDF download.
 // ---------------------------------------------------------------------------
 
-// Fit-to-WIDTH PDF export: each slide fills the full page width at its natural
-// height, and when a slide is taller than one page it SPILLS onto extra pages
-// (instead of being shrunk to fit, which made dense pages tiny). Page breaks snap
-// up to the nearest element edge so a card / chart / table row isn't sliced through
-// the middle. Shared by the admin Monthly Report and the client-facing Reports view.
-async function exportSlidesToPdf(slides, fileName, { orientation = 'landscape' } = {}) {
+// PDF export: ONE page per slide, each page sized to that slide's content - fixed
+// width, natural height. Nothing is shrunk to fit and nothing is cut mid-content,
+// and there's no trailing white space (the page ends where the card ends). A slide
+// taller than the PDF page limit (rare) is split at element edges as a fallback.
+const PDF_PAGE_W = 900 // pt - consistent page width; height follows each slide
+const PDF_MAX_H = 14000 // pt - PDF hard limit is 14400
+async function exportSlidesToPdf(slides, fileName) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas-pro'), import('jspdf')])
-  const pdf = new jsPDF({ orientation, unit: 'pt', format: 'a4' })
-  const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight()
   const bg = getComputedStyle(document.body).backgroundColor || '#ffffff'
   const buf = document.createElement('canvas'); const bctx = buf.getContext('2d')
-  let started = false
+  let pdf = null
+  const addPage = (w, h) => {
+    if (!pdf) pdf = new jsPDF({ orientation: w >= h ? 'landscape' : 'portrait', unit: 'pt', format: [w, h] })
+    else pdf.addPage([w, h], w >= h ? 'landscape' : 'portrait')
+  }
   for (const el of slides) {
     const top = el.getBoundingClientRect().top
-    const wcss = el.offsetWidth || 1
     const canvas = await html2canvas(el, { scale: 2, backgroundColor: bg, useCORS: true, logging: false })
-    const factor = canvas.width / wcss // CSS px -> canvas px
-    // Candidate page-break rows = the bottom edge of every visible descendant.
-    const cutSet = new Set([0, canvas.height])
-    el.querySelectorAll('*').forEach((n) => { const r = n.getBoundingClientRect(); if (r.height > 0) cutSet.add(Math.round((r.bottom - top) * factor)) })
-    const cuts = [...cutSet].filter((v) => v >= 0 && v <= canvas.height).sort((a, b) => a - b)
-    const fit = pw / canvas.width          // scale that makes the canvas exactly page-wide
-    const pageHpx = Math.max(1, Math.floor(ph / fit)) // source px that fill one page's height
-    if (canvas.height <= pageHpx + 2) {
-      if (started) pdf.addPage(); started = true
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pw, canvas.height * fit)
+    const fit = PDF_PAGE_W / canvas.width // px -> pt
+    const fullH = canvas.height * fit
+    if (fullH <= PDF_MAX_H) {
+      // Common case: the whole slide is one page, exactly its own height.
+      addPage(PDF_PAGE_W, fullH)
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, PDF_PAGE_W, fullH)
       continue
     }
-    let y = 0
-    buf.width = canvas.width
+    // Fallback for an unusually long slide: split into <=max-height pages, breaking on
+    // block-level element edges (not inline text) so rows / cards aren't cut.
+    const factor = canvas.width / (el.offsetWidth || 1)
+    const cutSet = new Set([canvas.height])
+    el.querySelectorAll('*').forEach((n) => { const r = n.getBoundingClientRect(); if (r.height < 14) return; const d = getComputedStyle(n).display; if (d === 'inline' || d === 'none') return; cutSet.add(Math.round((r.bottom - top) * factor)) })
+    const cuts = [...cutSet].filter((v) => v > 0 && v <= canvas.height).sort((a, b) => a - b)
+    const pageHpx = Math.floor(PDF_MAX_H / fit)
+    let y = 0; buf.width = canvas.width
     while (y < canvas.height) {
       let end = Math.min(y + pageHpx, canvas.height)
-      if (end < canvas.height) {
-        // Snap the break up to a real element edge, but only one that still fills at
-        // least ~35% of the page (otherwise hard-cut, e.g. an element taller than a page).
-        const safe = cuts.filter((c) => c > y + pageHpx * 0.35 && c <= end)
-        if (safe.length) end = safe[safe.length - 1]
-      }
+      if (end < canvas.height) { const safe = cuts.filter((c) => c > y + pageHpx * 0.35 && c <= end); if (safe.length) end = safe[safe.length - 1] }
       const h = end - y
-      buf.height = h
-      bctx.fillStyle = bg; bctx.fillRect(0, 0, buf.width, h)
-      bctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h)
-      if (started) pdf.addPage(); started = true
-      pdf.addImage(buf.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pw, h * fit)
+      buf.height = h; bctx.fillStyle = bg; bctx.fillRect(0, 0, buf.width, h); bctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h)
+      addPage(PDF_PAGE_W, h * fit)
+      pdf.addImage(buf.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, PDF_PAGE_W, h * fit)
       y = end
     }
   }
-  pdf.save(fileName)
+  if (pdf) pdf.save(fileName)
 }
 
 // Bounds + label for a 'YYYY-MM' month string (UTC-safe).
@@ -10784,7 +10782,7 @@ function MonthlyReport({ clients, currency, authUser }) {
           <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
           <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
         </div>
-        {canToggleDownload && <button className={`mr-btn${flagOn('clientPdfDownload') ? ' on' : ''}`} onClick={() => setFlag('clientPdfDownload', !flagOn('clientPdfDownload'))} title="Agency-wide: allow clients/viewers to download the PDF of their published reports. Off by default - turn on to give clients the download button.">{flagOn('clientPdfDownload') ? '✓ Client PDF: On' : '⃠ Client PDF: Off'}</button>}
+        {canToggleDownload && client && <button className={`mr-btn${clientDownloadOn(client.id) ? ' on' : ''}`} onClick={() => setClientDownload(client.id, !clientDownloadOn(client.id))} title={`Allow ${client.name} to download the PDF of their published reports. Off by default - per client.`}>{clientDownloadOn(client.id) ? `✓ ${client.name} PDF: On` : `⃠ ${client.name} PDF: Off`}</button>}
         <button className="mr-btn" onClick={present} disabled={!rep} title="Present fullscreen (for screen-share)">{fs ? '⤢ Exit' : '⛶ Present'}</button>
         <button className="mr-btn" onClick={() => window.print()} disabled={!rep} title="Print / Save as PDF">🖨 Print</button>
         <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>

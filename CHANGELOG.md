@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.307.0 - 2026-08-19 · `PENDING` - Custom conversions labelled by their real name
+- **Custom conversions now show their name (e.g. "B_Page_View") instead of "Offsite Conversion Custom 1339475751097032".**
+  Windsor's Custom Conversion Definition table maps each conversion id to its name; the Meta tab / Monthly Report Results
+  chips + the "primary = …" hover, and the Settings → Meta conversions list, all now read the real name. Falls back to the
+  id form only if a name can't be resolved.
+
 ## v3.306.0 - 2026-08-19 · `PENDING` - Time in stage → rolling 90 days; Daily Performance custom conversions now exact
 - **Time in stage (Timing board) now only considers open deals created in the last 90 days**, and says so in the header and
   caveat. Previously it loaded every open deal ever (sampled to 3,000), so ancient/stale deals skewed the dwell times and

@@ -192,11 +192,26 @@ function ccActionName(fieldId) {
   return null
 }
 const isCustomConvField = (f) => ccActionName(f) != null
-// Human label for a custom-conversion field id. cc:<name> keeps the name; a legacy
-// insights-style id has no friendly name to recover, so fall back to a generic.
-function ccLabel(fieldId) {
-  const m = String(fieldId || '').match(/^cc:(.+)$/i)
-  return m ? m[1].trim() : 'Custom conversion'
+// Friendly label for a custom-conversion field id. cc:<name> carries the name;
+// a legacy insights-style id (…custom_<id>) recovers its real name from the
+// Custom Conversion Definition map (id → name) when available, else a generic.
+function ccLabel(fieldId, names) {
+  const s = String(fieldId || '')
+  const m = s.match(/^cc:(.+)$/i); if (m) return m[1].trim()
+  const idm = s.match(/custom_(\d{6,})/); if (idm && names && names.get(idm[1])) return names.get(idm[1])
+  return 'Custom conversion'
+}
+// Windsor's "Custom Conversion Definition" table maps each custom conversion id to
+// its real name (e.g. 1339475751097032 → "B_Page_View"). Fetch it for one account
+// so labels read as names instead of "Offsite Conversion Custom <id>".
+async function fetchCustomConvNames(cc, from, to, key, preset = null) {
+  if (!cc || !cc.meta) return new Map()
+  try {
+    const rows = (await windsorFetch('facebook', ['account_id', 'custom_conversion_id', 'custom_conversion_name'], from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+    const m = new Map()
+    for (const r of rows) { const id = String(r.custom_conversion_id || '').trim(); const nm = String(r.custom_conversion_name || '').trim(); if (id && nm) m.set(id, nm) }
+    return m
+  } catch { return new Map() }
 }
 // Auto-detect a row's result field + Ads-Manager-style label from its ad set
 // optimisation goal + destination + promoted object. Returns null when it can't
@@ -572,6 +587,17 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
     windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt),
     pr.from ? windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
   ])
+  // Resolve custom-conversion primaries to their real names (Custom Conversion
+  // Definition table: id → name) so the Results label reads e.g. "B_Page_View"
+  // instead of "Offsite Conversion Custom <id>". Rebuild the fallback label
+  // rollupMeta stamps onto every row before the rollup runs.
+  let ccNames = null
+  if (fallback && (fallback.fields || []).some(isCustomConvField)) {
+    ccNames = await fetchCustomConvNames({ meta: accountId }, from, to, key, preset)
+    const lab1 = (f) => isCustomConvField(f) ? ccLabel(f, ccNames) : cap1(META_CONV_LABEL[f] || prettyField(f))
+    const fs = fallback.fields
+    fallback = { ...fallback, label: fs.length === 1 ? lab1(fs[0]) : `${lab1(fs[0])} +${fs.length - 1} more` }
+  }
   const roll = rollupMeta(adRows, dayRows, accRows, campRows, adsetRows, pCampRows, fallback, extra)
   roll.prev = metaTotals(prevRows)
   // Custom-conversion RESULTS injection. Windsor serves custom conversions only via
@@ -589,7 +615,7 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
       const addTotal = sumFor(total)
       if (addTotal > 0) {
         const bd = { ...(Object.fromEntries((roll.totals.resultBreakdown || []).map((b) => [b.label, b.count]))) }
-        for (const f of ccPrimary) { const an = ccActionName(f); const c = an ? (total.get(an) || 0) : 0; if (c > 0) { const lab = ccLabel(f); bd[lab] = (bd[lab] || 0) + c } }
+        for (const f of ccPrimary) { const an = ccActionName(f); const c = an ? (total.get(an) || 0) : 0; if (c > 0) { const lab = ccLabel(f, ccNames); bd[lab] = (bd[lab] || 0) + c } }
         roll.totals.results = (roll.totals.results || 0) + addTotal
         roll.totals.resultBreakdown = Object.entries(bd).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
         roll.totals.costPerResult = roll.totals.results ? Math.round((roll.totals.spend / roll.totals.results) * 100) / 100 : null
@@ -3301,6 +3327,7 @@ export default async (req) => {
     // (the per-id insights columns are unknown fields → always 0). Keyed by both the
     // friendly name and the offsite_conversion_custom_<id> alias.
     const ccCounts = await fetchCustomConvCounts(cc, from, t0, key, false).catch(() => ({ total: new Map() }))
+    const ccNames = await fetchCustomConvNames(cc, from, t0, key).catch(() => new Map())
     // This client's saved primary/secondary custom-conversion fields, so a saved
     // choice (e.g. A_event_pageview) shows its real count even if it isn't the
     // account's current optimisation event (so not in convById).
@@ -3345,15 +3372,19 @@ export default async (req) => {
     for (const [id, evName] of convById) {
       const f = convField(id)
       const cnt = ccLookup(f, evName)
-      if (!actions.some((a) => a.id === f)) actions.push({ id: f, label: `${evName} (custom conversion)`, count: cnt, costPer: cnt ? Math.round((spend / cnt) * 100) / 100 : null, custom: true, optimised: !!(optConv && optConv.id === id) })
-      else { const ex = actions.find((a) => a.id === f); ex.label = `${evName} (custom conversion)`; ex.count = cnt; ex.costPer = cnt ? Math.round((spend / cnt) * 100) / 100 : null; ex.optimised = !!(optConv && optConv.id === id) }
+      // Prefer the real custom-conversion name (Definition table) over the pixel-rule
+      // event name so it reads e.g. "B_Page_View".
+      const nm = ccNames.get(String(id)) || evName
+      if (!actions.some((a) => a.id === f)) actions.push({ id: f, label: `${nm} (custom conversion)`, count: cnt, costPer: cnt ? Math.round((spend / cnt) * 100) / 100 : null, custom: true, optimised: !!(optConv && optConv.id === id) })
+      else { const ex = actions.find((a) => a.id === f); ex.label = `${nm} (custom conversion)`; ex.count = cnt; ex.costPer = cnt ? Math.round((spend / cnt) * 100) / 100 : null; ex.optimised = !!(optConv && optConv.id === id) }
     }
     // Saved custom conversions (from Settings) that aren't the current optimisation
     // event: surface them with their real count from the Custom Conversions table.
     for (const f of savedCustomIds) {
       if (actions.some((a) => a.id === f)) continue
       const cnt = ccLookup(f, null)
-      const lab = prettyField(f).replace(/^(Conversions|Actions)\s+/i, '')
+      const nm = ccLabel(f, ccNames)
+      const lab = nm === 'Custom conversion' ? prettyField(f).replace(/^(Conversions|Actions)\s+/i, '') : nm
       actions.push({ id: f, label: `${lab} (custom conversion)`, count: cnt, costPer: cnt ? Math.round((spend / cnt) * 100) / 100 : null, custom: true })
     }
     const autoField = auto && auto.field && auto.field !== 'leads_native' ? auto.field : (auto && auto.field === 'leads_native' ? 'actions_leadgen_grouped' : null)

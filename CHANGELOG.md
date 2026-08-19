@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.305.0 - 2026-08-19 · `PENDING` - "GoHighLevel / GHL" renamed to "Caalano Systems" in the UI
+- **All user-facing mentions of GoHighLevel / GHL now read "Caalano Systems"** - the forms caveat, the Time-in-stage note,
+  the Call-activity dialer label, the add-client "not connected" status, the auto-onboard copy, the social inbox note, and
+  the "not connected" error. Internal code identifiers, the `gohighlevel` Windsor connector and the `GHL_*` environment
+  variables are unchanged (renaming them would break integrations).
+
 ## v3.304.0 - 2026-08-19 · `PENDING` - Custom conversions now count in every Meta Results surface
 - **Custom-conversion primaries now flow through to every Meta Results view**, not just the campaign table + account total:
   - **Ad-set & ad drill-downs** (Meta tab + Monthly Report): each campaign's custom count is allocated to its ad sets / ads

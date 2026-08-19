@@ -107,7 +107,7 @@ export async function exchangeCode(code, redirect_uri) {
 }
 async function agencyToken() {
   let t = await loadTokens()
-  if (!t) throw new Error('GoHighLevel not connected')
+  if (!t) throw new Error('Caalano Systems not connected')
   if (Date.now() > t.expires_at - 120000) {
     const j = await tokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh_token, user_type: 'Company' })
     t = { access_token: j.access_token, refresh_token: j.refresh_token || t.refresh_token, companyId: j.companyId || t.companyId, userType: j.userType || t.userType, expires_at: Date.now() + num(j.expires_in) * 1000 }

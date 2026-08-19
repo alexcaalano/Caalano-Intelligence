@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.304.0'
+const APP_VERSION = '3.305.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6324,7 +6324,7 @@ function FormsView({ clientId, currency, range, nonce }) {
           )
         })}
       </table></div>
-      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their GHL form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged - hover an answer to see what it combines.</p>
+      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their Caalano Systems form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged - hover an answer to see what it combines.</p>
       {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
     </>
   )
@@ -6688,7 +6688,7 @@ function StageTimingSection({ clientId, nonce }) {
           </div>
         )
       })}
-      <p className="cap">This is the age of deals <b>currently</b> in each stage - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (GoHighLevel doesn't keep that history).</p>
+      <p className="cap">This is the age of deals <b>currently</b> in each stage - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (Caalano Systems doesn't keep that history).</p>
     </div>
   )
 }
@@ -6926,7 +6926,7 @@ function UserCallActivity({ users, clientId, range, nonce, currency }) {
   const totOut = rows.reduce((a, r) => a + r.outbound, 0), totMin = rows.reduce((a, r) => a + r.outboundMinutes, 0)
   return (
     <div className="card">
-      <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Call activity <span style={{ fontWeight: 400 }}>· GoHighLevel dialer · {fmtNumber(d.totalCalls)} calls · {fmtNumber(totOut)} outbound · {fmtNumber(totMin)} talk min</span></div>
+      <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Call activity <span style={{ fontWeight: 400 }}>· Caalano Systems dialer · {fmtNumber(d.totalCalls)} calls · {fmtNumber(totOut)} outbound · {fmtNumber(totMin)} talk min</span></div>
       {idle.length > 0 && <div className="u-idle-flag" title="These reps have leads assigned in this range but no outbound calls logged in the dialer - either they're not calling or not logging calls here.">⚠ {idle.length === 1 ? '1 rep has' : `${idle.length} reps have`} assigned leads but no logged outbound calls: {idle.map((u) => u.name).join(', ')}</div>}
       <div className="table-wrap"><table className="mini-tbl appt-tbl"><thead><tr><th style={{ textAlign: 'left' }}>Rep</th><th>Outbound</th><th>Talk min</th><th>Connect %</th><th>Avg talk</th><th>Inbound</th><th title="Median time from lead-in to this rep's first outbound call">Speed to lead</th><th title="Share of leads this rep called back within 5 minutes">≤5 min %</th><th title="Outbound calls per appointment booked by this rep">Calls / booked</th><th title="Outbound calls per deal won by this rep">Calls / won</th><th title="Revenue won per hour of this rep's talk time">Rev / talk-hr</th></tr></thead>
         <tbody>{rows.map((r) => { const u = uById.get(r.userId); return (<tr key={r.userId}><td style={{ textAlign: 'left' }}>{nameOf(r)}</td><td>{fmtNumber(r.outbound)}</td><td>{fmtNumber(r.outboundMinutes)}</td><td>{fmtPct(r.connectRate, 0)}</td><td>{r.avgTalkMin}m</td><td>{fmtNumber(r.inbound)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{fmtSpeedHrs(r.speedToLeadHrs)}</td><td title={r.speedSamples ? `${r.speedSamples} leads` : ''}>{r.sla5Pct == null ? '-' : `${r.sla5Pct}%`}</td><td>{u ? fmtRatio(r.outbound, u.booked) : '-'}</td><td>{u ? fmtRatio(r.outbound, u.won) : '-'}</td><td>{revPerHr(r, u)}</td></tr>) })}</tbody></table></div>
@@ -8265,7 +8265,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   <Col title="📊 Google Analytics 4" items={d.ga4} sel={ga4} onSel={pickGa4} empty={d.ga4Err ? (/don'?t\s+have\s+this\s+connector/i.test(d.ga4Err) ? `⚠ Windsor doesn't recognise the GA4 connector on this key. Add the "Google Analytics 4" data source in your Windsor account (Data sources → add GA4), then hit Refresh accounts.` : `⚠ Windsor GA4 connector error - it may need re-authorising in Windsor: ${d.ga4Err}`) : 'No GA4 properties found yet from Windsor. Paste the property ID below to link it now.'} />
                 </div>
                 <div className="addcl-status cap">
-                  {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems (GHL) not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
+                  {d.connected === false ? <span className="addcl-stat-bad">● Caalano Systems not connected</span> : <span className="addcl-stat-ok">● Live from Windsor</span>}
                   {d.fetchedAt ? <> · refreshed {new Date(d.fetchedAt).toLocaleTimeString()}</> : null}
                   {' · '}{fmtNumber((d.meta || []).length)} Meta · {fmtNumber((d.google || []).length)} Google · {fmtNumber((d.ga4 || []).length)} GA4 · {fmtNumber((d.ghl || []).length)} CRM accounts visible
                   {d.metaErr || d.googleErr ? <span className="addcl-stat-bad"> · a connector is erroring (see above)</span> : null}
@@ -8274,7 +8274,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google || (ga4 || '').trim()) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}${(ga4 || '').trim() ? ' · GA4' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
                   <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
-                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked - a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the GoHighLevel agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> - so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
+                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked - a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> - so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
               </>}
         </div>
       </div>
@@ -8360,7 +8360,7 @@ function AutoOnboardModal({ existing, onClose }) {
             : st.status === 'err' ? <div className="cap">Couldn’t load accounts - <button className="btn-ghost sm" onClick={() => load(true)}>try again</button>.</div>
               : rows.length === 0 ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>Every Caalano Systems location is already linked to a client.</b><p className="cap">New sub-account? Install the app on it and add its ad account to your Meta Business Manager + Windsor, then hit Refresh.</p></div>
                 : (<>
-                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.{notReady ? <> <b style={{ color: 'var(--warn)' }}>{notReady} can’t be onboarded yet</b> - the marketplace app isn’t installed on those sub-accounts, so the API can’t reach them. Install it (or enable “install on all sub-accounts” in your GHL app) and hit Refresh.</> : null}</p>
+                  <p className="cap" style={{ marginTop: 0 }}>{rows.length} unlinked location{rows.length === 1 ? '' : 's'} found. Review the suggested Meta / Google matches (green = confident), untick any you don’t want, then create them all. You can fine-tune links afterwards on each client.{notReady ? <> <b style={{ color: 'var(--warn)' }}>{notReady} can’t be onboarded yet</b> - the marketplace app isn’t installed on those sub-accounts, so the API can’t reach them. Install it (or enable “install on all sub-accounts” in your Caalano Systems app) and hit Refresh.</> : null}</p>
                   <div className="ao-table">
                     <div className="ao-h"><span /><span>Client name</span><span>Caalano Systems</span><span>Meta</span><span>Google</span></div>
                     {rows.map((r, i) => (
@@ -13258,7 +13258,7 @@ function SocialDashboard({ clients, range, nonce }) {
 
       {dm && dm.total > 0 && (
         <section className="soc-section soc-dm">
-          <div className="soc-head"><span className="soc-plat soc-all">Inbound DMs</span><h3>Conversations started via social</h3><span className="soc-dm-note">from GoHighLevel inbox · first message inbound via IG/FB</span></div>
+          <div className="soc-head"><span className="soc-plat soc-all">Inbound DMs</span><h3>Conversations started via social</h3><span className="soc-dm-note">from Caalano Systems inbox · first message inbound via IG/FB</span></div>
           <div className="mr-kpirow">
             <MRKpi label="Total inbound DMs" value={n0(dm.total)} sub="IG + FB, this period" strong />
             <MRKpi label="Instagram DMs" value={n0(dm.ig)} />

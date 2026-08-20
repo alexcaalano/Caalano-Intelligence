@@ -1435,8 +1435,9 @@ async function speedFirstOutboundMap(locTok, locationId, startIso, endIso, start
     let cursor = null, guard = 0
     while (guard++ < 10) {
       if (Date.now() - started > budgetMs) break
-      // See buildUserCalls: sortBy:'createdAt' makes the export return zero rows.
-      const q = { channel, limit: 1000 }
+      // See buildUserCalls: sortBy:'createdAt' makes the export return zero rows,
+      // and a 1000-row page is too heavy to return before the timeout - page in 200s.
+      const q = { channel, limit: 200 }
       if (startIso) q.startDate = startIso
       if (endIso) q.endDate = endIso
       if (cursor) q.cursor = cursor
@@ -1456,7 +1457,7 @@ async function speedFirstOutboundMap(locTok, locationId, startIso, endIso, start
         if (kind === 'manual' && (e.manual == null || ms < e.manual)) e.manual = ms
       }
       cursor = j.nextCursor
-      if (!cursor || msgs.length < 1000) break
+      if (!cursor || msgs.length < 200) break
     }
   }
   return { map, srcCounts }
@@ -2084,12 +2085,18 @@ export async function buildUserCalls(locationId, from, to) {
   const allContacts = new Set()
   const dayMap = new Map() // YYYY-MM-DD -> { outbound, inbound, seconds }
   const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0, inboundSec: 0, longestSec: 0, contacts: new Set(), speed: [] }; byUser.set(uid, e) } return e }
-  let cursor = null, guard = 0, total = 0
-  while (guard++ < 8) {
+  // The export payload is heavy (recording URLs + full metadata per call), so a
+  // 1000-row page can exceed the function's ~10s budget and time out - which was
+  // silently swallowed and showed "No dialer calls". Page in smaller chunks under
+  // a wall-clock deadline instead; if the window is bigger than we can fetch in
+  // time, stop and flag it (partial) rather than return nothing.
+  let cursor = null, guard = 0, total = 0, partial = false
+  const callDeadline = Date.now() + 7000
+  while (guard++ < 80) {
     // NOTE: do NOT pass sortBy:'createdAt' - the export silently returns ZERO
-    // messages (HTTP 200, total:0) for that sort value. Its default order is
-    // newest-first already, which is what we want.
-    const q = { channel: 'Call', limit: 1000 }
+    // messages (HTTP 200, total:0) for that sort value (a GHL bug). Its default
+    // order is newest-first already, which is what we want.
+    const q = { channel: 'Call', limit: 200 }
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor
@@ -2114,12 +2121,13 @@ export async function buildUserCalls(locationId, from, to) {
       total++
     }
     cursor = j.nextCursor
-    if (!cursor || msgs.length < 1000) break
+    if (!cursor || msgs.length < 200) break
+    if (Date.now() > callDeadline) { partial = true; break }
   }
   // Best-effort: give the concurrent opps pull a short grace window now that the
   // calls are done. If it hasn't resolved, skip speed-to-lead rather than stall.
   let opps = null
-  try { opps = await Promise.race([oppsP, new Promise((r) => setTimeout(() => r(null), 3000))]) } catch { opps = null }
+  try { opps = await Promise.race([oppsP, new Promise((r) => setTimeout(() => r(null), 2000))]) } catch { opps = null }
   const speedAvailable = Array.isArray(opps)
   if (speedAvailable) {
     const leadMs = new Map()
@@ -2161,7 +2169,7 @@ export async function buildUserCalls(locationId, from, to) {
   }
   const daily = [...dayMap.entries()].filter(([d]) => d).sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, v]) => ({ date, outbound: v.outbound, inbound: v.inbound, minutes: Math.round(v.seconds / 60) }))
-  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable }
+  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable, partial }
 }
 // The channel / pipeline / won-basis filters on the Users tab only change WHICH
 // opportunities are counted - every expensive fetch (opps, appointments,

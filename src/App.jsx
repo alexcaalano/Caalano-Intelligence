@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.309.0'
+const APP_VERSION = '3.310.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6982,7 +6982,7 @@ function CallReportView({ clientId, range, nonce }) {
   return (
     <>
       <div className="card">
-        <div className="exec-panel-h">Call activity <span className="sub">· Caalano Systems dialer · {rangeLabel(range)}</span></div>
+        <div className="exec-panel-h">Call activity <span className="sub">· Caalano Systems dialer · {rangeLabel(range)}{d.partial ? ' · high volume — showing the most recent calls in range' : ''}</span></div>
         <div className="timing-scards">
           <div className="tm-sc hero"><span className="tm-lab">Total calls</span><b>{fmtNumber(t.calls)}</b><span className="tm-sub">{fmtNumber(t.outbound)} out · {fmtNumber(t.inbound)} in</span></div>
           <div className="tm-sc"><span className="tm-lab">Time on the phone</span><b>{fmtMin(t.talkMinutes)}</b><span className="tm-sub">connected talk time</span></div>

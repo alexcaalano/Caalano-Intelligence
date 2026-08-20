@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.310.0 - 2026-08-20 · `PENDING` - Call Reporting: page the export so heavy windows don't time out
+- **The v3.309.0 fix (removing the broken `sortBy`) exposed a second problem:** at `limit: 1000` the export payload (recording
+  URLs + full metadata per call) is so large a single page can't return inside the function's ~10s budget - so it timed out
+  and still showed nothing. Now it pages in 200-row chunks under a wall-clock deadline, banking each page as it arrives, and
+  the Speed-to-Lead bulk map does the same. Normal windows load fully; a very high-volume window that can't finish in time
+  now shows the most recent calls in range (labelled "high volume — showing the most recent calls") instead of zero.
+
 ## v3.309.0 - 2026-08-20 · `PENDING` - Fix: Call Reporting showed "No dialer calls" despite thousands of calls
 - **Call Reporting (and Speed-to-Lead) were silently empty.** The message-export call passed `sortBy: 'createdAt'`, and for
   that sort value the GoHighLevel export returns HTTP 200 with **zero** messages instead of an error - so the whole call

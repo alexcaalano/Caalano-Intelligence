@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.318.0'
+const APP_VERSION = '3.319.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10384,6 +10384,10 @@ function TagCombo({ value, onChange, options, listId, placeholder }) {
 function CreativeCockpit({ client, currency, range, nonce }) {
   useSettingsSync()
   const st = useCreatives(client.id, range, nonce)
+  // The CRM funnel behind each creative (green Caalano360 key-event columns) comes
+  // from the attribution build (byCreative, joined by utm_content) - same source
+  // the Meta Ads view + Monthly Report use, so the numbers line up across screens.
+  const attr = useAttribution(client.id, range, nonce)
   const money = (v) => fmtCurrency(v, currency)
   const tags = loadCreativeMeta(client.id)
   const tax = loadCreativeTax(client.id)
@@ -10474,6 +10478,10 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
       </div>
 
+      {/* Key events by creative - the CRM funnel (green Caalano360 columns) behind
+          each ad, joined by utm_content, so the cockpit shows the full outlook. */}
+      {hasCrm && <CockpitKeyEvents client={client} attr={attr} rows={rows} currency={currency} money={money} />}
+
       {/* Filters */}
       <div className="cc-filters">
         <input className="cc-search" placeholder="Search creative name…" value={f.q} onChange={(e) => set({ q: e.target.value })} />
@@ -10498,6 +10506,38 @@ function CreativeCockpit({ client, currency, range, nonce }) {
       <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.</p>
       {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad - likely paused or renamed creatives.</p> : null}
     </>
+  )
+}
+
+// Green Caalano360 key-event table for the Creative Cockpit: every creative with
+// the real CRM funnel behind it (booked / shown / stage reach / won per the
+// client's configured key events), joined to the ad by utm_content. Reuses the
+// exact sortable green table the Meta Ads view + Monthly Report render, so the
+// columns and numbers match across the app. Falls back to the legacy
+// Booked/Shown/Won block when no key events are configured.
+function CockpitKeyEvents({ client, attr, rows, currency, money }) {
+  const [tsort, onTsort] = useSort('spend')
+  const n0 = (v) => fmtNumber(v)
+  if (!attr || attr.status === 'loading') return <div className="card"><Spinner label="Loading key events…" /></div>
+  const A = attr.data && attr.data.attribution
+  if (!A) return null
+  // Order key events by their real funnel position (full pipeline registry), and
+  // map calendar ids → names, exactly like the Meta view / Monthly deck.
+  const stagePos = stagePosMap([...((A.allPipelines) || []), ...((A.channels && A.channels.all && A.channels.all.pipelines) || [])])
+  const calNames = new Map(((A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
+  const o360cols = buildO360Cols(loadKeyEvents(client.id), stagePos, calNames)
+  const oCre = aliasedOutcomeMap(client.id, 'content', A.byCreative)
+  // Shape each cockpit creative into the MRCreativeTable row + attach its
+  // per-creative key-event fields (0 when a creative never reached that event).
+  const tableRows = rows.map((c) => {
+    const leads = c.crm ? c.crm.leads : c.leads
+    const ctr = c.impressions ? (c.clicks / c.impressions) * 100 : null
+    return { name: c.name, type: c.format, thumb: c.thumb, spend: c.spend, impressions: c.impressions, clicks: c.clicks, leads, resultType: c.resultType, ctrV: ctr, freqV: null, cpl: leads ? c.spend / leads : null, ...o360Fields(oCre.get(unorm(c.name)), c.spend, leads, o360cols) }
+  })
+  return (
+    <div className="card">
+      <MRCreativeTable rows={tableRows} o360cols={o360cols} tsort={tsort} onTsort={onTsort} currency={currency} money={money} n0={n0} heading="Key events by creative · the CRM funnel behind each ad" />
+    </div>
   )
 }
 
@@ -11748,11 +11788,11 @@ function MRCreativeCards({ ads, doSort, sortToken, sortLabel, label, money, n0, 
 // One creative data-table (the sortable green Caalano360 table). In a
 // multi-pipeline deck each pipeline gets its own table under an optional label;
 // the header sort (tsort/onTsort) is shared so every table sorts together.
-function MRCreativeTable({ rows, o360cols, tsort, onTsort, currency, money, n0, label }) {
+function MRCreativeTable({ rows, o360cols, tsort, onTsort, currency, money, n0, label, heading }) {
   const tableRows = sortRows(rows, tsort)
   return (
     <>
-      <div className="mr-section-lab" style={{ marginTop: 18 }}>{label ? `Creative table · ${label}` : 'Creative table'}</div>
+      <div className="mr-section-lab" style={{ marginTop: 18 }}>{heading || (label ? `Creative table · ${label}` : 'Creative table')}</div>
       <div className="table-wrap"><table className="o360-tbl">
         <O360ColGroup left={8} green={!!o360cols} cols={o360cols} />
         <thead>

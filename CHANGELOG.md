@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.319.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key-event tracking per creative
+- Added a **"Key events by creative"** table to the Creative Cockpit (Creative Breakdown), showing the client's configured
+  green Caalano360 key events (booked / shown / stage reach / won, with cost-per-event and rates) behind every creative,
+  joined to each ad by `utm_content`.
+- Reuses the exact sortable green-column table from the Meta Ads view and the Monthly Report, so the numbers and columns
+  line up across every screen. Falls back to the legacy Booked / Shown / Won block when a client has no key events set.
+- Pulls the funnel from the same attribution build the other tabs use, so the cockpit now gives a full outlook from ad
+  spend all the way through to the CRM outcome.
+
 ## v3.318.0 - 2026-08-20 · `PENDING` - Removed the AI creative strategy panel from Creative Cockpit
 - Removed the "✨ AI creative strategy" card (the "Generate strategy" read) from the Creative Breakdown view.
 

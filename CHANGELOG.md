@@ -17,6 +17,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.321.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key events as columns in the tagging grid (not a separate table)
+- Moved the key-event tracking **into the existing creative grid** as green Caalano360 columns, instead of the separate
+  "Key events by creative" table. The full tagging grid is back in full - every creative is still click-to-expand for the
+  awareness / persona / angle / destination / CTA / copy / notes editor, and all previously saved tags are untouched.
+- Each creative row now shows its key events (booked / shown / stage reach / won, with cost-per-event and rates) as green
+  columns to the right of Spend / Leads / Booked, joined to the ad by `utm_content` - matching the Meta Ads view.
+- The green columns fill in a moment after the grid first paints (they come from the attribution build, an independent
+  fetch), so tagging is available immediately and nothing blocks on the CRM funnel.
+
 ## v3.320.0 - 2026-08-20 · `PENDING` - Creative Cockpit: selected client saved in the URL
 - The client picked in the Creative Cockpit is now written to the URL (`?c=`), so a link like
   `…?v=cockpit&c=<client>` opens the Cockpit straight on that client and any Cockpit link you copy remembers the selection.

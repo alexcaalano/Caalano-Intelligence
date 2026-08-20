@@ -2102,7 +2102,10 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
     // The export endpoint REQUIRES locationId as a query param (400
     // CONVERSATIONS_LOCATION_ID_REQUIRED otherwise) even though we auth with the
     // location token - unlike most other GHL reads.
-    const q = { locationId, channel: 'Call', limit: 100 }
+    // 250/page: a single day rarely has more, so most day-chunks finish in ONE
+    // request (fast). The per-day window keeps the matching set small, so even a
+    // 250-row page returns well within the timeout.
+    const q = { locationId, channel: 'Call', limit: 250 }
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor
@@ -2128,7 +2131,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
       total++
     }
     cursor = j.nextCursor
-    if (!cursor || msgs.length < 100) break
+    if (!cursor || msgs.length < 250) break
     if (Date.now() > callDeadline) { partial = true; break }
   }
   // Best-effort: give the concurrent opps pull a short grace window now that the

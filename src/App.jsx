@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.316.0'
+const APP_VERSION = '3.317.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6965,7 +6965,7 @@ function UserApptActivity({ clientId, range, nonce }) {
 // re-derive here. Speed-to-lead is omitted in batched mode (it needs the global
 // first-touch across the whole range, which independent day chunks can't see).
 function mergeCallChunks(parts) {
-  const um = new Map(); const daily = []; let partial = false
+  const um = new Map(); const daily = []; const repDaily = new Map(); let partial = false
   for (const p of parts) {
     if (p.partial) partial = true
     for (const u of (p.byUser || [])) {
@@ -6976,6 +6976,9 @@ function mergeCallChunks(parts) {
       e.oc += u.outboundConnected || 0; e.ic += u.inboundConnected || 0
       e.os += u.outboundSec || 0; e.is += u.inboundSec || 0
       e.longestSec = Math.max(e.longestSec, u.longestSec || 0); e.contacts += u.contacts || 0
+      // Per-rep, per-day (each chunk is one day) so the volume chart can drill to a rep.
+      const day = (p.period && p.period.from) || (p.daily && p.daily[0] && p.daily[0].date)
+      if (day) { let rd = repDaily.get(u.userId); if (!rd) { rd = new Map(); repDaily.set(u.userId, rd) } rd.set(day, { date: day, outbound: u.outbound || 0, inbound: u.inbound || 0, minutes: u.talkMinutes || 0 }) }
     }
     for (const dd of (p.daily || [])) daily.push(dd)
   }
@@ -6999,11 +7002,16 @@ function mergeCallChunks(parts) {
     activeReps: byUser.filter((e) => e.userId !== 'unassigned' && e.outbound > 0).length,
   }
   daily.sort((a, b) => a.date.localeCompare(b.date))
-  return { connected: true, totals, daily, byUser, speedAvailable: false, partial, batched: true }
+  const dailyByRep = {}
+  for (const [uid, m] of repDaily) dailyByRep[uid] = [...m.values()].sort((a, b) => a.date.localeCompare(b.date))
+  return { connected: true, totals, daily, byUser, dailyByRep, speedAvailable: false, partial, batched: true }
 }
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const dayTick = (v) => { const s = String(v); const dt = new Date(s + 'T00:00:00Z'); return isNaN(dt) ? s.slice(5) : `${s.slice(5)} ${DOW[dt.getUTCDay()]}` }
 function CallReportView({ clientId, range, nonce }) {
   const [d, setD] = useState(null)
   const [prog, setProg] = useState({ done: 0, total: 0 })
+  const [selRep, setSelRep] = useState('all')
   useEffect(() => {
     let alive = true; setD(null)
     // Split the range into 1-day chunks - each is small enough to fully page
@@ -7014,23 +7022,22 @@ function CallReportView({ clientId, range, nonce }) {
     for (let t = new Date(`${range.from}T00:00:00Z`); t <= new Date(`${range.to}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + 1)) days.push(t.toISOString().slice(0, 10))
     if (!days.length) { setD({ error: true }); return () => { alive = false } }
     setProg({ done: 0, total: days.length })
-    // Always bypass the server result cache for these day chunks (a stale empty
-    // from an earlier broken build could otherwise mask real calls). Deduped
-    // within this load by the shared token.
-    const bust = nonce || `t${Math.floor(Date.now() / 1000)}`
+    // Past days are immutable, so let the server cache them (fast repeat loads);
+    // a manual Refresh (nonce) busts. Only "today" can be up to the 10-min TTL stale.
+    const rq = nonce ? `&_r=${nonce}` : ''
     const parts = []; let idx = 0, done = 0
     const worker = async () => {
       while (idx < days.length && alive) {
         const day = days[idx++]
         try {
-          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1&_r=${bust}`)
+          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1${rq}`)
           const j = r.ok ? await r.json() : null
           if (j) parts.push(j)
         } catch { /* skip a failed day */ }
         done++; if (alive) setProg({ done, total: days.length })
       }
     }
-    Promise.all(Array.from({ length: Math.min(3, days.length) }, worker)).then(() => {
+    Promise.all(Array.from({ length: Math.min(5, days.length) }, worker)).then(() => {
       if (!alive) return
       if (parts.length && parts.every((p) => p && p.ghl === false)) return setD({ ghl: false })
       if (parts.length && parts.every((p) => p && p.connected === false)) return setD({ connected: false })
@@ -7065,22 +7072,39 @@ function CallReportView({ clientId, range, nonce }) {
           {t.missedInbound ? <div className="tm-sc warn"><span className="tm-lab">Missed inbound</span><b>{fmtNumber(t.missedInbound)}</b><span className="tm-sub">unanswered / voicemail</span></div> : null}
         </div>
       </div>
-      {d.daily && d.daily.length > 1 && (
-        <div className="card">
-          <div className="exec-panel-h">Call volume by day <span className="sub">· outbound vs inbound</span></div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={d.daily} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(v) => String(v).slice(5)} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={34} allowDecimals={false} />
-              <Tooltip contentStyle={{ fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="outbound" name="Outbound" stackId="a" fill="#6d5efc" maxBarSize={26} />
-              <Bar dataKey="inbound" name="Inbound" stackId="a" fill="#22b07d" radius={[3, 3, 0, 0]} maxBarSize={26} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {d.daily && d.daily.length > 1 && (() => {
+        // Pick the chart series: all reps (the merged daily) or one rep's per-day
+        // data, mapped onto every date in range so gaps read as 0 not blanks.
+        const repSeries = (selRep !== 'all' && d.dailyByRep && d.dailyByRep[selRep]) ? new Map(d.dailyByRep[selRep].map((x) => [x.date, x])) : null
+        const chartData = repSeries
+          ? d.daily.map((day) => { const rd = repSeries.get(day.date); return { date: day.date, outbound: rd ? rd.outbound : 0, inbound: rd ? rd.inbound : 0, minutes: rd ? rd.minutes : 0 } })
+          : d.daily
+        const selName = selRep === 'all' ? null : (nameOf((d.byUser || []).find((r) => r.userId === selRep) || { userId: selRep }))
+        return (
+          <div className="card">
+            <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <span>Call volume by day <span className="sub">· outbound vs inbound · talk minutes{selName ? ` · ${selName}` : ''}</span></span>
+              <select className="mr-cre-sort-sel" value={selRep} onChange={(e) => setSelRep(e.target.value)} style={{ maxWidth: 220 }}>
+                <option value="all">All reps</option>
+                {rows.map((r) => <option key={r.userId} value={r.userId}>{nameOf(r)}</option>)}
+              </select>
+            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 9.5, fill: 'var(--muted)' }} tickFormatter={dayTick} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis yAxisId="calls" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={34} allowDecimals={false} />
+                <YAxis yAxisId="mins" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={38} allowDecimals={false} tickFormatter={(v) => `${v}m`} />
+                <Tooltip contentStyle={{ fontSize: 12 }} labelFormatter={dayTick} formatter={(v, n) => [n === 'Talk minutes' ? `${fmtNumber(v)}m` : fmtNumber(v), n]} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar yAxisId="calls" dataKey="outbound" name="Outbound" stackId="a" fill="#6d5efc" maxBarSize={26} />
+                <Bar yAxisId="calls" dataKey="inbound" name="Inbound" stackId="a" fill="#22b07d" radius={[3, 3, 0, 0]} maxBarSize={26} />
+                <Line yAxisId="mins" type="monotone" dataKey="minutes" name="Talk minutes" stroke="#e0803a" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        )
+      })()}
       <div className="card">
         <div className="exec-panel-h">Rep scoreboard <span className="sub">· ranked by outbound volume · ★ top caller</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl">

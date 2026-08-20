@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.317.0 - 2026-08-20 · `PENDING` - Call Reporting: rep drill-down, talk-minutes line, weekday labels + faster pull
+- **Rep drill-down on the volume chart.** A rep dropdown above "Call volume by day" filters the chart to that rep's calls
+  (defaults to All reps).
+- **Talk-minutes line.** The chart is now a combo: outbound/inbound bars (left axis) plus a talk-minutes line (right axis),
+  for the whole team or the selected rep.
+- **Weekday on the axis.** Each day now reads "08-19 Tue" (date + day of week) on the axis and tooltip.
+- **Faster pull.** Now that the export works (the fix was a missing `locationId`, not throughput), each day fetches at 250
+  rows/page (most days finish in one request), day-chunk concurrency is up to 5, and past (immutable) days are cached again
+  so repeat loads are instant. A cold wide range loads noticeably quicker.
+
+## v3.316.0 - 2026-08-20 · `PENDING` - Call Reporting: bigger pages + longer per-day cutoff for complete day counts
+
 ## v3.315.0 - 2026-08-20 · `PENDING` - Call Reporting FIXED: the export needs locationId in the query
 - **Root cause found and fixed.** The `/conversations/messages/export` endpoint returns `400 CONVERSATIONS_LOCATION_ID_REQUIRED`
   unless `locationId` is passed as a query param - even though we authenticate with the location token (most other GHL reads

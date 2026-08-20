@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.315.0'
+const APP_VERSION = '3.316.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7030,7 +7030,7 @@ function CallReportView({ clientId, range, nonce }) {
         done++; if (alive) setProg({ done, total: days.length })
       }
     }
-    Promise.all(Array.from({ length: Math.min(2, days.length) }, worker)).then(() => {
+    Promise.all(Array.from({ length: Math.min(3, days.length) }, worker)).then(() => {
       if (!alive) return
       if (parts.length && parts.every((p) => p && p.ghl === false)) return setD({ ghl: false })
       if (parts.length && parts.every((p) => p && p.connected === false)) return setD({ connected: false })

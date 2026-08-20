@@ -2094,7 +2094,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   // a wall-clock deadline instead; if the window is bigger than we can fetch in
   // time, stop and flag it (partial) rather than return nothing.
   let cursor = null, guard = 0, total = 0, partial = false, pages = 0, sawNull = false, reportedTotal = null, exportErr = null
-  const callDeadline = Date.now() + 7000
+  const callDeadline = Date.now() + 8500
   while (guard++ < 80) {
     // NOTE: do NOT pass sortBy:'createdAt' - the export silently returns ZERO
     // messages (HTTP 200, total:0) for that sort value (a GHL bug). Its default
@@ -2102,7 +2102,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
     // The export endpoint REQUIRES locationId as a query param (400
     // CONVERSATIONS_LOCATION_ID_REQUIRED otherwise) even though we auth with the
     // location token - unlike most other GHL reads.
-    const q = { locationId, channel: 'Call', limit: 50 }
+    const q = { locationId, channel: 'Call', limit: 100 }
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor
@@ -2128,7 +2128,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
       total++
     }
     cursor = j.nextCursor
-    if (!cursor || msgs.length < 50) break
+    if (!cursor || msgs.length < 100) break
     if (Date.now() > callDeadline) { partial = true; break }
   }
   // Best-effort: give the concurrent opps pull a short grace window now that the

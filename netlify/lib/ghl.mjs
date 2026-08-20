@@ -2093,7 +2093,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   // silently swallowed and showed "No dialer calls". Page in smaller chunks under
   // a wall-clock deadline instead; if the window is bigger than we can fetch in
   // time, stop and flag it (partial) rather than return nothing.
-  let cursor = null, guard = 0, total = 0, partial = false, pages = 0, sawNull = false, reportedTotal = null
+  let cursor = null, guard = 0, total = 0, partial = false, pages = 0, sawNull = false, reportedTotal = null, exportErr = null
   const callDeadline = Date.now() + 7000
   while (guard++ < 80) {
     // NOTE: do NOT pass sortBy:'createdAt' - the export silently returns ZERO
@@ -2103,7 +2103,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor
-    const j = await ghlGet(locTok, '/conversations/messages/export', q).catch(() => null)
+    const j = await ghlGet(locTok, '/conversations/messages/export', q).catch((e) => { exportErr = String((e && e.message) || e).slice(0, 240); return null })
     if (!j) { sawNull = true; break }
     pages++; if (reportedTotal == null && typeof j.total === 'number') reportedTotal = j.total
     const msgs = j.messages || []
@@ -2176,7 +2176,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   }
   const daily = [...dayMap.entries()].filter(([d]) => d).sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, v]) => ({ date, outbound: v.outbound, inbound: v.inbound, minutes: Math.round(v.seconds / 60) }))
-  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable, partial, _diag: { pages, sawNull, reportedTotal, fetched: total, startIso, endIso } }
+  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable, partial, _diag: { pages, sawNull, reportedTotal, fetched: total, startIso, endIso, exportErr } }
 }
 // The channel / pipeline / won-basis filters on the Users tab only change WHICH
 // opportunities are counted - every expensive fetch (opps, appointments,

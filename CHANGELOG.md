@@ -17,6 +17,9 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.318.0 - 2026-08-20 · `PENDING` - Removed the AI creative strategy panel from Creative Cockpit
+- Removed the "✨ AI creative strategy" card (the "Generate strategy" read) from the Creative Breakdown view.
+
 ## v3.317.0 - 2026-08-20 · `PENDING` - Call Reporting: rep drill-down, talk-minutes line, weekday labels + faster pull
 - **Rep drill-down on the volume chart.** A rep dropdown above "Call volume by day" filters the chart to that rep's calls
   (defaults to All reps).

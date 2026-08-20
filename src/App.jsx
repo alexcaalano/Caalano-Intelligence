@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.317.0'
+const APP_VERSION = '3.318.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10472,18 +10472,6 @@ function CreativeCockpit({ client, currency, range, nonce }) {
           <thead><tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}</tr></thead>
           <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '-'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
         </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
-      </div>
-
-      {/* AI creative strategy */}
-      <div className="card ai-card cc-strategy">
-        <div className="ai-head">
-          <div className="ai-title">✨ AI creative strategy {strat ? <span className="sub">· {strat.period} · generated {new Date(strat.generatedAt).toLocaleString('en-AU')}</span> : <span className="sub">· Claude reads the tagged performance and tells you what to make next</span>}</div>
-          <button className="ai-btn" onClick={genStrategy} disabled={stratBusy}>{stratBusy ? 'Generating…' : strat ? '↻ Regenerate' : '✨ Generate strategy'}</button>
-        </div>
-        {stratErr && <p className="cap" style={{ color: 'var(--neg)', margin: '2px 0 0' }}>{stratErr}</p>}
-        {stratBusy ? <Spinner label="Claude is reviewing the creative…" />
-          : strat ? <MdText text={strat.insights} />
-            : <p className="cap" style={{ margin: 0 }}>Tag your creatives, then generate a strategy read: what's working by angle / persona / format, what to cut, and concrete new concepts to test. Runs only when you click.</p>}
       </div>
 
       {/* Filters */}

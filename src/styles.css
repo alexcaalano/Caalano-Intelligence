@@ -2014,6 +2014,15 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 
 /* Contain any wide table so it scrolls inside its box instead of the page. */
 .tbl-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+/* Mouse-friendly horizontal panning for wide tables (the green key-event grid):
+   click-and-drag to pan (see useDragScroll), plus a chunkier, always-visible
+   scrollbar that's easy to grab with a mouse. */
+.tbl-scroll.pan { cursor: grab; scrollbar-width: auto; scrollbar-color: rgba(120,130,150,.55) transparent; }
+.tbl-scroll.pan.dragging { cursor: grabbing; user-select: none; }
+.tbl-scroll.pan::-webkit-scrollbar { height: 14px; }
+.tbl-scroll.pan::-webkit-scrollbar-track { background: rgba(120,130,150,.08); border-radius: 8px; }
+.tbl-scroll.pan::-webkit-scrollbar-thumb { background: rgba(120,130,150,.55); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+.tbl-scroll.pan::-webkit-scrollbar-thumb:hover { background: rgba(120,130,150,.8); background-clip: padding-box; }
 .cc-nm { display: inline-block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 .cc-tbl { min-width: 720px; }
 @media (max-width: 640px) { .cc-nm { max-width: 150px; } }

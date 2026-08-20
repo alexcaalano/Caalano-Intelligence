@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.322.0 - 2026-08-20 · `PENDING` - Creative Cockpit: sortable key-event columns, mouse-friendly scrolling, per-event rollup
+- **Sort by any column, including key events.** Every green key-event column (Booked, Cost/Booked, Show Rate, Won, …) is
+  now click-to-sort in the creative grid, alongside the existing Spend / Leads / Fatigue columns.
+- **Easier horizontal scrolling with a mouse.** The wide green tables are now click-and-drag to pan (grab anywhere and
+  drag sideways), with a chunkier, always-visible scrollbar that's easy to grab. A real click still expands a row / sorts a
+  column - only an actual drag pans.
+- **Cost per key event + count on "What's working".** The rollup table (by Awareness / Persona / Angle / Format /
+  Destination) now shows, for each configured key event, the total count and the cost per event (spend ÷ count), grouped
+  under the event name - so you can see which angle books the cheapest site visits / calls / jobs at a glance.
+
 ## v3.321.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key events as columns in the tagging grid (not a separate table)
 - Moved the key-event tracking **into the existing creative grid** as green Caalano360 columns, instead of the separate
   "Key events by creative" table. The full tagging grid is back in full - every creative is still click-to-expand for the

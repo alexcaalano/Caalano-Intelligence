@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.321.0'
+const APP_VERSION = '3.322.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -241,6 +241,41 @@ function useSyncedTableScroll(ref) {
     mo.observe(root, { childList: true, subtree: true })
     return () => { mo.disconnect(); for (const w of wraps) w.removeEventListener('scroll', onScroll) }
   }, [])
+}
+// Click-and-drag to pan a wide table horizontally with the mouse (the green
+// key-event tables are far wider than the viewport, and a tiny bottom scrollbar is
+// fiddly). Returns a ref to attach to the scroll container. A drag past a few px
+// pans and swallows the click that follows, so row-expand / header-sort clicks
+// still work on a real (non-drag) click. Shift+wheel and the (now chunkier)
+// scrollbar keep working too.
+function useDragScroll() {
+  const ref = useRef(null)
+  useEffect(() => {
+    const el = ref.current; if (!el) return
+    let down = false, startX = 0, startL = 0, moved = false
+    const onDown = (e) => {
+      // Don't hijack drags that start on an interactive control (inputs, selects,
+      // buttons, links, textareas) inside an expanded row.
+      if (e.button !== 0 || e.target.closest('input,select,textarea,button,a,label')) return
+      down = true; moved = false; startX = e.clientX; startL = el.scrollLeft
+    }
+    const onMove = (e) => {
+      if (!down) return
+      const dx = e.clientX - startX
+      if (!moved && Math.abs(dx) > 4) { moved = true; el.classList.add('dragging') }
+      if (moved) { el.scrollLeft = startL - dx; e.preventDefault() }
+    }
+    const onUp = () => {
+      if (!down) return
+      down = false; el.classList.remove('dragging')
+      if (moved) { const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); el.removeEventListener('click', swallow, true) }; el.addEventListener('click', swallow, true) }
+    }
+    el.addEventListener('mousedown', onDown)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { el.removeEventListener('mousedown', onDown); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+  }, [])
+  return ref
 }
 /* Sortable tables - click a header to sort; click again to flip direction. */
 function useSort(key0, dir0 = -1) {
@@ -10413,6 +10448,8 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const [strat, setStrat] = useState(() => loadInsights(client.id + ':cockpit'))
   const [stratBusy, setStratBusy] = useState(false)
   const [stratErr, setStratErr] = useState(null)
+  const gridScrollRef = useDragScroll()   // drag-to-pan the wide green creative grid
+  const workScrollRef = useDragScroll()    // drag-to-pan the What's-working rollup
   useEffect(() => { setStrat(loadInsights(client.id + ':cockpit')); setStratErr(null) }, [client.id])
 
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading creatives…" /></div>
@@ -10425,14 +10462,35 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const fatBy = {}; for (const fc of ((d.fatigue && d.fatigue.creatives) || [])) fatBy[fc.name] = fc
   const fatSum = (d.fatigue && d.fatigue.summary) || null
 
-  // Attach saved tags; derive the fields we filter / rank on.
+  // Green Caalano360 key-event columns behind each creative (booked / shown /
+  // stage reach / won per the client's configured key events), joined to the ad by
+  // utm_content - the same funnel the Meta Ads view + Monthly Report show. Computed
+  // BEFORE the rows so each creative carries its per-event fields: the grid then
+  // sorts by any green column, and the What's-working rollup totals each event.
+  // Built from the attribution fetch (independent of the creatives load), so the
+  // columns fill in a moment after the grid first paints; tag editing is unchanged.
+  const hasCrm = d.hasCrm
+  const A = attr && attr.data && attr.data.attribution
+  const stagePos = A ? stagePosMap([...(A.allPipelines || []), ...((A.channels && A.channels.all && A.channels.all.pipelines) || [])]) : null
+  const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
+  const o360cols = (hasCrm && A) ? buildO360Cols(loadKeyEvents(client.id), stagePos, calNames) : null
+  const oCre = (hasCrm && A) ? aliasedOutcomeMap(client.id, 'content', A.byCreative) : null
+  const keLeft = hasCrm ? 10 : 8 // leading (non-green) grid column count, for the banner + expand colSpan
+  // First (count) column of each key-event group, aligned with o360cols.groups, so
+  // we can read each creative's per-event count for sorting + the rollup totals.
+  const evFirstCols = o360cols ? o360cols.cols.filter((c) => c.gfirst) : []
+
+  // Attach saved tags + the per-creative key-event fields (spread first so the tag /
+  // perf fields always win on any name clash).
   const rows = all.map((c) => {
     const t = tags[c.id] || {}
     const crm = c.crm || {}
     // Auto-detected CTA / copy / destination flow in as defaults; a saved tag
     // overrides. So the grid, filters and rollups work before any manual tagging.
     const fat = fatBy[c.name] || null
-    return { ...c, t, fat, fatLevel: fat ? fat.level : null, fatScore: fat ? fat.score : -1, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
+    const leads360 = crm.leads != null ? crm.leads : c.leads
+    const f360 = o360cols ? o360Fields(oCre && oCre.get(unorm(c.name)), c.spend, leads360, o360cols) : null
+    return { ...c, ...(f360 || {}), t, fat, fatLevel: fat ? fat.level : null, fatScore: fat ? fat.score : -1, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
   })
   const filtered = rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.fat || (f.fat === 'None' ? !c.fat : c.fatLevel === f.fat)) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
   const sorted = [...filtered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
@@ -10440,26 +10498,22 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   const tot = rows.reduce((a, c) => ({ spend: a.spend + c.spend, leads: a.leads + (c.crm ? c.crm.leads : c.leads), bk: a.bk + c.bk, tagged: a.tagged + (c.aware || c.persona || c.angle ? 1 : 0) }), { spend: 0, leads: 0, bk: 0, tagged: 0 })
 
-  // "What's working" - rank the chosen dimension's values by cost per booked call
-  // (the concrete, per-pipeline metric), not the fuzzier qualified-lead heuristic.
+  // "What's working" - rank the chosen dimension's values by cost per booked call.
+  // Also totals each key event (count) + its cost per event (spend ÷ count), so the
+  // rollup shows the same funnel as the grid, aggregated by the chosen dimension.
   const dimFn = { aware: (c) => c.aware, persona: (c) => c.persona, angle: (c) => c.angle, format: (c) => c.format, dest: (c) => c.dest }[dim]
-  const buildRollup = (fn) => { const m = new Map(); for (const c of rows) { const k = fn(c); if (!k) continue; const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, bk: 0, wn: 0 }; e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.bk += c.bk; e.wn += c.wn; m.set(k, e) } return [...m.values()].map((e) => ({ ...e, cpb: e.bk ? Math.round(e.spend / e.bk) : null })).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb)) }
+  const buildRollup = (fn) => {
+    const m = new Map()
+    for (const c of rows) {
+      const k = fn(c); if (!k) continue
+      const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, bk: 0, wn: 0, ev: evFirstCols.map(() => 0) }
+      e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.bk += c.bk; e.wn += c.wn
+      evFirstCols.forEach((col, i) => { e.ev[i] += (col ? (c[col.key] || 0) : 0) })
+      m.set(k, e)
+    }
+    return [...m.values()].map((e) => ({ ...e, cpb: e.bk ? Math.round(e.spend / e.bk) : null, evCost: e.ev.map((v) => (v ? Math.round(e.spend / v) : null)) })).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb))
+  }
   const rollup = buildRollup(dimFn)
-  const hasCrm = d.hasCrm
-
-  // Green Caalano360 key-event columns behind each creative (booked / shown /
-  // stage reach / won per the client's configured key events), joined to the ad by
-  // utm_content - the same funnel the Meta Ads view + Monthly Report show, so the
-  // numbers line up. Built from the attribution fetch (independent of the creatives
-  // load), so the columns fill in a moment after the grid first paints; the tag
-  // editing stays exactly as before. Multi-pipeline clients show the union of every
-  // pipeline's key events (a creative that never reached one just shows 0/-).
-  const A = attr && attr.data && attr.data.attribution
-  const stagePos = A ? stagePosMap([...(A.allPipelines || []), ...((A.channels && A.channels.all && A.channels.all.pipelines) || [])]) : null
-  const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
-  const o360cols = (hasCrm && A) ? buildO360Cols(loadKeyEvents(client.id), stagePos, calNames) : null
-  const oCre = (hasCrm && A) ? aliasedOutcomeMap(client.id, 'content', A.byCreative) : null
-  const keLeft = hasCrm ? 10 : 8 // leading (non-green) column count, for the group banner + expand colSpan
 
   // AI creative strategy over the tagged + performance set.
   const rollupBy = buildRollup
@@ -10497,9 +10551,12 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <div className="cc-work-h">What’s working <span className="sub">· ranked by cost / booked call · by</span>
           <div className="chan-toggle cc-dim">{[['aware', 'Awareness'], ['persona', 'Persona'], ['angle', 'Angle'], ['format', 'Format'], ['dest', 'Destination']].map(([k, l]) => <button key={k} className={dim === k ? 'on' : ''} onClick={() => setDim(k)}>{l}</button>)}</div>
         </div>
-        {rollup.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl">
-          <thead><tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}</tr></thead>
-          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '-'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}</tr>)}</tbody>
+        {rollup.length ? <div className="tbl-scroll pan" ref={workScrollRef}><table className="mini-tbl users-tbl">
+          <thead>
+            {o360cols && <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={7} aria-hidden="true" />{o360cols.groups.map((g, i) => <th key={i} className={`c360-grp${i > 0 ? ' c360-grp-sep' : ''}`} colSpan={2} title={g.label}>{g.label}</th>)}</tr>}
+            <tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}{o360cols && o360cols.groups.map((g, i) => <React.Fragment key={i}><th className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`} title={`${g.label} - count`}>Count</th><th className="c360-col" title={`Spend ÷ ${g.label}`}>Cost</th></React.Fragment>)}</tr>
+          </thead>
+          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '-'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}{o360cols && e.ev.map((v, i) => <React.Fragment key={i}><td className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`}>{fmtNumber(v)}</td><td className="c360-col">{e.evCost[i] != null ? money(e.evCost[i]) : '-'}</td></React.Fragment>)}</tr>)}</tbody>
         </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
       </div>
 
@@ -10516,17 +10573,17 @@ function CreativeCockpit({ client, currency, range, nonce }) {
       </div>
 
       {/* Creative grid */}
-      <div className="tbl-scroll"><table className="mini-tbl users-tbl cc-tbl">
+      <div className="tbl-scroll pan" ref={gridScrollRef}><table className="mini-tbl users-tbl cc-tbl">
         <thead>
           {o360cols && <C360GrpRow left={keLeft} cols={o360cols} />}
           <tr>
             <Th k="name" l>Creative</Th><Th k="format" l>Format</Th>
             <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th><Th k="fatScore" l>Fatigue</Th>
             <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="bk">Booked</Th>}{hasCrm && <Th k="cpb">Cost/book</Th>}
-            {o360cols && <O360Head cols={o360cols} />}
+            {o360cols && <O360Head sort={sort} on={setKey} cols={o360cols} />}
           </tr>
         </thead>
-        <tbody>{sorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} o360cols={o360cols} oCre={oCre} currency={currency} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
+        <tbody>{sorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} o360cols={o360cols} currency={currency} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
       </table></div>
       <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.</p>
       {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad - likely paused or renamed creatives.</p> : null}
@@ -10537,7 +10594,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
 // One creative: a scannable row (thumb, name, format, current tags, performance,
 // and - when the client has key events configured - the green Caalano360 funnel
 // columns behind this ad) that expands to the full tag editor + ad preview link.
-function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destOpts, o360cols, oCre, currency, open, onToggle }) {
+function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destOpts, o360cols, currency, open, onToggle }) {
   const save = (patch) => saveCreativeMeta(clientId, c.id, patch)
   const chip = (v) => v ? <span className="cc-chip">{v}</span> : <span className="cc-none">-</span>
   const [ai, setAi] = useState({ busy: false, err: null, reason: null })
@@ -10555,10 +10612,8 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
       setAi({ busy: false, err: null, reason: s.reason || null })
     } catch (e) { setAi({ busy: false, err: String(e.message || e), reason: null }) }
   }
-  // Green Caalano360 key-event fields behind this creative (utm_content join),
-  // flattened for the green cells. Null when the client has no key events.
-  const leads360 = c.crm ? c.crm.leads : c.leads
-  const f360 = o360cols ? o360Fields(oCre && oCre.get(unorm(c.name)), c.spend, leads360, o360cols) : null
+  // The per-creative key-event fields are already merged onto `c` (in the parent's
+  // rows map, so the grid can sort by them), so the green cells read straight off c.
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={onToggle}>
@@ -10572,7 +10627,7 @@ function CreativeRow({ c, clientId, money, hasCrm, personaOpts, angleOpts, destO
         <td>{fmtNumber(c.crm ? c.crm.leads : c.leads)}</td>
         {hasCrm && <td>{fmtNumber(c.bk)}</td>}
         {hasCrm && <td>{c.cpb != null ? money(c.cpb) : '-'}</td>}
-        {o360cols && o360Cells(f360, currency, o360cols)}
+        {o360cols && o360Cells(c, currency, o360cols)}
       </tr>
       {open && <tr className="cc-edit-row"><td colSpan={(hasCrm ? 10 : 8) + (o360cols ? o360cols.cols.length : 0)}>
         <div className="cc-edit" onClick={(e) => e.stopPropagation()}>

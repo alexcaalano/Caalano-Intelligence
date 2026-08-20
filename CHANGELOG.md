@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.315.0 - 2026-08-20 · `PENDING` - Call Reporting FIXED: the export needs locationId in the query
+- **Root cause found and fixed.** The `/conversations/messages/export` endpoint returns `400 CONVERSATIONS_LOCATION_ID_REQUIRED`
+  unless `locationId` is passed as a query param - even though we authenticate with the location token (most other GHL reads
+  don't need it). We weren't sending it, so every call export failed instantly and the `.catch` returned zero, which showed
+  as "No dialer calls". Added `locationId` to the query in both export call sites (Call Reporting + the Speed-to-Lead bulk
+  map). Call Reporting and full Speed-to-Lead now populate. (The earlier call-reporting changes - ISO dates, dropping the bad
+  sortBy, day-batching, smaller pages - were real issues, but this missing param was the one pinning it at zero.)
+
+## v3.314.0 - 2026-08-20 · `PENDING` - Call Reporting: surface the export error in _diag (found the 400)
+
 ## v3.313.0 - 2026-08-20 · `PENDING` - Call Reporting: 50-row pages + always-fresh chunks + diagnostics
 - Dropped the call-export page to 50 rows (a 100-row page for a busy day can exceed the 9s per-request timeout, which the
   loop swallowed and returned 0 calls), reduced day-chunk concurrency to 2 (avoids the export contending with itself), and

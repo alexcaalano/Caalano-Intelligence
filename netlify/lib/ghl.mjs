@@ -1435,9 +1435,9 @@ async function speedFirstOutboundMap(locTok, locationId, startIso, endIso, start
     let cursor = null, guard = 0
     while (guard++ < 10) {
       if (Date.now() - started > budgetMs) break
-      // See buildUserCalls: sortBy:'createdAt' makes the export return zero rows,
-      // and a 1000-row page is too heavy to return before the timeout - page in 200s.
-      const q = { channel, limit: 200 }
+      // See buildUserCalls: the export needs locationId in the query; sortBy makes
+      // it return zero rows; and a big page is too heavy to return before the timeout.
+      const q = { locationId, channel, limit: 200 }
       if (startIso) q.startDate = startIso
       if (endIso) q.endDate = endIso
       if (cursor) q.cursor = cursor
@@ -2099,7 +2099,10 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
     // NOTE: do NOT pass sortBy:'createdAt' - the export silently returns ZERO
     // messages (HTTP 200, total:0) for that sort value (a GHL bug). Its default
     // order is newest-first already, which is what we want.
-    const q = { channel: 'Call', limit: 50 }
+    // The export endpoint REQUIRES locationId as a query param (400
+    // CONVERSATIONS_LOCATION_ID_REQUIRED otherwise) even though we auth with the
+    // location token - unlike most other GHL reads.
+    const q = { locationId, channel: 'Call', limit: 50 }
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor

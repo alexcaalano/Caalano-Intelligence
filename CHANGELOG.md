@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.320.0 - 2026-08-20 · `PENDING` - Creative Cockpit: selected client saved in the URL
+- The client picked in the Creative Cockpit is now written to the URL (`?c=`), so a link like
+  `…?v=cockpit&c=<client>` opens the Cockpit straight on that client and any Cockpit link you copy remembers the selection.
+- Deep-linking a client no longer forces the client workspace when the URL asks for another view, so `?v=cockpit&c=` lands
+  on the Cockpit (not the client dashboard).
+
 ## v3.319.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key-event tracking per creative
 - Added a **"Key events by creative"** table to the Creative Cockpit (Creative Breakdown), showing the client's configured
   green Caalano360 key events (booked / shown / stage reach / won, with cost-per-event and rates) behind every creative,

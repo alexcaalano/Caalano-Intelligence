@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.319.0'
+const APP_VERSION = '3.320.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10342,9 +10342,20 @@ function MetaInsightsPage({ clients, currency, range, nonce }) {
 
 function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
   const list = [...clients].sort((a, b) => a.name.localeCompare(b.name))
-  const [selId, setSelId] = useState(list[0] ? list[0].id : null)
+  // Seed the picked client from the URL (?c=) so a shared Cockpit link opens
+  // straight on that client; fall back to the first client otherwise.
+  const [selId, setSelId] = useState(() => {
+    const c = readNavUrl().c
+    return (c && list.some((x) => x.id === c)) ? c : (list[0] ? list[0].id : null)
+  })
   const [sub, setSub] = useState('breakdown')
   const sel = list.find((c) => c.id === selId) || list[0]
+  // Mirror the picked client into the URL (?c=) so the current selection is always
+  // linkable - replace (not push) so it doesn't spam the browser history.
+  const pickClient = (id) => { setSelId(id); writeNavUrl({ c: id }, false) }
+  // Keep the URL in sync when the effective client falls back (e.g. deep-linked id
+  // isn't in this user's list), so the link reflects what's actually shown.
+  useEffect(() => { if (sel && sel.id !== readNavUrl().c) writeNavUrl({ c: sel.id }, false) }, [sel && sel.id])
   if (!list.length) return <div className="card empty-deep"><div className="big">🎬</div><b>No clients with a Meta account yet.</b></div>
   // Creative Curator is temporarily hidden (flip CURATOR_ENABLED back to true to
   // resurface its subtab). While off, the Cockpit shows only Creative Breakdown
@@ -10361,7 +10372,7 @@ function CreativeCockpitPage({ clients, currency, range, nonce, authUser }) {
       {!showCurator ? <>
         <div className="c360-head" style={{ marginTop: 0 }}>
           <div className="pipe-sel"><label>Client</label>
-            <select value={(sel && sel.id) || ''} onChange={(e) => setSelId(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <select value={(sel && sel.id) || ''} onChange={(e) => pickClient(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
           </div>
         </div>
         {sel ? <CreativeCockpit key={sel.id} client={sel} currency={currency} range={range} nonce={nonce} authUser={authUser} /> : null}
@@ -13768,10 +13779,13 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   useEffect(() => {
     if (navInitRef.current || !data) return
     navInitRef.current = true
-    const { c } = readNavUrl()
+    const { c, v } = readNavUrl()
     if (c) {
       const raw = (data.clients || []).find((x) => x.id === c) || (customClientList() || []).find((x) => x.id === c)
-      if (raw) { setPicked(raw); setView('clients') }
+      // ?c= seeds the picked client, but only jump to the client dashboard when the
+      // URL didn't ask for another view (e.g. ?v=cockpit&c= opens the Cockpit on
+      // that client, not the client workspace).
+      if (raw) { setPicked(raw); if (!v || v === 'clients') setView('clients') }
     }
   }, [data])
   // Browser Back / Forward: re-read the URL and re-apply it to state.

@@ -1435,7 +1435,8 @@ async function speedFirstOutboundMap(locTok, locationId, startIso, endIso, start
     let cursor = null, guard = 0
     while (guard++ < 10) {
       if (Date.now() - started > budgetMs) break
-      const q = { channel, limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }
+      // See buildUserCalls: sortBy:'createdAt' makes the export return zero rows.
+      const q = { channel, limit: 1000 }
       if (startIso) q.startDate = startIso
       if (endIso) q.endDate = endIso
       if (cursor) q.cursor = cursor
@@ -2085,7 +2086,10 @@ export async function buildUserCalls(locationId, from, to) {
   const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0, inboundSec: 0, longestSec: 0, contacts: new Set(), speed: [] }; byUser.set(uid, e) } return e }
   let cursor = null, guard = 0, total = 0
   while (guard++ < 8) {
-    const q = { channel: 'Call', limit: 1000, sortBy: 'createdAt', sortOrder: 'desc' }
+    // NOTE: do NOT pass sortBy:'createdAt' - the export silently returns ZERO
+    // messages (HTTP 200, total:0) for that sort value. Its default order is
+    // newest-first already, which is what we want.
+    const q = { channel: 'Call', limit: 1000 }
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor

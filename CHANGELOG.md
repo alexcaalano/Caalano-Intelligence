@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.309.0 - 2026-08-20 · `PENDING` - Fix: Call Reporting showed "No dialer calls" despite thousands of calls
+- **Call Reporting (and Speed-to-Lead) were silently empty.** The message-export call passed `sortBy: 'createdAt'`, and for
+  that sort value the GoHighLevel export returns HTTP 200 with **zero** messages instead of an error - so the whole call
+  section read as "No dialer calls in this period" even when there were thousands (Nexia: 2,320 calls in the last 30 days).
+  Removed the `sortBy`/`sortOrder` params (the export already returns newest-first), so calls, talk minutes, the per-rep
+  scoreboard and speed-to-lead all populate again.
+
 ## v3.308.0 - 2026-08-19 · `PENDING` - Fix: single custom-conversion primary still showed the id
 - **Follow-up to v3.307.0.** A client with a SINGLE custom conversion as its primary (e.g. Feel Better Medical → B_Page_View)
   still showed "Offsite Conversion Custom <id>" because the single-field result path built its label straight from the field

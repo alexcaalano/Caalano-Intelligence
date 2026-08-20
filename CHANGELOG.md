@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.313.0 - 2026-08-20 · `PENDING` - Call Reporting: 50-row pages + always-fresh chunks + diagnostics
+- Dropped the call-export page to 50 rows (a 100-row page for a busy day can exceed the 9s per-request timeout, which the
+  loop swallowed and returned 0 calls), reduced day-chunk concurrency to 2 (avoids the export contending with itself), and
+  made the day chunks always bypass the server result cache so a stale empty can't mask real calls. Added a `_diag` block to
+  the usercalls response (pages fetched, the export's reported total, the ISO bounds) so a single day URL reveals what's
+  happening if it's still empty.
+
 ## v3.312.0 - 2026-08-20 · `PENDING` - Call Reporting now loads wide ranges by batching day-by-day
 - **Call Reporting fetches the range one day at a time and merges the results**, with a "X/Y days" progress indicator. Each
   day is small enough to page fully inside one request (the export streams too slowly to pull a whole busy month at once),

@@ -2093,18 +2093,19 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   // silently swallowed and showed "No dialer calls". Page in smaller chunks under
   // a wall-clock deadline instead; if the window is bigger than we can fetch in
   // time, stop and flag it (partial) rather than return nothing.
-  let cursor = null, guard = 0, total = 0, partial = false
+  let cursor = null, guard = 0, total = 0, partial = false, pages = 0, sawNull = false, reportedTotal = null
   const callDeadline = Date.now() + 7000
   while (guard++ < 80) {
     // NOTE: do NOT pass sortBy:'createdAt' - the export silently returns ZERO
     // messages (HTTP 200, total:0) for that sort value (a GHL bug). Its default
     // order is newest-first already, which is what we want.
-    const q = { channel: 'Call', limit: 100 }
+    const q = { channel: 'Call', limit: 50 }
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor
     const j = await ghlGet(locTok, '/conversations/messages/export', q).catch(() => null)
-    if (!j) break
+    if (!j) { sawNull = true; break }
+    pages++; if (reportedTotal == null && typeof j.total === 'number') reportedTotal = j.total
     const msgs = j.messages || []
     for (const m of msgs) {
       const uid = m.userId || 'unassigned'
@@ -2124,7 +2125,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
       total++
     }
     cursor = j.nextCursor
-    if (!cursor || msgs.length < 100) break
+    if (!cursor || msgs.length < 50) break
     if (Date.now() > callDeadline) { partial = true; break }
   }
   // Best-effort: give the concurrent opps pull a short grace window now that the
@@ -2175,7 +2176,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   }
   const daily = [...dayMap.entries()].filter(([d]) => d).sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, v]) => ({ date, outbound: v.outbound, inbound: v.inbound, minutes: Math.round(v.seconds / 60) }))
-  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable, partial }
+  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable, partial, _diag: { pages, sawNull, reportedTotal, fetched: total, startIso, endIso } }
 }
 // The channel / pipeline / won-basis filters on the Users tab only change WHICH
 // opportunities are counted - every expensive fetch (opps, appointments,

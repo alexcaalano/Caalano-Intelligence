@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.312.0'
+const APP_VERSION = '3.313.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7014,19 +7014,23 @@ function CallReportView({ clientId, range, nonce }) {
     for (let t = new Date(`${range.from}T00:00:00Z`); t <= new Date(`${range.to}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + 1)) days.push(t.toISOString().slice(0, 10))
     if (!days.length) { setD({ error: true }); return () => { alive = false } }
     setProg({ done: 0, total: days.length })
+    // Always bypass the server result cache for these day chunks (a stale empty
+    // from an earlier broken build could otherwise mask real calls). Deduped
+    // within this load by the shared token.
+    const bust = nonce || `t${Math.floor(Date.now() / 1000)}`
     const parts = []; let idx = 0, done = 0
     const worker = async () => {
       while (idx < days.length && alive) {
         const day = days[idx++]
         try {
-          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1${nonce ? `&_r=${nonce}` : ''}`)
+          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1&_r=${bust}`)
           const j = r.ok ? await r.json() : null
           if (j) parts.push(j)
         } catch { /* skip a failed day */ }
         done++; if (alive) setProg({ done, total: days.length })
       }
     }
-    Promise.all(Array.from({ length: Math.min(3, days.length) }, worker)).then(() => {
+    Promise.all(Array.from({ length: Math.min(2, days.length) }, worker)).then(() => {
       if (!alive) return
       if (parts.length && parts.every((p) => p && p.ghl === false)) return setD({ ghl: false })
       if (parts.length && parts.every((p) => p && p.connected === false)) return setD({ connected: false })

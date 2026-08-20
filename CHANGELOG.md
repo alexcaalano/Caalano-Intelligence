@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.323.0 - 2026-08-20 · `PENDING` - Reliability: per-client request governor to cut GHL 429s
+- The reliability logs showed most hard errors are GoHighLevel `429 Too Many Requests` bursts - because opening a client
+  dashboard fires several CRM scopes (attribution + blend + users + …) for the SAME client at once, and GHL rate-limits per
+  location.
+- Added a **per-client concurrency cap** on shared CRM requests: one client's scopes now queue behind each other (max 4 in
+  flight), while different clients (the agency overview fan-out) still load in parallel. This is timing-only - it never
+  changes what's fetched or the numbers returned.
+- (Next, separately: the biggest single offender - `ccdrill` for high-volume clients - is a server-side snapshot-coverage
+  gap; that fix touches the opportunity-cache sizing and will land on its own so it can be watched carefully.)
+
 ## v3.322.0 - 2026-08-20 · `PENDING` - Creative Cockpit: sortable key-event columns, mouse-friendly scrolling, per-event rollup
 - **Sort by any column, including key events.** Every green key-event column (Booked, Cost/Booked, Show Rate, Won, …) is
   now click-to-sort in the creative grid, alongside the existing Spend / Leads / Fatigue columns.

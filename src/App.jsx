@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.322.0'
+const APP_VERSION = '3.323.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -548,11 +548,35 @@ function useClientLogos() {
 // always gets a fresh URL and bypasses this. Entries live ~45s; failures aren't
 // cached; the server itself still caches for 10 minutes behind this.
 const _getInflight = new Map() // url -> { at, p: Promise<Response> }
+// Per-client request governor. GoHighLevel rate-limits PER LOCATION, so opening a
+// client dashboard (which fires attribution + blend + users… for the SAME client at
+// once) can blow the burst limit and 429. We cap concurrent dedupeFetch calls PER
+// CLIENT (keyed on the ?client= param) so one client's scopes queue behind each
+// other, while DIFFERENT clients (the agency overview fan-out) still run in
+// parallel. Timing only - never changes what's fetched or the data returned.
+const CRM_MAX_PER_CLIENT = 4
+const _clientActive = new Map()  // clientId -> active count
+const _clientQueue = new Map()   // clientId -> [resolve, …]
+function _clientOf(url) { try { return new URL(url, location.origin).searchParams.get('client') || '' } catch { return '' } }
+function _crmSlot(cid) {
+  if (!cid) return Promise.resolve(() => {})
+  const release = () => {
+    _clientActive.set(cid, Math.max(0, (_clientActive.get(cid) || 1) - 1))
+    const q = _clientQueue.get(cid)
+    if (q && q.length) { _clientActive.set(cid, (_clientActive.get(cid) || 0) + 1); q.shift()() }
+  }
+  const active = _clientActive.get(cid) || 0
+  if (active < CRM_MAX_PER_CLIENT) { _clientActive.set(cid, active + 1); return Promise.resolve(release) }
+  return new Promise((res) => { const q = _clientQueue.get(cid) || []; q.push(() => res(release)); _clientQueue.set(cid, q) })
+}
 function dedupeFetch(url, ttl = 45000) {
   const now = Date.now()
   const hit = _getInflight.get(url)
   if (hit && (now - hit.at) < ttl) return hit.p.then((r) => r.clone())
-  const p = fetch(url)
+  const cid = _clientOf(url)
+  // Slot the request behind this client's concurrency cap, then fetch. A dedupe hit
+  // above never reaches here, so the cap only gates genuinely new round-trips.
+  const p = _crmSlot(cid).then((release) => fetch(url).finally(release))
   _getInflight.set(url, { at: now, p })
   p.then((r) => { if (!r.ok) _getInflight.delete(url) }, () => _getInflight.delete(url))
   return p.then((r) => r.clone())

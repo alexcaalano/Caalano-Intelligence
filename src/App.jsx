@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.311.0'
+const APP_VERSION = '3.312.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6960,15 +6960,82 @@ function UserApptActivity({ clientId, range, nonce }) {
 // Dedicated Call Reporting tab: sub-account dialer totals, a daily call-volume
 // trend, and a per-rep scoreboard. Reads scope=usercalls (GHL dialer message
 // export, channel=Call). Shows an empty state when no calls are logged.
+// Merge day-chunk call responses into one dataset. The per-user derived minute /
+// rate fields can't be summed, so each chunk ships raw counts/seconds and we
+// re-derive here. Speed-to-lead is omitted in batched mode (it needs the global
+// first-touch across the whole range, which independent day chunks can't see).
+function mergeCallChunks(parts) {
+  const um = new Map(); const daily = []; let partial = false
+  for (const p of parts) {
+    if (p.partial) partial = true
+    for (const u of (p.byUser || [])) {
+      let e = um.get(u.userId)
+      if (!e) { e = { userId: u.userId, name: u.name, outbound: 0, inbound: 0, oc: 0, ic: 0, os: 0, is: 0, longestSec: 0, contacts: 0 }; um.set(u.userId, e) }
+      if (!e.name && u.name) e.name = u.name
+      e.outbound += u.outbound || 0; e.inbound += u.inbound || 0
+      e.oc += u.outboundConnected || 0; e.ic += u.inboundConnected || 0
+      e.os += u.outboundSec || 0; e.is += u.inboundSec || 0
+      e.longestSec = Math.max(e.longestSec, u.longestSec || 0); e.contacts += u.contacts || 0
+    }
+    for (const dd of (p.daily || [])) daily.push(dd)
+  }
+  const byUser = [...um.values()].map((e) => ({
+    userId: e.userId, name: e.name, outbound: e.outbound, inbound: e.inbound,
+    outboundMinutes: Math.round(e.os / 60), inboundMinutes: Math.round(e.is / 60), talkMinutes: Math.round((e.os + e.is) / 60),
+    connectRate: e.outbound ? (e.oc / e.outbound) * 100 : 0,
+    avgTalkMin: e.oc ? Math.round((e.os / e.oc / 60) * 10) / 10 : 0,
+    longestMin: e.longestSec ? Math.round((e.longestSec / 60) * 10) / 10 : 0,
+    contacts: e.contacts, missedInbound: e.inbound - e.ic,
+    speedToLeadHrs: null, speedSamples: 0, sla5Pct: null,
+  })).sort((a, b) => b.outbound - a.outbound)
+  const vals = [...um.values()]
+  const red = (f) => vals.reduce((a, e) => a + f(e), 0)
+  const tOut = red((e) => e.outbound), tIn = red((e) => e.inbound), tOC = red((e) => e.oc), tIC = red((e) => e.ic), tOS = red((e) => e.os), tIS = red((e) => e.is)
+  const totals = {
+    calls: tOut + tIn, outbound: tOut, inbound: tIn, outboundConnected: tOC, inboundConnected: tIC,
+    outboundMinutes: Math.round(tOS / 60), inboundMinutes: Math.round(tIS / 60), talkMinutes: Math.round((tOS + tIS) / 60),
+    connectRate: tOut ? (tOC / tOut) * 100 : 0, avgCallMin: tOC ? Math.round((tOS / tOC / 60) * 10) / 10 : 0,
+    uniqueContacts: red((e) => e.contacts), missedInbound: tIn - tIC,
+    activeReps: byUser.filter((e) => e.userId !== 'unassigned' && e.outbound > 0).length,
+  }
+  daily.sort((a, b) => a.date.localeCompare(b.date))
+  return { connected: true, totals, daily, byUser, speedAvailable: false, partial, batched: true }
+}
 function CallReportView({ clientId, range, nonce }) {
   const [d, setD] = useState(null)
+  const [prog, setProg] = useState({ done: 0, total: 0 })
   useEffect(() => {
     let alive = true; setD(null)
-    dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
-      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive) setD(j || { error: true }) }).catch(() => { if (alive) setD({ error: true }) })
+    // Split the range into 1-day chunks - each is small enough to fully page
+    // inside one function call (the export streams slowly, so a wide window can't
+    // be fetched in a single request). Fetch them with low concurrency and merge;
+    // past days are immutable so each day's result caches on the server.
+    const days = []
+    for (let t = new Date(`${range.from}T00:00:00Z`); t <= new Date(`${range.to}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + 1)) days.push(t.toISOString().slice(0, 10))
+    if (!days.length) { setD({ error: true }); return () => { alive = false } }
+    setProg({ done: 0, total: days.length })
+    const parts = []; let idx = 0, done = 0
+    const worker = async () => {
+      while (idx < days.length && alive) {
+        const day = days[idx++]
+        try {
+          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1${nonce ? `&_r=${nonce}` : ''}`)
+          const j = r.ok ? await r.json() : null
+          if (j) parts.push(j)
+        } catch { /* skip a failed day */ }
+        done++; if (alive) setProg({ done, total: days.length })
+      }
+    }
+    Promise.all(Array.from({ length: Math.min(3, days.length) }, worker)).then(() => {
+      if (!alive) return
+      if (parts.length && parts.every((p) => p && p.ghl === false)) return setD({ ghl: false })
+      if (parts.length && parts.every((p) => p && p.connected === false)) return setD({ connected: false })
+      const good = parts.filter((p) => p && p.totals)
+      setD(good.length ? mergeCallChunks(good) : { error: true })
+    })
     return () => { alive = false }
-  }, [clientId, rangeQuery(range), nonce])
-  if (!d) return <div className="card"><Spinner label="Loading call reporting…" /></div>
+  }, [clientId, range.from, range.to, nonce])
+  if (!d) return <div className="card"><Spinner label={`Loading call reporting… ${prog.total ? `${prog.done}/${prog.total} days` : ''}`} /></div>
   if (d.ghl === false) return <div className="card empty-deep"><div className="big">📞</div><b>No CRM connected.</b><p style={{ maxWidth: 480, margin: '8px auto 0' }}>Call reporting reads from the Caalano Systems dialer, so it needs the CRM linked for this client.</p></div>
   if (d.error) return <div className="card empty-deep"><div className="big">📞</div><b>Couldn't load call reporting.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{typeof d.error === 'string' ? d.error : 'Please try again shortly.'}</p></div>
   const t = d.totals || {}
@@ -7034,7 +7101,7 @@ function CallReportView({ clientId, range, nonce }) {
             </tr>
           ))}</tbody>
         </table></div>
-        {!d.speedAvailable && <p className="cap" style={{ margin: '8px 2px 0' }}>Speed-to-lead is omitted this load (the lead-timing pull didn't finish in time) - refresh to try again.</p>}
+        {!d.speedAvailable && <p className="cap" style={{ margin: '8px 2px 0' }}>{d.batched ? 'Speed-to-lead needs the full range in one pull, so it’s omitted on wide windows - pick a shorter range (≤ a few days) to see it.' : 'Speed-to-lead is omitted this load (the lead-timing pull didn’t finish in time) - refresh to try again.'}</p>}
       </div>
     </>
   )

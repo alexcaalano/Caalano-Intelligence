@@ -3105,7 +3105,10 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'usercalls', client, ghl: false })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'usercalls', client, connected: false })
-    try { return json({ scope: 'usercalls', client, period: { from, to, preset }, ...(await buildUserCalls(cc.ghl, from, to)) }, 200, true) }
+    // callsonly=1 skips the opportunities pull + speed-to-lead so a single-day
+    // chunk returns fast; the frontend batches the wide range day-by-day and merges.
+    const callsOnly = url.searchParams.get('callsonly') === '1'
+    try { return json({ scope: 'usercalls', client, period: { from, to, preset }, ...(await buildUserCalls(cc.ghl, from, to, callsOnly)) }, 200, true) }
     catch (e) { return json({ scope: 'usercalls', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

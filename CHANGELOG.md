@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.312.0 - 2026-08-20 · `PENDING` - Call Reporting now loads wide ranges by batching day-by-day
+- **Call Reporting fetches the range one day at a time and merges the results**, with a "X/Y days" progress indicator. Each
+  day is small enough to page fully inside one request (the export streams too slowly to pull a whole busy month at once),
+  so a 30-day view of a high-volume dialer now shows **complete** calls / talk-minutes / per-rep scoreboard instead of a
+  blank or partial result. Past days are immutable, so each day's result caches on the server - the first wide load is a bit
+  slower (fetching in the background with the progress bar), and repeat loads are fast.
+- Backend: `usercalls` accepts `callsonly=1` (skips the opportunities pull for speed) and each rep row now carries raw
+  counts/seconds so the day chunks merge exactly and rates are re-derived. Speed-to-lead needs the whole range in one pull,
+  so it's shown only on shorter windows (≤ a few days) with a note; the call totals are complete on any range.
+
 ## v3.311.0 - 2026-08-20 · `PENDING` - Call Reporting: smaller pages so partial data always shows on heavy windows
 - Dropped the call-export page size to 100 so the first page always returns inside the per-request timeout - a very
   high-volume window now shows its most recent calls (labelled "high volume") instead of a blank "No dialer calls". The

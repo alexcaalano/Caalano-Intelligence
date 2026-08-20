@@ -2059,7 +2059,7 @@ export async function buildStageTiming(locationId, days = 90) {
 // minutes, connect rate, and inbound handled. Uses the bulk message export
 // (channel=Call) so it's a few paged requests for the whole location, not one
 // per contact. Keyed by userId (the frontend joins names from the users scope).
-export async function buildUserCalls(locationId, from, to) {
+export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   const locTok = await locationToken(locationId)
   // The message-export endpoint validates startDate/endDate as ISO 8601 datetimes
   // (YYYY-MM-DDTHH:mm:ss.sssZ). A bare YYYY-MM-DD is accepted with HTTP 200 but
@@ -2079,7 +2079,10 @@ export async function buildUserCalls(locationId, from, to) {
   // section. So we fire it off CONCURRENTLY here and only wait a short grace window
   // for it after the calls are in; if it isn't ready, call stats still ship and
   // speed-to-lead is simply omitted for this load.
-  const oppsP = allOpportunities(locTok, locationId, from, to, 2000).then((o) => o).catch(() => null)
+  // In callsOnly (day-chunk) mode we skip the opportunities pull entirely - the
+  // frontend batches days and computes call stats only; speed-to-lead needs the
+  // global first-touch across the whole range, which day chunks can't see.
+  const oppsP = callsOnly ? Promise.resolve(null) : allOpportunities(locTok, locationId, from, to, 2000).then((o) => o).catch(() => null)
   const firstOut = new Map() // contactId -> { ms, uid } first outbound call
   const byUser = new Map()
   const allContacts = new Set()
@@ -2138,6 +2141,9 @@ export async function buildUserCalls(locationId, from, to) {
   const med = (a) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
   const users = [...byUser.values()].map((e) => ({
     userId: e.userId, name: userName[e.userId] || (e.userId === 'unassigned' ? 'Unassigned / automated' : null), outbound: e.outbound, inbound: e.inbound,
+    // Raw counts/seconds so the day-chunk frontend can merge exactly and recompute
+    // rates (the derived minute/rate fields below can't be summed across chunks).
+    outboundConnected: e.outboundConnected, inboundConnected: e.inboundConnected, outboundSec: e.outboundSec, inboundSec: e.inboundSec, longestSec: e.longestSec,
     outboundMinutes: Math.round(e.outboundSec / 60),
     inboundMinutes: Math.round(e.inboundSec / 60),
     talkMinutes: Math.round((e.outboundSec + e.inboundSec) / 60),

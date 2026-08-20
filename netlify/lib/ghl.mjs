@@ -2096,7 +2096,7 @@ export async function buildUserCalls(locationId, from, to) {
     // NOTE: do NOT pass sortBy:'createdAt' - the export silently returns ZERO
     // messages (HTTP 200, total:0) for that sort value (a GHL bug). Its default
     // order is newest-first already, which is what we want.
-    const q = { channel: 'Call', limit: 200 }
+    const q = { channel: 'Call', limit: 100 }
     if (startIso) q.startDate = startIso
     if (endIso) q.endDate = endIso
     if (cursor) q.cursor = cursor
@@ -2121,7 +2121,7 @@ export async function buildUserCalls(locationId, from, to) {
       total++
     }
     cursor = j.nextCursor
-    if (!cursor || msgs.length < 200) break
+    if (!cursor || msgs.length < 100) break
     if (Date.now() > callDeadline) { partial = true; break }
   }
   // Best-effort: give the concurrent opps pull a short grace window now that the

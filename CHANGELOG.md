@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.311.0 - 2026-08-20 · `PENDING` - Call Reporting: smaller pages so partial data always shows on heavy windows
+- Dropped the call-export page size to 100 so the first page always returns inside the per-request timeout - a very
+  high-volume window now shows its most recent calls (labelled "high volume") instead of a blank "No dialer calls". The
+  GoHighLevel message export streams at only ~30-35 rows/sec, so a busy dialer's 30-day history (2,000+ calls) genuinely
+  can't be fetched inside one ~10s function; full coverage on wide windows needs a background pre-compute (planned).
+
 ## v3.310.0 - 2026-08-20 · `PENDING` - Call Reporting: page the export so heavy windows don't time out
 - **The v3.309.0 fix (removing the broken `sortBy`) exposed a second problem:** at `limit: 1000` the export payload (recording
   URLs + full metadata per call) is so large a single page can't return inside the function's ~10s budget - so it timed out

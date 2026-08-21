@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.326.0'
+const APP_VERSION = '3.327.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5611,12 +5611,12 @@ function PersonRow({ p, clientId, money, cols, ke }) {
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
-        <td className="lft">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
+        <td className="lft" title={p.name}>{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
         <td className="lft">{statusChip(p.status)}</td>
-        <td className="lft">{p.stageName || '-'}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</td>
+        <td className="lft" title={`${p.stageName || '-'}${p.pipelineName && p.pipelineName !== 'Pipeline' ? ' · ' + p.pipelineName : ''}`}>{p.stageName || '-'}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</td>
         <td>{p.value ? money(p.value) : '-'}</td>
         <td className={p.ageDays != null && p.ageDays >= 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '-'}</td>
-        <td className="lft">{cals.length ? cals.map((c, i) => <span key={i} className="fp-cal">{c.name}{(c.shown || c.occurred) ? <span className="fp-tick" title={c.shown ? 'Showed' : 'Occurred'}> ✓</span> : null}</span>) : (p.booked ? 'Booked' : '-')}</td>
+        <td className="lft" title={cals.length ? cals.map((c) => c.name + (c.shown ? ' (showed)' : c.occurred ? ' (occurred)' : '')).join(', ') : (p.booked ? 'Booked' : '')}>{cals.length ? cals.map((c, i) => <span key={i} className="fp-cal">{c.name}{(c.shown || c.occurred) ? <span className="fp-tick" title={c.shown ? 'Showed' : 'Occurred'}> ✓</span> : null}</span>) : (p.booked ? 'Booked' : '-')}</td>
         <td className="lft">{p.channel ? (CHAN_LABEL[p.channel] || p.channel) : '-'}</td>
         {srcCell(p.campaign)}
         {srcCell(p.adset)}
@@ -5742,12 +5742,16 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
                   <td className="num">{money(a.revenue)}</td>
                   {events.map((k, i) => <td key={i} className="num fke-col">{fmtNumber(a['ke' + i] || 0)}</td>)}
                 </tr>
-                {isOpen && clickable && <tr className="form-people-row"><td /><td colSpan={totalCols - 1}>
-                  <div className="tbl-scroll"><table className="mini-tbl users-tbl fp-tbl">
-                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th><th>Days in stage</th><th className="lft">Booked</th><th className="lft">Channel</th><th className="lft">Campaign</th><th className="lft">Ad Set</th><th className="lft">Creative</th>{hasKe ? <th className="num" title="How many of this client's key events this person reached - hover a number to see which">Key Events</th> : null}</tr></thead>
+                {isOpen && clickable && <tr className="form-people-row"><td colSpan={totalCols}>
+                  <div className="fp-wrap"><div className="tbl-scroll"><table className="mini-tbl users-tbl fp-tbl">
+                    <colgroup>
+                      <col className="fpc-name" /><col className="fpc-status" /><col className="fpc-stage" /><col className="fpc-val" /><col className="fpc-days" /><col className="fpc-booked" /><col className="fpc-chan" /><col className="fpc-camp" /><col className="fpc-adset" /><col className="fpc-cre" />{hasKe ? <col className="fpc-ke" /> : null}
+                    </colgroup>
+                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th><th>Days</th><th className="lft">Booked</th><th className="lft">Channel</th><th className="lft">Campaign</th><th className="lft">Ad Set</th><th className="lft">Creative</th>{hasKe ? <th className="num" title="How many of this client's key events this person reached - hover a number to see which">Key Ev.</th> : null}</tr></thead>
                     <tbody>{people.slice().sort((x, y) => (y.value || 0) - (x.value || 0)).map((p, i) => <PersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={hasKe ? 11 : 10} ke={hasKe ? ke : null} />)}</tbody>
                   </table></div>
                   {people.length >= 80 ? <div className="cap" style={{ padding: '4px 2px' }}>Showing the first 80 people for this answer.</div> : null}
+                  </div>
                 </td></tr>}
               </React.Fragment>
             )

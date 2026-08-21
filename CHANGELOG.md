@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.327.0 - 2026-08-20 · `PENDING` - Forms person drill: fits the screen (no horizontal scroll)
+- The expanded people table under a form answer is now pinned to the left of the screen and capped to the visible width
+  (the same trick the Users tab detail row uses), so the wide parent answer table no longer drags the person columns
+  off-screen.
+- The person table lays out fixed-width and every cell truncates to its column, so all columns (Name → Campaign / Ad Set /
+  Creative / Key Events) fit without a horizontal scrollbar. Hover any clipped cell (stage, booked calendar, campaign, ad
+  set, creative, name) to see its full value.
+
 ## v3.326.0 - 2026-08-20 · `PENDING` - Forms drill: resolve campaign/ad-set/creative ids to names via Windsor
 - The Forms person drill's Campaign / Ad Set / Creative columns now show the real **names** even when the CRM's UTM carried
   a numeric platform **id**. The `forms` scope builds the same Windsor id→name maps the attribution channel uses (Meta +

@@ -1211,12 +1211,26 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .fseg-tot-row td { font-weight: 700; color: var(--muted); border-bottom: 2px solid var(--border-2); background: var(--panel-2); text-align: right; }
 .fseg-tot-row td:nth-child(2) { text-align: left; }
 tr.form-people-row > td { background: var(--panel-2); padding: 8px 10px; }
-.fp-tbl { width: 100%; }
 .fp-cal { display: inline-block; margin-right: 6px; }
 .fp-tick { color: var(--pos); font-weight: 700; }
-/* Attribution columns (campaign / ad set / creative) in the Forms person drill -
-   truncate long UTM values so the row stays scannable; hover shows the full value. */
-.fp-src { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Forms person drill: pin the expanded panel to the viewport-left and cap its width
+   to the visible area (same pattern as the Users .u-detail-row), so the wide parent
+   answer table can't drag the person columns off-screen. The table then lays out
+   fixed-width and every cell truncates - so it fits with no horizontal scroll of its
+   own; hover any clipped cell for the full value. */
+tr.form-people-row > td { position: sticky; left: 0; }
+.fp-wrap { width: calc(100vw - var(--drill-gutter, 320px)); max-width: 100%; box-sizing: border-box; }
+.fp-tbl { table-layout: fixed; width: 100%; }
+.fp-tbl th, .fp-tbl td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* …but the expanded CRM-notes row must wrap freely, not truncate to one line. */
+.fp-tbl .u-notes-row td { overflow: visible; white-space: normal; text-overflow: clip; }
+/* Column widths (sum ~100%): name + the long text columns get the most, the numeric
+   / chip columns stay tight. Absent Key Ev. col just frees a little extra. */
+col.fpc-name { width: 13%; } col.fpc-status { width: 6.5%; } col.fpc-stage { width: 15%; }
+col.fpc-val { width: 5.5%; } col.fpc-days { width: 5%; } col.fpc-booked { width: 13%; }
+col.fpc-chan { width: 6%; } col.fpc-camp { width: 11.5%; } col.fpc-adset { width: 10.5%; }
+col.fpc-cre { width: 9.5%; } col.fpc-ke { width: 5%; }
+.fp-src { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-ke-n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 9px; background: var(--accent-soft, rgba(109,94,252,.12)); color: var(--accent, #6d5efc); font-weight: 700; font-variant-numeric: tabular-nums; cursor: help; }
 /* Agency comparison table */
 .ov-cmp-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }

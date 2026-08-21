@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.324.0'
+const APP_VERSION = '3.325.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5590,7 +5590,7 @@ const CHAN_LABEL = { meta: 'Meta', google: 'Google', other: 'Other' }
 function statusChip(status) { const s = status === 'won' ? 'won' : status === 'lost' ? 'lost' : 'open'; return <span className={`sch ${s}`}>{s === 'won' ? 'Won' : s === 'lost' ? 'Lost' : 'Open'}</span> }
 // One person in a form answer's drill-down. Expands to fetch that contact's CRM
 // notes on demand - same pattern (and notes markup) as OpenDealRow.
-function PersonRow({ p, clientId, money, cols }) {
+function PersonRow({ p, clientId, money, cols, ke }) {
   const [open, setOpen] = useState(false)
   const [notes, setNotes] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -5602,6 +5602,12 @@ function PersonRow({ p, clientId, money, cols }) {
   }
   const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && p.contactId) load() }
   const cals = (p.calendars || []).filter((c) => c.name)
+  // Key events this person reached (of the client's configured set), so the count
+  // cell shows a number and its hover lists exactly which ones were achieved.
+  const kev = (ke && ke.events) || []
+  const evLbl = (k) => (k.kind === 'calendar' ? '📅 ' : '') + k.label
+  const achieved = ke ? kev.filter((k) => ke.reached(p, k)) : []
+  const srcCell = (v) => <td className="lft fp-src" title={v || ''}>{v || <span className="cc-none">-</span>}</td>
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
@@ -5612,6 +5618,10 @@ function PersonRow({ p, clientId, money, cols }) {
         <td className={p.ageDays != null && p.ageDays >= 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '-'}</td>
         <td className="lft">{cals.length ? cals.map((c, i) => <span key={i} className="fp-cal">{c.name}{(c.shown || c.occurred) ? <span className="fp-tick" title={c.shown ? 'Showed' : 'Occurred'}> ✓</span> : null}</span>) : (p.booked ? 'Booked' : '-')}</td>
         <td className="lft">{p.channel ? (CHAN_LABEL[p.channel] || p.channel) : '-'}</td>
+        {srcCell(p.campaign)}
+        {srcCell(p.adset)}
+        {srcCell(p.creative)}
+        {ke ? <td className="num fke-col" title={achieved.length ? `Reached: ${achieved.map(evLbl).join(' · ')}` : 'No key events reached yet'}>{achieved.length ? <span className="fp-ke-n">{fmtNumber(achieved.length)}</span> : <span className="cc-none">0</span>}</td> : null}
       </tr>
       {open && <tr className="u-notes-row"><td colSpan={cols}>
         {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
@@ -5734,8 +5744,8 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
                 </tr>
                 {isOpen && clickable && <tr className="form-people-row"><td /><td colSpan={totalCols - 1}>
                   <div className="tbl-scroll"><table className="mini-tbl users-tbl fp-tbl">
-                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th><th>Days in stage</th><th className="lft">Booked</th><th className="lft">Channel</th></tr></thead>
-                    <tbody>{people.slice().sort((x, y) => (y.value || 0) - (x.value || 0)).map((p, i) => <PersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={7} />)}</tbody>
+                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th><th>Days in stage</th><th className="lft">Booked</th><th className="lft">Channel</th><th className="lft">Campaign</th><th className="lft">Ad Set</th><th className="lft">Creative</th>{hasKe ? <th className="num" title="How many of this client's key events this person reached - hover a number to see which">Key Events</th> : null}</tr></thead>
+                    <tbody>{people.slice().sort((x, y) => (y.value || 0) - (x.value || 0)).map((p, i) => <PersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={hasKe ? 11 : 10} ke={hasKe ? ke : null} />)}</tbody>
                   </table></div>
                   {people.length >= 80 ? <div className="cap" style={{ padding: '4px 2px' }}>Showing the first 80 people for this answer.</div> : null}
                 </td></tr>}

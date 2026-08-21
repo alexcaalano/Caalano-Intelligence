@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.325.0 - 2026-08-20 · `PENDING` - Forms drill: where each lead came from + key events achieved
+- When you expand a form answer to see the people, each person now shows **Campaign / Ad Set / Creative** they came from
+  (their first-touch UTMs), next to the existing Channel column. Free - the opportunity already carries attribution, so no
+  extra data pull.
+- Added a **Key Events** column: a single number of how many of this client's configured key events that person has reached
+  - hover the number to see exactly which ones (e.g. "Booked Discovery Call · Disc. Call - Qualified").
+- Long campaign / ad-set / creative names are truncated to keep the row scannable; hover any of them for the full value.
+- Note: campaign sometimes shows as the numeric campaign id (that's what the CRM's UTM carries); ad set and creative are
+  usually names. Say the word and the next pass can resolve campaign ids to names.
+
 ## v3.324.0 - 2026-08-20 · `PENDING` - Reliability: ccdrill reads the warm snapshot (kills the biggest 429 source)
 - `ccdrill` (the command-centre drill behind every clickable tile) was the single biggest source of GHL `429` errors in the
   logs. It pulls a 120-day opportunity window for name resolution, but for high-volume clients (e.g. Nexia) the shared

@@ -878,6 +878,11 @@ export async function buildForms(locationId, from, to) {
     const stg = pi ? pi.byId[o.pipelineStageId] : null
     const aMs = o ? Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt) : NaN
     const cMs = o ? Date.parse(o.createdAt) : NaN
+    // First-touch UTMs → where this lead came from (campaign / ad set / creative).
+    // Free: the opportunity already carries attributions, so this is one extra parse,
+    // no additional API call. utm_content is the creative (usually the ad name),
+    // utm_medium the ad set / ad group, utm_campaign the campaign (may be an id).
+    const u = o ? utmOf(o) : null
     const person = {
       contactId: cid,
       name: nameOfOpp(o) || name || 'Lead',
@@ -890,7 +895,10 @@ export async function buildForms(locationId, from, to) {
       ageDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null,
       booked, shown, occurred: !!(f && f.hasCallInPeriod),
       calendars: f && Array.isArray(f.calendars) ? f.calendars.map((c) => ({ name: c.name, occurred: !!c.occurred, shown: !!c.shown })) : [],
-      channel: o ? channelOf(utmOf(o)) : null,
+      channel: u ? channelOf(u) : null,
+      campaign: (u && u.campaign) || null,
+      adset: (u && u.medium) || null,
+      creative: (u && u.content) || null,
       createdMs: isFinite(cMs) ? cMs : null,
       lastActivityDays: isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null,
     }

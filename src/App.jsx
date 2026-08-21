@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.327.0'
+const APP_VERSION = '3.328.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -11621,6 +11621,10 @@ function MRDrill({ drill, currency, campMap, medMap, onClose }) {
   const deals = drill.deals || []
   const isLost = drill.kind === 'lost'
   const total = deals.reduce((s, d) => s + (d.value || 0), 0)
+  // Per-channel split of these deals, so a lost-reason popup shows what share came
+  // from Meta vs Google vs everything else.
+  const chanBk = deals.reduce((a, d) => { a[d.channel === 'meta' ? 'meta' : d.channel === 'google' ? 'google' : 'other']++; return a }, { meta: 0, google: 0, other: 0 })
+  const chanPct = (n) => (deals.length ? Math.round((n / deals.length) * 100) : 0) + '%'
   // Show the Ad/creative column only when we actually have attribution detail for
   // at least one deal (older snapshots won't carry ad/campaign). The overlay width
   // scales to the column count so more data never forces horizontal scrolling.
@@ -11630,7 +11634,7 @@ function MRDrill({ drill, currency, campMap, medMap, onClose }) {
     <div className="mr-drill-overlay no-print" onClick={onClose}>
       <div className="mr-drill" onClick={(e) => e.stopPropagation()} style={{ '--mr-drill-cols': colCount }}>
         <div className="mr-drill-head">
-          <div><h3>{drill.title}</h3><span>{deals.length} deal(s) · {money(total)} total</span></div>
+          <div><h3>{drill.title}</h3><span>{deals.length} deal(s) · {money(total)} total{deals.length ? <> · <span className="mr-src mr-src-meta">Meta {chanBk.meta} · {chanPct(chanBk.meta)}</span> <span className="mr-src mr-src-google">Google {chanBk.google} · {chanPct(chanBk.google)}</span> <span className="mr-src mr-src-other">Other {chanBk.other} · {chanPct(chanBk.other)}</span></> : ''}</span></div>
           <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="mr-drill-body">
@@ -12674,7 +12678,6 @@ function renderMonthlyDeck(rep, h) {
     }
     const otherRev = Math.max(0, realisedRev - paidRev)
     const PIE = ['#6d5efc', '#e0803a', '#e1306c', '#4285f4', '#f59e0b', '#12b886', '#9b8cff', '#ef4444']
-    const lostPie = (lost.byReason || []).slice(0, 8).map((r, i) => ({ name: r.name, value: r.count, color: PIE[i % PIE.length] }))
     const statusDonut = [
       { name: 'Open', value: crm.open || 0, color: '#6d5efc' },
       { name: 'Won', value: coWon.count || 0, color: '#22b07d' },
@@ -12719,6 +12722,22 @@ function renderMonthlyDeck(rep, h) {
       }).filter(Boolean).filter((r) => !P || r.leads || r.closed || r.cohortWon)
       return { ke: kelist, rows: rows.sort((a, b2) => (b2.revenue - a.revenue) || (b2.closed - a.closed) || (b2.leads - a.leads)) }
     }
+    // Which paid channel a lost deal's lead came from (Meta / Google / everything
+    // else), so we can total each lost reason by platform.
+    const chanKey = (d) => (d.channel === 'meta' ? 'meta' : d.channel === 'google' ? 'google' : 'other')
+    // Single-pipeline lost reasons rebuilt from the deal list so each reason carries
+    // its per-channel split (the backend byReason has no channel breakdown). Falls
+    // back to the backend rows (no channel columns) if the deal detail is absent.
+    const lostByReasonChan = (() => {
+      if (!(lost.deals && lost.deals.length)) return { rows: lost.byReason || [], hasChan: false }
+      const m = new Map()
+      for (const d of lost.deals) {
+        const rn = d.reason || 'Not set'
+        const e = m.get(rn) || { name: rn, count: 0, value: 0, meta: 0, google: 0, other: 0 }
+        e.count++; e.value += d.value || 0; e[chanKey(d)]++; m.set(rn, e)
+      }
+      return { rows: [...m.values()].sort((a, b2) => b2.count - a.count), hasChan: true }
+    })()
     // Lost reasons grouped by pipeline (from the capped closed-lost deal list, which
     // is the only feed carrying each deal's pipeline).
     const lostByPipe = () => {
@@ -12727,13 +12746,14 @@ function renderMonthlyDeck(rep, h) {
         const pn = d.pipeline || 'Unassigned'
         let g = m.get(pn); if (!g) { g = { name: pn, deals: [], byReason: new Map(), count: 0, value: 0 }; m.set(pn, g) }
         g.deals.push(d); g.count++; g.value += d.value || 0
-        const rn = d.reason || 'Not set'; const rr = g.byReason.get(rn) || { count: 0, value: 0 }; rr.count++; rr.value += d.value || 0; g.byReason.set(rn, rr)
+        const rn = d.reason || 'Not set'; const rr = g.byReason.get(rn) || { count: 0, value: 0, meta: 0, google: 0, other: 0 }
+        rr.count++; rr.value += d.value || 0; rr[chanKey(d)]++; g.byReason.set(rn, rr)
       }
       // Order by the account pipeline order, then any extras.
       const order = new Map(pipelines.map((p, i) => [p.name, i]))
       return [...m.values()].map((g) => ({
         name: g.name, count: g.count, value: g.value, deals: g.deals,
-        byReason: [...g.byReason.entries()].map(([name, v]) => ({ name, count: v.count, value: v.value })).sort((a, b2) => b2.count - a.count),
+        byReason: [...g.byReason.entries()].map(([name, v]) => ({ name, count: v.count, value: v.value, meta: v.meta, google: v.google, other: v.other })).sort((a, b2) => b2.count - a.count),
       })).sort((a, b2) => (order.has(a.name) ? order.get(a.name) : 99) - (order.has(b2.name) ? order.get(b2.name) : 99) || b2.count - a.count)
     }
     // Render one user-performance MRTable for a given {ke, rows} bundle + drill scope.
@@ -12787,48 +12807,51 @@ function renderMonthlyDeck(rep, h) {
             <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ resulted this month" />
             <MRKpi label="Still open" value={n0(crm.open)} sub={`${money(crm.openValue)} in pipeline`} />
           </div>
-          <div className="mr-two mr-two-viz">
-            <div>
-              <div className="mr-viz-lab">Why deals were lost{multiPipe ? ' · by pipeline' : ''}</div>
-              {multiPipe
-                ? (() => {
-                  const groups = lostByPipe()
-                  if (!groups.length) return <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>
-                  return groups.map((g) => (
-                    <div className="mr-pipe-block" key={g.name}>
-                      <div className="mr-pipe-head"><span className="c360-dot" /> {g.name} <span className="cap">· {n0(g.count)} lost · {money(g.value)}</span></div>
-                      <MRTable
-                        cols={[
-                          { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost - ${r.name} · ${g.name}`, kind: 'lost', deals: g.deals.filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
-                          { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
-                          { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                          { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, g.count) },
-                        ]}
-                        rows={g.byReason} max={6}
-                      />
-                    </div>
-                  ))
-                })()
-                : (<>
-                  {lostPie.length ? <MRDonut data={lostPie} money={money} /> : null}
-                  {lost.byReason && lost.byReason.length ? (
+          <div className="mr-lost-full">
+            <div className="mr-viz-lab">Why deals were lost{multiPipe ? ' · by pipeline' : ''} · by channel</div>
+            {(() => {
+              // Reason + Deals/Value/% then a per-channel split (Meta / Google / Other),
+              // so you can see which platform's leads drive each lost reason.
+              const chanCols = [
+                { k: 'meta', label: 'Meta', align: 'r', render: (r) => n0(r.meta || 0) },
+                { k: 'google', label: 'Google', align: 'r', render: (r) => n0(r.google || 0) },
+                { k: 'other', label: 'Other', align: 'r', render: (r) => n0(r.other || 0) },
+              ]
+              const reasonCol = (drillTitle, deals) => ({ k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: drillTitle(r), kind: 'lost', deals: deals(r) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) })
+              if (multiPipe) {
+                const groups = lostByPipe()
+                if (!groups.length) return <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>
+                return groups.map((g) => (
+                  <div className="mr-pipe-block" key={g.name}>
+                    <div className="mr-pipe-head"><span className="c360-dot" /> {g.name} <span className="cap">· {n0(g.count)} lost · {money(g.value)}</span></div>
                     <MRTable
                       cols={[
-                        { k: 'name', label: 'Reason', render: (r) => (openDrill ? <button className="mr-cellbtn mr-cellbtn-l" onClick={() => openDrill({ title: `Lost - ${r.name}`, kind: 'lost', deals: (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name) })}>{r.name}</button> : <span className="mr-name">{r.name}</span>) },
+                        reasonCol((r) => `Lost - ${r.name} · ${g.name}`, (r) => g.deals.filter((d) => (d.reason || 'Not set') === r.name)),
                         { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
                         { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
-                        { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
+                        { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, g.count) },
+                        ...chanCols,
                       ]}
-                      rows={lost.byReason} max={8}
+                      rows={g.byReason} max={6}
                     />
-                  ) : <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>}
-                </>)}
-            </div>
-            <div>
-              <div className="mr-viz-lab">This month's leads by status</div>
-              {statusDonut.length ? <MRDonut data={statusDonut} money={money} /> : <div className="mr-empty">No leads this month.</div>}
-              <p className="mr-foot-note" style={{ marginTop: 6 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(lost.total.count)} lost, {n0(crm.open)} still open.</p>
-            </div>
+                  </div>
+                ))
+              }
+              if (!lostByReasonChan.rows.length) return <div className="mr-empty">No deals were marked lost this month{md ? '' : ' (regenerate the snapshot to pull lost-deal detail)'}.</div>
+              return (
+                <MRTable
+                  cols={[
+                    reasonCol((r) => `Lost - ${r.name}`, (r) => (lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name)),
+                    { k: 'count', label: 'Deals', align: 'r', render: (r) => n0(r.count) },
+                    { k: 'value', label: 'Value', align: 'r', render: (r) => money(r.value) },
+                    { k: 'share', label: '%', align: 'r', render: (r) => pc(r.count, lost.total.count) },
+                    ...(lostByReasonChan.hasChan ? chanCols : []),
+                  ]}
+                  rows={lostByReasonChan.rows} max={10}
+                />
+              )
+            })()}
+            <p className="mr-foot-note" style={{ marginTop: 8 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(lost.total.count)} lost, {n0(crm.open)} still open. The Meta / Google / Other columns split each lost reason by the platform its lead first came from.</p>
           </div>
         </section>
       </MRSlide>

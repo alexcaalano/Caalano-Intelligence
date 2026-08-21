@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.328.0 - 2026-08-20 · `PENDING` - Monthly report lost reasons: per-channel split (Meta / Google / Other)
+- The "Lost reasons & pipeline status" tables now carry **Meta / Google / Other** columns, so each lost reason shows how
+  many of those deals' leads came from each platform - the per-channel behaviour of why deals are lost.
+- Made the lost-reason tables **full width** and removed the "This month's leads by status" pie chart (that same donut still
+  lives on the Account summary slide); the won/lost/open counts stay as a one-line note under the tables.
+- The lost-deal **popup** now shows a channel summary in its header - e.g. "Meta 41 · 72% · Google 14 · 25% · Other 2 · 3%"
+  - so you can see each reason's platform split at a glance while reading the people behind it.
+
 ## v3.327.0 - 2026-08-20 · `PENDING` - Forms person drill: fits the screen (no horizontal scroll)
 - The expanded people table under a form answer is now pinned to the left of the screen and capped to the visible width
   (the same trick the Users tab detail row uses), so the wide parent answer table no longer drags the person columns

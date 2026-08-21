@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.324.0 - 2026-08-20 · `PENDING` - Reliability: ccdrill reads the warm snapshot (kills the biggest 429 source)
+- `ccdrill` (the command-centre drill behind every clickable tile) was the single biggest source of GHL `429` errors in the
+  logs. It pulls a 120-day opportunity window for name resolution, but for high-volume clients (e.g. Nexia) the shared
+  opportunity snapshot truncates at its cap and reaches back less than 120 days - so that pull fell through to a live
+  `/opportunities/search` page every time, and concurrent loads 429'd.
+- Now `ccdrill` serves that wide window best-effort from the warm snapshot instead of paging live. Its in-period numbers
+  (the from→to cohort) are unchanged - that window is recent and always fully covered; only very deep historical *name*
+  lookups could be shallower, which is cosmetic.
+- Also, `allOpportunities` now serves any window from a NON-truncated snapshot (one holding every opportunity) instead of
+  making a live call that returns the same set - a free latency win for smaller clients, with identical numbers.
+
 ## v3.323.0 - 2026-08-20 · `PENDING` - Reliability: per-client request governor to cut GHL 429s
 - The reliability logs showed most hard errors are GoHighLevel `429 Too Many Requests` bursts - because opening a client
   dashboard fires several CRM scopes (attribution + blend + users + …) for the SAME client at once, and GHL rate-limits per

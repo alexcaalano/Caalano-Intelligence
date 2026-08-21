@@ -337,10 +337,19 @@ export async function warmOppSnapshot(locationId) {
   return { opps: snap ? snap.opps.length : 0, truncated: !!(snap && snap.truncated), pipelines: pipes }
 }
 async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
-  // Serve from the shared snapshot when it provably covers the requested window;
-  // otherwise page directly (unchanged behaviour). Conservative on purpose - a
-  // wrong "covered" call would undercount CRM numbers, so we only trust the
-  // snapshot when the window start is at/after the snapshot's oldest opportunity.
+  // Serve from the shared snapshot when it covers the requested window; otherwise
+  // page directly. Conservative on purpose - a wrong "covered" call would undercount
+  // CRM numbers. Three ways a window is covered:
+  //   1. fromMs >= snap.oldestMs        - window starts within the snapshot; exact.
+  //   2. !snap.truncated                - the snapshot holds EVERY opp (it didn't hit
+  //      the cap), so nothing exists before its oldest opp; an older window is simply
+  //      empty and the snapshot is complete for it. (Previously this live-paged for
+  //      no benefit - the page returns the same set.)
+  //   3. opts.snapshotBestEffort        - the caller accepts a possibly-shallower
+  //      history from a TRUNCATED snapshot rather than a live page that would 429.
+  //      Used by ccdrill's wide name-resolution window: its in-period cohort is
+  //      recent and always fully covered, so the in-period numbers are unaffected -
+  //      only deep historical name lookups may miss, which is cosmetic.
   if (!opts.noSnapshot) {
     try {
       const tz = await locationTimezone(locationId)
@@ -348,7 +357,7 @@ async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts =
       const toMs = to ? zonedEndMs(to, tz) : null
       if (fromMs != null) {
         const snap = await oppSnapshot(locTok, locationId)
-        if (snap && isFinite(snap.oldestMs) && fromMs >= snap.oldestMs) {
+        if (snap && isFinite(snap.oldestMs) && (fromMs >= snap.oldestMs || !snap.truncated || opts.snapshotBestEffort)) {
           // Match _pageOpportunities' cap semantics: newest-first, bounded by the
           // same effective cap, so small-`cap` sample callers still get ~cap rows.
           const spanDays = Math.max(1, Math.round(((toMs != null ? toMs : Date.now()) - fromMs) / 86400000))
@@ -2388,7 +2397,11 @@ export async function buildCcDrill(locationId, from, to, channel) {
   const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
   const [wideOpps, pipelines, appts, reasons, formAns, userRows] = await Promise.all([
-    allOpportunities(locTok, locationId, wideFrom, to, 2000),
+    // Best-effort snapshot: this 120-day window is only for name resolution + close
+    // context; the in-period cohort (from..to) is recent and always fully covered.
+    // Serving from the warm snapshot here avoids the live /opportunities/search page
+    // that was the single biggest source of 429s for high-volume clients.
+    allOpportunities(locTok, locationId, wideFrom, to, 2000, { snapshotBestEffort: true }),
     fetchPipelines(locTok, locationId),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), perCalendar: new Map() })),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),

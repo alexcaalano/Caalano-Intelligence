@@ -17,6 +17,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.329.0 - 2026-08-20 · `PENDING` - Forms person drill: styled key-events popup + tidied columns
+- The **Key Events** number now hovers into a proper styled popup (matching the rest of the app) instead of the plain
+  browser tooltip - it lists each key event the person reached, and the calendars they booked (with showed / occurred).
+- Moved the **Key Events** column to sit right after **Days in stage**, and **removed the Booked column** - the booked
+  calendar detail now lives inside that Key Events popup. (Clients with no configured key events keep the Booked column.)
+
 ## v3.328.0 - 2026-08-20 · `PENDING` - Monthly report lost reasons: per-channel split (Meta / Google / Other)
 - The "Lost reasons & pipeline status" tables now carry **Meta / Google / Other** columns, so each lost reason shows how
   many of those deals' leads came from each platform - the per-channel behaviour of why deals are lost.

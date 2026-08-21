@@ -1226,10 +1226,10 @@ tr.form-people-row > td { position: sticky; left: 0; }
 .fp-tbl .u-notes-row td { overflow: visible; white-space: normal; text-overflow: clip; }
 /* Column widths (sum ~100%): name + the long text columns get the most, the numeric
    / chip columns stay tight. Absent Key Ev. col just frees a little extra. */
-col.fpc-name { width: 13%; } col.fpc-status { width: 6.5%; } col.fpc-stage { width: 15%; }
-col.fpc-val { width: 5.5%; } col.fpc-days { width: 5%; } col.fpc-booked { width: 13%; }
-col.fpc-chan { width: 6%; } col.fpc-camp { width: 11.5%; } col.fpc-adset { width: 10.5%; }
-col.fpc-cre { width: 9.5%; } col.fpc-ke { width: 5%; }
+col.fpc-name { width: 15%; } col.fpc-status { width: 6.5%; } col.fpc-stage { width: 18%; }
+col.fpc-val { width: 6%; } col.fpc-days { width: 5.5%; } col.fpc-booked { width: 13%; }
+col.fpc-chan { width: 6%; } col.fpc-camp { width: 12.5%; } col.fpc-adset { width: 11.5%; }
+col.fpc-cre { width: 10%; } col.fpc-ke { width: 6%; }
 .fp-src { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-ke-n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 9px; background: var(--accent-soft, rgba(109,94,252,.12)); color: var(--accent, #6d5efc); font-weight: 700; font-variant-numeric: tabular-nums; cursor: help; }
 /* Agency comparison table */

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.328.0'
+const APP_VERSION = '3.329.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5602,12 +5602,24 @@ function PersonRow({ p, clientId, money, cols, ke }) {
   }
   const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && p.contactId) load() }
   const cals = (p.calendars || []).filter((c) => c.name)
-  // Key events this person reached (of the client's configured set), so the count
-  // cell shows a number and its hover lists exactly which ones were achieved.
+  // Key events this person reached (of the client's configured set). The count cell
+  // hovers into a styled popup listing exactly which events were reached, plus the
+  // calendars they booked (so the old Booked column can be dropped).
   const kev = (ke && ke.events) || []
   const evLbl = (k) => (k.kind === 'calendar' ? '📅 ' : '') + k.label
   const achieved = ke ? kev.filter((k) => ke.reached(p, k)) : []
   const srcCell = (v) => <td className="lft fp-src" title={v || ''}>{v || <span className="cc-none">-</span>}</td>
+  const kePop = () => (
+    <span className="hp-body">
+      <span className="hp-t">Key events reached · {fmtNumber(achieved.length)}</span>
+      {achieved.length
+        ? achieved.map((k, i) => <span className="hp-r" key={i}><span className="hp-lbl primary">{evLbl(k)}</span><span className="hp-val">✓</span></span>)
+        : <span className="hp-r"><span className="hp-lbl">None reached yet</span></span>}
+      {cals.length ? <><span className="hp-note">Booked</span>{cals.map((c, i) => <span className="hp-r" key={'c' + i}><span className="hp-lbl">📅 {c.name}</span><span className="hp-val">{c.shown ? 'showed' : c.occurred ? 'occurred' : 'booked'}</span></span>)}</> : null}
+    </span>
+  )
+  const keCell = <td className="num fke-col"><HoverPop className="ke-hp" render={kePop}>{achieved.length ? <span className="fp-ke-n">{fmtNumber(achieved.length)}</span> : <span className="cc-none">0</span>}</HoverPop></td>
+  const bookedCell = <td className="lft" title={cals.length ? cals.map((c) => c.name + (c.shown ? ' (showed)' : c.occurred ? ' (occurred)' : '')).join(', ') : (p.booked ? 'Booked' : '')}>{cals.length ? cals.map((c, i) => <span key={i} className="fp-cal">{c.name}{(c.shown || c.occurred) ? <span className="fp-tick" title={c.shown ? 'Showed' : 'Occurred'}> ✓</span> : null}</span>) : (p.booked ? 'Booked' : '-')}</td>
   return (
     <React.Fragment>
       <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
@@ -5616,12 +5628,11 @@ function PersonRow({ p, clientId, money, cols, ke }) {
         <td className="lft" title={`${p.stageName || '-'}${p.pipelineName && p.pipelineName !== 'Pipeline' ? ' · ' + p.pipelineName : ''}`}>{p.stageName || '-'}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</td>
         <td>{p.value ? money(p.value) : '-'}</td>
         <td className={p.ageDays != null && p.ageDays >= 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '-'}</td>
-        <td className="lft" title={cals.length ? cals.map((c) => c.name + (c.shown ? ' (showed)' : c.occurred ? ' (occurred)' : '')).join(', ') : (p.booked ? 'Booked' : '')}>{cals.length ? cals.map((c, i) => <span key={i} className="fp-cal">{c.name}{(c.shown || c.occurred) ? <span className="fp-tick" title={c.shown ? 'Showed' : 'Occurred'}> ✓</span> : null}</span>) : (p.booked ? 'Booked' : '-')}</td>
+        {ke ? keCell : bookedCell}
         <td className="lft">{p.channel ? (CHAN_LABEL[p.channel] || p.channel) : '-'}</td>
         {srcCell(p.campaign)}
         {srcCell(p.adset)}
         {srcCell(p.creative)}
-        {ke ? <td className="num fke-col" title={achieved.length ? `Reached: ${achieved.map(evLbl).join(' · ')}` : 'No key events reached yet'}>{achieved.length ? <span className="fp-ke-n">{fmtNumber(achieved.length)}</span> : <span className="cc-none">0</span>}</td> : null}
       </tr>
       {open && <tr className="u-notes-row"><td colSpan={cols}>
         {loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '2px 2px 6px' }}>No notes on this contact in Caalano Systems.</div>}
@@ -5745,10 +5756,10 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
                 {isOpen && clickable && <tr className="form-people-row"><td colSpan={totalCols}>
                   <div className="fp-wrap"><div className="tbl-scroll"><table className="mini-tbl users-tbl fp-tbl">
                     <colgroup>
-                      <col className="fpc-name" /><col className="fpc-status" /><col className="fpc-stage" /><col className="fpc-val" /><col className="fpc-days" /><col className="fpc-booked" /><col className="fpc-chan" /><col className="fpc-camp" /><col className="fpc-adset" /><col className="fpc-cre" />{hasKe ? <col className="fpc-ke" /> : null}
+                      <col className="fpc-name" /><col className="fpc-status" /><col className="fpc-stage" /><col className="fpc-val" /><col className="fpc-days" /><col className={hasKe ? 'fpc-ke' : 'fpc-booked'} /><col className="fpc-chan" /><col className="fpc-camp" /><col className="fpc-adset" /><col className="fpc-cre" />
                     </colgroup>
-                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th><th>Days</th><th className="lft">Booked</th><th className="lft">Channel</th><th className="lft">Campaign</th><th className="lft">Ad Set</th><th className="lft">Creative</th>{hasKe ? <th className="num" title="How many of this client's key events this person reached - hover a number to see which">Key Ev.</th> : null}</tr></thead>
-                    <tbody>{people.slice().sort((x, y) => (y.value || 0) - (x.value || 0)).map((p, i) => <PersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={hasKe ? 11 : 10} ke={hasKe ? ke : null} />)}</tbody>
+                    <thead><tr><th className="lft">Name</th><th className="lft">Status</th><th className="lft">Stage</th><th>Value</th><th>Days</th>{hasKe ? <th className="num" title="How many of this client's key events this person reached - hover the number to see which, and any calendars booked">Key Events</th> : <th className="lft">Booked</th>}<th className="lft">Channel</th><th className="lft">Campaign</th><th className="lft">Ad Set</th><th className="lft">Creative</th></tr></thead>
+                    <tbody>{people.slice().sort((x, y) => (y.value || 0) - (x.value || 0)).map((p, i) => <PersonRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={10} ke={hasKe ? ke : null} />)}</tbody>
                   </table></div>
                   {people.length >= 80 ? <div className="cap" style={{ padding: '4px 2px' }}>Showing the first 80 people for this answer.</div> : null}
                   </div>

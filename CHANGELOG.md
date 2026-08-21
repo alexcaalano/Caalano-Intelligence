@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.326.0 - 2026-08-20 · `PENDING` - Forms drill: resolve campaign/ad-set/creative ids to names via Windsor
+- The Forms person drill's Campaign / Ad Set / Creative columns now show the real **names** even when the CRM's UTM carried
+  a numeric platform **id**. The `forms` scope builds the same Windsor id→name maps the attribution channel uses (Meta +
+  Google campaign / ad-set / ad-group / ad pairs) and rewrites each person's source.
+- The id→name lookups hit Windsor (the ad platforms), NOT GoHighLevel, and run in parallel with the CRM build - so they add
+  no latency and don't touch the CRM rate limit. Best-effort: anything that can't be matched keeps its raw value.
+
 ## v3.325.0 - 2026-08-20 · `PENDING` - Forms drill: where each lead came from + key events achieved
 - When you expand a form answer to see the people, each person now shows **Campaign / Ad Set / Creative** they came from
   (their first-touch UTMs), next to the existing Channel column. Free - the opportunity already carries attribution, so no

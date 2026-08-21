@@ -550,6 +550,42 @@ export async function runOppWarm() {
   return { ok: true, count: results.length, warmed: results.filter((r) => !r.error).length, results }
 }
 
+// Windsor id→name maps for ad campaign / ad set / creative. CRM UTMs often carry a
+// numeric platform id (very common for utm_campaign), so a raw UTM can't be shown as
+// a name without this lookup. Lightweight Windsor reads (Meta + Google id+name
+// pairs) - these hit the ad platforms via Windsor, NOT GoHighLevel, so they don't
+// touch the CRM rate limit the reliability work is protecting. Best-effort: any miss
+// just leaves the raw value untouched. Same pairing the `attribution` channel builds.
+async function fetchAdIdNameMaps(cc, from, to, preset, key) {
+  const filtG = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, cc.google))
+  const filtM = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+  const [ggIds, fbIds, ggAdIds] = await Promise.all([
+    cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
+    cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id', 'ad_name', 'ad_id'], from, to, preset, key).then(filtM).catch(() => []) : Promise.resolve([]),
+    cc.google ? windsorFetch('google_ads', ['account_id', 'ad_group_name', 'ad_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
+  ])
+  const campaign = {}, medium = {}, content = {}
+  const put = (m, id, nm) => { const i = String(id ?? '').trim(); if (i && nm && !m[i]) m[i] = nm }
+  for (const r of ggIds) { put(campaign, r.campaign_id, r.campaign); put(medium, r.ad_group_id, r.ad_group_name) }
+  for (const r of ggAdIds) { put(medium, r.ad_id, r.ad_group_name) } // Google ad-id → ad group
+  for (const r of fbIds) { put(campaign, r.campaign_id, r.campaign); put(medium, r.adset_id, r.adset_name); put(content, r.ad_id, r.ad_name) }
+  return { campaign, medium, content }
+}
+// Rewrite each Forms person's campaign / ad set / creative from a numeric id to its
+// name using the maps above. Idempotent + best-effort (an unresolved value stays as
+// it was), and dedupes by object identity since form-people and answer-people share
+// the same person object references.
+function resolveFormsAttribution(data, maps) {
+  if (!maps || !data) return
+  const seen = new Set()
+  const rz = (v, m) => { if (v == null) return v; const s = String(v).trim(); return (m && m[s]) || v }
+  const fix = (p) => { if (!p || seen.has(p)) return; seen.add(p); p.campaign = rz(p.campaign, maps.campaign); p.adset = rz(p.adset, maps.medium); p.creative = rz(p.creative, maps.content) }
+  for (const f of (data.forms || [])) {
+    for (const p of (f.people || [])) fix(p)
+    for (const s of (f.segments || [])) for (const a of (s.answers || [])) for (const p of (a.people || [])) fix(p)
+  }
+}
+
 async function buildMeta(accountId, from, to, preset, key, fallback) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
@@ -2874,8 +2910,18 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'forms', client, ghl: false, forms: [] })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'forms', client, connected: false, forms: [] })
-    try { return json({ scope: 'forms', client, period: { from, to, preset }, ...(await buildForms(cc.ghl, from, to)) }, 200, true) }
-    catch (e) { return json({ scope: 'forms', client, error: String(e.message || e).slice(0, 200), forms: [] }, 200) }
+    try {
+      // Build the CRM forms AND (in parallel) the ad id→name maps, then resolve each
+      // person's campaign / ad set / creative from a numeric UTM id to its real name.
+      // The map fetch runs alongside buildForms (no added latency) and hits Windsor,
+      // not GHL, so it doesn't add to the CRM rate limit.
+      const [formsData, idMaps] = await Promise.all([
+        buildForms(cc.ghl, from, to),
+        (cc.meta || cc.google) ? fetchAdIdNameMaps(cc, from, to, preset, key).catch(() => null) : Promise.resolve(null),
+      ])
+      if (idMaps) resolveFormsAttribution(formsData, idMaps)
+      return json({ scope: 'forms', client, period: { from, to, preset }, ...formsData }, 200, true)
+    } catch (e) { return json({ scope: 'forms', client, error: String(e.message || e).slice(0, 200), forms: [] }, 200) }
   }
 
   // Speed to Lead: time from lead-in to first manual (human) outbound message.

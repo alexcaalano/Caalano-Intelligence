@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.330.0 - 2026-08-20 · `PENDING` - Meta data: scheduled warmer so the Meta tab loads fast (fewer failures)
+- Opening the Meta Ads tab fired 8 heavy Windsor queries in parallel every time you switched client or changed the date
+  range - a cold pull that was slow and, when one of those calls was slow that minute, occasionally tipped past the 10s
+  function budget and failed.
+- Added a **scheduled Meta warmer** (`meta-warm`, every ~10 min - mirrors the CRM `opp-warm`) that pre-builds each Meta
+  client's last-7-day and last-30-day payload into the result cache. Opening the tab on those common ranges is now a
+  warm-cache hit (<1s) instead of a cold fan-out. The warmer computes its date ranges in Australia/Sydney time so its cache
+  key matches exactly what the app requests.
+- Made the server result cache ignore the per-attempt retry counter (`_a`), so a retried deep pull reuses the same cached
+  entry (and the warmer's entry) instead of missing on it. Owner can force a warm via `/.netlify/functions/meta-warm-now`.
+- Ranges other than 7 / 30 days still load live for now; a follow-up can add progressive first-paint for cold pulls.
+
 ## v3.329.0 - 2026-08-20 · `PENDING` - Forms person drill: styled key-events popup + tidied columns
 - The **Key Events** number now hovers into a proper styled popup (matching the rest of the app) instead of the plain
   browser tooltip - it lists each key event the person reached, and the calendars they booked (with showed / occurred).

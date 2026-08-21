@@ -550,6 +550,52 @@ export async function runOppWarm() {
   return { ok: true, count: results.length, warmed: results.filter((r) => !r.error).length, results }
 }
 
+// Rolling-preset from/to computed in Australia/Sydney - the timezone the staff
+// browsers compute their ranges in (presetRange runs in the viewer's local tz). We
+// MUST produce the exact same dates so the warmed cache lands under the same key the
+// interactive request reads (rangeQuery = ?from=&to=, no preset). Anchoring at
+// noon-UTC on the Sydney calendar date + UTC date arithmetic avoids DST edge cases.
+function sydneyPresetRange(id) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const g = (t) => +parts.find((p) => p.type === t).value
+  const today = new Date(Date.UTC(g('year'), g('month') - 1, g('day'), 12, 0, 0))
+  const iso = (dt) => dt.toISOString().slice(0, 10)
+  const shift = (n) => { const x = new Date(today); x.setUTCDate(x.getUTCDate() - n); return iso(x) }
+  if (id === 'last_7d') return { from: shift(7), to: shift(1) }
+  if (id === 'last_30d') return { from: shift(30), to: shift(1) }
+  return null
+}
+// Scheduled Meta warmer: pre-build each Meta client's payload for the common rolling
+// ranges (last 7 / 30 days) into the result cache, so opening the Meta Ads tab is a
+// warm-cache hit instead of a cold 8-query Windsor fan-out (which is what makes the
+// first load slow, and occasionally tips past the 10s function budget → a failure).
+// Sequential per client (one client's ~8 Windsor calls at a time) so we never blast
+// Windsor. Writes to the SAME key cacheKeyFrom() derives for the interactive URL.
+const META_WARM_PRESETS = ['last_30d', 'last_7d']
+export async function runMetaWarm() {
+  try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
+  const key = process.env.WINDSOR_API_KEY
+  if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
+  const results = []
+  for (const [id, cc] of Object.entries(CLIENTS)) {
+    if (!cc.meta) continue
+    const fallback = await readMetaPrimary(id).catch(() => null)
+    let warmed = 0; const errors = []
+    for (const pid of META_WARM_PRESETS) {
+      const rg = sydneyPresetRange(pid); if (!rg) continue
+      try {
+        const meta = await buildMeta(cc.meta, rg.from, rg.to, null, key, fallback)
+        const payload = { client: id, channel: 'meta', period: { from: rg.from, to: rg.to, preset: null }, meta }
+        const ck = cacheKeyFrom(new URL(`https://warm/?client=${encodeURIComponent(id)}&channel=meta&from=${rg.from}&to=${rg.to}`))
+        writeResultCache(ck, payload)
+        warmed++
+      } catch (e) { errors.push(`${pid}: ${String(e.message || e).slice(0, 80)}`) }
+    }
+    results.push({ client: id, warmed, ...(errors.length ? { errors } : {}) })
+  }
+  return { ok: true, count: results.length, warmed: results.reduce((s, r) => s + r.warmed, 0), results }
+}
+
 // Windsor id→name maps for ad campaign / ad set / creative. CRM UTMs often carry a
 // numeric platform id (very common for utm_campaign), so a raw UTM can't be shown as
 // a name without this lookup. Lightweight Windsor reads (Meta + Google id+name
@@ -2238,7 +2284,11 @@ async function readResultCache(key) { try { return await cacheStore().get(key, {
 function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
 function cacheKeyFrom(url) {
   const p = new URLSearchParams(url.search)
-  p.delete('_r'); p.delete('debug'); p.delete('nonce')
+  // _r/nonce = refresh cache-buster, debug = raw sample, _a = the deep-fetch retry
+  // counter (a per-attempt browser cache-buster). None should fragment the SERVER
+  // cache: stripping _a lets retries share one entry AND lets the Meta/Google warmer
+  // (which has no _a) write the exact key the interactive request reads.
+  p.delete('_r'); p.delete('debug'); p.delete('nonce'); p.delete('_a')
   const entries = [...p.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : 1)))
   return 'v1:' + encodeURIComponent(entries.map(([k, v]) => `${k}=${v}`).join('&'))
 }

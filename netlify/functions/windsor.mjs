@@ -632,7 +632,12 @@ function resolveFormsAttribution(data, maps) {
   }
 }
 
-async function buildMeta(accountId, from, to, preset, key, fallback) {
+async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) {
+  // core = fast first-paint build: skip the two heaviest ad-level queries (per-ad and
+  // per-ad-per-day) plus the prior-period delta pulls, so the campaign / ad-set /
+  // totals / daily payload returns quickly. The creatives + day-drill + deltas arrive
+  // in the follow-up full build. Everything downstream already tolerates ads = [].
+  const core = !!opts.core
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
   // The client's configured CUSTOM conversion fields (Settings → Meta conversions) are
@@ -660,16 +665,16 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   // and still render. Small windows are cheap, so this rarely triggers there.
   const adCatch = windowDays(from, to, preset) > 90
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
-    (adCatch
+    core ? Promise.resolve([]) : (adCatch
       ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt).catch(() => [])
       : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt)),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
-    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
-    windsorFetch('facebook', adDayFields, from, to, preset, key).then(filt).catch(() => []),
+    (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []),
+    core ? Promise.resolve([]) : windsorFetch('facebook', adDayFields, from, to, preset, key).then(filt).catch(() => []),
     windsorFetch('facebook', campFields, from, to, preset, key).then(filt),
     windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt),
-    pr.from ? windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
+    (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []),
   ])
   // Resolve custom-conversion primaries to their real names (Custom Conversion
   // Definition table: id → name) so the Results label reads e.g. "B_Page_View"
@@ -721,6 +726,9 @@ async function buildMeta(accountId, from, to, preset, key, fallback) {
   }
   roll.adDaily = adDayRows.map((r) => ({ date: String(r.date || '').slice(0, 10), campaign: r.campaign, adset: r.adset_name || null, ad: r.ad_name || null, spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks), leads: fbLeads(r) })).filter((r) => r.date && (r.ad || r.campaign))
   roll.adDailyLevel = bigWin ? 'campaign' : 'ad'
+  // Fast-paint marker: the frontend shows a "loading creatives" note while this is
+  // set, then swaps in the full payload (with creatives + day-drill + deltas).
+  if (core) roll.coreOnly = true
   return roll
 }
 
@@ -3987,7 +3995,8 @@ export default async (req) => {
     }
     if (channel === 'meta') {
       const fallback = await readMetaPrimary(client)
-      const meta = await buildMeta(accountId, from, to, preset, key, fallback)
+      const core = url.searchParams.get('part') === 'core'
+      const meta = await buildMeta(accountId, from, to, preset, key, fallback, { core })
       return json({ client, channel, period: { from, to, preset }, meta }, 200, true)
     }
     const fields = [...spec.dims, ...spec.metrics]

@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.331.0 - 2026-08-20 · `PENDING` - Meta tab: progressive first paint on cold loads
+- On a cold Meta load (a range the warmer doesn't cover, e.g. last 90 days / custom), if the full pull is slow the tab now
+  paints a fast **core** payload first - campaigns, ad-sets, totals, daily chart and the Caalano360 key-event columns - so
+  you're reading numbers in ~2s instead of staring at a spinner for 8s.
+- The heavy creative + day-drill + prior-period queries continue in the background and swap in when ready; until then the
+  creatives section shows a small "Loading creative-level detail…" spinner.
+- It's a hedge: the core request only fires if the full pull hasn't returned within ~0.9s, so a warm-cache hit (the common
+  7 / 30-day ranges) still returns the full payload first with no extra Windsor work. If the full pull ultimately fails, the
+  core numbers stay on screen instead of an error card.
+
 ## v3.330.0 - 2026-08-20 · `PENDING` - Meta data: scheduled warmer so the Meta tab loads fast (fewer failures)
 - Opening the Meta Ads tab fired 8 heavy Windsor queries in parallel every time you switched client or changed the date
   range - a cold pull that was slow and, when one of those calls was slow that minute, occasionally tipped past the 10s

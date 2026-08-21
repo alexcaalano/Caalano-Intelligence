@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.330.0'
+const APP_VERSION = '3.331.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2201,6 +2201,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
         </table></div>}
         <p className="caveat">Spend / Impr. / CVR come from the Meta ads whose creative matches this form's submissions (utm_content); Leads / Booked / Shown / Won / Revenue are the CRM outcomes for leads that came through the form. CPL = spend ÷ CRM leads. Click a form to filter the campaigns, ad sets and creatives above to just the ads that drove it, or click a campaign / ad set / creative to filter this table to the forms it drove.</p>
       </>}
+      {deep.meta.coreOnly ? <div className="lvl-title">Creatives <span className="sub">· loading…</span><div className="card" style={{ padding: 14, marginTop: 8 }}><Spinner label="Loading creative-level detail…" /></div></div> : <>
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr>
         <SortTh k="name" sort={creSort} on={onCreSort}>Creative</SortTh><SortTh k="type" sort={creSort} on={onCreSort}>Type</SortTh><SortTh k="spend" sort={creSort} on={onCreSort}>Spend</SortTh><SortTh k="impressions" sort={creSort} on={onCreSort}>Impr.</SortTh><SortTh k="linkCtr" sort={creSort} on={onCreSort}>Link CTR</SortTh><SortTh k="hook" sort={creSort} on={onCreSort}>Hook</SortTh><SortTh k="leads" sort={creSort} on={onCreSort}>Leads</SortTh><SortTh k="cvr" sort={creSort} on={onCreSort}>CVR</SortTh><SortTh k="cpl" sort={creSort} on={onCreSort}>CPL</SortTh>{has360 && <O360Head sort={creSort} on={onCreSort} cols={o360cols} />}</tr></thead>
@@ -2226,6 +2227,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
             clientId={clientId} range={range} channel="meta"
           />
         : <div className="card" style={{ padding: 14 }}><p className="cap" style={{ margin: 0 }}>No creatives with spend in this range.</p></div>}
+      </>}
       <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{m.adDaily ? ' · click a day to break it down' : ''}</span></div>
       <div className="table-wrap"><table><thead><tr><th>Day</th><th>Spend</th><th>CPM</th><th>CTR</th><th>CPC</th><th>Leads</th><th>CPL</th></tr></thead>
         <tbody>{[...daily].reverse().map((d) => (<tr key={d.date} className={day === d.date ? 'row-sel' : ''} style={{ cursor: m.adDaily ? 'pointer' : 'default' }} onClick={() => m.adDaily && setDay(day === d.date ? null : d.date)}><td>{d.label}</td><td>{fmtCurrency(d.spend, currency)}</td><td>{fmtCurrency(d.cpm, currency)}</td><td>{fmtPct(d.ctr, 2)}</td><td>{fmtCurrency(d.cpc, currency)}</td><td>{fmtNumber(d.leads)}</td><td>{d.leads ? <span className="cpl-cell" style={{ background: cplColor(d.cpl, cpl) }}>{fmtCurrency(d.cpl, currency)}</span> : '-'}</td></tr>))}</tbody></table></div>
@@ -5234,6 +5236,24 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
       const MAX = 2 // up to 3 attempts total
       const permanent = (j) => /no\s+\w+\s+account|not connected|connect your/i.test(String((j && j.error) || ''))
       const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+      // Progressive first paint (Meta only): the full pull fires 8 Windsor queries and
+      // can take several seconds cold. If it hasn't landed quickly, fetch a lighter
+      // "core" payload (campaigns / ad-sets / totals / daily; no creatives) so the tab
+      // paints fast, then the full payload replaces it. On a warm-cache hit the full
+      // returns first and the core hedge never fires (no wasted Windsor work).
+      let fullDone = false; let coreShown = false; let coreTimer = null; let corePayload = null
+      if (channel === 'meta' && seed === undefined) {
+        coreTimer = setTimeout(async () => {
+          if (!alive || fullDone) return
+          try {
+            const r = await fetch(`${base}&part=core`)
+            const j = await r.json().catch(() => null)
+            if (!alive || fullDone || !j || j.error) return
+            coreShown = true; corePayload = j
+            setState({ status: 'ok', data: j, progress: { core: true } })
+          } catch { /* full is still coming */ }
+        }, 900)
+      }
       const attempt = async (n) => {
         const ctrl = new AbortController()
         const timer = setTimeout(() => ctrl.abort(), 14000)
@@ -5244,16 +5264,17 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
         } catch (e) { j = { error: 'Network error / timeout reaching the data function.' } }
         finally { clearTimeout(timer) }
         if (!alive) return
-        if (j && !j.error) { swrSet(base, j); setState({ status: 'ok', data: j, progress: null }); return }
-        // On a hard failure or exhausted retries, keep the cached copy if we have one.
-        if (permanent(j) || n >= MAX) { setState(seed !== undefined ? { status: 'ok', data: seed, progress: null } : { status: 'err', data: j || null, progress: null }); return }
-        setState(seed !== undefined ? { status: 'ok', data: seed, progress: { retry: n + 1, of: MAX } } : { status: 'loading', data: null, progress: { retry: n + 1, of: MAX } })
+        if (j && !j.error) { fullDone = true; if (coreTimer) clearTimeout(coreTimer); swrSet(base, j); setState({ status: 'ok', data: j, progress: null }); return }
+        // On a hard failure or exhausted retries, keep the cached copy if we have one -
+        // or the core payload if it already painted (better than an error card).
+        if (permanent(j) || n >= MAX) { fullDone = true; if (coreShown) { setState({ status: 'ok', data: { ...corePayload, meta: { ...corePayload.meta, coreOnly: false } }, progress: null }); return } setState(seed !== undefined ? { status: 'ok', data: seed, progress: null } : { status: 'err', data: j || null, progress: null }); return }
+        if (!coreShown) setState(seed !== undefined ? { status: 'ok', data: seed, progress: { retry: n + 1, of: MAX } } : { status: 'loading', data: null, progress: { retry: n + 1, of: MAX } })
         await sleep(1200 * (n + 1))
         if (!alive) return
         return attempt(n + 1)
       }
       attempt(0)
-      return () => { alive = false }
+      return () => { alive = false; if (coreTimer) clearTimeout(coreTimer) }
     }
     const ckey = `/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${q}${nonce ? `&_r=${nonce}` : ''}&chunky=1`
     const cseed = swrPeek(ckey)

@@ -1837,14 +1837,20 @@ const avgScores = (arr) => { const v = arr.filter((x) => x != null); return v.le
 const safeDiv = (a, b) => (b ? a / b : null)
 const pillar = (label, comps) => { const score = avgScores(comps.map((c) => c.score)); return { label, score, components: comps.filter((c) => c.score != null || c.actual != null) } }
 
-async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'created') {
-  const blend = await buildBlend(c, from, to, preset, key)
+async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'created', opts = {}) {
+  // Reuse a pre-built blend when the caller has one (the warm cache) - the Caalano360
+  // tab otherwise builds the blend twice per open (once for the tab, once here), and
+  // the second heavy build is what tips the health score past the 10s budget. The
+  // passed blend is a fresh parse from the cache, so mutating it below is safe.
+  const blend = opts.blend || await buildBlend(c, from, to, preset, key)
   // Closed won basis: overlay the blend's won/revenue with won-in-period (banked)
   // before deriving the score, so the Executive's revenue/ROAS reflect it. Leads
   // and the funnel stay created-basis. Default 'created' → unchanged for snapshot
   // and other callers.
   if (wonBasis === 'closed' && c.ghl && from && to) {
-    const wc = await wonInPeriod(c.ghl, from, to).catch(() => null)
+    // Reuse the blend's own wonClosed (the warmer / blend tab already computed it)
+    // rather than a fresh GHL pull, when it's there.
+    const wc = blend.wonClosed || await wonInPeriod(c.ghl, from, to).catch(() => null)
     if (wc) applyClosedBasisBlend(blend, wc)
   }
   const p = blend.paid, crm = blend.crm || {}, prev = blend.prev || null
@@ -3087,8 +3093,19 @@ export default async (req) => {
     try {
       const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
       const cfg = await readHealthConfig(client)
+      // Reuse the warm blend the ad-tab warmer built for this client + range (same
+      // created-basis; health applies the closed overlay itself), so the score builds
+      // cheaply off it instead of a second full blend rebuild that can time out.
+      let preBlend = null
+      if (from && to) {
+        try {
+          const bk = cacheKeyFrom(new URL(`https://x/?client=${encodeURIComponent(client)}&channel=blend&from=${from}&to=${to}`))
+          const hit = await readResultCache(bk)
+          if (hit && hit.payload && hit.payload.blend && (Date.now() - hit.at) < RESULT_TTL_MS) preBlend = hit.payload.blend
+        } catch { /* fall back to a fresh build */ }
+      }
       const [health, history] = await Promise.all([
-        buildHealth(cc, from, to, preset, key, cfg.weights, wonBasis),
+        buildHealth(cc, from, to, preset, key, cfg.weights, wonBasis, { blend: preBlend }),
         readHealthHistory(client).catch(() => []),
       ])
       return json({ scope: 'health', client, period: { from, to, preset }, wonBasis, ...health, history }, 200, true)

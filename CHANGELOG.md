@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.334.0 - 2026-08-20 · `PENDING` - Speed: health score reuses the warm blend (no second heavy build)
+- The Caalano360 tab built the blend **twice** on every open - once for the tab and once inside the executive health score -
+  and the second heavy build is what pushed the score past the 10s budget and produced "Couldn't load the executive health
+  score". The health score now **reuses the warm blend** (the one the tab / warmer already built for that client + range) and
+  only applies its own closed-basis overlay on top, so it builds cheaply instead of from scratch.
+- It also reuses the blend's already-computed won-in-period figure instead of a fresh CRM pull on the closed-basis view.
+- Falls back to a fresh build when no warm blend is available, so nothing breaks on an uncached range.
+
 ## v3.333.0 - 2026-08-20 · `PENDING` - Speed: warmer now covers Google Ads + the Caalano360 (blend) tab
 - Extended the scheduled warmer (which already warmed Meta) to also pre-build each client's **Google Ads** and
   **Caalano360 blend** (the default tab) payloads for last-30-days into the result cache. Those two tabs now open as warm

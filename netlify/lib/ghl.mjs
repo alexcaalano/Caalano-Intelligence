@@ -309,7 +309,11 @@ async function oppSnapshot(locTok, locationId, opts = {}) {
     if (!force) { try { const hit = await _oppStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.opps) && (now - hit.at) < OPP_SNAP_BLOB_MS) { const snap = _snapWrap(hit); _oppSnapMem.set(locationId, snap); return snap } } catch { /* fall through */ } }
     const to = new Date(now).toISOString().slice(0, 10)
     const from = new Date(now - OPP_SNAP_DAYS * 86400000).toISOString().slice(0, 10)
-    const opps = await _pageOpportunities(locTok, locationId, from, to, OPP_SNAP_CAP, { deadlineMs: 7000 })
+    // The scheduled warmer runs as a background function (long budget), so it can
+    // page to the FULL snapshot depth; an interactive cold build must fit the ~10s
+    // request budget, so it stays capped tight. A shallow snapshot is what makes a
+    // high-volume client's blend / health fall back to slow live paging → timeout.
+    const opps = await _pageOpportunities(locTok, locationId, from, to, OPP_SNAP_CAP, { deadlineMs: force ? 25000 : 7000 })
     const raw = { at: now, opps }
     const snap = _snapWrap(raw)
     // Bound warm-lambda memory: keep only the most recent handful of locations.

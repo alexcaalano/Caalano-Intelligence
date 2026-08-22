@@ -2277,6 +2277,27 @@ function applyClosedBasisBlend(blend, wc) {
 // cache is read, so a hit can never leak across accounts.
 const RESULT_TTL_MS = 10 * 60 * 1000            // serve a cached payload fresh for 10 min
 const STALE_ON_ERROR_MS = 6 * 60 * 60 * 1000    // on a rebuild failure, fall back to a payload up to 6h old
+// Historical ad-platform data is immutable: once Meta/Google's attribution window has
+// closed, a past range's spend / impressions / results never change. So for the pure
+// ad channels (meta / google) we cache a finalised past range far longer than the
+// live 10-min window - opening any older period becomes a near-permanent instant hit.
+// CRM-joined data (attribution / blend / every scope) is deliberately EXCLUDED: an old
+// lead can still be marked won, a stage can change, revenue can land later - so those
+// keep the short TTL. Tiered by how far the range's END is in the past:
+//   ended ≥ 8 days ago  → fully final (past the 7-day click window)      → 24h
+//   ended ≥ 2 days ago  → settled; a late-attributed result is rare and  → 1h
+//                          would be picked up within the hour anyway
+const RESULT_TTL_AD_FINAL_MS = 24 * 60 * 60 * 1000
+const RESULT_TTL_AD_SETTLED_MS = 60 * 60 * 1000
+function resultTtlFor(scope, channel, to) {
+  // Only the ad-only channels, and only when the request is channel-scoped (no scope).
+  if (scope || (channel !== 'meta' && channel !== 'google') || !to) return RESULT_TTL_MS
+  const toMs = Date.parse(to + 'T23:59:59Z'); if (!isFinite(toMs)) return RESULT_TTL_MS
+  const ageDays = (Date.now() - toMs) / 86400000
+  if (ageDays >= 8) return RESULT_TTL_AD_FINAL_MS
+  if (ageDays >= 2) return RESULT_TTL_AD_SETTLED_MS
+  return RESULT_TTL_MS
+}
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
@@ -2426,7 +2447,8 @@ export default async (req) => {
     _ckey = cacheKeyFrom(url)
     _staleHit = await readResultCache(_ckey)
     const bust = !!url.searchParams.get('_r')
-    if (_staleHit && !bust && (Date.now() - _staleHit.at) < RESULT_TTL_MS) {
+    const ttl = resultTtlFor(scope, channel, to)
+    if (_staleHit && !bust && (Date.now() - _staleHit.at) < ttl) {
       return json({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000) } }, 200, true)
     }
   }

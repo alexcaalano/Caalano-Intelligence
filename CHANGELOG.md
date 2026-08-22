@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.332.0 - 2026-08-20 · `PENDING` - Speed: cache finalised ad ranges for longer + deeper opp snapshot (health-score fix)
+- **Historical ad ranges cached much longer.** Once Meta/Google's attribution window has closed, a past range's numbers
+  never change - so for the pure ad channels the cache now keeps a finalised range far longer than the live 10-minute
+  window (1h once the range end is 2+ days old, 24h once it's 8+ days old). Opening any older period is now a near-instant
+  hit. CRM-joined data (attribution / blend / every CRM scope) keeps the short TTL, since an old lead can still be marked won
+  or move stage.
+- **Fixed "Couldn't load the executive health score".** For high-volume clients the shared opportunity snapshot was paging
+  with a tight 7-second deadline even in the background warmer, so it truncated shallow and the client's blend / health
+  build fell back to slow live paging and timed out. The scheduled warmer (which has a long background budget, unlike the
+  10s request path) now pages the snapshot to full depth, so those builds read the warm cache and complete in time.
+
 ## v3.331.0 - 2026-08-20 · `PENDING` - Meta tab: progressive first paint on cold loads
 - On a cold Meta load (a range the warmer doesn't cover, e.g. last 90 days / custom), if the full pull is slow the tab now
   paints a fast **core** payload first - campaigns, ad-sets, totals, daily chart and the Caalano360 key-event columns - so

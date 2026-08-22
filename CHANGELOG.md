@@ -17,6 +17,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.336.0 - 2026-08-20 · `PENDING` - Creative Cockpit: split the whole breakdown per pipeline (replaces the selector)
+- Replaced the pipeline *selector* with a proper **per-pipeline split**. A creative belongs to a pipeline (via its
+  campaign's Settings link / name match), so a multi-pipeline client's Creative Cockpit is now **one labelled section per
+  pipeline** - each with only that pipeline's creatives, its own "What's working" persona/angle rollup, and its own key-event
+  columns. No more duplicate / misaligned green columns, and the personas ranked in each section are the ones that actually
+  ran in that pipeline.
+- Each creative's green key-event fields are computed against *its* pipeline, so a creative in Pipeline A never shows counts
+  under Pipeline B's events. Creatives whose campaign maps to no pipeline collect in an "Unattributed" section.
+- Filters + the dimension toggle are shared across sections; each section's grid still sorts, tags and drags to pan on its
+  own. Single-pipeline clients are unchanged (one flat section, no labels).
+
 ## v3.335.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key-events pipeline selector for multi-pipeline clients
 - Multi-pipeline clients now get a **Key events** pipeline selector on the Creative Cockpit. The green key-event columns
   otherwise show the *union* of every pipeline's events, which produces duplicate / misaligned columns (e.g. two

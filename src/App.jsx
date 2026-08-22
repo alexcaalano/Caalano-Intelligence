@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.335.0'
+const APP_VERSION = '3.336.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -276,6 +276,13 @@ function useDragScroll() {
     return () => { el.removeEventListener('mousedown', onDown); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [])
   return ref
+}
+// A scroll container with click-and-drag panning + the chunky scrollbar. Each
+// instance owns its own drag ref, so it works when several are rendered in a loop
+// (e.g. one creative grid per pipeline section) where a shared hook ref couldn't.
+function PanScroll({ children, className = '' }) {
+  const ref = useDragScroll()
+  return <div className={`tbl-scroll pan${className ? ' ' + className : ''}`} ref={ref}>{children}</div>
 }
 /* Sortable tables - click a header to sort; click again to flip direction. */
 function useSort(key0, dir0 = -1) {
@@ -10513,14 +10520,11 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const [sort, setSort] = useState({ key: 'spend', dir: -1 })
   const [f, setF] = useState({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })
   const [dim, setDim] = useState('angle') // "what's working" rollup dimension
-  const [kePipe, setKePipe] = useState('all') // scope the green key-event columns to one pipeline
   const [open, setOpen] = useState(() => new Set())
   const set = (patch) => setF((p) => ({ ...p, ...patch }))
   const [strat, setStrat] = useState(() => loadInsights(client.id + ':cockpit'))
   const [stratBusy, setStratBusy] = useState(false)
   const [stratErr, setStratErr] = useState(null)
-  const gridScrollRef = useDragScroll()   // drag-to-pan the wide green creative grid
-  const workScrollRef = useDragScroll()    // drag-to-pan the What's-working rollup
   useEffect(() => { setStrat(loadInsights(client.id + ':cockpit')); setStratErr(null) }, [client.id])
 
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading creatives…" /></div>
@@ -10544,45 +10548,45 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const A = attr && attr.data && attr.data.attribution
   const stagePos = A ? stagePosMap([...(A.allPipelines || []), ...((A.channels && A.channels.all && A.channels.all.pipelines) || [])]) : null
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
-  // Multi-pipeline clients: the union of every pipeline's key events produces
-  // duplicate / misaligned green columns (e.g. two "15 Minute Call" from two
-  // pipelines). A pipeline selector scopes the key events to one pipeline so the
-  // columns line up; "all" keeps the union. keyEventsForPipe also stamps each event
-  // with the pipeline so its stage reach resolves against that pipeline's counts.
+  // Each creative belongs to a pipeline (via its campaign → Settings link / name
+  // match), so the green key-event columns - and the personas / angles that go with
+  // them - are scoped PER PIPELINE. A multi-pipeline client is split into one
+  // labelled section per pipeline, each with only that pipeline's creatives + key
+  // events, so the columns line up (no duplicate "15 Minute Call" from two pipelines)
+  // and the What's-working rollup only ranks personas that actually ran in it.
   const allPipes = (A && A.allPipelines) || []
-  const kePipeEff = allPipes.some((p) => p.id === kePipe) ? kePipe : 'all'
-  const o360cols = (hasCrm && A) ? buildO360Cols(keyEventsForPipe(loadKeyEvents(client.id), kePipeEff), stagePos, calNames) : null
+  const rawKe = hasCrm ? loadKeyEvents(client.id) : []
+  const _colsCache = {}
+  const colsForPipe = (pid) => { const k = pid || '_all'; if (!(k in _colsCache)) _colsCache[k] = (hasCrm && A) ? buildO360Cols(keyEventsForPipe(rawKe, pid || 'all'), stagePos, calNames) : null; return _colsCache[k] }
   const oCre = (hasCrm && A) ? aliasedOutcomeMap(client.id, 'content', A.byCreative) : null
+  const pipeOfCre = (c) => (allPipes.length ? pipeOfCampaign(client.id, c.campaign, allPipes) : null)
   const keLeft = hasCrm ? 10 : 8 // leading (non-green) grid column count, for the banner + expand colSpan
-  // First (count) column of each key-event group, aligned with o360cols.groups, so
-  // we can read each creative's per-event count for sorting + the rollup totals.
-  const evFirstCols = o360cols ? o360cols.cols.filter((c) => c.gfirst) : []
 
-  // Attach saved tags + the per-creative key-event fields (spread first so the tag /
-  // perf fields always win on any name clash).
+  // Attach saved tags + the per-creative key-event fields. Each creative's green
+  // fields use ITS pipeline's key events (so a creative in Pipeline A never shows
+  // counts under Pipeline B's events). Spread first so tag / perf fields always win.
   const rows = all.map((c) => {
     const t = tags[c.id] || {}
     const crm = c.crm || {}
-    // Auto-detected CTA / copy / destination flow in as defaults; a saved tag
-    // overrides. So the grid, filters and rollups work before any manual tagging.
     const fat = fatBy[c.name] || null
+    const pid = pipeOfCre(c)
+    const cols = colsForPipe(pid)
     const leads360 = crm.leads != null ? crm.leads : c.leads
-    const f360 = o360cols ? o360Fields(oCre && oCre.get(unorm(c.name)), c.spend, leads360, o360cols) : null
-    return { ...c, ...(f360 || {}), t, fat, fatLevel: fat ? fat.level : null, fatScore: fat ? fat.score : -1, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
+    const f360 = cols ? o360Fields(oCre && oCre.get(unorm(c.name)), c.spend, leads360, cols) : null
+    return { ...c, ...(f360 || {}), _pid: pid, t, fat, fatLevel: fat ? fat.level : null, fatScore: fat ? fat.score : -1, aware: t.aware || '', persona: t.persona || '', angle: t.angle || '', dest: t.dest || c.autoDest || '', cta: t.cta || c.autoCta || '', copy: t.copy || c.autoCopy || '', notes: t.notes || '', ql: crm.qualified || 0, bk: crm.booked || 0, wn: crm.won || 0, rev: crm.revenue || 0, cpq: crm.costPerQualified, cpb: crm.costPerBooked, cpw: crm.costPerWon }
   })
-  const filtered = rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.fat || (f.fat === 'None' ? !c.fat : c.fatLevel === f.fat)) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
-  const sorted = [...filtered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   const tot = rows.reduce((a, c) => ({ spend: a.spend + c.spend, leads: a.leads + (c.crm ? c.crm.leads : c.leads), bk: a.bk + c.bk, tagged: a.tagged + (c.aware || c.persona || c.angle ? 1 : 0) }), { spend: 0, leads: 0, bk: 0, tagged: 0 })
 
-  // "What's working" - rank the chosen dimension's values by cost per booked call.
-  // Also totals each key event (count) + its cost per event (spend ÷ count), so the
-  // rollup shows the same funnel as the grid, aggregated by the chosen dimension.
+  // "What's working" - rank the chosen dimension's values by cost per booked call,
+  // totalling each key event (count) + cost per event. Parameterised by a row subset
+  // + that subset's pipeline columns, so each pipeline section rolls up on its own.
   const dimFn = { aware: (c) => c.aware, persona: (c) => c.persona, angle: (c) => c.angle, format: (c) => c.format, dest: (c) => c.dest }[dim]
-  const buildRollup = (fn) => {
+  const buildRollup = (rowsIn, cols, fn) => {
+    const evFirstCols = cols ? cols.cols.filter((c) => c.gfirst) : []
     const m = new Map()
-    for (const c of rows) {
+    for (const c of rowsIn) {
       const k = fn(c); if (!k) continue
       const e = m.get(k) || { key: k, n: 0, spend: 0, leads: 0, bk: 0, wn: 0, ev: evFirstCols.map(() => 0) }
       e.n++; e.spend += c.spend; e.leads += (c.crm ? c.crm.leads : c.leads); e.bk += c.bk; e.wn += c.wn
@@ -10591,10 +10595,20 @@ function CreativeCockpit({ client, currency, range, nonce }) {
     }
     return [...m.values()].map((e) => ({ ...e, cpb: e.bk ? Math.round(e.spend / e.bk) : null, evCost: e.ev.map((v) => (v ? Math.round(e.spend / v) : null)) })).sort((a, b) => (a.cpb == null ? 1 : b.cpb == null ? -1 : a.cpb - b.cpb))
   }
-  const rollup = buildRollup(dimFn)
+  // Split into labelled per-pipeline sections when the client runs more than one
+  // pipeline AND the creatives actually span 2+ of them; otherwise one flat section.
+  const pipeGroups = (() => {
+    if (!hasCrm || allPipes.length < 2) return [{ pid: null, name: null, cols: colsForPipe('all'), rows }]
+    const by = new Map()
+    for (const c of rows) { const k = c._pid || '__none__'; if (!by.has(k)) by.set(k, []); by.get(k).push(c) }
+    const named = allPipes.filter((p) => by.has(p.id)).map((p) => ({ pid: p.id, name: p.name, cols: colsForPipe(p.id), rows: by.get(p.id) }))
+    const none = by.get('__none__')
+    if (none && none.length) named.push({ pid: null, name: 'Unattributed (no pipeline link)', cols: colsForPipe('all'), rows: none })
+    return named.length >= 2 ? named : [{ pid: null, name: null, cols: colsForPipe('all'), rows }]
+  })()
 
   // AI creative strategy over the tagged + performance set.
-  const rollupBy = buildRollup
+  const rollupBy = (fn) => buildRollup(rows, colsForPipe('all'), fn)
   const genStrategy = async () => {
     if (stratBusy) return
     setStratBusy(true); setStratErr(null)
@@ -10624,36 +10638,9 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         <Sc label="Tagged" value={`${fmtNumber(tot.tagged)} / ${fmtNumber(all.length)}`} />
       </div>
 
-      {/* Key-events pipeline selector - only for multi-pipeline CRM clients, so the
-          green columns (which otherwise union every pipeline's events into duplicate /
-          misaligned columns) can be scoped to one pipeline and line up. */}
-      {hasCrm && allPipes.length > 1 && (
-        <div className="c360-head" style={{ marginTop: 0 }}>
-          <div className="pipe-sel"><label>Key events</label>
-            <select value={kePipeEff} onChange={(e) => setKePipe(e.target.value)}>
-              <option value="all">All pipelines (combined)</option>
-              {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <span className="cap">Scopes the green key-event columns to one pipeline so they line up. “All pipelines” shows every pipeline’s events side by side.</span>
-        </div>
-      )}
+      {pipeGroups.length > 1 && <p className="cap" style={{ marginTop: -4 }}>Split by pipeline - each section shows only that pipeline's creatives and its own key events, so the personas / angles and green columns line up.</p>}
 
-      {/* What's working - dimension rollup ranked by cost per booked call */}
-      <div className="card cc-work">
-        <div className="cc-work-h">What’s working <span className="sub">· ranked by cost / booked call · by</span>
-          <div className="chan-toggle cc-dim">{[['aware', 'Awareness'], ['persona', 'Persona'], ['angle', 'Angle'], ['format', 'Format'], ['dest', 'Destination']].map(([k, l]) => <button key={k} className={dim === k ? 'on' : ''} onClick={() => setDim(k)}>{l}</button>)}</div>
-        </div>
-        {rollup.length ? <div className="tbl-scroll pan" ref={workScrollRef}><table className="mini-tbl users-tbl">
-          <thead>
-            {o360cols && <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={7} aria-hidden="true" />{o360cols.groups.map((g, i) => <th key={i} className={`c360-grp${i > 0 ? ' c360-grp-sep' : ''}`} colSpan={2} title={g.label}>{g.label}</th>)}</tr>}
-            <tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}{o360cols && o360cols.groups.map((g, i) => <React.Fragment key={i}><th className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`} title={`${g.label} - count`}>Count</th><th className="c360-col" title={`Spend ÷ ${g.label}`}>Cost</th></React.Fragment>)}</tr>
-          </thead>
-          <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '-'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}{o360cols && e.ev.map((v, i) => <React.Fragment key={i}><td className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`}>{fmtNumber(v)}</td><td className="c360-col">{e.evCost[i] != null ? money(e.evCost[i]) : '-'}</td></React.Fragment>)}</tr>)}</tbody>
-        </table></div> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
-      </div>
-
-      {/* Filters */}
+      {/* Global filters - apply across every pipeline section. */}
       <div className="cc-filters">
         <input className="cc-search" placeholder="Search creative name…" value={f.q} onChange={(e) => set({ q: e.target.value })} />
         <select value={f.format} onChange={(e) => set({ format: e.target.value })}><option value="">All formats</option><option>Image</option><option>Video</option></select>
@@ -10665,20 +10652,47 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         {(f.aware || f.persona || f.angle || f.format || f.dest || f.fat || f.q) ? <button className="link-btn sm" onClick={() => setF({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })}>Clear</button> : null}
       </div>
 
-      {/* Creative grid */}
-      <div className="tbl-scroll pan" ref={gridScrollRef}><table className="mini-tbl users-tbl cc-tbl">
-        <thead>
-          {o360cols && <C360GrpRow left={keLeft} cols={o360cols} />}
-          <tr>
-            <Th k="name" l>Creative</Th><Th k="format" l>Format</Th>
-            <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th><Th k="fatScore" l>Fatigue</Th>
-            <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="bk">Booked</Th>}{hasCrm && <Th k="cpb">Cost/book</Th>}
-            {o360cols && <O360Head sort={sort} on={setKey} cols={o360cols} />}
-          </tr>
-        </thead>
-        <tbody>{sorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} o360cols={o360cols} currency={currency} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
-      </table></div>
-      <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.</p>
+      {/* One section per pipeline (multi-pipeline clients) or a single flat section. */}
+      {pipeGroups.map((g) => {
+        const cols = g.cols
+        const rollup = buildRollup(g.rows, cols, dimFn)
+        const gFiltered = g.rows.filter((c) => (!f.aware || c.aware === f.aware) && (!f.persona || c.persona === f.persona) && (!f.angle || c.angle === f.angle) && (!f.format || c.format === f.format) && (!f.dest || c.dest === f.dest) && (!f.fat || (f.fat === 'None' ? !c.fat : c.fatLevel === f.fat)) && (!f.q || (c.name || '').toLowerCase().includes(f.q.toLowerCase())))
+        const gSorted = [...gFiltered].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return typeof av === 'string' ? String(av).localeCompare(String(bv)) * sort.dir : (av - bv) * sort.dir })
+        return (
+          <React.Fragment key={g.pid || 'all'}>
+            {g.name && <div className="lvl-title cc-pipe-lab" style={{ marginTop: 20 }}><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.rows.length)} creative{g.rows.length === 1 ? '' : 's'} · {money(g.rows.reduce((s, c) => s + c.spend, 0))}{g.rows.reduce((s, c) => s + c.bk, 0) ? ` · ${fmtNumber(g.rows.reduce((s, c) => s + c.bk, 0))} booked` : ''}</span></div>}
+
+            {/* What's working - dimension rollup ranked by cost per booked call */}
+            <div className="card cc-work">
+              <div className="cc-work-h">What’s working <span className="sub">· ranked by cost / booked call · by</span>
+                <div className="chan-toggle cc-dim">{[['aware', 'Awareness'], ['persona', 'Persona'], ['angle', 'Angle'], ['format', 'Format'], ['dest', 'Destination']].map(([k, l]) => <button key={k} className={dim === k ? 'on' : ''} onClick={() => setDim(k)}>{l}</button>)}</div>
+              </div>
+              {rollup.length ? <PanScroll><table className="mini-tbl users-tbl">
+                <thead>
+                  {cols && <tr className="c360-grp-row"><th className="c360-grp-blank" colSpan={7} aria-hidden="true" />{cols.groups.map((gg, i) => <th key={i} className={`c360-grp${i > 0 ? ' c360-grp-sep' : ''}`} colSpan={2} title={gg.label}>{gg.label}</th>)}</tr>}
+                  <tr><th className="lft">{dim === 'aware' ? 'Awareness' : dim === 'dest' ? 'Destination' : dim.charAt(0).toUpperCase() + dim.slice(1)}</th><th>Creatives</th><th>Spend</th><th>Leads</th>{hasCrm && <th>Booked</th>}{hasCrm && <th>Cost / book</th>}{hasCrm && <th>Won</th>}{cols && cols.groups.map((gg, i) => <React.Fragment key={i}><th className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`} title={`${gg.label} - count`}>Count</th><th className="c360-col" title={`Spend ÷ ${gg.label}`}>Cost</th></React.Fragment>)}</tr>
+                </thead>
+                <tbody>{rollup.map((e) => <tr key={e.key}><td className="lft">{e.key}</td><td>{fmtNumber(e.n)}</td><td>{money(e.spend)}</td><td>{fmtNumber(e.leads)}</td>{hasCrm && <td>{fmtNumber(e.bk)}</td>}{hasCrm && <td>{e.cpb != null ? money(e.cpb) : '-'}</td>}{hasCrm && <td>{fmtNumber(e.wn)}</td>}{cols && e.ev.map((v, i) => <React.Fragment key={i}><td className={`c360-col${i === 0 ? ' c360-gfirst' : ''}`}>{fmtNumber(v)}</td><td className="c360-col">{e.evCost[i] != null ? money(e.evCost[i]) : '-'}</td></React.Fragment>)}</tr>)}</tbody>
+              </table></PanScroll> : <div className="cap">Tag your creatives’ {dim === 'aware' ? 'awareness stage' : dim} to see which performs best.</div>}
+            </div>
+
+            {/* Creative grid */}
+            <PanScroll className="cc-grid-wrap"><table className="mini-tbl users-tbl cc-tbl">
+              <thead>
+                {cols && <C360GrpRow left={keLeft} cols={cols} />}
+                <tr>
+                  <Th k="name" l>Creative</Th><Th k="format" l>Format</Th>
+                  <th className="lft">Awareness</th><th className="lft">Persona</th><th className="lft">Angle</th><Th k="fatScore" l>Fatigue</Th>
+                  <Th k="spend">Spend</Th><Th k="leads">Leads</Th>{hasCrm && <Th k="bk">Booked</Th>}{hasCrm && <Th k="cpb">Cost/book</Th>}
+                  {cols && <O360Head sort={sort} on={setKey} cols={cols} />}
+                </tr>
+              </thead>
+              <tbody>{gSorted.map((c) => <CreativeRow key={c.id} c={c} clientId={client.id} money={money} hasCrm={hasCrm} personaOpts={personaOpts} angleOpts={angleOpts} destOpts={destOpts} o360cols={cols} currency={currency} open={open.has(c.id)} onToggle={() => setOpen((p) => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />)}</tbody>
+            </table></PanScroll>
+          </React.Fragment>
+        )
+      })}
+      <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.{pipeGroups.length > 1 ? ' A creative is placed in the pipeline its campaign is linked to (Settings → link a campaign to a pipeline to move it).' : ''}</p>
       {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad - likely paused or renamed creatives.</p> : null}
     </>
   )

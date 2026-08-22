@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.334.0'
+const APP_VERSION = '3.335.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10513,6 +10513,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const [sort, setSort] = useState({ key: 'spend', dir: -1 })
   const [f, setF] = useState({ aware: '', persona: '', angle: '', format: '', dest: '', fat: '', q: '' })
   const [dim, setDim] = useState('angle') // "what's working" rollup dimension
+  const [kePipe, setKePipe] = useState('all') // scope the green key-event columns to one pipeline
   const [open, setOpen] = useState(() => new Set())
   const set = (patch) => setF((p) => ({ ...p, ...patch }))
   const [strat, setStrat] = useState(() => loadInsights(client.id + ':cockpit'))
@@ -10543,7 +10544,14 @@ function CreativeCockpit({ client, currency, range, nonce }) {
   const A = attr && attr.data && attr.data.attribution
   const stagePos = A ? stagePosMap([...(A.allPipelines || []), ...((A.channels && A.channels.all && A.channels.all.pipelines) || [])]) : null
   const calNames = new Map(((A && A.appointments && A.appointments.byCalendar) || []).map((cc) => [cc.id, cc.name]))
-  const o360cols = (hasCrm && A) ? buildO360Cols(loadKeyEvents(client.id), stagePos, calNames) : null
+  // Multi-pipeline clients: the union of every pipeline's key events produces
+  // duplicate / misaligned green columns (e.g. two "15 Minute Call" from two
+  // pipelines). A pipeline selector scopes the key events to one pipeline so the
+  // columns line up; "all" keeps the union. keyEventsForPipe also stamps each event
+  // with the pipeline so its stage reach resolves against that pipeline's counts.
+  const allPipes = (A && A.allPipelines) || []
+  const kePipeEff = allPipes.some((p) => p.id === kePipe) ? kePipe : 'all'
+  const o360cols = (hasCrm && A) ? buildO360Cols(keyEventsForPipe(loadKeyEvents(client.id), kePipeEff), stagePos, calNames) : null
   const oCre = (hasCrm && A) ? aliasedOutcomeMap(client.id, 'content', A.byCreative) : null
   const keLeft = hasCrm ? 10 : 8 // leading (non-green) grid column count, for the banner + expand colSpan
   // First (count) column of each key-event group, aligned with o360cols.groups, so
@@ -10615,6 +10623,21 @@ function CreativeCockpit({ client, currency, range, nonce }) {
         {fatSum && (fatSum.high + fatSum.medium) > 0 && <Sc label="Fatiguing" value={`${fmtNumber(fatSum.high)} 🔥 · ${fmtNumber(fatSum.medium)} 👀`} />}
         <Sc label="Tagged" value={`${fmtNumber(tot.tagged)} / ${fmtNumber(all.length)}`} />
       </div>
+
+      {/* Key-events pipeline selector - only for multi-pipeline CRM clients, so the
+          green columns (which otherwise union every pipeline's events into duplicate /
+          misaligned columns) can be scoped to one pipeline and line up. */}
+      {hasCrm && allPipes.length > 1 && (
+        <div className="c360-head" style={{ marginTop: 0 }}>
+          <div className="pipe-sel"><label>Key events</label>
+            <select value={kePipeEff} onChange={(e) => setKePipe(e.target.value)}>
+              <option value="all">All pipelines (combined)</option>
+              {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <span className="cap">Scopes the green key-event columns to one pipeline so they line up. “All pipelines” shows every pipeline’s events side by side.</span>
+        </div>
+      )}
 
       {/* What's working - dimension rollup ranked by cost per booked call */}
       <div className="card cc-work">

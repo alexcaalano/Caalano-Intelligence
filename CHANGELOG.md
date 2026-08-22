@@ -17,6 +17,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.335.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key-events pipeline selector for multi-pipeline clients
+- Multi-pipeline clients now get a **Key events** pipeline selector on the Creative Cockpit. The green key-event columns
+  otherwise show the *union* of every pipeline's events, which produces duplicate / misaligned columns (e.g. two
+  "15 Minute Call" and two "Payment Collected" from two different pipelines).
+- Pick a pipeline and the green columns (in both the "What's working" rollup and the creative grid) scope to just that
+  pipeline's key events, so they line up and the counts resolve against that pipeline's stages. "All pipelines (combined)"
+  keeps the previous side-by-side union. The selector only appears when a client actually has more than one pipeline.
+
 ## v3.334.0 - 2026-08-20 · `PENDING` - Speed: health score reuses the warm blend (no second heavy build)
 - The Caalano360 tab built the blend **twice** on every open - once for the tab and once inside the executive health score -
   and the second heavy build is what pushed the score past the 10s budget and produced "Couldn't load the executive health

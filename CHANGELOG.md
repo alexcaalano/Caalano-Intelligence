@@ -17,6 +17,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.333.0 - 2026-08-20 · `PENDING` - Speed: warmer now covers Google Ads + the Caalano360 (blend) tab
+- Extended the scheduled warmer (which already warmed Meta) to also pre-build each client's **Google Ads** and
+  **Caalano360 blend** (the default tab) payloads for last-30-days into the result cache. Those two tabs now open as warm
+  hits (<1s) instead of a cold GHL + Windsor fan-out - the same treatment the Meta tab already got.
+- Meta stays warmed for last 7 + 30 days; Google + blend are warmed for last 30 days only, to keep the standing upstream
+  load in check. Cadence and range coverage are easy to tune.
+
 ## v3.332.0 - 2026-08-20 · `PENDING` - Speed: cache finalised ad ranges for longer + deeper opp snapshot (health-score fix)
 - **Historical ad ranges cached much longer.** Once Meta/Google's attribution window has closed, a past range's numbers
   never change - so for the pure ad channels the cache now keeps a finalised range far longer than the live 10-minute

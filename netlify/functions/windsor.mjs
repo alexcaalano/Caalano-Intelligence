@@ -571,25 +571,49 @@ function sydneyPresetRange(id) {
 // first load slow, and occasionally tips past the 10s function budget → a failure).
 // Sequential per client (one client's ~8 Windsor calls at a time) so we never blast
 // Windsor. Writes to the SAME key cacheKeyFrom() derives for the interactive URL.
+// Meta is warmed for the two most-viewed windows; Google + the Caalano360 blend
+// (the default tab) only for last_30d, to bound the standing Windsor / GHL load the
+// warmer adds. Sequential per client so we never blast the upstreams.
 const META_WARM_PRESETS = ['last_30d', 'last_7d']
+const AD_WARM_PRESETS = ['last_30d']
+// Write a warmed payload under the exact key cacheKeyFrom() derives for the
+// interactive request (client + channel + from + to; no wonBasis, matching the
+// deep-tab fetch which sends none → the handler's default 'created' basis).
+function _warmWrite(id, channel, rg, extra) {
+  const payload = { client: id, channel, period: { from: rg.from, to: rg.to, preset: null }, ...extra }
+  const ck = cacheKeyFrom(new URL(`https://warm/?client=${encodeURIComponent(id)}&channel=${channel}&from=${rg.from}&to=${rg.to}`))
+  writeResultCache(ck, payload)
+}
 export async function runMetaWarm() {
   try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
   const key = process.env.WINDSOR_API_KEY
   if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
   const results = []
   for (const [id, cc] of Object.entries(CLIENTS)) {
-    if (!cc.meta) continue
-    const fallback = await readMetaPrimary(id).catch(() => null)
+    if (!cc.meta && !cc.google && !cc.ghl) continue
+    const fallback = cc.meta ? await readMetaPrimary(id).catch(() => null) : null
     let warmed = 0; const errors = []
-    for (const pid of META_WARM_PRESETS) {
+    // Meta - the two most-viewed windows.
+    if (cc.meta) for (const pid of META_WARM_PRESETS) {
       const rg = sydneyPresetRange(pid); if (!rg) continue
-      try {
-        const meta = await buildMeta(cc.meta, rg.from, rg.to, null, key, fallback)
-        const payload = { client: id, channel: 'meta', period: { from: rg.from, to: rg.to, preset: null }, meta }
-        const ck = cacheKeyFrom(new URL(`https://warm/?client=${encodeURIComponent(id)}&channel=meta&from=${rg.from}&to=${rg.to}`))
-        writeResultCache(ck, payload)
-        warmed++
-      } catch (e) { errors.push(`${pid}: ${String(e.message || e).slice(0, 80)}`) }
+      try { _warmWrite(id, 'meta', rg, { meta: await buildMeta(cc.meta, rg.from, rg.to, null, key, fallback) }); warmed++ }
+      catch (e) { errors.push(`meta ${pid}: ${String(e.message || e).slice(0, 70)}`) }
+    }
+    // Google + Caalano360 blend (default tab) - last_30d only to cap the load.
+    for (const pid of AD_WARM_PRESETS) {
+      const rg = sydneyPresetRange(pid); if (!rg) continue
+      if (cc.google) {
+        try { _warmWrite(id, 'google', rg, { google: await buildGoogle(cc.google, rg.from, rg.to, null, key) }); warmed++ }
+        catch (e) { errors.push(`google ${pid}: ${String(e.message || e).slice(0, 70)}`) }
+      }
+      if (cc.ghl) {
+        try {
+          const blend = await buildBlend(cc, rg.from, rg.to, null, key)
+          blend.wonClosed = await wonInPeriod(cc.ghl, rg.from, rg.to).catch(() => null)
+          blend._wonBasis = 'created' // matches the deep-tab request (no wonBasis param)
+          _warmWrite(id, 'blend', rg, { blend }); warmed++
+        } catch (e) { errors.push(`blend ${pid}: ${String(e.message || e).slice(0, 70)}`) }
+      }
     }
     results.push({ client: id, warmed, ...(errors.length ? { errors } : {}) })
   }

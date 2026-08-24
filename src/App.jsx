@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.340.0'
+const APP_VERSION = '3.341.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5664,7 +5664,7 @@ function ClinicView({ clientId, currency, nonce }) {
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Lifetime value</span><b>{money(m.ltv)}</b><span className="tm-sub">{fmtNumber(m.ltvPatients || d.patientsWithData)} patients valued <ClinicDelta value={dl && dl.revenue} money={money} /></span></div>
         <div className="tm-sc"><span className="tm-lab">Avg LTV / patient</span><b>{money(m.avgLtv)}</b><span className="tm-sub">across patients with a value <ClinicDelta value={dl && dl.avgLtvDelta} money={money} /></span></div>
-        <div className="tm-sc"><span className="tm-lab">Next booking rate</span><b>{pct(re.nextBookingRate)}</b><span className="tm-sub">{fmtNumber(re.attendedWithNext)} of {fmtNumber(re.attended)} left with one booked <ClinicDelta value={dl && dl.nextBookingRatePts} pts /></span></div>
+        <div className="tm-sc"><span className="tm-lab">Next booking rate</span><b>{pct(re.nextBookingRate)}</b><span className="tm-sub">{fmtNumber(re.attendedWithNext)} of {fmtNumber(re.attended)} have one in the diary <ClinicDelta value={dl && dl.nextBookingRatePts} pts /></span></div>
         <div className="tm-sc"><span className="tm-lab">Return rate</span><b>{pct(re.returnRate)}</b><span className="tm-sub">{fmtNumber(re.returned)} came back at least once</span></div>
         <div className="tm-sc warn"><span className="tm-lab">One &amp; done</span><b>{pct(re.oneAndDoneRate)}</b><span className="tm-sub">{fmtNumber(re.oneAndDone)} never returned <ClinicDelta value={dl && dl.oneAndDoneRatePts} pts goodDown /></span></div>
         <div className="tm-sc warn"><span className="tm-lab">Revenue at risk</span><b>{money(re.lostRevenue)}</b><span className="tm-sub">one &amp; done × LTV gap</span></div>
@@ -5724,21 +5724,28 @@ function ClinicView({ clientId, currency, nonce }) {
             <span className="tm-lab">Next booking rate</span><b>{pct(rb.rate)}</b>
             <span className="tm-sub">{fmtNumber(rb.rebooked)} of {fmtNumber(rb.visits)} visits were followed by another booking</span>
           </div>
-          <ClinicSplitBar total={rb.visits} segs={[
+          <ClinicSplitBar total={rb.visits} segs={rb.timingAvailable ? [
             { key: 'poc', label: 'Booked before leaving', value: rb.atPointOfCare || 0, color: '#17b26a' },
             { key: 'later', label: 'Booked after leaving', value: rb.afterLeaving || 0, color: '#f5a524' },
+            { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
+          ] : [
+            { key: 'yes', label: 'Rebooked', value: rb.rebooked || 0, color: '#17b26a' },
             { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
           ]} />
           <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl">
             <thead><tr><th className="lft">Outcome of a visit</th><th>Visits</th><th>Share</th></tr></thead>
             <tbody>
-              <tr><td className="lft">Left with the next one booked</td><td>{fmtNumber(rb.atPointOfCare)}</td><td>{pct(rb.pctAtPointOfCare)}</td></tr>
-              <tr><td className="lft">Booked again after leaving</td><td>{fmtNumber(rb.afterLeaving)}</td><td>{pct(rb.pctAfterLeaving)}</td></tr>
+              {rb.timingAvailable ? <>
+                <tr><td className="lft">Left with the next one booked</td><td>{fmtNumber(rb.atPointOfCare)}</td><td>{pct(rb.pctAtPointOfCare)}</td></tr>
+                <tr><td className="lft">Booked again after leaving</td><td>{fmtNumber(rb.afterLeaving)}</td><td>{pct(rb.pctAfterLeaving)}</td></tr>
+              </> : <tr><td className="lft">Followed by another booking</td><td>{fmtNumber(rb.rebooked)}</td><td>{pct(rb.rate)}</td></tr>}
               <tr className="u-stale"><td className="lft">Never rebooked</td><td>{fmtNumber(rb.notRebooked)}</td><td>{pct(rb.pctNotRebooked)}</td></tr>
-              <tr><td className="lft"><b>Of those who did rebook, booked at the desk</b></td><td>-</td><td><b>{pct(rb.shareAtPointOfCare)}</b></td></tr>
+              {rb.timingAvailable ? <tr><td className="lft"><b>Of those who did rebook, booked at the desk</b></td><td>-</td><td><b>{pct(rb.shareAtPointOfCare)}</b></td></tr> : null}
             </tbody>
           </table></div>
-          <p className="caveat" style={{ marginTop: 10 }}>Read from the diary itself across {fmtNumber(rb.calendars)} calendar{rb.calendars === 1 ? '' : 's'}: for every visit that has already happened we compare when the <i>next</i> booking was created against the day of that visit. Booked on or before the visit day (at reception, or a course booked up front) counts as leaving with it booked; anything later counts as a chase.{rb.truncated ? ' Part of the diary was skipped to stay inside the request budget, so treat these as indicative.' : ''}</p>
+          {!rb.timingAvailable ? <p className="caveat cl-warn" style={{ marginTop: 10 }}><b>The at-the-desk split isn&rsquo;t shown for this clinic.</b> Appointments here are written into the CRM by the practice-management sync, so each booking&rsquo;s creation timestamp is the moment the sync ran - not the moment the patient booked{rb.bookingTimes && rb.bookingTimes.pctCreatedAfterStart > 0 ? `, and ${rb.bookingTimes.pctCreatedAfterStart}% of them are stamped after the appointment had already happened` : ''}. Splitting on that would produce a confident but meaningless number, so we report only whether a visit was followed by another booking - which depends on appointment dates, and those are real.</p>
+            : <p className="caveat" style={{ marginTop: 10 }}>Read from the diary itself across {fmtNumber(rb.calendars)} calendar{rb.calendars === 1 ? '' : 's'}: for every visit that has already happened we compare when the <i>next</i> booking was created against the day of that visit. Booked on or before the visit day (at reception, or a course booked up front) counts as leaving with it booked; anything later counts as a chase.</p>}
+          {rb.truncated ? <p className="caveat cl-warn">Part of the diary was skipped to stay inside the request budget, so treat these as indicative until the overnight snapshot catches up.</p> : null}
         </div> : null}
       </div>
 

@@ -3074,3 +3074,6 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .cl-curve th, .cl-curve td { white-space: nowrap; }
 .cl-curve .cl-cell { text-align: center; font-variant-numeric: tabular-nums; font-size: 11.5px; font-weight: 650; min-width: 46px; }
 .cl-curve .cl-na { background: repeating-linear-gradient(135deg, transparent, transparent 4px, var(--panel-2) 4px, var(--panel-2) 8px); opacity: .5; }
+
+/* A caveat that is a real limitation rather than a footnote */
+.caveat.cl-warn { color: var(--warn); border-left: 2px solid color-mix(in srgb, var(--warn) 55%, transparent); padding-left: 9px; }

@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.341.0 - 2026-08-20 · `PENDING` - Clinic: refuse to split rebooking on timestamps the sync fabricated
+- Confirmed against a live location that when the practice-management sync writes appointments **into** the CRM, each
+  booking's `dateAdded` is *the moment the sync ran*, not the moment the patient booked - a batch of appointments spread
+  across a month all carried creation stamps inside the same minute, flagged `createdBy.source: third_party`.
+- That silently invalidates the at-the-desk vs after-leaving split, which compares creation time against the visit day.
+  Appointment **start** times are real, so everything resting on them - the retention curve, visit counts, whether a visit
+  was followed by another booking - is unaffected.
+- The sweep now **tests the timestamps before trusting them**. Two tells: a booking "created" after its appointment had
+  already happened is impossible, and a bulk backfill stamps hundreds of events with the same minute. If either fires, the
+  split is withheld rather than guessed, the card falls back to rebooked / never-rebooked (which needs only appointment
+  dates), and it states plainly why - including what share of bookings were stamped after the appointment.
+- Clinics that genuinely book through the CRM calendars still get the full split. A confidently wrong number is worse than
+  an absent one, so this is deliberately conservative: it needs a 20-booking sample, under 15% created-after-start, and
+  creation times spread across more than a quarter as many distinct minutes as there are bookings.
+
 ## v3.340.0 - 2026-08-20 · `PENDING` - Clinic: a patient cohort analysis, separate from the lead cohort
 - The existing **Cohorts** tab is a *lead-acquisition* cohort: it buckets opportunities by the week the lead was created
   and tracks leads → booked → shown → won by channel. That's the right analysis for the ad-driven funnel and it stays as

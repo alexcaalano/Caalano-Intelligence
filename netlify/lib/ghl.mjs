@@ -1058,7 +1058,14 @@ function _dayKeyer(tz) {
   return (ms) => (isFinite(ms) ? fmt.format(new Date(ms)) : null)
 }
 async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900 } = {}) {
-  const out = { byContact: new Map(), calendars: 0, events: 0, available: false, truncated: false }
+  const out = { byContact: new Map(), calendars: 0, events: 0, available: false, truncated: false, bookingTimes: null }
+  // A two-way practice-management sync writes appointments INTO the CRM in bulk,
+  // so their `dateAdded` is the moment the sync ran, not the moment the patient
+  // booked. Two tells give it away: a booking "created" AFTER the appointment
+  // already happened is impossible in real life, and a backfill stamps hundreds
+  // of events with the same minute. We measure both and refuse to report the
+  // at-the-desk / after-leaving split unless the timestamps survive it.
+  const bt = { n: 0, afterStart: 0, minutes: new Set(), thirdParty: 0 }
   const deadline = Date.now() + deadlineMs
   let cals = []
   try { const j = await ghlGet(locTok, '/calendars/', { locationId }); cals = j.calendars || j.calendar || [] }
@@ -1069,9 +1076,15 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   const now = Date.now()
   const startMs = now - lookbackDays * DAY
   const endMs = now + 400 * DAY
-  const push = (cid, start, added, status, calName, service) => {
+  const push = (cid, start, added, status, calName, service, source) => {
     if (!cid || !isFinite(start)) return
     if (APPT_DEAD_RE.test(String(status || ''))) return
+    if (isFinite(added)) {
+      bt.n++
+      if (added > start) bt.afterStart++
+      bt.minutes.add(Math.floor(added / 60000))
+      if (source === 'third_party') bt.thirdParty++
+    }
     const e = out.byContact.get(cid) || []
     e.push({ start, added: isFinite(added) ? added : start, cal: calName || null, service: service || null })
     out.byContact.set(cid, e)
@@ -1085,7 +1098,7 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
       for (const ev of (j.events || [])) {
         out.events++
         const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
-        push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null)
+        push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null, ev.createdBy && ev.createdBy.source)
       }
     } catch { /* one bad calendar shouldn't sink the whole history */ }
   }))
@@ -1097,11 +1110,26 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
       for (const b of (j.bookings || j.events || [])) {
         out.events++
         const cid = b.contactId || (b.contact && (b.contact.id || b.contact._id)) || null
-        push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', b.serviceName || b.title || null)
+        push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', b.serviceName || b.title || null, b.createdBy && b.createdBy.source)
       }
     } catch { /* location isn't on the services catalog - normal */ }
   }
   out.available = out.byContact.size > 0
+  // Judge the booking timestamps. `afterStart` catches a backfill of historical
+  // appointments; the minute spread catches a bulk write of future ones.
+  if (bt.n >= 20) {
+    const afterRatio = bt.afterStart / bt.n
+    const spread = bt.minutes.size / bt.n
+    out.bookingTimes = {
+      reliable: afterRatio < 0.15 && spread > 0.25,
+      sampled: bt.n,
+      pctCreatedAfterStart: Math.round(afterRatio * 100),
+      pctSyncWritten: Math.round((bt.thirdParty / bt.n) * 100),
+      reason: afterRatio >= 0.15 ? 'backfilled' : (spread <= 0.25 ? 'bulk-written' : null),
+    }
+  } else if (bt.n > 0) {
+    out.bookingTimes = { reliable: false, sampled: bt.n, reason: 'too-few' }
+  }
   return out
 }
 // Turn one patient's raw bookings into the rebooking story: for every visit that
@@ -1325,19 +1353,30 @@ export async function buildClinic(locationId, opts = {}) {
   }
 
   const rebookedVisits = reb.atPointOfCare + reb.afterLeaving
+  // Whether we're allowed to say WHEN the rebooking happened. The visit ordering
+  // (and so the next-booking rate) only needs start times, which are always real;
+  // the at-the-desk / after-leaving split needs creation times, which a
+  // practice-management sync fabricates when it writes appointments in bulk.
+  const bookingTimes = (hist && hist.bookingTimes) || null
+  const timingOk = !!(bookingTimes && bookingTimes.reliable)
   const rebooking = {
     ...reb, rebooked: rebookedVisits,
     calendars: (hist && hist.calendars) || 0, events: (hist && hist.events) || 0,
     truncated: !!(hist && hist.truncated),
+    bookingTimes, timingAvailable: timingOk,
     // Next Booking Rate on a per-visit basis: of the visits that have already
     // happened, how many were followed by another booking at all.
     rate: reb.visits ? Math.round((rebookedVisits / reb.visits) * 100) : null,
-    pctAtPointOfCare: reb.visits ? Math.round((reb.atPointOfCare / reb.visits) * 100) : null,
-    pctAfterLeaving: reb.visits ? Math.round((reb.afterLeaving / reb.visits) * 100) : null,
     pctNotRebooked: reb.visits ? Math.round((reb.notRebooked / reb.visits) * 100) : null,
+    // Suppressed rather than guessed when the creation timestamps are sync
+    // artefacts - a confidently wrong split is worse than no split.
+    atPointOfCare: timingOk ? reb.atPointOfCare : null,
+    afterLeaving: timingOk ? reb.afterLeaving : null,
+    pctAtPointOfCare: timingOk && reb.visits ? Math.round((reb.atPointOfCare / reb.visits) * 100) : null,
+    pctAfterLeaving: timingOk && reb.visits ? Math.round((reb.afterLeaving / reb.visits) * 100) : null,
     // Of everyone who DID rebook, the share who did it before walking out - the
     // number a front-desk rebooking push actually moves.
-    shareAtPointOfCare: rebookedVisits ? Math.round((reb.atPointOfCare / rebookedVisits) * 100) : null,
+    shareAtPointOfCare: timingOk && rebookedVisits ? Math.round((reb.atPointOfCare / rebookedVisits) * 100) : null,
   }
 
   return {

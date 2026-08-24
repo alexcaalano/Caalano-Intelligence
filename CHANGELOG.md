@@ -17,6 +17,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.340.0 - 2026-08-20 · `PENDING` - Clinic: a patient cohort analysis, separate from the lead cohort
+- The existing **Cohorts** tab is a *lead-acquisition* cohort: it buckets opportunities by the week the lead was created
+  and tracks leads → booked → shown → won by channel. That's the right analysis for the ad-driven funnel and it stays as
+  it is - but it can't describe a clinic's patient base. It only sees contacts that have a CRM opportunity (most patients
+  don't), it ends at a one-off "won" value when a patient's worth accrues over years of repeat visits, and its 12-week
+  window is far shorter than the horizon clinic retention plays out over. So the Clinic tab gets its own.
+- **Age-normalised cohorts.** Cohorts are different ages, and raw LTV always flatters the older ones - a patient who first
+  came two years ago has had two years to spend. Each cohort row now carries its **age in months**, **avg LTV per month of
+  tenure** (the column to compare across rows), **still active** and **came back** shares.
+- **Retention curve** - the cohort triangle, and the one view the synced fields can never produce: they hold a single
+  cumulative LTV per patient with no per-period breakdown. The calendar history does carry real visit dates, so of the
+  patients who first attended in month M we can show the share still attending in M+1, M+2 … out to M+12, shaded by
+  retention. Months a cohort hasn't reached yet are hatched rather than shown as zero, so a young cohort's short row
+  doesn't read as churn.
+- Both are honest about their source: the curve needs appointments that reach a Caalano calendar, so clinics whose
+  clinical diary lives only in the practice-management system will see the age-normalised table but not the curve.
+
 ## v3.339.0 - 2026-08-20 · `PENDING` - Clinic: daily snapshots, so period revenue and trend actually exist
 - The practice-management sync **overwrites** each patient's stats on every run - lifetime spend, next appointment date,
   balances are all replaced with current values. That means the CRM only ever holds *today*: there is no history to read

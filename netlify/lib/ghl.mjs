@@ -1010,6 +1010,15 @@ const CLINIC_FIELDS = {
   accepted_email_marketing: 'str', accepted_sms_marketing: 'str',
   how_did_you_hear_about_us: 'str', likelihood_to_recommend: 'num', overall_satisfaction: 'str',
 }
+// Month maths for the cohort views. Cohort keys are "YYYY-MM".
+const CURVE_MAX = 12
+function _monthKeyUTC(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 7) : null }
+function _monthDiff(a, b) {
+  const [ay, am] = String(a).split('-').map(Number); const [by, bm] = String(b).split('-').map(Number)
+  if (!ay || !am || !by || !bm) return -1
+  return (by - ay) * 12 + (bm - am)
+}
+function _monthsSince(monthKey) { const now = new Date().toISOString().slice(0, 7); const d = _monthDiff(monthKey, now); return d < 0 ? 0 : d }
 function _clinicNum(v) { if (v == null || v === '') return null; const n = Number(String(v).replace(/[$,]/g, '')); return isFinite(n) ? n : null }
 function _monthOf(v) { const s = String(v || ''); const m = s.match(/(\d{4})[-/](\d{2})/); if (m) return `${m[1]}-${m[2]}`; const d = Date.parse(s); return isFinite(d) ? new Date(d).toISOString().slice(0, 7) : null }
 async function _pageContacts(locTok, locationId, onPage, { deadlineMs = 8000, cap = 6000 } = {}) {
@@ -1191,7 +1200,13 @@ export async function buildClinic(locationId, opts = {}) {
       if (String(val(m, 'accepted_sms_marketing') || '').toLowerCase().startsWith('y')) smsOptIn++
       // Cohort by first-appointment month, valued by LTV.
       const mo = _monthOf(val(m, 'first_appointment_date') || val(m, 'first_visit_date'))
-      if (mo) { const e = cohort.get(mo) || { month: mo, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += totalAppts; cohort.set(mo, e) }
+      if (mo) {
+        const e = cohort.get(mo) || { month: mo, patients: 0, ltv: 0, appts: 0, active: 0, returned: 0 }
+        e.patients++; e.ltv += spent || 0; e.appts += totalAppts
+        if (upc > 0) e.active++
+        if (arrived != null && arrived >= 2) e.returned++
+        cohort.set(mo, e)
+      }
       const nm = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.contactName || c.email || 'Patient'
       // Acquisition channel + campaign, so clinic revenue can be read back against
       // the ad spend that produced it (lifetime ROAS, not cost per lead).
@@ -1274,6 +1289,41 @@ export async function buildClinic(locationId, opts = {}) {
     }
     reb.available = reb.visits > 0
   }
+  // ---- Retention curve --------------------------------------------------
+  // The classic cohort triangle, and the one thing the synced fields can never
+  // give us: they hold a single cumulative LTV per patient with no per-period
+  // breakdown. The calendar history does carry real visit dates, so where the
+  // clinic's appointments reach the CRM calendars we can ask the actual
+  // question - of the patients who first came in month M, what share were still
+  // turning up in month M+1, M+2, and so on.
+  let cohortCurve = []
+  if (hist && hist.available) {
+    const curve = new Map()
+    for (const list of hist.byContact.values()) {
+      const months = [...new Set(list.map((a) => _monthKeyUTC(a.start)).filter(Boolean))].sort()
+      if (!months.length) continue
+      const first = months[0]
+      const e = curve.get(first) || { month: first, size: 0, hits: [] }
+      e.size++
+      for (const mk of months) {
+        const off = _monthDiff(first, mk)
+        if (off < 0 || off > CURVE_MAX) continue
+        e.hits[off] = (e.hits[off] || 0) + 1
+      }
+      curve.set(first, e)
+    }
+    cohortCurve = [...curve.values()]
+      .filter((e) => e.size > 0)
+      .map((e) => ({
+        month: e.month, size: e.size,
+        // Only report an offset the whole cohort has actually had the chance to
+        // reach - otherwise the tail reads as churn when it's just not due yet.
+        pct: Array.from({ length: Math.min(CURVE_MAX + 1, _monthsSince(e.month) + 1) }, (_, i) => (e.hits[i] ? Math.round((e.hits[i] / e.size) * 100) : 0)),
+      }))
+      .sort((a, b) => (a.month < b.month ? 1 : -1))
+      .slice(0, 24)
+  }
+
   const rebookedVisits = reb.atPointOfCare + reb.afterLeaving
   const rebooking = {
     ...reb, rebooked: rebookedVisits,
@@ -1319,7 +1369,22 @@ export async function buildClinic(locationId, opts = {}) {
     nps: { score: npsScore, responses: npsVals.length },
     retention: [...retention.entries()].map(([status, n]) => ({ status, patients: n })).sort((a, b) => b.patients - a.patients),
     heardAbout: [...heard.entries()].map(([source, n]) => ({ source, patients: n })).sort((a, b) => b.patients - a.patients),
-    cohorts: [...cohort.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0, avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0 })).sort((a, b) => (a.month < b.month ? 1 : -1)),
+    cohorts: [...cohort.values()].map((e) => {
+      // Cohorts are different ages, so raw LTV always flatters the older ones -
+      // a patient who first came two years ago has had two years to spend. Carry
+      // the tenure and a per-month figure so the rows are actually comparable.
+      const tenureMonths = _monthsSince(e.month)
+      const avgLtv = e.patients ? Math.round(e.ltv / e.patients) : 0
+      return {
+        ...e, ltv: Math.round(e.ltv), avgLtv,
+        avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0,
+        tenureMonths,
+        ltvPerMonth: tenureMonths > 0 ? Math.round(avgLtv / tenureMonths) : null,
+        activePct: e.patients ? Math.round((e.active / e.patients) * 100) : null,
+        returnedPct: e.patients ? Math.round((e.returned / e.patients) * 100) : null,
+      }
+    }).sort((a, b) => (a.month < b.month ? 1 : -1)),
+    cohortCurve,
     practitioners: [...practitioner.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.ltv - a.ltv).slice(0, 20),
     ar: ar.sort((a, b) => b.unpaid - a.unpaid).slice(0, 60),
     reactivate: reactivate.sort((a, b) => b.spent - a.spent).slice(0, 100),

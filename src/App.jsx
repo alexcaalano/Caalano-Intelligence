@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.339.0'
+const APP_VERSION = '3.340.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5778,10 +5778,32 @@ function ClinicView({ clientId, currency, nonce }) {
           </ComposedChart>
         </ResponsiveContainer> : null}
         {d.cohorts && d.cohorts.length ? <div className="table-wrap"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th><th>Avg appts</th></tr></thead>
-          <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.avgAppts}</td></tr>)}</tbody>
+          <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Age</th><th>Total LTV</th><th>Avg LTV</th><th title="Average LTV divided by how many months the cohort has existed - the fair way to compare a two-year-old cohort against a new one">Avg LTV / month</th><th>Avg appts</th><th title="Share of the cohort with an appointment in the diary right now">Still active</th><th title="Share of the cohort that came back for a second visit">Came back</th></tr></thead>
+          <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{c.tenureMonths != null ? `${c.tenureMonths}mo` : '-'}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.ltvPerMonth != null ? money(c.ltvPerMonth) : '-'}</td><td>{c.avgAppts}</td><td>{c.activePct != null ? `${c.activePct}%` : '-'}</td><td>{c.returnedPct != null ? `${c.returnedPct}%` : '-'}</td></tr>)}</tbody>
         </table></div> : <p className="cap" style={{ margin: 0 }}>No first-appointment dates synced yet.</p>}
+        <p className="caveat" style={{ marginTop: 10 }}>Cohorts are different ages, so raw LTV always flatters the older ones - a patient who first came two years ago has had two years to spend. <b>Avg LTV / month</b> divides by the cohort&rsquo;s age, which is the column to compare across rows.</p>
       </div>
+
+      {/* The cohort triangle. Only the calendar history can produce this - the
+          synced fields carry one cumulative LTV per patient with no per-period
+          breakdown, so they can never show the SHAPE of retention. */}
+      {d.cohortCurve && d.cohortCurve.length ? <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Retention curve <span style={{ fontWeight: 400 }}>· share of each cohort still attending, by months since their first visit</span></div>
+        <div className="tbl-scroll"><table className="mini-tbl appt-tbl cl-curve">
+          <thead><tr><th className="lft">First visit</th><th>Patients</th>{Array.from({ length: 13 }, (_, i) => <th key={i}>M{i}</th>)}</tr></thead>
+          <tbody>{d.cohortCurve.map((c) => (
+            <tr key={c.month}>
+              <td className="lft">{c.month}</td><td>{fmtNumber(c.size)}</td>
+              {Array.from({ length: 13 }, (_, i) => {
+                const v = c.pct[i]
+                if (v == null) return <td key={i} className="cl-cell cl-na" />
+                return <td key={i} className="cl-cell" style={{ background: v ? `color-mix(in srgb, var(--pos) ${Math.min(85, 12 + v * 0.75)}%, transparent)` : 'transparent' }}>{v ? `${v}%` : '-'}</td>
+              })}
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <p className="caveat" style={{ marginTop: 10 }}>Read a row left to right: M0 is the month of the first visit, M1 the month after, and each cell is the share of that cohort who attended in that month. Blank cells are months the cohort hasn&rsquo;t reached yet, so a young cohort&rsquo;s short row isn&rsquo;t churn. Built from the appointment history on the CRM calendars - clinics whose clinical appointments live only in the practice-management system and never reach a Caalano calendar won&rsquo;t have this view.</p>
+      </div> : null}
 
       {/* Phase 2: lifetime value by acquisition channel. */}
       {d.channels && d.channels.length ? <div className="card">

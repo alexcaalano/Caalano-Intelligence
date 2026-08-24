@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.336.0'
+const APP_VERSION = '3.337.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5516,6 +5516,123 @@ function CohortView({ clientId, currency, nonce }) {
   )
 }
 
+/* ============ Health Clinics module ============ */
+// Practice-management stats synced onto GHL contacts (LTV, appointments, billing,
+// retention), rolled up server-side. Not range-scoped - it's the patient base's
+// lifetime + current state, so no range param.
+function useClinic(clientId, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=clinic${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, nonce])
+  return st
+}
+function ClinicView({ clientId, currency, nonce }) {
+  const st = useClinic(clientId, nonce)
+  const money = (v) => fmtCurrency(v, currency)
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading clinic data…" /></div>
+  const d = st.data
+  if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load clinic data.</b></div>
+  if (d.ghl === false || d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected for this client.</b></div>
+  if (!d.hasClinic) return <div className="card empty-deep"><div className="big">🏥</div><b>No clinic data synced for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>This tab fills in once a practice-management sync (e.g. Universal Plugins → Cliniko / Nookal) writes patient stats - lifetime value, appointments, billing, retention - onto the contacts. {d.fields ? `${d.fields} clinic field(s) detected but no patients carry data yet.` : 'No clinic custom fields were found on this location.'}</p></div>
+  const m = d.money || {}, ap = d.appointments || {}, fb = d.forwardBookings || {}
+  const pct = (v) => (v == null ? '-' : `${v}%`)
+  return (
+    <>
+      <div className="lvl-title">🏥 Health Clinic <span className="sub">· {fmtNumber(d.patientsWithData)} of {fmtNumber(d.patients)} patients carry synced data{d.patientsWithData < d.patients ? ' · sync still populating' : ''}</span></div>
+      <div className="scorecard">
+        <Sc label="Patients (synced)" value={fmtNumber(d.patientsWithData)} />
+        <Sc label="Lifetime value" value={money(m.ltv)} />
+        <Sc label="Avg LTV / patient" value={money(m.avgLtv)} />
+        <Sc label="Spent this month" value={money(m.spentThisMonth)} />
+        <Sc label="Unpaid (AR)" value={money(m.unpaid)} />
+        <Sc label="Show rate" value={pct(ap.showRate)} />
+        <Sc label="No-show rate" value={pct(ap.noShowRate)} />
+        <Sc label="With next appt" value={`${pct(fb.pctWithUpcoming)}`} />
+        {d.nps && d.nps.score != null && <Sc label="NPS" value={`${d.nps.score} · ${fmtNumber(d.nps.responses)} resp`} />}
+      </div>
+
+      {/* Cohort LTV by first-appointment month */}
+      <div className="lvl-title" style={{ marginTop: 16 }}>Cohort LTV <span className="sub">· patients grouped by their first-appointment month, valued by lifetime spend</span></div>
+      {d.cohorts && d.cohorts.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+        <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th><th>Avg appts</th></tr></thead>
+        <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.avgAppts}</td></tr>)}</tbody>
+      </table></div> : <div className="cap">No first-appointment dates synced yet.</div>}
+
+      <div className="mr-two" style={{ marginTop: 16 }}>
+        {/* Attendance */}
+        <div>
+          <div className="mr-viz-lab">Attendance</div>
+          <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+            <tbody>
+              <tr><td className="lft">Total appointments</td><td>{fmtNumber(ap.total)}</td></tr>
+              <tr><td className="lft">Arrived</td><td>{fmtNumber(ap.arrived)}</td></tr>
+              <tr><td className="lft">Cancelled</td><td>{fmtNumber(ap.cancelled)} · {pct(ap.cancelRate)}</td></tr>
+              <tr><td className="lft">No-show</td><td>{fmtNumber(ap.noShow)} · {pct(ap.noShowRate)}</td></tr>
+              <tr><td className="lft">Show rate (of outcomes)</td><td>{pct(ap.showRate)}</td></tr>
+              <tr><td className="lft">Avg appts / patient</td><td>{ap.avgPerPatient}</td></tr>
+              <tr><td className="lft">Forward-booked (next appt)</td><td>{fmtNumber(fb.withUpcoming)} · {pct(fb.pctWithUpcoming)}</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        {/* Retention + Billing */}
+        <div>
+          <div className="mr-viz-lab">Retention & billing</div>
+          <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+            <tbody>
+              {(d.retention || []).map((r) => <tr key={r.status}><td className="lft">Retention · {r.status}</td><td>{fmtNumber(r.patients)}</td></tr>)}
+              <tr><td className="lft">Total paid</td><td>{money(m.paid)}</td></tr>
+              <tr><td className="lft">Remaining balance</td><td>{money(m.remaining)}</td></tr>
+              <tr><td className="lft">Unpaid balance (AR)</td><td>{money(m.unpaid)}</td></tr>
+              {d.consent && <tr><td className="lft">Marketing consent</td><td>{fmtNumber(d.consent.email)} email · {fmtNumber(d.consent.sms)} SMS</td></tr>}
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+
+      {/* Self-reported source (how did you hear about us) */}
+      {d.heardAbout && d.heardAbout.length ? <>
+        <div className="lvl-title" style={{ marginTop: 16 }}>How patients heard about us <span className="sub">· self-reported at intake (complements UTM attribution)</span></div>
+        <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+          <thead><tr><th className="lft">Source</th><th>Patients</th></tr></thead>
+          <tbody>{d.heardAbout.map((h) => <tr key={h.source}><td className="lft">{h.source}</td><td>{fmtNumber(h.patients)}</td></tr>)}</tbody>
+        </table></div>
+      </> : null}
+
+      {/* Practitioners */}
+      {d.practitioners && d.practitioners.length ? <>
+        <div className="lvl-title" style={{ marginTop: 16 }}>By practitioner <span className="sub">· from each patient's last appointment</span></div>
+        <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+          <thead><tr><th className="lft">Practitioner</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th></tr></thead>
+          <tbody>{d.practitioners.map((p) => <tr key={p.name}><td className="lft">{p.name}</td><td>{fmtNumber(p.patients)}</td><td>{money(p.ltv)}</td><td>{money(p.avgLtv)}</td></tr>)}</tbody>
+        </table></div>
+      </> : null}
+
+      {/* AR + reactivation worklists */}
+      {d.ar && d.ar.length ? <>
+        <div className="lvl-title" style={{ marginTop: 16 }}>Unpaid balances <span className="sub">· {fmtNumber(d.ar.length)} patient{d.ar.length === 1 ? '' : 's'}, biggest first</span></div>
+        <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+          <thead><tr><th className="lft">Patient</th><th>Unpaid</th><th>Lifetime spend</th><th className="lft">Last appointment</th></tr></thead>
+          <tbody>{d.ar.map((p, i) => <tr key={p.contactId || i}><td className="lft">{p.name}</td><td>{money(p.unpaid)}</td><td>{money(p.spent)}</td><td className="lft">{p.lastAppt ? String(p.lastAppt).slice(0, 10) : '-'}</td></tr>)}</tbody>
+        </table></div>
+      </> : null}
+      {d.reactivate && d.reactivate.length ? <>
+        <div className="lvl-title" style={{ marginTop: 16 }}>Reactivation list <span className="sub">· visited before, no upcoming appointment · {fmtNumber(d.reactivate.length)} patient{d.reactivate.length === 1 ? '' : 's'}</span></div>
+        <div className="tbl-scroll"><table className="mini-tbl users-tbl">
+          <thead><tr><th className="lft">Patient</th><th>Lifetime spend</th><th className="lft">Last appointment</th><th className="lft">Retention</th></tr></thead>
+          <tbody>{d.reactivate.slice(0, 60).map((p, i) => <tr key={p.contactId || i}><td className="lft">{p.name}</td><td>{money(p.spent)}</td><td className="lft">{p.lastAppt ? String(p.lastAppt).slice(0, 10) : '-'}</td><td className="lft">{p.retention || '-'}</td></tr>)}</tbody>
+        </table></div>
+      </> : null}
+      <p className="caveat">Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Lifetime value, appointment counts, attendance and billing are the plugin's own aggregates. Cohort LTV groups patients by their first-appointment month. Numbers fill in as the sync completes across the patient base.</p>
+    </>
+  )
+}
+
 /* ============ Forms performance ============ */
 function useForms(clientId, range, nonce = 0) {
   const [state, setState] = useState({ status: 'loading', data: null })
@@ -7681,7 +7798,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' }, { id: 'clinic', label: 'Clinic' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
@@ -7739,6 +7856,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'timing' && <><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
+        {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
       </div>
     </>

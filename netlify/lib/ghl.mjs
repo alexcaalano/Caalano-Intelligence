@@ -963,6 +963,129 @@ export async function buildForms(locationId, from, to) {
   return { connected: true, tz, submissions: subs.length, contacts: contactData.size, pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, stages: (p.stages || []).map((s, i) => ({ id: s.id, name: s.name, pos: s.position ?? i })).sort((a, b) => a.pos - b.pos) })), forms }
 }
 
+// --- Health Clinics module ------------------------------------------------
+// A practice-management sync (Universal Plugins → Cliniko/Nookal/etc) writes each
+// patient's lifetime stats onto their GHL CONTACT as custom fields (LTV, appointment
+// counts + attendance, billing / AR, first + last + upcoming appointment,
+// retention). The plugin has already aggregated per patient, so we just page every
+// contact, read those fields, and roll them up: patient base, LTV, cohort LTV by
+// first-appointment month, attendance rates, AR, retention mix, and (bonus) NPS +
+// self-reported source. Field IDs vary per location, so we resolve them by fieldKey
+// from the definitions endpoint rather than hard-coding ids.
+const CLINIC_FIELDS = {
+  // numeric lifetime stats (keyed by the fieldKey suffix after "contact.")
+  total_amount_spent: 'num', total_spent_this_month: 'num', total_amount_paid: 'num',
+  total_remaining_balance: 'num', total_unpaid_balance: 'num',
+  total_appointments: 'num', total_arrived: 'num', total_cancelled: 'num', noshow_count: 'num',
+  upcoming_appt_count: 'num',
+  // dates / text
+  first_appointment_date: 'str', first_visit_date: 'str', last_appointment_date: 'str',
+  upcoming_appt_start_time: 'str', retention_status: 'str',
+  last_appt_practitioner: 'str', last_appt_type: 'str',
+  upcoming_appt_practitioner: 'str',
+  accepted_email_marketing: 'str', accepted_sms_marketing: 'str',
+  how_did_you_hear_about_us: 'str', likelihood_to_recommend: 'num', overall_satisfaction: 'str',
+}
+function _clinicNum(v) { if (v == null || v === '') return null; const n = Number(String(v).replace(/[$,]/g, '')); return isFinite(n) ? n : null }
+function _monthOf(v) { const s = String(v || ''); const m = s.match(/(\d{4})[-/](\d{2})/); if (m) return `${m[1]}-${m[2]}`; const d = Date.parse(s); return isFinite(d) ? new Date(d).toISOString().slice(0, 7) : null }
+async function _pageContacts(locTok, locationId, onPage, { deadlineMs = 8000, cap = 6000 } = {}) {
+  const deadline = Date.now() + deadlineMs
+  let searchAfter = null, got = 0
+  for (let i = 0; i < 100; i++) {
+    if (Date.now() > deadline || got >= cap) break
+    const body = { locationId, pageLimit: 100 }
+    if (searchAfter) body.searchAfter = searchAfter
+    let j
+    try { j = await ghlPost(locTok, '/contacts/search', body) } catch { break }
+    const cs = (j && (j.contacts || j.items)) || []
+    if (!cs.length) break
+    onPage(cs); got += cs.length
+    const last = cs[cs.length - 1]
+    searchAfter = last && last.searchAfter
+    if (!searchAfter || cs.length < 100) break
+  }
+  return got
+}
+export async function buildClinic(locationId, opts = {}) {
+  const locTok = await locationToken(locationId)
+  // Resolve our target fields' ids by fieldKey (strip the "contact." prefix).
+  const defs = await ghlGet(locTok, `/locations/${locationId}/customFields`, { model: 'contact' }).then((j) => j.customFields || j.customField || []).catch(() => [])
+  const idOf = {}
+  for (const f of defs) { const key = String(f.fieldKey || '').replace(/^contact\./, ''); if (key in CLINIC_FIELDS && f.id) idOf[key] = f.id }
+  const present = Object.keys(idOf)
+  if (!present.length) return { connected: true, hasClinic: false, fields: 0 }
+  // Aggregators.
+  const N = { patients: 0, withData: 0 }
+  const sum = { ltv: 0, spentMonth: 0, paid: 0, remaining: 0, unpaid: 0, appts: 0, arrived: 0, cancelled: 0, noshow: 0, upcomingAppts: 0 }
+  const cohort = new Map(); const retention = new Map(); const heard = new Map()
+  const practitioner = new Map(); const npsVals = []
+  let withUpcoming = 0, emailOptIn = 0, smsOptIn = 0
+  const ar = []      // patients with an unpaid balance
+  const reactivate = [] // active-ish patients with no upcoming appt (churn risk)
+  const val = (m, key) => { const id = idOf[key]; return id ? m[id] : undefined }
+  const process = (contacts) => {
+    for (const c of contacts) {
+      N.patients++
+      const m = {}
+      for (const x of (c.customFields || c.customField || [])) m[x.id] = x.value != null ? x.value : x.fieldValue
+      const spent = _clinicNum(val(m, 'total_amount_spent'))
+      const hasAny = present.some((k) => { const v = val(m, k); return v != null && v !== '' })
+      if (!hasAny) continue
+      N.withData++
+      const add = (k, dest) => { const n = _clinicNum(val(m, k)); if (n != null) sum[dest] += n }
+      add('total_amount_spent', 'ltv'); add('total_spent_this_month', 'spentMonth'); add('total_amount_paid', 'paid')
+      add('total_remaining_balance', 'remaining'); add('total_unpaid_balance', 'unpaid')
+      add('total_appointments', 'appts'); add('total_arrived', 'arrived'); add('total_cancelled', 'cancelled'); add('noshow_count', 'noshow')
+      const upc = _clinicNum(val(m, 'upcoming_appt_count')) || (val(m, 'upcoming_appt_start_time') ? 1 : 0)
+      if (upc > 0) { withUpcoming++; sum.upcomingAppts += upc }
+      const ret = String(val(m, 'retention_status') || '').trim(); if (ret) retention.set(ret, (retention.get(ret) || 0) + 1)
+      const h = String(val(m, 'how_did_you_hear_about_us') || '').trim(); if (h) heard.set(h, (heard.get(h) || 0) + 1)
+      const pr = String(val(m, 'last_appt_practitioner') || '').trim()
+      if (pr) { const e = practitioner.get(pr) || { name: pr, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += _clinicNum(val(m, 'total_appointments')) || 0; practitioner.set(pr, e) }
+      const nps = _clinicNum(val(m, 'likelihood_to_recommend')); if (nps != null) npsVals.push(nps)
+      if (String(val(m, 'accepted_email_marketing') || '').toLowerCase().startsWith('y')) emailOptIn++
+      if (String(val(m, 'accepted_sms_marketing') || '').toLowerCase().startsWith('y')) smsOptIn++
+      // Cohort by first-appointment month, valued by LTV.
+      const mo = _monthOf(val(m, 'first_appointment_date') || val(m, 'first_visit_date'))
+      if (mo) { const e = cohort.get(mo) || { month: mo, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += _clinicNum(val(m, 'total_appointments')) || 0; cohort.set(mo, e) }
+      const nm = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.contactName || c.email || 'Patient'
+      const unpaid = _clinicNum(val(m, 'total_unpaid_balance'))
+      if (unpaid && unpaid > 0) ar.push({ contactId: c.id, name: nm, unpaid, lastAppt: val(m, 'last_appointment_date') || null, spent: spent || 0 })
+      // Reactivation: has visited, no upcoming appointment, not already flagged lapsed.
+      const totalAppts = _clinicNum(val(m, 'total_appointments')) || 0
+      if (totalAppts > 0 && upc === 0) reactivate.push({ contactId: c.id, name: nm, lastAppt: val(m, 'last_appointment_date') || null, spent: spent || 0, retention: ret || null })
+    }
+  }
+  await _pageContacts(locTok, locationId, process, opts)
+  const showBase = sum.arrived + sum.noshow // appointments with a known arrived/no-show outcome
+  const npsScore = npsVals.length ? Math.round(((npsVals.filter((v) => v >= 9).length - npsVals.filter((v) => v <= 6).length) / npsVals.length) * 100) : null
+  return {
+    connected: true, hasClinic: true, fields: present.length,
+    patients: N.patients, patientsWithData: N.withData,
+    money: {
+      ltv: Math.round(sum.ltv), avgLtv: N.withData ? Math.round(sum.ltv / N.withData) : 0,
+      spentThisMonth: Math.round(sum.spentMonth), paid: Math.round(sum.paid),
+      remaining: Math.round(sum.remaining), unpaid: Math.round(sum.unpaid),
+    },
+    appointments: {
+      total: sum.appts, arrived: sum.arrived, cancelled: sum.cancelled, noShow: sum.noshow,
+      showRate: showBase ? Math.round((sum.arrived / showBase) * 100) : null,
+      cancelRate: sum.appts ? Math.round((sum.cancelled / sum.appts) * 100) : null,
+      noShowRate: sum.appts ? Math.round((sum.noshow / sum.appts) * 100) : null,
+      avgPerPatient: N.withData ? Math.round((sum.appts / N.withData) * 10) / 10 : 0,
+    },
+    forwardBookings: { withUpcoming, pctWithUpcoming: N.withData ? Math.round((withUpcoming / N.withData) * 100) : 0, upcomingTotal: sum.upcomingAppts },
+    consent: { email: emailOptIn, sms: smsOptIn },
+    nps: { score: npsScore, responses: npsVals.length },
+    retention: [...retention.entries()].map(([status, n]) => ({ status, patients: n })).sort((a, b) => b.patients - a.patients),
+    heardAbout: [...heard.entries()].map(([source, n]) => ({ source, patients: n })).sort((a, b) => b.patients - a.patients),
+    cohorts: [...cohort.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0, avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0 })).sort((a, b) => (a.month < b.month ? 1 : -1)),
+    practitioners: [...practitioner.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.ltv - a.ltv).slice(0, 20),
+    ar: ar.sort((a, b) => b.unpaid - a.unpaid).slice(0, 60),
+    reactivate: reactivate.sort((a, b) => b.spent - a.spent).slice(0, 100),
+  }
+}
+
 // Read-only probe for the Forms feature: the location's forms (id -> name), a
 // few recent submissions with PII redacted, and the custom-field definitions -
 // so we can see how Meta Lead Forms vs GHL funnel forms are actually structured

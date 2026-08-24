@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.337.0 - 2026-08-20 · `PENDING` - Health Clinics module: per-client Clinic tab (appointments, LTV, retention, AR)
+- New **Clinic** tab (clients with a GHL location) that reads practice-management data synced onto GHL contacts by the
+  Universal Plugins integration - appointment/service-calendar stats, revenue and retention - and turns it into a clinic
+  operations view. Backend `buildClinic()` pages every contact in the location, resolves the sync custom fields by their
+  field key, and aggregates across the patient base.
+- **Scorecard**: patients synced, total lifetime value, average LTV/patient, spend this month, unpaid AR, attendance
+  (show / no-show rates), forward bookings (% with a next appointment), and NPS.
+- **Cohort LTV** by first-appointment month (feeds the LTV-by-cohort view the brief asked for), **attendance** breakdown
+  (arrived / cancelled / no-show), **retention & billing** summary, **how patients heard about us**, **by-practitioner**
+  split, an **unpaid-balances** AR list and a **reactivation** list (lapsed patients with no upcoming appointment).
+- Cached as its own `clinic` scope. Data is only as complete as the practice-management sync - clinics mid-sync will show
+  a subset of patients until every contact is populated.
+
 ## v3.336.0 - 2026-08-20 · `PENDING` - Creative Cockpit: split the whole breakdown per pipeline (replaces the selector)
 - Replaced the pipeline *selector* with a proper **per-pipeline split**. A creative belongs to a pipeline (via its
   campaign's Settings link / name match), so a multi-pipeline client's Creative Cockpit is now **one labelled section per

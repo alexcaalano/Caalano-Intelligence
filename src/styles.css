@@ -3064,3 +3064,8 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .cl-split-item { display: inline-flex; align-items: center; gap: 6px; }
 .cl-split-item i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
 .cl-split-item b { color: var(--text); }
+
+/* Clinic: movement chip on a scorecard (vs our previous daily snapshot) */
+.cl-delta { display: inline-block; margin-left: 5px; font-weight: 700; font-size: 11px; white-space: nowrap; }
+.cl-delta.up { color: var(--pos); }
+.cl-delta.down { color: var(--neg); }

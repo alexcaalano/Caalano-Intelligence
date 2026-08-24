@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.338.0'
+const APP_VERSION = '3.339.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5624,6 +5624,15 @@ function ClinicFunnel({ rows }) {
     </div>
   )
 }
+// A movement chip for a clinic scorecard. `pts` marks a rate (percentage-point
+// move) rather than a count. `goodDown` flips the colour for measures where
+// falling is the win - no-shows, one-and-done, unpaid balances.
+function ClinicDelta({ value, pts, goodDown, money, suffix }) {
+  if (value == null || value === 0) return null
+  const good = goodDown ? value < 0 : value > 0
+  const txt = money ? money(Math.abs(value)) : `${Math.abs(value)}${pts ? 'pt' : ''}${suffix || ''}`
+  return <span className={`cl-delta ${good ? 'up' : 'down'}`}>{value > 0 ? '▲' : '▼'} {txt}</span>
+}
 function ClinicView({ clientId, currency, nonce }) {
   const st = useClinic(clientId, nonce)
   const money = (v) => fmtCurrency(v, currency)
@@ -5634,6 +5643,9 @@ function ClinicView({ clientId, currency, nonce }) {
   if (!d.hasClinic) return <div className="card empty-deep"><div className="big">🏥</div><b>No clinic data synced for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>This tab fills in once a practice-management sync (e.g. Universal Plugins → Cliniko / Nookal) writes patient stats - lifetime value, appointments, billing, retention - onto the contacts. {d.fields ? `${d.fields} clinic field(s) detected but no patients carry data yet.` : 'No clinic custom fields were found on this location.'}</p></div>
   const m = d.money || {}, ap = d.appointments || {}, fb = d.forwardBookings || {}, re = d.retentionEcon || {}
   const rb = d.rebooking || {}
+  const dl = d.deltas || null
+  const hist = Array.isArray(d.history) ? d.history : []
+  const asAt = d.asAt ? new Date(d.asAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
   // Retention funnel: synced -> attended -> came back -> something in the diary.
   const funnelRows = [
     { key: 'synced', label: 'Patients synced', value: d.patientsWithData || 0, color: '#6d5efc', hint: 'Contacts carrying practice-management data.' },
@@ -5645,20 +5657,58 @@ function ClinicView({ clientId, currency, nonce }) {
   const partial = d.patientsWithData < d.patients
   return (
     <>
-      <div className="lvl-title">🏥 Health Clinic <span className="sub">· {fmtNumber(d.patientsWithData)} of {fmtNumber(d.patients)} patients carry synced data{partial ? ' · sync still populating' : ''}</span></div>
+      <div className="lvl-title">🏥 Health Clinic <span className="sub">· {fmtNumber(d.patientsWithData)} of {fmtNumber(d.patients)} patients carry synced data{partial ? ' · sync still populating' : ''}{asAt ? ` · as at ${asAt}` : ''}</span></div>
+      <p className="caveat" style={{ marginTop: -4 }}>This tab is a <b>point-in-time</b> read, not a date-range report - the practice-management sync overwrites each patient&rsquo;s stats every run, so the CRM only ever holds today&rsquo;s values. The date range selected above doesn&rsquo;t apply here. Period figures below come from our own daily snapshots instead.</p>
 
       {/* Headline clinic economics, in the app's standard scorecard strip. */}
       <div className="timing-scards">
-        <div className="tm-sc hero"><span className="tm-lab">Lifetime value</span><b>{money(m.ltv)}</b><span className="tm-sub">{fmtNumber(m.ltvPatients || d.patientsWithData)} patients valued</span></div>
-        <div className="tm-sc"><span className="tm-lab">Avg LTV / patient</span><b>{money(m.avgLtv)}</b><span className="tm-sub">across patients with a value</span></div>
-        <div className="tm-sc"><span className="tm-lab">Next booking rate</span><b>{pct(re.nextBookingRate)}</b><span className="tm-sub">{fmtNumber(re.attendedWithNext)} of {fmtNumber(re.attended)} left with one booked</span></div>
+        <div className="tm-sc hero"><span className="tm-lab">Lifetime value</span><b>{money(m.ltv)}</b><span className="tm-sub">{fmtNumber(m.ltvPatients || d.patientsWithData)} patients valued <ClinicDelta value={dl && dl.revenue} money={money} /></span></div>
+        <div className="tm-sc"><span className="tm-lab">Avg LTV / patient</span><b>{money(m.avgLtv)}</b><span className="tm-sub">across patients with a value <ClinicDelta value={dl && dl.avgLtvDelta} money={money} /></span></div>
+        <div className="tm-sc"><span className="tm-lab">Next booking rate</span><b>{pct(re.nextBookingRate)}</b><span className="tm-sub">{fmtNumber(re.attendedWithNext)} of {fmtNumber(re.attended)} left with one booked <ClinicDelta value={dl && dl.nextBookingRatePts} pts /></span></div>
         <div className="tm-sc"><span className="tm-lab">Return rate</span><b>{pct(re.returnRate)}</b><span className="tm-sub">{fmtNumber(re.returned)} came back at least once</span></div>
-        <div className="tm-sc warn"><span className="tm-lab">One &amp; done</span><b>{pct(re.oneAndDoneRate)}</b><span className="tm-sub">{fmtNumber(re.oneAndDone)} never returned</span></div>
+        <div className="tm-sc warn"><span className="tm-lab">One &amp; done</span><b>{pct(re.oneAndDoneRate)}</b><span className="tm-sub">{fmtNumber(re.oneAndDone)} never returned <ClinicDelta value={dl && dl.oneAndDoneRatePts} pts goodDown /></span></div>
         <div className="tm-sc warn"><span className="tm-lab">Revenue at risk</span><b>{money(re.lostRevenue)}</b><span className="tm-sub">one &amp; done × LTV gap</span></div>
-        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{pct(ap.showRate)}</b><span className="tm-sub">no-show {pct(ap.noShowRate)} · cancel {pct(ap.cancelRate)}</span></div>
-        <div className="tm-sc"><span className="tm-lab">Spent this month</span><b>{money(m.spentThisMonth)}</b><span className="tm-sub">unpaid AR {money(m.unpaid)}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{pct(ap.showRate)}</b><span className="tm-sub">no-show {pct(ap.noShowRate)} · cancel {pct(ap.cancelRate)} <ClinicDelta value={dl && dl.showRatePts} pts /></span></div>
+        <div className="tm-sc" title="Calendar month to date, as reported by the sync - this figure resets on the 1st."><span className="tm-lab">Spent this month</span><b>{money(m.spentThisMonth)}</b><span className="tm-sub">month to date · unpaid AR {money(m.unpaid)}</span></div>
         {d.nps && d.nps.score != null ? <div className="tm-sc"><span className="tm-lab">NPS</span><b>{d.nps.score}</b><span className="tm-sub">{fmtNumber(d.nps.responses)} responses</span></div> : null}
       </div>
+
+      {/* Period movement. Only possible because we snapshot daily: lifetime spend
+          is cumulative, so the gap between two days IS the revenue booked between
+          them - a figure the CRM cannot produce, since it overwrites as it syncs. */}
+      {dl ? <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 10 }}>Last {dl.spanDays} days <span style={{ fontWeight: 400 }}>· measured against our snapshot from {dl.since}</span></div>
+        <div className="timing-scards">
+          <div className="tm-sc hero"><span className="tm-lab">Revenue booked</span><b>{money(dl.revenue)}</b><span className="tm-sub">growth in total lifetime value</span></div>
+          <div className="tm-sc"><span className="tm-lab">Collected</span><b>{money(dl.collected)}</b><span className="tm-sub">movement in total paid</span></div>
+          <div className="tm-sc"><span className="tm-lab">New patients</span><b>{fmtNumber(dl.newPatients)}</b><span className="tm-sub">added to the synced base</span></div>
+          <div className="tm-sc"><span className="tm-lab">Appointments attended</span><b>{fmtNumber(dl.apptsAttended)}</b><span className="tm-sub">of {fmtNumber(dl.apptsBooked)} booked</span></div>
+          <div className="tm-sc warn"><span className="tm-lab">No-shows</span><b>{fmtNumber(dl.noShows)}</b><span className="tm-sub">in the same window</span></div>
+          <div className="tm-sc"><span className="tm-lab">Unpaid AR</span><b>{money(m.unpaid)}</b><span className="tm-sub">movement <ClinicDelta value={dl.unpaidDelta} money={money} goodDown /></span></div>
+        </div>
+        <p className="caveat" style={{ marginTop: 10 }}>Because lifetime spend, appointment and attendance counters only ever accumulate, the difference between two daily snapshots is a genuine period figure. It reflects what the sync had recorded on each of those two days, so a backdated entry lands in the window we noticed it rather than the window it happened in.</p>
+      </div> : (hist.length ? null : <div className="card insight">
+        <div><b>Trends start building from today.</b><p style={{ margin: '4px 0 0' }}>The practice-management sync overwrites its values each run, so no history exists to read back. We now record this clinic&rsquo;s totals once a day - period revenue, patient growth and rate movement will appear here as those snapshots accumulate, and a month from now this becomes a like-for-like comparison.</p></div>
+      </div>)}
+
+      {/* Trend, from our own snapshots. */}
+      {hist.length > 2 ? <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Trend <span style={{ fontWeight: 400 }}>· {fmtNumber(hist.length)} daily snapshots</span></div>
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={hist} margin={{ left: -8, right: 6, top: 8 }}>
+            <CartesianGrid stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="date" fontSize={9.5} stroke="var(--muted)" interval="preserveStartEnd" minTickGap={26} />
+            <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+            <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+            <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} formatter={(v, n) => (n === 'Lifetime value' ? money(v) : `${v}%`)} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line yAxisId="l" dataKey="ltv" name="Lifetime value" stroke="#12b886" strokeWidth={2} dot={false} />
+            <Line yAxisId="r" dataKey="nextBookingRate" name="Next booking rate" stroke="#4f7cff" strokeWidth={2} dot={false} />
+            <Line yAxisId="r" dataKey="showRate" name="Show rate" stroke="#f5a524" strokeWidth={2} dot={false} />
+            <Line yAxisId="r" dataKey="oneAndDoneRate" name="One &amp; done" stroke="#f0435b" strokeWidth={2} dot={false} strokeDasharray="4 3" />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div> : null}
 
       {/* The retention funnel, then - where the diary supports it - the rebooking
           split that says WHEN the next appointment got made. */}
@@ -5824,7 +5874,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </table></div>
       </div> : null}
 
-      <p className="caveat">Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Lifetime value, appointment counts, attendance and billing are the plugin&rsquo;s own aggregates. Cohort LTV groups patients by their first-appointment month. Numbers fill in as the sync completes across the patient base.</p>
+      <p className="caveat">Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Lifetime value, appointment counts, attendance and billing are the plugin&rsquo;s own aggregates, and every sync <b>overwrites</b> them with current values - so everything above is a snapshot of right now, and &ldquo;spent this month&rdquo; resets on the 1st. Period and trend figures come from the daily snapshots we take ourselves. Rebooking timing is read from the calendars, which keep real per-booking history. Numbers fill in as the sync completes across the patient base.</p>
     </>
   )
 }

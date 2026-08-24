@@ -17,6 +17,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.339.0 - 2026-08-20 · `PENDING` - Clinic: daily snapshots, so period revenue and trend actually exist
+- The practice-management sync **overwrites** each patient's stats on every run - lifetime spend, next appointment date,
+  balances are all replaced with current values. That means the CRM only ever holds *today*: there is no history to read
+  back, and a rolling field like `total spent this month` silently resets on the 1st. The Clinic tab now says so plainly
+  (it's a point-in-time read, and the global date range doesn't apply to it), and we keep our own history instead.
+- **Daily clinic snapshot** (`clinic-snapshot`, `@daily`, with an on-demand `clinic-snapshot-now` twin) records each
+  clinic's aggregate into the `caalano-clinic` blob. Non-clinic locations are skipped by the cheap capability probe.
+- **Real period figures.** Lifetime spend, appointment and attendance counters only ever accumulate, so the difference
+  between two daily snapshots is a genuine period number - something the CRM can't produce on its own. A "Last N days"
+  card now shows **revenue booked**, **collected**, **new patients**, **appointments attended vs booked**, **no-shows**
+  and **AR movement**, measured against the nearest snapshot at least 30 days old (falling back to the oldest held, and
+  reporting which date it compared against).
+- **Movement chips** on the headline scorecards - lifetime value, avg LTV, next booking rate, one & done, show rate -
+  coloured by whether the move is good, so falling no-shows and falling one-and-done read as wins.
+- **Trend chart** from those snapshots: lifetime value against next booking rate, show rate and the one-and-done rate.
+- Before any history accumulates the tab says so directly rather than showing empty comparisons, and the period card
+  notes that a backdated entry lands in the window we noticed it, not the window it happened in.
+- Rebooking timing is unaffected by any of this: it's read from the calendars, which keep real per-booking history.
+
 ## v3.338.0 - 2026-08-20 · `PENDING` - Clinic: rebooking from the diary, retention economics, LTV by channel
 - The Clinic tab now answers the questions that actually move clinic revenue, and it only appears where it applies.
 - **Rebooking, read from the diary.** The synced practice-management fields carry lifetime *counters* but no timeline, so

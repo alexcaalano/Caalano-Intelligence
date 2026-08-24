@@ -533,6 +533,101 @@ export async function runHealthSnapshots(dates) {
   return { ok: true, count: results.length, results }
 }
 
+// ---- Clinic history ------------------------------------------------------
+// The practice-management sync OVERWRITES each contact's fields every run: the
+// values are a snapshot of "now", never a history. So the CRM can tell you the
+// LTV today but can never tell you what it was last month, and a rolling field
+// like `total_spent_this_month` silently resets on the 1st.
+//
+// We therefore keep our own daily record. Two things fall out of it that the
+// CRM cannot produce on its own:
+//   * real period revenue - lifetime spend is CUMULATIVE, so LTV(today) minus
+//     LTV(30 days ago) is the revenue actually booked in that window;
+//   * genuine trend - show rate, no-show rate, next-booking rate and the
+//     one-and-done rate become series instead of single numbers.
+const clinicStore = () => getStore({ name: 'caalano-clinic', consistency: 'strong' })
+// The aggregate fields worth trending. Deliberately a flat, small point - this
+// is written daily for every clinic and read on every Clinic tab load.
+function clinicPoint(d) {
+  const m = d.money || {}, ap = d.appointments || {}, fb = d.forwardBookings || {}, re = d.retentionEcon || {}, rb = d.rebooking || {}
+  return {
+    patients: d.patients || 0, synced: d.patientsWithData || 0,
+    ltv: m.ltv || 0, avgLtv: m.avgLtv || 0, spentThisMonth: m.spentThisMonth || 0,
+    paid: m.paid || 0, unpaid: m.unpaid || 0,
+    appts: ap.total || 0, arrived: ap.arrived || 0, cancelled: ap.cancelled || 0, noShow: ap.noShow || 0,
+    showRate: ap.showRate, noShowRate: ap.noShowRate, cancelRate: ap.cancelRate,
+    withUpcoming: fb.withUpcoming || 0, pctWithUpcoming: fb.pctWithUpcoming,
+    attended: re.attended || 0, returned: re.returned || 0, oneAndDone: re.oneAndDone || 0,
+    nextBookingRate: re.nextBookingRate, returnRate: re.returnRate, oneAndDoneRate: re.oneAndDoneRate,
+    avgLtvReturned: re.avgLtvReturned || 0, lostRevenue: re.lostRevenue,
+    rebookRate: rb.available ? rb.rate : null, pctAtPointOfCare: rb.available ? rb.pctAtPointOfCare : null,
+  }
+}
+async function readClinicHistory(clientId) {
+  try {
+    const rec = await clinicStore().get(clientId, { type: 'json' })
+    const days = (rec && rec.days) || {}
+    return Object.entries(days).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date))
+  } catch { return [] }
+}
+async function writeClinicSnapshot(clientId, date, point) {
+  const st = clinicStore()
+  const rec = (await st.get(clientId, { type: 'json' }).catch(() => null)) || { days: {} }
+  rec.days = rec.days || {}
+  rec.days[date] = point
+  const keys = Object.keys(rec.days).sort()
+  if (keys.length > 400) for (const k of keys.slice(0, keys.length - 400)) delete rec.days[k]
+  rec.updatedAt = new Date().toISOString()
+  await st.setJSON(clientId, rec)
+  return point
+}
+// Compare today against the nearest stored point at least `days` old. Cumulative
+// counters become period figures (revenue booked, patients added, appointments
+// attended); rates are reported as a simple point difference.
+function clinicDeltas(history, today, days = 30) {
+  if (!history.length) return null
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  // Nearest point on or before the cutoff; otherwise the oldest we hold.
+  const older = history.filter((p) => p.date <= cutoff)
+  const base = older.length ? older[older.length - 1] : history[0]
+  if (!base || base.date === today.date) return null
+  const spanDays = Math.max(1, Math.round((Date.parse(today.date) - Date.parse(base.date)) / 86400000))
+  const diff = (k) => (today[k] != null && base[k] != null ? today[k] - base[k] : null)
+  return {
+    since: base.date, spanDays,
+    // Period figures, only trustworthy because the underlying fields accumulate.
+    revenue: diff('ltv'), newPatients: diff('synced'), apptsAttended: diff('arrived'),
+    apptsBooked: diff('appts'), noShows: diff('noShow'), collected: diff('paid'),
+    // Rate movements, in percentage points.
+    showRatePts: diff('showRate'), noShowRatePts: diff('noShowRate'),
+    nextBookingRatePts: diff('nextBookingRate'), oneAndDoneRatePts: diff('oneAndDoneRate'),
+    returnRatePts: diff('returnRate'), rebookRatePts: diff('rebookRate'),
+    avgLtvDelta: diff('avgLtv'), unpaidDelta: diff('unpaid'),
+  }
+}
+// Daily clinic snapshot across every clinic client (scheduled). Sequential and
+// resilient: one clinic failing never aborts the rest. Non-clinic locations are
+// skipped by the cheap probe rather than paying for a full build.
+export async function runClinicSnapshots(dates) {
+  try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
+  const today = new Date().toISOString().slice(0, 10)
+  const targets = (dates && dates.length) ? dates : [today]
+  const results = []
+  for (const [id, cc] of Object.entries(CLIENTS)) {
+    if (!cc.ghl) continue
+    try {
+      const probe = await buildClinic(cc.ghl, { probe: true })
+      if (!probe || !probe.hasClinic) continue
+      const d = await buildClinic(cc.ghl, { deadlineMs: 20000, apptDeadlineMs: 20000, cap: 20000 })
+      if (!d || !d.hasClinic) continue
+      const p = clinicPoint(d)
+      for (const date of targets) await writeClinicSnapshot(id, date, p)
+      results.push({ client: id, synced: p.synced, ltv: p.ltv })
+    } catch (e) { results.push({ client: id, error: String(e.message || e).slice(0, 120) }) }
+  }
+  return { ok: true, count: results.length, snapshotted: results.filter((r) => !r.error).length, results }
+}
+
 // Scheduled warmer: refresh every CRM client's shared opportunity snapshot so the
 // interactive scopes (users / ccdrill / speed / appts / forms / health) read the
 // Blobs cache instead of each re-paging /opportunities/search. That endpoint is the
@@ -3276,7 +3371,16 @@ export default async (req) => {
     // this location is a clinic at all (one custom-field read, no contact paging),
     // so the Clinic tab only appears where the practice-management sync exists.
     const probe = url.searchParams.get('probe') === '1'
-    try { return json({ scope: 'clinic', client, probe, ...(await buildClinic(cc.ghl, { probe })) }, 200, true) }
+    try {
+      if (probe) return json({ scope: 'clinic', client, probe, ...(await buildClinic(cc.ghl, { probe: true })) }, 200, true)
+      // The sync overwrites the CRM fields on every run, so the only history that
+      // exists is the one we keep ourselves. Read it alongside today's build and
+      // turn the cumulative counters into real period figures.
+      const [d, history] = await Promise.all([buildClinic(cc.ghl), readClinicHistory(client).catch(() => [])])
+      const today = { date: new Date().toISOString().slice(0, 10), ...clinicPoint(d) }
+      const deltas = d.hasClinic ? clinicDeltas(history, today, 30) : null
+      return json({ scope: 'clinic', client, ...d, history: history.slice(-180), deltas, asAt: new Date().toISOString() }, 200, true)
+    }
     catch (e) { return json({ scope: 'clinic', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

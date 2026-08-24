@@ -683,12 +683,36 @@ export async function listLocations() {
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
-// Lightweight calendar list for the Settings funnel-step editor: id + name only.
+// Calendar list for the Settings key-events editor: id + name + type. Covers
+// EVERY way a clinic can take bookings - the calendars endpoint returns all
+// calendar types (round robin, event, class, collective and Service Calendars),
+// and locations on the newer Services catalog keep their service menu on a
+// separate feed, so that's merged in too and tagged `service`. Without the
+// second call a clinic running a service menu would see an empty picker.
+const CAL_TYPE_LABEL = { round_robin: 'Round robin', event: 'Event', class_booking: 'Class', collective: 'Collective', service: 'Service', service_booking: 'Service', personal: 'Personal' }
 export async function listCalendars(locationId) {
   const locTok = await locationToken(locationId)
-  const j = await ghlGet(locTok, '/calendars/', { locationId })
-  const cals = j.calendars || j.calendar || []
-  return cals.map((c) => ({ id: c.id || c._id || c.calendarId, name: c.name || c.calendarName || 'Calendar' })).filter((c) => c.id)
+  const [cals, services] = await Promise.all([
+    ghlGet(locTok, '/calendars/', { locationId }).then((j) => j.calendars || j.calendar || []).catch(() => []),
+    ghlGet(locTok, '/calendars/services/catalog', { locationId }).then((j) => j.services || j.catalog || []).catch(() => []),
+  ])
+  const out = cals.map((c) => {
+    const t = String(c.calendarType || c.eventType || '').toLowerCase()
+    return {
+      id: c.id || c._id || c.calendarId,
+      name: c.name || c.calendarName || 'Calendar',
+      type: /service/.test(t) ? 'service' : (t || null),
+      typeLabel: CAL_TYPE_LABEL[t] || (/service/.test(t) ? 'Service' : null),
+    }
+  }).filter((c) => c.id)
+  const seen = new Set(out.map((c) => c.id))
+  for (const s of services) {
+    const id = s.id || s._id || s.serviceId || s.calendarId
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push({ id, name: s.name || s.serviceName || 'Service', type: 'service', typeLabel: 'Service' })
+  }
+  return out
 }
 // Pipelines + their stages straight from the GoHighLevel API (not Windsor), so
 // the Key-events editor can list stages the moment a client is linked - before
@@ -1006,6 +1030,117 @@ async function _pageContacts(locTok, locationId, onPage, { deadlineMs = 8000, ca
   }
   return got
 }
+// Per-patient appointment history for the clinic module. The synced practice-
+// management fields give lifetime COUNTERS (total appointments / arrived /
+// no-show) but no timeline, so they can't answer the questions that actually
+// drive clinic revenue: did the patient rebook, and did they rebook *before
+// they walked out* or only later? For that we need each booking's start time
+// AND the moment it was created (dateAdded), which the calendar events carry.
+//
+// Every calendar in the location is swept (round-robin, class, event and
+// Service Calendars alike - the calendars endpoint returns them all, so a
+// clinic running a service menu is covered the moment those calendars exist),
+// plus the Services V1 booking feed for locations on the newer service catalog.
+const APPT_DEAD_RE = /invalid|cancel/i
+function _dayKeyer(tz) {
+  let fmt
+  try { fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }) }
+  catch { fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }) }
+  return (ms) => (isFinite(ms) ? fmt.format(new Date(ms)) : null)
+}
+async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900 } = {}) {
+  const out = { byContact: new Map(), calendars: 0, events: 0, available: false, truncated: false }
+  const deadline = Date.now() + deadlineMs
+  let cals = []
+  try { const j = await ghlGet(locTok, '/calendars/', { locationId }); cals = j.calendars || j.calendar || [] }
+  catch { return out }
+  const active = cals.filter((c) => (c.id || c._id || c.calendarId) && c.isActive !== false)
+  out.calendars = active.length
+  const DAY = 86400000
+  const now = Date.now()
+  const startMs = now - lookbackDays * DAY
+  const endMs = now + 400 * DAY
+  const push = (cid, start, added, status, calName, service) => {
+    if (!cid || !isFinite(start)) return
+    if (APPT_DEAD_RE.test(String(status || ''))) return
+    const e = out.byContact.get(cid) || []
+    e.push({ start, added: isFinite(added) ? added : start, cal: calName || null, service: service || null })
+    out.byContact.set(cid, e)
+  }
+  await Promise.all(active.map(async (cal) => {
+    if (Date.now() > deadline) { out.truncated = true; return }
+    const calId = cal.id || cal._id || cal.calendarId
+    const calName = cal.name || cal.calendarName || 'Calendar'
+    try {
+      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
+      for (const ev of (j.events || [])) {
+        out.events++
+        const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
+        push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null)
+      }
+    } catch { /* one bad calendar shouldn't sink the whole history */ }
+  }))
+  // Service Calendars on the newer Services catalog book through their own feed
+  // rather than /calendars/events, so pull those too when the location has them.
+  if (Date.now() < deadline) {
+    try {
+      const j = await ghlGet(locTok, '/calendars/services/bookings', { locationId, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString() })
+      for (const b of (j.bookings || j.events || [])) {
+        out.events++
+        const cid = b.contactId || (b.contact && (b.contact.id || b.contact._id)) || null
+        push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', b.serviceName || b.title || null)
+      }
+    } catch { /* location isn't on the services catalog - normal */ }
+  }
+  out.available = out.byContact.size > 0
+  return out
+}
+// Turn one patient's raw bookings into the rebooking story: for every visit that
+// has already happened, was there a NEXT booking, and was it already in the diary
+// when they walked out (booked at or before the end of the visit day - covers both
+// booking at reception and a course booked upfront) or only made later?
+function _rebookOf(list, dayKey, nowMs) {
+  const seen = new Set()
+  const appts = list.filter((a) => { const k = `${a.start}`; if (seen.has(k)) return false; seen.add(k); return true }).sort((a, b) => a.start - b.start)
+  const past = appts.filter((a) => a.start <= nowMs)
+  const future = appts.filter((a) => a.start > nowMs)
+  let atCare = 0, later = 0, none = 0
+  // `past` is a prefix of the start-sorted `appts`, so the appointment after
+  // past[i] is simply appts[i + 1] - no identity lookup needed.
+  for (let i = 0; i < past.length; i++) {
+    const nxt = appts[i + 1]
+    if (!nxt) { none++; continue }
+    if (dayKey(nxt.added) <= dayKey(past[i].start)) atCare++; else later++
+  }
+  return { visits: past.length, future: future.length, atCare, later, none, firstVisit: past.length ? past[0].start : null, lastVisit: past.length ? past[past.length - 1].start : null }
+}
+// Acquisition channel for a patient contact, from whatever first-touch
+// attribution the contact carries (contacts/search returns an `attributions`
+// array and/or an `attributionSource`/`lastAttributionSource` object). Reuses
+// the same META/GOOGLE fingerprints as the opportunity attribution model, and
+// adds referral / organic / direct buckets. Returns null when the contact has
+// no attribution at all (so unsynced clinics simply show no channel split).
+function _contactChannel(c) {
+  const a = (Array.isArray(c.attributions) ? (c.attributions.find((x) => x.isFirst) || c.attributions[0]) : null)
+    || c.attributionSource || c.lastAttributionSource || {}
+  const sig = [a.utmSessionSource, a.sessionSource, a.utmSource, a.utm_source, a.utmMedium, a.utm_medium, a.medium, a.utmCampaign, a.utm_campaign, a.campaign, a.referrer, a.gclid, a.fbclid, a.url, a.pageUrl]
+    .filter(Boolean).join(' ').toLowerCase()
+  if (!sig) return null
+  if (META_RE.test(sig)) return 'meta'
+  if (GOOGLE_RE.test(sig)) return 'google'
+  if (/referr?al/.test(sig)) return 'referral'
+  if (/organic|(^|[^a-z])seo([^a-z]|$)|search$/.test(sig)) return 'organic'
+  if (/direct|\(none\)|type.?in/.test(sig)) return 'direct'
+  return 'other'
+}
+// The campaign a patient was acquired on, so clinic revenue can be attributed
+// down to the campaign that paid for it (not just the channel).
+function _contactCampaign(c) {
+  const a = (Array.isArray(c.attributions) ? (c.attributions.find((x) => x.isFirst) || c.attributions[0]) : null)
+    || c.attributionSource || c.lastAttributionSource || {}
+  const v = a.campaign || a.utmCampaign || a.utm_campaign || null
+  return v ? String(v).trim().slice(0, 120) : null
+}
 export async function buildClinic(locationId, opts = {}) {
   const locTok = await locationToken(locationId)
   // Resolve our target fields' ids by fieldKey (strip the "contact." prefix).
@@ -1014,14 +1149,20 @@ export async function buildClinic(locationId, opts = {}) {
   for (const f of defs) { const key = String(f.fieldKey || '').replace(/^contact\./, ''); if (key in CLINIC_FIELDS && f.id) idOf[key] = f.id }
   const present = Object.keys(idOf)
   if (!present.length) return { connected: true, hasClinic: false, fields: 0 }
+  // Capability probe: the caller only wants to know whether this location has the
+  // practice-management sync, so stop before the expensive contact/calendar sweep.
+  if (opts.probe) return { connected: true, hasClinic: true, fields: present.length }
   // Aggregators.
-  const N = { patients: 0, withData: 0 }
+  const N = { patients: 0, withData: 0, ltvPatients: 0 }
   const sum = { ltv: 0, spentMonth: 0, paid: 0, remaining: 0, unpaid: 0, appts: 0, arrived: 0, cancelled: 0, noshow: 0, upcomingAppts: 0 }
   const cohort = new Map(); const retention = new Map(); const heard = new Map()
   const practitioner = new Map(); const npsVals = []
+  const channel = new Map(); const campaign = new Map()
   let withUpcoming = 0, emailOptIn = 0, smsOptIn = 0
-  const ar = []      // patients with an unpaid balance
-  const reactivate = [] // active-ish patients with no upcoming appt (churn risk)
+  const ar = []            // patients with an unpaid balance
+  const reactivate = []    // visited before, nothing in the diary
+  const oneAndDoneList = [] // attended exactly once and never came back
+  const pt = new Map()     // contactId -> the per-patient facts the joins below need
   const val = (m, key) => { const id = idOf[key]; return id ? m[id] : undefined }
   const process = (contacts) => {
     for (const c of contacts) {
@@ -1032,6 +1173,7 @@ export async function buildClinic(locationId, opts = {}) {
       const hasAny = present.some((k) => { const v = val(m, k); return v != null && v !== '' })
       if (!hasAny) continue
       N.withData++
+      if (spent != null) N.ltvPatients++
       const add = (k, dest) => { const n = _clinicNum(val(m, k)); if (n != null) sum[dest] += n }
       add('total_amount_spent', 'ltv'); add('total_spent_this_month', 'spentMonth'); add('total_amount_paid', 'paid')
       add('total_remaining_balance', 'remaining'); add('total_unpaid_balance', 'unpaid')
@@ -1041,29 +1183,119 @@ export async function buildClinic(locationId, opts = {}) {
       const ret = String(val(m, 'retention_status') || '').trim(); if (ret) retention.set(ret, (retention.get(ret) || 0) + 1)
       const h = String(val(m, 'how_did_you_hear_about_us') || '').trim(); if (h) heard.set(h, (heard.get(h) || 0) + 1)
       const pr = String(val(m, 'last_appt_practitioner') || '').trim()
-      if (pr) { const e = practitioner.get(pr) || { name: pr, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += _clinicNum(val(m, 'total_appointments')) || 0; practitioner.set(pr, e) }
+      const totalAppts = _clinicNum(val(m, 'total_appointments')) || 0
+      const arrived = _clinicNum(val(m, 'total_arrived'))
+      if (pr) { const e = practitioner.get(pr) || { name: pr, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += totalAppts; practitioner.set(pr, e) }
       const nps = _clinicNum(val(m, 'likelihood_to_recommend')); if (nps != null) npsVals.push(nps)
       if (String(val(m, 'accepted_email_marketing') || '').toLowerCase().startsWith('y')) emailOptIn++
       if (String(val(m, 'accepted_sms_marketing') || '').toLowerCase().startsWith('y')) smsOptIn++
       // Cohort by first-appointment month, valued by LTV.
       const mo = _monthOf(val(m, 'first_appointment_date') || val(m, 'first_visit_date'))
-      if (mo) { const e = cohort.get(mo) || { month: mo, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += _clinicNum(val(m, 'total_appointments')) || 0; cohort.set(mo, e) }
+      if (mo) { const e = cohort.get(mo) || { month: mo, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += totalAppts; cohort.set(mo, e) }
       const nm = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.contactName || c.email || 'Patient'
+      // Acquisition channel + campaign, so clinic revenue can be read back against
+      // the ad spend that produced it (lifetime ROAS, not cost per lead).
+      const ch = _contactChannel(c)
+      const camp = _contactCampaign(c)
+      const lastAppt = val(m, 'last_appointment_date') || null
+      if (ch) {
+        const e = channel.get(ch) || { channel: ch, patients: 0, ltv: 0, appts: 0, attended: 0, oneAndDone: 0, withNext: 0 }
+        e.patients++; e.ltv += spent || 0; e.appts += totalAppts
+        if (arrived != null && arrived >= 1) { e.attended++; if (arrived === 1 && upc === 0) e.oneAndDone++; if (upc > 0) e.withNext++ }
+        channel.set(ch, e)
+        if (camp) { const k = `${ch}||${camp}`; const ce = campaign.get(k) || { campaign: camp, channel: ch, patients: 0, ltv: 0, attended: 0 }; ce.patients++; ce.ltv += spent || 0; if (arrived >= 1) ce.attended++; campaign.set(k, ce) }
+      }
       const unpaid = _clinicNum(val(m, 'total_unpaid_balance'))
-      if (unpaid && unpaid > 0) ar.push({ contactId: c.id, name: nm, unpaid, lastAppt: val(m, 'last_appointment_date') || null, spent: spent || 0 })
-      // Reactivation: has visited, no upcoming appointment, not already flagged lapsed.
-      const totalAppts = _clinicNum(val(m, 'total_appointments')) || 0
-      if (totalAppts > 0 && upc === 0) reactivate.push({ contactId: c.id, name: nm, lastAppt: val(m, 'last_appointment_date') || null, spent: spent || 0, retention: ret || null })
+      if (unpaid && unpaid > 0) ar.push({ contactId: c.id, name: nm, unpaid, lastAppt, spent: spent || 0, channel: ch, practitioner: pr || null })
+      // Reactivation: has visited, no upcoming appointment.
+      if (totalAppts > 0 && upc === 0) reactivate.push({ contactId: c.id, name: nm, lastAppt, spent: spent || 0, retention: ret || null, channel: ch, practitioner: pr || null, visits: arrived != null ? arrived : null })
+      // Win-back: attended exactly once and nothing booked ahead.
+      if (arrived === 1 && upc === 0) oneAndDoneList.push({ contactId: c.id, name: nm, spent: spent || 0, lastAppt, channel: ch, practitioner: pr || null })
+      pt.set(c.id, { name: nm, ltv: spent || 0, arrived: arrived != null ? arrived : null, appts: totalAppts, upcoming: upc, channel: ch, lastAppt })
     }
   }
-  await _pageContacts(locTok, locationId, process, opts)
+  // Contact paging and the calendar sweep are independent, so run them together -
+  // serially they'd blow the function budget on a clinic with a busy diary.
+  const [, hist] = await Promise.all([
+    _pageContacts(locTok, locationId, process, opts),
+    _clinicApptHistory(locTok, locationId, { deadlineMs: opts.apptDeadlineMs || 7000 }).catch(() => null),
+  ])
   const showBase = sum.arrived + sum.noshow // appointments with a known arrived/no-show outcome
   const npsScore = npsVals.length ? Math.round(((npsVals.filter((v) => v >= 9).length - npsVals.filter((v) => v <= 6).length) / npsVals.length) * 100) : null
+
+  // ---- Retention economics ---------------------------------------------
+  // The money question: who comes back, and what does it cost when they don't.
+  // Derived from the synced lifetime counters, so it works for every clinic on
+  // the sync even before the calendar sweep below has anything to say.
+  let attended = 0, attendedWithNext = 0, returned = 0, oneAndDone = 0, firstVisitOnly = 0, rebookedAfterFirst = 0
+  let ltvReturned = 0, ltvOneAndDone = 0
+  for (const p of pt.values()) {
+    if (p.arrived == null || p.arrived < 1) continue
+    attended++
+    if (p.upcoming > 0) attendedWithNext++
+    if (p.arrived >= 2) { returned++; ltvReturned += p.ltv }
+    if (p.arrived === 1) {
+      firstVisitOnly++
+      if (p.upcoming > 0) rebookedAfterFirst++
+      else { oneAndDone++; ltvOneAndDone += p.ltv }
+    }
+  }
+  const avgLtvReturned = returned ? ltvReturned / returned : 0
+  const avgLtvOneAndDone = oneAndDone ? ltvOneAndDone / oneAndDone : 0
+  const ltvGap = avgLtvReturned - avgLtvOneAndDone
+  const retentionEcon = {
+    attended, attendedWithNext, returned, oneAndDone, firstVisitOnly, rebookedAfterFirst,
+    nextBookingRate: attended ? Math.round((attendedWithNext / attended) * 100) : null,
+    returnRate: attended ? Math.round((returned / attended) * 100) : null,
+    oneAndDoneRate: attended ? Math.round((oneAndDone / attended) * 100) : null,
+    rebookRate: firstVisitOnly ? Math.round((rebookedAfterFirst / firstVisitOnly) * 100) : null,
+    avgLtvReturned: Math.round(avgLtvReturned), avgLtvOneAndDone: Math.round(avgLtvOneAndDone),
+    ltvGap: Math.round(Math.max(0, ltvGap)),
+    // Only meaningful once both cohorts carry revenue.
+    lostRevenue: (returned && oneAndDone && ltvGap > 0) ? Math.round(ltvGap * oneAndDone) : null,
+  }
+
+  // ---- Rebooking, from the actual diary ---------------------------------
+  // The counters above can say a patient has a next appointment, but not WHEN it
+  // was made. The calendar events carry both the visit time and the moment the
+  // booking was created, which is the only way to separate "walked out with the
+  // next one booked" from "we had to chase them weeks later".
+  const reb = { available: false, visits: 0, atPointOfCare: 0, afterLeaving: 0, notRebooked: 0, patients: 0, patientsWithNext: 0 }
+  if (hist && hist.available) {
+    const tz = await locationTimezone(locationId).catch(() => 'UTC')
+    const dayKey = _dayKeyer(tz)
+    const nowMs = Date.now()
+    for (const [cid, list] of hist.byContact) {
+      const r = _rebookOf(list, dayKey, nowMs)
+      if (!r.visits) continue
+      reb.patients++; reb.visits += r.visits
+      reb.atPointOfCare += r.atCare; reb.afterLeaving += r.later; reb.notRebooked += r.none
+      if (r.future > 0) reb.patientsWithNext++
+    }
+    reb.available = reb.visits > 0
+  }
+  const rebookedVisits = reb.atPointOfCare + reb.afterLeaving
+  const rebooking = {
+    ...reb, rebooked: rebookedVisits,
+    calendars: (hist && hist.calendars) || 0, events: (hist && hist.events) || 0,
+    truncated: !!(hist && hist.truncated),
+    // Next Booking Rate on a per-visit basis: of the visits that have already
+    // happened, how many were followed by another booking at all.
+    rate: reb.visits ? Math.round((rebookedVisits / reb.visits) * 100) : null,
+    pctAtPointOfCare: reb.visits ? Math.round((reb.atPointOfCare / reb.visits) * 100) : null,
+    pctAfterLeaving: reb.visits ? Math.round((reb.afterLeaving / reb.visits) * 100) : null,
+    pctNotRebooked: reb.visits ? Math.round((reb.notRebooked / reb.visits) * 100) : null,
+    // Of everyone who DID rebook, the share who did it before walking out - the
+    // number a front-desk rebooking push actually moves.
+    shareAtPointOfCare: rebookedVisits ? Math.round((reb.atPointOfCare / rebookedVisits) * 100) : null,
+  }
+
   return {
     connected: true, hasClinic: true, fields: present.length,
     patients: N.patients, patientsWithData: N.withData,
     money: {
-      ltv: Math.round(sum.ltv), avgLtv: N.withData ? Math.round(sum.ltv / N.withData) : 0,
+      ltv: Math.round(sum.ltv), avgLtv: N.ltvPatients ? Math.round(sum.ltv / N.ltvPatients) : 0,
+      ltvPatients: N.ltvPatients,
       spentThisMonth: Math.round(sum.spentMonth), paid: Math.round(sum.paid),
       remaining: Math.round(sum.remaining), unpaid: Math.round(sum.unpaid),
     },
@@ -1075,6 +1307,14 @@ export async function buildClinic(locationId, opts = {}) {
       avgPerPatient: N.withData ? Math.round((sum.appts / N.withData) * 10) / 10 : 0,
     },
     forwardBookings: { withUpcoming, pctWithUpcoming: N.withData ? Math.round((withUpcoming / N.withData) * 100) : 0, upcomingTotal: sum.upcomingAppts },
+    retentionEcon, rebooking,
+    channels: [...channel.values()].map((e) => ({
+      ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0,
+      avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0,
+      pctWithNext: e.attended ? Math.round((e.withNext / e.attended) * 100) : null,
+      oneAndDonePct: e.attended ? Math.round((e.oneAndDone / e.attended) * 100) : null,
+    })).sort((a, b) => b.ltv - a.ltv),
+    campaigns: [...campaign.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.ltv - a.ltv).slice(0, 25),
     consent: { email: emailOptIn, sms: smsOptIn },
     nps: { score: npsScore, responses: npsVals.length },
     retention: [...retention.entries()].map(([status, n]) => ({ status, patients: n })).sort((a, b) => b.patients - a.patients),
@@ -1083,6 +1323,7 @@ export async function buildClinic(locationId, opts = {}) {
     practitioners: [...practitioner.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.ltv - a.ltv).slice(0, 20),
     ar: ar.sort((a, b) => b.unpaid - a.unpaid).slice(0, 60),
     reactivate: reactivate.sort((a, b) => b.spent - a.spent).slice(0, 100),
+    oneAndDoneList: oneAndDoneList.sort((a, b) => b.spent - a.spent).slice(0, 60),
   }
 }
 

@@ -3272,7 +3272,11 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'clinic', client, ghl: false })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'clinic', client, connected: false })
-    try { return json({ scope: 'clinic', client, ...(await buildClinic(cc.ghl)) }, 200, true) }
+    // probe=1 is the cheap capability check the client view uses to decide whether
+    // this location is a clinic at all (one custom-field read, no contact paging),
+    // so the Clinic tab only appears where the practice-management sync exists.
+    const probe = url.searchParams.get('probe') === '1'
+    try { return json({ scope: 'clinic', client, probe, ...(await buildClinic(cc.ghl, { probe })) }, 200, true) }
     catch (e) { return json({ scope: 'clinic', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

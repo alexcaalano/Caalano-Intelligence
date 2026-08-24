@@ -17,6 +17,30 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.338.0 - 2026-08-20 · `PENDING` - Clinic: rebooking from the diary, retention economics, LTV by channel
+- The Clinic tab now answers the questions that actually move clinic revenue, and it only appears where it applies.
+- **Rebooking, read from the diary.** The synced practice-management fields carry lifetime *counters* but no timeline, so
+  they can't say *when* a next appointment was made. We now sweep the location's calendars (every type, Service Calendars
+  included) and compare each booking's creation time against the visit it follows. That splits every completed visit three
+  ways: **left with the next one booked** (booked at reception, or a course booked up front), **booked again after
+  leaving** (a chase), or **never rebooked** - shown as a stacked bar plus a **Next booking rate**. Day boundaries are
+  evaluated in the clinic's own timezone, so a 9am Sydney visit rebooked that afternoon reads as the desk, not a chase.
+- **Retention economics.** Patients who attended once and never returned are counted as **one & done**, and priced:
+  `Revenue at risk` = that cohort × the LTV gap between a retained and a lapsed patient. It's an opportunity figure, not
+  money already lost, and the caveat on the card says so. Plus a **retention funnel** - synced → attended → came back →
+  next appointment booked - scaled so the drop-off reads at a glance.
+- **Lifetime value by acquisition channel** (the ad-side join): each patient's first-touch attribution on their contact
+  gives Meta / Google / referral / organic / direct, so clinic LTV can be read back against the spend that produced it -
+  lifetime ROAS rather than cost per lead - with a campaign-level breakdown behind it. Patients created directly in the
+  practice-management system carry no attribution and are excluded.
+- **Cohort LTV chart** (patients + avg LTV by first-appointment month) above the existing table, and a **win-back list**
+  of one-and-done patients; every worklist row still expands to that patient's CRM notes and shows their channel.
+- **Service Calendars** now come through to the key-events picker: the calendar list merges the calendars endpoint (all
+  types) with the newer services catalog, and tags each non-round-robin calendar with its type.
+- **The Clinic tab is self-detecting.** It used to show for every CRM client; it now appears only where a
+  practice-management sync has actually created its patient fields, decided by a cheap capability probe (one custom-field
+  read, no contact paging).
+
 ## v3.337.0 - 2026-08-20 · `PENDING` - Health Clinics module: per-client Clinic tab (appointments, LTV, retention, AR)
 - New **Clinic** tab (clients with a GHL location) that reads practice-management data synced onto GHL contacts by the
   Universal Plugins integration - appointment/service-calendar stats, revenue and retention - and turns it into a clinic

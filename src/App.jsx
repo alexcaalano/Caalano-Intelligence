@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.346.0'
+const APP_VERSION = '3.347.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5644,6 +5644,82 @@ function ClinicSection({ id, title, note, children }) {
     </section>
   )
 }
+// How this clinic sits against the rest of the Allied Health cohort. Reads each
+// clinic's stored daily snapshot rather than rebuilding anything, so the whole
+// comparison costs one blob read per clinic. Medians, not means - one large
+// practice would otherwise define the benchmark everyone else is judged against.
+function useClinicCohort(nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  useEffect(() => {
+    let alive = true
+    fetch(`/.netlify/functions/windsor?scope=clinics${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.rows ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [nonce])
+  return st
+}
+function ClinicBenchmark({ clientId, currency, nonce }) {
+  const st = useClinicCohort(nonce)
+  const money = (v) => fmtCurrency(v, currency)
+  if (st.status !== 'ok' || !st.data) return null
+  const { rows = [], benchmark = {} } = st.data
+  // A cohort of one is just this clinic - there is nothing to compare against.
+  if (rows.length < 2) return null
+  const me = rows.find((r) => r.client === clientId)
+  const pct = (v) => (v == null ? '-' : `${v}%`)
+  // goodDown marks measures where being under the median is the win.
+  const MEASURES = [
+    { key: 'pva', label: 'PVA', fmt: (v) => (v == null ? '-' : v) },
+    { key: 'showRate', label: 'Show rate', fmt: pct },
+    { key: 'nextBookingRate', label: 'Next booking rate', fmt: pct },
+    { key: 'oneAndDoneRate', label: 'One & done', fmt: pct, goodDown: true },
+    { key: 'avgLtv', label: 'Avg LTV', fmt: money },
+    { key: 'dollarPerVisit', label: '$ / visit', fmt: money },
+  ]
+  return (
+    <div className="card">
+      <div className="cap cl-cap">Against the clinic cohort <span>· {fmtNumber(rows.length)} clinics on the practice-management sync</span></div>
+      {me ? <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+        <thead><tr><th className="lft">Measure</th><th>This clinic</th><th>Cohort median</th><th className="lft">Standing</th></tr></thead>
+        <tbody>{MEASURES.map((m) => {
+          const mine = me[m.key], mid = benchmark[m.key]
+          const cmp = (mine == null || mid == null) ? null : (m.goodDown ? mine < mid : mine > mid)
+          const same = mine != null && mid != null && mine === mid
+          return (
+            <tr key={m.key}>
+              <td className="lft">{m.label}</td>
+              <td>{m.fmt(mine)}</td>
+              <td>{m.fmt(mid)}</td>
+              <td className="lft">{cmp == null ? <span className="cc-none">-</span>
+                : same ? 'At the median'
+                  : <span className={`cl-delta ${cmp ? 'up' : 'down'}`}>{cmp ? '▲ above' : '▼ below'} median</span>}</td>
+            </tr>
+          )
+        })}</tbody>
+      </table></div> : <p className="cap">This clinic has no stored snapshot yet, so it isn&rsquo;t in the comparison. It joins after tonight&rsquo;s run.</p>}
+      <div className="cap" style={{ fontWeight: 700, margin: '14px 0 8px' }}>Every clinic</div>
+      <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+        <thead><tr><th className="lft">Clinic</th><th>Patients</th><th>PVA</th><th>Show</th><th>Next booking</th><th>One &amp; done</th><th>Avg LTV</th><th>$ / visit</th><th>Revenue 30d</th></tr></thead>
+        <tbody>{rows.map((r) => (
+          <tr key={r.client} className={r.client === clientId ? 'row-sel' : ''}>
+            <td className="lft" title={r.name}>{r.name}{r.staleDays >= 3 ? <em className="kev-caltype" title={`Last snapshot ${r.staleDays} days ago`}>stale</em> : null}</td>
+            <td>{fmtNumber(r.patients)}</td>
+            <td>{r.pva != null ? r.pva : '-'}</td>
+            <td>{pct(r.showRate)}</td>
+            <td>{pct(r.nextBookingRate)}</td>
+            <td>{pct(r.oneAndDoneRate)}</td>
+            <td>{money(r.avgLtv)}</td>
+            <td>{r.dollarPerVisit != null ? money(r.dollarPerVisit) : '-'}</td>
+            <td>{r.revenue30 != null ? money(r.revenue30) : '-'}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+      <p className="caveat">Built from each clinic&rsquo;s stored nightly snapshot, so this costs one read per clinic rather than a rebuild. Medians rather than averages - one large practice would otherwise set the bar everyone else is measured against. A clinic marked <b>stale</b> hasn&rsquo;t produced a snapshot in three days or more, which is a sync problem rather than a performance one, and its numbers are frozen at that date.</p>
+    </div>
+  )
+}
 function ClinicView({ clientId, currency, nonce }) {
   const st = useClinic(clientId, nonce)
   const [work, setWork] = useState('winback')
@@ -5992,6 +6068,10 @@ function ClinicView({ clientId, currency, nonce }) {
             <p className="caveat">The cancellation reason recorded against each patient&rsquo;s most recent cancelled appointment.</p>
           </div> : null}
         </div> : null}
+      </ClinicSection>
+
+      <ClinicSection id="cl-bench" title="Benchmark" note="how this clinic compares to the rest of the cohort">
+        <ClinicBenchmark clientId={clientId} currency={currency} nonce={nonce} />
       </ClinicSection>
 
       {workTab ? <ClinicSection id="cl-work" title="Worklists" note="click any patient to read their CRM notes">

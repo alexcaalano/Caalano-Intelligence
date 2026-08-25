@@ -2469,7 +2469,7 @@ const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // biggest load-time win. Safe to cache only for UNRESTRICTED callers (no
 // per-caller filtering) - the gate below enforces that, and each builder already
 // returns cache=!filtered, so a restricted caller still rebuilds live.
-const CACHEABLE_SCOPES_NOCLIENT = new Set(['agency', 'coverage'])
+const CACHEABLE_SCOPES_NOCLIENT = new Set(['agency', 'coverage', 'clinics'])
 async function readResultCache(key) { try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } }
 function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
 function cacheKeyFrom(url) {
@@ -3094,6 +3094,50 @@ export default async (req) => {
   }
 
   // Agency-wide roll-up (no single client) - powers the Overview + leaderboard.
+  // Cross-client clinic benchmark. Reads each clinic's stored daily snapshot
+  // rather than rebuilding anything, so comparing the whole Allied Health cohort
+  // costs one blob read per clinic instead of a full multi-client fan-out.
+  if (url.searchParams.get('scope') === 'clinics') {
+    try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
+    const rows = []
+    for (const [id, cc] of Object.entries(CLIENTS)) {
+      if (!cc.ghl) continue
+      const hist = await readClinicHistory(id).catch(() => [])
+      if (!hist.length) continue
+      const latest = hist[hist.length - 1]
+      // Movement against the nearest point at least 30 days old, same basis as
+      // the per-client tab so the two never disagree.
+      const deltas = clinicDeltas(hist, latest, 30)
+      rows.push({
+        client: id, name: cc.name || id, date: latest.date, points: hist.length,
+        patients: latest.synced, ltv: latest.ltv, avgLtv: latest.avgLtv,
+        pva: latest.pva, pvaMedian: latest.pvaMedian, dollarPerVisit: latest.dollarPerVisit,
+        showRate: latest.showRate, noShowRate: latest.noShowRate,
+        nextBookingRate: latest.nextBookingRate, oneAndDoneRate: latest.oneAndDoneRate,
+        returnRate: latest.returnRate, unpaid: latest.unpaid,
+        revenue30: deltas ? deltas.revenue : null,
+        newPatients30: deltas ? deltas.newPatients : null,
+        pvaDelta: deltas ? deltas.pvaDelta : null,
+        since: deltas ? deltas.since : null,
+        // A clinic whose snapshot has gone quiet is a sync problem, not a
+        // performance one - surface it rather than letting it read as decline.
+        staleDays: Math.max(0, Math.round((Date.now() - Date.parse(`${latest.date}T00:00:00Z`)) / 86400000)),
+      })
+    }
+    rows.sort((a, b) => (b.ltv || 0) - (a.ltv || 0))
+    // Cohort medians beat means here - one large practice would otherwise define
+    // the benchmark every other clinic is measured against.
+    const med = (key) => {
+      const v = rows.map((r) => r[key]).filter((x) => x != null).sort((a, b) => a - b)
+      if (!v.length) return null
+      return v.length % 2 ? v[(v.length - 1) / 2] : Math.round(((v[v.length / 2 - 1] + v[v.length / 2]) / 2) * 10) / 10
+    }
+    return json({
+      scope: 'clinics', clinics: rows.length, rows,
+      benchmark: { pva: med('pva'), showRate: med('showRate'), nextBookingRate: med('nextBookingRate'), oneAndDoneRate: med('oneAndDoneRate'), avgLtv: med('avgLtv'), dollarPerVisit: med('dollarPerVisit') },
+    }, 200, true)
+  }
+
   if (url.searchParams.get('scope') === 'agency') {
     try {
       // Backend default stays 'created' (unchanged); the frontend passes 'closed'

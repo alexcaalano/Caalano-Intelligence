@@ -17,6 +17,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.347.0 - 2026-08-20 · `PENDING` - Clinic: benchmark against the rest of the cohort
+- A **Benchmark** section on each Clinic tab: this clinic's PVA, show rate, next-booking rate, one-and-done, avg LTV and
+  dollar-per-visit set against the **cohort median**, with a standing for each, plus a table of every clinic on the sync.
+- Built entirely from the stored nightly snapshots, so comparing the whole Allied Health cohort costs **one blob read per
+  clinic** rather than a multi-client rebuild - and it can't add load to the user path.
+- **Medians, not means.** One large practice would otherwise set the bar every other clinic is judged against: across a
+  sample cohort the mean PVA lands at 7.4 against a median of 4.1, above every typical clinic in the group.
+- Clinics whose snapshot has gone quiet for 3+ days are marked **stale**, since frozen numbers are a sync problem rather
+  than a performance one and shouldn't read as decline. A cohort of one renders nothing - there's nothing to compare to.
+- Direction is measured per metric rather than assumed: being *below* the median on one-and-done is the win, being above
+  it on PVA is.
+
 ## v3.346.0 - 2026-08-20 · `PENDING` - Clinic: the forward book, busiest days, and a data-quality guard
 - **Data-quality guard.** A synced field can exist on a location but be populated on only a fraction of patients, and a
   headline built on a thin field reads confidently wrong. Coverage is now measured per field, with a banner above the

@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.362.0 - 2026-08-20 · `PENDING` - Terms of use: stronger, and a real decision to make (v1.1)
+- The terms now open with a bordered **"Read this before proceeding"** notice stating plainly that this is a binding
+  legal agreement between the individual and Caalano Digital, that acceptance is a **condition of using the Platform**,
+  and that anyone who does not agree must **not proceed - sign out now and contact us**.
+- The single-line acknowledgement is replaced by a formal **declaration**: read and understood in full with the
+  opportunity to seek advice; signing personally as the named account holder with authority to do so; agreeing to be
+  bound and undertaking to **remain in compliance for as long as access is held**, and after it ends where a term says
+  so; understanding the record may be relied on as evidence; and understanding that the only alternative is to sign out.
+- New clause 9, **"Your agreement is ongoing"** - acceptance is not a one-off click. Every sign-in reaffirms the terms,
+  and anyone no longer willing or able to comply must stop using the Platform and say so.
+- **Declining is now as visible as accepting.** The header button reads "I do not agree - sign out", there's a matching
+  button beside Accept, and the accept button reads "I agree and sign".
+- Version bumped to **1.1**, so everyone - including anyone who already signed v1.0 - is asked to read and sign the
+  stronger wording on their next load. Their v1.0 acceptance is kept on record rather than replaced.
+
 ## v3.361.0 - 2026-08-20 · `PENDING` - Terms of use, signed and recorded
 - **Terms of Use** for Caalano360, covering ownership of the platform (interface, reports, metrics and how they're
   calculated, data models, integrations, code), a personal revocable right of access, and explicit restrictions: no

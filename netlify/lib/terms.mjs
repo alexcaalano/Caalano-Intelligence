@@ -9,11 +9,22 @@
 // Bumping TERMS_VERSION re-prompts everyone on their next load. Do that for any
 // change of substance; fixing a typo doesn't need it.
 // ---------------------------------------------------------------------------
-export const TERMS_VERSION = '1.0'
+export const TERMS_VERSION = '1.1'
 export const TERMS_EFFECTIVE = '2026-08-25'
 
 export const TERMS_TITLE = 'Caalano360 - Terms of Use'
-export const TERMS_INTRO = 'Caalano360 is proprietary software owned and operated by Caalano Digital. Access is granted to named individuals only. Please read these terms - you are asked to sign them because they are a binding agreement, not a formality.'
+export const TERMS_INTRO = 'Caalano360 is proprietary software owned and operated by Caalano Digital. Access is granted to named individuals only, and only on the terms set out below.'
+// Shown above the terms in a bordered notice, before anything else. It states
+// plainly that this is a condition of entry and that declining is a real option -
+// which is what separates an agreement from a dialog someone dismissed.
+export const TERMS_NOTICE = {
+  h: 'Read this before proceeding',
+  p: [
+    'This is a binding legal agreement between you personally and Caalano Digital. It governs your access to and use of Caalano360.',
+    'You are required to accept it before you may use the Platform. By signing below and continuing, you agree to be bound by every term in this document, you confirm you have the authority to do so, and you undertake to keep acting in line with it for as long as you have access.',
+    'If you do not agree to any part of it, do not proceed. Sign out now and contact Caalano Digital. Continuing past this screen without agreeing is not permitted.',
+  ],
+}
 
 export const TERMS_SECTIONS = [
   {
@@ -84,28 +95,42 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    h: '9. Changes',
+    h: '9. Your agreement is ongoing',
+    p: [
+      'Your acceptance is not a one-off formality. Every time you sign in and use the Platform you reaffirm these terms and confirm you are still complying with them.',
+      'If at any point you are no longer willing or able to comply, you must stop using the Platform and tell us.',
+    ],
+  },
+  {
+    h: '10. Changes',
     p: [
       'We may update these terms. Where a change is significant you will be asked to review and accept the updated version before continuing to use the Platform. The version and date you accepted is recorded against your account.',
     ],
   },
   {
-    h: '10. Governing law',
+    h: '11. Governing law',
     p: ['These terms are governed by the laws of New South Wales, Australia, and you submit to the non-exclusive jurisdiction of its courts.'],
   },
 ]
 
-export const TERMS_SIGN_STATEMENT = 'By signing below I confirm I have read and understood these terms, that I accept them, and that I am signing as the named account holder.'
+export const TERMS_SIGN_STATEMENT = [
+  'By signing below, I declare that:',
+  'I have read and understood these terms in full, and I have had the opportunity to seek advice on them;',
+  'I am the named account holder, I am signing personally, and I have the authority to enter into this agreement;',
+  'I agree to be bound by these terms, and I undertake to remain in compliance with them for as long as I hold access - and, where a term says so, after that access ends;',
+  'I understand that my acceptance is recorded with my name, the date and time, the version of these terms and my signature, and that this record may be relied upon as evidence of my agreement;',
+  'I understand that if I do not agree, I must not use the Platform, and that my only alternative is to sign out now.',
+]
 
 // Flattened text, used for the hash so an acceptance can be tied to exact wording.
 export function termsPlainText() {
-  const parts = [TERMS_TITLE, `Version ${TERMS_VERSION} (effective ${TERMS_EFFECTIVE})`, TERMS_INTRO]
+  const parts = [TERMS_TITLE, `Version ${TERMS_VERSION} (effective ${TERMS_EFFECTIVE})`, TERMS_NOTICE.h, ...TERMS_NOTICE.p, TERMS_INTRO]
   for (const s of TERMS_SECTIONS) {
     parts.push(s.h)
     for (const p of (s.p || [])) parts.push(p)
     for (const l of (s.list || [])) parts.push('- ' + l)
   }
-  parts.push(TERMS_SIGN_STATEMENT)
+  parts.push(...TERMS_SIGN_STATEMENT)
   return parts.join('\n\n')
 }
 // Short, stable digest of the wording. Not a security control - it exists so a
@@ -116,5 +141,5 @@ export async function termsHash() {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
 }
 export function termsPayload() {
-  return { version: TERMS_VERSION, effective: TERMS_EFFECTIVE, title: TERMS_TITLE, intro: TERMS_INTRO, sections: TERMS_SECTIONS, signStatement: TERMS_SIGN_STATEMENT }
+  return { version: TERMS_VERSION, effective: TERMS_EFFECTIVE, title: TERMS_TITLE, notice: TERMS_NOTICE, intro: TERMS_INTRO, sections: TERMS_SECTIONS, signStatement: TERMS_SIGN_STATEMENT }
 }

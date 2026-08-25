@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.361.0'
+const APP_VERSION = '3.362.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3070,7 +3070,7 @@ const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 // Must match TERMS_VERSION in netlify/lib/terms.mjs. Bumping it there and
 // here re-prompts everyone for a signature on their next load.
-const TERMS_VERSION_FE = '1.0'
+const TERMS_VERSION_FE = '1.1'
 const KEV_KEY = 'caalano_keyevents'
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -10839,6 +10839,12 @@ function TermsViewer({ onClose }) {
         <div className="mr-drill-body terms-view-body">
           {!terms ? <Spinner label="Loading…" /> : (
             <>
+              {terms.notice ? (
+                <div className="terms-notice">
+                  <h3>{terms.notice.h}</h3>
+                  {terms.notice.p.map((t, i) => <p key={i}>{t}</p>)}
+                </div>
+              ) : null}
               <p className="terms-intro">{terms.intro}</p>
               {terms.sections.map((sec, i) => (
                 <section key={i} className="terms-sec">
@@ -10891,11 +10897,17 @@ function TermsGate({ user, onAccepted, onLogout }) {
             <h2>{terms ? terms.title : 'Caalano360 - Terms of Use'}</h2>
             <span className="cap">{terms ? `Version ${terms.version} · effective ${terms.effective}` : 'Loading…'} · for {user.name || user.email}</span>
           </div>
-          <button className="btn-ghost sm" onClick={onLogout}>Sign out</button>
+          <button className="btn-ghost sm" onClick={onLogout}>I do not agree - sign out</button>
         </div>
         <div className="terms-body" ref={bodyRef} onScroll={onScroll}>
           {!terms ? <Spinner label="Loading the terms…" /> : (
             <>
+              {terms.notice ? (
+                <div className="terms-notice">
+                  <h3>{terms.notice.h}</h3>
+                  {terms.notice.p.map((t, i) => <p key={i}>{t}</p>)}
+                </div>
+              ) : null}
               <p className="terms-intro">{terms.intro}</p>
               {terms.sections.map((s, i) => (
                 <section key={i} className="terms-sec">
@@ -10904,7 +10916,11 @@ function TermsGate({ user, onAccepted, onLogout }) {
                   {s.list ? <ul>{s.list.map((t, j) => <li key={j}>{t}</li>)}</ul> : null}
                 </section>
               ))}
-              <p className="terms-sign-statement">{terms.signStatement}</p>
+              <div className="terms-declaration">
+                {Array.isArray(terms.signStatement)
+                  ? <><p className="terms-decl-lead">{terms.signStatement[0]}</p><ul>{terms.signStatement.slice(1).map((t, i) => <li key={i}>{t}</li>)}</ul></>
+                  : <p>{terms.signStatement}</p>}
+              </div>
             </>
           )}
         </div>
@@ -10919,10 +10935,16 @@ function TermsGate({ user, onAccepted, onLogout }) {
           </div>
           {err ? <p className="cap u-err">{err}</p> : null}
           <div className="terms-actions">
-            <span className="cap">Signing is recorded against your account with the date, time and version.</span>
-            <button className="btn-primary" disabled={!read || !signed || busy} onClick={accept}>
-              {busy ? 'Recording…' : 'I accept these terms'}
-            </button>
+            <span className="cap">
+              Your signature is recorded against your account with your name, the date and time, and the version of these
+              terms. <b>If you do not agree, do not proceed - sign out now.</b>
+            </span>
+            <div className="terms-btns">
+              <button type="button" className="btn-ghost" onClick={onLogout}>I do not agree</button>
+              <button className="btn-primary" disabled={!read || !signed || busy} onClick={accept}>
+                {busy ? 'Recording…' : 'I agree and sign'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

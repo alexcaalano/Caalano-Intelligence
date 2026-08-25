@@ -3219,6 +3219,7 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .terms-card { width: min(880px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
 .terms-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 22px 14px; border-bottom: 1px solid var(--border); }
 .terms-head h2 { margin: 0 0 3px; font-size: 19px; letter-spacing: -.01em; }
+.terms-preview-tag { margin-left: 9px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: middle; background: rgba(245,158,11,.14); color: #b45309; border: 1px solid rgba(245,158,11,.35); }
 .terms-body { flex: 1 1 auto; overflow-y: auto; padding: 18px 22px; }
 .terms-intro { font-size: 13.5px; line-height: 1.6; color: var(--text); margin: 0 0 16px; }
 .terms-sec { margin-bottom: 16px; }

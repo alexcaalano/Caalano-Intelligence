@@ -17,6 +17,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.363.0 - 2026-08-20 · `PENDING` - Preview the signing screen, and no way to be stuck on it
+
+**Preview mode for the terms gate**
+- The signed register (Settings → Users) gets a **Preview signing screen**
+  button, and `?preview=terms` on any URL does the same thing. It renders the
+  exact gate a new user sees - notice, full terms, scroll-to-end requirement,
+  signature pad - with the accept button inert and a "Preview" tag in the
+  header. Nothing is recorded and your own acceptance is untouched.
+- Leaving the preview is a plain page load (`Close preview`), not a sign-out.
+- This is how the gate gets demonstrated without bumping `TERMS_VERSION`, which
+  would re-prompt everyone.
+
+**The gate can no longer trap anyone**
+- If `authApi('terms')` failed, the gate showed a spinner forever - a user who
+  had done nothing wrong could not reach their dashboard. It now shows a plain
+  error with a **Try again** button, and says explicitly that nothing was
+  recorded and nothing is wrong with their account.
+
+---
+
 ## v3.362.0 - 2026-08-20 · `PENDING` - Terms of use: stronger, and a real decision to make (v1.1)
 - The terms now open with a bordered **"Read this before proceeding"** notice stating plainly that this is a binding
   legal agreement between the individual and Caalano Digital, that acceptance is a **condition of using the Platform**,

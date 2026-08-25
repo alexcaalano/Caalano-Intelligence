@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.362.0'
+const APP_VERSION = '3.363.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10866,15 +10866,22 @@ function TermsViewer({ onClose }) {
     </div>
   )
 }
-function TermsGate({ user, onAccepted, onLogout }) {
+function TermsGate({ user, onAccepted, onLogout, preview }) {
   const [terms, setTerms] = useState(null)
   const [sig, setSig] = useState(null)
   const [typed, setTyped] = useState('')
   const [read, setRead] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
+  const [loadErr, setLoadErr] = useState(false)
   const bodyRef = useRef(null)
-  useEffect(() => { authApi('terms').then((r) => { if (r && r.ok) setTerms(r.terms) }).catch(() => {}) }, [])
+  // If the terms can't be fetched this screen must not become an infinite
+  // spinner - that would lock a legitimate user out of their own dashboard.
+  const load = () => {
+    setLoadErr(false); setTerms(null)
+    authApi('terms').then((r) => { if (r && r.ok) setTerms(r.terms); else setLoadErr(true) }).catch(() => setLoadErr(true))
+  }
+  useEffect(load, [])
   // "Read" means reached the bottom. Not proof of reading, but it removes the
   // "I never saw it" argument, and it's the reason Accept starts disabled.
   const onScroll = (e) => {
@@ -10882,6 +10889,7 @@ function TermsGate({ user, onAccepted, onLogout }) {
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setRead(true)
   }
   const accept = async () => {
+    if (preview) { setErr('Preview only - nothing has been recorded. Close the preview to go back.'); return }
     setBusy(true); setErr(null)
     const r = await authApi('accept-terms', { method: 'POST', body: JSON.stringify({ signature: sig, typedName: typed.trim() }) })
     setBusy(false)
@@ -10894,13 +10902,20 @@ function TermsGate({ user, onAccepted, onLogout }) {
       <div className="terms-card">
         <div className="terms-head">
           <div>
-            <h2>{terms ? terms.title : 'Caalano360 - Terms of Use'}</h2>
-            <span className="cap">{terms ? `Version ${terms.version} · effective ${terms.effective}` : 'Loading…'} · for {user.name || user.email}</span>
+            <h2>{terms ? terms.title : 'Caalano360 - Terms of Use'}{preview ? <span className="terms-preview-tag">Preview</span> : null}</h2>
+            <span className="cap">{terms ? `Version ${terms.version} · effective ${terms.effective}` : 'Loading…'} · for {user.name || user.email}{preview ? ' · nothing on this screen is recorded' : ''}</span>
           </div>
-          <button className="btn-ghost sm" onClick={onLogout}>I do not agree - sign out</button>
+          <button className="btn-ghost sm" onClick={onLogout}>{preview ? 'Close preview' : 'I do not agree - sign out'}</button>
         </div>
         <div className="terms-body" ref={bodyRef} onScroll={onScroll}>
-          {!terms ? <Spinner label="Loading the terms…" /> : (
+          {loadErr ? (
+            <div className="empty-deep" style={{ padding: '30px 10px' }}>
+              <div className="big">⚠️</div>
+              <b>Couldn’t load the terms.</b>
+              <p style={{ maxWidth: 460, margin: '8px auto 14px' }}>Nothing has been recorded and there is nothing wrong with your account. Try again, or sign out and come back.</p>
+              <button className="btn-primary" onClick={load}>Try again</button>
+            </div>
+          ) : !terms ? <Spinner label="Loading the terms…" /> : (
             <>
               {terms.notice ? (
                 <div className="terms-notice">
@@ -10940,9 +10955,9 @@ function TermsGate({ user, onAccepted, onLogout }) {
               terms. <b>If you do not agree, do not proceed - sign out now.</b>
             </span>
             <div className="terms-btns">
-              <button type="button" className="btn-ghost" onClick={onLogout}>I do not agree</button>
+              <button type="button" className="btn-ghost" onClick={onLogout}>{preview ? 'Close preview' : 'I do not agree'}</button>
               <button className="btn-primary" disabled={!read || !signed || busy} onClick={accept}>
-                {busy ? 'Recording…' : 'I agree and sign'}
+                {busy ? 'Recording…' : preview ? 'I agree and sign · disabled in preview' : 'I agree and sign'}
               </button>
             </div>
           </div>
@@ -10962,6 +10977,11 @@ function TermsRegister() {
       .catch(() => setSt({ status: 'err', rows: [] }))
   }
   useEffect(load, [])
+  // Re-opens the gate on demand. A query param rather than local state so the
+  // preview can be shared as a link, and so leaving it is a plain page load.
+  const openPreview = () => {
+    try { const u = new URL(window.location.href); u.searchParams.set('preview', 'terms'); window.location.href = u.toString() } catch {}
+  }
   const when = (iso) => (iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-')
   const exportCsv = () => {
     const esc = (v) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
@@ -10986,6 +11006,7 @@ function TermsRegister() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-ghost sm" onClick={openPreview}>👁 Preview signing screen</button>
           <button className="btn-ghost sm" onClick={load}>Refresh</button>
           <button className="btn-ghost sm" onClick={exportCsv} disabled={!st.rows.length}>⭳ CSV</button>
         </div>
@@ -15421,6 +15442,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
 export default function App() {
   const [auth, setAuth] = useState({ status: 'loading' })
   const inviteToken = (() => { try { return new URLSearchParams(window.location.search).get('invite') } catch { return null } })()
+  const previewTerms = (() => { try { return new URLSearchParams(window.location.search).get('preview') === 'terms' } catch { return false } })()
   const check = () => authApi('me').then((r) => {
     if (!r || r.ok === false && r.enabled === false) setAuth({ status: 'ready', enabled: false, user: null })
     else if (r.enabled === false) setAuth({ status: 'ready', enabled: false, user: null })
@@ -15448,6 +15470,12 @@ export default function App() {
       onLogout={onLogout}
       onAccepted={(r) => setAuth((a) => ({ ...a, user: { ...a.user, termsVersion: r.version, termsAcceptedAt: r.acceptedAt } }))}
     />
+  }
+  // ?preview=terms re-opens the signing screen for someone who has already
+  // signed, so the gate can be demonstrated or re-read without bumping the
+  // version for everyone. Accepting is inert here; leaving is a plain reload.
+  if (auth.enabled && auth.user && previewTerms) {
+    return <TermsGate preview user={auth.user} onAccepted={() => {}} onLogout={() => { clearInvite(); window.location.reload() }} />
   }
   return <><Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator /></>
 }

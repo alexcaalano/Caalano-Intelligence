@@ -3208,3 +3208,8 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .logs-who { max-width: 170px; }
 .logs-who small { display: block; color: var(--faint); font-size: 10.5px; line-height: 1.2; }
 .logs-who-sum { margin-top: 6px; }
+
+/* Session revocation row in the Edit access modal */
+.u-revoke { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.u-revoke b { display: block; font-size: 13px; }
+.u-revoke .cap { display: block; margin-top: 2px; max-width: 460px; }

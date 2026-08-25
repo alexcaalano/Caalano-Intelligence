@@ -17,6 +17,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.358.0 - 2026-08-20 · `PENDING` - Security: a password change now actually ends other sessions
+- Found during a review of the auth layer. Login sessions are stateless signed tokens valid for **14 days**, and the
+  signature covered only email, role, name and expiry - so changing a password rewrote the hash but **left every existing
+  session working**. That's precisely backwards: changing your password is what people do when they think an account has
+  been compromised, and until now it did nothing to the compromised session.
+- Sessions now carry an **epoch** that is part of the signed payload. Bumping it on the user record invalidates every
+  token issued before it, instantly, with no session store to maintain. Because the epoch is inside the HMAC, an attacker
+  can't edit their own token to match a new one - that breaks the signature.
+- **Changing your password now signs out every other device** and re-issues the current one, so the person making the
+  change stays signed in while everyone else's session dies.
+- New **"Sign out of all other devices"** on Your account, and **"Sign out everywhere"** on a person's Edit access panel
+  for admins - the answer to a lost laptop or someone leaving, instead of waiting two weeks for tokens to expire. An
+  Admin can't revoke a Super Admin, matching every other guard on that panel.
+- Tokens minted before this existed carry no epoch and are treated as epoch 0, so nobody is signed out by the upgrade.
+- Reviewed and found already sound, for the record: server-side per-client authorization (a viewer can't reach another
+  client's data by crafting a request, and viewers are further limited to the scopes their allocated tabs use), admin-only
+  settings writes with Super-Admin-only client linking, PBKDF2 150k with timing-safe comparison, HttpOnly/Secure/SameSite
+  cookies, login lockout, no source maps published, and no secrets reachable from the client bundle.
+
 ## v3.357.0 - 2026-08-20 · `PENDING` - Refuse AI crawlers at the edge
 - Known AI training / answer-engine crawlers (GPTBot, ClaudeBot, PerplexityBot, CCBot, Bytespider, Google-Extended,
   Amazonbot, Applebot-Extended and the rest) and generic scraping stacks (Scrapy, python-requests, curl, wget,

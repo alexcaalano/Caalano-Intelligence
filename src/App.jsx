@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.357.0'
+const APP_VERSION = '3.358.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9866,6 +9866,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
           <h3 style={{ marginTop: 0 }}>Your account</h3>
           <p className="cap" style={{ marginTop: -4 }}>Signed in as <b>{authUser ? (authUser.name || authUser.email) : ''}</b>{authUser ? ` · ${ROLE_LABEL[authUser.role] || authUser.role}` : ''}. Change your password below.</p>
           <ChangePasswordCard />
+          <SignOutEverywhereCard />
         </div>
       )}
       {isAdmin && section === 'clients' && (<>
@@ -10559,6 +10560,19 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
     <div className="modal-bg" onClick={onClose}>
       <div className="modal u-modal" onClick={(e) => e.stopPropagation()}>
         <div className="m-head"><div><h3>{isInvite ? 'Invite a person' : `Edit access - ${user.name || user.email}`}</h3><span className="cap">{isInvite ? 'Set their role and exactly what they can see' : user.email}</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        {!isInvite && (
+          <div className="u-revoke">
+            <div>
+              <b>Signed-in devices</b>
+              <span className="cap">Their session lasts 14 days. End every one of them now - use this when someone leaves, or if you think their account has been used by someone else.</span>
+            </div>
+            <button type="button" className="btn-ghost sm" onClick={async () => {
+              if (!window.confirm(`Sign ${user.name || user.email} out of every device?\n\nThey'll need to sign in again. Their access and password are unchanged.`)) return
+              const r = await authApi('revoke-sessions', { method: 'POST', body: JSON.stringify({ email: user.email }) })
+              window.alert(r && r.ok ? 'Signed out of all devices.' : ((r && r.error) || 'Couldn\u2019t sign them out.'))
+            }}>Sign out everywhere</button>
+          </div>
+        )}
         <div className="m-body">
           {self && <div className="auth-err" style={{ marginBottom: 12 }}>This is your own account - you can’t change your own role or access.</div>}
           <fieldset className="u-modal-fs" disabled={self}>
@@ -10709,6 +10723,28 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
         </table></div>
       </div>
       {modal && <UserAccessModal user={modal.user || null} clients={clients} authUser={authUser} onClose={() => setModal(null)} onChanged={load} />}
+    </div>
+  )
+}
+// Sign out of every device. The response to a lost laptop or a session you
+// think has been copied - without it, a stolen cookie stays valid for its full
+// two-week life no matter what you change.
+function SignOutEverywhereCard() {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const go = async () => {
+    if (!window.confirm('Sign out of every other device?\n\nYou will stay signed in here. Anyone signed in as you elsewhere - another browser, a phone, a shared machine - is signed out immediately.')) return
+    setBusy(true); setMsg(null)
+    const r = await authApi('signout-everywhere', { method: 'POST', body: '{}' })
+    setBusy(false)
+    setMsg(r && r.ok ? { ok: true, t: 'Every other session has been signed out.' } : { ok: false, t: (r && r.error) || 'Couldn\u2019t sign out other devices.' })
+  }
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>Devices</h3>
+      <p className="cap" style={{ marginTop: -4 }}>Sessions last 14 days. If you\u2019ve signed in somewhere you no longer control - a shared computer, an old phone, a laptop that went missing - end those sessions now rather than waiting for them to expire.</p>
+      <button className="btn-ghost" onClick={go} disabled={busy}>{busy ? 'Signing out…' : 'Sign out of all other devices'}</button>
+      {msg && <p className={`cap ${msg.ok ? 'u-ok' : 'u-err'}`} style={{ marginTop: 8 }}>{msg.t}</p>}
     </div>
   )
 }

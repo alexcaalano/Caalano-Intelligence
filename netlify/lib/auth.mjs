@@ -135,6 +135,7 @@ const publicUser = (u) => u && ({
   email: u.email, name: u.name || '', role: normRole(u.role), status: u.status || 'active',
   createdAt: u.createdAt || null, invitedBy: u.invitedBy || null, lastLogin: u.lastLogin || null,
   lastSeen: u.lastSeen || null, sessions: Array.isArray(u.sessions) ? u.sessions.slice(-30) : [],
+  tokenEpoch: u.tokenEpoch || 0,
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
   tabs: Array.isArray(u.tabs) ? u.tabs : null, reports: u.reports === true, requestedAt: u.requestedAt || null, note: u.note || '',
 })
@@ -346,8 +347,21 @@ export async function changePassword(email, current, next) {
   if (!next || String(next).length < 8) return { error: 'New password must be at least 8 characters.' }
   const { hash, salt } = await hashPassword(next)
   u.passwordHash = hash; u.passwordSalt = salt
+  // Every session issued under the old password dies here. The caller re-mints
+  // the current one so the person changing their own password stays signed in.
+  u.tokenEpoch = (u.tokenEpoch || 0) + 1
   await saveUser(u)
-  return { ok: true }
+  return { ok: true, tokenEpoch: u.tokenEpoch }
+}
+// Sign a user out of every device. Used when an account may be compromised, or
+// when someone leaves and you want their open sessions gone rather than waiting
+// out the token's two-week life.
+export async function revokeSessions(email) {
+  const u = await getUser(email)
+  if (!u) return { error: 'No such user.' }
+  u.tokenEpoch = (u.tokenEpoch || 0) + 1
+  await saveUser(u)
+  return { ok: true, tokenEpoch: u.tokenEpoch }
 }
 
 // ---- activity tracking -----------------------------------------------------
@@ -395,6 +409,13 @@ export async function currentUser(req, secret, opts = {}) {
   if (!payload || !payload.e) return null
   const u = await getUser(payload.e)
   if (!u || u.status !== 'active') return null
+  // Session epoch. Tokens are stateless and live for two weeks, so without this a
+  // stolen cookie survives a password change - which is exactly the thing people
+  // do when they think an account is compromised. Bumping the epoch invalidates
+  // every token issued before it, immediately, without a session store.
+  // Tokens minted before this existed carry no `v`; treat them as epoch 0 so
+  // nobody is signed out by the upgrade itself.
+  if ((payload.v || 0) !== (u.tokenEpoch || 0)) return null
   // `track` is opt-in so background/ops checks don't register as someone using
   // the app - only real page traffic should count toward time in the product.
   if (opts.track) await touchActivity(u)

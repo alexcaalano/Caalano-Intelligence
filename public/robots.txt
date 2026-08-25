@@ -1,3 +1,59 @@
-# Private client reporting dashboard — not for public search indexing.
+# Private client reporting dashboard - not for public search indexing, and not
+# for AI training or answer-engine crawling.
+#
+# The named agents below are listed explicitly as a clear statement of intent:
+# the blanket rule already covers them, but several operators only honour a rule
+# that names them, and a named block is unambiguous if intent is ever disputed.
+# Enforcement happens at the edge (403 on these user agents) and behind the
+# login gate - robots.txt on its own is a request, not a control.
+
+User-agent: GPTBot
+Disallow: /
+User-agent: ChatGPT-User
+Disallow: /
+User-agent: OAI-SearchBot
+Disallow: /
+User-agent: ClaudeBot
+Disallow: /
+User-agent: Claude-Web
+Disallow: /
+User-agent: Claude-SearchBot
+Disallow: /
+User-agent: anthropic-ai
+Disallow: /
+User-agent: PerplexityBot
+Disallow: /
+User-agent: Perplexity-User
+Disallow: /
+User-agent: Google-Extended
+Disallow: /
+User-agent: GoogleOther
+Disallow: /
+User-agent: Applebot-Extended
+Disallow: /
+User-agent: Bytespider
+Disallow: /
+User-agent: CCBot
+Disallow: /
+User-agent: Diffbot
+Disallow: /
+User-agent: Omgilibot
+Disallow: /
+User-agent: ImagesiftBot
+Disallow: /
+User-agent: FacebookBot
+Disallow: /
+User-agent: Meta-ExternalAgent
+Disallow: /
+User-agent: Amazonbot
+Disallow: /
+User-agent: cohere-ai
+Disallow: /
+User-agent: YouBot
+Disallow: /
+User-agent: Timpibot
+Disallow: /
+
+# Everything else, including ordinary search engines.
 User-agent: *
 Disallow: /

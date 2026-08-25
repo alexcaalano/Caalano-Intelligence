@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.357.0 - 2026-08-20 · `PENDING` - Refuse AI crawlers at the edge
+- Known AI training / answer-engine crawlers (GPTBot, ClaudeBot, PerplexityBot, CCBot, Bytespider, Google-Extended,
+  Amazonbot, Applebot-Extended and the rest) and generic scraping stacks (Scrapy, python-requests, curl, wget,
+  Go-http-client, node-fetch) are now **refused with a 403 at the edge**, before even the app shell is served. That's what
+  produces a "couldn't access this site" result instead of a page of scraped markup.
+- `robots.txt` now names each of those agents individually. The blanket `Disallow: /` already covered them, but several
+  operators only honour a rule that names them, and a named block is unambiguous if intent is ever disputed.
+- The pattern is deliberately narrow rather than matching `/bot/i`, which would also catch Slackbot, Twitterbot and link
+  previews. Verified against the real user-agent strings of 13 crawlers and 6 real browsers: every crawler blocked, every
+  browser (and an empty user-agent) allowed.
+- This is a **courtesy fence, not a security control** - a user-agent is self-declared, so anyone determined simply sends
+  a browser's. It stops well-behaved bulk crawlers, which is most of them. The real boundary remains the session gate.
+- Note: the on-demand ops endpoints (`*-now`) are behind this too, so they must be opened in a signed-in browser rather
+  than curled.
+
 ## v3.356.0 - 2026-08-20 · `PENDING` - Forms: the expanded notes panel no longer scrolls sideways
 - Expanding a lead in the Forms drill pushed its CRM notes off the right edge behind a horizontal scrollbar. The cause was
   subtle: the notes panel is a single full-width cell, which makes it the row's `:last-child` - and `.mini-tbl`

@@ -13,6 +13,10 @@
 // The /auth and OAuth-callback functions are excluded entirely (below) so the
 // login desk and GoHighLevel redirect are always reachable.
 const COOKIE = 'c360_session'
+// Known AI training / answer-engine crawlers and the generic scraping stacks.
+// Named explicitly rather than matched loosely, so a real browser is never
+// caught by an over-broad pattern like /bot/.
+const CRAWLER_UA = /(GPTBot|ChatGPT-User|OAI-SearchBot|ClaudeBot|Claude-Web|anthropic-ai|Claude-SearchBot|PerplexityBot|Perplexity-User|Google-Extended|GoogleOther|Applebot-Extended|Bytespider|CCBot|Diffbot|Omgilibot|ImagesiftBot|FacebookBot|Meta-ExternalAgent|Amazonbot|cohere-ai|YouBot|Timpibot|Webzio|magpie-crawler|Scrapy|python-requests|python-urllib|node-fetch|Go-http-client|libwww-perl|HTTrack|Wget|curl\/)/i
 const enc = new TextEncoder()
 
 function bytesFromB64url(str) {
@@ -54,6 +58,24 @@ function basicOk(req) {
 export default async (request, context) => {
   const secret = Netlify.env.get('AUTH_SECRET')
   const url = new URL(request.url)
+
+  // ---- automated crawlers -------------------------------------------------
+  // Refused before anything else, including the SPA shell. robots.txt asks
+  // politely and a well-behaved crawler obeys it; this is the part that
+  // actually returns nothing, which is what produces the "couldn't access this
+  // site" result rather than a page of scraped markup.
+  //
+  // This is a courtesy fence, not a security control: a user-agent is
+  // self-declared and anyone determined can simply send a browser's. It stops
+  // the well-behaved bulk crawlers - which is most of them - and nothing more.
+  // The real boundary is the session gate below.
+  const ua = request.headers.get('user-agent') || ''
+  if (CRAWLER_UA.test(ua)) {
+    return new Response('This is a private application. Automated access is not permitted.', {
+      status: 403,
+      headers: { 'content-type': 'text/plain; charset=utf-8', 'x-robots-tag': 'noindex, nofollow' },
+    })
+  }
 
   // Legacy mode - behave exactly as before.
   if (!secret) {

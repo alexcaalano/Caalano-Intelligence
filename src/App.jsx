@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.343.0'
+const APP_VERSION = '3.344.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5656,6 +5656,7 @@ function ClinicView({ clientId, currency, nonce }) {
   const m = d.money || {}, ap = d.appointments || {}, fb = d.forwardBookings || {}, re = d.retentionEcon || {}
   const rb = d.rebooking || {}
   const sy = d.sync || {}
+  const df = d.derivedFrom || null
   const dl = d.deltas || null
   const hist = Array.isArray(d.history) ? d.history : []
   const asAt = d.asAt ? new Date(d.asAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
@@ -5756,7 +5757,8 @@ function ClinicView({ clientId, currency, nonce }) {
             </table></div> : null}
             {!rb.timingAvailable ? <p className="caveat cl-warn"><b>The at-the-desk split isn&rsquo;t shown for this clinic.</b> Appointments here are written into the CRM by the practice-management sync, so each booking&rsquo;s creation timestamp is the moment the sync ran, not the moment the patient booked{rb.bookingTimes && rb.bookingTimes.pctCreatedAfterStart > 0 ? `, and ${rb.bookingTimes.pctCreatedAfterStart}% are stamped after the appointment had already happened` : ''}. Splitting on that would produce a confident but meaningless number, so we report only whether a visit was followed by another booking - which depends on appointment dates, and those are real.</p>
               : <p className="caveat">Read from the diary across {fmtNumber(rb.calendars)} calendar{rb.calendars === 1 ? '' : 's'}: for every visit that has already happened we compare when the <i>next</i> booking was created against the day of that visit. Booked on or before the visit day (at reception, or a course booked up front) counts as leaving with it booked; anything later counts as a chase.</p>}
-            {rb.truncated ? <p className="caveat cl-warn">Part of the diary was skipped to stay inside the request budget, so treat these as indicative until the overnight snapshot catches up.</p> : null}
+            {df ? <p className="caveat">Diary figures come from the overnight snapshot{df.ageHours != null ? ` taken ${df.ageHours}h ago` : ''}{df.stale ? ' - the live read couldn\u2019t finish in time, so this is the last complete walk of the diary' : ''}. Walking a busy clinic\u2019s calendars takes longer than a page load allows, so it\u2019s done overnight with a full budget instead of partially on every visit.</p> : null}
+            {!df && rb.truncated ? <p className="caveat cl-warn">Part of the diary was skipped to stay inside the request budget{rb.slices ? ` (${rb.slices.fetched} of ${rb.slices.total} windows read)` : ''}, so treat these as indicative until tonight\u2019s snapshot catches up.</p> : null}
           </div> : null}
         </div>
 

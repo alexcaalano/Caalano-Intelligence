@@ -17,6 +17,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.344.0 - 2026-08-20 · `PENDING` - Clinic detection fixed, and the diary sweep sized for a real clinic
+- **The Clinic tab was appearing for clients that aren't clinics.** Detection asked "does this location define *any* of the
+  ~30 fields we read", and several of those - a satisfaction survey, marketing-consent boxes, "how did you hear about
+  us" - are fields any client can have. Verified against a live non-clinic location carrying three of them from a March
+  feedback form: it would have been handed a Clinic tab with nothing in it.
+  Detection now requires **fields only a booking/practice system creates** - a patient id (conclusive on its own), or two
+  independent practice-management fields. Confirmed against both real locations: the clinic matches on 21 core fields, the
+  non-clinic on none.
+- **The diary sweep is sized for real volume.** A practice running ~500 appointments a month across the 900-day lookback
+  is ~16,000 events, and the events endpoint caps a response rather than paginating - so one request per calendar would
+  have quietly returned a clipped answer. Each calendar is now walked in **time slices** (90-day on the user path, 60-day
+  overnight) through a bounded worker pool, with any slice returning at the cap flagged, and the number of windows read
+  reported when time runs out.
+- **The expensive half now runs overnight.** The retention curve and rebooking split need a full walk of the diary, which
+  doesn't fit in a page load. The daily snapshot computes them with a background budget (3 minutes rather than 7 seconds)
+  and stores them; the tab reads that copy when it's under 36 hours old and skips the sweep entirely. If no fresh snapshot
+  exists and the live read can't finish, the stored copy is used rather than a half-walked diary.
+- Either way the tab **says where the numbers came from** and how old they are, so a snapshot figure is never mistaken for
+  a live one.
+
 ## v3.343.0 - 2026-08-20 · `PENDING` - Service Calendars wired end-to-end, and a Calendars performance tab
 - **Service Calendars now work as key events, not just appear in the list.** They arrive in two different shapes and the
   wiring handles both: some are ordinary calendars carrying `calendarType: service` (their bookings come back from the

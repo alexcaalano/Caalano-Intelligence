@@ -570,11 +570,21 @@ async function readClinicHistory(clientId) {
     return Object.entries(days).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date))
   } catch { return [] }
 }
-async function writeClinicSnapshot(clientId, date, point) {
+async function readClinicDerived(clientId) {
+  try {
+    const rec = await clinicStore().get(clientId, { type: 'json' })
+    return (rec && rec.derived) || null
+  } catch { return null }
+}
+async function writeClinicSnapshot(clientId, date, point, derived) {
   const st = clinicStore()
   const rec = (await st.get(clientId, { type: 'json' }).catch(() => null)) || { days: {} }
   rec.days = rec.days || {}
   rec.days[date] = point
+  // The retention curve and rebooking split are the expensive half of the build -
+  // they need a full walk of the diary, which a busy clinic can't afford on the
+  // user path. Computed here with a background budget and read back by the tab.
+  if (derived) rec.derived = { ...derived, at: new Date().toISOString() }
   const keys = Object.keys(rec.days).sort()
   if (keys.length > 400) for (const k of keys.slice(0, keys.length - 400)) delete rec.days[k]
   rec.updatedAt = new Date().toISOString()
@@ -618,10 +628,11 @@ export async function runClinicSnapshots(dates) {
     try {
       const probe = await buildClinic(cc.ghl, { probe: true })
       if (!probe || !probe.hasClinic) continue
-      const d = await buildClinic(cc.ghl, { deadlineMs: 20000, apptDeadlineMs: 20000, cap: 20000 })
+      const d = await buildClinic(cc.ghl, { deadlineMs: 30000, apptDeadlineMs: 180000, cap: 20000, chunkDays: 60 })
       if (!d || !d.hasClinic) continue
       const p = clinicPoint(d)
-      for (const date of targets) await writeClinicSnapshot(id, date, p)
+      const derived = { cohortCurve: d.cohortCurve || [], rebooking: d.rebooking || null }
+      for (const date of targets) await writeClinicSnapshot(id, date, p, derived)
       results.push({ client: id, synced: p.synced, ltv: p.ltv })
     } catch (e) { results.push({ client: id, error: String(e.message || e).slice(0, 120) }) }
   }
@@ -3386,7 +3397,27 @@ export default async (req) => {
       // The sync overwrites the CRM fields on every run, so the only history that
       // exists is the one we keep ourselves. Read it alongside today's build and
       // turn the cumulative counters into real period figures.
-      const [d, history] = await Promise.all([buildClinic(cc.ghl), readClinicHistory(client).catch(() => [])])
+      // Prefer last night's derived curve/rebooking when it's fresh: walking a
+      // busy clinic's diary can't be done inside a 10s request, and recomputing
+      // it on every cold load is exactly the work the snapshot exists to absorb.
+      const derived = await readClinicDerived(client).catch(() => null)
+      const derivedAgeH = derived && derived.at ? (Date.now() - Date.parse(derived.at)) / 3600000 : null
+      const useStored = !!(derived && derivedAgeH != null && derivedAgeH < 36)
+      const [d, history] = await Promise.all([
+        buildClinic(cc.ghl, useStored ? { skipAppts: true } : {}),
+        readClinicHistory(client).catch(() => []),
+      ])
+      if (useStored) {
+        d.cohortCurve = derived.cohortCurve || []
+        d.rebooking = derived.rebooking || d.rebooking
+        d.derivedFrom = { at: derived.at, ageHours: Math.round(derivedAgeH) }
+      } else if (derived && d.rebooking && (d.rebooking.truncated || !d.rebooking.available)) {
+        // No fresh snapshot and the live sweep couldn't finish - a stale stored
+        // copy still beats a half-walked diary, as long as we say how old it is.
+        d.cohortCurve = derived.cohortCurve || d.cohortCurve
+        d.rebooking = derived.rebooking || d.rebooking
+        d.derivedFrom = { at: derived.at, ageHours: derivedAgeH != null ? Math.round(derivedAgeH) : null, stale: true }
+      }
       const today = { date: new Date().toISOString().slice(0, 10), ...clinicPoint(d) }
       const deltas = d.hasClinic ? clinicDeltas(history, today, 30) : null
       return json({ scope: 'clinic', client, ...d, history: history.slice(-180), deltas, asAt: new Date().toISOString() }, 200, true)

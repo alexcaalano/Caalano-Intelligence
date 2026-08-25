@@ -1081,6 +1081,28 @@ function _monthDiff(a, b) {
   return (by - ay) * 12 + (bm - am)
 }
 function _monthsSince(monthKey) { const now = new Date().toISOString().slice(0, 7); const d = _monthDiff(monthKey, now); return d < 0 ? 0 : d }
+// Which of the fields above actually PROVE a practice-management sync. Several
+// entries in CLINIC_FIELDS are generic - a satisfaction survey, a marketing
+// consent box, "how did you hear about us" - and any client can have them, so
+// keying detection off "has at least one clinic field" hands a Clinic tab to
+// ordinary clients who happen to run a feedback form. These are the fields only
+// a booking/practice system creates.
+const CLINIC_CORE_FIELDS = new Set([
+  'patient_id', 'patientid',
+  'total_appointments', 'total_arrived', 'total_cancelled', 'noshow_count',
+  'total_amount_spent', 'total_spent_this_month', 'total_amount_paid',
+  'total_remaining_balance', 'total_unpaid_balance',
+  'upcoming_appt_count', 'upcoming_appt_start_time', 'upcoming_appt_practitioner', 'upcoming_appt_type',
+  'first_appointment_date', 'first_visit_date', 'last_appointment_date',
+  'last_appt_practitioner', 'last_appt_type', 'retention_status',
+])
+// A patient id is on its own conclusive; otherwise we want two independent
+// practice-management fields before claiming the location is a clinic.
+function _clinicVerdict(present) {
+  const core = present.filter((k) => CLINIC_CORE_FIELDS.has(k))
+  const hasPatientId = core.includes('patient_id') || core.includes('patientid')
+  return { hasClinic: hasPatientId || core.length >= 2, core: core.length, hasPatientId }
+}
 function _clinicNum(v) { if (v == null || v === '') return null; const n = Number(String(v).replace(/[$,]/g, '')); return isFinite(n) ? n : null }
 function _monthOf(v) { const s = String(v || ''); const m = s.match(/(\d{4})[-/](\d{2})/); if (m) return `${m[1]}-${m[2]}`; const d = Date.parse(s); return isFinite(d) ? new Date(d).toISOString().slice(0, 7) : null }
 async function _pageContacts(locTok, locationId, onPage, { deadlineMs = 8000, cap = 6000 } = {}) {
@@ -1119,7 +1141,7 @@ function _dayKeyer(tz) {
   catch { fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }) }
   return (ms) => (isFinite(ms) ? fmt.format(new Date(ms)) : null)
 }
-async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900 } = {}) {
+async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900, chunkDays = 90 } = {}) {
   const out = { byContact: new Map(), calendars: 0, events: 0, available: false, truncated: false, bookingTimes: null }
   // A two-way practice-management sync writes appointments INTO the CRM in bulk,
   // so their `dateAdded` is the moment the sync ran, not the moment the patient
@@ -1150,20 +1172,52 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
     const e = out.byContact.get(cid) || []
     e.push({ start, added: isFinite(added) ? added : start, cal: calName || null, service: service || null })
     out.byContact.set(cid, e)
+    // (_rebookOf de-dupes by start time, so a booking seen in two slices is safe.)
   }
-  await Promise.all(active.map(async (cal) => {
-    if (Date.now() > deadline) { out.truncated = true; return }
+  // A busy clinic diary is far too big for one request per calendar: a practice
+  // running ~500 appointments a month across a 900-day lookback is ~15k events,
+  // and the events endpoint silently caps a response rather than paginating. So
+  // walk each calendar in time slices and stitch the slices together - bounded
+  // work per request, and no silent truncation hiding inside a capped payload.
+  const slices = []
+  for (let a = startMs; a < endMs; a += chunkDays * DAY) {
+    slices.push([a, Math.min(a + chunkDays * DAY, endMs)])
+  }
+  const jobs = []
+  for (const cal of active) {
     const calId = cal.id || cal._id || cal.calendarId
     const calName = cal.name || cal.calendarName || 'Calendar'
-    try {
-      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
-      for (const ev of (j.events || [])) {
-        out.events++
-        const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
-        push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null, ev.createdBy && ev.createdBy.source)
-      }
-    } catch { /* one bad calendar shouldn't sink the whole history */ }
-  }))
+    for (const [a, b] of slices) jobs.push({ calId, calName, a, b })
+  }
+  // Bounded worker pool. The GHL client already caps concurrency globally, but
+  // queueing thousands of promises at once still burns memory and makes the
+  // deadline check useless - workers let us stop cleanly the moment we run out
+  // of time and report exactly how much of the diary we covered.
+  let next = 0, done = 0
+  const worker = async () => {
+    for (;;) {
+      if (Date.now() > deadline) { out.truncated = true; return }
+      const i = next++
+      if (i >= jobs.length) return
+      const { calId, calName, a, b } = jobs[i]
+      try {
+        const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: a, endTime: b })
+        const evs = j.events || []
+        // A slice that comes back at the cap is likely clipped - flag it rather
+        // than pretend we saw the whole window.
+        if (evs.length >= 500) out.capped = (out.capped || 0) + 1
+        for (const ev of evs) {
+          out.events++
+          const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
+          push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null, ev.createdBy && ev.createdBy.source)
+        }
+      } catch { /* one bad slice shouldn't sink the whole history */ }
+      done++
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, worker))
+  out.slices = { total: jobs.length, fetched: done }
+  if (done < jobs.length) out.truncated = true
   // Service Calendars on the newer Services catalog book through their own feed
   // rather than /calendars/events, so pull those too when the location has them.
   if (Date.now() < deadline) {
@@ -1247,10 +1301,11 @@ export async function buildClinic(locationId, opts = {}) {
   const idOf = {}
   for (const f of defs) { const key = String(f.fieldKey || '').replace(/^contact\./, ''); if (key in CLINIC_FIELDS && f.id) idOf[key] = f.id }
   const present = Object.keys(idOf)
-  if (!present.length) return { connected: true, hasClinic: false, fields: 0 }
+  const verdict = _clinicVerdict(present)
+  if (!verdict.hasClinic) return { connected: true, hasClinic: false, fields: present.length, coreFields: verdict.core }
   // Capability probe: the caller only wants to know whether this location has the
   // practice-management sync, so stop before the expensive contact/calendar sweep.
-  if (opts.probe) return { connected: true, hasClinic: true, fields: present.length }
+  if (opts.probe) return { connected: true, hasClinic: true, fields: present.length, coreFields: verdict.core, hasPatientId: verdict.hasPatientId }
   // Aggregators.
   const N = { patients: 0, withData: 0, ltvPatients: 0 }
   const sum = { ltv: 0, spentMonth: 0, paid: 0, remaining: 0, unpaid: 0, appts: 0, arrived: 0, cancelled: 0, noshow: 0, upcomingAppts: 0 }
@@ -1329,9 +1384,17 @@ export async function buildClinic(locationId, opts = {}) {
   }
   // Contact paging and the calendar sweep are independent, so run them together -
   // serially they'd blow the function budget on a clinic with a busy diary.
+  // The calendar sweep is the expensive half. When a recent overnight snapshot
+  // already holds the derived curve and rebooking figures, the caller passes
+  // skipAppts and splices those in instead of walking the diary again.
   const [, hist] = await Promise.all([
     _pageContacts(locTok, locationId, process, opts),
-    _clinicApptHistory(locTok, locationId, { deadlineMs: opts.apptDeadlineMs || 7000 }).catch(() => null),
+    opts.skipAppts ? Promise.resolve(null)
+      : _clinicApptHistory(locTok, locationId, {
+        deadlineMs: opts.apptDeadlineMs || 7000,
+        lookbackDays: opts.lookbackDays || 900,
+        chunkDays: opts.chunkDays || 90,
+      }).catch(() => null),
   ])
   const showBase = sum.arrived + sum.noshow // appointments with a known arrived/no-show outcome
   const npsScore = npsVals.length ? Math.round(((npsVals.filter((v) => v >= 9).length - npsVals.filter((v) => v <= 6).length) / npsVals.length) * 100) : null
@@ -1450,7 +1513,7 @@ export async function buildClinic(locationId, opts = {}) {
   }
 
   return {
-    connected: true, hasClinic: true, fields: present.length,
+    connected: true, hasClinic: true, fields: present.length, coreFields: verdict.core, hasPatientId: verdict.hasPatientId,
     patients: N.patients, patientsWithData: N.withData,
     money: {
       ltv: Math.round(sum.ltv), avgLtv: N.ltvPatients ? Math.round(sum.ltv / N.ltvPatients) : 0,

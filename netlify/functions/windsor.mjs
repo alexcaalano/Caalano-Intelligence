@@ -573,6 +573,27 @@ async function readClinicHistory(clientId) {
     return Object.entries(days).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date))
   } catch { return [] }
 }
+// The forward book is the one derived figure that decays: a snapshot taken
+// yesterday still lists yesterday. Drop the days that have since passed and
+// re-total, so a reused diary describes the fortnight ahead of NOW rather than
+// the fortnight ahead of whenever the snapshot ran.
+function _trimDiary(diary) {
+  if (!diary || !Array.isArray(diary.days)) return diary
+  const today = new Date().toISOString().slice(0, 10)
+  const days = diary.days.filter((d) => d.date >= today)
+  if (days.length === diary.days.length) return diary
+  const capacity = days.reduce((n, d) => n + (d.capacity || 0), 0)
+  const hours = Math.round(days.reduce((n, d) => n + (d.hours || 0), 0) * 10) / 10
+  return {
+    ...diary, days, hours,
+    appts: days.reduce((n, d) => n + (d.appts || 0), 0),
+    emptyDays: days.filter((d) => d.open !== false && !d.appts).length,
+    capacity: capacity || null,
+    occupancy: capacity ? Math.round((hours / capacity) * 100) : null,
+    // Say so, rather than quietly presenting a shortened window as a fortnight.
+    windowDays: days.length,
+  }
+}
 async function readClinicDerived(clientId) {
   try {
     const rec = await clinicStore().get(clientId, { type: 'json' })
@@ -635,7 +656,7 @@ export async function runClinicSnapshots(dates) {
       const d = await buildClinic(cc.ghl, { deadlineMs: 30000, apptDeadlineMs: 180000, cap: 20000, chunkDays: 60 })
       if (!d || !d.hasClinic) continue
       const p = clinicPoint(d)
-      const derived = { cohortCurve: d.cohortCurve || [], rebooking: d.rebooking || null }
+      const derived = { cohortCurve: d.cohortCurve || [], rebooking: d.rebooking || null, diary: d.diary || null }
       for (const date of targets) await writeClinicSnapshot(id, date, p, derived)
       results.push({ client: id, synced: p.synced, ltv: p.ltv })
     } catch (e) { results.push({ client: id, error: String(e.message || e).slice(0, 120) }) }
@@ -3414,12 +3435,14 @@ export default async (req) => {
       if (useStored) {
         d.cohortCurve = derived.cohortCurve || []
         d.rebooking = derived.rebooking || d.rebooking
+        d.diary = _trimDiary(derived.diary) || d.diary
         d.derivedFrom = { at: derived.at, ageHours: Math.round(derivedAgeH) }
       } else if (derived && d.rebooking && (d.rebooking.truncated || !d.rebooking.available)) {
         // No fresh snapshot and the live sweep couldn't finish - a stale stored
         // copy still beats a half-walked diary, as long as we say how old it is.
         d.cohortCurve = derived.cohortCurve || d.cohortCurve
         d.rebooking = derived.rebooking || d.rebooking
+        d.diary = _trimDiary(derived.diary) || d.diary
         d.derivedFrom = { at: derived.at, ageHours: derivedAgeH != null ? Math.round(derivedAgeH) : null, stale: true }
       }
       const today = { date: new Date().toISOString().slice(0, 10), ...clinicPoint(d) }

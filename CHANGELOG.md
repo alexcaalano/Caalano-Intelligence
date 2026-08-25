@@ -17,6 +17,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.346.0 - 2026-08-20 · `PENDING` - Clinic: the forward book, busiest days, and a data-quality guard
+- **Data-quality guard.** A synced field can exist on a location but be populated on only a fraction of patients, and a
+  headline built on a thin field reads confidently wrong. Coverage is now measured per field, with a banner above the
+  numbers when it's low. The sharp case is called out explicitly: if attendance is recorded on far fewer patients than
+  appointment counts, PVA / show rate / one-and-done all read low and look like a retention collapse rather than a sync
+  gap - the banner says which it is, with both percentages.
+- **The book** - a new section covering the fortnight ahead: appointments booked, **booked hours**, **occupancy** and
+  **empty days**, with a per-day chart. Booked hours come from each appointment's real start and end time, which only the
+  calendars carry - the synced counters know how many appointments there were, never how long they ran.
+- Occupancy is shown **only when the calendars actually declare opening hours**. Without a real denominator a percentage
+  would be invented rather than measured, so it's withheld and the card says why. Capacity counts only the days the clinic
+  opens, across the number of calendars that can take a booking at once.
+- **Busiest days of the week**, averaged over the days the clinic actually opened rather than over all 90 - so a day it's
+  closed doesn't drag its own average down. Cancelled and missed appointments are excluded, making it delivered load
+  rather than what was booked.
+- Fixed a pre-existing bug in the working-hours detector: it looked for `daysOfWeek` while the API returns
+  `daysOfTheWeek`, so detection never fired and **every** location silently fell back to a Mon-Fri 9-5 assumption.
+- The forward book decays, so a reused overnight copy now has elapsed days trimmed and its totals recomputed - a snapshot
+  taken yesterday no longer lists yesterday as part of the fortnight ahead.
+
 ## v3.345.0 - 2026-08-20 · `PENDING` - Clinic: PVA and the averages that sit around it
 - **PVA (Patient Visit Average)** - the number allied-health practices actually run on - is now a headline metric, defined
   as attended visits per patient *who has actually been seen*. Patients on file who never attended are excluded: including

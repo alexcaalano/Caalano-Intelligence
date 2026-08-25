@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.345.0'
+const APP_VERSION = '3.346.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5658,6 +5658,9 @@ function ClinicView({ clientId, currency, nonce }) {
   const sy = d.sync || {}
   const df = d.derivedFrom || null
   const pv = d.pva || {}
+  const dq = d.dataQuality || {}
+  const di = d.diary || null
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const dl = d.deltas || null
   const hist = Array.isArray(d.history) ? d.history : []
   const asAt = d.asAt ? new Date(d.asAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
@@ -5684,6 +5687,14 @@ function ClinicView({ clientId, currency, nonce }) {
         {stale ? <p className="cl-stale">⚠️ The sync last wrote to this location <b>{sy.staleDays} days ago</b>. Everything below is as at that date, not today.</p>
           : (sy.lastSyncAt ? <p className="cl-fresh">Practice-management sync last wrote {new Date(sy.lastSyncAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.{partial ? ' Still populating across the patient base.' : ''}</p> : null)}
       </div>
+
+      {dq.warnings && dq.warnings.length ? <div className="card insight cl-dq">
+        <div>
+          <b>Read these numbers with the sync in mind.</b>
+          <ul>{dq.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+          <p style={{ margin: '6px 0 0' }}>Field coverage: {Object.entries(dq.coverage || {}).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v.pct == null ? '-' : v.pct + '%'}`).join(' · ')}.</p>
+        </div>
+      </div> : null}
 
       {/* Five numbers, not nine. Everything else lives in the section it belongs to. */}
       <div className="timing-scards cl-hero">
@@ -5730,6 +5741,41 @@ function ClinicView({ clientId, currency, nonce }) {
           </ResponsiveContainer>
         </div> : null}
       </ClinicSection>
+
+      {di ? <ClinicSection id="cl-capacity" title="The book" note={`what's scheduled over the next ${di.windowDays || di.days.length} days`}>
+        <div className="card">
+          <div className="timing-scards">
+            <div className="tm-sc hero"><span className="tm-lab">Booked ahead</span><b>{fmtNumber(di.appts)}</b><span className="tm-sub">appointments in the book</span></div>
+            <div className="tm-sc"><span className="tm-lab">Booked hours</span><b>{di.hours}h</b><span className="tm-sub">{di.capacity ? `of ${di.capacity}h open` : 'clinical time scheduled'}</span></div>
+            {di.occupancy != null ? <div className="tm-sc"><span className="tm-lab">Occupancy</span><b>{di.occupancy}%</b><span className="tm-sub">of declared opening hours</span></div> : null}
+            <div className="tm-sc warn"><span className="tm-lab">Empty days</span><b>{fmtNumber(di.emptyDays)}</b><span className="tm-sub">open with nothing booked</span></div>
+          </div>
+          <ResponsiveContainer width="100%" height={190}>
+            <ComposedChart data={di.days} margin={{ left: -8, right: 6, top: 12 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="date" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => { const p = String(v).split('-'); return `${p[2]}/${p[1]}` }} interval={0} minTickGap={2} />
+              <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" allowDecimals={false} />
+              {di.occupancy != null ? <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" domain={[0, 100]} tickFormatter={(v) => `${v}%`} /> : null}
+              <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+              <Bar yAxisId="l" dataKey="appts" name="Appointments" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={26} />
+              {di.occupancy != null ? <Line yAxisId="r" dataKey="occupancy" name="Occupancy %" stroke="#f5a524" strokeWidth={2} dot={{ r: 2 }} /> : null}
+            </ComposedChart>
+          </ResponsiveContainer>
+          <p className="caveat">Booked hours come from each appointment&rsquo;s actual start and end time, which only the calendars carry - the synced counters know how many appointments there were, never how long they ran.{di.occupancy != null ? ` Occupancy is measured against the opening hours the calendars declare (${DOW.filter((_, i) => (di.openHours.days || []).includes(i)).join(', ')}, ${Math.floor(di.openHours.startMin / 60)}:00-${Math.floor(di.openHours.endMin / 60)}:00, across ${fmtNumber(di.openHours.chairs)} calendar${di.openHours.chairs === 1 ? '' : 's'}).` : ' Occupancy isn\u2019t shown because the calendars don\u2019t declare opening hours - without a real denominator a percentage would be invented rather than measured.'}</p>
+        </div>
+
+        {di.byWeekday && di.byWeekday.some((w) => w.daysOpen) ? <div className="card">
+          <div className="cap cl-cap">Busiest days of the week <span>· averaged over the last 90 days</span></div>
+          {(() => { const top = Math.max(...di.byWeekday.map((w) => w.avgAppts), 0); return <div>{di.byWeekday.filter((w) => w.daysOpen).map((w) => (
+            <div className="bar-row" key={w.dow}>
+              <span className="nm">{DOW[w.dow]}</span>
+              <span className="bar-track"><span className="bar-fill" style={{ width: `${Math.max(2, top ? (w.avgAppts / top) * 100 : 0)}%`, background: '#6d5efc' }} /></span>
+              <span className="ct">{w.avgAppts}</span>
+            </div>
+          ))}</div> })()}
+          <p className="caveat">Averaged over the days the clinic actually opened, not over all 90 - a day the clinic is closed shouldn&rsquo;t drag its own average down. Cancelled and missed appointments are excluded, so this is delivered load rather than what was booked.</p>
+        </div> : null}
+      </ClinicSection> : null}
 
       <ClinicSection id="cl-retention" title="Retention" note="who comes back, and what it costs when they don't">
         <div className="card">

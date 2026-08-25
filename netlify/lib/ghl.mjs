@@ -1141,8 +1141,16 @@ function _dayKeyer(tz) {
   catch { fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }) }
   return (ms) => (isFinite(ms) ? fmt.format(new Date(ms)) : null)
 }
-async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900, chunkDays = 90 } = {}) {
+async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900, chunkDays = 90, tz = 'UTC' } = {}) {
   const out = { byContact: new Map(), calendars: 0, events: 0, available: false, truncated: false, bookingTimes: null }
+  // Diary aggregates, built in the same pass rather than a second sweep: what's
+  // in the book for the next fortnight, and which weekdays actually carry the
+  // load. Both need appointment DURATION, which only the calendar events have -
+  // the synced counters know how many appointments there were, never how long.
+  const dayKeyTz = _dayKeyer(tz)
+  const fwd = new Map()               // dateKey -> { appts, minutes }
+  const dow = Array.from({ length: 7 }, () => ({ appts: 0, minutes: 0, dates: new Set() }))
+  const FWD_DAYS = 14, DOW_LOOKBACK = 90
   // A two-way practice-management sync writes appointments INTO the CRM in bulk,
   // so their `dateAdded` is the moment the sync ran, not the moment the patient
   // booked. Two tells give it away: a booking "created" AFTER the appointment
@@ -1160,7 +1168,27 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   const now = Date.now()
   const startMs = now - lookbackDays * DAY
   const endMs = now + 400 * DAY
-  const push = (cid, start, added, status, calName, service, source) => {
+  const nowRef = Date.now()
+  const fwdEnd = nowRef + FWD_DAYS * 86400000
+  const dowStart = nowRef - DOW_LOOKBACK * 86400000
+  const diary = (start, end, status) => {
+    if (!isFinite(start)) return
+    // A cancelled or missed slot isn't capacity in use, and shouldn't shape the
+    // picture of how busy a day is.
+    if (APPT_DEAD_RE.test(String(status || '')) || APPT_NOSHOW_RE.test(String(status || ''))) return
+    const mins = isFinite(end) && end > start ? Math.min(600, Math.round((end - start) / 60000)) : 0
+    if (start >= nowRef && start <= fwdEnd) {
+      const k = dayKeyTz(start)
+      const e = fwd.get(k) || { appts: 0, minutes: 0 }
+      e.appts++; e.minutes += mins; fwd.set(k, e)
+    }
+    if (start >= dowStart && start < nowRef) {
+      const d = new Date(start).getUTCDay()
+      dow[d].appts++; dow[d].minutes += mins; dow[d].dates.add(dayKeyTz(start))
+    }
+  }
+  const push = (cid, start, added, status, calName, service, source, end) => {
+    diary(start, end, status)
     if (!cid || !isFinite(start)) return
     if (APPT_DEAD_RE.test(String(status || ''))) return
     if (isFinite(added)) {
@@ -1209,7 +1237,7 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
         for (const ev of evs) {
           out.events++
           const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
-          push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null, ev.createdBy && ev.createdBy.source)
+          push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null, ev.createdBy && ev.createdBy.source, Date.parse(ev.endTime))
         }
       } catch { /* one bad slice shouldn't sink the whole history */ }
       done++
@@ -1226,11 +1254,33 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
       for (const b of (j.bookings || j.events || [])) {
         out.events++
         const cid = b.contactId || (b.contact && (b.contact.id || b.contact._id)) || null
-        push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', b.serviceName || b.title || null, b.createdBy && b.createdBy.source)
+        push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', b.serviceName || b.title || null, b.createdBy && b.createdBy.source, Date.parse(b.endTime || b.end))
       }
     } catch { /* location isn't on the services catalog - normal */ }
   }
   out.available = out.byContact.size > 0
+  // Next fortnight, one row per day, including the quiet ones - a day with
+  // nothing booked is the most useful row on the list.
+  const fwdDays = []
+  for (let i = 0; i < FWD_DAYS; i++) {
+    const k = dayKeyTz(nowRef + i * 86400000)
+    const e = fwd.get(k) || { appts: 0, minutes: 0 }
+    fwdDays.push({ date: k, appts: e.appts, hours: Math.round((e.minutes / 60) * 10) / 10 })
+  }
+  out.forward = {
+    days: fwdDays,
+    appts: fwdDays.reduce((n, d) => n + d.appts, 0),
+    hours: Math.round(fwdDays.reduce((n, d) => n + d.hours, 0) * 10) / 10,
+    emptyDays: fwdDays.filter((d) => !d.appts).length,
+  }
+  // Busiest weekdays, averaged over the days the clinic actually opened rather
+  // than over all 90 - a clinic closed on Sundays shouldn't show Sunday as a
+  // catastrophic average.
+  out.byWeekday = dow.map((e, i) => ({
+    dow: i, appts: e.appts, daysOpen: e.dates.size,
+    avgAppts: e.dates.size ? Math.round((e.appts / e.dates.size) * 10) / 10 : 0,
+    avgHours: e.dates.size ? Math.round((e.minutes / 60 / e.dates.size) * 10) / 10 : 0,
+  }))
   // Judge the booking timestamps. `afterStart` catches a backfill of historical
   // appointments; the minute spread catches a bulk write of future ones.
   if (bt.n >= 20) {
@@ -1314,6 +1364,12 @@ export async function buildClinic(locationId, opts = {}) {
   const channel = new Map(); const campaign = new Map()
   const cancelReasons = new Map(); const apptTypes = new Map()
   let withUpcoming = 0, emailOptIn = 0, smsOptIn = 0, identified = 0, lastSyncMs = 0
+  // Per-field coverage. A field can exist on the location but be populated on
+  // only a fraction of patients - and a headline built on a thinly-populated
+  // field reads confidently wrong. PVA is the sharp case: if total_arrived is
+  // sparse while total_appointments is full, PVA reads far too low and looks
+  // like a retention collapse rather than a sync gap.
+  const cover = { total_arrived: 0, total_appointments: 0, total_amount_spent: 0, first_appointment_date: 0, upcoming_appt_count: 0 }
   const ar = []            // patients with an unpaid balance
   const reactivate = []    // visited before, nothing in the diary
   const oneAndDoneList = [] // attended exactly once and never came back
@@ -1346,6 +1402,7 @@ export async function buildClinic(locationId, opts = {}) {
         if (arrived != null) { e.visits += arrived; if (arrived >= 1) e.attended++ }
         practitioner.set(pr, e)
       }
+      for (const k of Object.keys(cover)) { const v = val(m, k); if (v != null && v !== '') cover[k]++ }
       const nps = _clinicNum(val(m, 'likelihood_to_recommend')); if (nps != null) npsVals.push(nps)
       // A real patient record in the practice-management system, not just a lead.
       const pid = String(val(m, 'patient_id') || val(m, 'patientid') || '').trim(); if (pid) identified++
@@ -1394,14 +1451,17 @@ export async function buildClinic(locationId, opts = {}) {
   // The calendar sweep is the expensive half. When a recent overnight snapshot
   // already holds the derived curve and rebooking figures, the caller passes
   // skipAppts and splices those in instead of walking the diary again.
-  const [, hist] = await Promise.all([
+  const tz = await locationTimezone(locationId).catch(() => 'UTC')
+  const [, hist, hours] = await Promise.all([
     _pageContacts(locTok, locationId, process, opts),
     opts.skipAppts ? Promise.resolve(null)
       : _clinicApptHistory(locTok, locationId, {
         deadlineMs: opts.apptDeadlineMs || 7000,
         lookbackDays: opts.lookbackDays || 900,
         chunkDays: opts.chunkDays || 90,
+        tz,
       }).catch(() => null),
+    opts.skipAppts ? Promise.resolve(null) : deriveBusinessHours(locationId).catch(() => null),
   ])
   const showBase = sum.arrived + sum.noshow // appointments with a known arrived/no-show outcome
   const npsScore = npsVals.length ? Math.round(((npsVals.filter((v) => v >= 9).length - npsVals.filter((v) => v <= 6).length) / npsVals.length) * 100) : null
@@ -1447,7 +1507,6 @@ export async function buildClinic(locationId, opts = {}) {
   // next one booked" from "we had to chase them weeks later".
   const reb = { available: false, visits: 0, atPointOfCare: 0, afterLeaving: 0, notRebooked: 0, patients: 0, patientsWithNext: 0 }
   if (hist && hist.available) {
-    const tz = await locationTimezone(locationId).catch(() => 'UTC')
     const dayKey = _dayKeyer(tz)
     const nowMs = Date.now()
     for (const [cid, list] of hist.byContact) {
@@ -1507,6 +1566,36 @@ export async function buildClinic(locationId, opts = {}) {
     avgDaysBetweenVisits: gapN ? round1(gapSum / gapN) : null,
     gapSample: gapN,
     spread,
+  }
+
+  // ---- Forward book and capacity ----------------------------------------
+  // Booked hours are solid; occupancy is only as good as the capacity we can
+  // infer, so it's reported ONLY when the calendars actually declare opening
+  // hours - a made-up denominator would be worse than no percentage at all.
+  let diary = null
+  if (hist && hist.forward) {
+    const openDays = hours && hours.detected ? new Set(hours.days) : null
+    const dailyHours = hours && hours.detected ? (hours.endMin - hours.startMin) / 60 : null
+    // Capacity is the clinic's open hours across the days it opens in the
+    // window, times the number of calendars that can take a booking at once.
+    const chairs = hist.calendars || 1
+    const days = hist.forward.days.map((d) => {
+      const dowIdx = new Date(`${d.date}T00:00:00Z`).getUTCDay()
+      const open = openDays ? openDays.has(dowIdx) : null
+      const capacity = open && dailyHours ? Math.round(dailyHours * chairs * 10) / 10 : null
+      return { ...d, open, capacity, occupancy: capacity ? Math.round((d.hours / capacity) * 100) : null }
+    })
+    const capTotal = days.reduce((n, d) => n + (d.capacity || 0), 0)
+    diary = {
+      days,
+      appts: hist.forward.appts, hours: hist.forward.hours,
+      emptyDays: days.filter((d) => d.open !== false && !d.appts).length,
+      capacity: capTotal || null,
+      occupancy: capTotal ? Math.round((hist.forward.hours / capTotal) * 100) : null,
+      openHours: hours && hours.detected ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin, chairs } : null,
+      byWeekday: hist.byWeekday || [],
+      tz,
+    }
   }
 
   // ---- Retention curve --------------------------------------------------
@@ -1571,8 +1660,29 @@ export async function buildClinic(locationId, opts = {}) {
     shareAtPointOfCare: timingOk && rebookedVisits ? Math.round((reb.atPointOfCare / rebookedVisits) * 100) : null,
   }
 
+  // Coverage verdict. Flag a metric as unreliable when the field behind it is
+  // populated on well under the patient base - and specifically call out the
+  // arrived-vs-booked gap, which is what silently deflates PVA and show rate.
+  const covPct = (k) => (N.withData ? Math.round((cover[k] / N.withData) * 100) : null)
+  const dqWarnings = []
+  const arrivedPct = covPct('total_arrived'), apptPct = covPct('total_appointments')
+  if (N.withData >= 10) {
+    if (arrivedPct != null && arrivedPct < 60) {
+      dqWarnings.push(apptPct != null && apptPct - arrivedPct >= 20
+        ? `Attendance is recorded on only ${arrivedPct}% of patients while appointment counts reach ${apptPct}%. PVA, show rate and the one-and-done figures are all built on attendance, so they will read low until that gap closes.`
+        : `Attendance is recorded on only ${arrivedPct}% of patients, so PVA, show rate and the one-and-done figures are based on a partial base.`)
+    }
+    const ltvPct = covPct('total_amount_spent')
+    if (ltvPct != null && ltvPct < 60) dqWarnings.push(`Lifetime spend is populated on only ${ltvPct}% of patients, so every revenue figure covers that subset rather than the whole base.`)
+    const cohPct = covPct('first_appointment_date')
+    if (cohPct != null && cohPct < 60) dqWarnings.push(`A first-appointment date exists for only ${cohPct}% of patients, so the cohort table only describes those.`)
+  }
   return {
     connected: true, hasClinic: true, fields: present.length, coreFields: verdict.core, hasPatientId: verdict.hasPatientId,
+    dataQuality: {
+      coverage: Object.fromEntries(Object.keys(cover).map((k) => [k, { patients: cover[k], pct: covPct(k) }])),
+      warnings: dqWarnings,
+    },
     patients: N.patients, patientsWithData: N.withData,
     money: {
       ltv: Math.round(sum.ltv), avgLtv: N.ltvPatients ? Math.round(sum.ltv / N.ltvPatients) : 0,
@@ -1588,7 +1698,7 @@ export async function buildClinic(locationId, opts = {}) {
       avgPerPatient: N.withData ? Math.round((sum.appts / N.withData) * 10) / 10 : 0,
     },
     forwardBookings: { withUpcoming, pctWithUpcoming: N.withData ? Math.round((withUpcoming / N.withData) * 100) : 0, upcomingTotal: sum.upcomingAppts },
-    retentionEcon, rebooking, pva,
+    retentionEcon, rebooking, pva, diary,
     // Sync health: how many contacts are genuine patient records, and how long
     // since the practice-management sync last wrote anything.
     sync: {
@@ -2173,7 +2283,7 @@ export async function deriveBusinessHours(locationId) {
   for (const c of cals) {
     const oh = c.openHours || c.availability || c.availabilities || []
     for (const slot of (Array.isArray(oh) ? oh : [])) {
-      for (const d of (slot.daysOfWeek || slot.days || [])) days.add(Number(d))
+      for (const d of (slot.daysOfTheWeek || slot.daysOfWeek || slot.days || [])) days.add(Number(d))
       for (const h of (slot.hours || slot.slots || [])) {
         const o = (h.openHour ?? h.startHour ?? 0) * 60 + (h.openMinute ?? h.startMinute ?? 0)
         const cl = (h.closeHour ?? h.endHour ?? 0) * 60 + (h.closeMinute ?? h.endMinute ?? 0)

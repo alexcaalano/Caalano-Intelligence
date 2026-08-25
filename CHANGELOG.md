@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.348.0 - 2026-08-20 · `PENDING` - Clinic: tiles fit their column instead of scrolling
+- The Operations tiles were clipping their own label column - "Unpaid balance (AR)" rendered as "ce (AR)" behind a
+  horizontal scrollbar, and the same for Attendance and By practitioner. Every tile in a narrow grid track now fits
+  without scrolling.
+- Two causes, both fixed. `.appt-tbl` sets `white-space: nowrap` on every cell, which is right for the wide drill tables
+  it was written for but wrong in a half- or third-width tile. More importantly there is a **global**
+  `table { min-width: 700px }` - that floor is what actually forced the overflow, and no amount of wrapping or
+  `table-layout` wins against it until it's overridden.
+- Label/value tiles now wrap their label and pin the value column; tiles with a name plus numeric columns wrap the name
+  and keep the numbers on one line. Numeric **headings** may wrap where the numbers themselves never do - "With next
+  appt" over two lines costs a few pixels of height and saves the table from scrolling.
+- Verified in a real browser rather than by eye: measured `scrollWidth` against `clientWidth` for every tile at 1920,
+  1440 and 1180px, and checked no first-column cell is visually clipped. All fit at every width.
+
 ## v3.347.0 - 2026-08-20 · `PENDING` - Clinic: benchmark against the rest of the cohort
 - A **Benchmark** section on each Clinic tab: this clinic's PVA, show rate, next-booking rate, one-and-done, avg LTV and
   dollar-per-visit set against the **cohort median**, with a standing for each, plus a table of every clinic on the sync.

@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.347.0'
+const APP_VERSION = '3.348.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5894,7 +5894,7 @@ function ClinicView({ clientId, currency, nonce }) {
               { key: 'yes', label: 'Rebooked', value: rb.rebooked || 0, color: '#17b26a' },
               { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
             ]} />
-            {rb.timingAvailable ? <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl">
+            {rb.timingAvailable ? <div className="cl-kv-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl cl-fit">
               <thead><tr><th className="lft">Outcome of a visit</th><th>Visits</th><th>Share</th></tr></thead>
               <tbody>
                 <tr><td className="lft">Left with the next one booked</td><td>{fmtNumber(rb.atPointOfCare)}</td><td>{pct(rb.pctAtPointOfCare)}</td></tr>
@@ -5981,7 +5981,7 @@ function ClinicView({ clientId, currency, nonce }) {
                 <span className="ct">{money(c.ltv)}</span>
               </div>
             ))}</div> : null })()}
-            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+            <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-fit cl-fit-wide">
               <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th title="Attended visits per patient seen">PVA</th><th title="Revenue per attended visit">$ / visit</th><th>With next appt</th></tr></thead>
               <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.dollarPerVisit != null ? money(c.dollarPerVisit) : '-'}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
             </table></div>
@@ -6013,7 +6013,7 @@ function ClinicView({ clientId, currency, nonce }) {
         <div className="mr-three">
           <div className="card">
             <div className="cap cl-cap">Attendance</div>
-            <div className="table-wrap"><table className="mini-tbl appt-tbl">
+            <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-kv">
               <tbody>
                 <tr><td className="lft">Total appointments</td><td>{fmtNumber(ap.total)}</td></tr>
                 <tr><td className="lft">Arrived</td><td>{fmtNumber(ap.arrived)}</td></tr>
@@ -6027,7 +6027,7 @@ function ClinicView({ clientId, currency, nonce }) {
           </div>
           <div className="card">
             <div className="cap cl-cap">Billing &amp; consent</div>
-            <div className="table-wrap"><table className="mini-tbl appt-tbl">
+            <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-kv">
               <tbody>
                 <tr><td className="lft">Total paid</td><td>{money(m.paid)}</td></tr>
                 <tr><td className="lft">Remaining balance</td><td>{money(m.remaining)}</td></tr>
@@ -6041,7 +6041,7 @@ function ClinicView({ clientId, currency, nonce }) {
           </div>
           <div className="card">
             <div className="cap cl-cap">By practitioner</div>
-            {d.practitioners && d.practitioners.length ? <div className="table-wrap"><table className="mini-tbl appt-tbl">
+            {d.practitioners && d.practitioners.length ? <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-fit">
               <thead><tr><th className="lft">Practitioner</th><th>Patients</th><th title="Attended visits per patient seen">PVA</th><th>Avg LTV</th></tr></thead>
               <tbody>{d.practitioners.map((p) => <tr key={p.name}><td className="lft" title={p.name}>{p.name}</td><td>{fmtNumber(p.patients)}</td><td>{p.pva != null ? p.pva : '-'}</td><td>{money(p.avgLtv)}</td></tr>)}</tbody>
             </table></div> : <p className="cap" style={{ margin: 0 }}>No practitioner recorded yet.</p>}
@@ -6051,7 +6051,7 @@ function ClinicView({ clientId, currency, nonce }) {
         {(d.apptTypes && d.apptTypes.length) || (d.cancelReasons && d.cancelReasons.length) ? <div className="mr-two">
           {d.apptTypes && d.apptTypes.length ? <div className="card">
             <div className="cap cl-cap">Appointment types <span>· by patients&rsquo; most recent visit</span></div>
-            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+            <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-fit">
               <thead><tr><th className="lft">Type</th><th>Patients</th><th>Avg LTV</th></tr></thead>
               <tbody>{d.apptTypes.map((t) => <tr key={t.type}><td className="lft" title={t.type}>{t.type}</td><td>{fmtNumber(t.patients)}</td><td>{money(t.avgLtv)}</td></tr>)}</tbody>
             </table></div>

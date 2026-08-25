@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.363.0'
+const APP_VERSION = '3.364.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3068,9 +3068,6 @@ function UtmSection({ attr, currency, paid }) {
 // SETTINGS cache (seeded from localStorage, then hydrated from the server).
 const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
-// Must match TERMS_VERSION in netlify/lib/terms.mjs. Bumping it there and
-// here re-prompts everyone for a signature on their next load.
-const TERMS_VERSION_FE = '1.1'
 const KEV_KEY = 'caalano_keyevents'
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -10729,7 +10726,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
           })}</tbody>
         </table></div>
       </div>
-      <TermsRegister />
+      {actorRole === 'superadmin' && <TermsRegister />}
       {modal && <UserAccessModal user={modal.user || null} clients={clients} authUser={authUser} onClose={() => setModal(null)} onChanged={load} />}
     </div>
   )
@@ -10760,6 +10757,7 @@ function SignOutEverywhereCard() {
    A gate, not a banner. Anyone who hasn't accepted the current version sees
    this instead of the dashboard - the point is a record that a named person
    read and signed, so it can't be something you scroll past. */
+const SIG_INK = '#0f172a'
 function SignaturePad({ onChange }) {
   const ref = useRef(null)
   const drawing = useRef(false)
@@ -10774,8 +10772,12 @@ function SignaturePad({ onChange }) {
     c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr)
     const ctx = c.getContext('2d')
     ctx.scale(dpr, dpr)
-    ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#111'
+    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+    // Fixed ink, not the theme's text colour. A signature drawn in dark mode
+    // used to be a near-white stroke on a transparent PNG - invisible the
+    // moment anyone viewed the register in light mode. It's a legal record;
+    // it has to look the same wherever it is shown.
+    ctx.strokeStyle = SIG_INK
   }, [])
   const pos = (e) => {
     const c = ref.current; const r = c.getBoundingClientRect()
@@ -10806,6 +10808,7 @@ function SignaturePad({ onChange }) {
         onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
         onTouchStart={start} onTouchMove={move} onTouchEnd={end}
       />
+      <div className="sig-line" aria-hidden="true"><span>×</span></div>
       <div className="sig-actions">
         <span className="cap">Sign above with your mouse, trackpad or finger.</span>
         <button type="button" className="btn-ghost sm" onClick={clear}>Clear</button>
@@ -10856,7 +10859,7 @@ function TermsViewer({ onClose }) {
               {mine && mine.latest && mine.latest.signature ? (
                 <div className="terms-my-sig">
                   <span className="cap">Your signature on file</span>
-                  <img src={mine.latest.signature} alt="Your signature" />
+                  <img className="sig-img" src={mine.latest.signature} alt="Your signature" />
                 </div>
               ) : null}
             </>
@@ -10870,6 +10873,18 @@ function TermsGate({ user, onAccepted, onLogout, preview }) {
   const [terms, setTerms] = useState(null)
   const [sig, setSig] = useState(null)
   const [typed, setTyped] = useState('')
+  // Captured at signing rather than taken from the invite: the person signing
+  // states their own name and a number they can be reached on, and that is what
+  // goes on the record next to their signature.
+  const [who, setWho] = useState(() => {
+    const parts = String(user.name || '').trim().split(/\s+/).filter(Boolean)
+    return {
+      first: user.firstName || parts[0] || '',
+      last: user.lastName || (parts.length > 1 ? parts.slice(1).join(' ') : ''),
+      phone: user.phone || '',
+    }
+  })
+  const setW = (k) => (e) => setWho((w) => ({ ...w, [k]: e.target.value }))
   const [read, setRead] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
@@ -10891,12 +10906,16 @@ function TermsGate({ user, onAccepted, onLogout, preview }) {
   const accept = async () => {
     if (preview) { setErr('Preview only - nothing has been recorded. Close the preview to go back.'); return }
     setBusy(true); setErr(null)
-    const r = await authApi('accept-terms', { method: 'POST', body: JSON.stringify({ signature: sig, typedName: typed.trim() }) })
+    const r = await authApi('accept-terms', {
+      method: 'POST',
+      body: JSON.stringify({ signature: sig, typedName: typed.trim(), firstName: who.first.trim(), lastName: who.last.trim(), phone: who.phone.trim() }),
+    })
     setBusy(false)
     if (r && r.ok) onAccepted(r)
     else setErr((r && r.error) || 'Couldn’t record your acceptance. Please try again.')
   }
   const signed = !!sig || typed.trim().length >= 3
+  const whoOk = who.first.trim().length >= 2 && who.last.trim().length >= 2 && who.phone.replace(/\D/g, '').length >= 6
   return (
     <div className="terms-bg">
       <div className="terms-card">
@@ -10941,22 +10960,42 @@ function TermsGate({ user, onAccepted, onLogout, preview }) {
         </div>
         <div className="terms-foot">
           {!read && terms ? <p className="cap terms-scroll-hint">↓ Scroll to the end of the terms to continue.</p> : null}
+          {read && terms && !whoOk ? <p className="cap terms-scroll-hint">Give your name and a contact phone number to continue.</p> : null}
+          <div className="terms-who">
+            <div className="fld">
+              <label className="cap" htmlFor="terms-first">First name</label>
+              <input id="terms-first" className="inp" value={who.first} onChange={setW('first')} placeholder="First name" autoComplete="given-name" />
+            </div>
+            <div className="fld">
+              <label className="cap" htmlFor="terms-last">Last name</label>
+              <input id="terms-last" className="inp" value={who.last} onChange={setW('last')} placeholder="Last name" autoComplete="family-name" />
+            </div>
+            <div className="fld">
+              <label className="cap" htmlFor="terms-email">Email</label>
+              <input id="terms-email" className="inp" value={user.email} readOnly title="This is the account you are signed in as - it can't be changed here." />
+            </div>
+            <div className="fld">
+              <label className="cap" htmlFor="terms-phone">Phone</label>
+              <input id="terms-phone" className="inp" value={who.phone} onChange={setW('phone')} placeholder="e.g. 0400 000 000" autoComplete="tel" inputMode="tel" />
+            </div>
+          </div>
           <div className="terms-sign">
             <SignaturePad onChange={setSig} />
             <div className="terms-typed">
               <label className="cap" htmlFor="terms-typed-name">Or type your full name as your signature</label>
-              <input id="terms-typed-name" className="inp" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={user.name || 'Your full name'} autoComplete="off" />
+              <input id="terms-typed-name" className="inp" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={[who.first, who.last].filter(Boolean).join(' ') || user.name || 'Your full name'} autoComplete="off" />
             </div>
           </div>
           {err ? <p className="cap u-err">{err}</p> : null}
           <div className="terms-actions">
             <span className="cap">
               Your signature is recorded against your account with your name, the date and time, and the version of these
-              terms. <b>If you do not agree, do not proceed - sign out now.</b>
+              terms, along with the name, email and phone number above. <b>If you do not agree, do not proceed - sign out
+              now.</b>
             </span>
             <div className="terms-btns">
               <button type="button" className="btn-ghost" onClick={onLogout}>{preview ? 'Close preview' : 'I do not agree'}</button>
-              <button className="btn-primary" disabled={!read || !signed || busy} onClick={accept}>
+              <button className="btn-primary" disabled={!read || !signed || !whoOk || busy} onClick={accept}>
                 {busy ? 'Recording…' : preview ? 'I agree and sign · disabled in preview' : 'I agree and sign'}
               </button>
             </div>
@@ -10970,10 +11009,10 @@ function TermsGate({ user, onAccepted, onLogout, preview }) {
    they gave. This is the artefact the whole feature exists to produce. */
 function TermsRegister() {
   const [st, setSt] = useState({ status: 'loading', rows: [], current: null })
-  const [zoom, setZoom] = useState(null)
+  const [open, setOpen] = useState(null)
   const load = () => {
     setSt((s) => ({ ...s, status: 'loading' }))
-    authApi('terms-log').then((r) => setSt(r && r.ok ? { status: 'ok', rows: r.acceptances || [], current: r.current } : { status: 'err', rows: [] }))
+    authApi('terms-log').then((r) => setSt(r && r.ok ? { status: 'ok', rows: r.acceptances || [], current: r.current, minVersion: r.minVersion } : { status: 'err', rows: [] }))
       .catch(() => setSt({ status: 'err', rows: [] }))
   }
   useEffect(load, [])
@@ -10985,7 +11024,7 @@ function TermsRegister() {
   const when = (iso) => (iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-')
   const exportCsv = () => {
     const esc = (v) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
-    const head = ['name', 'email', 'role', 'version', 'hash', 'acceptedAt', 'signedBy', 'ip', 'userAgent']
+    const head = ['firstName', 'lastName', 'name', 'email', 'phone', 'role', 'version', 'hash', 'acceptedAt', 'signedBy', 'ip', 'userAgent']
     const lines = [head.join(','), ...st.rows.map((r) => head.map((k) => esc(
       k === 'signedBy' ? (r.signature ? 'drawn signature' : r.typedName ? `typed: ${r.typedName}` : '') : r[k],
     )).join(','))]
@@ -11002,7 +11041,9 @@ function TermsRegister() {
           <h3 style={{ margin: 0 }}>Terms of use · signed register</h3>
           <p className="cap" style={{ margin: '4px 0 0' }}>
             Everyone who has accepted the Caalano360 terms, with the version they signed and their signature.
-            Current version <b>{st.current || '-'}</b>. Anyone on an older version is asked to re-sign on their next load.
+            Click a row to open their signed record - their details, their signature, and the agreement exactly as it was
+            worded on the day. Current version <b>{st.current || '-'}</b>; signatures from <b>{st.minVersion || '-'}</b> onwards
+            still stand, so publishing a new version does not send everyone back through the gate.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -11016,23 +11057,25 @@ function TermsRegister() {
           : !st.rows.length ? <p className="cap">Nobody has accepted the terms yet.</p>
             : (
               <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl users-tbl">
-                <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Version</th><th className="lft">Accepted</th><th className="lft">Signature</th></tr></thead>
+                <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Phone</th><th className="lft">Role</th><th className="lft">Version</th><th className="lft">Accepted</th><th className="lft">Signature</th><th className="lft"></th></tr></thead>
                 <tbody>{st.rows.map((r) => (
-                  <tr key={r.email}>
+                  <tr key={r.email} className="terms-row" onClick={() => setOpen(r)} title="Open the signed record">
                     <td className="lft">{r.name || <span className="cap">-</span>}</td>
                     <td className="lft">{r.email}</td>
+                    <td className="lft">{r.phone || <span className="cap">-</span>}</td>
                     <td className="lft"><span className={`u-role-tag r-${r.role}`}>{ROLE_LABEL[r.role] || r.role}</span></td>
                     <td className="lft">
                       {r.version}
-                      {st.current && r.version !== st.current ? <em className="kev-caltype" title="Signed an older version - will be asked to re-sign">outdated</em> : null}
+                      {st.current && r.version !== st.current ? <em className="kev-caltype" title="Signed an earlier version. Still valid - a re-sign is only asked for when the terms change materially.">earlier version</em> : null}
                     </td>
                     <td className="lft" title={`${r.acceptedAt}${r.ip ? ` · from ${r.ip}` : ''}${r.history > 1 ? ` · ${r.history} acceptances on record` : ''}`}>{when(r.acceptedAt)}</td>
                     <td className="lft">
                       {r.signature
-                        ? <button type="button" className="terms-sig-thumb" onClick={() => setZoom(r)} title="Click to enlarge"><img src={r.signature} alt={`Signature of ${r.name || r.email}`} /></button>
+                        ? <span className="terms-sig-thumb"><img className="sig-img" src={r.signature} alt={`Signature of ${r.name || r.email}`} /></span>
                         : r.typedName ? <span className="terms-sig-typed" title="Typed as a signature">{r.typedName}</span>
                           : <span className="cap">-</span>}
                     </td>
+                    <td className="lft"><span className="cap">View record →</span></td>
                   </tr>
                 ))}</tbody>
               </table></div>
@@ -11042,17 +11085,95 @@ function TermsRegister() {
         always be matched back to what was actually agreed - even after the terms have since changed. Earlier acceptances
         are kept rather than overwritten.
       </p>
-      {zoom ? (
-        <div className="mr-drill-overlay no-print" onClick={() => setZoom(null)}>
-          <div className="mr-drill terms-sig-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="mr-drill-head">
-              <div><h3>{zoom.name || zoom.email}</h3><span>Signed {when(zoom.acceptedAt)} · version {zoom.version} · wording {zoom.hash}</span></div>
-              <button className="mr-drill-x" onClick={() => setZoom(null)} aria-label="Close">✕</button>
-            </div>
-            <div className="mr-drill-body"><img className="terms-sig-full" src={zoom.signature} alt={`Signature of ${zoom.name || zoom.email}`} /></div>
+      {open ? <TermsRecordModal rec={open} onClose={() => setOpen(null)} /> : null}
+    </div>
+  )
+}
+/* One person's signed record: their details as stated at signing, their
+   signature, and the agreement exactly as it was worded on the day. The last
+   part is the whole reason the wording is archived per version - showing today's
+   terms next to a two-year-old signature would prove nothing. */
+function TermsRecordModal({ rec, onClose }) {
+  const [doc, setDoc] = useState({ status: 'loading' })
+  useEffect(() => {
+    let live = true
+    authApi(`terms-doc&version=${encodeURIComponent(rec.version || '')}&hash=${encodeURIComponent(rec.hash || '')}`)
+      .then((r) => { if (!live) return; setDoc(r && r.ok ? { status: 'ok', terms: r.terms, source: r.source } : { status: 'err', error: (r && r.error) || 'The wording for this version isn’t on file.' }) })
+      .catch(() => { if (live) setDoc({ status: 'err', error: 'Couldn’t load the wording for this version.' }) })
+    return () => { live = false }
+  }, [rec.version, rec.hash])
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-')
+  const t = doc.terms
+  return (
+    <div className="mr-drill-overlay no-print" onClick={onClose}>
+      <div className="mr-drill terms-rec-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="mr-drill-head">
+          <div>
+            <h3>{rec.name || rec.email}</h3>
+            <span>Signed {when(rec.acceptedAt)} · {rec.version ? `version ${rec.version}` : 'version unknown'} · wording {rec.hash || '-'}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button className="btn-ghost sm" onClick={() => window.print()}>⎙ Print</button>
+            <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
           </div>
         </div>
-      ) : null}
+        <div className="mr-drill-body terms-rec-body">
+          <div className="terms-rec-grid">
+            <div><span className="cap">First name</span><b>{rec.firstName || (rec.name || '').split(' ')[0] || '-'}</b></div>
+            <div><span className="cap">Last name</span><b>{rec.lastName || (rec.name || '').split(' ').slice(1).join(' ') || '-'}</b></div>
+            <div><span className="cap">Email</span><b>{rec.email}</b></div>
+            <div><span className="cap">Phone</span><b>{rec.phone || '-'}</b></div>
+            <div><span className="cap">Role at signing</span><b>{ROLE_LABEL[rec.role] || rec.role || '-'}</b></div>
+            <div><span className="cap">Accepted</span><b>{when(rec.acceptedAt)}</b></div>
+            <div><span className="cap">Terms version</span><b>{rec.version || '-'}</b></div>
+            <div><span className="cap">Wording digest</span><b className="mono">{rec.hash || '-'}</b></div>
+            <div><span className="cap">IP address</span><b>{rec.ip || '-'}</b></div>
+            <div className="wide"><span className="cap">Device</span><b className="terms-rec-ua">{rec.userAgent || '-'}</b></div>
+          </div>
+
+          <div className="terms-rec-sig">
+            <span className="cap">Signature</span>
+            {rec.signature
+              ? <div className="terms-sig-full"><img className="sig-img" src={rec.signature} alt={`Signature of ${rec.name || rec.email}`} /></div>
+              : rec.typedName
+                ? <div className="terms-sig-full"><span className="terms-sig-typed" style={{ fontSize: 26 }}>{rec.typedName}</span><p className="cap" style={{ margin: '6px 0 0' }}>Typed as a signature.</p></div>
+                : <p className="cap">No signature on file.</p>}
+          </div>
+
+          <div className="terms-rec-doc">
+            <div className="terms-rec-doc-head">
+              <b>The agreement they signed</b>
+              {doc.status === 'ok' ? <span className="cap">{doc.source === 'archived' ? 'Archived copy, as worded on the day' : 'This wording is still the current version'}</span> : null}
+            </div>
+            {doc.status === 'loading' ? <Spinner label="Loading the wording…" />
+              : doc.status === 'err' ? <p className="cap">{doc.error}</p>
+                : (
+                  <div className="terms-rec-doc-body">
+                    <h4>{t.title} - version {t.version} (effective {t.effective})</h4>
+                    {t.notice ? (
+                      <div className="terms-notice">
+                        <h3>{t.notice.h}</h3>
+                        {t.notice.p.map((x, i) => <p key={i}>{x}</p>)}
+                      </div>
+                    ) : null}
+                    <p className="terms-intro">{t.intro}</p>
+                    {t.sections.map((sec, i) => (
+                      <section key={i} className="terms-sec">
+                        <h3>{sec.h}</h3>
+                        {(sec.p || []).map((x, j) => <p key={j}>{x}</p>)}
+                        {sec.list ? <ul>{sec.list.map((x, j) => <li key={j}>{x}</li>)}</ul> : null}
+                      </section>
+                    ))}
+                    <div className="terms-declaration">
+                      {Array.isArray(t.signStatement)
+                        ? <><p className="terms-decl-lead">{t.signStatement[0]}</p><ul>{t.signStatement.slice(1).map((x, i) => <li key={i}>{x}</li>)}</ul></>
+                        : <p>{t.signStatement}</p>}
+                    </div>
+                  </div>
+                )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -15389,7 +15510,12 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         <div className="side-foot">
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic"><NavIcon name="settings" /></span>Settings</button>
           {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
-          <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}><b>v{APP_VERSION}</b> · deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
+          {/* Two deliberate lines rather than one that wraps mid-timestamp - the
+              sidebar is too narrow to hold version, date and commit on one row. */}
+          <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}>
+            <span className="fb-ver"><b>v{APP_VERSION}</b>{__COMMIT_REF__ ? <em>{__COMMIT_REF__}</em> : null}</span>
+            <span className="fb-when">deployed {fmtBuildTime(__BUILD_TIME__)}</span>
+          </div>
           {/* Standing notice. People forget what they signed on day one, so the
               claim sits where they work rather than only in a document. */}
           {showTerms ? <TermsViewer onClose={() => setShowTerms(false)} /> : null}
@@ -15464,11 +15590,16 @@ export default function App() {
   // signed record before any client data is on screen. Only applies when the
   // multi-user system is on; the legacy shared-password mode has no identity to
   // record an acceptance against.
-  if (auth.enabled && auth.user && auth.user.termsVersion !== TERMS_VERSION_FE) {
+  // The server decides this (`needsTerms`), so a version bump alone doesn't drag
+  // everyone back through the gate - a signature stands until the minimum
+  // accepted version is deliberately raised. The fallback covers an older
+  // function still being live mid-deploy: sign only if nothing is on file.
+  const needsTerms = auth.user && (auth.user.needsTerms !== undefined ? auth.user.needsTerms : !auth.user.termsVersion)
+  if (auth.enabled && auth.user && needsTerms) {
     return <TermsGate
       user={auth.user}
       onLogout={onLogout}
-      onAccepted={(r) => setAuth((a) => ({ ...a, user: { ...a.user, termsVersion: r.version, termsAcceptedAt: r.acceptedAt } }))}
+      onAccepted={(r) => setAuth((a) => ({ ...a, user: { ...a.user, termsVersion: r.version, termsAcceptedAt: r.acceptedAt, needsTerms: false } }))}
     />
   }
   // ?preview=terms re-opens the signing screen for someone who has already

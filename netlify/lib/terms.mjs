@@ -6,11 +6,35 @@
 // stored on their acceptance record. That hash is the point: it lets you show
 // exactly WHICH wording a person agreed to, even after the terms have moved on.
 //
-// Bumping TERMS_VERSION re-prompts everyone on their next load. Do that for any
-// change of substance; fixing a typo doesn't need it.
+// Bumping TERMS_VERSION records a new version and archives its wording, but on
+// its own it does NOT ask anyone to sign again - a signature already on file
+// stays valid. Only raising TERMS_MIN_VERSION does that, and it should be
+// reserved for a change material enough that the old agreement no longer covers
+// what people are agreeing to.
 // ---------------------------------------------------------------------------
-export const TERMS_VERSION = '1.1'
+export const TERMS_VERSION = '1.2'
 export const TERMS_EFFECTIVE = '2026-08-25'
+// The oldest acceptance still accepted. Raise it only to force a re-sign.
+// 1.2 is the first version whose wording covers every future release of the
+// Platform, so it is the one everybody needs on file. Once signed, ordinary
+// version bumps never send anyone back through the gate.
+export const TERMS_MIN_VERSION = '1.2'
+
+// Numeric-segment compare, so '1.10' sorts above '1.9' rather than below it.
+export function cmpTermsVersion(a, b) {
+  const pa = String(a || '').split('.').map((n) => parseInt(n, 10) || 0)
+  const pb = String(b || '').split('.').map((n) => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if (d) return d < 0 ? -1 : 1
+  }
+  return 0
+}
+// Does a signature on this version still stand?
+export function termsAcceptanceValid(version) {
+  if (!version) return false
+  return cmpTermsVersion(version, TERMS_MIN_VERSION) >= 0
+}
 
 export const TERMS_TITLE = 'Caalano360 - Terms of Use'
 export const TERMS_INTRO = 'Caalano360 is proprietary software owned and operated by Caalano Digital. Access is granted to named individuals only, and only on the terms set out below.'
@@ -22,6 +46,7 @@ export const TERMS_NOTICE = {
   p: [
     'This is a binding legal agreement between you personally and Caalano Digital. It governs your access to and use of Caalano360.',
     'You are required to accept it before you may use the Platform. By signing below and continuing, you agree to be bound by every term in this document, you confirm you have the authority to do so, and you undertake to keep acting in line with it for as long as you have access.',
+    'Your signature covers Caalano360 as it is today and every future version of it. We release changes frequently; you will not be asked to sign again for ordinary updates.',
     'If you do not agree to any part of it, do not proceed. Sign out now and contact Caalano Digital. Continuing past this screen without agreeing is not permitted.',
   ],
 }
@@ -95,16 +120,19 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    h: '9. Your agreement is ongoing',
+    h: '9. Your agreement is ongoing, and covers future versions',
     p: [
-      'Your acceptance is not a one-off formality. Every time you sign in and use the Platform you reaffirm these terms and confirm you are still complying with them.',
+      'This agreement applies to Caalano360 as it exists on the day you sign and to every future version of it - every release, update, fix, redesign, new tab, new report, new metric, new integration and new module we add, whether or not it existed when you signed. We ship changes frequently, and your acceptance carries across to all of them without you having to sign again.',
+      'Your acceptance is not a one-off formality. Every time you sign in and use the Platform you reaffirm these terms and confirm you are still complying with them, in respect of whatever the Platform has become by then.',
       'If at any point you are no longer willing or able to comply, you must stop using the Platform and tell us.',
     ],
   },
   {
-    h: '10. Changes',
+    h: '10. Changes to these terms',
     p: [
-      'We may update these terms. Where a change is significant you will be asked to review and accept the updated version before continuing to use the Platform. The version and date you accepted is recorded against your account.',
+      'We may update these terms. An updated version takes effect when it is published in the Platform, and your continued use of the Platform after that is your acceptance of it. The current version is always available from the footer of every screen.',
+      'We will only ask you to sign again where a change is material enough that an existing signature should not be taken to cover it. Routine revisions do not require a new signature.',
+      'The version, date and exact wording you signed is recorded against your account and is not altered when these terms are later revised.',
     ],
   },
   {
@@ -118,6 +146,7 @@ export const TERMS_SIGN_STATEMENT = [
   'I have read and understood these terms in full, and I have had the opportunity to seek advice on them;',
   'I am the named account holder, I am signing personally, and I have the authority to enter into this agreement;',
   'I agree to be bound by these terms, and I undertake to remain in compliance with them for as long as I hold access - and, where a term says so, after that access ends;',
+  'I agree that this applies to Caalano360 as it is today and to every future version, release, module and feature of it, and that I will not be asked to sign again for ordinary updates;',
   'I understand that my acceptance is recorded with my name, the date and time, the version of these terms and my signature, and that this record may be relied upon as evidence of my agreement;',
   'I understand that if I do not agree, I must not use the Platform, and that my only alternative is to sign out now.',
 ]

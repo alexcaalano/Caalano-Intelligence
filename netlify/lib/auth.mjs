@@ -133,6 +133,7 @@ export function allowedTabs(user, offered) {
 // ---- user store ----
 const publicUser = (u) => u && ({
   email: u.email, name: u.name || '', role: normRole(u.role), status: u.status || 'active',
+  firstName: u.firstName || null, lastName: u.lastName || null, phone: u.phone || null,
   createdAt: u.createdAt || null, invitedBy: u.invitedBy || null, lastLogin: u.lastLogin || null,
   lastSeen: u.lastSeen || null, sessions: Array.isArray(u.sessions) ? u.sessions.slice(-30) : [],
   tokenEpoch: u.tokenEpoch || 0,
@@ -446,12 +447,39 @@ export async function requireOpsAdmin(req) {
 const termsStore = () => getStore({ name: 'caalano-terms', consistency: 'strong' })
 const tKey = (email) => 't_' + String(email || '').toLowerCase().trim()
 
-export async function recordTermsAcceptance(email, { version, hash, signature, typedName, ip, userAgent }) {
+const dKey = (version, hash) => 'doc_' + String(version || '').replace(/[^\w.-]/g, '') + '_' + String(hash || '').replace(/[^\w]/g, '')
+// The wording itself, archived once per version+hash. The hash on an acceptance
+// proves WHICH text was signed; this is what lets you actually show it, years
+// later, after terms.mjs has moved on several times. Stored separately from the
+// acceptances so the register listing stays cheap - the document is only read
+// when someone opens a single person's record.
+export async function archiveTermsDoc(version, hash, payload) {
+  try {
+    const st = termsStore()
+    const k = dKey(version, hash)
+    if (await st.get(k, { type: 'json' }).catch(() => null)) return { ok: true, existing: true }
+    await st.setJSON(k, { version, hash, archivedAt: new Date().toISOString(), doc: payload })
+    return { ok: true }
+  } catch { return { error: 'Couldn\u2019t archive the terms wording.' } }
+}
+export async function getTermsDoc(version, hash) {
+  try { return (await termsStore().get(dKey(version, hash), { type: 'json' })) || null } catch { return null }
+}
+
+export async function recordTermsAcceptance(email, { version, hash, signature, typedName, ip, userAgent, firstName, lastName, phone, doc }) {
   const u = await getUser(email)
   if (!u) return { error: 'No such user.' }
   const at = new Date().toISOString()
+  // Identity captured at signing time. Held on the acceptance itself as well as
+  // on the user record: the person's details can be edited later, but what they
+  // stated when they signed must not change.
+  const first = String(firstName || '').trim().slice(0, 80)
+  const last = String(lastName || '').trim().slice(0, 80)
+  const ph = String(phone || '').trim().slice(0, 40)
+  const fullName = [first, last].filter(Boolean).join(' ') || u.name || ''
   const rec = {
-    email: u.email, name: u.name || '', role: normRole(u.role),
+    email: u.email, name: fullName, role: normRole(u.role),
+    firstName: first || null, lastName: last || null, phone: ph || null,
     version, hash, acceptedAt: at,
     // Whichever way they signed - drawn, or typed as a fallback where a mouse
     // or touchscreen isn't available.
@@ -467,8 +495,13 @@ export async function recordTermsAcceptance(email, { version, hash, signature, t
     prior.latest = rec
     await st.setJSON(tKey(u.email), prior)
   } catch { return { error: 'Couldn\u2019t record your acceptance - please try again.' } }
+  if (doc) await archiveTermsDoc(version, hash, doc)
   u.termsVersion = version
   u.termsAcceptedAt = at
+  if (first) u.firstName = first
+  if (last) u.lastName = last
+  if (ph) u.phone = ph
+  if (fullName) u.name = fullName
   await saveUser(u)
   return { ok: true, acceptedAt: at }
 }

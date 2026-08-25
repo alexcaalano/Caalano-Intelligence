@@ -17,6 +17,51 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.364.0 - 2026-08-20 · `PENDING` - Terms v1.2: sign once, and a proper signed record
+
+**One signature, then never again**
+- Terms **v1.2** now says in the notice, in clause 9 and in the declaration that
+  a signature covers Caalano360 *as it is today and every future version of it* -
+  every release, module, tab, metric and integration we ship afterwards.
+- The gate no longer fires on a version bump. Whether someone must sign is
+  decided server-side against a new `TERMS_MIN_VERSION`, which is separate from
+  `TERMS_VERSION`. Publishing new wording archives it and changes nothing for
+  anyone already on file; only deliberately raising the minimum asks for a
+  re-sign, and clause 10 now says exactly that.
+- `TERMS_MIN_VERSION` is set to **1.2** for this release, so everyone signs the
+  wording that carries forward - once. After that, ship as often as you like.
+
+**Who signed, and what they actually signed**
+- The signing screen now captures **first name, last name and phone** alongside
+  the signature. Email is shown from the session and can't be edited. All three
+  are required, and they're written to both the acceptance record and the user.
+- The exact wording of each version is **archived** the first time someone
+  accepts it, keyed by version + digest. Opening a record shows the agreement as
+  it was worded on the day - not today's text next to an old signature.
+- Clicking a row in the register opens the full record: their details as stated
+  at signing, role, timestamp, version, wording digest, IP, device, their
+  signature, and the complete agreement. Printable.
+
+**The register is Super-Admin only**
+- It holds names, phone numbers, IP addresses and signature images. `terms-log`,
+  `terms-record` and `terms-doc` now return 403 to anyone below Super Admin, and
+  the card is hidden from Admins in Settings → Team & access.
+
+**The signature was nearly invisible**
+- The pad drew in the theme's text colour on a transparent canvas, so a
+  signature drawn in dark mode was a near-white stroke - and disappeared the
+  moment it was viewed in light mode. The pad is now white paper with fixed dark
+  ink, and every stored signature renders through a filter that forces it to
+  solid ink, which fixes the ones already captured.
+
+**Sidebar footer alignment**
+- Settings, the user row, the build stamp and the legal note sat at four
+  different left insets (12 / 14 / 12 / 0). They now share one, with a divider
+  above the legal note, and the build stamp is two deliberate lines instead of
+  one that wrapped mid-timestamp.
+
+---
+
 ## v3.363.0 - 2026-08-20 · `PENDING` - Preview the signing screen, and no way to be stuck on it
 
 **Preview mode for the terms gate**

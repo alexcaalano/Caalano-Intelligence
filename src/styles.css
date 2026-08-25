@@ -111,10 +111,16 @@ body {
    its text weight/colour (muted → text on hover/active). */
 .side .ic { width: 20px; height: 20px; display: grid; place-items: center; flex-shrink: 0; opacity: .9; }
 .side .nav-svg { display: block; }
-/* Footer group: settings + a slim, blended-in user row + build stamp. */
-.side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding-top: 10px; }
-.side .foot-note { padding: 12px 10px 4px; font-size: 10.5px; color: var(--faint); line-height: 1.5; }
-.side .foot-build { padding: 8px 12px 2px; font-size: 10px; color: var(--faint); opacity: .7; font-variant-numeric: tabular-nums; }
+/* Footer group: settings + a slim, blended-in user row + build stamp + legal.
+   --side-inset keeps all four on the same left edge; they used to sit at 12px,
+   14px, 12px and 0 respectively, which read as a ragged column. */
+.side-foot { --side-inset: 12px; margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding-top: 10px; }
+.side .foot-note { padding: 12px var(--side-inset) 4px; font-size: 10.5px; color: var(--faint); line-height: 1.5; }
+.side .foot-build { display: flex; flex-direction: column; gap: 1px; padding: 10px var(--side-inset) 0; font-size: 10px; color: var(--faint); opacity: .8; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.side .fb-ver { display: flex; align-items: baseline; gap: 6px; }
+.side .fb-ver b { font-size: 11px; color: var(--muted); font-weight: 700; }
+.side .fb-ver em { font-style: normal; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; opacity: .8; }
+.side .fb-when { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Main */
 .main { padding: 26px clamp(16px, 3.2vw, 40px) 70px; min-width: 0; }
@@ -1734,7 +1740,7 @@ table.ov-cmp { width: 100%; border-collapse: collapse; font-size: 12.5px; white-
 .auth-err { background: color-mix(in srgb, var(--neg) 14%, transparent); border: 1px solid color-mix(in srgb, var(--neg) 40%, transparent); color: var(--neg); font-size: 12.5px; font-weight: 600; padding: 8px 11px; border-radius: 9px; }
 
 /* Sidebar signed-in user - slim, blended-in row (no card box). */
-.side-user { display: flex; align-items: center; gap: 9px; min-width: 0; margin: 2px 2px; padding: 7px 12px; border-radius: 10px; }
+.side-user { display: flex; align-items: center; gap: 9px; min-width: 0; margin: 2px 0; padding: 7px var(--side-inset, 12px); border-radius: 10px; }
 .side-user:hover { background: var(--panel-2); }
 .side-user-av { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--brand) 82%, var(--panel)); color: #fff; font-weight: 700; font-size: 11.5px; }
 .side-user-txt { min-width: 0; flex: 1; display: flex; flex-direction: column; line-height: 1.2; }
@@ -3233,18 +3239,57 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .terms-sign { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (max-width: 720px) { .terms-sign { grid-template-columns: 1fr; } }
 .sig-wrap { min-width: 0; }
-.sig-pad { display: block; width: 100%; height: 110px; background: var(--panel); border: 1px dashed var(--border); border-radius: 9px; cursor: crosshair; touch-action: none; }
+/* Always white paper with dark ink, in both themes. The pad used to inherit the
+   theme's text colour, so a signature drawn in dark mode was a near-white stroke
+   on a transparent PNG - and vanished the moment it was viewed in light mode. */
+.sig-pad { display: block; width: 100%; height: 120px; background: #fff; border: 1px dashed #b8c0cc; border-radius: 9px; cursor: crosshair; touch-action: none; }
+.sig-line { position: relative; height: 0; margin: -34px 14px 0; border-top: 1px solid #cbd3de; pointer-events: none; }
+.sig-line span { position: absolute; left: -2px; top: -10px; font-size: 13px; color: #9aa4b2; }
+/* Renders any stored signature as solid ink regardless of the colour it was
+   drawn in - alpha is preserved, so only the stroke is recoloured. Covers the
+   signatures captured before the pad was fixed. */
+.sig-img { filter: brightness(0) invert(1); }
+:root[data-theme='light'] .sig-img { filter: brightness(0); }
+/* The filter recolours everything it is applied to, backgrounds included - so it
+   only ever goes on the <img>, never on a box that carries its own background. */
+.terms-sig-full .sig-img { display: block; max-width: 100%; height: auto; }
 .sig-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
 .terms-typed label { display: block; margin-bottom: 5px; }
 .terms-typed .inp { width: 100%; }
 .terms-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
-.terms-sig-thumb { background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 2px 6px; cursor: zoom-in; line-height: 0; }
-.terms-sig-thumb img { height: 30px; width: auto; max-width: 150px; object-fit: contain; }
+.terms-sig-thumb { display: inline-block; background: var(--panel-2); border: 1px solid var(--border); border-radius: 7px; padding: 3px 7px; line-height: 0; }
+.terms-sig-thumb img { height: 34px; width: auto; max-width: 160px; object-fit: contain; }
+.terms-row { cursor: pointer; }
+.terms-row:hover { background: var(--panel-2); }
+/* Who is signing - captured on the gate, stored on the acceptance. */
+.terms-who { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+@media (max-width: 820px) { .terms-who { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.terms-who .fld { min-width: 0; }
+.terms-who label { display: block; margin-bottom: 5px; }
+.terms-who .inp { width: 100%; }
+.terms-who .inp[readonly] { opacity: .72; cursor: not-allowed; }
+/* One person's signed record. */
+.terms-rec-modal { --mr-drill-cols: 6; }
+.terms-rec-body { max-height: 74vh; overflow-y: auto; }
+.terms-rec-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+@media (max-width: 900px) { .terms-rec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.terms-rec-grid > div { min-width: 0; }
+.terms-rec-grid > div.wide { grid-column: 1 / -1; }
+.terms-rec-grid .cap { display: block; margin-bottom: 2px; }
+.terms-rec-grid b { font-size: 13px; word-break: break-word; }
+.terms-rec-grid b.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.terms-rec-ua { font-weight: 500; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.terms-rec-sig { margin-top: 14px; }
+.terms-rec-sig .cap { display: block; margin-bottom: 6px; }
+.terms-rec-doc { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+.terms-rec-doc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.terms-rec-doc-body { max-height: 46vh; overflow-y: auto; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.terms-rec-doc-body h4 { margin: 0 0 12px; font-size: 13.5px; }
 .terms-sig-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 15px; }
 .terms-sig-modal { --mr-drill-cols: 4; }
-.terms-sig-full { display: block; max-width: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 10px; }
-.foot-legal { margin-top: 6px; font-size: 10.5px; line-height: 1.5; color: var(--faint); }
-.foot-legal-link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand-2); cursor: pointer; text-decoration: underline; }
+.terms-sig-full { display: block; max-width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 12px; }
+.foot-legal { margin: 9px 0 0; padding: 9px var(--side-inset, 12px) 2px; border-top: 1px solid var(--border); font-size: 10px; line-height: 1.55; color: var(--faint); text-wrap: pretty; }
+.foot-legal-link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand-2); cursor: pointer; text-decoration: underline; white-space: nowrap; }
 .terms-view-modal { --mr-drill-cols: 6; }
 .terms-view-body { max-height: 65vh; overflow-y: auto; }
 .terms-my-sig { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }

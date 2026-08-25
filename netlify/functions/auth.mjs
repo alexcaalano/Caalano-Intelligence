@@ -7,9 +7,9 @@ import {
   listUsers, updateUser, deleteUser, changePassword, currentUser, countUsers,
   signupRequest, approveUser, ensureSuperadmin, isAdminish, signSession, sessionCookie, clearCookie, COOKIE,
   checkLoginAllowed, recordLoginResult, revokeSessions, getUser,
-  recordTermsAcceptance, listTermsAcceptances, getTermsAcceptance,
+  recordTermsAcceptance, listTermsAcceptances, getTermsAcceptance, getTermsDoc,
 } from '../lib/auth.mjs'
-import { TERMS_VERSION, termsPayload, termsHash } from '../lib/terms.mjs'
+import { TERMS_VERSION, TERMS_MIN_VERSION, termsPayload, termsHash, termsAcceptanceValid } from '../lib/terms.mjs'
 
 const SESSION_MS = 14 * 86400 * 1000
 const secret = () => process.env.AUTH_SECRET || ''
@@ -22,6 +22,10 @@ const json = (obj, status = 200, cookie = null) => {
 // every token carrying an older value, which is how a password change or an
 // explicit sign-out-everywhere takes effect against stateless tokens.
 const mint = async (user) => signSession({ e: user.email, r: user.role, n: user.name, v: user.tokenEpoch || 0, exp: Date.now() + SESSION_MS }, secret())
+// Whether this person still has to sign. Decided here rather than in the app so
+// a version bump doesn't re-prompt everyone by accident - a signature stands
+// until TERMS_MIN_VERSION is deliberately raised past it.
+const withTerms = (user) => user && ({ ...user, needsTerms: !termsAcceptanceValid(user.termsVersion), termsMinVersion: TERMS_MIN_VERSION, termsCurrentVersion: TERMS_VERSION })
 
 export default async (req) => {
   const url = new URL(req.url)
@@ -40,15 +44,15 @@ export default async (req) => {
       // The app's own session check - genuine usage, so it counts toward activity.
       const user = await currentUser(req, S, { track: true })
       const needsSetup = (await countUsers()) === 0
-      return json({ ok: true, enabled: true, user: user || null, needsSetup })
+      return json({ ok: true, enabled: true, user: withTerms(user) || null, needsSetup })
     }
     if (action === 'terms') {
-      return json({ ok: true, terms: termsPayload(), hash: await termsHash() })
+      return json({ ok: true, terms: termsPayload(), hash: await termsHash(), minVersion: TERMS_MIN_VERSION })
     }
     if (action === 'bootstrap' && req.method === 'POST') {
       const r = await bootstrapAdmin(body)
       if (r.error) return json({ ok: false, error: r.error }, 400)
-      return json({ ok: true, user: r.user }, 200, sessionCookie(await mint(r.user)))
+      return json({ ok: true, user: withTerms(r.user) }, 200, sessionCookie(await mint(r.user)))
     }
     if (action === 'login' && req.method === 'POST') {
       const gate = await checkLoginAllowed(body.email)
@@ -56,7 +60,7 @@ export default async (req) => {
       const user = await authenticate(body.email, body.password)
       await recordLoginResult(body.email, !!user)
       if (!user) return json({ ok: false, error: 'Wrong email or password, or the account isn’t active.' }, 401)
-      return json({ ok: true, user }, 200, sessionCookie(await mint(user)))
+      return json({ ok: true, user: withTerms(user) }, 200, sessionCookie(await mint(user)))
     }
     if (action === 'logout') {
       return json({ ok: true }, 200, clearCookie())
@@ -67,7 +71,7 @@ export default async (req) => {
     if (action === 'accept' && req.method === 'POST') {
       const r = await acceptInvite(body)
       if (r.error) return json({ ok: false, error: r.error }, 400)
-      return json({ ok: true, user: r.user }, 200, sessionCookie(await mint(r.user)))
+      return json({ ok: true, user: withTerms(r.user) }, 200, sessionCookie(await mint(r.user)))
     }
     if (action === 'signup' && req.method === 'POST') {
       const r = await signupRequest(body)
@@ -85,12 +89,24 @@ export default async (req) => {
       const sig = typeof body.signature === 'string' ? body.signature : null
       const typed = typeof body.typedName === 'string' ? body.typedName.trim() : ''
       if (!sig && !typed) return json({ ok: false, error: 'Please sign before accepting.' }, 400)
+      // Who signed, in their own words. An acceptance that can't be tied to a
+      // contactable person is weak evidence, so these are required rather than
+      // inferred from whatever name happened to be on the invite.
+      const first = String(body.firstName || '').trim()
+      const last = String(body.lastName || '').trim()
+      const phone = String(body.phone || '').trim()
+      if (first.length < 2 || last.length < 2) return json({ ok: false, error: 'Please give your first and last name.' }, 400)
+      if (phone.replace(/\D/g, '').length < 6) return json({ ok: false, error: 'Please give a contact phone number.' }, 400)
       // Bound the image so a pathological payload can't be stored. A signature
       // canvas produces a few tens of KB; anything far past that isn't one.
       if (sig && sig.length > 400000) return json({ ok: false, error: 'Signature image is too large.' }, 400)
       if (sig && !/^data:image\/(png|jpeg);base64,/.test(sig)) return json({ ok: false, error: 'Signature must be an image.' }, 400)
       const r = await recordTermsAcceptance(me.email, {
         version: TERMS_VERSION, hash: await termsHash(), signature: sig, typedName: typed || null,
+        firstName: first, lastName: last, phone,
+        // Archived alongside the acceptance so the exact wording can be shown
+        // back years later, after these terms have been revised.
+        doc: termsPayload(),
         // Recorded for the audit trail: which device, and roughly from where.
         ip: req.headers.get('x-nf-client-connection-ip') || req.headers.get('x-forwarded-for') || null,
         userAgent: req.headers.get('user-agent') || null,
@@ -129,11 +145,27 @@ export default async (req) => {
     if (!isAdminish(me.role)) return json({ ok: false, error: 'Admins only.' }, 403)
 
     if (action === 'users') return json({ ok: true, users: await listUsers(), me })
-    // Who has accepted, when, and on which version - with their signature.
-    if (action === 'terms-log') return json({ ok: true, current: TERMS_VERSION, acceptances: await listTermsAcceptances() })
-    if (action === 'terms-record') {
-      const rec = await getTermsAcceptance(String(body.email || url.searchParams.get('email') || '').toLowerCase().trim())
-      return json({ ok: true, record: rec || null })
+
+    // ---- super-admin only ----
+    // The signed register is the legal record: names, phone numbers, IPs and
+    // signature images. Admins run the day-to-day; only the owner sees this.
+    if (action === 'terms-log' || action === 'terms-record' || action === 'terms-doc') {
+      if (me.role !== 'superadmin') return json({ ok: false, error: 'Super Admins only.' }, 403)
+      // Who has accepted, when, and on which version - with their signature.
+      if (action === 'terms-log') return json({ ok: true, current: TERMS_VERSION, minVersion: TERMS_MIN_VERSION, acceptances: await listTermsAcceptances() })
+      if (action === 'terms-record') {
+        const rec = await getTermsAcceptance(String(body.email || url.searchParams.get('email') || '').toLowerCase().trim())
+        return json({ ok: true, record: rec || null })
+      }
+      // The wording as it stood when they signed. Falls back to the live text
+      // only when the hash still matches - never silently shows newer terms.
+      const version = String(body.version || url.searchParams.get('version') || '')
+      const hash = String(body.hash || url.searchParams.get('hash') || '')
+      const archived = await getTermsDoc(version, hash)
+      if (archived && archived.doc) return json({ ok: true, terms: archived.doc, version, hash, archivedAt: archived.archivedAt || null, source: 'archived' })
+      const live = await termsHash()
+      if (version === TERMS_VERSION && hash === live) return json({ ok: true, terms: termsPayload(), version, hash, source: 'current' })
+      return json({ ok: false, error: 'That version of the terms was signed before wording was archived, so the exact text is no longer on file. The version and wording digest below still identify it.', version, hash }, 404)
     }
     if (action === 'invite' && req.method === 'POST') {
       const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports, actor: me })

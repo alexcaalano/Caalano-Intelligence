@@ -10,6 +10,10 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
+import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, demoWindsor } from '../lib/demo.mjs'
+// Stand-in for the Windsor API key, used only when the request is for the demo
+// client. windsorFetch reads it as "generate, don't fetch".
+const DEMO_KEY = 'demo::windsor'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -21,6 +25,10 @@ function parseHours(url) {
 }
 
 const CLIENTS = {
+  // Demo account - no real integrations behind it; every response is generated.
+  // Registered like any other client so it flows through the same access control,
+  // caching and scope handling as the rest.
+  [DEMO_CLIENT_ID]: { meta: DEMO_META_ACCT, google: DEMO_GOOGLE_ACCT, ghl: DEMO_LOCATION, name: 'Norwest Multi-Disciplinary', demo: true },
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
   'finr-advisory':   { meta: '562656435170426',  google: null, ghl: 'A2lu96mobIYMdB9gcHte' },
   'nexia-health':    { meta: '538799668712983',  google: '774-276-3045', ghl: 'rQJAY6L6qt1JJfj16fZ8' },
@@ -300,10 +308,21 @@ function windowDays(from, to, preset) {
   return 30
 }
 async function windsorFetch(connector, fields, from, to, preset, key) {
+  // Demo account: answer from the generated dataset. The signal is the KEY, not
+  // a module-level flag - the key is resolved once per request from the client
+  // being asked for, so a real client's request can never take this branch and
+  // there is no shared state to race. (A module flag would have served demo rows
+  // to real clients and, worse, short-circuited their real fetch.)
+  if (key === DEMO_KEY) return demoWindsor(connector, fields, from, to)
   const p = new URLSearchParams({ api_key: key, fields: fields.join(',') })
   if (from && to) { p.set('date_from', from); p.set('date_to', to) }
   else { p.set('date_preset', preset || 'last_30d') }
   const url = `https://connectors.windsor.ai/${connector}?${p.toString()}`
+  // Agency-wide pulls use the real key, so the demo account's rows would be
+  // missing from the overview and trend tiles. Append rather than replace: every
+  // consumer maps rows to a client by account_id and skips what it can't place,
+  // so a real client cannot see these and cannot lose its own data to them.
+  const withDemo = (rows) => (rows || []).concat(demoWindsor(connector, fields, from, to))
   // The Netlify function is hard-stopped at ~10s, so EVERY attempt must finish
   // inside that budget - otherwise the whole function is killed mid-flight and the
   // browser gets a raw 502 it can't explain (looks like "nothing loads"). So cap
@@ -319,7 +338,7 @@ async function windsorFetch(connector, fields, from, to, preset, key) {
   const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries })
   if (!r.ok) throw new Error(`Windsor ${connector} ${r.status}: ${(await r.text()).slice(0, 200)}`)
   const j = await r.json()
-  return j.data || j.result || []
+  return withDemo(j.data || j.result || [])
 }
 
 // Aggregate a set of Meta rows by a key field into a metrics map. Leads use the
@@ -2516,7 +2535,10 @@ export default async (req) => {
   const channel = url.searchParams.get('channel') || 'meta'
   const from = url.searchParams.get('from'); const to = url.searchParams.get('to'); const preset = url.searchParams.get('preset')
   const debug = url.searchParams.get('debug')
-  const key = process.env.WINDSOR_API_KEY
+  // The demo client has no Windsor account behind it, so it gets the sentinel key
+  // instead of the real one - which is what routes its ad data to the generator
+  // without any other call site needing to know about the demo.
+  const key = (client === DEMO_CLIENT_ID) ? DEMO_KEY : process.env.WINDSOR_API_KEY
   // Only cache successful, non-debug responses. Errors and debug must never be
   // cached, or a transient failure gets replayed by the CDN.
   // SECURITY: when the multi-user login system is active (AUTH_SECRET set), the

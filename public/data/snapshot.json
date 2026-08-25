@@ -1,74 +1,334 @@
 {
   "generatedAt": "2026-07-15T00:00:00.000Z",
-  "period": { "label": "June 2026", "start": "2026-06-01", "end": "2026-06-30" },
+  "period": {
+    "label": "June 2026",
+    "start": "2026-06-01",
+    "end": "2026-06-30"
+  },
   "compareLabel": "May 2026",
   "currency": "AUD",
   "source": "Windsor.ai - Meta Ads, Google Ads, Caalano Systems",
   "rosterNote": "Active client roster (13) per the lead-pipeline-analysis brief.",
   "clients": [
     {
-      "id": "ablycalm", "name": "ablycalm", "industry": "ADHD telehealth assessments", "trackingStatus": "full",
-      "meta": { "spend": 7089.41, "impressions": 330528, "clicks": 6844, "leads": 495, "prev": { "spend": 5986.43, "impressions": 370715, "clicks": 7189, "leads": 274 } },
+      "id": "norwest-mdc",
+      "name": "Norwest Multi-Disciplinary",
+      "industry": "Allied health - multi-disciplinary clinic (physio, chiro, psychology, OT)",
+      "trackingStatus": "full",
+      "demo": true,
+      "meta": {
+        "spend": 7089.41,
+        "impressions": 330528,
+        "clicks": 6844,
+        "leads": 495,
+        "prev": {
+          "spend": 5986.43,
+          "impressions": 370715,
+          "clicks": 7189,
+          "leads": 274
+        }
+      }
+    },
+    {
+      "id": "ablycalm",
+      "name": "ablycalm",
+      "industry": "ADHD telehealth assessments",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 7089.41,
+        "impressions": 330528,
+        "clicks": 6844,
+        "leads": 495,
+        "prev": {
+          "spend": 5986.43,
+          "impressions": 370715,
+          "clicks": 7189,
+          "leads": 274
+        }
+      },
       "google": null
     },
     {
-      "id": "finr-advisory", "name": "Finr Advisory", "industry": "Mortgage broking + buyers advocacy", "trackingStatus": "full",
-      "meta": { "spend": 7554.71, "impressions": 61686, "clicks": 1649, "leads": 92, "prev": { "spend": 5110.86, "impressions": 64992, "clicks": 1389, "leads": 76 } },
+      "id": "finr-advisory",
+      "name": "Finr Advisory",
+      "industry": "Mortgage broking + buyers advocacy",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 7554.71,
+        "impressions": 61686,
+        "clicks": 1649,
+        "leads": 92,
+        "prev": {
+          "spend": 5110.86,
+          "impressions": 64992,
+          "clicks": 1389,
+          "leads": 76
+        }
+      },
       "google": null
     },
     {
-      "id": "nexia-health", "name": "Nexia Health Care", "industry": "ADHD + Allied Health", "trackingStatus": "full",
-      "meta": { "spend": 8268.21, "impressions": 341638, "clicks": 4391, "leads": 270, "prev": { "spend": 8443.66, "impressions": 358275, "clicks": 5550, "leads": 349 } },
-      "google": { "cost": 5628.90, "impressions": 22922, "clicks": 1425, "conversions": 145.0, "prev": { "cost": 5770.61, "impressions": 33071, "clicks": 2075, "conversions": 208.68 } }
+      "id": "nexia-health",
+      "name": "Nexia Health Care",
+      "industry": "ADHD + Allied Health",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 8268.21,
+        "impressions": 341638,
+        "clicks": 4391,
+        "leads": 270,
+        "prev": {
+          "spend": 8443.66,
+          "impressions": 358275,
+          "clicks": 5550,
+          "leads": 349
+        }
+      },
+      "google": {
+        "cost": 5628.9,
+        "impressions": 22922,
+        "clicks": 1425,
+        "conversions": 145,
+        "prev": {
+          "cost": 5770.61,
+          "impressions": 33071,
+          "clicks": 2075,
+          "conversions": 208.68
+        }
+      }
     },
     {
-      "id": "pool-haus", "name": "Pool Haus", "industry": "Pool builder (trades, high-ticket)", "trackingStatus": "full",
-      "meta": { "spend": 5064.16, "impressions": 116787, "clicks": 3192, "leads": 53, "prev": { "spend": 3802.74, "impressions": 94264, "clicks": 2642, "leads": 72 } },
-      "google": { "cost": 1462.42, "impressions": 1709, "clicks": 110, "conversions": 4.0, "prev": { "cost": 2077.95, "impressions": 3633, "clicks": 171, "conversions": 6.0 } }
+      "id": "pool-haus",
+      "name": "Pool Haus",
+      "industry": "Pool builder (trades, high-ticket)",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 5064.16,
+        "impressions": 116787,
+        "clicks": 3192,
+        "leads": 53,
+        "prev": {
+          "spend": 3802.74,
+          "impressions": 94264,
+          "clicks": 2642,
+          "leads": 72
+        }
+      },
+      "google": {
+        "cost": 1462.42,
+        "impressions": 1709,
+        "clicks": 110,
+        "conversions": 4,
+        "prev": {
+          "cost": 2077.95,
+          "impressions": 3633,
+          "clicks": 171,
+          "conversions": 6
+        }
+      }
     },
     {
-      "id": "healan-centre", "name": "Healan Centre", "industry": "ADHD/autism assessments", "trackingStatus": "full",
-      "meta": { "spend": 3311.99, "impressions": 201266, "clicks": 2823, "leads": 205, "prev": { "spend": 3309.09, "impressions": 225067, "clicks": 2883, "leads": 203 } },
-      "google": { "cost": 1599.99, "impressions": 8170, "clicks": 927, "conversions": 200.95, "prev": { "cost": 1456.21, "impressions": 7929, "clicks": 910, "conversions": 220.05 } }
+      "id": "healan-centre",
+      "name": "Healan Centre",
+      "industry": "ADHD/autism assessments",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 3311.99,
+        "impressions": 201266,
+        "clicks": 2823,
+        "leads": 205,
+        "prev": {
+          "spend": 3309.09,
+          "impressions": 225067,
+          "clicks": 2883,
+          "leads": 203
+        }
+      },
+      "google": {
+        "cost": 1599.99,
+        "impressions": 8170,
+        "clicks": 927,
+        "conversions": 200.95,
+        "prev": {
+          "cost": 1456.21,
+          "impressions": 7929,
+          "clicks": 910,
+          "conversions": 220.05
+        }
+      }
     },
     {
-      "id": "simchat", "name": "Simchat", "industry": "ADHD/ASD clinic (Wyong NSW)", "trackingStatus": "full",
-      "meta": { "spend": 1500.99, "impressions": 57185, "clicks": 1478, "leads": 159, "prev": { "spend": 1503.97, "impressions": 60437, "clicks": 1399, "leads": 135 } },
-      "google": { "cost": 2541.66, "impressions": 14381, "clicks": 855, "conversions": 111.0, "prev": { "cost": 2529.16, "impressions": 13810, "clicks": 978, "conversions": 141.0 } }
+      "id": "simchat",
+      "name": "Simchat",
+      "industry": "ADHD/ASD clinic (Wyong NSW)",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 1500.99,
+        "impressions": 57185,
+        "clicks": 1478,
+        "leads": 159,
+        "prev": {
+          "spend": 1503.97,
+          "impressions": 60437,
+          "clicks": 1399,
+          "leads": 135
+        }
+      },
+      "google": {
+        "cost": 2541.66,
+        "impressions": 14381,
+        "clicks": 855,
+        "conversions": 111,
+        "prev": {
+          "cost": 2529.16,
+          "impressions": 13810,
+          "clicks": 978,
+          "conversions": 141
+        }
+      }
     },
     {
-      "id": "swift-emergency", "name": "Swift Emergency", "industry": "Urgent care / infusion clinic", "trackingStatus": "full",
-      "meta": { "spend": 1967.51, "impressions": 69964, "clicks": 4211, "leads": 195, "prev": { "spend": 1711.18, "impressions": 61931, "clicks": 3297, "leads": 171 } },
+      "id": "swift-emergency",
+      "name": "Swift Emergency",
+      "industry": "Urgent care / infusion clinic",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 1967.51,
+        "impressions": 69964,
+        "clicks": 4211,
+        "leads": 195,
+        "prev": {
+          "spend": 1711.18,
+          "impressions": 61931,
+          "clicks": 3297,
+          "leads": 171
+        }
+      },
       "google": null
     },
     {
-      "id": "ido-ido", "name": "IDO IDO", "industry": "Stationery / wedding invitations", "trackingStatus": "full",
-      "meta": { "spend": 1503.20, "impressions": 92756, "clicks": 2627, "leads": 138, "prev": { "spend": 1493.01, "impressions": 110030, "clicks": 3455, "leads": 219 } },
+      "id": "ido-ido",
+      "name": "IDO IDO",
+      "industry": "Stationery / wedding invitations",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 1503.2,
+        "impressions": 92756,
+        "clicks": 2627,
+        "leads": 138,
+        "prev": {
+          "spend": 1493.01,
+          "impressions": 110030,
+          "clicks": 3455,
+          "leads": 219
+        }
+      },
       "google": null
     },
     {
-      "id": "owl-psa", "name": "Owl PSA", "industry": "Health / psychosocial assessments", "trackingStatus": "full",
-      "meta": { "spend": 1508.85, "impressions": 94061, "clicks": 2147, "leads": 334, "prev": { "spend": 1492.40, "impressions": 99336, "clicks": 2386, "leads": 400 } },
+      "id": "owl-psa",
+      "name": "Owl PSA",
+      "industry": "Health / psychosocial assessments",
+      "trackingStatus": "full",
+      "meta": {
+        "spend": 1508.85,
+        "impressions": 94061,
+        "clicks": 2147,
+        "leads": 334,
+        "prev": {
+          "spend": 1492.4,
+          "impressions": 99336,
+          "clicks": 2386,
+          "leads": 400
+        }
+      },
       "google": null
     },
     {
-      "id": "psychology-hub", "name": "The Psychology Hub", "industry": "Psychology assessments", "trackingStatus": "wins_no_value",
-      "meta": { "spend": 3763.68, "impressions": 182384, "clicks": 5306, "leads": 368, "prev": { "spend": 3646.62, "impressions": 173798, "clicks": 4616, "leads": 314 } },
-      "google": { "cost": 1524.54, "impressions": 6899, "clicks": 529, "conversions": 102.0, "prev": { "cost": 1458.90, "impressions": 6558, "clicks": 574, "conversions": 100.0 } }
+      "id": "psychology-hub",
+      "name": "The Psychology Hub",
+      "industry": "Psychology assessments",
+      "trackingStatus": "wins_no_value",
+      "meta": {
+        "spend": 3763.68,
+        "impressions": 182384,
+        "clicks": 5306,
+        "leads": 368,
+        "prev": {
+          "spend": 3646.62,
+          "impressions": 173798,
+          "clicks": 4616,
+          "leads": 314
+        }
+      },
+      "google": {
+        "cost": 1524.54,
+        "impressions": 6899,
+        "clicks": 529,
+        "conversions": 102,
+        "prev": {
+          "cost": 1458.9,
+          "impressions": 6558,
+          "clicks": 574,
+          "conversions": 100
+        }
+      }
     },
     {
-      "id": "a2z", "name": "A2Z", "industry": "Wedding video / photography", "trackingStatus": "intelligence_only",
-      "meta": { "spend": 3310.61, "impressions": 104392, "clicks": 3428, "leads": 85, "prev": { "spend": 3273.12, "impressions": 138656, "clicks": 4272, "leads": 76 } },
+      "id": "a2z",
+      "name": "A2Z",
+      "industry": "Wedding video / photography",
+      "trackingStatus": "intelligence_only",
+      "meta": {
+        "spend": 3310.61,
+        "impressions": 104392,
+        "clicks": 3428,
+        "leads": 85,
+        "prev": {
+          "spend": 3273.12,
+          "impressions": 138656,
+          "clicks": 4272,
+          "leads": 76
+        }
+      },
       "google": null
     },
     {
-      "id": "book-a-midwife", "name": "Book a Midwife", "industry": "Midwife consults", "trackingStatus": "no_outcome_tracking",
-      "meta": { "spend": 1691.06, "impressions": 107891, "clicks": 3874, "leads": 0, "prev": { "spend": 1786.18, "impressions": 106400, "clicks": 3291, "leads": 0 } },
+      "id": "book-a-midwife",
+      "name": "Book a Midwife",
+      "industry": "Midwife consults",
+      "trackingStatus": "no_outcome_tracking",
+      "meta": {
+        "spend": 1691.06,
+        "impressions": 107891,
+        "clicks": 3874,
+        "leads": 0,
+        "prev": {
+          "spend": 1786.18,
+          "impressions": 106400,
+          "clicks": 3291,
+          "leads": 0
+        }
+      },
       "google": null
     },
     {
-      "id": "rlm-telehealth", "name": "RLM Telehealth", "industry": "Menopause / metabolic telehealth", "trackingStatus": "no_outcome_tracking",
-      "meta": { "spend": 2269.21, "impressions": 51954, "clicks": 2055, "leads": 59, "prev": { "spend": 2197.84, "impressions": 58320, "clicks": 3143, "leads": 205 } },
+      "id": "rlm-telehealth",
+      "name": "RLM Telehealth",
+      "industry": "Menopause / metabolic telehealth",
+      "trackingStatus": "no_outcome_tracking",
+      "meta": {
+        "spend": 2269.21,
+        "impressions": 51954,
+        "clicks": 2055,
+        "leads": 59,
+        "prev": {
+          "spend": 2197.84,
+          "impressions": 58320,
+          "clicks": 3143,
+          "leads": 205
+        }
+      },
       "google": null
     }
   ],
@@ -77,49 +337,185 @@
     "pipelineName": "0. Lead to Sales Pipeline",
     "trackedNotInvoiced": true,
     "summary": {
-      "open": 50, "openValue": 8700,
-      "won": 22, "wonValue": 242284, "avgWonValue": 11013,
-      "lostTotal": 453, "lostSampled": 100,
+      "open": 50,
+      "openValue": 8700,
+      "won": 22,
+      "wonValue": 242284,
+      "avgWonValue": 11013,
+      "lostTotal": 453,
+      "lostSampled": 100,
       "closedWinRatePct": 4.6
     },
     "biggestLeak": "Contactability and 15-minute call attendance. \"Could Not Contact\" is the single largest loss reason, and 15-min Cancel plus No Show together make up roughly a fifth of sampled losses.",
     "funnel": [
-      { "stage": "New / contacting", "count": 7, "phase": "contact" },
-      { "stage": "15-min booked or confirmed", "count": 8, "phase": "appt-set" },
-      { "stage": "15-min cancel / no-show", "count": 4, "phase": "at-risk" },
-      { "stage": "15-min shown", "count": 8, "phase": "held" },
-      { "stage": "45-min / proposal stage", "count": 19, "phase": "proposal" },
-      { "stage": "CS / onboarding", "count": 4, "phase": "onboarding" }
+      {
+        "stage": "New / contacting",
+        "count": 7,
+        "phase": "contact"
+      },
+      {
+        "stage": "15-min booked or confirmed",
+        "count": 8,
+        "phase": "appt-set"
+      },
+      {
+        "stage": "15-min cancel / no-show",
+        "count": 4,
+        "phase": "at-risk"
+      },
+      {
+        "stage": "15-min shown",
+        "count": 8,
+        "phase": "held"
+      },
+      {
+        "stage": "45-min / proposal stage",
+        "count": 19,
+        "phase": "proposal"
+      },
+      {
+        "stage": "CS / onboarding",
+        "count": 4,
+        "phase": "onboarding"
+      }
     ],
     "wonByMonth": [
-      { "month": "2025-04", "count": 1 }, { "month": "2025-05", "count": 2 },
-      { "month": "2025-06", "count": 2 }, { "month": "2025-07", "count": 1 },
-      { "month": "2025-08", "count": 2 }, { "month": "2025-09", "count": 4 },
-      { "month": "2025-10", "count": 1 }, { "month": "2025-12", "count": 1 },
-      { "month": "2026-01", "count": 6 }, { "month": "2026-02", "count": 2 }
+      {
+        "month": "2025-04",
+        "count": 1
+      },
+      {
+        "month": "2025-05",
+        "count": 2
+      },
+      {
+        "month": "2025-06",
+        "count": 2
+      },
+      {
+        "month": "2025-07",
+        "count": 1
+      },
+      {
+        "month": "2025-08",
+        "count": 2
+      },
+      {
+        "month": "2025-09",
+        "count": 4
+      },
+      {
+        "month": "2025-10",
+        "count": 1
+      },
+      {
+        "month": "2025-12",
+        "count": 1
+      },
+      {
+        "month": "2026-01",
+        "count": 6
+      },
+      {
+        "month": "2026-02",
+        "count": 2
+      }
     ],
     "lostReasons": [
-      { "name": "Could Not Contact", "count": 19 },
-      { "name": "Business Stage Too Early", "count": 14 },
-      { "name": "15 Min - Cancel", "count": 12 },
-      { "name": "15 Min - No Show", "count": 10 },
-      { "name": "Timing", "count": 10 },
-      { "name": "No Telehealth", "count": 8 },
-      { "name": "Low Customer LTV", "count": 8 },
-      { "name": "Not Interested", "count": 5 },
-      { "name": "One Man Band", "count": 5 },
-      { "name": "Budget", "count": 5 },
-      { "name": "Not a Good Fit / Bad Vibes", "count": 4 }
+      {
+        "name": "Could Not Contact",
+        "count": 19
+      },
+      {
+        "name": "Business Stage Too Early",
+        "count": 14
+      },
+      {
+        "name": "15 Min - Cancel",
+        "count": 12
+      },
+      {
+        "name": "15 Min - No Show",
+        "count": 10
+      },
+      {
+        "name": "Timing",
+        "count": 10
+      },
+      {
+        "name": "No Telehealth",
+        "count": 8
+      },
+      {
+        "name": "Low Customer LTV",
+        "count": 8
+      },
+      {
+        "name": "Not Interested",
+        "count": 5
+      },
+      {
+        "name": "One Man Band",
+        "count": 5
+      },
+      {
+        "name": "Budget",
+        "count": 5
+      },
+      {
+        "name": "Not a Good Fit / Bad Vibes",
+        "count": 4
+      }
     ],
     "sources": [
-      { "name": "VSL-LP / Private Clinic", "won": 6, "open": 12, "lostSampled": 75 },
-      { "name": "Meta / Schedule-Clinic", "won": 0, "open": 11, "lostSampled": 11 },
-      { "name": "Meta Lead / Psychology Clinic", "won": 3, "open": 0, "lostSampled": 0 },
-      { "name": "Instagram Bio", "won": 0, "open": 4, "lostSampled": 4 },
-      { "name": "Website / Contact Us", "won": 0, "open": 5, "lostSampled": 2 },
-      { "name": "Website / Strategy Session", "won": 0, "open": 2, "lostSampled": 4 },
-      { "name": "Referrals (ASG, Client, general)", "won": 4, "open": 0, "lostSampled": 0 },
-      { "name": "Website / CS Landing Page", "won": 2, "open": 0, "lostSampled": 0 }
+      {
+        "name": "VSL-LP / Private Clinic",
+        "won": 6,
+        "open": 12,
+        "lostSampled": 75
+      },
+      {
+        "name": "Meta / Schedule-Clinic",
+        "won": 0,
+        "open": 11,
+        "lostSampled": 11
+      },
+      {
+        "name": "Meta Lead / Psychology Clinic",
+        "won": 3,
+        "open": 0,
+        "lostSampled": 0
+      },
+      {
+        "name": "Instagram Bio",
+        "won": 0,
+        "open": 4,
+        "lostSampled": 4
+      },
+      {
+        "name": "Website / Contact Us",
+        "won": 0,
+        "open": 5,
+        "lostSampled": 2
+      },
+      {
+        "name": "Website / Strategy Session",
+        "won": 0,
+        "open": 2,
+        "lostSampled": 4
+      },
+      {
+        "name": "Referrals (ASG, Client, general)",
+        "won": 4,
+        "open": 0,
+        "lostSampled": 0
+      },
+      {
+        "name": "Website / CS Landing Page",
+        "won": 2,
+        "open": 0,
+        "lostSampled": 0
+      }
     ],
     "recommendations": [
       "Fix speed-to-lead and call cadence: \"Could Not Contact\" is the #1 loss reason at ~19% of sampled losses. Faster first touch and more attempts on New Leads recovers the largest single pool.",

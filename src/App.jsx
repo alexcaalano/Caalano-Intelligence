@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.358.0'
+const APP_VERSION = '3.359.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3089,6 +3089,10 @@ const LOGOS_KEY = 'caalano_logos'                // { clientId: { website, logoU
 // so their Meta/Google funnel + grouped Caalano360 columns render out of the
 // box. Bare strings = pipeline stage names; calendars are linked in Settings.
 const SEED_KEYEVENTS = {
+  // Demo account. Seeded rather than configured so the funnel is populated the
+  // first time anyone opens it - a demo that needs setup before it demos is no
+  // demo at all.
+  'norwest-mdc': ['New Enquiry', 'Booked Discovery Call', 'Discovery Call Attended', 'Booked Initial Appointment', 'Initial Appointment Attended', 'Ongoing Care Plan'],
   'pool-haus': ['New Lead', 'Pool Specialist Booked Call', 'Pool Specialist Call - Shown', 'Site Visit Booked', 'Site Visit Completed', 'Quote/Proposal Sent', 'Client Won'],
 }
 // Default Optimisation Log Google Sheets per client (from the master client→sheet

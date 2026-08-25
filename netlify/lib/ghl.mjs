@@ -3,6 +3,7 @@
 // Blobs, then per-sub-account "location tokens" are minted on demand to read
 // each client's contacts (attributionSource = first-touch UTMs) + opportunities.
 import { getStore } from '@netlify/blobs'
+import { DEMO_TOKEN, isDemoLocation, isDemoToken, demoGhl } from './demo.mjs'
 
 const API = 'https://services.leadconnectorhq.com'
 const VER = '2021-07-28'
@@ -133,6 +134,7 @@ async function locationToken(locationId) {
 }
 
 async function ghlGet(locTok, path, query) {
+  if (isDemoToken(locTok)) return demoGhl(path, query || {})
   const url = new URL(API + path)
   for (const [k, v] of Object.entries(query || {})) if (v != null) url.searchParams.set(k, v)
   const r = await ghlFetch(url, { headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json' } }, { label: `ghl GET ${path}` })
@@ -141,6 +143,7 @@ async function ghlGet(locTok, path, query) {
   return JSON.parse(txt)
 }
 async function ghlPost(locTok, path, bodyObj) {
+  if (isDemoToken(locTok)) return demoGhl(path, {}, bodyObj || {})
   const r = await ghlFetch(API + path, { method: 'POST', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) }, { label: `ghl POST ${path}` })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl POST ${path} ${r.status}: ${txt.slice(0, 200)}`)
@@ -154,11 +157,18 @@ async function ghlPost(locTok, path, bodyObj) {
 // Australian "today" was really 10am->10am and morning leads slipped a day.
 const DEF_TZ = 'Australia/Sydney'
 const locTzCache = new Map()
+// The demo account has no GoHighLevel behind it. Handing back a sentinel token
+// here is what lets every builder run unchanged: ghlGet/ghlPost recognise it and
+// answer from the generated dataset instead of the network, so the demo exercises
+// the real code paths rather than a parallel implementation of them.
+export async function locationTokenOrDemo(locationId) {
+  return isDemoLocation(locationId) ? DEMO_TOKEN : locationToken(locationId)
+}
 export async function locationTimezone(locationId) {
   if (locTzCache.has(locationId)) return locTzCache.get(locationId)
   let tz = DEF_TZ
   try {
-    const locTok = await locationToken(locationId)
+    const locTok = await locationTokenOrDemo(locationId)
     const j = await ghlGet(locTok, `/locations/${locationId}`, {})
     const cand = (j.location && j.location.timezone) || j.timezone || null
     if (cand) { try { new Intl.DateTimeFormat('en-US', { timeZone: cand }); tz = cand } catch { /* keep default */ } }
@@ -176,7 +186,7 @@ export async function locationProfile(locationId) {
   if (locProfileCache.has(locationId)) return locProfileCache.get(locationId)
   let out = { name: null, website: null, logoUrl: null }
   try {
-    const locTok = await locationToken(locationId)
+    const locTok = await locationTokenOrDemo(locationId)
     const j = await ghlGet(locTok, `/locations/${locationId}`, {})
     const L = (j && j.location) || j || {}
     out = {
@@ -331,7 +341,7 @@ async function oppSnapshot(locTok, locationId, opts = {}) {
 // what causes the concurrent-cold-invocation 429 bursts. Force-refreshes past the
 // in-memory window so the scheduled run always writes a fresh cross-invocation copy.
 export async function warmOppSnapshot(locationId) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const snap = await oppSnapshot(locTok, locationId, { force: true })
   // Also refresh the pipelines cache so interactive loads never hit the live
   // /opportunities/pipelines call (the one that, when rate-limited, blanked the
@@ -719,7 +729,7 @@ export async function deletedClients() {
 // successful mint is a reliable "API ready" signal and a failure means the app
 // isn't installed there yet. Cheap: one token call (cached per warm lambda).
 export async function checkLocationAccess(locationId) {
-  try { await locationToken(locationId); return true } catch { return false }
+  try { await locationTokenOrDemo(locationId); return true } catch { return false }
 }
 export async function listLocations() {
   const t = await agencyToken()
@@ -751,7 +761,7 @@ async function locationMergeValues(locationId) {
   if (locValsCache.has(locationId)) return locValsCache.get(locationId)
   const out = new Map()
   try {
-    const locTok = await locationToken(locationId)
+    const locTok = await locationTokenOrDemo(locationId)
     const [vals, prof] = await Promise.all([
       ghlGet(locTok, `/locations/${locationId}/customValues`, {}).then((j) => j.customValues || j.customValue || []).catch(() => []),
       locationProfile(locationId).catch(() => null),
@@ -784,7 +794,7 @@ function resolveMergeTags(str, vals) {
 // second call a clinic running a service menu would see an empty picker.
 const CAL_TYPE_LABEL = { round_robin: 'Round robin', event: 'Event', class_booking: 'Class', collective: 'Collective', service: 'Service', service_booking: 'Service', personal: 'Personal' }
 export async function listCalendars(locationId) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const [cals, services, vals] = await Promise.all([
     ghlGet(locTok, '/calendars/', { locationId }).then((j) => j.calendars || j.calendar || []).catch(() => []),
     ghlGet(locTok, '/calendars/services/catalog', { locationId }).then((j) => j.services || j.catalog || []).catch(() => []),
@@ -843,7 +853,7 @@ export async function listCalendars(locationId) {
 // blend feed's pipelines (id, name, stages:[{id,name,pos}]) so the editor can use
 // either interchangeably.
 export async function listPipelines(locationId, opts = {}) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const pipes = await fetchPipelines(locTok, locationId, opts)
   return (pipes || []).map((p) => ({
     id: p.id,
@@ -858,7 +868,7 @@ export async function listPipelines(locationId, opts = {}) {
 // waiting for Windsor to backfill a newly-linked account. Single-account, so no
 // account_id filtering is needed downstream.
 export async function ghlOpportunityRows(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const opps = await allOpportunities(locTok, locationId, from, to, 3000)
   return opps.map((o) => ({
     account_id: locationId,
@@ -875,7 +885,7 @@ export async function ghlOpportunityRows(locationId, from, to) {
   }))
 }
 export async function ghlPipelineRows(locationId) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const pipes = await fetchPipelines(locTok, locationId)
   return (pipes || []).map((p) => ({
     account_id: locationId,
@@ -885,7 +895,7 @@ export async function ghlPipelineRows(locationId) {
   }))
 }
 export async function ghlUserRows(locationId) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const j = await ghlGet(locTok, '/users/', { locationId }).catch(() => ({ users: [] }))
   return (j.users || []).map((u) => ({ account_id: locationId, user_id: u.id || u._id, user_name: u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || null }))
 }
@@ -895,7 +905,7 @@ export async function ghlUserRows(locationId) {
 // contact to its opportunity outcome, so friction / qualification levels can be
 // compared (fewer but higher-converting leads vs more but lower-quality).
 export async function buildForms(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const DAY = 86400000
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
@@ -1491,7 +1501,7 @@ function _contactCampaign(c) {
   return v ? String(v).trim().slice(0, 120) : null
 }
 export async function buildClinic(locationId, opts = {}) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   // Resolve our target fields' ids by fieldKey (strip the "contact." prefix).
   const defs = await ghlGet(locTok, `/locations/${locationId}/customFields`, { model: 'contact' }).then((j) => j.customFields || j.customField || []).catch(() => [])
   const idOf = {}
@@ -1911,7 +1921,7 @@ export async function buildClinic(locationId, opts = {}) {
 // once UTMs are being captured on the booking journey.
 const CALPERF_CHANNELS = ['meta', 'google', 'other', 'unattributed']
 export async function buildCalPerf(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const [appts, opps] = await Promise.all([
     fetchAppointments(locTok, locationId, from, to),
     allOpportunities(locTok, locationId, from, to, 3000).catch(() => []),
@@ -1987,7 +1997,7 @@ export async function buildCalPerf(locationId, from, to) {
 // (form name on the submission vs a "Facebook Form Name" custom field) before
 // building the full By-Form performance view.
 export async function sampleForms(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const out = { locationId }
   const cfById = {}
   try {
@@ -2110,7 +2120,7 @@ function rollupSubset(opps, idx, reasonName) {
 // first-touch paid channel (meta / google / other) - powers UTM-split
 // cost-per-booked in the Daily Performance rolling windows.
 export async function bookedTrends(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const [opps, idx] = await Promise.all([
     allOpportunities(locTok, locationId, from, to),
     pipelineStageIndex(locTok, locationId),
@@ -2135,7 +2145,7 @@ export async function bookedTrends(locationId, from, to) {
 // Windsor `opportunity_source` classification is only a fallback when the app isn't
 // connected. Returns one record per opp so the caller can bucket into 56-day windows.
 export async function crmTrends(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const [opps, idx] = await Promise.all([
     allOpportunities(locTok, locationId, from, to),
     pipelineStageIndex(locTok, locationId),
@@ -2163,7 +2173,7 @@ export async function crmTrends(locationId, from, to) {
 // old leads that close in-period are captured; capped, so very old-created deals
 // may be missed (flagged via `capped`).
 export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
   const CAP = 2500 // allOpportunities pages up to ~25×100
   const opps = await allOpportunities(locTok, locationId, back, to, CAP)
@@ -2207,7 +2217,7 @@ export async function wonInPeriod(locationId, from, to, lookbackDays = 400) {
 // contact name, lead-created date, status-change (won/lost) date, value, source
 // channel, pipeline/stage and assigned user - everything needed to sense-check.
 export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const back = from ? new Date(new Date(from + 'T00:00:00Z').getTime() - lookbackDays * 86400000).toISOString().slice(0, 10) : from
   const CAP = 3000
   const [opps, pipelines, reasons, tz] = await Promise.all([
@@ -2293,7 +2303,7 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
 // stamps when a deal enters it. GHL v2 tags each field with a `model`
 // (contact|opportunity); if that's absent we keep all and just flag date types.
 export async function oppTimestampFields(locationId) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   let fields = []
   try {
     const j = await ghlGet(locTok, `/locations/${locationId}/customFields`, { model: 'opportunity' })
@@ -2315,7 +2325,7 @@ export async function oppTimestampFields(locationId) {
 // whose start (dateAdded, falling back to last message) lands in the window.
 // opts.debug returns a raw sample so channel field names can be verified live.
 export async function socialDMs(locationId, from, to, opts = {}) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
@@ -2359,7 +2369,7 @@ export async function socialDMs(locationId, from, to, opts = {}) {
 // Lightweight source-tag coverage for one location (no pipeline/stage work):
 // how many opportunities carry a UTM, split by classified channel.
 export async function attributionCoverage(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const opps = await allOpportunities(locTok, locationId, from, to)
   let attributed = 0; const ch = { meta: 0, google: 0, other: 0 }
   for (const o of opps) { const u = utmOf(o); if (u.source || u.campaign) attributed++; ch[channelOf(u)]++ }
@@ -2426,7 +2436,7 @@ function businessMinutesBetween(aMs, bMs, hours, tz) {
 // Auto-detect a location's working hours from its calendars' openHours (union of
 // open weekdays + earliest open / latest close). Falls back to Mon-Fri 9-5.
 export async function deriveBusinessHours(locationId) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   let cals = []
   try { const j = await ghlGet(locTok, '/calendars/', { locationId }); cals = j.calendars || j.calendar || [] } catch { /* default below */ }
@@ -2506,7 +2516,7 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   const budgetMs = opts.budgetMs || 22000
   const hours = opts.hours || null // { days:[0-6], startMin, endMin } or null (raw)
   const started = Date.now()
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
@@ -2721,7 +2731,7 @@ async function scanFirstOutbound(locTok, locationId, lead, deadline, srcCounts) 
 }
 // Build the full ordered lead list for a range (no conversation reads yet).
 export async function speedLeadList(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
@@ -2763,7 +2773,7 @@ export async function speedLeadList(locationId, from, to) {
 }
 // Process leads[startIdx..] into `agg` for up to budgetMs; returns the new index.
 export async function speedScanChunk(locationId, leads, startIdx, budgetMs, agg) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const deadline = Date.now() + budgetMs
   let idx = startIdx
   while (idx < leads.length && Date.now() < deadline) {
@@ -2857,7 +2867,7 @@ function normApptStatus(s) {
   return 'other'
 }
 export async function buildAppointmentInsights(locationId, from, to, opts = {}) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
   const now = Date.now()
@@ -3056,7 +3066,7 @@ async function openOpportunities(locTok, locationId, cap = 3000, sinceMs = null)
 // up, not the completed duration of deals that already moved on (GHL doesn't keep
 // that history).
 export async function buildStageTiming(locationId, days = 90) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const now = Date.now(), DAY = 86400000
   // Rolling window: only deals created in the last `days` days, so the board
   // reflects the current cohort (and the load stays bounded) rather than every
@@ -3099,7 +3109,7 @@ export async function buildStageTiming(locationId, days = 90) {
 // (channel=Call) so it's a few paged requests for the whole location, not one
 // per contact. Keyed by userId (the frontend joins names from the users scope).
 export async function buildUserCalls(locationId, from, to, callsOnly = false) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   // The message-export endpoint validates startDate/endDate as ISO 8601 datetimes
   // (YYYY-MM-DDTHH:mm:ss.sssZ). A bare YYYY-MM-DD is accepted with HTTP 200 but
   // silently matches ZERO messages - which is why call activity was always blank.
@@ -3230,7 +3240,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
 // PerformanceCombos uses this to return every combo in a single response, so the
 // front end can switch filters instantly without re-hitting GHL.
 async function _userPerfInputs(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
@@ -3420,7 +3430,7 @@ async function formAnswersByContact(locTok, locationId, from, to) {
 // are added by the caller (windsor) from the health feed. Each opp is classified
 // to a paid channel via channelOf(utmOf()) with a friendly source label.
 export async function buildCcDrill(locationId, from, to, channel) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
   const fromMs = from ? zonedStartMs(from, tz) : null
@@ -3589,7 +3599,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
 // calendars linked to a stage) + a channel, return every opportunity/contact that
 // makes up that count, with the details a rep needs to work them.
 export async function buildKeyPeople(locationId, from, to, { channel, pipeline, stage, kind, cals, ad }) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
   const fromMs = from ? zonedStartMs(from, tz) : null
@@ -3687,7 +3697,7 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
 // can be ranked by cost per qualified / booked / won. Keyed by the raw
 // utm_content string; the caller joins it to the Meta ad name.
 export async function buildCreativePerf(locationId, from, to, opts = {}) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
   const fromMs = from ? zonedStartMs(from, tz) : null
@@ -3736,7 +3746,7 @@ export async function buildCreativePerf(locationId, from, to, opts = {}) {
 // likely cause. One opportunities+appointments pass; notes fetched only for the
 // small non-booker sample.
 export async function buildUpdateExtra(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
   const fromMs = from ? zonedStartMs(from, tz) : null
@@ -3825,7 +3835,7 @@ function htmlToText(s) {
 // "why is this stuck?" context for the Users open-deal drill-down.
 export async function fetchOppNotes(locationId, { contactId }) {
   if (!contactId) return { notes: [] }
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const [cn, un] = await Promise.all([
     ghlGet(locTok, `/contacts/${contactId}/notes`, {}).then((j) => j.notes || []).catch(() => []),
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
@@ -3843,7 +3853,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   // function timeout. Booked/shown still come from the (now parallel) real
   // appointment feed, so the leaderboard's numbers match the client view.
   const lite = !!opts.lite
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   // Wide opportunity lookback so a booking made in-period by a lead who first
   // came in earlier can still be credited to the creative that brought them in.
   const DAY = 86400000
@@ -4174,7 +4184,7 @@ async function cohortAppointments(locTok, locationId, from, to) {
 // maturation timing. `weekIndexOf(localCreatedDate)` maps a lead's created date
 // (in the location timezone) to its week-bucket index, or null if out of range.
 export async function buildCohorts(locationId, from, to, weekCount, weekIndexOf) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const [opps, pipelines, appts] = await Promise.all([
     allOpportunities(locTok, locationId, from, to, 3000),
@@ -4283,7 +4293,7 @@ function crmBoard(opps, idx, reasonName) {
 }
 
 export async function buildCrm(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const [opps, pipelines, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, from, to),
     fetchPipelines(locTok, locationId),
@@ -4314,7 +4324,7 @@ export async function buildCrm(locationId, from, to) {
 export async function auditLocation(locationId) {
   const out = {}
   let locTok
-  try { locTok = await locationToken(locationId); out.access = 'ok' }
+  try { locTok = await locationTokenOrDemo(locationId); out.access = 'ok' }
   catch (e) { out.access = 'FAIL: ' + String(e.message || e).replace(/\s+/g, ' ').slice(0, 140); return out }
   const probe = async (label, path, query) => {
     try { await ghlGet(locTok, path, query); out[label] = 'ok' }
@@ -4336,7 +4346,7 @@ export async function auditLocation(locationId) {
 // whose contact self-booked, split by paid channel). BOOK_TAG_RE / oppTags are
 // shared with the attribution feed (defined near channelOf).
 export async function tagAudit(locationId, sample = 400) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   // 1) Tags defined in the location (authoritative existence check).
   let definedCount = null, definedErr = null, definedMatches = []
   try {
@@ -4385,7 +4395,7 @@ export async function tagAudit(locationId, sample = 400) {
 // distinct source|medium combos landing in "other" (so we can see what a
 // mis-classified paid lead looks like). No contact data.
 export async function sampleChannels(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const opps = await allOpportunities(locTok, locationId, from, to, 2000)
   const counts = { meta: 0, google: 0, other: 0 }
   const otherSigs = new Map()
@@ -4401,7 +4411,7 @@ export async function sampleChannels(locationId, from, to) {
 
 // Debug: raw opportunity + attribution shapes to confirm paid-UTM field names.
 export async function sampleAttribution(locationId, from, to) {
-  const locTok = await locationToken(locationId)
+  const locTok = await locationTokenOrDemo(locationId)
   const opps = await allOpportunities(locTok, locationId, from, to, 20)
   const withUtm = opps.find((o) => (o.attributions || []).some((a) => a.utmCampaign || a.utmSource || a.utmContent))
   return {

@@ -17,6 +17,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.359.0 - 2026-08-20 · `PENDING` - Demo account: Norwest Multi-Disciplinary
+- A complete, self-consistent demo clinic - physio, chiro, psychology and OT - that loads instantly and needs no
+  integrations behind it. Pipeline runs **New Enquiry → Contacted → Booked Discovery Call → Discovery Call Attended →
+  Booked Initial Appointment → Initial Appointment Attended → Ongoing Care Plan**, with key events pre-seeded so the
+  funnel is populated the first time anyone opens it.
+- **The data is faked at the API boundary, not per view.** Rather than stubbing 55 scopes (every one a different shape,
+  all of which would drift the moment a builder changed), the GoHighLevel and Windsor *responses* are generated and every
+  real builder runs its genuine logic over them. Two consequences worth having: every tab agrees with every other because
+  they're derived from one dataset by the same code that derives the real ones, and the demo can't rot - a change to a
+  builder flows into it for free, with no second implementation to keep in step.
+- Everything comes from a fixed seed, so the numbers are identical on every load and for every viewer. A demo that
+  changes shape mid-pitch is worse than no demo.
+- Ad spend is **derived from the CRM leads** at a believable cost per lead, so cost-per-key-event, ROAS and the
+  Caalano360 blend reconcile instead of telling three different stories. ~90 days: 347 leads, 44 won, $69k revenue, 18.2%
+  close rate, 13 days to won, ~$22k spend at a $56 blended CPL.
+- Includes the Clinic tab end-to-end: 531 patients, PVA 7.1 (median 6), $150/visit, 94% show rate, 12% one-and-done, a
+  populated retention curve, and a **Discovery Call calendar that auto-classifies as triage** while the four service
+  calendars classify as clinical - so the demo exercises that logic rather than dodging it.
+- Demo routing is keyed off a **per-request sentinel** rather than a module flag. A module flag would have served demo
+  rows to real clients and, worse, short-circuited their real fetch; the sentinel is derived once per request from the
+  client being asked for, so there's no shared state to race. Agency-wide pulls append demo rows instead of replacing,
+  and every consumer maps rows to a client by account id, so a real client can neither see them nor lose its own data.
+
 ## v3.358.0 - 2026-08-20 · `PENDING` - Security: a password change now actually ends other sessions
 - Found during a review of the auth layer. Login sessions are stateless signed tokens valid for **14 days**, and the
   signature covered only email, role, name and expiry - so changing a password rewrote the hash but **left every existing

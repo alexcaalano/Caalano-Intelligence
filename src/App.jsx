@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.359.0'
+const APP_VERSION = '3.360.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3092,7 +3092,7 @@ const SEED_KEYEVENTS = {
   // Demo account. Seeded rather than configured so the funnel is populated the
   // first time anyone opens it - a demo that needs setup before it demos is no
   // demo at all.
-  'norwest-mdc': ['New Enquiry', 'Booked Discovery Call', 'Discovery Call Attended', 'Booked Initial Appointment', 'Initial Appointment Attended', 'Ongoing Care Plan'],
+  'norwest-mdc': ['New Enquiry', 'Contacted', 'Appointment Booked', 'Appointment Attended', 'Treatment Plan Active'],
   'pool-haus': ['New Lead', 'Pool Specialist Booked Call', 'Pool Specialist Call - Shown', 'Site Visit Booked', 'Site Visit Completed', 'Quote/Proposal Sent', 'Client Won'],
 }
 // Default Optimisation Log Google Sheets per client (from the master client→sheet

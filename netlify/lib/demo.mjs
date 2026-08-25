@@ -63,11 +63,9 @@ const DISCIPLINES = ['Physiotherapy', 'Chiropractic', 'Psychology', 'Occupationa
 const STAGES = [
   'New Enquiry',
   'Contacted',
-  'Booked Discovery Call',
-  'Discovery Call Attended',
-  'Booked Initial Appointment',
-  'Initial Appointment Attended',
-  'Ongoing Care Plan',
+  'Appointment Booked',
+  'Appointment Attended',
+  'Treatment Plan Active',
 ]
 const HEARD = ['Instagram', 'Facebook', 'Google', 'Friend Recommended', 'GP Referral', 'Other']
 const FIRST = ['Olivia', 'Jack', 'Charlotte', 'Noah', 'Amelia', 'Liam', 'Isla', 'William', 'Mia', 'Henry', 'Grace', 'Thomas', 'Chloe', 'Lucas', 'Zoe', 'Ethan', 'Ruby', 'Oliver', 'Ava', 'Leo', 'Harper', 'Max', 'Freya', 'Elijah', 'Sienna', 'Hugo', 'Poppy', 'Archie', 'Willow', 'Rafael']
@@ -124,13 +122,10 @@ export function demoData() {
   // Calendars: one discovery-call calendar (triage) + a service calendar per
   // discipline (clinical). This is exactly the shape the Clinic settings tab
   // classifies by type, so the demo exercises that logic rather than dodging it.
+  const hours = [1, 2, 3, 4, 5].map((x) => ({ daysOfTheWeek: [x], hours: [{ openHour: 8, openMinute: 0, closeHour: 18, closeMinute: 0 }] }))
   const calendars = [
-    { id: 'demoCalDiscovery', locationId: DEMO_LOCATION, name: 'Discovery Call', calendarType: 'round_robin', isActive: true,
-      openHours: [1, 2, 3, 4, 5].map((d) => ({ daysOfTheWeek: [d], hours: [{ openHour: 8, openMinute: 0, closeHour: 18, closeMinute: 0 }] })), slotDuration: 15 },
-    ...DISCIPLINES.map((d, i) => ({
-      id: `demoCalSvc${i}`, locationId: DEMO_LOCATION, name: `${d} - Initial Appointment`, calendarType: 'service', isActive: true,
-      openHours: [1, 2, 3, 4, 5].map((x) => ({ daysOfTheWeek: [x], hours: [{ openHour: 8, openMinute: 0, closeHour: 18, closeMinute: 0 }] })), slotDuration: 45,
-    })),
+    ...DISCIPLINES.map((d, i) => ({ id: `demoCalInit${i}`, locationId: DEMO_LOCATION, name: `${d} Initial Consult`, calendarType: 'service', isActive: true, openHours: hours, slotDuration: 45 })),
+    ...DISCIPLINES.map((d, i) => ({ id: `demoCalFup${i}`, locationId: DEMO_LOCATION, name: `${d} Follow-up`, calendarType: 'service', isActive: true, openHours: hours, slotDuration: 30 })),
   ]
 
   const opportunities = []
@@ -177,17 +172,15 @@ export function demoData() {
       // Funnel. Paid converts a little worse than referral at the top and a
       // little better in the middle - which is the story the demo tells.
       const contacted = chance(r, ch === 'referral' ? 0.95 : 0.88)
-      const bookedDisc = contacted && chance(r, ch === 'referral' ? 0.82 : ch === 'meta' ? 0.62 : 0.68)
-      const attendedDisc = bookedDisc && chance(r, 0.79)
-      const bookedInitial = attendedDisc && chance(r, ch === 'referral' ? 0.78 : 0.66)
-      const attendedInitial = bookedInitial && chance(r, 0.86)
-      const ongoing = attendedInitial && chance(r, 0.68)
+      const bookedInitial = contacted && chance(r, ch === 'referral' ? 0.74 : ch === 'meta' ? 0.55 : 0.62)
+      const attendedInitial = bookedInitial && chance(r, 0.87)
+      const ongoing = attendedInitial && chance(r, 0.66)
       // Anything that hasn't moved in a fortnight is done, not "in progress".
       const settled = age > 14
 
       let stageIdx = 0
-      if (ongoing) stageIdx = 6; else if (attendedInitial) stageIdx = 5; else if (bookedInitial) stageIdx = 4
-      else if (attendedDisc) stageIdx = 3; else if (bookedDisc) stageIdx = 2; else if (contacted) stageIdx = 1
+      if (ongoing) stageIdx = 4; else if (attendedInitial) stageIdx = 3
+      else if (bookedInitial) stageIdx = 2; else if (contacted) stageIdx = 1
       const won = ongoing && settled
       const lost = settled && !ongoing && chance(r, 0.82)
       const status = won ? 'won' : lost ? 'lost' : 'open'
@@ -205,37 +198,27 @@ export function demoData() {
         lastStatusChangeAt: status === 'open' ? iso(createdMs + between(r, 1, 6) * DAY) : iso(statusAtMs),
         lastStageChangeAt: iso(createdMs + between(r, 1, 9) * DAY),
         contactId: cid, assignedTo: bookedInitial ? pracUser.id : coord.id,
-        contact: { id: cid, name, email: `${name.toLowerCase().replace(/[^a-z]+/g, '.')}@example.com.au`, phone: `+6149${between(r, 1000000, 9999999)}`, tags: bookedDisc ? ['customer booked appointment'] : [] },
+        contact: { id: cid, name, email: `${name.toLowerCase().replace(/[^a-z]+/g, '.')}@example.com.au`, phone: `+6149${between(r, 1000000, 9999999)}`, tags: bookedInitial ? ['customer booked appointment'] : [] },
         attributions: [att],
         lostReasonName: lost ? pick(r, ['Cost / no rebate', 'Went elsewhere', 'No longer needed', 'Wrong service', 'Could not get a suitable time', 'No answer after 3 attempts']) : null,
       })
 
       // Calendar events. Discovery calls on the triage calendar; the initial
       // appointment on that discipline's service calendar.
-      if (bookedDisc) {
-        const bookedAtMs = createdMs + between(r, 0, 2) * DAY + between(r, 1, 8) * 3600000
-        const startMs = bookedAtMs + between(r, 1, 6) * DAY + between(r, 0, 6) * 3600000
-        events.push({
-          id: id16(r), calendarId: 'demoCalDiscovery', locationId: DEMO_LOCATION, contactId: cid,
-          title: `${name} x Norwest MDC | Discovery Call`, appointmentStatus: attendedDisc ? 'showed' : (chance(r, 0.55) ? 'noshow' : 'cancelled'),
-          startTime: iso(startMs), endTime: iso(startMs + 15 * 60000), dateAdded: iso(bookedAtMs),
-          assignedUserId: coord.id, createdBy: { source: 'booking_widget' },
-        })
-      }
       if (bookedInitial) {
-        const calId = `demoCalSvc${DISCIPLINES.indexOf(disc)}`
-        // First clinical visit, then the care plan's follow-ups every 1-3 weeks.
-        let visitMs = createdMs + between(r, 5, 16) * DAY + between(r, 8, 16) * 3600000
+        const di = DISCIPLINES.indexOf(disc)
+        const bookedAtMs = createdMs + between(r, 0, 3) * DAY + between(r, 1, 8) * 3600000
+        let visitMs = bookedAtMs + between(r, 2, 12) * DAY + between(r, 8, 16) * 3600000
         const total = Math.max(1, planVisits || 1)
         for (let v = 0; v < total; v++) {
           if (visitMs > now + 45 * DAY) break
           const attended = v === 0 ? attendedInitial : chance(r, 0.9)
           events.push({
-            id: id16(r), calendarId: calId, locationId: DEMO_LOCATION, contactId: cid,
-            title: `${name} x Norwest MDC | ${disc} ${v === 0 ? 'Initial Appointment' : 'Follow-up'}`,
+            id: id16(r), calendarId: v === 0 ? `demoCalInit${di}` : `demoCalFup${di}`, locationId: DEMO_LOCATION, contactId: cid,
+            title: `${name} x Norwest MDC | ${disc} ${v === 0 ? 'Initial Consult' : 'Follow-up'}`,
             appointmentStatus: visitMs > now ? 'confirmed' : (attended ? 'showed' : (chance(r, 0.6) ? 'noshow' : 'cancelled')),
-            startTime: iso(visitMs), endTime: iso(visitMs + 45 * 60000),
-            dateAdded: iso(visitMs - between(r, 3, 20) * DAY),
+            startTime: iso(visitMs), endTime: iso(visitMs + (v === 0 ? 45 : 30) * 60000),
+            dateAdded: iso(v === 0 ? bookedAtMs : visitMs - between(r, 3, 20) * DAY),
             assignedUserId: pracUser.id, createdBy: { source: v === 0 ? 'booking_widget' : 'user' },
           })
           visitMs += between(r, 7, 21) * DAY
@@ -260,7 +243,7 @@ export function demoData() {
           total_unpaid_balance: attendedVisits > 0 && chance(r, 0.14) ? Math.round(prac.fee * between(r, 1, 3)) : '',
           total_remaining_balance: '',
           total_spent_this_month: attendedVisits > 0 && chance(r, 0.3) ? prac.fee * between(r, 1, 3) : '',
-          total_appointments: attendedVisits + (bookedDisc ? 1 : 0) + (chance(r, 0.2) ? 1 : 0),
+          total_appointments: attendedVisits + (chance(r, 0.2) ? 1 : 0),
           total_arrived: attendedVisits,
           total_cancelled: chance(r, 0.18) ? 1 : 0,
           noshow_count: chance(r, 0.12) ? 1 : 0,

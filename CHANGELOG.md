@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.360.0 - 2026-08-20 · `PENDING` - Demo: drop the discovery call, and fix a funnel that couldn't happen
+- The demo's pipeline card showed **Booked Initial Appointment (107) above Discovery Call Attended (57)** - a later step
+  outranking an earlier one, which is impossible in a funnel. The tell was the show rate underneath it: only
+  calendar-linked key events carry one. Both "Booked…" events had matched a **calendar by name**, so every follow-up
+  booking on the service calendars was being counted as a first appointment.
+- Demo data only - the reach calculation itself is sound, and builds cumulatively from the last stage backwards.
+- **Discovery calls removed.** A physio books people straight in, so the pipeline is now
+  **New Enquiry → Contacted → Appointment Booked → Appointment Attended → Treatment Plan Active**.
+- Stage names are now deliberately chosen NOT to collide with any calendar name, which is what caused the double count.
+- The first visit books onto a **{Discipline} Initial Consult** calendar and every later visit onto **{Discipline}
+  Follow-up**, so first appointments and ongoing care are countable separately instead of piling onto one calendar - and
+  the Calendars tab has eight real services to compare.
+- Resulting funnel over 90 days: 338 enquiries → 303 contacted (90%) → 194 booked (57%) → 157 attended (46%) → 100 on a
+  treatment plan (30%). Clinic side: PVA 6.7 (median 6), $157/visit, 96% show rate, 11% one-and-done.
+
 ## v3.359.0 - 2026-08-20 · `PENDING` - Demo account: Norwest Multi-Disciplinary
 - A complete, self-consistent demo clinic - physio, chiro, psychology and OT - that loads instantly and needs no
   integrations behind it. Pipeline runs **New Enquiry → Contacted → Booked Discovery Call → Discovery Call Attended →

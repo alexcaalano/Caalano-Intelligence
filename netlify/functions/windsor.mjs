@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, buildCalPerf } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -2426,7 +2426,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'usercalls', 'clinic'])
+const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -3363,6 +3363,16 @@ export default async (req) => {
 
   // Health Clinics module: per-patient practice-management stats (LTV, appointments,
   // billing / AR, retention) synced onto GHL contacts as custom fields, rolled up.
+  // Calendar / Service performance: booking volume + show rate for every
+  // calendar and Service Calendar, split by acquisition channel.
+  if (url.searchParams.get('scope') === 'calperf') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'calperf', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'calperf', client, connected: false })
+    try { return json({ scope: 'calperf', client, from, to, ...(await buildCalPerf(cc.ghl, from, to)) }, 200, true) }
+    catch (e) { return json({ scope: 'calperf', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
   if (url.searchParams.get('scope') === 'clinic') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'clinic', client, ghl: false })

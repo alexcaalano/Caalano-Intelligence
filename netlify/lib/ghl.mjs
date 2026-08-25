@@ -527,6 +527,14 @@ function contactIdOf(o) { return o.contactId || (o.contact && (o.contact.id || o
 // future-dated bookings made in-period and calls that occurred in-period.
 const APPT_INVALID_RE = /invalid/i
 const APPT_CANCEL_RE = /cancel/i
+// Status vocabulary differs by source. A CRM-native booking reports "showed";
+// a Service Calendar or a booking synced from a practice-management system
+// reports "arrived", "attended", "completed" - and marks a miss as "DNA" or
+// "did not attend" rather than "noshow". Matching only the CRM word silently
+// under-counts every synced clinical appointment, so classify on all of them.
+const APPT_SHOWN_RE = /^(showed|shown|attended|arrived|complete|completed|fulfilled|checked.?in)$/i
+const APPT_NOSHOW_RE = /no.?show|did.?not.?attend|didn.?t.?attend|\bdna\b/i
+function apptShown(status) { const s = String(status || '').trim(); return APPT_SHOWN_RE.test(s) && !APPT_NOSHOW_RE.test(s) }
 async function fetchAppointments(locTok, locationId, from, to) {
   const byContact = new Map()
   const nameByContact = new Map() // contactId -> display name from the calendar event
@@ -541,6 +549,14 @@ async function fetchAppointments(locTok, locationId, from, to) {
     const j = await ghlGet(locTok, '/calendars/', { locationId })
     calendars = j.calendars || j.calendar || []
   } catch (e) { return { byContact, perCalendar, connected: false, error: String(e.message || e).slice(0, 120) } }
+  // Service Calendars come in two shapes. Some are ordinary calendars carrying
+  // calendarType "service" - those are already in `calendars` above and their
+  // bookings come back from /calendars/events like any other. Locations on the
+  // newer Services catalog instead keep a service menu whose bookings live on
+  // their own feed, so those are fetched separately below and bucketed under
+  // the SERVICE's id. Either way a key event linked to that id resolves.
+  const services = await ghlGet(locTok, '/calendars/services/catalog', { locationId })
+    .then((j) => j.services || j.catalog || []).catch(() => [])
   const DAY = 86400000
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null
@@ -552,16 +568,17 @@ async function fetchAppointments(locTok, locationId, from, to) {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
     const invalid = APPT_INVALID_RE.test(s), cancelled = APPT_CANCEL_RE.test(s)
-    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false }
+    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, noShowByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false }
     if (!invalid && inPeriod(addedMs)) {
       e.bookedInPeriod = true // cancelled still counts as a booking on its creation day
       if (cancelled) e._cancelled = true; else e._live = true
     }
-    if (s === 'showed' && inPeriod(startTimeMs)) e.shownByStatus = true
+    if (apptShown(s) && inPeriod(startTimeMs)) e.shownByStatus = true
+    if (APPT_NOSHOW_RE.test(s) && inPeriod(startTimeMs)) e.noShowByStatus = true
     // A live (not cancelled/invalid) call that took place in-period. Lets the
     // caller fall back to "shown by pipeline stage" when the appointment status
     // was never set but the opportunity was advanced past the shown stage.
-    if (!invalid && !cancelled && inPeriod(startTimeMs)) e.hasCallInPeriod = true
+    if (!invalid && !cancelled && !APPT_NOSHOW_RE.test(s) && inPeriod(startTimeMs)) e.hasCallInPeriod = true
     map.set(contactId, e)
   }
   let events = 0
@@ -574,7 +591,11 @@ async function fetchAppointments(locTok, locationId, from, to) {
     const calId = cal.id || cal._id || cal.calendarId
     if (!calId) return
     let rec = perCalendar.get(calId)
-    if (!rec) { rec = { id: calId, name: cal.name || cal.calendarName || 'Calendar', byContact: new Map() }; perCalendar.set(calId, rec) }
+    if (!rec) {
+      const ct = String(cal.calendarType || '').toLowerCase()
+      rec = { id: calId, name: cal.name || cal.calendarName || 'Calendar', kind: /service/.test(ct) ? 'service' : 'calendar', calendarType: ct || null, byContact: new Map() }
+      perCalendar.set(calId, rec)
+    }
     try {
       const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs, endTime: endMs })
       for (const ev of (j.events || [])) {
@@ -601,6 +622,37 @@ async function fetchAppointments(locTok, locationId, from, to) {
       }
     } catch { /* skip a calendar we cannot read; others still count */ }
   }))
+  // Services-catalog bookings. A single booking can cover several services, so
+  // fan it out per service and dedupe by booking id within each bucket - three
+  // services on one visit are three service outcomes, not three visits.
+  if (services.length) {
+    const nameOfService = new Map(services.map((sv) => [String(sv.id || sv._id || sv.serviceId), sv.name || sv.serviceName || 'Service']))
+    try {
+      const j = await ghlGet(locTok, '/calendars/services/bookings', { locationId, startTime: new Date(startMs).toISOString(), endTime: new Date(endMs).toISOString() })
+      const seen = new Set()
+      for (const b of (j.bookings || j.events || [])) {
+        const cid = b.contactId || (b.contact && (b.contact.id || b.contact._id)) || null
+        if (!cid) continue
+        const st = b.appointmentStatus || b.appoinmentStatus || b.status
+        const added = Date.parse(b.dateAdded || b.createdAt), start = Date.parse(b.startTime || b.start)
+        // Every service on the booking, falling back to the booking's own
+        // calendar when the payload doesn't itemise them.
+        const ids = (Array.isArray(b.services) && b.services.length
+          ? b.services.map((x) => String(x.id || x.serviceId || x))
+          : [String(b.serviceId || b.calendarId || '')]).filter(Boolean)
+        for (const sid of ids) {
+          const key = `${sid}::${b.id || b.bookingId || start}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          let rec = perCalendar.get(sid)
+          if (!rec) { rec = { id: sid, name: nameOfService.get(sid) || b.serviceName || 'Service', kind: 'service', byContact: new Map() }; perCalendar.set(sid, rec) }
+          events++
+          mark(cid, st, added, start)
+          markInto(rec.byContact, cid, st, added, start)
+        }
+      }
+    } catch { /* location isn't on the services catalog - normal */ }
+  }
   let bookedContacts = 0, shownContacts = 0, cancelledContacts = 0
   for (const e of byContact.values()) {
     // Net cancellation: they booked in-period and every one of those bookings
@@ -619,7 +671,7 @@ async function fetchAppointments(locTok, locationId, from, to) {
       if (!f.bookedInPeriod && !f.hasCallInPeriod && !f.shownByStatus) continue
       const e = byContact.get(cid); if (!e) continue
       if (!e.calendars) e.calendars = []
-      e.calendars.push({ id: rec.id || null, name: rec.name, occurred: !!f.hasCallInPeriod, shown: !!f.shownByStatus, cancelled: !!(f._cancelled && !f._live) })
+      e.calendars.push({ id: rec.id || null, name: rec.name, kind: rec.kind || 'calendar', occurred: !!f.hasCallInPeriod, shown: !!f.shownByStatus, noShow: !!f.noShowByStatus, cancelled: !!(f._cancelled && !f._live) })
     }
   }
   return { byContact, perCalendar, nameByContact, connected: true, calendars: calendars.length, events, bookedContacts, shownContacts, cancelledContacts }
@@ -1455,6 +1507,87 @@ export async function buildClinic(locationId, opts = {}) {
     ar: ar.sort((a, b) => b.unpaid - a.unpaid).slice(0, 60),
     reactivate: reactivate.sort((a, b) => b.spent - a.spent).slice(0, 100),
     oneAndDoneList: oneAndDoneList.sort((a, b) => b.spent - a.spent).slice(0, 60),
+  }
+}
+
+// Calendar / Service performance: every bookable thing in the location - ordinary
+// calendars and Service Calendars alike - with its booking volume and show rate,
+// split by the channel the patient originally came from.
+//
+// The channel comes from first-touch attribution on the contact's opportunity,
+// which is where UTMs land. Bookings whose contact has no attribution are
+// reported as "Unattributed" rather than quietly folded into organic - most
+// clinic bookings look like that today, and the number only becomes meaningful
+// once UTMs are being captured on the booking journey.
+const CALPERF_CHANNELS = ['meta', 'google', 'other', 'unattributed']
+export async function buildCalPerf(locationId, from, to) {
+  const locTok = await locationToken(locationId)
+  const [appts, opps] = await Promise.all([
+    fetchAppointments(locTok, locationId, from, to),
+    allOpportunities(locTok, locationId, from, to, 3000).catch(() => []),
+  ])
+  if (!appts || appts.connected === false) return { connected: false, calendars: [] }
+  // contactId -> acquisition channel, from whichever opportunity carries
+  // first-touch UTMs. Opportunities are snapshot-backed, so this is cheap.
+  const chanOf = new Map()
+  for (const o of opps) {
+    const cid = contactIdOf(o); if (!cid || chanOf.has(cid)) continue
+    const u = utmOf(o)
+    // channelOf only knows meta/google/other; keep "other" distinct from
+    // "we have no attribution at all", which is the honest default here.
+    chanOf.set(cid, u && u.sig ? channelOf(u) : null)
+  }
+  const mk = () => ({ booked: 0, shown: 0, noShow: 0, cancelled: 0 })
+  const rows = []
+  for (const rec of (appts.perCalendar instanceof Map ? appts.perCalendar.values() : [])) {
+    const total = mk()
+    const byChannel = { meta: mk(), google: mk(), other: mk(), unattributed: mk() }
+    for (const [cid, f] of rec.byContact) {
+      const booked = !!f.bookedInPeriod, shown = !!f.shownByStatus
+      const noShow = !!f.noShowByStatus, cancelled = !!(f._cancelled && !f._live)
+      if (!booked && !shown && !noShow && !cancelled) continue
+      const ch = chanOf.get(cid)
+      const bucket = byChannel[ch === 'meta' ? 'meta' : ch === 'google' ? 'google' : ch ? 'other' : 'unattributed']
+      for (const b of [total, bucket]) {
+        if (booked) b.booked++
+        if (shown) b.shown++
+        if (noShow) b.noShow++
+        if (cancelled) b.cancelled++
+      }
+    }
+    if (!total.booked && !total.shown && !total.noShow && !total.cancelled) continue
+    // Show rate is measured against bookings with a KNOWN outcome. Counting a
+    // booking whose status was never set as a miss would punish clinics that
+    // simply don't mark attendance.
+    const rate = (b) => { const base = b.shown + b.noShow; return base ? Math.round((b.shown / base) * 100) : null }
+    rows.push({
+      id: rec.id, name: rec.name, kind: rec.kind || 'calendar', calendarType: rec.calendarType || null,
+      ...total, showRate: rate(total),
+      outcomeKnown: total.shown + total.noShow,
+      cancelRate: total.booked ? Math.round((total.cancelled / total.booked) * 100) : null,
+      byChannel: Object.fromEntries(CALPERF_CHANNELS.map((c) => [c, { ...byChannel[c], showRate: rate(byChannel[c]) }])),
+    })
+  }
+  rows.sort((a, b) => b.booked - a.booked)
+  const totals = mk()
+  const totalsByChannel = Object.fromEntries(CALPERF_CHANNELS.map((c) => [c, mk()]))
+  for (const r of rows) {
+    for (const k of ['booked', 'shown', 'noShow', 'cancelled']) {
+      totals[k] += r[k]
+      for (const c of CALPERF_CHANNELS) totalsByChannel[c][k] += r.byChannel[c][k]
+    }
+  }
+  const rate = (b) => { const base = b.shown + b.noShow; return base ? Math.round((b.shown / base) * 100) : null }
+  const attributed = CALPERF_CHANNELS.filter((c) => c !== 'unattributed').reduce((n, c) => n + totalsByChannel[c].booked, 0)
+  return {
+    connected: true,
+    calendars: rows,
+    services: rows.filter((r) => r.kind === 'service').length,
+    totals: { ...totals, showRate: rate(totals) },
+    byChannel: Object.fromEntries(CALPERF_CHANNELS.map((c) => [c, { ...totalsByChannel[c], showRate: rate(totalsByChannel[c]) }])),
+    // How much of the booking volume we can actually attribute yet - the honest
+    // header for the channel split until UTMs are flowing on this journey.
+    attributedPct: totals.booked ? Math.round((attributed / totals.booked) * 100) : 0,
   }
 }
 

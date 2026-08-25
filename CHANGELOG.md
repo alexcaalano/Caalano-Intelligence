@@ -17,6 +17,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.343.0 - 2026-08-20 · `PENDING` - Service Calendars wired end-to-end, and a Calendars performance tab
+- **Service Calendars now work as key events, not just appear in the list.** They arrive in two different shapes and the
+  wiring handles both: some are ordinary calendars carrying `calendarType: service` (their bookings come back from the
+  events endpoint like any other), while locations on the newer Services catalog keep a service menu whose bookings live
+  on a **separate feed entirely**. Those are now fetched and bucketed under the *service's* id, so a key event linked to
+  either kind resolves. A booking covering several services fans out per service and de-dupes by booking id - three
+  services on one visit are three service outcomes, not three visits.
+- **Status vocabulary broadened.** A CRM-native booking reports `showed`; a Service Calendar or an appointment synced from
+  a practice-management system reports `arrived` / `attended` / `completed`, and marks a miss as `DNA` or `did not
+  attend`. Matching only the CRM word was silently under-counting every synced clinical appointment. No-shows are now
+  detected explicitly and no longer count as a visit that occurred. Existing CRM statuses behave exactly as before.
+- The key-events picker tags each non-round-robin calendar with its type, so a Service Calendar is identifiable at a
+  glance before you link it to a pipeline stage.
+- **New Calendars tab** - every bookable thing in the location, calendars and Service Calendars alike, with booked,
+  attended, no-show, cancelled and show rate, plus a per-calendar bar chart. Show rate is measured against bookings with a
+  **known outcome**, so clinics that don't mark attendance aren't punished for it.
+- **Filterable by acquisition source** - Meta / Google / Other tracked / Unattributed - from each patient's first-touch
+  UTMs. Most bookings are unattributed today, and the tab says so with the exact percentage rather than folding them into
+  organic. The view is built now so it fills in on its own once UTMs are captured on the booking journey, with no further
+  change needed at that point.
+
 ## v3.342.0 - 2026-08-20 · `PENDING` - Clinic: lay the page out properly, and read the fields we were ignoring
 - The tab had become one long column of equally-weighted cards. It's now banded into labelled sections - **Growth**,
   **Retention**, **Cohorts**, **Acquisition**, **Operations**, **Worklists** - so it reads as chapters rather than a wall.

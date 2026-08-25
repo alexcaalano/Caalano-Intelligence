@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.342.0'
+const APP_VERSION = '3.343.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5954,6 +5954,104 @@ function ClinicView({ clientId, currency, nonce }) {
   )
 }
 
+/* ============ Calendar / Service performance ============ */
+const CALPERF_CH = [
+  { id: 'all', label: 'All sources' },
+  { id: 'meta', label: 'Meta' },
+  { id: 'google', label: 'Google' },
+  { id: 'other', label: 'Other tracked' },
+  { id: 'unattributed', label: 'Unattributed' },
+]
+function useCalPerf(clientId, range, nonce = 0) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const q = rangeQuery(range)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=calperf&${q}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, q, nonce])
+  return st
+}
+// Every bookable thing in the location - ordinary calendars and Service
+// Calendars alike - with its show rate, filterable by where the patient came
+// from. The channel filter is deliberately visible even while most bookings are
+// unattributed: it's the view that becomes the answer once UTMs are flowing.
+function CalPerfView({ clientId, range, nonce }) {
+  const st = useCalPerf(clientId, range, nonce)
+  const [ch, setCh] = useState('all')
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading calendar performance…" /></div>
+  const d = st.data
+  if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load calendar performance.</b></div>
+  if (d.ghl === false || d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected for this client.</b></div>
+  const rows = d.calendars || []
+  if (!rows.length) return <div className="card empty-deep"><div className="big">📅</div><b>No bookings on any calendar in this range.</b></div>
+  const pick = (r) => (ch === 'all' ? r : (r.byChannel || {})[ch] || { booked: 0, shown: 0, noShow: 0, cancelled: 0, showRate: null })
+  const tot = ch === 'all' ? d.totals : (d.byChannel || {})[ch] || {}
+  const shown = rows.map((r) => ({ r, v: pick(r) })).filter((x) => x.v.booked || x.v.shown || x.v.noShow || x.v.cancelled)
+  const top = Math.max(...shown.map((x) => x.v.booked), 0)
+  const pct = (v) => (v == null ? '-' : `${v}%`)
+  return (
+    <>
+      <div className="lvl-title">📅 Calendar performance <span className="sub">· {fmtNumber(rows.length)} calendar{rows.length === 1 ? '' : 's'}{d.services ? ` · ${fmtNumber(d.services)} service calendar${d.services === 1 ? '' : 's'}` : ''}</span></div>
+
+      <div className="cl-tabs" style={{ marginBottom: 12 }}>
+        {CALPERF_CH.map((c) => <button key={c.id} type="button" className={`cl-tab ${ch === c.id ? 'on' : ''}`} onClick={() => setCh(c.id)}>{c.label}{c.id !== 'all' && d.byChannel && d.byChannel[c.id] ? <em>{fmtNumber(d.byChannel[c.id].booked)}</em> : null}</button>)}
+      </div>
+
+      <div className="timing-scards cl-hero">
+        <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(tot.booked)}</b><span className="tm-sub">{ch === 'all' ? 'all sources' : CALPERF_CH.find((c) => c.id === ch).label}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Attended</span><b>{fmtNumber(tot.shown)}</b><span className="tm-sub">marked as arrived / showed</span></div>
+        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{pct(tot.showRate)}</b><span className="tm-sub">of bookings with a known outcome</span></div>
+        <div className="tm-sc warn"><span className="tm-lab">No-show</span><b>{fmtNumber(tot.noShow)}</b><span className="tm-sub">marked as no-show / DNA</span></div>
+        <div className="tm-sc warn"><span className="tm-lab">Cancelled</span><b>{fmtNumber(tot.cancelled)}</b><span className="tm-sub">net of reschedules</span></div>
+      </div>
+
+      <div className="card">
+        <div className="cap cl-cap">By calendar <span>· {ch === 'all' ? 'all sources' : CALPERF_CH.find((c) => c.id === ch).label}</span></div>
+        {top ? <div style={{ marginBottom: 14 }}>{shown.map(({ r, v }) => (
+          <div className="bar-row" key={`b-${r.id}`}>
+            <span className="nm" title={r.name}>{r.name}{r.kind === 'service' ? <em className="kev-caltype">Service</em> : null}</span>
+            <span className="bar-track"><span className="bar-fill" style={{ width: `${Math.max(2, (v.booked / top) * 100)}%`, background: r.kind === 'service' ? '#12b886' : '#4f7cff' }} /></span>
+            <span className="ct">{fmtNumber(v.booked)}</span>
+          </div>
+        ))}</div> : null}
+        <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+          <thead><tr><th className="lft">Calendar</th><th className="lft">Type</th><th>Booked</th><th>Attended</th><th>No-show</th><th>Cancelled</th><th>Show rate</th></tr></thead>
+          <tbody>{shown.map(({ r, v }) => (
+            <tr key={r.id}>
+              <td className="lft" title={r.name}>{r.name}</td>
+              <td className="lft">{r.kind === 'service' ? 'Service' : 'Calendar'}</td>
+              <td>{fmtNumber(v.booked)}</td><td>{fmtNumber(v.shown)}</td><td>{fmtNumber(v.noShow)}</td><td>{fmtNumber(v.cancelled)}</td>
+              <td>{pct(v.showRate)}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <p className="caveat">Show rate is measured against bookings with a <b>known outcome</b> (attended or no-show) - a booking whose status was never set isn&rsquo;t counted as a miss, so clinics that don&rsquo;t mark attendance aren&rsquo;t punished for it. Service Calendars are included alongside ordinary calendars; where a location runs a service menu, each service is reported on its own line.</p>
+      </div>
+
+      <div className="card">
+        <div className="cap cl-cap">Where the bookings came from</div>
+        <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+          <thead><tr><th className="lft">Source</th><th>Booked</th><th>Attended</th><th>No-show</th><th>Show rate</th><th>Share of bookings</th></tr></thead>
+          <tbody>{CALPERF_CH.filter((c) => c.id !== 'all').map((c) => {
+            const v = (d.byChannel || {})[c.id] || {}
+            return <tr key={c.id} className={c.id === 'unattributed' ? 'u-stale' : ''}>
+              <td className="lft">{c.label}</td><td>{fmtNumber(v.booked)}</td><td>{fmtNumber(v.shown)}</td><td>{fmtNumber(v.noShow)}</td>
+              <td>{pct(v.showRate)}</td>
+              <td>{d.totals && d.totals.booked ? `${Math.round(((v.booked || 0) / d.totals.booked) * 100)}%` : '-'}</td>
+            </tr>
+          })}</tbody>
+        </table></div>
+        {d.attributedPct < 50 ? <p className="caveat cl-warn"><b>Only {d.attributedPct}% of bookings can be attributed to a source yet.</b> Channel comes from first-touch UTMs on the patient&rsquo;s contact, so a booking made by someone who never came through a tracked link has none. This split becomes the real answer once UTMs are captured on the booking journey - the view is here and will fill in on its own, with no change needed at that point.</p>
+          : <p className="caveat">Channel is the patient&rsquo;s first-touch attribution, so a calendar&rsquo;s show rate can be read per source - useful when paid traffic books readily but attends less reliably than a referral.</p>}
+      </div>
+    </>
+  )
+}
+
 /* ============ Forms performance ============ */
 function useForms(clientId, range, nonce = 0) {
   const [state, setState] = useState({ status: 'loading', data: null })
@@ -8120,7 +8218,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' })
   // Clinic is self-detecting rather than configured: it appears only where the
   // practice-management sync has actually created its patient fields.
   if (isClinic) allTabs.push({ id: 'clinic', label: 'Clinic' })
@@ -8181,6 +8279,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'timing' && <><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
+        {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
       </div>
@@ -10034,7 +10133,8 @@ const TAB_OPTIONS = [
   { id: 'overall', label: 'Caalano360' }, { id: 'meta', label: 'Meta Ads' }, { id: 'google', label: 'Google Ads' },
   { id: 'analytics', label: 'Analytics' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' },
   { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
-  { id: 'appts', label: 'Appointments' }, { id: 'timing', label: 'Timing' }, { id: 'optlog', label: 'Optimisation Log' },
+  { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'clinic', label: 'Clinic' },
+  { id: 'timing', label: 'Timing' }, { id: 'optlog', label: 'Optimisation Log' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>

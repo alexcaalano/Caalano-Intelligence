@@ -3531,7 +3531,9 @@ export default async (req) => {
       // synced any opportunity data for the account.
       const [cals, pipelines] = await Promise.all([
         listCalendars(cc.ghl),
-        listPipelines(cc.ghl).catch(() => []),
+        // The settings editor is where someone reads stage names right after
+        // changing them, so it always pulls them live rather than from cache.
+        listPipelines(cc.ghl, { force: true }).catch(() => []),
       ])
       return json({ scope: 'calendars', client, connected: true, calendars: cals.calendars || [], roleBasis: cals.roleBasis || null, hasServices: !!cals.hasServices, pipelines }, 200, true)
     }

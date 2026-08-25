@@ -386,16 +386,21 @@ const STAGE_EXC = /(cancel|no.?show|no.?answer|disqualif|lost)/i
 // snapshot-served counts (leads / won / open) still showed. Cache it, and on a failed
 // live pull serve the last-good copy rather than an empty list.
 const PIPE_MEM_MS = 600000     // 10 min in-memory freshness
-const PIPE_BLOB_MS = 86400000  // 24h cross-invocation freshness (pipelines rarely change)
+// Pipelines rarely change - but when they DO, a 24h cache meant a renamed stage
+// kept showing its old name for a day, including on the settings screen where
+// someone is actively looking at the names they just changed. An hour keeps the
+// call volume negligible while making a rename visible in a coffee break, and
+// `force` bypasses it entirely for the settings editor.
+const PIPE_BLOB_MS = 3600000   // 1h cross-invocation freshness
 const _pipeMem = new Map()     // locationId -> { at, pipelines }
 const _pipeStore = () => getStore({ name: 'caalano-pipecache', consistency: 'strong' })
-async function fetchPipelines(locTok, locationId) {
+async function fetchPipelines(locTok, locationId, { force = false } = {}) {
   const now = Date.now()
   const mem = _pipeMem.get(locationId)
-  if (mem && now - mem.at < PIPE_MEM_MS) return mem.pipelines
+  if (!force && mem && now - mem.at < PIPE_MEM_MS) return mem.pipelines
   let cached = null
   try { const hit = await _pipeStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.pipelines)) cached = hit } catch { /* blobs unavailable */ }
-  if (cached && now - cached.at < PIPE_BLOB_MS) { _pipeMem.set(locationId, cached); return cached.pipelines }
+  if (!force && cached && now - cached.at < PIPE_BLOB_MS) { _pipeMem.set(locationId, cached); return cached.pipelines }
   let pipelines = null
   try { const j = await ghlGet(locTok, '/opportunities/pipelines', { locationId }); if (j && Array.isArray(j.pipelines)) pipelines = j.pipelines } catch { /* fall through to stale */ }
   if (pipelines && pipelines.length) {
@@ -837,9 +842,9 @@ export async function listCalendars(locationId) {
 // Windsor has backfilled any opportunity data for the account. Shape matches the
 // blend feed's pipelines (id, name, stages:[{id,name,pos}]) so the editor can use
 // either interchangeably.
-export async function listPipelines(locationId) {
+export async function listPipelines(locationId, opts = {}) {
   const locTok = await locationToken(locationId)
-  const pipes = await fetchPipelines(locTok, locationId)
+  const pipes = await fetchPipelines(locTok, locationId, opts)
   return (pipes || []).map((p) => ({
     id: p.id,
     name: p.name,

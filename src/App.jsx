@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.352.0'
+const APP_VERSION = '3.353.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8811,7 +8811,25 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
   // stages still appear immediately instead of "No pipeline stages found".
   const blendPipes = (st.blend && st.blend.pipelines) || []
   const directPipes = cals.pipelines || []
-  const pipes = blendPipes.some((p) => (p.stages || []).length) ? blendPipes : (directPipes.length ? directPipes : blendPipes)
+  // Stage NAMES come from Caalano Systems, which is where they're edited; the
+  // blend feed is a periodic mirror, so preferring it meant a renamed stage kept
+  // its old name here until that sync caught up. Counts still come from the
+  // blend - it's the only side that has them - matched to the live stage by id.
+  const pipes = React.useMemo(() => {
+    if (!directPipes.length) return blendPipes
+    const bById = new Map(blendPipes.map((p) => [p.id, p]))
+    return directPipes.map((p) => {
+      const b = bById.get(p.id)
+      if (!b) return p
+      const bStage = new Map((b.stages || []).map((x) => [x.id, x]))
+      return {
+        ...b, ...p,
+        // Live id/name/position wins; anything else the blend knows about a
+        // stage (open counts, value) rides along.
+        stages: (p.stages || []).map((x) => ({ ...(bStage.get(x.id) || {}), ...x })),
+      }
+    })
+  }, [directPipes, blendPipes])
   const withStages = pipes.filter((p) => (p.stages || []).length)
   const multi = withStages.length > 1
   // A stage entry is a bare name (or {stage} with no cal); a calendar entry is

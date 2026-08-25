@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.353.0 - 2026-08-20 · `PENDING` - Pipeline stage names: cached for a day, now an hour (and live in Settings)
+- Stage names were showing their **old** values after a rename in Caalano Systems. The cause was not the data source -
+  pipelines already come straight from the GoHighLevel API - it was the cache in front of it: `caalano-pipecache` held
+  them for **24 hours**, on the reasoning that pipelines rarely change. They rarely do; but when they do, a full day of
+  wrong names is the worst possible time to be caching hard.
+- Cross-invocation freshness cut from **24h to 1h**, keeping the 10-minute in-memory layer and the stale-on-error
+  fallback (a transient 429 still can't blank the funnel).
+- The **Settings key-events editor now pulls pipelines live**, bypassing both caches. That's the one screen where someone
+  reads stage names immediately after changing them, so it should never show a cached copy.
+- Stage **names and positions are now taken from the live pipeline list** and the blend feed's per-stage counts are
+  merged onto them by stage id, rather than one source winning outright. A stage renamed, added or deleted in the CRM is
+  reflected immediately, and its open-deal counts still ride along.
+
 ## v3.352.0 - 2026-08-20 · `PENDING` - Clinic settings: calendar TYPE decides, not the name
 - Where a clinic runs **Service Calendars**, that is the clinical layer - services are what a practitioner delivers - and
   the ordinary calendars are the discovery / intake layer in front of them. That's a structural fact, far more reliable

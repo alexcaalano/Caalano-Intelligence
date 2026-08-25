@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.342.0 - 2026-08-20 · `PENDING` - Clinic: lay the page out properly, and read the fields we were ignoring
+- The tab had become one long column of equally-weighted cards. It's now banded into labelled sections - **Growth**,
+  **Retention**, **Cohorts**, **Acquisition**, **Operations**, **Worklists** - so it reads as chapters rather than a wall.
+- The headline scorecard is trimmed from nine tiles to **five**; the rest moved into the section they belong to. The three
+  patient worklists (win-back, unpaid balances, reactivation) now share **one tabbed card** instead of stacking three long
+  tables, and operations sits in a three-across row.
+- Enumerated every field the sync actually creates and picked up the ones we were ignoring:
+  - **Patient ID** - its presence marks a contact as a real patient record rather than a lead who never attended, and the
+    header now reports how many contacts matched one.
+  - **Last Updated via API** - the sync's own timestamp, so the tab shows when the practice-management system last wrote
+    and warns when a clinic's sync has quietly stopped for 3+ days.
+  - **Cancellation reasons** - why appointments fall over, as a ranked bar list.
+  - **Appointment types** - what's actually being booked, with the avg LTV of patients on each.
+- Also added lifetime value **by campaign** (the lifetime-ROAS view: set against campaign spend for cost per *patient*
+  rather than cost per lead), and turned the "how patients heard about us" list into bars.
+- Confirmed there is **no booking-created date** among the synced fields, so the at-the-desk rebooking split can't be
+  recovered from contact data - it needs per-booking creation times, which only genuine CRM bookings carry.
+
 ## v3.341.0 - 2026-08-20 · `PENDING` - Clinic: refuse to split rebooking on timestamps the sync fabricated
 - Confirmed against a live location that when the practice-management sync writes appointments **into** the CRM, each
   booking's `dateAdded` is *the moment the sync ran*, not the moment the patient booked - a batch of appointments spread

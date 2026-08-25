@@ -1009,6 +1009,16 @@ const CLINIC_FIELDS = {
   upcoming_appt_practitioner: 'str',
   accepted_email_marketing: 'str', accepted_sms_marketing: 'str',
   how_did_you_hear_about_us: 'str', likelihood_to_recommend: 'num', overall_satisfaction: 'str',
+  // The practice-management system's own patient id. Its presence is what makes a
+  // contact a PATIENT rather than a lead who never attended, which is a far better
+  // signal than "carries any clinic field at all".
+  patient_id: 'str', patientid: 'str',
+  // When the sync last touched this contact - lets us show how fresh the tab is
+  // and warn when a clinic's sync has quietly stopped.
+  last_updated_via_api: 'str',
+  // Why appointments fall over, and what is actually being booked.
+  last_appt_cancel_reason: 'str', upcoming_appt_cancel_reason: 'str',
+  upcoming_appt_type: 'str', last_appt_business: 'str',
 }
 // Month maths for the cohort views. Cohort keys are "YYYY-MM".
 const CURVE_MAX = 12
@@ -1195,7 +1205,8 @@ export async function buildClinic(locationId, opts = {}) {
   const cohort = new Map(); const retention = new Map(); const heard = new Map()
   const practitioner = new Map(); const npsVals = []
   const channel = new Map(); const campaign = new Map()
-  let withUpcoming = 0, emailOptIn = 0, smsOptIn = 0
+  const cancelReasons = new Map(); const apptTypes = new Map()
+  let withUpcoming = 0, emailOptIn = 0, smsOptIn = 0, identified = 0, lastSyncMs = 0
   const ar = []            // patients with an unpaid balance
   const reactivate = []    // visited before, nothing in the diary
   const oneAndDoneList = [] // attended exactly once and never came back
@@ -1224,6 +1235,13 @@ export async function buildClinic(locationId, opts = {}) {
       const arrived = _clinicNum(val(m, 'total_arrived'))
       if (pr) { const e = practitioner.get(pr) || { name: pr, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += totalAppts; practitioner.set(pr, e) }
       const nps = _clinicNum(val(m, 'likelihood_to_recommend')); if (nps != null) npsVals.push(nps)
+      // A real patient record in the practice-management system, not just a lead.
+      const pid = String(val(m, 'patient_id') || val(m, 'patientid') || '').trim(); if (pid) identified++
+      const syncMs = Date.parse(val(m, 'last_updated_via_api') || ''); if (isFinite(syncMs) && syncMs > lastSyncMs) lastSyncMs = syncMs
+      const cr = String(val(m, 'last_appt_cancel_reason') || val(m, 'upcoming_appt_cancel_reason') || '').trim()
+      if (cr) cancelReasons.set(cr, (cancelReasons.get(cr) || 0) + 1)
+      const at = String(val(m, 'last_appt_type') || '').trim()
+      if (at) { const e = apptTypes.get(at) || { type: at, patients: 0, ltv: 0 }; e.patients++; e.ltv += spent || 0; apptTypes.set(at, e) }
       if (String(val(m, 'accepted_email_marketing') || '').toLowerCase().startsWith('y')) emailOptIn++
       if (String(val(m, 'accepted_sms_marketing') || '').toLowerCase().startsWith('y')) smsOptIn++
       // Cohort by first-appointment month, valued by LTV.
@@ -1397,6 +1415,15 @@ export async function buildClinic(locationId, opts = {}) {
     },
     forwardBookings: { withUpcoming, pctWithUpcoming: N.withData ? Math.round((withUpcoming / N.withData) * 100) : 0, upcomingTotal: sum.upcomingAppts },
     retentionEcon, rebooking,
+    // Sync health: how many contacts are genuine patient records, and how long
+    // since the practice-management sync last wrote anything.
+    sync: {
+      identified,
+      lastSyncAt: lastSyncMs ? new Date(lastSyncMs).toISOString() : null,
+      staleDays: lastSyncMs ? Math.floor((Date.now() - lastSyncMs) / 86400000) : null,
+    },
+    cancelReasons: [...cancelReasons.entries()].map(([reason, n]) => ({ reason, count: n })).sort((a, b) => b.count - a.count).slice(0, 12),
+    apptTypes: [...apptTypes.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.patients - a.patients).slice(0, 12),
     channels: [...channel.values()].map((e) => ({
       ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0,
       avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0,

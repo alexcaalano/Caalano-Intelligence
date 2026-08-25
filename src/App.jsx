@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.341.0'
+const APP_VERSION = '3.342.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5633,277 +5633,323 @@ function ClinicDelta({ value, pts, goodDown, money, suffix }) {
   const txt = money ? money(Math.abs(value)) : `${Math.abs(value)}${pts ? 'pt' : ''}${suffix || ''}`
   return <span className={`cl-delta ${good ? 'up' : 'down'}`}>{value > 0 ? '▲' : '▼'} {txt}</span>
 }
+// A labelled band that breaks the clinic page into readable chapters. Without
+// these the tab is one long column of equally-weighted cards and everything
+// reads as equally important.
+function ClinicSection({ id, title, note, children }) {
+  return (
+    <section className="cl-sec" id={id}>
+      <div className="cl-sec-h"><h3>{title}</h3>{note ? <span>{note}</span> : null}</div>
+      {children}
+    </section>
+  )
+}
 function ClinicView({ clientId, currency, nonce }) {
   const st = useClinic(clientId, nonce)
+  const [work, setWork] = useState('winback')
   const money = (v) => fmtCurrency(v, currency)
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading clinic data…" /></div>
   const d = st.data
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load clinic data.</b></div>
   if (d.ghl === false || d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected for this client.</b></div>
-  if (!d.hasClinic) return <div className="card empty-deep"><div className="big">🏥</div><b>No clinic data synced for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>This tab fills in once a practice-management sync (e.g. Universal Plugins → Cliniko / Nookal) writes patient stats - lifetime value, appointments, billing, retention - onto the contacts. {d.fields ? `${d.fields} clinic field(s) detected but no patients carry data yet.` : 'No clinic custom fields were found on this location.'}</p></div>
+  if (!d.hasClinic) return <div className="card empty-deep"><div className="big">🏥</div><b>No clinic data synced for this client.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>This tab fills in once a practice-management sync (e.g. Universal Plugins → Cliniko / Nookal / Halaxy) writes patient stats - lifetime value, appointments, billing, retention - onto the contacts. {d.fields ? `${d.fields} clinic field(s) detected but no patients carry data yet.` : 'No clinic custom fields were found on this location.'}</p></div>
   const m = d.money || {}, ap = d.appointments || {}, fb = d.forwardBookings || {}, re = d.retentionEcon || {}
   const rb = d.rebooking || {}
+  const sy = d.sync || {}
   const dl = d.deltas || null
   const hist = Array.isArray(d.history) ? d.history : []
   const asAt = d.asAt ? new Date(d.asAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
-  // Retention funnel: synced -> attended -> came back -> something in the diary.
+  const pct = (v) => (v == null ? '-' : `${v}%`)
+  const partial = d.patientsWithData < d.patients
+  const stale = sy.staleDays != null && sy.staleDays >= 3
   const funnelRows = [
     { key: 'synced', label: 'Patients synced', value: d.patientsWithData || 0, color: '#6d5efc', hint: 'Contacts carrying practice-management data.' },
     { key: 'attended', label: 'Attended at least once', value: re.attended || 0, color: '#4f7cff', hint: 'The retention base - patients actually seen.' },
     { key: 'returned', label: 'Came back (2+ visits)', value: re.returned || 0, color: '#12b886', hint: 'Genuinely retained - the cohort that produces the LTV.' },
     { key: 'next', label: 'Next appointment booked', value: re.attendedWithNext || 0, color: '#17b26a', hint: 'Has an appointment in the diary right now.' },
   ]
-  const pct = (v) => (v == null ? '-' : `${v}%`)
-  const partial = d.patientsWithData < d.patients
+  const workTabs = [
+    { id: 'winback', label: 'Win-back', n: (d.oneAndDoneList || []).length },
+    { id: 'ar', label: 'Unpaid balances', n: (d.ar || []).length },
+    { id: 'reactivate', label: 'Reactivation', n: (d.reactivate || []).length },
+  ].filter((t) => t.n > 0)
+  const workTab = workTabs.some((t) => t.id === work) ? work : (workTabs[0] ? workTabs[0].id : null)
   return (
     <>
-      <div className="lvl-title">🏥 Health Clinic <span className="sub">· {fmtNumber(d.patientsWithData)} of {fmtNumber(d.patients)} patients carry synced data{partial ? ' · sync still populating' : ''}{asAt ? ` · as at ${asAt}` : ''}</span></div>
-      <p className="caveat" style={{ marginTop: -4 }}>This tab is a <b>point-in-time</b> read, not a date-range report - the practice-management sync overwrites each patient&rsquo;s stats every run, so the CRM only ever holds today&rsquo;s values. The date range selected above doesn&rsquo;t apply here. Period figures below come from our own daily snapshots instead.</p>
+      <div className="lvl-title">🏥 Health Clinic <span className="sub">· {fmtNumber(d.patientsWithData)} of {fmtNumber(d.patients)} contacts carry patient data{sy.identified ? ` · ${fmtNumber(sy.identified)} matched to a practice ID` : ''}{asAt ? ` · read ${asAt}` : ''}</span></div>
+      <div className="cl-note">
+        <p><b>This is a point-in-time view, not a date-range report.</b> The practice-management sync overwrites each patient&rsquo;s stats every run, so the CRM only ever holds today&rsquo;s values - the date range selected above doesn&rsquo;t apply here. Period and trend figures come from our own daily snapshots instead.</p>
+        {stale ? <p className="cl-stale">⚠️ The sync last wrote to this location <b>{sy.staleDays} days ago</b>. Everything below is as at that date, not today.</p>
+          : (sy.lastSyncAt ? <p className="cl-fresh">Practice-management sync last wrote {new Date(sy.lastSyncAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.{partial ? ' Still populating across the patient base.' : ''}</p> : null)}
+      </div>
 
-      {/* Headline clinic economics, in the app's standard scorecard strip. */}
-      <div className="timing-scards">
+      {/* Five numbers, not nine. Everything else lives in the section it belongs to. */}
+      <div className="timing-scards cl-hero">
         <div className="tm-sc hero"><span className="tm-lab">Lifetime value</span><b>{money(m.ltv)}</b><span className="tm-sub">{fmtNumber(m.ltvPatients || d.patientsWithData)} patients valued <ClinicDelta value={dl && dl.revenue} money={money} /></span></div>
         <div className="tm-sc"><span className="tm-lab">Avg LTV / patient</span><b>{money(m.avgLtv)}</b><span className="tm-sub">across patients with a value <ClinicDelta value={dl && dl.avgLtvDelta} money={money} /></span></div>
         <div className="tm-sc"><span className="tm-lab">Next booking rate</span><b>{pct(re.nextBookingRate)}</b><span className="tm-sub">{fmtNumber(re.attendedWithNext)} of {fmtNumber(re.attended)} have one in the diary <ClinicDelta value={dl && dl.nextBookingRatePts} pts /></span></div>
-        <div className="tm-sc"><span className="tm-lab">Return rate</span><b>{pct(re.returnRate)}</b><span className="tm-sub">{fmtNumber(re.returned)} came back at least once</span></div>
         <div className="tm-sc warn"><span className="tm-lab">One &amp; done</span><b>{pct(re.oneAndDoneRate)}</b><span className="tm-sub">{fmtNumber(re.oneAndDone)} never returned <ClinicDelta value={dl && dl.oneAndDoneRatePts} pts goodDown /></span></div>
-        <div className="tm-sc warn"><span className="tm-lab">Revenue at risk</span><b>{money(re.lostRevenue)}</b><span className="tm-sub">one &amp; done × LTV gap</span></div>
-        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{pct(ap.showRate)}</b><span className="tm-sub">no-show {pct(ap.noShowRate)} · cancel {pct(ap.cancelRate)} <ClinicDelta value={dl && dl.showRatePts} pts /></span></div>
-        <div className="tm-sc" title="Calendar month to date, as reported by the sync - this figure resets on the 1st."><span className="tm-lab">Spent this month</span><b>{money(m.spentThisMonth)}</b><span className="tm-sub">month to date · unpaid AR {money(m.unpaid)}</span></div>
-        {d.nps && d.nps.score != null ? <div className="tm-sc"><span className="tm-lab">NPS</span><b>{d.nps.score}</b><span className="tm-sub">{fmtNumber(d.nps.responses)} responses</span></div> : null}
+        <div className="tm-sc warn"><span className="tm-lab">Revenue at risk</span><b>{money(re.lostRevenue)}</b><span className="tm-sub">one &amp; done × the LTV gap</span></div>
       </div>
 
-      {/* Period movement. Only possible because we snapshot daily: lifetime spend
-          is cumulative, so the gap between two days IS the revenue booked between
-          them - a figure the CRM cannot produce, since it overwrites as it syncs. */}
-      {dl ? <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 10 }}>Last {dl.spanDays} days <span style={{ fontWeight: 400 }}>· measured against our snapshot from {dl.since}</span></div>
-        <div className="timing-scards">
-          <div className="tm-sc hero"><span className="tm-lab">Revenue booked</span><b>{money(dl.revenue)}</b><span className="tm-sub">growth in total lifetime value</span></div>
-          <div className="tm-sc"><span className="tm-lab">Collected</span><b>{money(dl.collected)}</b><span className="tm-sub">movement in total paid</span></div>
-          <div className="tm-sc"><span className="tm-lab">New patients</span><b>{fmtNumber(dl.newPatients)}</b><span className="tm-sub">added to the synced base</span></div>
-          <div className="tm-sc"><span className="tm-lab">Appointments attended</span><b>{fmtNumber(dl.apptsAttended)}</b><span className="tm-sub">of {fmtNumber(dl.apptsBooked)} booked</span></div>
-          <div className="tm-sc warn"><span className="tm-lab">No-shows</span><b>{fmtNumber(dl.noShows)}</b><span className="tm-sub">in the same window</span></div>
-          <div className="tm-sc"><span className="tm-lab">Unpaid AR</span><b>{money(m.unpaid)}</b><span className="tm-sub">movement <ClinicDelta value={dl.unpaidDelta} money={money} goodDown /></span></div>
-        </div>
-        <p className="caveat" style={{ marginTop: 10 }}>Because lifetime spend, appointment and attendance counters only ever accumulate, the difference between two daily snapshots is a genuine period figure. It reflects what the sync had recorded on each of those two days, so a backdated entry lands in the window we noticed it rather than the window it happened in.</p>
-      </div> : (hist.length ? null : <div className="card insight">
-        <div><b>Trends start building from today.</b><p style={{ margin: '4px 0 0' }}>The practice-management sync overwrites its values each run, so no history exists to read back. We now record this clinic&rsquo;s totals once a day - period revenue, patient growth and rate movement will appear here as those snapshots accumulate, and a month from now this becomes a like-for-like comparison.</p></div>
-      </div>)}
-
-      {/* Trend, from our own snapshots. */}
-      {hist.length > 2 ? <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Trend <span style={{ fontWeight: 400 }}>· {fmtNumber(hist.length)} daily snapshots</span></div>
-        <ResponsiveContainer width="100%" height={200}>
-          <ComposedChart data={hist} margin={{ left: -8, right: 6, top: 8 }}>
-            <CartesianGrid stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="date" fontSize={9.5} stroke="var(--muted)" interval="preserveStartEnd" minTickGap={26} />
-            <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
-            <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-            <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} formatter={(v, n) => (n === 'Lifetime value' ? money(v) : `${v}%`)} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Line yAxisId="l" dataKey="ltv" name="Lifetime value" stroke="#12b886" strokeWidth={2} dot={false} />
-            <Line yAxisId="r" dataKey="nextBookingRate" name="Next booking rate" stroke="#4f7cff" strokeWidth={2} dot={false} />
-            <Line yAxisId="r" dataKey="showRate" name="Show rate" stroke="#f5a524" strokeWidth={2} dot={false} />
-            <Line yAxisId="r" dataKey="oneAndDoneRate" name="One &amp; done" stroke="#f0435b" strokeWidth={2} dot={false} strokeDasharray="4 3" />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div> : null}
-
-      {/* The retention funnel, then - where the diary supports it - the rebooking
-          split that says WHEN the next appointment got made. */}
-      <div className="mr-two">
-        <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 10 }}>Patient retention funnel</div>
-          <ClinicFunnel rows={funnelRows} />
-          <p className="caveat" style={{ marginTop: 12 }}>Each bar is scaled against the synced patient base, so the drop between &ldquo;attended&rdquo; and &ldquo;came back&rdquo; is the retention problem in one picture.</p>
-        </div>
-        {rb.available ? <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 10 }}>Rebooking - when was the next appointment made?</div>
-          <div className="tm-sc hero" style={{ marginBottom: 12 }}>
-            <span className="tm-lab">Next booking rate</span><b>{pct(rb.rate)}</b>
-            <span className="tm-sub">{fmtNumber(rb.rebooked)} of {fmtNumber(rb.visits)} visits were followed by another booking</span>
+      <ClinicSection id="cl-growth" title="Growth" note="what actually moved, from our daily snapshots">
+        {dl ? <div className="card">
+          <div className="cap cl-cap">Last {dl.spanDays} days <span>· measured against our snapshot from {dl.since}</span></div>
+          <div className="timing-scards">
+            <div className="tm-sc hero"><span className="tm-lab">Revenue booked</span><b>{money(dl.revenue)}</b><span className="tm-sub">growth in total lifetime value</span></div>
+            <div className="tm-sc"><span className="tm-lab">Collected</span><b>{money(dl.collected)}</b><span className="tm-sub">movement in total paid</span></div>
+            <div className="tm-sc"><span className="tm-lab">New patients</span><b>{fmtNumber(dl.newPatients)}</b><span className="tm-sub">added to the synced base</span></div>
+            <div className="tm-sc"><span className="tm-lab">Attended</span><b>{fmtNumber(dl.apptsAttended)}</b><span className="tm-sub">of {fmtNumber(dl.apptsBooked)} booked</span></div>
+            <div className="tm-sc warn"><span className="tm-lab">No-shows</span><b>{fmtNumber(dl.noShows)}</b><span className="tm-sub">in the same window</span></div>
+            <div className="tm-sc"><span className="tm-lab">Unpaid AR</span><b>{money(m.unpaid)}</b><span className="tm-sub">movement <ClinicDelta value={dl.unpaidDelta} money={money} goodDown /></span></div>
           </div>
-          <ClinicSplitBar total={rb.visits} segs={rb.timingAvailable ? [
-            { key: 'poc', label: 'Booked before leaving', value: rb.atPointOfCare || 0, color: '#17b26a' },
-            { key: 'later', label: 'Booked after leaving', value: rb.afterLeaving || 0, color: '#f5a524' },
-            { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
-          ] : [
-            { key: 'yes', label: 'Rebooked', value: rb.rebooked || 0, color: '#17b26a' },
-            { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
-          ]} />
-          <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl">
-            <thead><tr><th className="lft">Outcome of a visit</th><th>Visits</th><th>Share</th></tr></thead>
-            <tbody>
-              {rb.timingAvailable ? <>
+          <p className="caveat">Lifetime spend and the appointment counters only ever accumulate, so the difference between two daily snapshots is a genuine period figure. It reflects what the sync had recorded on each of those two days, so a backdated entry lands in the window we noticed it rather than the window it happened in.</p>
+        </div> : (hist.length ? null : <div className="card insight">
+          <div><b>Trends start building from today.</b><p style={{ margin: '4px 0 0' }}>The practice-management sync overwrites its values each run, so no history exists to read back. We now record this clinic&rsquo;s totals once a day - period revenue, patient growth and rate movement will appear here as those snapshots accumulate, and a month from now this becomes a like-for-like comparison.</p></div>
+        </div>)}
+
+        {hist.length > 2 ? <div className="card">
+          <div className="cap cl-cap">Trend <span>· {fmtNumber(hist.length)} daily snapshots</span></div>
+          <ResponsiveContainer width="100%" height={210}>
+            <ComposedChart data={hist} margin={{ left: -8, right: 6, top: 8 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="date" fontSize={9.5} stroke="var(--muted)" interval="preserveStartEnd" minTickGap={26} />
+              <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+              <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+              <Tooltip contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} formatter={(v, n) => (n === 'Lifetime value' ? money(v) : `${v}%`)} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line yAxisId="l" dataKey="ltv" name="Lifetime value" stroke="#12b886" strokeWidth={2} dot={false} />
+              <Line yAxisId="r" dataKey="nextBookingRate" name="Next booking rate" stroke="#4f7cff" strokeWidth={2} dot={false} />
+              <Line yAxisId="r" dataKey="showRate" name="Show rate" stroke="#f5a524" strokeWidth={2} dot={false} />
+              <Line yAxisId="r" dataKey="oneAndDoneRate" name="One &amp; done" stroke="#f0435b" strokeWidth={2} dot={false} strokeDasharray="4 3" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div> : null}
+      </ClinicSection>
+
+      <ClinicSection id="cl-retention" title="Retention" note="who comes back, and what it costs when they don't">
+        <div className="mr-two">
+          <div className="card">
+            <div className="cap cl-cap">Patient retention funnel</div>
+            <ClinicFunnel rows={funnelRows} />
+            <p className="caveat">Each bar is scaled against the synced patient base, so the drop between &ldquo;attended&rdquo; and &ldquo;came back&rdquo; is the retention problem in one picture.</p>
+          </div>
+          {rb.available ? <div className="card">
+            <div className="cap cl-cap">Rebooking <span>· was a visit followed by another booking?</span></div>
+            <div className="cl-bignum"><b>{pct(rb.rate)}</b><span>{fmtNumber(rb.rebooked)} of {fmtNumber(rb.visits)} visits led to another booking</span></div>
+            <ClinicSplitBar total={rb.visits} segs={rb.timingAvailable ? [
+              { key: 'poc', label: 'Booked before leaving', value: rb.atPointOfCare || 0, color: '#17b26a' },
+              { key: 'later', label: 'Booked after leaving', value: rb.afterLeaving || 0, color: '#f5a524' },
+              { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
+            ] : [
+              { key: 'yes', label: 'Rebooked', value: rb.rebooked || 0, color: '#17b26a' },
+              { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
+            ]} />
+            {rb.timingAvailable ? <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Outcome of a visit</th><th>Visits</th><th>Share</th></tr></thead>
+              <tbody>
                 <tr><td className="lft">Left with the next one booked</td><td>{fmtNumber(rb.atPointOfCare)}</td><td>{pct(rb.pctAtPointOfCare)}</td></tr>
                 <tr><td className="lft">Booked again after leaving</td><td>{fmtNumber(rb.afterLeaving)}</td><td>{pct(rb.pctAfterLeaving)}</td></tr>
-              </> : <tr><td className="lft">Followed by another booking</td><td>{fmtNumber(rb.rebooked)}</td><td>{pct(rb.rate)}</td></tr>}
-              <tr className="u-stale"><td className="lft">Never rebooked</td><td>{fmtNumber(rb.notRebooked)}</td><td>{pct(rb.pctNotRebooked)}</td></tr>
-              {rb.timingAvailable ? <tr><td className="lft"><b>Of those who did rebook, booked at the desk</b></td><td>-</td><td><b>{pct(rb.shareAtPointOfCare)}</b></td></tr> : null}
+                <tr className="u-stale"><td className="lft">Never rebooked</td><td>{fmtNumber(rb.notRebooked)}</td><td>{pct(rb.pctNotRebooked)}</td></tr>
+                <tr><td className="lft"><b>Of those who rebooked, booked at the desk</b></td><td>-</td><td><b>{pct(rb.shareAtPointOfCare)}</b></td></tr>
+              </tbody>
+            </table></div> : null}
+            {!rb.timingAvailable ? <p className="caveat cl-warn"><b>The at-the-desk split isn&rsquo;t shown for this clinic.</b> Appointments here are written into the CRM by the practice-management sync, so each booking&rsquo;s creation timestamp is the moment the sync ran, not the moment the patient booked{rb.bookingTimes && rb.bookingTimes.pctCreatedAfterStart > 0 ? `, and ${rb.bookingTimes.pctCreatedAfterStart}% are stamped after the appointment had already happened` : ''}. Splitting on that would produce a confident but meaningless number, so we report only whether a visit was followed by another booking - which depends on appointment dates, and those are real.</p>
+              : <p className="caveat">Read from the diary across {fmtNumber(rb.calendars)} calendar{rb.calendars === 1 ? '' : 's'}: for every visit that has already happened we compare when the <i>next</i> booking was created against the day of that visit. Booked on or before the visit day (at reception, or a course booked up front) counts as leaving with it booked; anything later counts as a chase.</p>}
+            {rb.truncated ? <p className="caveat cl-warn">Part of the diary was skipped to stay inside the request budget, so treat these as indicative until the overnight snapshot catches up.</p> : null}
+          </div> : null}
+        </div>
+
+        <div className="card">
+          <div className="cap cl-cap">Retention economics <span>· what it costs when a patient doesn&rsquo;t come back</span></div>
+          <div className="table-wrap"><table className="mini-tbl appt-tbl">
+            <thead><tr><th className="lft">Measure</th><th>Patients</th><th>Rate</th><th className="lft">What it means</th></tr></thead>
+            <tbody>
+              <tr><td className="lft">Attended at least once</td><td>{fmtNumber(re.attended)}</td><td>-</td><td className="lft">The retention base - everyone who has actually been seen.</td></tr>
+              <tr><td className="lft">Has their next appointment booked</td><td>{fmtNumber(re.attendedWithNext)}</td><td>{pct(re.nextBookingRate)}</td><td className="lft">Something in the diary right now. The single biggest retention lever.</td></tr>
+              <tr><td className="lft">Booked again after their first visit</td><td>{fmtNumber(re.rebookedAfterFirst)}</td><td>{pct(re.rebookRate)}</td><td className="lft">Of first-visit patients, how many have a second appointment booked.</td></tr>
+              <tr><td className="lft">Returned (2+ visits)</td><td>{fmtNumber(re.returned)}</td><td>{pct(re.returnRate)}</td><td className="lft">Genuinely retained - the cohort that produces the LTV.</td></tr>
+              <tr className="u-stale"><td className="lft">First visit, never returned</td><td>{fmtNumber(re.oneAndDone)}</td><td>{pct(re.oneAndDoneRate)}</td><td className="lft">One attended visit and nothing booked ahead.</td></tr>
+              <tr><td className="lft">Avg LTV · returned patient</td><td>-</td><td>{money(re.avgLtvReturned)}</td><td className="lft">What a retained patient is worth.</td></tr>
+              <tr><td className="lft">Avg LTV · one &amp; done patient</td><td>-</td><td>{money(re.avgLtvOneAndDone)}</td><td className="lft">What a lapsed patient produced before leaving.</td></tr>
+              <tr><td className="lft"><b>Revenue at risk</b></td><td>{fmtNumber(re.oneAndDone)}</td><td><b>{money(re.lostRevenue)}</b></td><td className="lft">One &amp; done patients × the {money(re.ltvGap)} gap between a retained and a lapsed patient.</td></tr>
             </tbody>
           </table></div>
-          {!rb.timingAvailable ? <p className="caveat cl-warn" style={{ marginTop: 10 }}><b>The at-the-desk split isn&rsquo;t shown for this clinic.</b> Appointments here are written into the CRM by the practice-management sync, so each booking&rsquo;s creation timestamp is the moment the sync ran - not the moment the patient booked{rb.bookingTimes && rb.bookingTimes.pctCreatedAfterStart > 0 ? `, and ${rb.bookingTimes.pctCreatedAfterStart}% of them are stamped after the appointment had already happened` : ''}. Splitting on that would produce a confident but meaningless number, so we report only whether a visit was followed by another booking - which depends on appointment dates, and those are real.</p>
-            : <p className="caveat" style={{ marginTop: 10 }}>Read from the diary itself across {fmtNumber(rb.calendars)} calendar{rb.calendars === 1 ? '' : 's'}: for every visit that has already happened we compare when the <i>next</i> booking was created against the day of that visit. Booked on or before the visit day (at reception, or a course booked up front) counts as leaving with it booked; anything later counts as a chase.</p>}
-          {rb.truncated ? <p className="caveat cl-warn">Part of the diary was skipped to stay inside the request budget, so treat these as indicative until the overnight snapshot catches up.</p> : null}
+          <p className="caveat"><b>Revenue at risk</b> is an opportunity figure, not money already lost: it prices what the one-and-done cohort would have been worth had they retained at the same average as returning patients.</p>
+        </div>
+      </ClinicSection>
+
+      <ClinicSection id="cl-cohorts" title="Cohorts" note="patients grouped by when they first came in">
+        <div className="card">
+          <div className="cap cl-cap">Cohort value <span>· by first-appointment month</span></div>
+          {d.cohorts && d.cohorts.length > 1 ? <ResponsiveContainer width="100%" height={190}>
+            <ComposedChart data={d.cohorts.slice().reverse()} margin={{ left: -8, right: 6, top: 8 }}>
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="month" fontSize={9.5} stroke="var(--muted)" interval="preserveStartEnd" minTickGap={14} />
+              <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" allowDecimals={false} />
+              <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
+              <Tooltip formatter={(v, n) => (n === 'Patients' ? fmtNumber(v) : money(v))} contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar yAxisId="l" dataKey="patients" name="Patients" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={22} />
+              <Line yAxisId="r" dataKey="avgLtv" name="Avg LTV" stroke="#12b886" strokeWidth={2} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer> : null}
+          {d.cohorts && d.cohorts.length ? <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+            <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Age</th><th>Total LTV</th><th>Avg LTV</th><th title="Average LTV divided by how many months the cohort has existed - the fair way to compare a two-year-old cohort against a new one">Avg LTV / month</th><th>Avg appts</th><th title="Share with an appointment in the diary right now">Still active</th><th title="Share that came back for a second visit">Came back</th></tr></thead>
+            <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{c.tenureMonths != null ? `${c.tenureMonths}mo` : '-'}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.ltvPerMonth != null ? money(c.ltvPerMonth) : '-'}</td><td>{c.avgAppts}</td><td>{c.activePct != null ? `${c.activePct}%` : '-'}</td><td>{c.returnedPct != null ? `${c.returnedPct}%` : '-'}</td></tr>)}</tbody>
+          </table></div> : <p className="cap" style={{ margin: 0 }}>No first-appointment dates synced yet.</p>}
+          <p className="caveat">Cohorts are different ages, so raw LTV always flatters the older ones - a patient who first came two years ago has had two years to spend. <b>Avg LTV / month</b> divides by the cohort&rsquo;s age, which is the column to compare across rows.</p>
+        </div>
+
+        {d.cohortCurve && d.cohortCurve.length ? <div className="card">
+          <div className="cap cl-cap">Retention curve <span>· share of each cohort still attending, by months since their first visit</span></div>
+          <div className="tbl-scroll"><table className="mini-tbl appt-tbl cl-curve">
+            <thead><tr><th className="lft">First visit</th><th>Patients</th>{Array.from({ length: 13 }, (_, i) => <th key={i}>M{i}</th>)}</tr></thead>
+            <tbody>{d.cohortCurve.map((c) => (
+              <tr key={c.month}>
+                <td className="lft">{c.month}</td><td>{fmtNumber(c.size)}</td>
+                {Array.from({ length: 13 }, (_, i) => {
+                  const v = c.pct[i]
+                  if (v == null) return <td key={i} className="cl-cell cl-na" />
+                  return <td key={i} className="cl-cell" style={{ background: v ? `color-mix(in srgb, var(--pos) ${Math.min(85, 12 + v * 0.75)}%, transparent)` : 'transparent' }}>{v ? `${v}%` : '-'}</td>
+                })}
+              </tr>
+            ))}</tbody>
+          </table></div>
+          <p className="caveat">Read a row left to right: M0 is the month of the first visit, M1 the month after, and each cell is the share of that cohort who attended in that month. Hatched cells are months the cohort hasn&rsquo;t reached yet, so a young cohort&rsquo;s short row isn&rsquo;t churn. Built from the appointment history on the CRM calendars.</p>
         </div> : null}
-      </div>
+      </ClinicSection>
 
-      {/* Retention economics - the money question: who comes back, and what does
-          it cost when they don't. */}
-      <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Retention economics - do patients come back, and what does it cost when they don&rsquo;t?</div>
-        <div className="table-wrap"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Measure</th><th>Patients</th><th>Rate</th><th className="lft">What it means</th></tr></thead>
-          <tbody>
-            <tr><td className="lft">Attended at least once</td><td>{fmtNumber(re.attended)}</td><td>-</td><td className="lft">The retention base - everyone who has actually been seen.</td></tr>
-            <tr><td className="lft">Left with their next appointment booked</td><td>{fmtNumber(re.attendedWithNext)}</td><td>{pct(re.nextBookingRate)}</td><td className="lft">Forward-booked before walking out. The single biggest retention lever.</td></tr>
-            <tr><td className="lft">Booked again after their first visit</td><td>{fmtNumber(re.rebookedAfterFirst)}</td><td>{pct(re.rebookRate)}</td><td className="lft">Of first-visit patients, how many have a second appointment booked.</td></tr>
-            <tr><td className="lft">Returned (2+ visits)</td><td>{fmtNumber(re.returned)}</td><td>{pct(re.returnRate)}</td><td className="lft">Genuinely retained - the cohort that produces the LTV.</td></tr>
-            <tr className="u-stale"><td className="lft">First visit, never returned</td><td>{fmtNumber(re.oneAndDone)}</td><td>{pct(re.oneAndDoneRate)}</td><td className="lft">One attended visit and nothing booked ahead.</td></tr>
-            <tr><td className="lft">Avg LTV · returned patient</td><td>-</td><td>{money(re.avgLtvReturned)}</td><td className="lft">What a retained patient is worth.</td></tr>
-            <tr><td className="lft">Avg LTV · one &amp; done patient</td><td>-</td><td>{money(re.avgLtvOneAndDone)}</td><td className="lft">What a lapsed patient produced before leaving.</td></tr>
-            <tr><td className="lft"><b>Revenue at risk</b></td><td>{fmtNumber(re.oneAndDone)}</td><td><b>{money(re.lostRevenue)}</b></td><td className="lft">One &amp; done patients × the {money(re.ltvGap)} gap between a retained and a lapsed patient.</td></tr>
-          </tbody>
-        </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}><b>Revenue at risk</b> is an opportunity figure, not money already lost: it prices what the one-and-done cohort would have been worth had they retained at the same average as returning patients. The sync writes lifetime totals rather than a visit history, so &ldquo;returned&rdquo; means two or more attended visits and &ldquo;left with next booked&rdquo; means an appointment is on the books now.</p>
-      </div>
+      <ClinicSection id="cl-acq" title="Acquisition" note="where patients come from, and what they end up worth">
+        <div className="mr-two">
+          {d.channels && d.channels.length ? <div className="card">
+            <div className="cap cl-cap">Lifetime value by channel</div>
+            {(() => { const top = Math.max(...d.channels.map((c) => c.ltv), 0); return top ? <div style={{ marginBottom: 12 }}>{d.channels.map((c) => (
+              <div className="bar-row" key={`b-${c.channel}`}>
+                <span className="nm">{CLINIC_CHAN[c.channel] || c.channel}</span>
+                <span className="bar-track"><span className="bar-fill" style={{ width: `${Math.max(2, (c.ltv / top) * 100)}%`, background: c.channel === 'meta' ? '#4f7cff' : c.channel === 'google' ? '#38bdf8' : c.channel === 'referral' ? '#12b886' : '#8b93a7' }} /></span>
+                <span className="ct">{money(c.ltv)}</span>
+              </div>
+            ))}</div> : null })()}
+            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th>Avg appts</th><th>With next appt</th></tr></thead>
+              <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.avgAppts}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
+            </table></div>
+            <p className="caveat">Channel comes from each patient&rsquo;s first-touch attribution on their contact, so lifetime value traces back to the ad that produced them. Patients created directly in the practice-management system carry no attribution and are excluded.</p>
+          </div> : null}
+          {d.heardAbout && d.heardAbout.length ? <div className="card">
+            <div className="cap cl-cap">How patients heard about us</div>
+            {(() => { const top = Math.max(...d.heardAbout.map((h) => h.patients), 0); return <div>{d.heardAbout.map((h) => (
+              <div className="bar-row" key={h.source}>
+                <span className="nm" title={h.source}>{h.source}</span>
+                <span className="bar-track"><span className="bar-fill" style={{ width: `${Math.max(2, (h.patients / top) * 100)}%`, background: '#6d5efc' }} /></span>
+                <span className="ct">{fmtNumber(h.patients)}</span>
+              </div>
+            ))}</div> })()}
+            <p className="caveat">Self-reported at intake - complements, rather than replaces, UTM attribution.</p>
+          </div> : null}
+        </div>
+        {d.campaigns && d.campaigns.length ? <div className="card">
+          <div className="cap cl-cap">Lifetime value by campaign <span>· top {d.campaigns.length}</span></div>
+          <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+            <thead><tr><th className="lft">Campaign</th><th className="lft">Channel</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th></tr></thead>
+            <tbody>{d.campaigns.map((c, i) => <tr key={i}><td className="lft" title={c.campaign}>{c.campaign}</td><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td></tr>)}</tbody>
+          </table></div>
+          <p className="caveat">This is the lifetime-ROAS view: set these against each campaign&rsquo;s spend to see cost per <i>patient</i> rather than cost per lead.</p>
+        </div> : null}
+      </ClinicSection>
 
-      {/* Cohort LTV by first-appointment month */}
-      <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Cohort LTV - patients grouped by their first-appointment month</div>
-        {d.cohorts && d.cohorts.length > 1 ? <ResponsiveContainer width="100%" height={190}>
-          <ComposedChart data={d.cohorts.slice().reverse()} margin={{ left: -8, right: 6, top: 8 }}>
-            <CartesianGrid stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="month" fontSize={9.5} stroke="var(--muted)" interval="preserveStartEnd" minTickGap={14} />
-            <YAxis yAxisId="l" fontSize={9.5} stroke="var(--muted)" allowDecimals={false} />
-            <YAxis yAxisId="r" orientation="right" fontSize={9.5} stroke="var(--muted)" tickFormatter={(v) => '$' + fmtCompact(v)} />
-            <Tooltip formatter={(v, n) => (n === 'Patients' ? fmtNumber(v) : money(v))} contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar yAxisId="l" dataKey="patients" name="Patients" fill="#4f7cff" radius={[3, 3, 0, 0]} maxBarSize={22} />
-            <Line yAxisId="r" dataKey="avgLtv" name="Avg LTV" stroke="#12b886" strokeWidth={2} dot={false} />
-          </ComposedChart>
-        </ResponsiveContainer> : null}
-        {d.cohorts && d.cohorts.length ? <div className="table-wrap"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Age</th><th>Total LTV</th><th>Avg LTV</th><th title="Average LTV divided by how many months the cohort has existed - the fair way to compare a two-year-old cohort against a new one">Avg LTV / month</th><th>Avg appts</th><th title="Share of the cohort with an appointment in the diary right now">Still active</th><th title="Share of the cohort that came back for a second visit">Came back</th></tr></thead>
-          <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{c.tenureMonths != null ? `${c.tenureMonths}mo` : '-'}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.ltvPerMonth != null ? money(c.ltvPerMonth) : '-'}</td><td>{c.avgAppts}</td><td>{c.activePct != null ? `${c.activePct}%` : '-'}</td><td>{c.returnedPct != null ? `${c.returnedPct}%` : '-'}</td></tr>)}</tbody>
-        </table></div> : <p className="cap" style={{ margin: 0 }}>No first-appointment dates synced yet.</p>}
-        <p className="caveat" style={{ marginTop: 10 }}>Cohorts are different ages, so raw LTV always flatters the older ones - a patient who first came two years ago has had two years to spend. <b>Avg LTV / month</b> divides by the cohort&rsquo;s age, which is the column to compare across rows.</p>
-      </div>
-
-      {/* The cohort triangle. Only the calendar history can produce this - the
-          synced fields carry one cumulative LTV per patient with no per-period
-          breakdown, so they can never show the SHAPE of retention. */}
-      {d.cohortCurve && d.cohortCurve.length ? <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Retention curve <span style={{ fontWeight: 400 }}>· share of each cohort still attending, by months since their first visit</span></div>
-        <div className="tbl-scroll"><table className="mini-tbl appt-tbl cl-curve">
-          <thead><tr><th className="lft">First visit</th><th>Patients</th>{Array.from({ length: 13 }, (_, i) => <th key={i}>M{i}</th>)}</tr></thead>
-          <tbody>{d.cohortCurve.map((c) => (
-            <tr key={c.month}>
-              <td className="lft">{c.month}</td><td>{fmtNumber(c.size)}</td>
-              {Array.from({ length: 13 }, (_, i) => {
-                const v = c.pct[i]
-                if (v == null) return <td key={i} className="cl-cell cl-na" />
-                return <td key={i} className="cl-cell" style={{ background: v ? `color-mix(in srgb, var(--pos) ${Math.min(85, 12 + v * 0.75)}%, transparent)` : 'transparent' }}>{v ? `${v}%` : '-'}</td>
-              })}
-            </tr>
-          ))}</tbody>
-        </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Read a row left to right: M0 is the month of the first visit, M1 the month after, and each cell is the share of that cohort who attended in that month. Blank cells are months the cohort hasn&rsquo;t reached yet, so a young cohort&rsquo;s short row isn&rsquo;t churn. Built from the appointment history on the CRM calendars - clinics whose clinical appointments live only in the practice-management system and never reach a Caalano calendar won&rsquo;t have this view.</p>
-      </div> : null}
-
-      {/* Phase 2: lifetime value by acquisition channel. */}
-      {d.channels && d.channels.length ? <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Lifetime value by acquisition channel</div>
-        {(() => { const top = Math.max(...d.channels.map((c) => c.ltv), 0); return top ? <div style={{ marginBottom: 12 }}>{d.channels.map((c) => (
-          <div className="bar-row" key={`b-${c.channel}`}>
-            <span className="nm">{CLINIC_CHAN[c.channel] || c.channel}</span>
-            <span className="bar-track"><span className="bar-fill" style={{ width: `${Math.max(2, (c.ltv / top) * 100)}%`, background: c.channel === 'meta' ? '#4f7cff' : c.channel === 'google' ? '#38bdf8' : c.channel === 'referral' ? '#12b886' : '#8b93a7' }} /></span>
-            <span className="ct">{money(c.ltv)}</span>
+      <ClinicSection id="cl-ops" title="Operations" note="attendance, billing and who delivers the care">
+        <div className="mr-three">
+          <div className="card">
+            <div className="cap cl-cap">Attendance</div>
+            <div className="table-wrap"><table className="mini-tbl appt-tbl">
+              <tbody>
+                <tr><td className="lft">Total appointments</td><td>{fmtNumber(ap.total)}</td></tr>
+                <tr><td className="lft">Arrived</td><td>{fmtNumber(ap.arrived)}</td></tr>
+                <tr><td className="lft">Cancelled</td><td>{fmtNumber(ap.cancelled)} · {pct(ap.cancelRate)}</td></tr>
+                <tr><td className="lft">No-show</td><td>{fmtNumber(ap.noShow)} · {pct(ap.noShowRate)}</td></tr>
+                <tr><td className="lft">Show rate</td><td>{pct(ap.showRate)}</td></tr>
+                <tr><td className="lft">Avg appts / patient</td><td>{ap.avgPerPatient}</td></tr>
+                <tr><td className="lft">Forward-booked</td><td>{fmtNumber(fb.withUpcoming)} · {pct(fb.pctWithUpcoming)}</td></tr>
+              </tbody>
+            </table></div>
           </div>
-        ))}</div> : null })()}
-        <div className="table-wrap"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th><th>Avg appts</th><th>With next appt</th></tr></thead>
-          <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.avgAppts}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
-        </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Channel comes from each patient&rsquo;s first-touch attribution on their Caalano Systems contact. Patients booked through a Caalano calendar carry attribution from the click that produced them, so their lifetime value traces back to the ad. Patients created directly in the practice-management system have no attribution and are excluded here.</p>
-      </div> : null}
-
-      <div className="mr-two">
-        <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Attendance</div>
-          <div className="table-wrap"><table className="mini-tbl appt-tbl">
-            <tbody>
-              <tr><td className="lft">Total appointments</td><td>{fmtNumber(ap.total)}</td></tr>
-              <tr><td className="lft">Arrived</td><td>{fmtNumber(ap.arrived)}</td></tr>
-              <tr><td className="lft">Cancelled</td><td>{fmtNumber(ap.cancelled)} · {pct(ap.cancelRate)}</td></tr>
-              <tr><td className="lft">No-show</td><td>{fmtNumber(ap.noShow)} · {pct(ap.noShowRate)}</td></tr>
-              <tr><td className="lft">Show rate (of outcomes)</td><td>{pct(ap.showRate)}</td></tr>
-              <tr><td className="lft">Avg appts / patient</td><td>{ap.avgPerPatient}</td></tr>
-              <tr><td className="lft">Forward-booked (next appt)</td><td>{fmtNumber(fb.withUpcoming)} · {pct(fb.pctWithUpcoming)}</td></tr>
-            </tbody>
-          </table></div>
+          <div className="card">
+            <div className="cap cl-cap">Billing &amp; consent</div>
+            <div className="table-wrap"><table className="mini-tbl appt-tbl">
+              <tbody>
+                <tr><td className="lft">Total paid</td><td>{money(m.paid)}</td></tr>
+                <tr><td className="lft">Remaining balance</td><td>{money(m.remaining)}</td></tr>
+                <tr><td className="lft">Unpaid balance (AR)</td><td>{money(m.unpaid)}</td></tr>
+                <tr><td className="lft" title="Calendar month to date - this figure resets on the 1st">Spent this month</td><td>{money(m.spentThisMonth)}</td></tr>
+                {(d.retention || []).map((r) => <tr key={r.status}><td className="lft">Retention · {r.status}</td><td>{fmtNumber(r.patients)}</td></tr>)}
+                {d.consent ? <tr><td className="lft">Marketing consent</td><td>{fmtNumber(d.consent.email)} email · {fmtNumber(d.consent.sms)} SMS</td></tr> : null}
+                {d.nps && d.nps.score != null ? <tr><td className="lft">NPS</td><td>{d.nps.score} · {fmtNumber(d.nps.responses)} responses</td></tr> : null}
+              </tbody>
+            </table></div>
+          </div>
+          <div className="card">
+            <div className="cap cl-cap">By practitioner</div>
+            {d.practitioners && d.practitioners.length ? <div className="table-wrap"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Practitioner</th><th>Patients</th><th>Avg LTV</th></tr></thead>
+              <tbody>{d.practitioners.map((p) => <tr key={p.name}><td className="lft" title={p.name}>{p.name}</td><td>{fmtNumber(p.patients)}</td><td>{money(p.avgLtv)}</td></tr>)}</tbody>
+            </table></div> : <p className="cap" style={{ margin: 0 }}>No practitioner recorded yet.</p>}
+            <p className="caveat">From each patient&rsquo;s most recent appointment.</p>
+          </div>
         </div>
+        {(d.apptTypes && d.apptTypes.length) || (d.cancelReasons && d.cancelReasons.length) ? <div className="mr-two">
+          {d.apptTypes && d.apptTypes.length ? <div className="card">
+            <div className="cap cl-cap">Appointment types <span>· by patients&rsquo; most recent visit</span></div>
+            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Type</th><th>Patients</th><th>Avg LTV</th></tr></thead>
+              <tbody>{d.apptTypes.map((t) => <tr key={t.type}><td className="lft" title={t.type}>{t.type}</td><td>{fmtNumber(t.patients)}</td><td>{money(t.avgLtv)}</td></tr>)}</tbody>
+            </table></div>
+          </div> : null}
+          {d.cancelReasons && d.cancelReasons.length ? <div className="card">
+            <div className="cap cl-cap">Why appointments fall over</div>
+            {(() => { const top = Math.max(...d.cancelReasons.map((c) => c.count), 0); return <div>{d.cancelReasons.map((c) => (
+              <div className="bar-row" key={c.reason}>
+                <span className="nm" title={c.reason}>{c.reason}</span>
+                <span className="bar-track"><span className="bar-fill" style={{ width: `${Math.max(2, (c.count / top) * 100)}%`, background: '#f5a524' }} /></span>
+                <span className="ct">{fmtNumber(c.count)}</span>
+              </div>
+            ))}</div> })()}
+            <p className="caveat">The cancellation reason recorded against each patient&rsquo;s most recent cancelled appointment.</p>
+          </div> : null}
+        </div> : null}
+      </ClinicSection>
+
+      {workTab ? <ClinicSection id="cl-work" title="Worklists" note="click any patient to read their CRM notes">
         <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Retention &amp; billing</div>
-          <div className="table-wrap"><table className="mini-tbl appt-tbl">
-            <tbody>
-              {(d.retention || []).map((r) => <tr key={r.status}><td className="lft">Retention · {r.status}</td><td>{fmtNumber(r.patients)}</td></tr>)}
-              <tr><td className="lft">Total paid</td><td>{money(m.paid)}</td></tr>
-              <tr><td className="lft">Remaining balance</td><td>{money(m.remaining)}</td></tr>
-              <tr><td className="lft">Unpaid balance (AR)</td><td>{money(m.unpaid)}</td></tr>
-              {d.consent && <tr><td className="lft">Marketing consent</td><td>{fmtNumber(d.consent.email)} email · {fmtNumber(d.consent.sms)} SMS</td></tr>}
-            </tbody>
-          </table></div>
+          <div className="cl-tabs">{workTabs.map((t) => (
+            <button key={t.id} type="button" className={`cl-tab ${workTab === t.id ? 'on' : ''}`} onClick={() => setWork(t.id)}>{t.label} <em>{fmtNumber(t.n)}</em></button>
+          ))}</div>
+          {workTab === 'winback' ? <>
+            <p className="cap cl-worknote">Attended once and never came back - the highest-intent reactivation list you have.</p>
+            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Patient</th><th>Lifetime spend</th><th className="lft">Practitioner</th><th className="lft">Last appointment</th><th className="lft">Channel</th></tr></thead>
+              <tbody>{d.oneAndDoneList.map((p, i) => <ClinicPatientRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={5} extra={<><td>{money(p.spent)}</td><td className="lft">{p.practitioner || '-'}</td></>} />)}</tbody>
+            </table></div>
+          </> : null}
+          {workTab === 'ar' ? <>
+            <p className="cap cl-worknote">Outstanding balances, biggest first.</p>
+            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Patient</th><th>Unpaid</th><th>Lifetime spend</th><th className="lft">Last appointment</th><th className="lft">Channel</th></tr></thead>
+              <tbody>{d.ar.map((p, i) => <ClinicPatientRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={5} extra={<><td>{money(p.unpaid)}</td><td>{money(p.spent)}</td></>} />)}</tbody>
+            </table></div>
+          </> : null}
+          {workTab === 'reactivate' ? <>
+            <p className="cap cl-worknote">Visited before, nothing in the diary now.</p>
+            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Patient</th><th>Lifetime spend</th><th>Visits</th><th className="lft">Last appointment</th><th className="lft">Channel</th></tr></thead>
+              <tbody>{d.reactivate.slice(0, 60).map((p, i) => <ClinicPatientRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={5} extra={<><td>{money(p.spent)}</td><td>{p.visits != null ? fmtNumber(p.visits) : '-'}</td></>} />)}</tbody>
+            </table></div>
+          </> : null}
         </div>
-      </div>
+      </ClinicSection> : null}
 
-      <div className="mr-two">
-        {d.heardAbout && d.heardAbout.length ? <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>How patients heard about us</div>
-          <div className="table-wrap"><table className="mini-tbl appt-tbl">
-            <thead><tr><th className="lft">Source</th><th>Patients</th></tr></thead>
-            <tbody>{d.heardAbout.map((h) => <tr key={h.source}><td className="lft">{h.source}</td><td>{fmtNumber(h.patients)}</td></tr>)}</tbody>
-          </table></div>
-          <p className="caveat" style={{ marginTop: 10 }}>Self-reported at intake - complements, rather than replaces, UTM attribution.</p>
-        </div> : null}
-        {d.practitioners && d.practitioners.length ? <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>By practitioner</div>
-          <div className="table-wrap"><table className="mini-tbl appt-tbl">
-            <thead><tr><th className="lft">Practitioner</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th></tr></thead>
-            <tbody>{d.practitioners.map((p) => <tr key={p.name}><td className="lft">{p.name}</td><td>{fmtNumber(p.patients)}</td><td>{money(p.ltv)}</td><td>{money(p.avgLtv)}</td></tr>)}</tbody>
-          </table></div>
-          <p className="caveat" style={{ marginTop: 10 }}>Attributed from each patient&rsquo;s most recent appointment.</p>
-        </div> : null}
-      </div>
-
-      {/* Worklists - every patient row expands to their CRM notes. */}
-      {d.oneAndDoneList && d.oneAndDoneList.length ? <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Win-back list - attended once, never returned <span style={{ fontWeight: 400 }}>· {fmtNumber(re.oneAndDone)} patient{re.oneAndDone === 1 ? '' : 's'}</span></div>
-        <div className="table-wrap"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Patient</th><th>Lifetime spend</th><th className="lft">Practitioner</th><th className="lft">Last appointment</th><th className="lft">Channel</th></tr></thead>
-          <tbody>{d.oneAndDoneList.map((p, i) => <ClinicPatientRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={5} extra={<><td>{money(p.spent)}</td><td className="lft">{p.practitioner || '-'}</td></>} />)}</tbody>
-        </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Click a patient to read their CRM notes. Channel is their first-touch attribution, so you can see which campaigns produce patients who don&rsquo;t stick.</p>
-      </div> : null}
-
-      {d.ar && d.ar.length ? <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Unpaid balances <span style={{ fontWeight: 400 }}>· {fmtNumber(d.ar.length)} patient{d.ar.length === 1 ? '' : 's'}, biggest first</span></div>
-        <div className="table-wrap"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Patient</th><th>Unpaid</th><th>Lifetime spend</th><th className="lft">Last appointment</th><th className="lft">Channel</th></tr></thead>
-          <tbody>{d.ar.map((p, i) => <ClinicPatientRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={5} extra={<><td>{money(p.unpaid)}</td><td>{money(p.spent)}</td></>} />)}</tbody>
-        </table></div>
-      </div> : null}
-
-      {d.reactivate && d.reactivate.length ? <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Reactivation list <span style={{ fontWeight: 400 }}>· visited before, no upcoming appointment · {fmtNumber(d.reactivate.length)} patient{d.reactivate.length === 1 ? '' : 's'}</span></div>
-        <div className="table-wrap"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Patient</th><th>Lifetime spend</th><th>Visits</th><th className="lft">Last appointment</th><th className="lft">Channel</th></tr></thead>
-          <tbody>{d.reactivate.slice(0, 60).map((p, i) => <ClinicPatientRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={5} extra={<><td>{money(p.spent)}</td><td>{p.visits != null ? fmtNumber(p.visits) : '-'}</td></>} />)}</tbody>
-        </table></div>
-      </div> : null}
-
-      <p className="caveat">Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Lifetime value, appointment counts, attendance and billing are the plugin&rsquo;s own aggregates, and every sync <b>overwrites</b> them with current values - so everything above is a snapshot of right now, and &ldquo;spent this month&rdquo; resets on the 1st. Period and trend figures come from the daily snapshots we take ourselves. Rebooking timing is read from the calendars, which keep real per-booking history. Numbers fill in as the sync completes across the patient base.</p>
+      <p className="caveat">Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Every sync <b>overwrites</b> them with current values, so everything here is a snapshot of right now. Period and trend figures come from the daily snapshots we take ourselves; rebooking and the retention curve are read from the calendars, which keep real per-booking history.</p>
     </>
   )
 }

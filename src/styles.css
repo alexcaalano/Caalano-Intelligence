@@ -2333,9 +2333,16 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .mr-userperf .mr-table td, .mr-forms-tbl td { overflow-wrap: anywhere; }
 .mr-userperf .mr-table th.r, .mr-forms-tbl th.r { white-space: normal; }
 .mr-userperf .mr-table td.r, .mr-forms-tbl td.r { white-space: nowrap; }
-.mr-userperf .mr-name, .mr-forms-tbl .mr-name { max-width: 180px; }
+/* Form names are long, underscore-heavy machine names. The 180px cap made them
+   spill into the Leads column: .mr-name is a flex column, and a flex item won't
+   wrap its text without min-width:0 + an explicit wrap rule, so the cap clipped
+   the box while the text carried on. Give the column real room and let the name
+   wrap inside it. */
+.mr-userperf .mr-name { max-width: 180px; }
+.mr-forms-tbl .mr-name-form { max-width: none; }
+.mr-forms-tbl th:first-child, .mr-forms-tbl td:first-child { width: 24%; min-width: 190px; }
 .mr-forms-tbl .mr-fpct { color: var(--faint); font-weight: 500; font-size: .82em; }
-.mr-name { display: flex; flex-direction: column; line-height: 1.3; max-width: 320px; }
+.mr-name { display: flex; flex-direction: column; line-height: 1.3; max-width: 320px; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
 .mr-name small { color: var(--faint); font-size: 11px; }
 .mr-more { padding: 8px 10px; font-size: 11.5px; color: var(--faint); }
 .mr-empty { padding: 20px; text-align: center; color: var(--faint); font-size: 13px; background: var(--panel-2); border-radius: 10px; }

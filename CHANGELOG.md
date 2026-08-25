@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.349.0 - 2026-08-20 · `PENDING` - Monthly report: creative + form funnels are clickable, form names fit
+- **Creative performance key events are clickable again in the monthly deck.** The drill was already built - the deck's
+  call site just never passed `clientId`, `range` or `channel`, so `canDrill` was false and every row rendered static. Now
+  wired, so each key-event row opens the same people drill as the Meta view.
+- **Form performance cells are clickable** - leads and every key-event count open the leads behind that step, with their
+  status, pipeline · stage, source, campaign/creative, age and value, plus a Meta / Google / Other split in the header.
+- The monthly snapshot deliberately stores form **counts only** (keeping every lead's record per form would bloat every
+  frozen report), so the drill fetches the people on demand **for that report's own period** - which returns exactly the
+  leads the cell counted. It re-applies the same key-event reach test the table used, so the list and the count can never
+  disagree, and it's scoped per pipeline on multi-pipeline decks.
+- **Form names no longer spill into the Leads column.** `.mr-name` is a flex column, and a flex item won't wrap its text
+  without `min-width: 0` plus an explicit wrap rule - so the old 180px cap clipped the box while the text ran on
+  underneath the next column. The form column now has real width and the name wraps inside it.
+- Both fixes measured in a browser rather than by eye: the name element's right edge against the Leads column's left edge
+  at 1920 and 1440px, with no table overflow at either.
+
 ## v3.348.0 - 2026-08-20 · `PENDING` - Clinic: tiles fit their column instead of scrolling
 - The Operations tiles were clipping their own label column - "Unpaid balance (AR)" rendered as "ce (AR)" behind a
   horizontal scrollbar, and the same for Attendance and By practitioner. Every tile in a narrow grid track now fits

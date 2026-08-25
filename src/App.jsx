@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.348.0'
+const APP_VERSION = '3.349.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -12100,6 +12100,7 @@ function ClientReports({ clients, currency }) {
   const [st, setSt] = useState({ status: 'idle' })
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null)
+  const [formDrill, setFormDrill] = useState(null) // {form, event, pipeKey} - who is behind one Form performance cell
   const [copied, setCopied] = useState(false)
   const copyLink = () => { try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ } }
   const deckRef = useRef(null)
@@ -12126,7 +12127,7 @@ function ClientReports({ clients, currency }) {
     return () => { alive = false }
   }, [clientId, month])
   const rep = st.status === 'ok' ? st.report : null
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d) }) : []), [rep, currency])
+  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill }) : []), [rep, currency])
   async function downloadPdf() {
     if (!deckRef.current) return
     setExporting(true); deckRef.current.classList.add('mr-exporting')
@@ -12155,6 +12156,7 @@ function ClientReports({ clients, currency }) {
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report - please try again shortly.</div>}
       {rep && <div className="mr-deck" ref={deckRef}><div className="mr-track">{deck}</div></div>}
       {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
+      {formDrill && rep && rep.client && <MRFormDrill clientId={rep.client.id} range={rep.period} form={formDrill.form} event={formDrill.event} pipeKey={formDrill.pipeKey} currency={currency} onClose={() => setFormDrill(null)} />}
     </div>
   )
 }
@@ -12189,6 +12191,7 @@ function MonthlyReport({ clients, currency, authUser }) {
   const [genWarn, setGenWarn] = useState(null) // sections that failed on the last generate
   const [exporting, setExporting] = useState(false)
   const [drill, setDrill] = useState(null) // {title, kind, deals}
+  const [formDrill, setFormDrill] = useState(null) // {form, event, pipeKey} - who is behind one Form performance cell
   const [view, setView] = useState('slides') // slides (one page at a time) | scroll (continuous)
   const [idx, setIdx] = useState(0)
   const deckRef = useRef(null)
@@ -12259,7 +12262,7 @@ function MonthlyReport({ clients, currency, authUser }) {
   }
 
   const rep = st.status === 'ok' ? st.report : null
-  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d) }) : []), [rep, currency])
+  const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill }) : []), [rep, currency])
   const total = deck.length
   const cur = Math.max(0, Math.min(idx, total - 1))
   const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
@@ -12349,6 +12352,7 @@ function MonthlyReport({ clients, currency, authUser }) {
         </div>
       )}
       {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
+      {formDrill && rep && rep.client && <MRFormDrill clientId={rep.client.id} range={rep.period} form={formDrill.form} event={formDrill.event} pipeKey={formDrill.pipeKey} currency={currency} onClose={() => setFormDrill(null)} />}
     </div>
   )
 }
@@ -12377,6 +12381,73 @@ function mrAdDetail(d, campMap, medMap) {
   const grp = (medMap && medMap[d.medium]) || d.medium
   if (d.channel === 'google') { const parts = [camp, grp].filter(Boolean); return parts.length ? parts.join(' · ') : (d.ad || null) }
   return d.ad || camp || null
+}
+// Who is behind one cell of the Form performance table. The monthly snapshot
+// deliberately stores counts only - keeping every lead's record per form would
+// bloat every frozen report - so the people are fetched on demand for the
+// report's own period, which returns exactly the leads that cell counted.
+function MRFormDrill({ clientId, range, form, event, pipeKey, currency, onClose }) {
+  const [st, setSt] = useState({ status: 'loading', people: [] })
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  useEffect(() => {
+    let alive = true
+    fetch(`/.netlify/functions/windsor?client=${clientId}&scope=forms&${rangeQuery(range)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => {
+        if (!alive) return
+        const arr = (j && j.forms) || []
+        const f = arr.find((x) => x.form === form)
+        const all = (f && f.people) || []
+        // Re-apply the same reach test the table used, so the list and the count
+        // can't disagree.
+        const fke = formKeyEvents(clientId, pipeKey || 'all', (j && j.pipelines) || [])
+        const ev = (fke.events || []).find((k) => k.label === event.label && (k.kind || 'stage') === (event.kind || 'stage'))
+        const people = ev ? all.filter((p) => fke.reached(p, ev)) : all
+        setSt({ status: 'ok', people })
+      })
+      .catch(() => { if (alive) setSt({ status: 'err', people: [] }) })
+    return () => { alive = false }
+  }, [clientId, range, form, event, pipeKey])
+  const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
+  const ppl = st.people
+  const chan = ppl.reduce((a, p) => { a[p.channel === 'meta' ? 'meta' : p.channel === 'google' ? 'google' : 'other']++; return a }, { meta: 0, google: 0, other: 0 })
+  const pctc = (n) => (ppl.length ? Math.round((n / ppl.length) * 100) : 0) + '%'
+  return (
+    <div className="mr-drill-overlay no-print" onClick={onClose}>
+      <div className="mr-drill" onClick={(e) => e.stopPropagation()} style={{ '--mr-drill-cols': 7 }}>
+        <div className="mr-drill-head">
+          <div>
+            <h3>{form} · {event.label}</h3>
+            <span>{st.status === 'loading' ? 'Loading…' : <>{fmtNumber(ppl.length)} lead(s){ppl.length ? <> · <span className="mr-src mr-src-meta">Meta {chan.meta} · {pctc(chan.meta)}</span> <span className="mr-src mr-src-google">Google {chan.google} · {pctc(chan.google)}</span> <span className="mr-src mr-src-other">Other {chan.other} · {pctc(chan.other)}</span></> : null}</>}</span>
+          </div>
+          <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="mr-drill-body">
+          {st.status === 'loading' ? <Spinner label="Loading the leads behind this…" />
+            : st.status === 'err' ? <div className="cap">Couldn’t load the leads for this form.</div>
+              : ppl.length ? (
+                <table className="mr-table">
+                  <thead><tr><th>Contact</th><th>Status</th><th>Pipeline · stage</th><th>Source</th><th>Campaign / creative</th><th className="r">Age</th><th className="r">Value</th></tr></thead>
+                  <tbody>{ppl.map((p, i) => (
+                    <tr key={p.contactId || i}>
+                      <td>{p.name}</td>
+                      <td><span className={`mr-pill-${p.status === 'won' ? 'won' : p.status === 'lost' ? 'lost' : 'open'}`}>{p.status === 'won' ? 'Won' : p.status === 'lost' ? 'Lost' : 'Open'}</span></td>
+                      <td>{[p.pipelineName, p.stageName].filter(Boolean).join(' · ') || '-'}</td>
+                      <td>{p.channel === 'meta' ? 'Meta' : p.channel === 'google' ? 'Google' : 'Other'}</td>
+                      <td title={[p.campaign, p.adset, p.creative].filter(Boolean).join(' / ')}>{p.creative || p.campaign || '-'}</td>
+                      <td className="r">{p.ageDays != null ? `${p.ageDays}d` : '-'}</td>
+                      <td className="r">{money(p.value)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              ) : <div className="cap">No leads reached this step for this form.</div>}
+        </div>
+      </div>
+    </div>
+  )
 }
 function MRDrill({ drill, currency, campMap, medMap, onClose }) {
   const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
@@ -12829,7 +12900,10 @@ function MRCreativeSection({ ads, oCre, o360cols, o360colsFor, pipeLabelFor, mon
 // Pure renderer for the deck so it can be reused by both the live view and the
 // frozen snapshot (identical shape). Returns an array of <MRSlide> elements.
 function renderMonthlyDeck(rep, h) {
-  const { currency, money, n0, pc, openDrill } = h
+  const { currency, money, n0, pc, openDrill, setFormDrill } = h
+  // The form drill fetches its people live for the report's own period, so it
+  // needs a client and a range; frozen decks rendered without them stay static.
+  const fDrillOk = !!(setFormDrill && rep.client && rep.client.id && rep.period && rep.period.from && rep.period.to)
   const b = rep.period
   const meta = rep.meta, google = rep.google, blend = rep.blend, attribution = rep.attribution
   const won = rep.wonClosed || (blend && blend.wonClosed) || null
@@ -12991,7 +13065,7 @@ function renderMonthlyDeck(rep, h) {
     push(
       <MRSlide key="m-cre" kicker="Meta Ads · Creative" title="Creative performance" sub={`${spendAds.length} creative(s) with spend · sort & page through, 10 at a time`}>
         {spendAds.length
-          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} showTable />
+          ? <MRCreativeSection ads={spendAds} oCre={oCre} o360cols={o360cols} o360colsFor={o360colsFor} pipeLabelFor={multiPipe ? pipeLabelFor : null} money={money} n0={n0} currency={currency} showTable clientId={rep.client && rep.client.id} range={b} channel="meta" />
           : <div className="mr-empty">No creatives with spend for this period.</div>}
         <p className="mr-foot-note">All creatives that spent this period, sortable by any metric, 10 per page. <b>Leads</b> = Meta results; the key-event chips are the client's configured <b>key events</b> (Settings → Key events) for leads whose ad UTM (utm_content) matches the creative. ▶ plays the Instagram post inline where a permalink is available.</p>
       </MRSlide>
@@ -13257,7 +13331,7 @@ function renderMonthlyDeck(rep, h) {
     // One "Leads → each key event → Revenue → Avg deal" table for a set of forms
     // and its own column list. Multi-pipeline decks render one of these per
     // pipeline (each pipeline's own key events, no duplicated columns).
-    const keTable = (events, forms) => {
+    const keTable = (events, forms, pipeKey = 'all') => {
       const ftot = forms.reduce((a, f) => ({ leads: a.leads + (f.leads || 0), won: a.won + (f.won || 0), revenue: a.revenue + (f.revenue || 0), ke: a.ke.map((v, i) => v + ((f.ke && f.ke[i]) || 0)) }), { leads: 0, won: 0, revenue: 0, ke: events.map(() => 0) })
       return (
         <div className="mr-tablewrap"><table className="mr-table mr-forms-tbl">
@@ -13265,9 +13339,19 @@ function renderMonthlyDeck(rep, h) {
           <tbody>
             {forms.map((f, i) => (
               <tr key={i}>
-                <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
-                <td className="r">{n0(f.leads)}</td>
-                {events.map((k, j) => { const c = (f.ke && f.ke[j]) || 0; return <td key={j} className="r">{n0(c)}{f.leads ? <small className="mr-fpct"> {fmtPct((c / f.leads) * 100, 0)}</small> : null}</td> })}
+                <td className="lft"><span className="mr-name mr-name-form" title={f.form}>{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
+                <td className="r">{f.leads > 0 && fDrillOk
+                  ? <button className="mr-cellbtn" onClick={() => setFormDrill({ form: f.form, event: { label: 'Leads', kind: 'lead' }, pipeKey })} title="Click to see the leads behind this">{n0(f.leads)}</button>
+                  : n0(f.leads)}</td>
+                {events.map((k, j) => {
+                  const c = (f.ke && f.ke[j]) || 0
+                  const pctSm = f.leads ? <small className="mr-fpct"> {fmtPct((c / f.leads) * 100, 0)}</small> : null
+                  // Only offer the drill where there is something to look at and
+                  // we know which client/period to ask about.
+                  return <td key={j} className="r">{c > 0 && fDrillOk
+                    ? <button className="mr-cellbtn" onClick={() => setFormDrill({ form: f.form, event: k, pipeKey })} title="Click to see the leads behind this">{n0(c)}{pctSm}</button>
+                    : <>{n0(c)}{pctSm}</>}</td>
+                })}
                 <td className="r">{money(f.revenue)}</td>
                 <td className="r">{f.won ? money(f.revenue / f.won) : '-'}</td>
               </tr>
@@ -13286,7 +13370,7 @@ function renderMonthlyDeck(rep, h) {
           <tbody>
             {forms.map((f, i) => (
               <tr key={i}>
-                <td className="lft"><span className="mr-name">{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
+                <td className="lft"><span className="mr-name mr-name-form" title={f.form}>{f.form}{f.kind ? <small>{fkind(f.kind)}</small> : null}</span></td>
                 <td className="r">{n0(f.leads)}</td><td className="r">{n0(f.booked)}</td><td className="r">{frate(f.booked, f.leads)}</td>
                 <td className="r">{n0(f.shown)}</td><td className="r">{n0(f.won)}</td><td className="r">{frate(f.won, f.leads)}</td><td className="r">{money(f.revenue)}</td>
               </tr>
@@ -13317,11 +13401,11 @@ function renderMonthlyDeck(rep, h) {
           ? byPipe.map((blk, bi) => (
               <div key={bi} className="mr-camp-block">
                 <div className="mr-pipe-head" style={{ marginTop: bi ? 16 : 0 }}><span className="c360-dot" /> {blk.pipelineName || 'Pipeline'} <span className="cap">· {blk.forms.length} form(s)</span></div>
-                {keTable(blk.events, blk.forms)}
+                {keTable(blk.events, blk.forms, blk.pipelineId || 'all')}
               </div>
             ))
           : hasFke
-            ? keTable(uni.events, uni.forms)
+            ? keTable(uni.events, uni.forms, 'all')
             : legacyTable(rep.forms)}
       </MRSlide>
     )

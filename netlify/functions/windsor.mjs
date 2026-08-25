@@ -2564,7 +2564,9 @@ export default async (req) => {
   // which keeps full access. Client-scoped requests must name an allowed
   // account; agency-wide requests are off-limits to client (viewer) accounts.
   const AUTH_SECRET = process.env.AUTH_SECRET
-  const me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET).catch(() => null) : null
+  // Data requests are the truest signal of someone actually working in the app,
+  // so they drive the activity stamp (throttled inside currentUser).
+  const me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET, { track: true }).catch(() => null) : null
   // Clients marked "Super-Admin only" in Settings are hidden from everyone who
   // isn't a superadmin. A null caller is the trusted Basic-Auth / legacy path
   // (owner) and a superadmin both see everything, so we only load + apply the

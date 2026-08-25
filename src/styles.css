@@ -3189,3 +3189,7 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .set-clinic-grp { margin-bottom: 14px; }
 .set-clinic-grp-h { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--muted); margin-bottom: 7px; }
 .set-clinic-grp-h span { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+
+/* Team & access: last-active and time-in-app columns */
+.u-seen { display: flex; flex-direction: column; line-height: 1.25; font-size: 12.5px; }
+.u-seen small { color: var(--faint); font-size: 10.5px; }

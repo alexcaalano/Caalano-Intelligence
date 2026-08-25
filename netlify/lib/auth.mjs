@@ -134,6 +134,7 @@ export function allowedTabs(user, offered) {
 const publicUser = (u) => u && ({
   email: u.email, name: u.name || '', role: normRole(u.role), status: u.status || 'active',
   createdAt: u.createdAt || null, invitedBy: u.invitedBy || null, lastLogin: u.lastLogin || null,
+  lastSeen: u.lastSeen || null, sessions: Array.isArray(u.sessions) ? u.sessions.slice(-30) : [],
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
   tabs: Array.isArray(u.tabs) ? u.tabs : null, reports: u.reports === true, requestedAt: u.requestedAt || null, note: u.note || '',
 })
@@ -246,6 +247,10 @@ export async function authenticate(email, password) {
   if (u.status !== 'active') return null // invited-but-not-accepted can't log in
   if (!(await verifyPassword(password, u))) return null
   u.lastLogin = new Date().toISOString()
+  // A deliberate sign-in always opens a new session, even if the previous one
+  // was still inside the idle window.
+  u.lastSeen = u.lastLogin
+  u.sessions = [...(Array.isArray(u.sessions) ? u.sessions : []), { start: u.lastLogin, last: u.lastLogin, mins: 0 }].slice(-SESSION_KEEP)
   await saveUser(u)
   return publicUser(u)
 }
@@ -345,14 +350,54 @@ export async function changePassword(email, current, next) {
   return { ok: true }
 }
 
+// ---- activity tracking -----------------------------------------------------
+// Sessions are stateless signed tokens, so there is no server-side record of one
+// starting or ending - which means "how long were they in?" can't be read from
+// the token. Instead we stamp activity as requests come through and stitch those
+// stamps into sessions: consecutive activity inside the idle window extends the
+// current session, a longer gap starts a new one.
+//
+// Writes are throttled hard. Every authenticated request passes through here, so
+// an unthrottled write would put a blob PUT on every API call for no extra
+// precision - a couple of minutes' granularity is plenty for "last seen" and
+// makes session lengths accurate to about the same.
+const ACTIVITY_WRITE_MS = 2 * 60 * 1000   // don't re-stamp more often than this
+const SESSION_IDLE_MS = 30 * 60 * 1000    // a gap longer than this is a new session
+const SESSION_KEEP = 30                   // recent sessions retained per user
+function _touchSessions(u, nowMs) {
+  const list = Array.isArray(u.sessions) ? u.sessions : []
+  const cur = list[list.length - 1]
+  if (cur && cur.last && (nowMs - Date.parse(cur.last)) < SESSION_IDLE_MS) {
+    cur.last = new Date(nowMs).toISOString()
+    cur.mins = Math.max(0, Math.round((Date.parse(cur.last) - Date.parse(cur.start)) / 60000))
+  } else {
+    list.push({ start: new Date(nowMs).toISOString(), last: new Date(nowMs).toISOString(), mins: 0 })
+  }
+  u.sessions = list.slice(-SESSION_KEEP)
+  return u
+}
+// Best-effort: a failed stamp must never cost someone their request.
+async function touchActivity(u) {
+  try {
+    const now = Date.now()
+    if (u.lastSeen && (now - Date.parse(u.lastSeen)) < ACTIVITY_WRITE_MS) return
+    u.lastSeen = new Date(now).toISOString()
+    _touchSessions(u, now)
+    await saveUser(u)
+  } catch { /* activity is a nice-to-have, never a blocker */ }
+}
+
 // Resolve the caller's session from the request cookie. Returns the public user
 // record (re-read from the store so role/status changes take effect) or null.
-export async function currentUser(req, secret) {
+export async function currentUser(req, secret, opts = {}) {
   const token = readCookie(req)
   const payload = await verifySession(token, secret)
   if (!payload || !payload.e) return null
   const u = await getUser(payload.e)
   if (!u || u.status !== 'active') return null
+  // `track` is opt-in so background/ops checks don't register as someone using
+  // the app - only real page traffic should count toward time in the product.
+  if (opts.track) await touchActivity(u)
   return publicUser(u)
 }
 

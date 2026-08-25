@@ -17,6 +17,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.354.0 - 2026-08-20 · `PENDING` - Team & access: last active, and time spent in the app
+- **Last login was already being recorded** on every sign-in - it just wasn't shown anywhere. Duration wasn't recorded at
+  all: login sessions are stateless signed tokens, so nothing server-side knows when one starts or ends.
+- Activity is now stamped as requests come through and stitched into sessions: consecutive activity inside a 30-minute
+  idle window extends the current session, a longer gap starts a new one. A deliberate sign-in always opens a fresh
+  session even if the previous one was still inside the window.
+- Two new sortable columns on **Team & access**: **Last active** ("3 min ago", "yesterday") with that session's length
+  underneath, and **Time (30d)** - total time in the app over the last 30 days. Hovering either gives exact timestamps
+  and the session count.
+- Writes are throttled to once per two minutes per person. Every authenticated request passes through the same hook, so
+  an unthrottled stamp would put a blob write on every API call for no extra precision. Tracking is also **opt-in per
+  call site**: the app's session check and data requests count, while ops/background guards don't - so a warmer running
+  overnight never looks like someone using the product.
+- Stamping is best-effort throughout: a failed write never costs anyone their request.
+
 ## v3.353.0 - 2026-08-20 · `PENDING` - Pipeline stage names: cached for a day, now an hour (and live in Settings)
 - Stage names were showing their **old** values after a rename in Caalano Systems. The cause was not the data source -
   pipelines already come straight from the GoHighLevel API - it was the cache in front of it: `caalano-pipecache` held

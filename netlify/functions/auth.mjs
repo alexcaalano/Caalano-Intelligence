@@ -32,7 +32,8 @@ export default async (req) => {
     // ---- public, unauthenticated actions ----
     if (action === 'me') {
       await ensureSuperadmin().catch(() => {}) // one-time: promote the founding admin
-      const user = await currentUser(req, S)
+      // The app's own session check - genuine usage, so it counts toward activity.
+      const user = await currentUser(req, S, { track: true })
       const needsSetup = (await countUsers()) === 0
       return json({ ok: true, enabled: true, user: user || null, needsSetup })
     }

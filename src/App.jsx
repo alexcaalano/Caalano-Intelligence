@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.353.0'
+const APP_VERSION = '3.354.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10600,6 +10600,30 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
   const accessSummary = (u) => isAdminishFE(u.role) ? 'All clients · all tabs'
     : u.role === 'user' ? (u.allClients !== false ? 'All accounts' : `${(u.clients || []).length} account${(u.clients || []).length === 1 ? '' : 's'}`)
     : `${(u.clients || []).length} client${(u.clients || []).length === 1 ? '' : 's'}${Array.isArray(u.tabs) ? ` · ${u.tabs.length} tab${u.tabs.length === 1 ? '' : 's'}` : ' · all tabs'}`
+  // "3 min ago" / "yesterday" reads faster than a timestamp when you're scanning
+  // a team list for who's actually using the thing.
+  const ago = (iso) => {
+    if (!iso) return null
+    const ms = Date.now() - Date.parse(iso)
+    if (!isFinite(ms) || ms < 0) return null
+    const m = Math.round(ms / 60000)
+    if (m < 2) return 'just now'
+    if (m < 60) return `${m} min ago`
+    const h = Math.round(m / 60)
+    if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`
+    const d = Math.round(h / 24)
+    if (d === 1) return 'yesterday'
+    if (d < 30) return `${d} days ago`
+    const mo = Math.round(d / 30)
+    return mo < 12 ? `${mo} month${mo === 1 ? '' : 's'} ago` : `${Math.round(mo / 12)}y ago`
+  }
+  const mins = (n) => (n == null ? null : n < 60 ? `${n}m` : `${Math.floor(n / 60)}h ${n % 60}m`)
+  // Time in the app over the last 30 days, summed from the recorded sessions.
+  const recentMins = (u) => {
+    const cut = Date.now() - 30 * 86400000
+    return (u.sessions || []).filter((x) => Date.parse(x.start) >= cut).reduce((n, x) => n + (x.mins || 0), 0)
+  }
+  const lastSession = (u) => (u.sessions || [])[(u.sessions || []).length - 1] || null
   const pending = state.users.filter((u) => u.status === 'pending')
   const team = state.users.filter((u) => u.status !== 'pending')
   // Sort the team table by the clicked column. Role sorts by access order
@@ -10611,6 +10635,9 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
     if (key === 'status') return STATUS_RANK[u.status] != null ? STATUS_RANK[u.status] : 9
     if (key === 'access') return isAdminishFE(u.role) ? 1e9 : (u.role === 'user' ? (u.allClients !== false ? 1e8 : (u.clients || []).length) : (u.clients || []).length)
     if (key === 'email') return (u.email || '').toLowerCase()
+    // Never seen sorts last on a descending "most recent first" click.
+    if (key === 'seen') return u.lastSeen ? Date.parse(u.lastSeen) : -1
+    if (key === 'time') return recentMins(u)
     return (u.name || u.email || '').toLowerCase()
   }
   const sortedTeam = [...team].sort((a, b) => {
@@ -10638,15 +10665,24 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
         </div>
 
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
-          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" /><Th k="status" label="Status" /><th className="lft"></th></tr></thead>
-          <tbody>{state.status === 'loading' ? <tr><td colSpan={6}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
+          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" /><Th k="seen" label="Last active" /><Th k="time" label="Time (30d)" /><Th k="status" label="Status" /><th className="lft"></th></tr></thead>
+          <tbody>{state.status === 'loading' ? <tr><td colSpan={8}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
             const self = u.email === (authUser && authUser.email)
+            const seen = ago(u.lastSeen)
+            const ls = lastSession(u)
+            const tot = recentMins(u)
             return (
               <tr key={u.email}>
                 <td className="lft">{u.name || <span className="cap">-</span>}{self && <span className="u-you">you</span>}</td>
                 <td className="lft">{u.email}</td>
                 <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
+                <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
+                  {seen ? <span className="u-seen">{seen}{ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}</span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
+                </td>
+                <td className="lft" title={tot ? `${(u.sessions || []).filter((x) => Date.parse(x.start) >= Date.now() - 30 * 86400000).length} session(s) in the last 30 days` : ''}>
+                  {tot ? <span className="u-seen">{mins(tot)}</span> : <span className="cap">-</span>}
+                </td>
                 <td className="lft">{badge(u)}</td>
                 <td className="lft">{canManageRoleFE(actorRole, u.role) ? <button className="btn-ghost sm" onClick={() => setModal({ user: u })}>Edit access</button> : <span className="cap" title="Only a Super Admin can manage an Admin">🔒 locked</span>}</td>
               </tr>

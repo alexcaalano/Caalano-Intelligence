@@ -17,6 +17,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.350.0 - 2026-08-20 · `PENDING` - Clinic settings: which calendars actually make someone a patient
+- A discovery / triage call is a sales conversation, not a visit - but the diary sweep was counting it as one. That put a
+  **phantom first visit at the head of the retention curve**, handed the clinic a **free "rebooking"** when the real first
+  appointment followed it, and **dragged the visit-cadence average down**. All three now exclude triage bookings.
+- New **Settings → Clinic** tab per CRM client: every calendar listed with a **Clinical / Triage** toggle. Explicit
+  choices are stored per calendar and always win.
+- Unset calendars fall back to a **name-based guess** (discovery, triage, screening, intro, qualification, enquiry, free
+  15-min…), so it behaves sensibly before anyone configures it, and those rows are badged **auto** so a guess is never
+  mistaken for a decision. Deliberately narrow: "Standard Consultation", "Dietitian Consult 45min" and "Initial
+  Assessment" all stay clinical, where a naive match on "consult" or "initial" would have wrongly demoted real
+  appointments.
+- **Triage bookings still appear in the book** - they occupy real time, so excluding them would understate how busy the
+  clinic is. The forward book now reads "N clinical appointments · +M triage", keeping occupancy honest while the patient
+  metrics stay clean.
+- The Clinic tab names which calendars were treated as triage, how many bookings that excluded, and whether it was set or
+  guessed - so the setting is discoverable from the numbers it changes rather than buried in a menu.
+- Applies to both the live tab and the overnight snapshot.
+
 ## v3.349.0 - 2026-08-20 · `PENDING` - Monthly report: creative + form funnels are clickable, form names fit
 - **Creative performance key events are clickable again in the monthly deck.** The drill was already built - the deck's
   call site just never passed `clientId`, `range` or `channel`, so `canDrill` was false and every row rendered static. Now

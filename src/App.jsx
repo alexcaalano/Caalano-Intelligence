@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.349.0'
+const APP_VERSION = '3.350.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3069,6 +3069,7 @@ function UtmSection({ attr, currency, paid }) {
 const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
+const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
 const RESTRICTED_KEY = 'caalano_restricted'       // { clientId: true } - client is visible to Super Admins only
 const CLIENTS_KEY = 'caalano_clients' // UI-added clients { id: { name, meta, google, ghl } }
@@ -3115,7 +3116,7 @@ const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendly
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -5720,6 +5721,97 @@ function ClinicBenchmark({ clientId, currency, nonce }) {
     </div>
   )
 }
+/* ============ Clinic settings ============
+   Which calendars actually make someone a patient. A discovery / triage call is
+   a sales conversation, not a visit - counting it as one puts a phantom first
+   visit at the head of the retention curve, hands the clinic a free "rebooking"
+   when the real first appointment follows, and drags the visit-cadence average
+   down. This is where that call gets made. */
+const TRIAGE_NAME_RE_FE = /discovery|triage|screening|intro(duction)?\b|consult(ation)?\s*call|phone\s*consult|strategy\s*call|qualif|scoping|enquiry|enquire|free\s*(call|chat)|15\s*min/i
+function loadClinicCfg(clientId) { const v = SETTINGS.clinic && SETTINGS.clinic[clientId]; return (v && typeof v === 'object') ? v : {} }
+function saveClinicCfg(clientId, cfg) {
+  SETTINGS.clinic = { ...(SETTINGS.clinic || {}), [clientId]: cfg }
+  writeLS(CLINIC_CFG_KEY, SETTINGS.clinic); saveSettingsRemote({ clinic: { [clientId]: cfg } }); bumpSettings()
+}
+// The role a calendar plays, and whether that was decided or merely guessed.
+function clinicCalRoleFE(cal, cfg) {
+  const explicit = cfg && cfg.cals ? cfg.cals[cal.id] : null
+  if (explicit === 'clinical' || explicit === 'triage') return { role: explicit, auto: false }
+  return { role: TRIAGE_NAME_RE_FE.test(cal.name || '') ? 'triage' : 'clinical', auto: true }
+}
+// The location's calendars (id + name + type) for the Clinic settings picker.
+function useCalendars(clientId, nonce) {
+  const [st, setSt] = useState({ status: 'loading', list: [] })
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', list: [] })
+    fetch(`/.netlify/functions/windsor?scope=calendars&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: 'ok', list: j.calendars || [] }) })
+      .catch(() => { if (alive) setSt({ status: 'err', list: [] }) })
+    return () => { alive = false }
+  }, [clientId, nonce])
+  return st
+}
+function ClinicSettings({ clientId, nonce }) {
+  const cals = useCalendars(clientId, nonce)
+  const [, bump] = useState(0)
+  useEffect(() => onSettings(() => bump((n) => n + 1)), [])
+  const cfg = loadClinicCfg(clientId)
+  const setRole = (calId, role) => {
+    const cals2 = { ...(cfg.cals || {}) }
+    if (role === 'auto') delete cals2[calId]; else cals2[calId] = role
+    saveClinicCfg(clientId, { ...cfg, cals: cals2 })
+  }
+  const list = (cals.list || [])
+  const clinical = list.filter((c) => clinicCalRoleFE(c, cfg).role === 'clinical')
+  const triage = list.filter((c) => clinicCalRoleFE(c, cfg).role === 'triage')
+  return (
+    <div className="set-tabpane">
+      <div className="set-sec-t">Clinic settings</div>
+      <p className="cap set-clinic-intro">
+        A patient only becomes a patient once a <b>clinical</b> calendar has seen them. Mark your discovery, triage and
+        intake calls as <b>Triage</b> and they stop counting as visits - they no longer open a cohort on the retention
+        curve, no longer count as a rebooking when the real first appointment follows, and no longer pull the visit
+        cadence down. They still appear in the book, because they still occupy real time.
+      </p>
+      {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
+        : !list.length ? <p className="cap">No calendars found for this client.</p>
+          : (
+            <>
+              <div className="set-clinic-sum">
+                <span><b>{fmtNumber(clinical.length)}</b> clinical</span>
+                <span><b>{fmtNumber(triage.length)}</b> triage</span>
+              </div>
+              <div className="set-clinic-list">
+                {list.map((cal) => {
+                  const { role, auto } = clinicCalRoleFE(cal, cfg)
+                  return (
+                    <div className={`set-clinic-row ${role}`} key={cal.id}>
+                      <span className="set-clinic-nm" title={cal.name}>
+                        {cal.name}
+                        {cal.typeLabel && cal.type !== 'round_robin' ? <em className="kev-caltype">{cal.typeLabel}</em> : null}
+                        {auto ? <em className="set-clinic-auto" title="Guessed from the calendar name - set it explicitly to be sure">auto</em> : null}
+                      </span>
+                      <span className="set-clinic-btns">
+                        <button type="button" className={role === 'clinical' ? 'on' : ''} onClick={() => setRole(cal.id, 'clinical')}>Clinical</button>
+                        <button type="button" className={role === 'triage' ? 'on' : ''} onClick={() => setRole(cal.id, 'triage')}>Triage</button>
+                        {!auto ? <button type="button" className="set-clinic-reset" onClick={() => setRole(cal.id, 'auto')} title="Go back to guessing from the name">↺</button> : null}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="caveat" style={{ marginTop: 12 }}>
+                Calendars marked <b>auto</b> were guessed from their name - anything reading like a discovery, triage,
+                screening or intro call is treated as triage. The guess only has to be right often enough to be useful on
+                day one; setting it explicitly is what makes it correct, and an explicit choice always wins. Changes apply
+                to the Clinic tab on its next load, and to tonight&rsquo;s snapshot.
+              </p>
+            </>
+          )}
+    </div>
+  )
+}
 function ClinicView({ clientId, currency, nonce }) {
   const st = useClinic(clientId, nonce)
   const [work, setWork] = useState('winback')
@@ -5736,6 +5828,7 @@ function ClinicView({ clientId, currency, nonce }) {
   const pv = d.pva || {}
   const dq = d.dataQuality || {}
   const di = d.diary || null
+  const cr = d.calendarRoles || null
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const dl = d.deltas || null
   const hist = Array.isArray(d.history) ? d.history : []
@@ -5763,6 +5856,10 @@ function ClinicView({ clientId, currency, nonce }) {
         {stale ? <p className="cl-stale">⚠️ The sync last wrote to this location <b>{sy.staleDays} days ago</b>. Everything below is as at that date, not today.</p>
           : (sy.lastSyncAt ? <p className="cl-fresh">Practice-management sync last wrote {new Date(sy.lastSyncAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.{partial ? ' Still populating across the patient base.' : ''}</p> : null)}
       </div>
+
+      {cr && cr.triage && cr.triage.length ? <p className="caveat cl-triage">
+        <b>{cr.triage.map((t) => t.name).join(', ')}</b> {cr.triage.length === 1 ? 'is' : 'are'} treated as <b>triage</b>, not clinical - {fmtNumber(cr.triageAppts)} booking{cr.triageAppts === 1 ? '' : 's'} excluded from patient visits, so {cr.triage.length === 1 ? 'it doesn\u2019t' : 'they don\u2019t'} open a cohort on the retention curve or count as a rebooking. {cr.configured ? 'Set explicitly in Settings → Clinic.' : 'Guessed from the calendar name - confirm it in Settings → Clinic.'} Triage bookings still appear in the book, because they still occupy real time.
+      </p> : null}
 
       {dq.warnings && dq.warnings.length ? <div className="card insight cl-dq">
         <div>
@@ -5821,7 +5918,7 @@ function ClinicView({ clientId, currency, nonce }) {
       {di ? <ClinicSection id="cl-capacity" title="The book" note={`what's scheduled over the next ${di.windowDays || di.days.length} days`}>
         <div className="card">
           <div className="timing-scards">
-            <div className="tm-sc hero"><span className="tm-lab">Booked ahead</span><b>{fmtNumber(di.appts)}</b><span className="tm-sub">appointments in the book</span></div>
+            <div className="tm-sc hero"><span className="tm-lab">Booked ahead</span><b>{fmtNumber(di.appts)}</b><span className="tm-sub">clinical appointments{di.triage ? ` · +${fmtNumber(di.triage)} triage` : ''}</span></div>
             <div className="tm-sc"><span className="tm-lab">Booked hours</span><b>{di.hours}h</b><span className="tm-sub">{di.capacity ? `of ${di.capacity}h open` : 'clinical time scheduled'}</span></div>
             {di.occupancy != null ? <div className="tm-sc"><span className="tm-lab">Occupancy</span><b>{di.occupancy}%</b><span className="tm-sub">of declared opening hours</span></div> : null}
             <div className="tm-sc warn"><span className="tm-lab">Empty days</span><b>{fmtNumber(di.emptyDays)}</b><span className="tm-sub">open with nothing booked</span></div>
@@ -10033,6 +10130,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
   if (c.ghl) tabs.push(['forms', 'Forms'])
   if (c.ghl) tabs.push(['qualstage', 'Qualified lead'])
+  if (c.ghl) tabs.push(['clinic', 'Clinic'])
   tabs.push(['optlog', 'Optimisation Log'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics'])
   const [tab, setTab] = useState('summary')
@@ -10077,6 +10175,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           </div>}
           {tab === 'profile' && <div className="set-tabpane"><div className="set-sec-t">Overview - client brand profile</div><ClientProfileEditor clientId={c.id} /></div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'kpis' && <div className="set-tabpane"><div className="set-sec-t">KPI targets</div><KpiEditor clientId={c.id} embedded nonce={sig} /></div>}

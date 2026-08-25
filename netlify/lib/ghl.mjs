@@ -1072,6 +1072,31 @@ const CLINIC_FIELDS = {
   last_appt_cancel_reason: 'str', upcoming_appt_cancel_reason: 'str',
   upcoming_appt_type: 'str', last_appt_business: 'str',
 }
+// ---- Clinical vs triage calendars ---------------------------------------
+// A patient is only a patient once a CLINICAL calendar has seen them. A
+// discovery / triage / screening call is a sales conversation: counting it as a
+// visit corrupts every patient metric at once - it becomes a phantom first
+// visit at the head of the retention curve, a free "rebooking" when the real
+// first appointment follows it, and it drags the visit-cadence average down.
+//
+// Classification is explicit per calendar in Settings, falling back to the name
+// when nobody has said. The fallback only ever has to be right often enough to
+// be useful on day one; the setting is what makes it correct.
+const TRIAGE_NAME_RE = /discovery|triage|screening|intro(duction)?\b|consult(ation)?\s*call|phone\s*consult|strategy\s*call|qualif|scoping|enquiry|enquire|free\s*(call|chat)|15\s*min/i
+function _clinicCalRole(cal, cfg) {
+  const id = String(cal.id || cal._id || cal.calendarId || '')
+  const explicit = cfg && cfg.cals && id ? cfg.cals[id] : null
+  if (explicit === 'clinical' || explicit === 'triage') return explicit
+  return TRIAGE_NAME_RE.test(String(cal.name || cal.calendarName || '')) ? 'triage' : 'clinical'
+}
+export async function clinicConfig(clientId) {
+  try {
+    const all = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+    const c = all && all.clinic && all.clinic[clientId]
+    return (c && typeof c === 'object') ? c : null
+  } catch { return null }
+}
+
 // Month maths for the cohort views. Cohort keys are "YYYY-MM".
 const CURVE_MAX = 12
 function _monthKeyUTC(ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 7) : null }
@@ -1141,14 +1166,14 @@ function _dayKeyer(tz) {
   catch { fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }) }
   return (ms) => (isFinite(ms) ? fmt.format(new Date(ms)) : null)
 }
-async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900, chunkDays = 90, tz = 'UTC' } = {}) {
+async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookbackDays = 900, chunkDays = 90, tz = 'UTC', clinicCfg = null } = {}) {
   const out = { byContact: new Map(), calendars: 0, events: 0, available: false, truncated: false, bookingTimes: null }
   // Diary aggregates, built in the same pass rather than a second sweep: what's
   // in the book for the next fortnight, and which weekdays actually carry the
   // load. Both need appointment DURATION, which only the calendar events have -
   // the synced counters know how many appointments there were, never how long.
   const dayKeyTz = _dayKeyer(tz)
-  const fwd = new Map()               // dateKey -> { appts, minutes }
+  const fwd = new Map()               // dateKey -> { appts, minutes, triage }
   const dow = Array.from({ length: 7 }, () => ({ appts: 0, minutes: 0, dates: new Set() }))
   const FWD_DAYS = 14, DOW_LOOKBACK = 90
   // A two-way practice-management sync writes appointments INTO the CRM in bulk,
@@ -1163,7 +1188,15 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   try { const j = await ghlGet(locTok, '/calendars/', { locationId }); cals = j.calendars || j.calendar || [] }
   catch { return out }
   const active = cals.filter((c) => (c.id || c._id || c.calendarId) && c.isActive !== false)
-  out.calendars = active.length
+  // Split the diary before reading anything from it. Triage calendars are still
+  // swept - they're real bookings that occupy real time, and the book needs
+  // them - but they never become patient visits.
+  const roleOf = new Map(active.map((c) => [String(c.id || c._id || c.calendarId), _clinicCalRole(c, clinicCfg)]))
+  out.calendars = active.filter((c) => roleOf.get(String(c.id || c._id || c.calendarId)) === 'clinical').length
+  out.triageCalendars = active
+    .filter((c) => roleOf.get(String(c.id || c._id || c.calendarId)) === 'triage')
+    .map((c) => ({ id: String(c.id || c._id || c.calendarId), name: c.name || c.calendarName || 'Calendar' }))
+  out.triageAppts = 0
   const DAY = 86400000
   const now = Date.now()
   const startMs = now - lookbackDays * DAY
@@ -1171,7 +1204,7 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   const nowRef = Date.now()
   const fwdEnd = nowRef + FWD_DAYS * 86400000
   const dowStart = nowRef - DOW_LOOKBACK * 86400000
-  const diary = (start, end, status) => {
+  const diary = (start, end, status, clinical = true) => {
     if (!isFinite(start)) return
     // A cancelled or missed slot isn't capacity in use, and shouldn't shape the
     // picture of how busy a day is.
@@ -1179,18 +1212,26 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
     const mins = isFinite(end) && end > start ? Math.min(600, Math.round((end - start) / 60000)) : 0
     if (start >= nowRef && start <= fwdEnd) {
       const k = dayKeyTz(start)
-      const e = fwd.get(k) || { appts: 0, minutes: 0 }
-      e.appts++; e.minutes += mins; fwd.set(k, e)
+      const e = fwd.get(k) || { appts: 0, minutes: 0, triage: 0 }
+      // Both consume a slot, so both count toward booked time; only clinical
+      // bookings count as patient appointments.
+      e.minutes += mins
+      if (clinical) e.appts++; else e.triage++
+      fwd.set(k, e)
     }
     if (start >= dowStart && start < nowRef) {
       const d = new Date(start).getUTCDay()
-      dow[d].appts++; dow[d].minutes += mins; dow[d].dates.add(dayKeyTz(start))
+      if (clinical) dow[d].appts++
+      dow[d].minutes += mins; dow[d].dates.add(dayKeyTz(start))
     }
   }
-  const push = (cid, start, added, status, calName, service, source, end) => {
-    diary(start, end, status)
+  const push = (cid, start, added, status, calName, service, source, end, clinical = true) => {
+    diary(start, end, status, clinical)
     if (!cid || !isFinite(start)) return
     if (APPT_DEAD_RE.test(String(status || ''))) return
+    // A triage booking is a sales call, not a visit. It counts toward the book
+    // and toward triage volume, never toward this patient's visit history.
+    if (!clinical) { out.triageAppts++; return }
     if (isFinite(added)) {
       bt.n++
       if (added > start) bt.afterStart++
@@ -1228,6 +1269,7 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
       const i = next++
       if (i >= jobs.length) return
       const { calId, calName, a, b } = jobs[i]
+      const isClinical = roleOf.get(String(calId)) !== 'triage'
       try {
         const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: a, endTime: b })
         const evs = j.events || []
@@ -1237,7 +1279,7 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
         for (const ev of evs) {
           out.events++
           const cid = ev.contactId || (ev.contact && (ev.contact.id || ev.contact._id)) || null
-          push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null, ev.createdBy && ev.createdBy.source, Date.parse(ev.endTime))
+          push(cid, Date.parse(ev.startTime), Date.parse(ev.dateAdded), ev.appointmentStatus || ev.appoinmentStatus || ev.status, calName, ev.title || ev.appointmentTitle || null, ev.createdBy && ev.createdBy.source, Date.parse(ev.endTime), isClinical)
         }
       } catch { /* one bad slice shouldn't sink the whole history */ }
       done++
@@ -1254,7 +1296,9 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
       for (const b of (j.bookings || j.events || [])) {
         out.events++
         const cid = b.contactId || (b.contact && (b.contact.id || b.contact._id)) || null
-        push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', b.serviceName || b.title || null, b.createdBy && b.createdBy.source, Date.parse(b.endTime || b.end))
+        const svcName = b.serviceName || b.calendarName || b.title || ''
+        const svcClinical = _clinicCalRole({ id: b.serviceId || b.calendarId, name: svcName }, clinicCfg) !== 'triage'
+        push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', svcName || null, b.createdBy && b.createdBy.source, Date.parse(b.endTime || b.end), svcClinical)
       }
     } catch { /* location isn't on the services catalog - normal */ }
   }
@@ -1264,14 +1308,15 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   const fwdDays = []
   for (let i = 0; i < FWD_DAYS; i++) {
     const k = dayKeyTz(nowRef + i * 86400000)
-    const e = fwd.get(k) || { appts: 0, minutes: 0 }
-    fwdDays.push({ date: k, appts: e.appts, hours: Math.round((e.minutes / 60) * 10) / 10 })
+    const e = fwd.get(k) || { appts: 0, minutes: 0, triage: 0 }
+    fwdDays.push({ date: k, appts: e.appts, triage: e.triage, hours: Math.round((e.minutes / 60) * 10) / 10 })
   }
   out.forward = {
     days: fwdDays,
     appts: fwdDays.reduce((n, d) => n + d.appts, 0),
+    triage: fwdDays.reduce((n, d) => n + d.triage, 0),
     hours: Math.round(fwdDays.reduce((n, d) => n + d.hours, 0) * 10) / 10,
-    emptyDays: fwdDays.filter((d) => !d.appts).length,
+    emptyDays: fwdDays.filter((d) => !d.appts && !d.triage).length,
   }
   // Busiest weekdays, averaged over the days the clinic actually opened rather
   // than over all 90 - a clinic closed on Sundays shouldn't show Sunday as a
@@ -1452,6 +1497,7 @@ export async function buildClinic(locationId, opts = {}) {
   // already holds the derived curve and rebooking figures, the caller passes
   // skipAppts and splices those in instead of walking the diary again.
   const tz = await locationTimezone(locationId).catch(() => 'UTC')
+  const clinicCfg = opts.clinicCfg || null
   const [, hist, hours] = await Promise.all([
     _pageContacts(locTok, locationId, process, opts),
     opts.skipAppts ? Promise.resolve(null)
@@ -1459,7 +1505,7 @@ export async function buildClinic(locationId, opts = {}) {
         deadlineMs: opts.apptDeadlineMs || 7000,
         lookbackDays: opts.lookbackDays || 900,
         chunkDays: opts.chunkDays || 90,
-        tz,
+        tz, clinicCfg,
       }).catch(() => null),
     opts.skipAppts ? Promise.resolve(null) : deriveBusinessHours(locationId).catch(() => null),
   ])
@@ -1588,12 +1634,13 @@ export async function buildClinic(locationId, opts = {}) {
     const capTotal = days.reduce((n, d) => n + (d.capacity || 0), 0)
     diary = {
       days,
-      appts: hist.forward.appts, hours: hist.forward.hours,
+      appts: hist.forward.appts, triage: hist.forward.triage || 0, hours: hist.forward.hours,
       emptyDays: days.filter((d) => d.open !== false && !d.appts).length,
       capacity: capTotal || null,
       occupancy: capTotal ? Math.round((hist.forward.hours / capTotal) * 100) : null,
       openHours: hours && hours.detected ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin, chairs } : null,
       byWeekday: hist.byWeekday || [],
+      triageCalendars: hist.triageCalendars || [],
       tz,
     }
   }
@@ -1699,6 +1746,9 @@ export async function buildClinic(locationId, opts = {}) {
     },
     forwardBookings: { withUpcoming, pctWithUpcoming: N.withData ? Math.round((withUpcoming / N.withData) * 100) : 0, upcomingTotal: sum.upcomingAppts },
     retentionEcon, rebooking, pva, diary,
+    // Which calendars were treated as triage rather than clinical, so the tab can
+    // say so plainly and the setting is discoverable from the numbers it changes.
+    calendarRoles: hist ? { clinical: hist.calendars || 0, triage: hist.triageCalendars || [], triageAppts: hist.triageAppts || 0, configured: !!(clinicCfg && clinicCfg.cals) } : null,
     // Sync health: how many contacts are genuine patient records, and how long
     // since the practice-management sync last wrote anything.
     sync: {

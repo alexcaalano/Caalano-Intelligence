@@ -8,7 +8,7 @@ import { currentUser } from '../lib/auth.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
-const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl']
+const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'clinic']
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 })
@@ -29,7 +29,7 @@ export default async (req) => {
           const pick = (obj) => { const o = {}; for (const k in (obj || {})) { if (allow.has(String(k).split(':')[0])) o[k] = obj[k] } return o }
           const scoped = {}
           // Client-keyed sections the viewer UI reads, filtered to their clients.
-          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames']) scoped[s] = pick(data[s])
+          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames', 'clinic']) scoped[s] = pick(data[s])
           // campmap is campaign-name-keyed (needed for spend attribution) and fatigue
           // is global thresholds - neither is per-client-sensitive; pass as-is.
           scoped.campmap = data.campmap || {}

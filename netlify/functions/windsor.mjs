@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, buildCalPerf } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
@@ -653,7 +653,7 @@ export async function runClinicSnapshots(dates) {
     try {
       const probe = await buildClinic(cc.ghl, { probe: true })
       if (!probe || !probe.hasClinic) continue
-      const d = await buildClinic(cc.ghl, { deadlineMs: 30000, apptDeadlineMs: 180000, cap: 20000, chunkDays: 60 })
+      const d = await buildClinic(cc.ghl, { deadlineMs: 30000, apptDeadlineMs: 180000, cap: 20000, chunkDays: 60, clinicCfg: await clinicConfig(id).catch(() => null) })
       if (!d || !d.hasClinic) continue
       const p = clinicPoint(d)
       const derived = { cohortCurve: d.cohortCurve || [], rebooking: d.rebooking || null, diary: d.diary || null }
@@ -3472,8 +3472,9 @@ export default async (req) => {
       const derived = await readClinicDerived(client).catch(() => null)
       const derivedAgeH = derived && derived.at ? (Date.now() - Date.parse(derived.at)) / 3600000 : null
       const useStored = !!(derived && derivedAgeH != null && derivedAgeH < 36)
+      const clinicCfg = await clinicConfig(client).catch(() => null)
       const [d, history] = await Promise.all([
-        buildClinic(cc.ghl, useStored ? { skipAppts: true } : {}),
+        buildClinic(cc.ghl, useStored ? { skipAppts: true, clinicCfg } : { clinicCfg }),
         readClinicHistory(client).catch(() => []),
       ])
       if (useStored) {

@@ -3164,3 +3164,22 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 /* Four or more numeric columns need the label column to give up more room. */
 .cl-fit.cl-fit-wide th:first-child, .cl-fit.cl-fit-wide td:first-child { width: 30%; }
 @media (max-width: 1180px) { .cl-fit th:first-child, .cl-fit td:first-child { width: 38%; } }
+
+/* ---- Clinic settings: which calendars make someone a patient ---- */
+.set-clinic-intro { margin: 0 0 12px; line-height: 1.55; max-width: 760px; }
+.set-clinic-sum { display: flex; gap: 16px; margin-bottom: 10px; font-size: 12.5px; color: var(--muted); }
+.set-clinic-sum b { color: var(--text); }
+.set-clinic-list { display: flex; flex-direction: column; gap: 6px; }
+.set-clinic-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.set-clinic-row.triage { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.set-clinic-nm { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.set-clinic-auto { font-style: normal; font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; opacity: .6; border: 1px dashed currentColor; border-radius: 999px; padding: 1px 5px; }
+.set-clinic-btns { display: inline-flex; gap: 5px; flex: 0 0 auto; }
+.set-clinic-btns button { background: var(--panel); border: 1px solid var(--border); color: var(--muted); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 650; cursor: pointer; }
+.set-clinic-btns button:hover { color: var(--text); }
+.set-clinic-btns button.on { background: color-mix(in srgb, var(--brand) 18%, transparent); border-color: color-mix(in srgb, var(--brand) 55%, transparent); color: var(--text); }
+.set-clinic-row.triage .set-clinic-btns button.on { background: color-mix(in srgb, var(--warn) 20%, transparent); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.set-clinic-reset { padding: 4px 8px !important; }
+
+/* Which calendars were treated as triage - shown where it changes the numbers */
+.caveat.cl-triage { border-left: 2px solid color-mix(in srgb, var(--brand) 55%, transparent); padding-left: 9px; margin: 0 0 14px; }

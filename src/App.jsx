@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.350.0'
+const APP_VERSION = '3.351.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5782,15 +5782,28 @@ function ClinicSettings({ clientId, nonce }) {
                 <span><b>{fmtNumber(clinical.length)}</b> clinical</span>
                 <span><b>{fmtNumber(triage.length)}</b> triage</span>
               </div>
+              {!clinical.length ? <p className="caveat cl-warn" style={{ marginTop: 0, marginBottom: 10 }}>
+                <b>No calendar here is clinical.</b> That&rsquo;s expected when the clinical diary lives in the practice-management
+                system and only the sales calls run through Caalano Systems - the patient counts, LTV and attendance still come
+                from the sync, but the retention curve, rebooking split and visit cadence need clinical bookings in a calendar,
+                so those stay empty until one exists here.
+              </p> : null}
               <div className="set-clinic-list">
                 {list.map((cal) => {
                   const { role, auto } = clinicCalRoleFE(cal, cfg)
                   return (
                     <div className={`set-clinic-row ${role}`} key={cal.id}>
-                      <span className="set-clinic-nm" title={cal.name}>
-                        {cal.name}
-                        {cal.typeLabel && cal.type !== 'round_robin' ? <em className="kev-caltype">{cal.typeLabel}</em> : null}
-                        {auto ? <em className="set-clinic-auto" title="Guessed from the calendar name - set it explicitly to be sure">auto</em> : null}
+                      <span className="set-clinic-nm" title={cal.rawName ? `Calendar name: ${cal.rawName}` : cal.name}>
+                        <span className="set-clinic-t">
+                          {cal.name}
+                          {cal.typeLabel && cal.type !== 'round_robin' ? <em className="kev-caltype">{cal.typeLabel}</em> : null}
+                          {auto ? <em className="set-clinic-auto" title="Guessed from the calendar name - set it explicitly to be sure">auto</em> : null}
+                          {/* What's actually booked here - the name alone is often
+                              generic or a template, and this is what makes the
+                              clinical / triage call obvious. */}
+                          {cal.commonBooking ? <small>mostly &ldquo;{cal.commonBooking}&rdquo;{cal.recent ? ` · ${fmtNumber(cal.recent)} recent booking${cal.recent === 1 ? '' : 's'}` : ''}</small>
+                            : cal.recent === 0 ? <small>no bookings in the last 120 days</small> : null}
+                        </span>
                       </span>
                       <span className="set-clinic-btns">
                         <button type="button" className={role === 'clinical' ? 'on' : ''} onClick={() => setRole(cal.id, 'clinical')}>Clinical</button>

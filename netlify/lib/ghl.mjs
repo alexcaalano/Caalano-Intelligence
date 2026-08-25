@@ -735,6 +735,42 @@ export async function listLocations() {
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
+// Calendar names routinely contain unresolved merge tags - a template calendar
+// ships as "{{custom_values.appointment_name}} with {{location.name}}" and the
+// API returns it verbatim. Left raw it's unpickable in a settings list AND it
+// defeats any name-based classification, because the words that would identify
+// it (e.g. "Discovery Call") live in the custom value, not the name. Resolving
+// them is what makes both work.
+const locValsCache = new Map()
+async function locationMergeValues(locationId) {
+  if (locValsCache.has(locationId)) return locValsCache.get(locationId)
+  const out = new Map()
+  try {
+    const locTok = await locationToken(locationId)
+    const [vals, prof] = await Promise.all([
+      ghlGet(locTok, `/locations/${locationId}/customValues`, {}).then((j) => j.customValues || j.customValue || []).catch(() => []),
+      locationProfile(locationId).catch(() => null),
+    ])
+    for (const v of vals) {
+      // fieldKey arrives as "{{ custom_values.appointment_name }}" - spacing and
+      // braces vary, so key on the bare path.
+      const k = String(v.fieldKey || '').replace(/[{}]/g, '').trim().toLowerCase()
+      if (k && v.value != null) out.set(k, String(v.value))
+    }
+    if (prof && prof.name) out.set('location.name', prof.name)
+  } catch { /* names simply stay raw */ }
+  locValsCache.set(locationId, out)
+  return out
+}
+function resolveMergeTags(str, vals) {
+  const raw = String(str || '')
+  if (!vals || !/\{\{/.test(raw)) return raw
+  return raw.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (m, key) => {
+    const v = vals.get(String(key).trim().toLowerCase())
+    return v != null ? v : m
+  }).replace(/\s{2,}/g, ' ').trim()
+}
+
 // Calendar list for the Settings key-events editor: id + name + type. Covers
 // EVERY way a clinic can take bookings - the calendars endpoint returns all
 // calendar types (round robin, event, class, collective and Service Calendars),
@@ -744,19 +780,45 @@ export async function listLocations() {
 const CAL_TYPE_LABEL = { round_robin: 'Round robin', event: 'Event', class_booking: 'Class', collective: 'Collective', service: 'Service', service_booking: 'Service', personal: 'Personal' }
 export async function listCalendars(locationId) {
   const locTok = await locationToken(locationId)
-  const [cals, services] = await Promise.all([
+  const [cals, services, vals] = await Promise.all([
     ghlGet(locTok, '/calendars/', { locationId }).then((j) => j.calendars || j.calendar || []).catch(() => []),
     ghlGet(locTok, '/calendars/services/catalog', { locationId }).then((j) => j.services || j.catalog || []).catch(() => []),
+    locationMergeValues(locationId),
   ])
   const out = cals.map((c) => {
     const t = String(c.calendarType || c.eventType || '').toLowerCase()
+    const raw = c.name || c.calendarName || 'Calendar'
+    const resolved = resolveMergeTags(raw, vals)
     return {
       id: c.id || c._id || c.calendarId,
-      name: c.name || c.calendarName || 'Calendar',
+      name: resolved,
+      rawName: resolved !== raw ? raw : undefined,
       type: /service/.test(t) ? 'service' : (t || null),
       typeLabel: CAL_TYPE_LABEL[t] || (/service/.test(t) ? 'Service' : null),
     }
   }).filter((c) => c.id)
+  // What is actually being booked on each calendar. A name alone can be
+  // uninformative ("Appointments", or a template that resolved to something
+  // generic); the titles of its recent bookings are what make the clinical /
+  // triage choice obvious. Best-effort and bounded - the picker still works
+  // without it.
+  await Promise.all(out.slice(0, 12).map(async (c) => {
+    try {
+      const now = Date.now()
+      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: c.id, startTime: now - 120 * 86400000, endTime: now + 60 * 86400000 })
+      const evs = j.events || []
+      c.recent = evs.length
+      const titles = new Map()
+      for (const e of evs) {
+        // Booking titles are usually "Contact x Business | Service" - the last
+        // segment is the part that names what was booked.
+        const t = String(e.title || '').split('|').pop().trim()
+        if (t) titles.set(t, (titles.get(t) || 0) + 1)
+      }
+      const top = [...titles.entries()].sort((a, b) => b[1] - a[1])[0]
+      if (top) c.commonBooking = top[0]
+    } catch { /* the picker still works without a sample */ }
+  }))
   const seen = new Set(out.map((c) => c.id))
   for (const s of services) {
     const id = s.id || s._id || s.serviceId || s.calendarId
@@ -1184,9 +1246,18 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   // at-the-desk / after-leaving split unless the timestamps survive it.
   const bt = { n: 0, afterStart: 0, minutes: new Set(), thirdParty: 0 }
   const deadline = Date.now() + deadlineMs
-  let cals = []
-  try { const j = await ghlGet(locTok, '/calendars/', { locationId }); cals = j.calendars || j.calendar || [] }
-  catch { return out }
+  let cals = [], mergeVals = null
+  try {
+    const [j, vals] = await Promise.all([
+      ghlGet(locTok, '/calendars/', { locationId }),
+      locationMergeValues(locationId).catch(() => null),
+    ])
+    cals = j.calendars || j.calendar || []
+    mergeVals = vals
+  } catch { return out }
+  // Resolve merge tags before anything reads a calendar name - the words that
+  // identify a triage calendar often live in a custom value, not the name.
+  for (const c of cals) c.name = resolveMergeTags(c.name || c.calendarName || 'Calendar', mergeVals)
   const active = cals.filter((c) => (c.id || c._id || c.calendarId) && c.isActive !== false)
   // Split the diary before reading anything from it. Triage calendars are still
   // swept - they're real bookings that occupy real time, and the book needs

@@ -17,6 +17,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.351.0 - 2026-08-20 · `PENDING` - Clinic settings: resolve template calendar names, show what's booked on each
+- Checking a live location immediately found the hole in yesterday's name-based fallback: a template calendar ships as
+  `{{custom_values.appointment_name}} with {{location.name}}` and the API returns it **verbatim**. Its bookings were all
+  discovery calls, but the words that say so live in the custom value, not the name - so it read as clinical, and in the
+  settings list it was unpickable.
+- Calendar names now **resolve their merge tags** (custom values + location name, tolerating the spacing difference between how the
+  field key and the name are written). The picker shows "Discovery Call with Kind Health Company", and the auto-guess
+  classifies on the resolved name - which flips that calendar from clinical to triage without anyone touching it.
+- Each calendar in the picker also shows **what is actually booked on it** - the most common booking title and how many
+  bookings in the last 120 days. A name alone is often generic or a resolved template; the titles are what make the
+  clinical / triage call obvious.
+- When **no** calendar is clinical, the settings tab says so plainly and explains the consequence: patient counts, LTV and
+  attendance still come from the practice-management sync, but the retention curve, rebooking split and visit cadence need
+  clinical bookings in a calendar and stay empty until one exists. That is the expected shape for a clinic whose clinical
+  diary lives entirely in Cliniko / Nookal and runs only sales calls through the CRM.
+
 ## v3.350.0 - 2026-08-20 · `PENDING` - Clinic settings: which calendars actually make someone a patient
 - A discovery / triage call is a sales conversation, not a visit - but the diary sweep was counting it as one. That put a
   **phantom first visit at the head of the retention curve**, handed the clinic a **free "rebooking"** when the real first

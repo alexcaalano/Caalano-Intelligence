@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.356.0 - 2026-08-20 · `PENDING` - Forms: the expanded notes panel no longer scrolls sideways
+- Expanding a lead in the Forms drill pushed its CRM notes off the right edge behind a horizontal scrollbar. The cause was
+  subtle: the notes panel is a single full-width cell, which makes it the row's `:last-child` - and `.mini-tbl`
+  right-aligns last cells, because they're normally numbers. So the entire note inherited **right alignment** and its
+  pre-wrapped text ran off the right of a very wide table.
+- Notes rows are now explicitly left-aligned, pinned to the viewport-left like the person row above them, and capped to
+  the visible width - so a note reads normally and stays on screen no matter how wide the parent answer table gets.
+- Verified in a browser at 1600 and 1280px: computed alignment, the note's right edge against the viewport, and that the
+  text no longer overflows its own box.
+
 ## v3.355.0 - 2026-08-20 · `PENDING` - Reliability log: who was on screen when it failed
 - Every failure and slow build now records **which signed-in user** triggered it - name, email and role - shown in a new
   **Who** column and included in both the JSON and CSV exports.

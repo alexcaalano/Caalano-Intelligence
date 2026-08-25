@@ -588,7 +588,17 @@ button.u-vc.lost:hover { border-color: var(--neg); }
 .u-chip.lost:hover:not(:disabled) { border-color: var(--neg); }
 .u-drill-tbl td:not(.lft), .u-drill-tbl th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .u-drill-tbl .u-stale { color: var(--warn); font-weight: 700; }
-tr.u-notes-row > td { background: var(--panel-2); padding: 8px 12px; border-bottom: 1px solid var(--border); }
+/* The notes panel is a single full-width cell, which makes it :last-child - and
+   .mini-tbl right-aligns last cells. That silently right-aligned the whole note
+   and pushed its pre-wrapped text off the right edge of a wide table. Notes read
+   left-to-right; pin them there and keep them inside the viewport rather than
+   letting the parent table's width drag them off-screen. */
+tr.u-notes-row > td {
+  background: var(--panel-2); padding: 8px 12px; border-bottom: 1px solid var(--border);
+  text-align: left !important;
+  position: sticky; left: 0;
+}
+tr.u-notes-row > td > * { max-width: calc(100vw - var(--drill-gutter, 320px)); box-sizing: border-box; }
 .u-notes { display: flex; flex-direction: column; gap: 8px; }
 .u-note-item { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--brand); border-radius: 8px; padding: 8px 11px; }
 .u-note-meta { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: var(--faint); margin-bottom: 3px; }

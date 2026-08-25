@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.355.0 - 2026-08-20 · `PENDING` - Reliability log: who was on screen when it failed
+- Every failure and slow build now records **which signed-in user** triggered it - name, email and role - shown in a new
+  **Who** column and included in both the JSON and CSV exports.
+- A **per-person summary** sits under the scope chips. One person dominating the list usually points at their session,
+  client mix or filters rather than a system-wide fault, and that's invisible when every row looks the same.
+- Entries with no user are labelled **system** rather than left blank - scheduled jobs, warmers and requests made before
+  sign-in genuinely have no actor, and that's a meaningful distinction when reading the log.
+- Name and role are stored on the entry rather than looked up later, so a log line still reads correctly after someone is
+  renamed, has their role changed, or is removed from the team.
+
 ## v3.354.0 - 2026-08-20 · `PENDING` - Team & access: last active, and time spent in the app
 - **Last login was already being recorded** on every sign-in - it just wasn't shown anywhere. Duration wasn't recorded at
   all: login sessions are stateless signed tokens, so nothing server-side knows when one starts or ends.

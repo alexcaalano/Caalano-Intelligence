@@ -3193,3 +3193,8 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 /* Team & access: last-active and time-in-app columns */
 .u-seen { display: flex; flex-direction: column; line-height: 1.25; font-size: 12.5px; }
 .u-seen small { color: var(--faint); font-size: 10.5px; }
+
+/* Reliability log: who was on screen when it failed */
+.logs-who { max-width: 170px; }
+.logs-who small { display: block; color: var(--faint); font-size: 10.5px; line-height: 1.2; }
+.logs-who-sum { margin-top: 6px; }

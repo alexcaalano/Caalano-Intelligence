@@ -2529,6 +2529,11 @@ export default async (req) => {
   // Populated after access control (below) for cacheable client-scoped requests.
   let _ckey = null       // blob cache key for this request
   let _staleHit = null   // last cached payload (any age) - for stale-on-error fallback
+  // Who was looking at the screen when this went wrong. Declared up here rather
+  // than beside the session lookup below because `json` can fire before that
+  // lookup runs (e.g. the missing-API-key guard), and a const declared later
+  // would be in its temporal dead zone at that point.
+  let _actor = null
   const mkResponse = (obj, status, cache) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
   const json = async (obj, status = 200, cache = false) => {
     const softErr = status === 200 && obj && obj.error
@@ -2538,16 +2543,16 @@ export default async (req) => {
     // requests that actually have a recent-enough cached copy. The diag write is
     // awaited so the failure is durably recorded before the lambda can freeze.
     if (_ckey && _staleHit && softErr && (Date.now() - _staleHit.at) < STALE_ON_ERROR_MS) {
-      await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at })
+      await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at, ..._actor })
       return mkResponse({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true } }, 200, true)
     }
-    if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240) })
+    if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ..._actor })
     // Write-through: cache a freshly-built success, and flag builds that came close
     // to the timeout so we can see which scopes to make live-safe first.
     if (_ckey && cache && status === 200 && obj && !obj.error && !obj._cache) {
       writeResultCache(_ckey, obj)
       const ms = Date.now() - _t0
-      if (ms > 6000) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms })
+      if (ms > 6000) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms, ..._actor })
     }
     return mkResponse(obj, status, cache)
   }
@@ -2567,6 +2572,10 @@ export default async (req) => {
   // Data requests are the truest signal of someone actually working in the app,
   // so they drive the activity stamp (throttled inside currentUser).
   const me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET, { track: true }).catch(() => null) : null
+  // Stamp every subsequent log line with who was on the screen. Name and role
+  // ride along so the log reads without a second lookup, and so an entry stays
+  // meaningful after someone is renamed or removed.
+  if (me) _actor = { user: me.email, userName: me.name || null, userRole: me.role || null }
   // Clients marked "Super-Admin only" in Settings are hidden from everyone who
   // isn't a superadmin. A null caller is the trusted Basic-Auth / legacy path
   // (owner) and a superadmin both see everything, so we only load + apply the
@@ -2637,7 +2646,7 @@ export default async (req) => {
   // parse error it saw) so the same log captures browser-visible breakages the
   // function itself never got to record.
   if (scope === 'clientlog' && req.method === 'POST') {
-    try { const b = await req.json().catch(() => ({})); await diagLog({ sev: 'client', scope: String(b.scope || 'unknown').slice(0, 60), client: b.client || client || null, ms: Number(b.ms) || null, error: String(b.error || '').slice(0, 240) }) } catch { /* ignore */ }
+    try { const b = await req.json().catch(() => ({})); await diagLog({ sev: 'client', scope: String(b.scope || 'unknown').slice(0, 60), client: b.client || client || null, ms: Number(b.ms) || null, error: String(b.error || '').slice(0, 240), ..._actor }) } catch { /* ignore */ }
     return json({ ok: true })
   }
 

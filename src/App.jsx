@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.354.0'
+const APP_VERSION = '3.355.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9690,12 +9690,12 @@ function LogsPanel({ clients }) {
   // file - so it can be handed off for diagnosis without needing live log access.
   const exportLog = (fmt) => {
     const d = (log && log.data) || {}
-    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, error: e.error || null }))
+    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, user: e.user || null, userName: e.userName || null, userRole: e.userRole || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, error: e.error || null }))
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     let blob, name
     if (fmt === 'csv') {
       const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-      const head = ['when', 'sev', 'scope', 'client', 'ms', 'ageMs', 'error']
+      const head = ['when', 'sev', 'scope', 'client', 'user', 'userName', 'userRole', 'ms', 'ageMs', 'error']
       const lines = [head.join(','), ...entries.map((e) => head.map((k) => esc(e[k])).join(','))]
       blob = new Blob([lines.join('\n')], { type: 'text/csv' }); name = `caalano360-reliability-log-${days}d-${stamp}.csv`
     } else {
@@ -9767,14 +9767,32 @@ function LogsPanel({ clients }) {
             ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>No failures or slow builds in the last {days} day{days === 1 ? '' : 's'}.</b><p className="cap">Everything served within budget. Entries appear here automatically when something times out, errors, or runs slow.</p></div>
             : (<>
               <div className="logs-summary">{Object.entries(log.data.summary || {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const [sev, scope] = k.split('|'); const sm = sevMeta[sev] || ['•', '', sev]; return <span key={k} className={`logs-chip ${sm[1]}`}>{sm[0]} {scope} <b>{n}</b></span> })}</div>
+              {/* Who was hit. One person dominating the list usually means their
+                  session, client mix or filters - not a system-wide fault. */}
+              {(() => {
+                const by = new Map()
+                for (const e of (log.data.entries || [])) {
+                  const k = e.user || null
+                  const cur = by.get(k) || { n: 0, name: e.userName || e.user || null }
+                  cur.n++; by.set(k, cur)
+                }
+                const rows = [...by.entries()].sort((a, b) => b[1].n - a[1].n)
+                if (rows.length < 2 && rows[0] && rows[0][0] == null) return null
+                return <div className="logs-summary logs-who-sum">{rows.map(([k, v]) => (
+                  <span key={k || 'system'} className="logs-chip" title={k || 'Scheduled jobs, warmers and unauthenticated requests'}>👤 {k ? (v.name || k) : 'system'} <b>{v.n}</b></span>
+                ))}</div>
+              })()}
               <div className="table-wrap"><table className="mini-tbl logs-tbl">
-                <thead><tr><th className="lft">When</th><th className="lft">Type</th><th className="lft">Scope</th><th className="lft">Client</th><th>ms</th><th className="lft">Detail</th></tr></thead>
+                <thead><tr><th className="lft">When</th><th className="lft">Type</th><th className="lft">Scope</th><th className="lft">Client</th><th className="lft">Who</th><th>ms</th><th className="lft">Detail</th></tr></thead>
                 <tbody>{log.data.entries.map((e, i) => { const sm = sevMeta[e.sev] || ['•', '', e.sev]; return (
                   <tr key={i}>
                     <td className="lft logs-when">{new Date(e.t).toLocaleString('en-AU')}</td>
                     <td className="lft"><span className={`logs-chip ${sm[1]}`}>{sm[0]} {sm[2]}</span></td>
                     <td className="lft">{e.scope}</td>
                     <td className="lft">{nameOf(e.client)}</td>
+                    <td className="lft logs-who" title={e.user ? `${e.user}${e.userRole ? ` · ${ROLE_LABEL[e.userRole] || e.userRole}` : ''}` : 'No signed-in user - a scheduled job, a warmer, or a request made before sign-in'}>
+                      {e.user ? <>{e.userName || e.user}{e.userRole ? <small>{ROLE_LABEL[e.userRole] || e.userRole}</small> : null}</> : <span className="cap">system</span>}
+                    </td>
                     <td>{e.ms != null ? fmtNumber(e.ms) : '-'}</td>
                     <td className="lft logs-detail">{e.error || (e.sev === 'slow' ? 'Slow build (approaching the 10s function limit)' : '')}{e.ageMs != null ? ` · served cached ${Math.round(e.ageMs / 60000)}m old` : ''}</td>
                   </tr>

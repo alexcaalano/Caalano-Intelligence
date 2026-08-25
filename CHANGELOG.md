@@ -17,6 +17,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.345.0 - 2026-08-20 · `PENDING` - Clinic: PVA and the averages that sit around it
+- **PVA (Patient Visit Average)** - the number allied-health practices actually run on - is now a headline metric, defined
+  as attended visits per patient *who has actually been seen*. Patients on file who never attended are excluded: including
+  them drags the figure toward zero and makes it incomparable with what a practice-management system reports. The
+  whole-list version is shown alongside it so the two can never be confused.
+- **Median visits** sits next to it deliberately. A PVA of 4 built from "most come once, a few come thirty times" is a
+  completely different clinic from one where everybody comes four times - the mean can't tell them apart and the median
+  can. A **visit spread** histogram (1 / 2-3 / 4-6 / 7-11 / 12-23 / 24+) shows the shape directly, with the one-visit
+  bucket in red.
+- **Dollar per visit** - revenue per attended visit - is what separates a retention problem from a pricing one.
+- Also added: **PVA excluding one-and-dones** (describes patients who engaged at all), **booked per patient** against
+  attended per patient (the gap is cancellations and no-shows), and **visit cadence** - the average gap between
+  consecutive visits, read from the diary, which no synced counter can give.
+- PVA and dollar-per-visit are broken out **by practitioner** (who retains), **by acquisition channel** (whether paid
+  patients stick as well as referrals), and **by cohort**. Both are recorded in the daily snapshot too, so they carry
+  movement chips and a PVA line on the trend chart.
+
 ## v3.344.0 - 2026-08-20 · `PENDING` - Clinic detection fixed, and the diary sweep sized for a real clinic
 - **The Clinic tab was appearing for clients that aren't clinics.** Detection asked "does this location define *any* of the
   ~30 fields we read", and several of those - a satisfaction survey, marketing-consent boxes, "how did you hear about

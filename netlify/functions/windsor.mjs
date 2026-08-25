@@ -550,7 +550,10 @@ const clinicStore = () => getStore({ name: 'caalano-clinic', consistency: 'stron
 // is written daily for every clinic and read on every Clinic tab load.
 function clinicPoint(d) {
   const m = d.money || {}, ap = d.appointments || {}, fb = d.forwardBookings || {}, re = d.retentionEcon || {}, rb = d.rebooking || {}
+  const pv = d.pva || {}
   return {
+    pva: pv.value != null ? pv.value : null, pvaMedian: pv.median != null ? pv.median : null,
+    dollarPerVisit: pv.dollarPerVisit != null ? pv.dollarPerVisit : null,
     patients: d.patients || 0, synced: d.patientsWithData || 0,
     ltv: m.ltv || 0, avgLtv: m.avgLtv || 0, spentThisMonth: m.spentThisMonth || 0,
     paid: m.paid || 0, unpaid: m.unpaid || 0,
@@ -611,6 +614,7 @@ function clinicDeltas(history, today, days = 30) {
     // Rate movements, in percentage points.
     showRatePts: diff('showRate'), noShowRatePts: diff('noShowRate'),
     nextBookingRatePts: diff('nextBookingRate'), oneAndDoneRatePts: diff('oneAndDoneRate'),
+    pvaDelta: diff('pva'), dollarPerVisitDelta: diff('dollarPerVisit'),
     returnRatePts: diff('returnRate'), rebookRatePts: diff('rebookRate'),
     avgLtvDelta: diff('avgLtv'), unpaidDelta: diff('unpaid'),
   }

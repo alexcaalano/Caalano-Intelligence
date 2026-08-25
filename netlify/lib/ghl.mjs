@@ -1340,7 +1340,12 @@ export async function buildClinic(locationId, opts = {}) {
       const pr = String(val(m, 'last_appt_practitioner') || '').trim()
       const totalAppts = _clinicNum(val(m, 'total_appointments')) || 0
       const arrived = _clinicNum(val(m, 'total_arrived'))
-      if (pr) { const e = practitioner.get(pr) || { name: pr, patients: 0, ltv: 0, appts: 0 }; e.patients++; e.ltv += spent || 0; e.appts += totalAppts; practitioner.set(pr, e) }
+      if (pr) {
+        const e = practitioner.get(pr) || { name: pr, patients: 0, ltv: 0, appts: 0, visits: 0, attended: 0 }
+        e.patients++; e.ltv += spent || 0; e.appts += totalAppts
+        if (arrived != null) { e.visits += arrived; if (arrived >= 1) e.attended++ }
+        practitioner.set(pr, e)
+      }
       const nps = _clinicNum(val(m, 'likelihood_to_recommend')); if (nps != null) npsVals.push(nps)
       // A real patient record in the practice-management system, not just a lead.
       const pid = String(val(m, 'patient_id') || val(m, 'patientid') || '').trim(); if (pid) identified++
@@ -1354,8 +1359,9 @@ export async function buildClinic(locationId, opts = {}) {
       // Cohort by first-appointment month, valued by LTV.
       const mo = _monthOf(val(m, 'first_appointment_date') || val(m, 'first_visit_date'))
       if (mo) {
-        const e = cohort.get(mo) || { month: mo, patients: 0, ltv: 0, appts: 0, active: 0, returned: 0 }
+        const e = cohort.get(mo) || { month: mo, patients: 0, ltv: 0, appts: 0, visits: 0, attendedN: 0, active: 0, returned: 0 }
         e.patients++; e.ltv += spent || 0; e.appts += totalAppts
+        if (arrived != null) { e.visits += arrived; if (arrived >= 1) e.attendedN++ }
         if (upc > 0) e.active++
         if (arrived != null && arrived >= 2) e.returned++
         cohort.set(mo, e)
@@ -1367,8 +1373,9 @@ export async function buildClinic(locationId, opts = {}) {
       const camp = _contactCampaign(c)
       const lastAppt = val(m, 'last_appointment_date') || null
       if (ch) {
-        const e = channel.get(ch) || { channel: ch, patients: 0, ltv: 0, appts: 0, attended: 0, oneAndDone: 0, withNext: 0 }
+        const e = channel.get(ch) || { channel: ch, patients: 0, ltv: 0, appts: 0, visits: 0, attended: 0, oneAndDone: 0, withNext: 0 }
         e.patients++; e.ltv += spent || 0; e.appts += totalAppts
+        if (arrived != null) e.visits += arrived
         if (arrived != null && arrived >= 1) { e.attended++; if (arrived === 1 && upc === 0) e.oneAndDone++; if (upc > 0) e.withNext++ }
         channel.set(ch, e)
         if (camp) { const k = `${ch}||${camp}`; const ce = campaign.get(k) || { campaign: camp, channel: ch, patients: 0, ltv: 0, attended: 0 }; ce.patients++; ce.ltv += spent || 0; if (arrived >= 1) ce.attended++; campaign.set(k, ce) }
@@ -1405,9 +1412,11 @@ export async function buildClinic(locationId, opts = {}) {
   // the sync even before the calendar sweep below has anything to say.
   let attended = 0, attendedWithNext = 0, returned = 0, oneAndDone = 0, firstVisitOnly = 0, rebookedAfterFirst = 0
   let ltvReturned = 0, ltvOneAndDone = 0
+  const visitCounts = []   // attended visits per patient, for the median + spread
   for (const p of pt.values()) {
     if (p.arrived == null || p.arrived < 1) continue
     attended++
+    visitCounts.push(p.arrived)
     if (p.upcoming > 0) attendedWithNext++
     if (p.arrived >= 2) { returned++; ltvReturned += p.ltv }
     if (p.arrived === 1) {
@@ -1450,6 +1459,56 @@ export async function buildClinic(locationId, opts = {}) {
     }
     reb.available = reb.visits > 0
   }
+  // ---- PVA and the averages that sit around it --------------------------
+  // Patient Visit Average is the number allied-health practices actually run on.
+  // It's attended visits per patient - measured over patients who have actually
+  // BEEN SEEN, not everyone on file, since including people who never attended
+  // drags it toward zero and makes it incomparable with what a practice-management
+  // system reports. Dollar-per-visit is its revenue twin: what a single visit is
+  // worth, which is what tells you whether a low PVA is a retention problem or a
+  // pricing one.
+  const visitsTotal = sum.arrived
+  const sortedVisits = visitCounts.slice().sort((a, b) => a - b)
+  const median = sortedVisits.length
+    ? (sortedVisits.length % 2 ? sortedVisits[(sortedVisits.length - 1) / 2]
+      : Math.round(((sortedVisits[sortedVisits.length / 2 - 1] + sortedVisits[sortedVisits.length / 2]) / 2) * 10) / 10)
+    : null
+  // How the visit counts are actually spread. A mean of 4 built from "most come
+  // once, a few come thirty times" is a completely different clinic from one where
+  // everybody comes four times, and only the spread tells them apart.
+  const VISIT_BUCKETS = [[1, 1, '1 visit'], [2, 3, '2-3'], [4, 6, '4-6'], [7, 11, '7-11'], [12, 23, '12-23'], [24, Infinity, '24+']]
+  const spread = VISIT_BUCKETS.map(([lo, hi, label]) => {
+    const n = visitCounts.filter((v) => v >= lo && v <= hi).length
+    return { label, patients: n, pct: attended ? Math.round((n / attended) * 100) : 0 }
+  })
+  // Average gap between consecutive visits, from the diary - the cadence a
+  // practice is actually running at, which no synced counter can give.
+  let gapSum = 0, gapN = 0
+  if (hist && hist.available) {
+    const nowMs = Date.now()
+    for (const list of hist.byContact.values()) {
+      const starts = [...new Set(list.map((a) => a.start))].filter((t) => t <= nowMs).sort((a, b) => a - b)
+      for (let i = 1; i < starts.length; i++) { gapSum += (starts[i] - starts[i - 1]) / 86400000; gapN++ }
+    }
+  }
+  const round1 = (v) => Math.round(v * 10) / 10
+  const pva = {
+    // The headline: attended visits per attending patient.
+    value: attended ? round1(visitsTotal / attended) : null,
+    // The same number across everyone on file, which is what you get if you
+    // divide by the whole list - kept so the two are never confused.
+    allPatients: N.withData ? round1(visitsTotal / N.withData) : null,
+    // Excludes the one-and-dones, so it describes patients who engaged at all.
+    returning: returned ? round1((visitsTotal - oneAndDone) / returned) : null,
+    median, visits: visitsTotal, patients: attended,
+    // Revenue per attended visit, and the booked-vs-attended gap.
+    dollarPerVisit: visitsTotal ? Math.round(sum.ltv / visitsTotal) : null,
+    bookedPerPatient: attended ? round1(sum.appts / attended) : null,
+    avgDaysBetweenVisits: gapN ? round1(gapSum / gapN) : null,
+    gapSample: gapN,
+    spread,
+  }
+
   // ---- Retention curve --------------------------------------------------
   // The classic cohort triangle, and the one thing the synced fields can never
   // give us: they hold a single cumulative LTV per patient with no per-period
@@ -1529,7 +1588,7 @@ export async function buildClinic(locationId, opts = {}) {
       avgPerPatient: N.withData ? Math.round((sum.appts / N.withData) * 10) / 10 : 0,
     },
     forwardBookings: { withUpcoming, pctWithUpcoming: N.withData ? Math.round((withUpcoming / N.withData) * 100) : 0, upcomingTotal: sum.upcomingAppts },
-    retentionEcon, rebooking,
+    retentionEcon, rebooking, pva,
     // Sync health: how many contacts are genuine patient records, and how long
     // since the practice-management sync last wrote anything.
     sync: {
@@ -1542,6 +1601,8 @@ export async function buildClinic(locationId, opts = {}) {
     channels: [...channel.values()].map((e) => ({
       ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0,
       avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0,
+      pva: e.attended ? Math.round((e.visits / e.attended) * 10) / 10 : null,
+      dollarPerVisit: e.visits ? Math.round(e.ltv / e.visits) : null,
       pctWithNext: e.attended ? Math.round((e.withNext / e.attended) * 100) : null,
       oneAndDonePct: e.attended ? Math.round((e.oneAndDone / e.attended) * 100) : null,
     })).sort((a, b) => b.ltv - a.ltv),
@@ -1559,6 +1620,7 @@ export async function buildClinic(locationId, opts = {}) {
       return {
         ...e, ltv: Math.round(e.ltv), avgLtv,
         avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0,
+        pva: e.attendedN ? Math.round((e.visits / e.attendedN) * 10) / 10 : null,
         tenureMonths,
         ltvPerMonth: tenureMonths > 0 ? Math.round(avgLtv / tenureMonths) : null,
         activePct: e.patients ? Math.round((e.active / e.patients) * 100) : null,
@@ -1566,7 +1628,11 @@ export async function buildClinic(locationId, opts = {}) {
       }
     }).sort((a, b) => (a.month < b.month ? 1 : -1)),
     cohortCurve,
-    practitioners: [...practitioner.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.ltv - a.ltv).slice(0, 20),
+    practitioners: [...practitioner.values()].map((e) => ({
+      ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0,
+      pva: e.attended ? Math.round((e.visits / e.attended) * 10) / 10 : null,
+      dollarPerVisit: e.visits ? Math.round(e.ltv / e.visits) : null,
+    })).sort((a, b) => b.ltv - a.ltv).slice(0, 20),
     ar: ar.sort((a, b) => b.unpaid - a.unpaid).slice(0, 60),
     reactivate: reactivate.sort((a, b) => b.spent - a.spent).slice(0, 100),
     oneAndDoneList: oneAndDoneList.sort((a, b) => b.spent - a.spent).slice(0, 60),

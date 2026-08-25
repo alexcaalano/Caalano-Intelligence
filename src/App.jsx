@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.344.0'
+const APP_VERSION = '3.345.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5657,6 +5657,7 @@ function ClinicView({ clientId, currency, nonce }) {
   const rb = d.rebooking || {}
   const sy = d.sync || {}
   const df = d.derivedFrom || null
+  const pv = d.pva || {}
   const dl = d.deltas || null
   const hist = Array.isArray(d.history) ? d.history : []
   const asAt = d.asAt ? new Date(d.asAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null
@@ -5688,6 +5689,7 @@ function ClinicView({ clientId, currency, nonce }) {
       <div className="timing-scards cl-hero">
         <div className="tm-sc hero"><span className="tm-lab">Lifetime value</span><b>{money(m.ltv)}</b><span className="tm-sub">{fmtNumber(m.ltvPatients || d.patientsWithData)} patients valued <ClinicDelta value={dl && dl.revenue} money={money} /></span></div>
         <div className="tm-sc"><span className="tm-lab">Avg LTV / patient</span><b>{money(m.avgLtv)}</b><span className="tm-sub">across patients with a value <ClinicDelta value={dl && dl.avgLtvDelta} money={money} /></span></div>
+        <div className="tm-sc" title="Patient Visit Average - attended visits per patient who has actually been seen"><span className="tm-lab">PVA</span><b>{pv.value != null ? pv.value : '-'}</b><span className="tm-sub">visits per patient{pv.median != null ? ` · median ${pv.median}` : ''}</span></div>
         <div className="tm-sc"><span className="tm-lab">Next booking rate</span><b>{pct(re.nextBookingRate)}</b><span className="tm-sub">{fmtNumber(re.attendedWithNext)} of {fmtNumber(re.attended)} have one in the diary <ClinicDelta value={dl && dl.nextBookingRatePts} pts /></span></div>
         <div className="tm-sc warn"><span className="tm-lab">One &amp; done</span><b>{pct(re.oneAndDoneRate)}</b><span className="tm-sub">{fmtNumber(re.oneAndDone)} never returned <ClinicDelta value={dl && dl.oneAndDoneRatePts} pts goodDown /></span></div>
         <div className="tm-sc warn"><span className="tm-lab">Revenue at risk</span><b>{money(re.lostRevenue)}</b><span className="tm-sub">one &amp; done × the LTV gap</span></div>
@@ -5723,12 +5725,36 @@ function ClinicView({ clientId, currency, nonce }) {
               <Line yAxisId="r" dataKey="nextBookingRate" name="Next booking rate" stroke="#4f7cff" strokeWidth={2} dot={false} />
               <Line yAxisId="r" dataKey="showRate" name="Show rate" stroke="#f5a524" strokeWidth={2} dot={false} />
               <Line yAxisId="r" dataKey="oneAndDoneRate" name="One &amp; done" stroke="#f0435b" strokeWidth={2} dot={false} strokeDasharray="4 3" />
+              <Line yAxisId="r" dataKey="pva" name="PVA" stroke="#a78bfa" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div> : null}
       </ClinicSection>
 
       <ClinicSection id="cl-retention" title="Retention" note="who comes back, and what it costs when they don't">
+        <div className="card">
+          <div className="cap cl-cap">Patient Visit Average <span>· and the averages that sit around it</span></div>
+          <div className="timing-scards">
+            <div className="tm-sc hero"><span className="tm-lab">PVA</span><b>{pv.value != null ? pv.value : '-'}</b><span className="tm-sub">{fmtNumber(pv.visits)} visits ÷ {fmtNumber(pv.patients)} patients seen <ClinicDelta value={dl && dl.pvaDelta} /></span></div>
+            <div className="tm-sc"><span className="tm-lab">Median visits</span><b>{pv.median != null ? pv.median : '-'}</b><span className="tm-sub">the typical patient</span></div>
+            <div className="tm-sc"><span className="tm-lab">PVA · returning only</span><b>{pv.returning != null ? pv.returning : '-'}</b><span className="tm-sub">excludes one &amp; done</span></div>
+            <div className="tm-sc"><span className="tm-lab">Dollar per visit</span><b>{money(pv.dollarPerVisit)}</b><span className="tm-sub">what one visit is worth <ClinicDelta value={dl && dl.dollarPerVisitDelta} money={money} /></span></div>
+            <div className="tm-sc"><span className="tm-lab">Booked per patient</span><b>{pv.bookedPerPatient != null ? pv.bookedPerPatient : '-'}</b><span className="tm-sub">vs {pv.value != null ? pv.value : '-'} attended</span></div>
+            {pv.avgDaysBetweenVisits != null ? <div className="tm-sc"><span className="tm-lab">Visit cadence</span><b>{pv.avgDaysBetweenVisits}d</b><span className="tm-sub">avg gap between visits</span></div> : null}
+            <div className="tm-sc"><span className="tm-lab">PVA · whole list</span><b>{pv.allPatients != null ? pv.allPatients : '-'}</b><span className="tm-sub">incl. never-attended</span></div>
+          </div>
+          {pv.spread && pv.spread.length && pv.patients ? <>
+            <div className="cap" style={{ fontWeight: 700, margin: '14px 0 8px' }}>How visits are spread</div>
+            {(() => { const top = Math.max(...pv.spread.map((b) => b.patients), 0); return <div>{pv.spread.map((b) => (
+              <div className="bar-row" key={b.label}>
+                <span className="nm">{b.label}</span>
+                <span className="bar-track"><span className="bar-fill" style={{ width: `${Math.max(2, top ? (b.patients / top) * 100 : 0)}%`, background: b.label === '1 visit' ? '#f0435b' : b.label === '2-3' ? '#f5a524' : '#12b886' }} /></span>
+                <span className="ct">{fmtNumber(b.patients)} · {b.pct}%</span>
+              </div>
+            ))}</div> })()}
+          </> : null}
+          <p className="caveat"><b>PVA</b> is attended visits per patient who has actually been seen - patients on file who never attended are excluded, because including them drags it toward zero and makes it incomparable with what your practice-management system reports. The <b>median</b> is the number to sanity-check it against: a PVA of 4 built from &ldquo;most come once, a few come thirty times&rdquo; is a completely different clinic from one where everybody comes four times, and only the spread tells them apart. <b>Dollar per visit</b> is what says whether a low PVA is a retention problem or a pricing one.{pv.gapSample ? ` Visit cadence is measured across ${fmtNumber(pv.gapSample)} consecutive visit pairs in the diary.` : ''}</p>
+        </div>
         <div className="mr-two">
           <div className="card">
             <div className="cap cl-cap">Patient retention funnel</div>
@@ -5797,8 +5823,8 @@ function ClinicView({ clientId, currency, nonce }) {
             </ComposedChart>
           </ResponsiveContainer> : null}
           {d.cohorts && d.cohorts.length ? <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
-            <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Age</th><th>Total LTV</th><th>Avg LTV</th><th title="Average LTV divided by how many months the cohort has existed - the fair way to compare a two-year-old cohort against a new one">Avg LTV / month</th><th>Avg appts</th><th title="Share with an appointment in the diary right now">Still active</th><th title="Share that came back for a second visit">Came back</th></tr></thead>
-            <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{c.tenureMonths != null ? `${c.tenureMonths}mo` : '-'}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.ltvPerMonth != null ? money(c.ltvPerMonth) : '-'}</td><td>{c.avgAppts}</td><td>{c.activePct != null ? `${c.activePct}%` : '-'}</td><td>{c.returnedPct != null ? `${c.returnedPct}%` : '-'}</td></tr>)}</tbody>
+            <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Age</th><th>Total LTV</th><th>Avg LTV</th><th title="Average LTV divided by how many months the cohort has existed - the fair way to compare a two-year-old cohort against a new one">Avg LTV / month</th><th title="Attended visits per patient seen">PVA</th><th title="Share with an appointment in the diary right now">Still active</th><th title="Share that came back for a second visit">Came back</th></tr></thead>
+            <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{c.tenureMonths != null ? `${c.tenureMonths}mo` : '-'}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.ltvPerMonth != null ? money(c.ltvPerMonth) : '-'}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.activePct != null ? `${c.activePct}%` : '-'}</td><td>{c.returnedPct != null ? `${c.returnedPct}%` : '-'}</td></tr>)}</tbody>
           </table></div> : <p className="cap" style={{ margin: 0 }}>No first-appointment dates synced yet.</p>}
           <p className="caveat">Cohorts are different ages, so raw LTV always flatters the older ones - a patient who first came two years ago has had two years to spend. <b>Avg LTV / month</b> divides by the cohort&rsquo;s age, which is the column to compare across rows.</p>
         </div>
@@ -5834,8 +5860,8 @@ function ClinicView({ clientId, currency, nonce }) {
               </div>
             ))}</div> : null })()}
             <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
-              <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th>Avg appts</th><th>With next appt</th></tr></thead>
-              <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.avgAppts}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
+              <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th title="Attended visits per patient seen">PVA</th><th title="Revenue per attended visit">$ / visit</th><th>With next appt</th></tr></thead>
+              <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.dollarPerVisit != null ? money(c.dollarPerVisit) : '-'}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
             </table></div>
             <p className="caveat">Channel comes from each patient&rsquo;s first-touch attribution on their contact, so lifetime value traces back to the ad that produced them. Patients created directly in the practice-management system carry no attribution and are excluded.</p>
           </div> : null}
@@ -5894,8 +5920,8 @@ function ClinicView({ clientId, currency, nonce }) {
           <div className="card">
             <div className="cap cl-cap">By practitioner</div>
             {d.practitioners && d.practitioners.length ? <div className="table-wrap"><table className="mini-tbl appt-tbl">
-              <thead><tr><th className="lft">Practitioner</th><th>Patients</th><th>Avg LTV</th></tr></thead>
-              <tbody>{d.practitioners.map((p) => <tr key={p.name}><td className="lft" title={p.name}>{p.name}</td><td>{fmtNumber(p.patients)}</td><td>{money(p.avgLtv)}</td></tr>)}</tbody>
+              <thead><tr><th className="lft">Practitioner</th><th>Patients</th><th title="Attended visits per patient seen">PVA</th><th>Avg LTV</th></tr></thead>
+              <tbody>{d.practitioners.map((p) => <tr key={p.name}><td className="lft" title={p.name}>{p.name}</td><td>{fmtNumber(p.patients)}</td><td>{p.pva != null ? p.pva : '-'}</td><td>{money(p.avgLtv)}</td></tr>)}</tbody>
             </table></div> : <p className="cap" style={{ margin: 0 }}>No practitioner recorded yet.</p>}
             <p className="caveat">From each patient&rsquo;s most recent appointment.</p>
           </div>

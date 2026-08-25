@@ -17,6 +17,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.352.0 - 2026-08-20 · `PENDING` - Clinic settings: calendar TYPE decides, not the name
+- Where a clinic runs **Service Calendars**, that is the clinical layer - services are what a practitioner delivers - and
+  the ordinary calendars are the discovery / intake layer in front of them. That's a structural fact, far more reliable
+  than reading names, so it is now the default: **services are clinical, calendars are discovery**.
+- The name-based guess is kept only for locations with **no** service calendars, where it's the only signal available.
+  Switching to type everywhere would have erased every visit for a clinic that books real appointments on a plain
+  round-robin calendar, so the rule adapts to the location instead of assuming one shape.
+- The settings tab **states which rule is deciding** and why, so the defaults never look arbitrary, and the list is now
+  grouped into **Service calendars** and **Calendars** with the buttons relabelled **Clinical service** /
+  **Discovery / triage**. An explicit choice still beats both rules and survives a rename.
+- The front end no longer re-derives the default from the name - it uses the server's, so the picker can't disagree with
+  the numbers on the Clinic tab.
+
 ## v3.351.0 - 2026-08-20 · `PENDING` - Clinic settings: resolve template calendar names, show what's booked on each
 - Checking a live location immediately found the hole in yesterday's name-based fallback: a template calendar ships as
   `{{custom_values.appointment_name}} with {{location.name}}` and the API returns it **verbatim**. Its bookings were all

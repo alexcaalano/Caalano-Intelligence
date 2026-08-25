@@ -820,13 +820,17 @@ export async function listCalendars(locationId) {
     } catch { /* the picker still works without a sample */ }
   }))
   const seen = new Set(out.map((c) => c.id))
+  const hasServices = services.length > 0 || out.some((c) => c.type === 'service')
+  for (const c of out) c.defaultRole = _clinicCalRole({ id: c.id, name: c.name, kind: c.type }, null, { hasServices })
   for (const s of services) {
     const id = s.id || s._id || s.serviceId || s.calendarId
     if (!id || seen.has(id)) continue
     seen.add(id)
-    out.push({ id, name: s.name || s.serviceName || 'Service', type: 'service', typeLabel: 'Service' })
+    out.push({ id, name: s.name || s.serviceName || 'Service', type: 'service', typeLabel: 'Service', defaultRole: 'clinical' })
   }
-  return out
+  // Returned alongside the list rather than stapled to the array: the picker
+  // needs to know which rule is deciding, or the defaults look arbitrary.
+  return { calendars: out, roleBasis: clinicRoleBasis(hasServices), hasServices }
 }
 // Pipelines + their stages straight from the GoHighLevel API (not Windsor), so
 // the Key-events editor can list stages the moment a client is linked - before
@@ -1145,12 +1149,27 @@ const CLINIC_FIELDS = {
 // when nobody has said. The fallback only ever has to be right often enough to
 // be useful on day one; the setting is what makes it correct.
 const TRIAGE_NAME_RE = /discovery|triage|screening|intro(duction)?\b|consult(ation)?\s*call|phone\s*consult|strategy\s*call|qualif|scoping|enquiry|enquire|free\s*(call|chat)|15\s*min/i
-function _clinicCalRole(cal, cfg) {
+// The strongest signal is structural, not textual. Where a location runs Service
+// Calendars, that IS the clinical layer - services are what a practitioner
+// delivers - and the ordinary calendars are the sales layer in front of it
+// (discovery, triage, intake). So when services exist, type decides.
+//
+// Where a location has NO service calendars we can't assume the same: a clinic
+// booking real appointments on a plain round-robin calendar would have every
+// visit erased. There the name is the only signal we have, so it decides.
+//
+// An explicit setting always wins over either.
+function _clinicCalRole(cal, cfg, opts = {}) {
   const id = String(cal.id || cal._id || cal.calendarId || '')
   const explicit = cfg && cfg.cals && id ? cfg.cals[id] : null
   if (explicit === 'clinical' || explicit === 'triage') return explicit
+  const type = String(cal.calendarType || cal.kind || '').toLowerCase()
+  const isService = cal.kind === 'service' || /service/.test(type)
+  if (opts.hasServices) return isService ? 'clinical' : 'triage'
   return TRIAGE_NAME_RE.test(String(cal.name || cal.calendarName || '')) ? 'triage' : 'clinical'
 }
+// Which rule decided, so the UI can explain itself rather than looking arbitrary.
+const clinicRoleBasis = (hasServices) => (hasServices ? 'type' : 'name')
 export async function clinicConfig(clientId) {
   try {
     const all = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
@@ -1258,11 +1277,17 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   // Resolve merge tags before anything reads a calendar name - the words that
   // identify a triage calendar often live in a custom value, not the name.
   for (const c of cals) c.name = resolveMergeTags(c.name || c.calendarName || 'Calendar', mergeVals)
+  const services = await ghlGet(locTok, '/calendars/services/catalog', { locationId })
+    .then((j) => j.services || j.catalog || []).catch(() => [])
   const active = cals.filter((c) => (c.id || c._id || c.calendarId) && c.isActive !== false)
   // Split the diary before reading anything from it. Triage calendars are still
   // swept - they're real bookings that occupy real time, and the book needs
   // them - but they never become patient visits.
-  const roleOf = new Map(active.map((c) => [String(c.id || c._id || c.calendarId), _clinicCalRole(c, clinicCfg)]))
+  // Does this location run Service Calendars at all? That single fact changes
+  // which default rule applies, so establish it before classifying anything.
+  const hasServices = services.length > 0 || active.some((c) => /service/.test(String(c.calendarType || '').toLowerCase()))
+  out.roleBasis = clinicRoleBasis(hasServices)
+  const roleOf = new Map(active.map((c) => [String(c.id || c._id || c.calendarId), _clinicCalRole(c, clinicCfg, { hasServices })]))
   out.calendars = active.filter((c) => roleOf.get(String(c.id || c._id || c.calendarId)) === 'clinical').length
   out.triageCalendars = active
     .filter((c) => roleOf.get(String(c.id || c._id || c.calendarId)) === 'triage')
@@ -1368,7 +1393,7 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
         out.events++
         const cid = b.contactId || (b.contact && (b.contact.id || b.contact._id)) || null
         const svcName = b.serviceName || b.calendarName || b.title || ''
-        const svcClinical = _clinicCalRole({ id: b.serviceId || b.calendarId, name: svcName }, clinicCfg) !== 'triage'
+        const svcClinical = _clinicCalRole({ id: b.serviceId || b.calendarId, name: svcName, kind: 'service' }, clinicCfg, { hasServices: true }) !== 'triage'
         push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', svcName || null, b.createdBy && b.createdBy.source, Date.parse(b.endTime || b.end), svcClinical)
       }
     } catch { /* location isn't on the services catalog - normal */ }
@@ -1819,7 +1844,7 @@ export async function buildClinic(locationId, opts = {}) {
     retentionEcon, rebooking, pva, diary,
     // Which calendars were treated as triage rather than clinical, so the tab can
     // say so plainly and the setting is discoverable from the numbers it changes.
-    calendarRoles: hist ? { clinical: hist.calendars || 0, triage: hist.triageCalendars || [], triageAppts: hist.triageAppts || 0, configured: !!(clinicCfg && clinicCfg.cals) } : null,
+    calendarRoles: hist ? { clinical: hist.calendars || 0, triage: hist.triageCalendars || [], triageAppts: hist.triageAppts || 0, configured: !!(clinicCfg && clinicCfg.cals), basis: hist.roleBasis || null } : null,
     // Sync health: how many contacts are genuine patient records, and how long
     // since the practice-management sync last wrote anything.
     sync: {

@@ -3185,3 +3185,7 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .caveat.cl-triage { border-left: 2px solid color-mix(in srgb, var(--brand) 55%, transparent); padding-left: 9px; margin: 0 0 14px; }
 .set-clinic-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .set-clinic-t small { font-weight: 400; font-size: 11px; color: var(--faint); }
+.set-clinic-rule { margin: 0 0 12px; padding: 8px 11px; border-radius: 8px; background: color-mix(in srgb, var(--brand) 8%, transparent); border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent); line-height: 1.5; max-width: 760px; }
+.set-clinic-grp { margin-bottom: 14px; }
+.set-clinic-grp-h { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; color: var(--muted); margin-bottom: 7px; }
+.set-clinic-grp-h span { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }

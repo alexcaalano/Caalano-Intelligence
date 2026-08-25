@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.351.0'
+const APP_VERSION = '3.352.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5737,6 +5737,10 @@ function saveClinicCfg(clientId, cfg) {
 function clinicCalRoleFE(cal, cfg) {
   const explicit = cfg && cfg.cals ? cfg.cals[cal.id] : null
   if (explicit === 'clinical' || explicit === 'triage') return { role: explicit, auto: false }
+  // The server already applied the rule that fits this location (type where the
+  // clinic runs Service Calendars, name where it doesn't); re-deriving it here
+  // from the name alone would disagree with the numbers on the Clinic tab.
+  if (cal.defaultRole === 'clinical' || cal.defaultRole === 'triage') return { role: cal.defaultRole, auto: true }
   return { role: TRIAGE_NAME_RE_FE.test(cal.name || '') ? 'triage' : 'clinical', auto: true }
 }
 // The location's calendars (id + name + type) for the Clinic settings picker.
@@ -5746,7 +5750,7 @@ function useCalendars(clientId, nonce) {
     let alive = true; setSt({ status: 'loading', list: [] })
     fetch(`/.netlify/functions/windsor?scope=calendars&client=${clientId}${nonce ? `&_r=${nonce}` : ''}`)
       .then((x) => (x.ok ? x.json() : Promise.reject(new Error('http'))))
-      .then((j) => { if (alive) setSt({ status: 'ok', list: j.calendars || [] }) })
+      .then((j) => { if (alive) setSt({ status: 'ok', list: j.calendars || [], roleBasis: j.roleBasis || null, hasServices: !!j.hasServices }) })
       .catch(() => { if (alive) setSt({ status: 'err', list: [] }) })
     return () => { alive = false }
   }, [clientId, nonce])
@@ -5769,11 +5773,18 @@ function ClinicSettings({ clientId, nonce }) {
     <div className="set-tabpane">
       <div className="set-sec-t">Clinic settings</div>
       <p className="cap set-clinic-intro">
-        A patient only becomes a patient once a <b>clinical</b> calendar has seen them. Mark your discovery, triage and
-        intake calls as <b>Triage</b> and they stop counting as visits - they no longer open a cohort on the retention
-        curve, no longer count as a rebooking when the real first appointment follows, and no longer pull the visit
-        cadence down. They still appear in the book, because they still occupy real time.
+        A patient only becomes a patient once a <b>clinical</b> booking has seen them. Anything marked <b>Discovery / triage</b>
+        stops counting as a visit - it no longer opens a cohort on the retention curve, no longer counts as a rebooking when
+        the real first appointment follows, and no longer pulls the visit cadence down. Those bookings still appear in the
+        book, because they still occupy real time.
       </p>
+      {cals.roleBasis === 'type' ? <p className="cap set-clinic-rule">
+        This location runs <b>Service Calendars</b>, so the default follows the calendar type: <b>services are clinical</b>,
+        ordinary calendars are the discovery layer in front of them. Override any of it below.
+      </p> : cals.status === 'ok' ? <p className="cap set-clinic-rule">
+        This location has <b>no Service Calendars</b>, so the default is guessed from each calendar&rsquo;s name - anything
+        reading like a discovery, triage, screening or intro call is treated as triage. Set them explicitly to be sure.
+      </p> : null}
       {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
         : !list.length ? <p className="cap">No calendars found for this client.</p>
           : (
@@ -5788,8 +5799,16 @@ function ClinicSettings({ clientId, nonce }) {
                 from the sync, but the retention curve, rebooking split and visit cadence need clinical bookings in a calendar,
                 so those stay empty until one exists here.
               </p> : null}
-              <div className="set-clinic-list">
-                {list.map((cal) => {
+              {[['service', 'Service calendars', 'What practitioners deliver - these are the clinical bookings'],
+                ['calendar', 'Calendars', 'Booking calendars - usually the discovery / intake layer']]
+                .map(([grp, gLabel, gHint]) => {
+                  const rows = list.filter((c) => (c.type === 'service' ? 'service' : 'calendar') === grp)
+                  if (!rows.length) return null
+                  return (
+                    <div key={grp} className="set-clinic-grp">
+                      <div className="set-clinic-grp-h">{gLabel} <span>· {gHint}</span></div>
+                      <div className="set-clinic-list">
+                        {rows.map((cal) => {
                   const { role, auto } = clinicCalRoleFE(cal, cfg)
                   return (
                     <div className={`set-clinic-row ${role}`} key={cal.id}>
@@ -5806,19 +5825,21 @@ function ClinicSettings({ clientId, nonce }) {
                         </span>
                       </span>
                       <span className="set-clinic-btns">
-                        <button type="button" className={role === 'clinical' ? 'on' : ''} onClick={() => setRole(cal.id, 'clinical')}>Clinical</button>
-                        <button type="button" className={role === 'triage' ? 'on' : ''} onClick={() => setRole(cal.id, 'triage')}>Triage</button>
+                        <button type="button" className={role === 'clinical' ? 'on' : ''} onClick={() => setRole(cal.id, 'clinical')}>Clinical service</button>
+                        <button type="button" className={role === 'triage' ? 'on' : ''} onClick={() => setRole(cal.id, 'triage')}>Discovery / triage</button>
                         {!auto ? <button type="button" className="set-clinic-reset" onClick={() => setRole(cal.id, 'auto')} title="Go back to guessing from the name">↺</button> : null}
                       </span>
                     </div>
                   )
+                        })}
+                      </div>
+                    </div>
+                  )
                 })}
-              </div>
               <p className="caveat" style={{ marginTop: 12 }}>
-                Calendars marked <b>auto</b> were guessed from their name - anything reading like a discovery, triage,
-                screening or intro call is treated as triage. The guess only has to be right often enough to be useful on
-                day one; setting it explicitly is what makes it correct, and an explicit choice always wins. Changes apply
-                to the Clinic tab on its next load, and to tonight&rsquo;s snapshot.
+                Calendars marked <b>auto</b> are using the default rule above rather than a choice you&rsquo;ve made - an explicit choice always wins over the default, and
+                sticks even if the calendar is later renamed. Changes apply to the Clinic tab on its next load, and to
+                tonight&rsquo;s snapshot.
               </p>
             </>
           )}

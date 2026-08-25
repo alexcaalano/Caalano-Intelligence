@@ -3529,11 +3529,11 @@ export default async (req) => {
       // Pipelines come from the DIRECT GHL API (not Windsor), so the Key-events
       // editor lists stages the instant a client is linked - before Windsor has
       // synced any opportunity data for the account.
-      const [calendars, pipelines] = await Promise.all([
+      const [cals, pipelines] = await Promise.all([
         listCalendars(cc.ghl),
         listPipelines(cc.ghl).catch(() => []),
       ])
-      return json({ scope: 'calendars', client, connected: true, calendars, pipelines }, 200, true)
+      return json({ scope: 'calendars', client, connected: true, calendars: cals.calendars || [], roleBasis: cals.roleBasis || null, hasServices: !!cals.hasServices, pipelines }, 200, true)
     }
     catch (e) { return json({ scope: 'calendars', client, error: String(e.message || e).slice(0, 160), calendars: [] }, 200) }
   }

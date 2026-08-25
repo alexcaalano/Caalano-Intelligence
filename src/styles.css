@@ -3213,3 +3213,38 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .u-revoke { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
 .u-revoke b { display: block; font-size: 13px; }
 .u-revoke .cap { display: block; margin-top: 2px; max-width: 460px; }
+
+/* ============ Terms of use gate ============ */
+.terms-bg { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 900; overflow: auto; }
+.terms-card { width: min(880px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.terms-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 22px 14px; border-bottom: 1px solid var(--border); }
+.terms-head h2 { margin: 0 0 3px; font-size: 19px; letter-spacing: -.01em; }
+.terms-body { flex: 1 1 auto; overflow-y: auto; padding: 18px 22px; }
+.terms-intro { font-size: 13.5px; line-height: 1.6; color: var(--text); margin: 0 0 16px; }
+.terms-sec { margin-bottom: 16px; }
+.terms-sec h3 { margin: 0 0 6px; font-size: 13.5px; letter-spacing: -.01em; }
+.terms-sec p { margin: 0 0 8px; font-size: 12.8px; line-height: 1.62; color: var(--muted); }
+.terms-sec ul { margin: 4px 0 0; padding-left: 20px; }
+.terms-sec li { font-size: 12.8px; line-height: 1.62; color: var(--muted); margin-bottom: 5px; }
+.terms-sign-statement { margin: 18px 0 0; padding: 12px 14px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--border); font-size: 13px; line-height: 1.6; font-weight: 600; }
+.terms-foot { flex: 0 0 auto; border-top: 1px solid var(--border); padding: 14px 22px 18px; background: var(--panel-2); }
+.terms-scroll-hint { margin: 0 0 10px; color: var(--warn); }
+.terms-sign { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 720px) { .terms-sign { grid-template-columns: 1fr; } }
+.sig-wrap { min-width: 0; }
+.sig-pad { display: block; width: 100%; height: 110px; background: var(--panel); border: 1px dashed var(--border); border-radius: 9px; cursor: crosshair; touch-action: none; }
+.sig-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.terms-typed label { display: block; margin-bottom: 5px; }
+.terms-typed .inp { width: 100%; }
+.terms-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+.terms-sig-thumb { background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 2px 6px; cursor: zoom-in; line-height: 0; }
+.terms-sig-thumb img { height: 30px; width: auto; max-width: 150px; object-fit: contain; }
+.terms-sig-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 15px; }
+.terms-sig-modal { --mr-drill-cols: 4; }
+.terms-sig-full { display: block; max-width: 100%; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 10px; }
+.foot-legal { margin-top: 6px; font-size: 10.5px; line-height: 1.5; color: var(--faint); }
+.foot-legal-link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand-2); cursor: pointer; text-decoration: underline; }
+.terms-view-modal { --mr-drill-cols: 6; }
+.terms-view-body { max-height: 65vh; overflow-y: auto; }
+.terms-my-sig { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); }
+.terms-my-sig img { display: block; height: 54px; margin-top: 6px; }

@@ -136,6 +136,7 @@ const publicUser = (u) => u && ({
   createdAt: u.createdAt || null, invitedBy: u.invitedBy || null, lastLogin: u.lastLogin || null,
   lastSeen: u.lastSeen || null, sessions: Array.isArray(u.sessions) ? u.sessions.slice(-30) : [],
   tokenEpoch: u.tokenEpoch || 0,
+  termsVersion: u.termsVersion || null, termsAcceptedAt: u.termsAcceptedAt || null,
   clients: Array.isArray(u.clients) ? u.clients : [], allClients: u.allClients !== false,
   tabs: Array.isArray(u.tabs) ? u.tabs : null, reports: u.reports === true, requestedAt: u.requestedAt || null, note: u.note || '',
 })
@@ -434,6 +435,57 @@ export async function requireOpsAdmin(req) {
   const me = await currentUser(req, secret).catch(() => null)
   if (me && me.role === 'superadmin') return null
   return new Response(JSON.stringify({ error: 'Forbidden - superadmin only.' }), { status: 403, headers: { 'content-type': 'application/json' } })
+}
+
+// ---- terms of use ---------------------------------------------------------
+// Split deliberately: a light marker on the user record (which version they're
+// on) so the gate check costs nothing on every request, and the full record -
+// including the signature image - in its own store, read only when someone
+// actually looks at the audit trail. Signatures are tens of kilobytes; putting
+// them on the user record would weigh down every listUsers call forever.
+const termsStore = () => getStore({ name: 'caalano-terms', consistency: 'strong' })
+const tKey = (email) => 't_' + String(email || '').toLowerCase().trim()
+
+export async function recordTermsAcceptance(email, { version, hash, signature, typedName, ip, userAgent }) {
+  const u = await getUser(email)
+  if (!u) return { error: 'No such user.' }
+  const at = new Date().toISOString()
+  const rec = {
+    email: u.email, name: u.name || '', role: normRole(u.role),
+    version, hash, acceptedAt: at,
+    // Whichever way they signed - drawn, or typed as a fallback where a mouse
+    // or touchscreen isn't available.
+    signature: signature || null, typedName: typedName || null,
+    ip: ip || null, userAgent: (userAgent || '').slice(0, 300),
+  }
+  try {
+    const st = termsStore()
+    // Keep the history: an earlier acceptance of an earlier version is still
+    // evidence, and overwriting it would destroy the trail.
+    const prior = (await st.get(tKey(u.email), { type: 'json' }).catch(() => null)) || { acceptances: [] }
+    prior.acceptances = [...(prior.acceptances || []), rec].slice(-20)
+    prior.latest = rec
+    await st.setJSON(tKey(u.email), prior)
+  } catch { return { error: 'Couldn\u2019t record your acceptance - please try again.' } }
+  u.termsVersion = version
+  u.termsAcceptedAt = at
+  await saveUser(u)
+  return { ok: true, acceptedAt: at }
+}
+export async function listTermsAcceptances() {
+  try {
+    const st = termsStore()
+    const { blobs } = await st.list({ prefix: 't_' }).catch(() => ({ blobs: [] }))
+    const out = []
+    for (const b of blobs || []) {
+      const rec = await st.get(b.key, { type: 'json' }).catch(() => null)
+      if (rec && rec.latest) out.push({ ...rec.latest, history: (rec.acceptances || []).length })
+    }
+    return out.sort((a, b) => String(b.acceptedAt).localeCompare(String(a.acceptedAt)))
+  } catch { return [] }
+}
+export async function getTermsAcceptance(email) {
+  try { return await termsStore().get(tKey(email), { type: 'json' }) } catch { return null }
 }
 
 // ---- login brute-force throttle -------------------------------------------

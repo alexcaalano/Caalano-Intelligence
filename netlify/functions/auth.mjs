@@ -7,7 +7,9 @@ import {
   listUsers, updateUser, deleteUser, changePassword, currentUser, countUsers,
   signupRequest, approveUser, ensureSuperadmin, isAdminish, signSession, sessionCookie, clearCookie, COOKIE,
   checkLoginAllowed, recordLoginResult, revokeSessions, getUser,
+  recordTermsAcceptance, listTermsAcceptances, getTermsAcceptance,
 } from '../lib/auth.mjs'
+import { TERMS_VERSION, termsPayload, termsHash } from '../lib/terms.mjs'
 
 const SESSION_MS = 14 * 86400 * 1000
 const secret = () => process.env.AUTH_SECRET || ''
@@ -39,6 +41,9 @@ export default async (req) => {
       const user = await currentUser(req, S, { track: true })
       const needsSetup = (await countUsers()) === 0
       return json({ ok: true, enabled: true, user: user || null, needsSetup })
+    }
+    if (action === 'terms') {
+      return json({ ok: true, terms: termsPayload(), hash: await termsHash() })
     }
     if (action === 'bootstrap' && req.method === 'POST') {
       const r = await bootstrapAdmin(body)
@@ -74,6 +79,29 @@ export default async (req) => {
     const me = await currentUser(req, S)
     if (!me) return json({ ok: false, error: 'Not signed in.' }, 401)
 
+    if (action === 'accept-terms' && req.method === 'POST') {
+      // A signature is required - the whole point is evidence that a person,
+      // not a click, accepted. Either a drawn image or a typed name qualifies.
+      const sig = typeof body.signature === 'string' ? body.signature : null
+      const typed = typeof body.typedName === 'string' ? body.typedName.trim() : ''
+      if (!sig && !typed) return json({ ok: false, error: 'Please sign before accepting.' }, 400)
+      // Bound the image so a pathological payload can't be stored. A signature
+      // canvas produces a few tens of KB; anything far past that isn't one.
+      if (sig && sig.length > 400000) return json({ ok: false, error: 'Signature image is too large.' }, 400)
+      if (sig && !/^data:image\/(png|jpeg);base64,/.test(sig)) return json({ ok: false, error: 'Signature must be an image.' }, 400)
+      const r = await recordTermsAcceptance(me.email, {
+        version: TERMS_VERSION, hash: await termsHash(), signature: sig, typedName: typed || null,
+        // Recorded for the audit trail: which device, and roughly from where.
+        ip: req.headers.get('x-nf-client-connection-ip') || req.headers.get('x-forwarded-for') || null,
+        userAgent: req.headers.get('user-agent') || null,
+      })
+      return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, acceptedAt: r.acceptedAt, version: TERMS_VERSION })
+    }
+    if (action === 'my-terms') {
+      const rec = await getTermsAcceptance(me.email)
+      return json({ ok: true, current: TERMS_VERSION, latest: (rec && rec.latest) || null, history: (rec && rec.acceptances) || [] })
+    }
+
     if (action === 'change-password' && req.method === 'POST') {
       const r = await changePassword(me.email, body.current, body.next)
       if (r.error) return json({ ok: false, error: r.error }, 400)
@@ -101,6 +129,12 @@ export default async (req) => {
     if (!isAdminish(me.role)) return json({ ok: false, error: 'Admins only.' }, 403)
 
     if (action === 'users') return json({ ok: true, users: await listUsers(), me })
+    // Who has accepted, when, and on which version - with their signature.
+    if (action === 'terms-log') return json({ ok: true, current: TERMS_VERSION, acceptances: await listTermsAcceptances() })
+    if (action === 'terms-record') {
+      const rec = await getTermsAcceptance(String(body.email || url.searchParams.get('email') || '').toLowerCase().trim())
+      return json({ ok: true, record: rec || null })
+    }
     if (action === 'invite' && req.method === 'POST') {
       const r = await createInvite({ email: body.email, name: body.name, role: body.role, clients: body.clients, allClients: body.allClients, tabs: body.tabs, reports: body.reports, actor: me })
       if (r.error) return json({ ok: false, error: r.error }, 400)

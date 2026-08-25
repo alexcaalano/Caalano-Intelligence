@@ -17,6 +17,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.361.0 - 2026-08-20 · `PENDING` - Terms of use, signed and recorded
+- **Terms of Use** for Caalano360, covering ownership of the platform (interface, reports, metrics and how they're
+  calculated, data models, integrations, code), a personal revocable right of access, and explicit restrictions: no
+  copying, no reverse engineering, no rebuilding it elsewhere, no scraping, and no feeding its screens, outputs or code
+  into third-party or AI systems for analysis, training or reproduction. Plus confidentiality, data ownership, accuracy
+  and availability, breach, liability and governing law (NSW).
+- **A gate, not a banner.** It sits between signing in and the dashboard, so acceptance is a real decision and there is a
+  signed record before any client data is on screen. Accept stays disabled until the reader reaches the end.
+- **A real signature** - drawn on a canvas with mouse, trackpad or finger, or typed as a fallback where neither is
+  practical. Stored as an image against the account.
+- **Signed register** in Team & access: who accepted, when, on which version, and their signature (click to enlarge),
+  exportable to CSV. Anyone on an outdated version is flagged and re-prompted on their next load.
+- Each acceptance stores the version **and a digest of the exact wording that was on screen**, so a signature can always
+  be matched back to what was actually agreed even after the terms move on. Earlier acceptances are kept, not overwritten.
+- A standing proprietary notice sits in the sidebar footer with a link to re-read the terms and see your own signature -
+  people forget what they signed on day one, so the claim lives where they work rather than only in a document.
+- Signature images are held in their own store with only a lightweight version marker on the user record, so the gate
+  check stays free and no signature weighs down an ordinary user listing.
+
 ## v3.360.0 - 2026-08-20 · `PENDING` - Demo: drop the discovery call, and fix a funnel that couldn't happen
 - The demo's pipeline card showed **Booked Initial Appointment (107) above Discovery Call Attended (57)** - a later step
   outranking an earlier one, which is impossible in a funnel. The tell was the show rate underneath it: only

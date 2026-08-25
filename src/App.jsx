@@ -12,7 +12,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.360.0'
+const APP_VERSION = '3.361.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3068,6 +3068,9 @@ function UtmSection({ attr, currency, paid }) {
 // SETTINGS cache (seeded from localStorage, then hydrated from the server).
 const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
+// Must match TERMS_VERSION in netlify/lib/terms.mjs. Bumping it there and
+// here re-prompts everyone for a signature on their next load.
+const TERMS_VERSION_FE = '1.0'
 const KEV_KEY = 'caalano_keyevents'
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -10726,6 +10729,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
           })}</tbody>
         </table></div>
       </div>
+      <TermsRegister />
       {modal && <UserAccessModal user={modal.user || null} clients={clients} authUser={authUser} onClose={() => setModal(null)} onChanged={load} />}
     </div>
   )
@@ -10749,6 +10753,263 @@ function SignOutEverywhereCard() {
       <p className="cap" style={{ marginTop: -4 }}>Sessions last 14 days. If you\u2019ve signed in somewhere you no longer control - a shared computer, an old phone, a laptop that went missing - end those sessions now rather than waiting for them to expire.</p>
       <button className="btn-ghost" onClick={go} disabled={busy}>{busy ? 'Signing out…' : 'Sign out of all other devices'}</button>
       {msg && <p className={`cap ${msg.ok ? 'u-ok' : 'u-err'}`} style={{ marginTop: 8 }}>{msg.t}</p>}
+    </div>
+  )
+}
+/* ============ Terms of use ============
+   A gate, not a banner. Anyone who hasn't accepted the current version sees
+   this instead of the dashboard - the point is a record that a named person
+   read and signed, so it can't be something you scroll past. */
+function SignaturePad({ onChange }) {
+  const ref = useRef(null)
+  const drawing = useRef(false)
+  const drew = useRef(false)
+  const last = useRef(null)
+  // Size the backing store to the device pixel ratio, or the stroke renders
+  // soft and the stored image looks like a fax.
+  useEffect(() => {
+    const c = ref.current; if (!c) return
+    const dpr = window.devicePixelRatio || 1
+    const r = c.getBoundingClientRect()
+    c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr)
+    const ctx = c.getContext('2d')
+    ctx.scale(dpr, dpr)
+    ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#111'
+  }, [])
+  const pos = (e) => {
+    const c = ref.current; const r = c.getBoundingClientRect()
+    const t = e.touches ? e.touches[0] : e
+    return { x: t.clientX - r.left, y: t.clientY - r.top }
+  }
+  const start = (e) => { e.preventDefault(); drawing.current = true; last.current = pos(e) }
+  const move = (e) => {
+    if (!drawing.current) return
+    e.preventDefault()
+    const c = ref.current, ctx = c.getContext('2d'), p = pos(e)
+    ctx.beginPath(); ctx.moveTo(last.current.x, last.current.y); ctx.lineTo(p.x, p.y); ctx.stroke()
+    last.current = p; drew.current = true
+  }
+  const end = () => {
+    if (!drawing.current) return
+    drawing.current = false
+    if (drew.current) onChange(ref.current.toDataURL('image/png'))
+  }
+  const clear = () => {
+    const c = ref.current, ctx = c.getContext('2d')
+    ctx.clearRect(0, 0, c.width, c.height); drew.current = false; onChange(null)
+  }
+  return (
+    <div className="sig-wrap">
+      <canvas
+        ref={ref} className="sig-pad"
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+      />
+      <div className="sig-actions">
+        <span className="cap">Sign above with your mouse, trackpad or finger.</span>
+        <button type="button" className="btn-ghost sm" onClick={clear}>Clear</button>
+      </div>
+    </div>
+  )
+}
+// Read-only view of the terms already accepted, reachable from the footer.
+// Someone who signed months ago should be able to see what they agreed to
+// without having to ask for it.
+function TermsViewer({ onClose }) {
+  const [terms, setTerms] = useState(null)
+  const [mine, setMine] = useState(null)
+  useEffect(() => {
+    authApi('terms').then((r) => { if (r && r.ok) setTerms(r.terms) }).catch(() => {})
+    authApi('my-terms').then((r) => { if (r && r.ok) setMine(r) }).catch(() => {})
+  }, [])
+  return (
+    <div className="mr-drill-overlay no-print" onClick={onClose}>
+      <div className="mr-drill terms-view-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="mr-drill-head">
+          <div>
+            <h3>{terms ? terms.title : 'Terms of Use'}</h3>
+            <span>
+              {terms ? `Version ${terms.version} · effective ${terms.effective}` : ''}
+              {mine && mine.latest ? ` · you accepted ${new Date(mine.latest.acceptedAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+            </span>
+          </div>
+          <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <div className="mr-drill-body terms-view-body">
+          {!terms ? <Spinner label="Loading…" /> : (
+            <>
+              <p className="terms-intro">{terms.intro}</p>
+              {terms.sections.map((sec, i) => (
+                <section key={i} className="terms-sec">
+                  <h3>{sec.h}</h3>
+                  {(sec.p || []).map((t, j) => <p key={j}>{t}</p>)}
+                  {sec.list ? <ul>{sec.list.map((t, j) => <li key={j}>{t}</li>)}</ul> : null}
+                </section>
+              ))}
+              {mine && mine.latest && mine.latest.signature ? (
+                <div className="terms-my-sig">
+                  <span className="cap">Your signature on file</span>
+                  <img src={mine.latest.signature} alt="Your signature" />
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+function TermsGate({ user, onAccepted, onLogout }) {
+  const [terms, setTerms] = useState(null)
+  const [sig, setSig] = useState(null)
+  const [typed, setTyped] = useState('')
+  const [read, setRead] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const bodyRef = useRef(null)
+  useEffect(() => { authApi('terms').then((r) => { if (r && r.ok) setTerms(r.terms) }).catch(() => {}) }, [])
+  // "Read" means reached the bottom. Not proof of reading, but it removes the
+  // "I never saw it" argument, and it's the reason Accept starts disabled.
+  const onScroll = (e) => {
+    const el = e.currentTarget
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 24) setRead(true)
+  }
+  const accept = async () => {
+    setBusy(true); setErr(null)
+    const r = await authApi('accept-terms', { method: 'POST', body: JSON.stringify({ signature: sig, typedName: typed.trim() }) })
+    setBusy(false)
+    if (r && r.ok) onAccepted(r)
+    else setErr((r && r.error) || 'Couldn’t record your acceptance. Please try again.')
+  }
+  const signed = !!sig || typed.trim().length >= 3
+  return (
+    <div className="terms-bg">
+      <div className="terms-card">
+        <div className="terms-head">
+          <div>
+            <h2>{terms ? terms.title : 'Caalano360 - Terms of Use'}</h2>
+            <span className="cap">{terms ? `Version ${terms.version} · effective ${terms.effective}` : 'Loading…'} · for {user.name || user.email}</span>
+          </div>
+          <button className="btn-ghost sm" onClick={onLogout}>Sign out</button>
+        </div>
+        <div className="terms-body" ref={bodyRef} onScroll={onScroll}>
+          {!terms ? <Spinner label="Loading the terms…" /> : (
+            <>
+              <p className="terms-intro">{terms.intro}</p>
+              {terms.sections.map((s, i) => (
+                <section key={i} className="terms-sec">
+                  <h3>{s.h}</h3>
+                  {(s.p || []).map((t, j) => <p key={j}>{t}</p>)}
+                  {s.list ? <ul>{s.list.map((t, j) => <li key={j}>{t}</li>)}</ul> : null}
+                </section>
+              ))}
+              <p className="terms-sign-statement">{terms.signStatement}</p>
+            </>
+          )}
+        </div>
+        <div className="terms-foot">
+          {!read && terms ? <p className="cap terms-scroll-hint">↓ Scroll to the end of the terms to continue.</p> : null}
+          <div className="terms-sign">
+            <SignaturePad onChange={setSig} />
+            <div className="terms-typed">
+              <label className="cap" htmlFor="terms-typed-name">Or type your full name as your signature</label>
+              <input id="terms-typed-name" className="inp" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={user.name || 'Your full name'} autoComplete="off" />
+            </div>
+          </div>
+          {err ? <p className="cap u-err">{err}</p> : null}
+          <div className="terms-actions">
+            <span className="cap">Signing is recorded against your account with the date, time and version.</span>
+            <button className="btn-primary" disabled={!read || !signed || busy} onClick={accept}>
+              {busy ? 'Recording…' : 'I accept these terms'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+/* The signed register - who accepted, when, on what version, and the signature
+   they gave. This is the artefact the whole feature exists to produce. */
+function TermsRegister() {
+  const [st, setSt] = useState({ status: 'loading', rows: [], current: null })
+  const [zoom, setZoom] = useState(null)
+  const load = () => {
+    setSt((s) => ({ ...s, status: 'loading' }))
+    authApi('terms-log').then((r) => setSt(r && r.ok ? { status: 'ok', rows: r.acceptances || [], current: r.current } : { status: 'err', rows: [] }))
+      .catch(() => setSt({ status: 'err', rows: [] }))
+  }
+  useEffect(load, [])
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-')
+  const exportCsv = () => {
+    const esc = (v) => { const t = v == null ? '' : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
+    const head = ['name', 'email', 'role', 'version', 'hash', 'acceptedAt', 'signedBy', 'ip', 'userAgent']
+    const lines = [head.join(','), ...st.rows.map((r) => head.map((k) => esc(
+      k === 'signedBy' ? (r.signature ? 'drawn signature' : r.typedName ? `typed: ${r.typedName}` : '') : r[k],
+    )).join(','))]
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `caalano360-terms-register-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click(); URL.revokeObjectURL(a.href)
+  }
+  return (
+    <div className="card">
+      <div className="u-head-row">
+        <div>
+          <h3 style={{ margin: 0 }}>Terms of use · signed register</h3>
+          <p className="cap" style={{ margin: '4px 0 0' }}>
+            Everyone who has accepted the Caalano360 terms, with the version they signed and their signature.
+            Current version <b>{st.current || '-'}</b>. Anyone on an older version is asked to re-sign on their next load.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-ghost sm" onClick={load}>Refresh</button>
+          <button className="btn-ghost sm" onClick={exportCsv} disabled={!st.rows.length}>⭳ CSV</button>
+        </div>
+      </div>
+      {st.status === 'loading' ? <Spinner label="Loading the register…" />
+        : st.status === 'err' ? <p className="cap">Couldn’t load the register.</p>
+          : !st.rows.length ? <p className="cap">Nobody has accepted the terms yet.</p>
+            : (
+              <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl users-tbl">
+                <thead><tr><th className="lft">Name</th><th className="lft">Email</th><th className="lft">Role</th><th className="lft">Version</th><th className="lft">Accepted</th><th className="lft">Signature</th></tr></thead>
+                <tbody>{st.rows.map((r) => (
+                  <tr key={r.email}>
+                    <td className="lft">{r.name || <span className="cap">-</span>}</td>
+                    <td className="lft">{r.email}</td>
+                    <td className="lft"><span className={`u-role-tag r-${r.role}`}>{ROLE_LABEL[r.role] || r.role}</span></td>
+                    <td className="lft">
+                      {r.version}
+                      {st.current && r.version !== st.current ? <em className="kev-caltype" title="Signed an older version - will be asked to re-sign">outdated</em> : null}
+                    </td>
+                    <td className="lft" title={`${r.acceptedAt}${r.ip ? ` · from ${r.ip}` : ''}${r.history > 1 ? ` · ${r.history} acceptances on record` : ''}`}>{when(r.acceptedAt)}</td>
+                    <td className="lft">
+                      {r.signature
+                        ? <button type="button" className="terms-sig-thumb" onClick={() => setZoom(r)} title="Click to enlarge"><img src={r.signature} alt={`Signature of ${r.name || r.email}`} /></button>
+                        : r.typedName ? <span className="terms-sig-typed" title="Typed as a signature">{r.typedName}</span>
+                          : <span className="cap">-</span>}
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            )}
+      <p className="caveat" style={{ marginTop: 10 }}>
+        Each acceptance stores the terms version and a digest of the exact wording that was on screen, so a signature can
+        always be matched back to what was actually agreed - even after the terms have since changed. Earlier acceptances
+        are kept rather than overwritten.
+      </p>
+      {zoom ? (
+        <div className="mr-drill-overlay no-print" onClick={() => setZoom(null)}>
+          <div className="mr-drill terms-sig-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mr-drill-head">
+              <div><h3>{zoom.name || zoom.email}</h3><span>Signed {when(zoom.acceptedAt)} · version {zoom.version} · wording {zoom.hash}</span></div>
+              <button className="mr-drill-x" onClick={() => setZoom(null)} aria-label="Close">✕</button>
+            </div>
+            <div className="mr-drill-body"><img className="terms-sig-full" src={zoom.signature} alt={`Signature of ${zoom.name || zoom.email}`} /></div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -14947,6 +15208,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // dashboard is safe to screen-share with a client. Not persisted - always
   // starts off so it can never be left on by accident.
   const [present, setPresent] = useState(false)
+  const [showTerms, setShowTerms] = useState(false)
   const agency = useAgencyLive(range, refreshKey, wonBasis)
   useClientLogos() // one-time brand-logo sync from Caalano Systems (avatars)
   // Server-backed settings: re-render on hydrate/change; enabled is a derived
@@ -15085,6 +15347,14 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic"><NavIcon name="settings" /></span>Settings</button>
           {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           <div className="foot-build" title={`Caalano360 v${APP_VERSION} · Build ${__BUILD_TIME__}${__COMMIT_REF__ ? ` · commit ${__COMMIT_REF__}` : ''} · see CHANGELOG.md`}><b>v{APP_VERSION}</b> · deployed {fmtBuildTime(__BUILD_TIME__)}{__COMMIT_REF__ ? ` · ${__COMMIT_REF__}` : ''}</div>
+          {/* Standing notice. People forget what they signed on day one, so the
+              claim sits where they work rather than only in a document. */}
+          {showTerms ? <TermsViewer onClose={() => setShowTerms(false)} /> : null}
+          <div className="foot-legal">
+            © {new Date().getFullYear()} Caalano Digital. Caalano360 is proprietary software - its reports, metrics and
+            design may not be copied, reproduced or reverse engineered.{' '}
+            <button type="button" className="foot-legal-link" onClick={() => setShowTerms(true)}>Terms of use</button>
+          </div>
         </div>
       </aside>
 
@@ -15145,5 +15415,17 @@ export default function App() {
   if (auth.enabled && inviteToken && !auth.user) return <AcceptInvite token={inviteToken} onSignedIn={onSignedIn} />
   if (auth.enabled && auth.needsSetup) return <SetupAdmin onSignedIn={onSignedIn} />
   if (auth.enabled && !auth.user) return <LoginForm onSignedIn={onSignedIn} />
+  // Terms gate. Sits between signing in and the dashboard so acceptance is a
+  // real decision rather than a banner someone scrolls past - and so there is a
+  // signed record before any client data is on screen. Only applies when the
+  // multi-user system is on; the legacy shared-password mode has no identity to
+  // record an acceptance against.
+  if (auth.enabled && auth.user && auth.user.termsVersion !== TERMS_VERSION_FE) {
+    return <TermsGate
+      user={auth.user}
+      onLogout={onLogout}
+      onAccepted={(r) => setAuth((a) => ({ ...a, user: { ...a.user, termsVersion: r.version, termsAcceptedAt: r.acceptedAt } }))}
+    />
+  }
   return <><Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator /></>
 }

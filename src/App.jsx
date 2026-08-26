@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.365.0'
+const APP_VERSION = '3.366.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10689,6 +10689,10 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
   })
   const onSort = (key) => setSort((s) => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' })
   const Th = ({ k, label }) => <th className={`lft th-sort${sort.key === k ? ' on' : ''}`} onClick={() => onSort(k)} title="Sort by this column">{label}<span className="th-arrow">{sort.key === k ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</span></th>
+  // Activity - last sign-in and time spent - is owner-only. The server already
+  // withholds it from anyone else; the columns come out too so the table doesn't
+  // show a row of empty dashes that reads like missing data.
+  const seeActivity = actorRole === 'superadmin'
   return (
     <div className="u-wrap">
       {pending.length > 0 && (
@@ -10701,29 +10705,31 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
 
       <div className="card">
         <div className="u-head-row">
-          <div><h3 style={{ margin: 0 }}>Team &amp; access</h3><p className="cap" style={{ margin: '4px 0 0' }}><b>Super Admin</b> = owner (manages admins &amp; accounts) · <b>Admin</b> = full control · <b>User</b> = agency staff · <b>Viewer</b> = client. {actorRole !== 'superadmin' && <span>You can manage Users &amp; Viewers; only a Super Admin can manage Admins.</span>}</p></div>
+          <div><h3 style={{ margin: 0 }}>Team &amp; access</h3><p className="cap" style={{ margin: '4px 0 0' }}><b>Super Admin</b> = owner (manages admins &amp; accounts) · <b>Admin</b> = full control · <b>User</b> = agency staff · <b>Viewer</b> = client. {actorRole !== 'superadmin' && <span>You can manage Users &amp; Viewers; only a Super Admin can manage Admins, or see when people last signed in and how long they spent.</span>}</p></div>
           <button className="btn-primary" onClick={() => setModal({ invite: true })}>+ Invite person</button>
         </div>
 
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
-          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" /><Th k="seen" label="Last active" /><Th k="time" label="Time (30d)" /><Th k="status" label="Status" /><th className="lft"></th></tr></thead>
-          <tbody>{state.status === 'loading' ? <tr><td colSpan={8}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
+          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" />{seeActivity && <><Th k="seen" label="Last active" /><Th k="time" label="Time (30d)" /></>}<Th k="status" label="Status" /><th className="lft"></th></tr></thead>
+          <tbody>{state.status === 'loading' ? <tr><td colSpan={seeActivity ? 8 : 6}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
             const self = u.email === (authUser && authUser.email)
-            const seen = ago(u.lastSeen)
-            const ls = lastSession(u)
-            const tot = recentMins(u)
+            const seen = seeActivity ? ago(u.lastSeen) : null
+            const ls = seeActivity ? lastSession(u) : null
+            const tot = seeActivity ? recentMins(u) : 0
             return (
               <tr key={u.email}>
                 <td className="lft">{u.name || <span className="cap">-</span>}{self && <span className="u-you">you</span>}</td>
                 <td className="lft">{u.email}</td>
                 <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
-                <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
-                  {seen ? <span className="u-seen">{seen}{ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}</span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
-                </td>
-                <td className="lft" title={tot ? `${(u.sessions || []).filter((x) => Date.parse(x.start) >= Date.now() - 30 * 86400000).length} session(s) in the last 30 days` : ''}>
-                  {tot ? <span className="u-seen">{mins(tot)}</span> : <span className="cap">-</span>}
-                </td>
+                {seeActivity && <>
+                  <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
+                    {seen ? <span className="u-seen">{seen}{ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}</span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
+                  </td>
+                  <td className="lft" title={tot ? `${(u.sessions || []).filter((x) => Date.parse(x.start) >= Date.now() - 30 * 86400000).length} session(s) in the last 30 days` : ''}>
+                    {tot ? <span className="u-seen">{mins(tot)}</span> : <span className="cap">-</span>}
+                  </td>
+                </>}
                 <td className="lft">{badge(u)}</td>
                 <td className="lft">{canManageRoleFE(actorRole, u.role) ? <button className="btn-ghost sm" onClick={() => setModal({ user: u })}>Edit access</button> : <span className="cap" title="Only a Super Admin can manage an Admin">🔒 locked</span>}</td>
               </tr>

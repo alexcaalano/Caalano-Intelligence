@@ -17,6 +17,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.366.0 - 2026-08-20 · `PENDING` - Who signed in and for how long is owner-only
+
+**Activity data is Super-Admin only**
+- **Last active** and **Time (30d)** in Settings → Team & access - when someone
+  last signed in, their last session length, and their total time in the app
+  over 30 days - are now visible only to a Super Admin.
+- Stripped **on the server**, not just hidden in the UI: the `users` response
+  nulls `lastSeen`, `lastLogin` and `sessions` for everyone except the caller,
+  so the data never reaches an Admin's browser to begin with. The two columns
+  come out of the table as well, so it reads as a deliberate omission rather
+  than a row of empty dashes.
+- You can always see your own activity - it's your own record.
+- The role legend now says so plainly: *"only a Super Admin can manage Admins,
+  or see when people last signed in and how long they spent."*
+- Agency staff (**User**) and clients (**Viewer**) never had the Team & access
+  tab at all, so nothing changes for them.
+
+Admins manage who can see what; the owner sees the watching. The two are
+different powers and were being granted together.
+
+---
+
 ## v3.365.0 - 2026-08-20 · `PENDING` - Terms you can edit yourself, and terms v1.3
 
 **Edit the terms in the app - Super Admin only**

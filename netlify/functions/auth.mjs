@@ -164,7 +164,17 @@ export default async (req) => {
     // ---- admin + super-admin actions ----
     if (!isAdminish(me.role)) return json({ ok: false, error: 'Admins only.' }, 403)
 
-    if (action === 'users') return json({ ok: true, users: await listUsers(), me })
+    if (action === 'users') {
+      const users = await listUsers()
+      // When someone last signed in and how long they have spent in the app is
+      // monitoring data about a person, not access configuration. Admins manage
+      // who can see what; only the owner sees the watching. Stripped on the
+      // server, not just hidden in the UI - the response is the boundary.
+      const scoped = me.role === 'superadmin' ? users : users.map((u) => (
+        u.email === me.email ? u : { ...u, lastLogin: null, lastSeen: null, sessions: [] }
+      ))
+      return json({ ok: true, users: scoped, me })
+    }
 
     // ---- super-admin only ----
     // The signed register is the legal record: names, phone numbers, IPs and

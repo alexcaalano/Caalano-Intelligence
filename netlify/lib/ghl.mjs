@@ -1279,6 +1279,18 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   // of events with the same minute. We measure both and refuse to report the
   // at-the-desk / after-leaving split unless the timestamps survive it.
   const bt = { n: 0, afterStart: 0, minutes: new Set(), thirdParty: 0 }
+  // Chair time actually booked, per calendar, over a recent window - the numerator
+  // for utilisation. The denominator (a calendar's open hours) comes off the
+  // calendar record itself, below.
+  const UTIL_DAYS = 28
+  const load = new Map()              // calName -> { booked, appts, cancelled, noShow }
+  const bump = (calName, k, v = 1) => {
+    const e = load.get(calName) || { booked: 0, appts: 0, cancelled: 0, noShow: 0 }
+    e[k] += v; load.set(calName, e)
+  }
+  // Every cancellation, so we can ask the question that has money attached: did
+  // this patient ever come back? A cancellation that was rebooked costs nothing.
+  const cancels = []
   const deadline = Date.now() + deadlineMs
   let cals = [], mergeVals = null
   try {
@@ -1339,7 +1351,20 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
   const push = (cid, start, added, status, calName, service, source, end, clinical = true) => {
     diary(start, end, status, clinical)
     if (!cid || !isFinite(start)) return
-    if (APPT_DEAD_RE.test(String(status || ''))) return
+    const st = String(status || '')
+    // Utilisation and cancellation recovery both look at a recent window only -
+    // a 900-day lookback would average away the thing you're trying to see.
+    if (clinical && start >= (nowRef - UTIL_DAYS * DAY) && start < nowRef) {
+      const nm = calName || 'Calendar'
+      if (APPT_CANCEL_RE.test(st)) bump(nm, 'cancelled')
+      else if (APPT_NOSHOW_RE.test(st)) { bump(nm, 'noShow'); bump(nm, 'appts') }
+      else if (!APPT_INVALID_RE.test(st)) {
+        const mins = (isFinite(end) && end > start) ? Math.round((end - start) / 60000) : 30
+        bump(nm, 'booked', Math.min(mins, 480)); bump(nm, 'appts')
+      }
+    }
+    if (clinical && APPT_CANCEL_RE.test(st) && start >= (nowRef - 180 * DAY) && start < nowRef) cancels.push({ cid, start })
+    if (APPT_DEAD_RE.test(st)) return
     // A triage booking is a sales call, not a visit. It counts toward the book
     // and toward triage volume, never toward this patient's visit history.
     if (!clinical) { out.triageAppts++; return }
@@ -1412,6 +1437,65 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
         push(cid, Date.parse(b.startTime || b.start), Date.parse(b.dateAdded || b.createdAt), b.status || b.appointmentStatus, b.calendarName || 'Service', svcName || null, b.createdBy && b.createdBy.source, Date.parse(b.endTime || b.end), svcClinical)
       }
     } catch { /* location isn't on the services catalog - normal */ }
+  }
+  // A calendar's own opening hours give the denominator. Location-wide hours
+  // would flatter a part-timer and punish a full-timer, so this is per-calendar
+  // and skips any calendar that doesn't publish hours rather than guessing.
+  const weeklyMinutes = (cal) => {
+    const oh = cal.openHours || cal.availability || cal.availabilities || []
+    let total = 0
+    for (const slot of (Array.isArray(oh) ? oh : [])) {
+      const days = (slot.daysOfTheWeek || slot.daysOfWeek || slot.days || []).length
+      let perDay = 0
+      for (const h of (slot.hours || slot.slots || [])) {
+        const o = (h.openHour ?? h.startHour ?? 0) * 60 + (h.openMinute ?? h.startMinute ?? 0)
+        const cl = (h.closeHour ?? h.endHour ?? 0) * 60 + (h.closeMinute ?? h.endMinute ?? 0)
+        if (cl > o) perDay += cl - o
+      }
+      total += days * perDay
+    }
+    return total
+  }
+  const weeks = UTIL_DAYS / 7
+  const rows = []
+  for (const cal of active) {
+    const nm = cal.name || cal.calendarName || 'Calendar'
+    if (roleOf.get(String(cal.id || cal._id || cal.calendarId)) === 'triage') continue
+    const wk = weeklyMinutes(cal)
+    const e = load.get(nm) || { booked: 0, appts: 0, cancelled: 0, noShow: 0 }
+    const capacity = Math.round(wk * weeks)
+    rows.push({
+      name: nm, appts: e.appts, cancelled: e.cancelled, noShow: e.noShow,
+      bookedHours: Math.round((e.booked / 60) * 10) / 10,
+      capacityHours: capacity ? Math.round((capacity / 60) * 10) / 10 : null,
+      pct: capacity ? Math.round((e.booked / capacity) * 100) : null,
+    })
+  }
+  const rated = rows.filter((r) => r.pct != null)
+  out.utilisation = {
+    days: UTIL_DAYS,
+    // Only meaningful if at least one calendar publishes its hours.
+    available: rated.length > 0,
+    hoursKnown: rated.length, calendars: rows.length,
+    bookedHours: Math.round(rated.reduce((n, r) => n + r.bookedHours, 0) * 10) / 10,
+    capacityHours: Math.round(rated.reduce((n, r) => n + (r.capacityHours || 0), 0) * 10) / 10,
+    pct: rated.length ? Math.round((rated.reduce((n, r) => n + r.bookedHours, 0) / Math.max(1, rated.reduce((n, r) => n + (r.capacityHours || 0), 0))) * 100) : null,
+    rows: rows.sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1)),
+  }
+  // A cancellation is only a loss if the patient never came back. Anything in the
+  // last 14 days is left out of "unrecovered" - they may simply not have rebooked
+  // yet, and calling that a loss would overstate it every time.
+  const RECENT = nowRef - 14 * DAY
+  let unrec = 0, judged = 0
+  for (const c of cancels) {
+    if (c.start >= RECENT) continue
+    judged++
+    const later = (out.byContact.get(c.cid) || []).some((a) => a.start > c.start)
+    if (!later) unrec++
+  }
+  out.cancelRecovery = {
+    window: 180, cancelled: cancels.length, judged, unrecovered: unrec,
+    pct: judged ? Math.round((unrec / judged) * 100) : null,
   }
   out.available = out.byContact.size > 0
   // Next fortnight, one row per day, including the quiet ones - a day with
@@ -1857,6 +1941,16 @@ export async function buildClinic(locationId, opts = {}) {
     },
     forwardBookings: { withUpcoming, pctWithUpcoming: N.withData ? Math.round((withUpcoming / N.withData) * 100) : 0, upcomingTotal: sum.upcomingAppts },
     retentionEcon, rebooking, pva, diary,
+    // Chair time booked against chair time available, per practitioner calendar.
+    utilisation: (hist && hist.utilisation) || null,
+    // Cancellations that were never followed by another booking, with what that
+    // is worth at this clinic's own average visit value.
+    cancelRecovery: hist && hist.cancelRecovery
+      ? { ...hist.cancelRecovery, lostValue: Math.round((hist.cancelRecovery.unrecovered || 0) * (sum.arrived ? (sum.paid / sum.arrived) : 0)) }
+      : null,
+    // What one attended appointment is worth here - the denominator behind most
+    // of the "what is this costing us" numbers on the tab.
+    revPerAppt: sum.arrived ? Math.round(sum.paid / sum.arrived) : null,
     // Which calendars were treated as triage rather than clinical, so the tab can
     // say so plainly and the setting is discoverable from the numbers it changes.
     calendarRoles: hist ? { clinical: hist.calendars || 0, triage: hist.triageCalendars || [], triageAppts: hist.triageAppts || 0, configured: !!(clinicCfg && clinicCfg.cals), basis: hist.roleBasis || null } : null,

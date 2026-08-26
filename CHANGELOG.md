@@ -17,6 +17,41 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.376.0 - 2026-08-20 · `PENDING` - Clinic: capacity & recovery
+
+Researched what [Allie](https://www.allieclinics.com/) reports on (Cliniko /
+Halaxy / Nookal / Splose, the same PMS layer our clinics sync from) and closed
+the three gaps that were cheap because the data was already loaded.
+
+**Practitioner utilisation** - their lead metric, and we weren't computing it.
+- Booked clinical minutes ÷ that calendar's **own declared opening hours**, over
+  a rolling 28 days, per calendar. Per-calendar rather than clinic-wide on
+  purpose: measuring a part-timer against the whole clinic's hours makes them
+  look idle and hides a full practitioner already at capacity.
+- Cancelled and missed appointments don't count as booked - the slot was open.
+- Calendars that don't publish opening hours are listed but not scored, and are
+  left out of the headline rather than silently guessed at.
+- Traffic-lit against the 80% allied-health target.
+
+**Cancellations that never got recovered** - the version with money attached.
+- A cancellation only costs something if the patient never came back. Anything
+  in the last fortnight is excluded from the judgement: they may simply not have
+  rebooked yet, and counting those as lost overstates it every time.
+- Priced at the clinic's own revenue-per-visit.
+
+**Revenue per visit** - collected ÷ attended. Near-free, and it's the
+denominator behind most of the "what is this costing us" figures on the tab.
+
+**A limitation stated in the UI rather than left to bite:** capacity is counted
+per calendar, so a practitioner running both an initial-consult and a follow-up
+service calendar has their hours counted twice and the clinic-wide figure
+understates them. The tab says so and tells you what to do about it.
+
+Not chased, deliberately: episode-of-care completion and funding-mix (NDIS /
+DVA / WorkCover / EPC) both need PMS fields we can't yet confirm sync through.
+
+---
+
 ## v3.375.0 - 2026-08-20 · `PENDING` - Settings sections are deep-linkable
 
 - Each Settings section now carries `?s=` in the URL, so a **refresh comes back

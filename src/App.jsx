@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.375.0'
+const APP_VERSION = '3.376.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5625,6 +5625,10 @@ function ClinicDelta({ value, pts, goodDown, money, suffix }) {
 // A labelled band that breaks the clinic page into readable chapters. Without
 // these the tab is one long column of equally-weighted cards and everything
 // reads as equally important.
+// Scores a value against a target: at or above `good` is green, at or above
+// `ok` is amber, below is red. Targets are the ones published for allied health
+// (utilisation 80%, rebooking 85%, retention 70%) rather than invented here.
+const tlClass = (v, good, ok) => (v == null ? '' : v >= good ? 'tl-good' : v >= ok ? 'tl-ok' : 'tl-bad')
 function ClinicSection({ id, title, note, children }) {
   return (
     <section className="cl-sec" id={id}>
@@ -5850,6 +5854,8 @@ function ClinicView({ clientId, currency, nonce }) {
   const pv = d.pva || {}
   const dq = d.dataQuality || {}
   const di = d.diary || null
+  const ut = d.utilisation || null
+  const crec = d.cancelRecovery || null
   const cr = d.calendarRoles || null
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const dl = d.deltas || null
@@ -5971,6 +5977,65 @@ function ClinicView({ clientId, currency, nonce }) {
           <Caveat>Averaged over the days the clinic actually opened, not over all 90 - a day the clinic is closed shouldn&rsquo;t drag its own average down. Cancelled and missed appointments are excluded, so this is delivered load rather than what was booked.</Caveat>
         </div> : null}
       </ClinicSection> : null}
+
+      {(ut && ut.available) || (crec && crec.judged) || d.revPerAppt != null ? (
+        <ClinicSection id="cl-util" title="Capacity &amp; recovery" note="how full the book is, and what the gaps cost">
+          <div className="card">
+            <div className="timing-scards">
+              {ut && ut.available ? (
+                <div className="tm-sc hero"><span className="tm-lab">Utilisation</span>
+                  <b className={tlClass(ut.pct, 80, 65)}>{ut.pct}%</b>
+                  <span className="tm-sub">{ut.bookedHours}h booked of {ut.capacityHours}h open · last {ut.days} days</span>
+                </div>
+              ) : null}
+              {crec && crec.judged ? (
+                <div className="tm-sc"><span className="tm-lab">Cancellations not recovered</span>
+                  <b className={tlClass(100 - (crec.pct || 0), 70, 50)}>{crec.pct}%</b>
+                  <span className="tm-sub">{fmtNumber(crec.unrecovered)} of {fmtNumber(crec.judged)} never rebooked</span>
+                </div>
+              ) : null}
+              {crec && crec.lostValue ? (
+                <div className="tm-sc"><span className="tm-lab">What that&rsquo;s worth</span><b>{money(crec.lostValue)}</b>
+                  <span className="tm-sub">at {money(d.revPerAppt || 0)} a visit</span>
+                </div>
+              ) : null}
+              {d.revPerAppt != null ? (
+                <div className="tm-sc"><span className="tm-lab">Revenue per visit</span><b>{money(d.revPerAppt)}</b>
+                  <span className="tm-sub">collected ÷ attended</span>
+                </div>
+              ) : null}
+            </div>
+
+            {ut && ut.available ? (
+              <>
+                <div className="cl-cap">Chair time by practitioner <span className="cap">· target 80%</span></div>
+                <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-fit">
+                  <thead><tr><th className="lft">Calendar</th><th>Booked</th><th>Open</th><th>Utilisation</th><th>Appts</th><th title="Cancelled or missed in the same window">Lost slots</th></tr></thead>
+                  <tbody>{ut.rows.map((r) => (
+                    <tr key={r.name}>
+                      <td className="lft">{r.name}</td>
+                      <td>{r.bookedHours}h</td>
+                      <td>{r.capacityHours != null ? `${r.capacityHours}h` : <span className="cap" title="This calendar doesn’t publish opening hours, so there’s nothing to measure against">not set</span>}</td>
+                      <td>{r.pct != null ? <span className={tlClass(r.pct, 80, 65)}>{r.pct}%</span> : <span className="cap">-</span>}</td>
+                      <td>{fmtNumber(r.appts)}</td>
+                      <td>{r.cancelled + r.noShow ? <span className="cl-lost">{fmtNumber(r.cancelled + r.noShow)}</span> : '-'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table></div>
+                {ut.hoursKnown < ut.calendars ? (
+                  <Caveat>{ut.calendars - ut.hoursKnown} of {ut.calendars} clinical calendars don&rsquo;t publish opening hours, so they&rsquo;re listed but not scored - and they&rsquo;re left out of the headline. Set opening hours on those calendars in the CRM and they&rsquo;ll start counting.</Caveat>
+                ) : null}
+                <Caveat><b>Read the rows before the headline.</b> Capacity is counted per calendar, so a practitioner who runs two service calendars - an initial-consult one and a follow-up one - has their hours counted twice, and the clinic-wide figure understates how full they really are. Where several calendars share a person, either set opening hours on only the one they actually work from, or judge them a row at a time.</Caveat>
+                <Caveat>Utilisation is booked clinical minutes divided by that calendar&rsquo;s own declared opening hours, over the last {ut.days} days. Per-calendar rather than clinic-wide on purpose: measuring a part-timer against the whole clinic&rsquo;s hours makes them look idle and hides a full practitioner who is actually at capacity. Cancelled and missed appointments don&rsquo;t count as booked time - the slot was open. 80% is the usual target for allied health; much above 90% and there is no room to fit an urgent patient in.</Caveat>
+              </>
+            ) : null}
+
+            {crec && crec.judged ? (
+              <Caveat>A cancellation only costs something if the patient never came back. Of {fmtNumber(crec.cancelled)} cancellations in the last {crec.window} days, {fmtNumber(crec.judged)} are old enough to judge - anything in the last fortnight is excluded because they may simply not have rebooked yet, and counting those as lost would overstate it every time. {fmtNumber(crec.unrecovered)} never appear in the diary again{crec.lostValue ? `, which at ${money(d.revPerAppt || 0)} a visit is ${money(crec.lostValue)} of single visits not delivered - and more than that once you count the visits those patients would have gone on to have` : ''}.</Caveat>
+            ) : null}
+          </div>
+        </ClinicSection>
+      ) : null}
 
       <ClinicSection id="cl-retention" title="Retention" note="who comes back, and what it costs when they don't">
         <div className="card">

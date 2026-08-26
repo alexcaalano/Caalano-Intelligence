@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.378.0'
+const APP_VERSION = '3.379.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6214,8 +6214,8 @@ function ClinicView({ clientId, currency, nonce }) {
               </div>
             ))}</div> : null })()}
             <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-fit cl-fit-wide">
-              <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th title="Attended visits per patient seen">PVA</th><th title="Revenue per attended visit">$ / visit</th><th>With next appt</th></tr></thead>
-              <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.dollarPerVisit != null ? money(c.dollarPerVisit) : '-'}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
+              <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th title="Attended visits per patient seen">PVA</th><th title="Revenue per attended visit">$ / visit</th><th title="Came once and never returned - the sharpest read on whether a channel brings patients who stay">One &amp; done</th><th>With next appt</th></tr></thead>
+              <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.dollarPerVisit != null ? money(c.dollarPerVisit) : '-'}</td><td>{c.oneAndDonePct != null ? <span className={tlClass(100 - c.oneAndDonePct, 75, 60)}>{c.oneAndDonePct}%</span> : '-'}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
             </table></div>
             <Caveat>Channel comes from each patient&rsquo;s first-touch attribution on their contact, so lifetime value traces back to the ad that produced them. Patients created directly in the practice-management system carry no attribution and are excluded.</Caveat>
           </div> : null}

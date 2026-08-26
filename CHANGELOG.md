@@ -17,6 +17,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.379.0 - 2026-08-20 · `PENDING` - One-and-done by channel, and a demo that reflects its own roster
+
+**Which channels bring patients who stay**
+- The Acquisition table gains **One & done** - the share of a channel's patients
+  who came once and never returned. Traffic-lit, because it is the sharpest read
+  there is on whether a channel brings patients or just bookings.
+- Correction to what was said when this was proposed: most of this split already
+  existed (patients, avg LTV, PVA, $/visit, with-next), and `oneAndDonePct` was
+  already being computed server-side - it simply wasn't rendered. The gap was one
+  column, not a feature.
+
+**The demo was declaring four practitioners' worth of hours across eight calendars**
+- Utilisation read 10% in the demo, which made a working metric look broken on
+  the thing used to show the product.
+- The cause was real and worth understanding: the eight service calendars are
+  **four practitioners with two service types each**, and every one of them
+  declared a full 8-6 week. That claimed 400 hours of weekly capacity for four
+  staff. This is exactly the double-counting the tab already warns about - the
+  demo was demonstrating the flaw rather than the feature.
+- Each discipline now gets one clinician's week split across their two
+  calendars: a day of initial consults, three days of follow-ups. The demo now
+  reads **42%** overall, 30-68% per calendar - a clinic with room to fill, which
+  is a better story for a marketing dashboard than one already at capacity.
+
+---
+
 ## v3.378.0 - 2026-08-20 · `PENDING` - Clinic: who's drifting, whose patients come back, and where every number comes from
 
 All three built from fields **already synced** - no new CRM columns.

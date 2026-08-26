@@ -122,10 +122,18 @@ export function demoData() {
   // Calendars: one discovery-call calendar (triage) + a service calendar per
   // discipline (clinical). This is exactly the shape the Clinic settings tab
   // classifies by type, so the demo exercises that logic rather than dodging it.
-  const hours = [1, 2, 3, 4, 5].map((x) => ({ daysOfTheWeek: [x], hours: [{ openHour: 8, openMinute: 0, closeHour: 18, closeMinute: 0 }] }))
+  // Opening hours per calendar, because utilisation measures booked time against
+  // them. The eight service calendars are four practitioners with two service
+  // types each, not eight people - declaring a full week on all eight would claim
+  // 400 hours of weekly capacity for four staff and drive utilisation to single
+  // digits. So each discipline gets one clinician's week, split across their two
+  // calendars: a day of initial consults, three days of follow-ups.
+  const mkHours = (days, openHour, closeHour) => days.map((x) => ({ daysOfTheWeek: [x], hours: [{ openHour, openMinute: 0, closeHour, closeMinute: 0 }] }))
+  const initHours = mkHours([2], 9, 14)             // one clinic day of new patients
+  const fupHours = mkHours([1, 3, 4], 8, 14)        // three days of returning patients
   const calendars = [
-    ...DISCIPLINES.map((d, i) => ({ id: `demoCalInit${i}`, locationId: DEMO_LOCATION, name: `${d} Initial Consult`, calendarType: 'service', isActive: true, openHours: hours, slotDuration: 45 })),
-    ...DISCIPLINES.map((d, i) => ({ id: `demoCalFup${i}`, locationId: DEMO_LOCATION, name: `${d} Follow-up`, calendarType: 'service', isActive: true, openHours: hours, slotDuration: 30 })),
+    ...DISCIPLINES.map((d, i) => ({ id: `demoCalInit${i}`, locationId: DEMO_LOCATION, name: `${d} Initial Consult`, calendarType: 'service', isActive: true, openHours: initHours, slotDuration: 45 })),
+    ...DISCIPLINES.map((d, i) => ({ id: `demoCalFup${i}`, locationId: DEMO_LOCATION, name: `${d} Follow-up`, calendarType: 'service', isActive: true, openHours: fupHours, slotDuration: 30 })),
   ]
 
   const opportunities = []

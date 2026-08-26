@@ -17,6 +17,41 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.383.0 - 2026-08-20 · `PENDING` - Catchment: service areas
+
+The other half of catchment, for a business that works **across areas** rather
+than from one place - a builder covering several parts of Sydney.
+
+**Zones are made of places, not circles**
+- A zone is a named set of **postcodes and suburbs**, so a lead either is in it
+  or isn't. No edge-of-circle guesswork, which is what a radius always carries.
+- Add places by typing a postcode or suburb name. Anything that can't be
+  resolved is **refused with near-matches offered**, rather than stored as a
+  name that would silently match nothing later.
+- **Fill by radius** seeds a zone with every postcode within N km of what's
+  already in it - quick to author, then editable by hand. (10 km of Norwest
+  2153 pulls in 45 postcodes.)
+- **Per-pipeline scoping** on each zone, for a client whose offers cover
+  different ground.
+
+**Reporting**
+- A zone table above the lead map: places matched, leads, booked, won, win rate.
+- An explicit **"Outside every zone"** row - leads that fall outside your
+  coverage are the interesting ones, so they're never quietly dropped.
+
+**Overlaps are allowed, and said out loud**
+- A place can sit in two zones. That's a real thing a business might want, so
+  it isn't blocked - but a lead there is counted in **both**, which makes zone
+  totals exceed the lead count. The editor flags which places overlap, and the
+  map warns when the totals no longer add up, rather than leaving someone to
+  discover it in front of a client.
+
+Verified: zone membership, the radius fill, unzoned leads, per-zone win rates,
+and the overlap case (two zones sharing a postcode → 165 zoned leads against 137
+actual, correctly detected).
+
+---
+
 ## v3.382.0 - 2026-08-20 · `PENDING` - Catchment: how far people travelled to get there
 
 **Settings → (client) → Catchment.** Off by default, because "how far did they

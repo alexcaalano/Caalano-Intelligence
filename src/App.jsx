@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.382.0'
+const APP_VERSION = '3.383.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3281,7 +3281,7 @@ function useDiscoverNames() {
 /* Catchment settings. Off by default - measuring how far people travelled only
    means something for a business people travel TO, so it stays invisible until
    someone turns it on for that client. */
-const GEO_DEFAULT = { mode: 'off', origin: 'business', place: '', radiusKm: 15, byPipeline: {} }
+const GEO_DEFAULT = { mode: 'off', origin: 'business', place: '', radiusKm: 15, byPipeline: {}, areas: [] }
 function loadGeo(clientId) { return { ...GEO_DEFAULT, ...((SETTINGS.geo && SETTINGS.geo[clientId]) || {}) } }
 function saveGeo(clientId, obj) {
   SETTINGS.geo = { ...(SETTINGS.geo || {}), [clientId]: obj }
@@ -5824,6 +5824,61 @@ function GeoSettings({ clientId }) {
     return () => { a = false }
   }, [clientId])
   const save = (next) => { setG(next); saveGeo(clientId, next); setTick(true); setTimeout(() => setTick(false), 1200) }
+  // The place list is the same file the map already loads, so opening this tab
+  // costs a cached fetch rather than a bigger bundle.
+  const [geoDb, setGeoDb] = useState(null)
+  const [draft, setDraft] = useState({})
+  const [seed, setSeed] = useState({})
+  const [suggest, setSuggest] = useState({})
+  useEffect(() => {
+    if (g.mode !== 'areas' || geoDb) return
+    let a = true
+    import('./data/aupostcodes.json').then((m) => { if (a) setGeoDb(m.default || m) }).catch(() => {})
+    return () => { a = false }
+  }, [g.mode, geoDb])
+  const setAreas = (areas) => setG({ ...g, areas })
+  const saveAreas = (areas) => save({ ...g, areas })
+  // Resolve what someone typed to a place we hold coordinates for. Refuses
+  // anything unresolvable rather than storing a name that will silently match
+  // nothing later.
+  const resolvePlace = (raw) => {
+    const v = String(raw || '').trim()
+    if (!v || !geoDb) return null
+    if (/^\d{4}$/.test(v) && geoDb.pc[v]) return v
+    if (/^\d{3}$/.test(v) && geoDb.pc['0' + v]) return '0' + v
+    const key = normSub(v)
+    return geoDb.sub[key] ? v.toUpperCase() : null
+  }
+  const addPlace = (i, raw) => {
+    const ok = resolvePlace(raw)
+    const areas = g.areas || []
+    if (!ok) {
+      // Offer near-matches rather than a dead end.
+      const q = normSub(raw || '')
+      const hits = q.length >= 3 && geoDb
+        ? Object.keys(geoDb.sub).filter((k) => k.startsWith(q)).slice(0, 8)
+        : []
+      setSuggest({ ...suggest, [areas[i].id]: hits })
+      return
+    }
+    setSuggest({ ...suggest, [areas[i].id]: [] })
+    setDraft({ ...draft, [areas[i].id]: '' })
+    saveAreas(areas.map((x, j) => (j === i ? { ...x, places: [...new Set([...(x.places || []), ok])] } : x)))
+  }
+  // Fill a zone with every postcode within N km of what's already in it.
+  const seedRadius = (i) => {
+    const areas = g.areas || []
+    const a = areas[i]
+    const km = Number(seed[a.id]) || 0
+    if (!geoDb || !km || !(a.places || []).length) return
+    const centres = (a.places || []).map((pl) => (/^\d{3,4}$/.test(pl) ? geoDb.pc[pl] : (() => { const sv = geoDb.sub[normSub(pl)]; return sv ? (typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]]) : null })())).filter(Boolean)
+    if (!centres.length) return
+    const found = new Set(a.places)
+    for (const [pc, c] of Object.entries(geoDb.pc)) {
+      if (centres.some((ctr) => kmBetween(ctr, c) <= km)) found.add(pc)
+    }
+    saveAreas(areas.map((x, j) => (j === i ? { ...x, places: [...found] } : x)))
+  }
   const b = biz.data || {}
   const bizLine = [b.address, b.city, b.state, b.postalCode].filter(Boolean).join(', ')
   // The origin has to resolve to a postcode or suburb we hold coordinates for.
@@ -5844,7 +5899,9 @@ function GeoSettings({ clientId }) {
             <b>{lbl}</b><span>{hint}</span>
           </button>
         ))}
-        <div className="geo-mode soon"><b>Service areas</b><span>Named zones for a business that works across areas rather than from one. Coming next.</span></div>
+        <button type="button" className={`geo-mode${g.mode === 'areas' ? ' on' : ''}`} onClick={() => save({ ...g, mode: 'areas' })}>
+          <b>Service areas</b><span>Named zones, for a business that works across areas rather than from one place.</span>
+        </button>
       </div>
 
       {g.mode === 'radius' ? (
@@ -5900,6 +5957,61 @@ function GeoSettings({ clientId }) {
             </>
           ) : null}
           <Caveat>Distance is measured between postcode centroids, so it is sound across a few hundred leads and unreliable for any single one - a city postcode is a couple of kilometres across and a rural one can be fifty. Leads with no location captured, and anything outside Australia, are counted separately rather than plotted wrong.</Caveat>
+        </>
+      ) : null}
+      {g.mode === 'areas' ? (
+        <>
+          <Caveat>
+            Zones are made of <b>postcodes and suburbs</b>, not circles - so a lead either is in a zone or isn&rsquo;t,
+            with none of the guesswork a radius carries at the edges. Use the radius helper to fill a zone quickly, then
+            edit it by hand.
+          </Caveat>
+          {!geoDb ? <p className="cap">Loading place list…</p> : null}
+          <div className="geo-areas">
+            {(g.areas || []).map((a, i) => {
+              const dupes = (g.areas || []).filter((x, j) => j !== i).flatMap((x) => x.places || []).filter((pl) => (a.places || []).includes(pl))
+              return (
+                <div className="geo-area" key={a.id}>
+                  <div className="geo-area-h">
+                    <input className="inp geo-area-nm" value={a.name} placeholder="Zone name - e.g. Inner West"
+                      onChange={(e) => setAreas(g.areas.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                      onBlur={() => save(g)} />
+                    {pipelines.length > 1 ? (
+                      <select className="inp geo-area-pipe" value={Array.isArray(a.pipelines) ? a.pipelines[0] : 'all'}
+                        onChange={(e) => saveAreas(g.areas.map((x, j) => (j === i ? { ...x, pipelines: e.target.value === 'all' ? 'all' : [e.target.value] } : x)))}>
+                        <option value="all">All pipelines</option>
+                        {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    ) : null}
+                    <button type="button" className="btn-ghost sm" onClick={() => saveAreas(g.areas.filter((_, j) => j !== i))}>Remove</button>
+                  </div>
+                  <div className="geo-chips">
+                    {(a.places || []).length ? (a.places || []).map((pl) => (
+                      <span className="geo-chip" key={pl}>{pl}
+                        <button type="button" onClick={() => saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: x.places.filter((y) => y !== pl) } : x)))} aria-label={`Remove ${pl}`}>✕</button>
+                      </span>
+                    )) : <span className="cap">No places yet - add a postcode or suburb below.</span>}
+                  </div>
+                  <div className="geo-add">
+                    <input className="inp" placeholder="Add a postcode or suburb" value={draft[a.id] || ''}
+                      onChange={(e) => setDraft({ ...draft, [a.id]: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPlace(i, draft[a.id]) } }} />
+                    <button type="button" className="btn-ghost sm" onClick={() => addPlace(i, draft[a.id])}>Add</button>
+                    <span className="geo-seed">
+                      <input className="inp" style={{ width: 74 }} placeholder="km" value={seed[a.id] || ''} onChange={(e) => setSeed({ ...seed, [a.id]: e.target.value })} />
+                      <button type="button" className="btn-ghost sm" title="Add every postcode within this many km of the places already in the zone" onClick={() => seedRadius(i)}>Fill by radius</button>
+                    </span>
+                  </div>
+                  {suggest[a.id] && suggest[a.id].length ? (
+                    <div className="geo-sugg">{suggest[a.id].map((sg) => <button key={sg} type="button" onClick={() => addPlace(i, sg)}>{sg}</button>)}</div>
+                  ) : null}
+                  {dupes.length ? <p className="cap geo-warn" style={{ margin: '6px 0 0' }}>⚠ {dupes.slice(0, 6).join(', ')}{dupes.length > 6 ? ` +${dupes.length - 6}` : ''} also appear in another zone. A lead there counts in both, so zone totals will add to more than your lead count.</p> : null}
+                </div>
+              )
+            })}
+          </div>
+          <button type="button" className="btn-ghost sm" onClick={() => saveAreas([...(g.areas || []), { id: `z${Date.now().toString(36)}`, name: '', places: [], pipelines: 'all' }])}>+ Add a zone</button>
+          <Caveat>A lead is placed by the postcode or suburb captured on their form. Anywhere that appears in two zones counts in <b>both</b> - overlapping zones are a real thing a business might want, so they aren&rsquo;t blocked, but the totals will exceed your lead count and the warning above says where. Leads with no location captured are reported separately rather than dropped.</Caveat>
         </>
       ) : null}
       {tick ? <span className="set-saved-tick" style={{ position: 'static' }}>✓ saved</span> : null}
@@ -7111,6 +7223,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
   // Catchment: off unless switched on for this client in Settings → Catchment.
   const geo = clientId ? loadGeo(clientId) : GEO_DEFAULT
   const geoOn = geo.mode === 'radius'
+  const areasOn = geo.mode === 'areas' && (geo.areas || []).some((a) => (a.places || []).length)
   const [biz, setBiz] = useState(null)
   useEffect(() => {
     if (!geoOn || !clientId || geo.origin !== 'business') return
@@ -7191,6 +7304,37 @@ function LeadMap({ locs, tall, clientId, currency }) {
     }
   }, [geoOn, db, geo.origin, geo.place, geo.radiusKm, biz, pts, clientState])
 
+  // Which zone (or zones) each pocket of leads falls in. Membership is a set
+  // lookup on the place itself, so there is no edge-of-circle guesswork - a lead
+  // either is in the zone or isn't.
+  const zones = useMemo(() => {
+    if (!areasOn) return null
+    const norm = (v) => String(v || '').trim().toUpperCase()
+    const rows = (geo.areas || []).filter((a) => (a.places || []).length).map((a) => {
+      const set = new Set((a.places || []).map(norm))
+      const hit = pts.filter((p) => set.has(norm(p.value)))
+      const sum = (k) => hit.reduce((n, p) => n + (p[k] || 0), 0)
+      const leads = sum('leads'), won = sum('won')
+      return {
+        id: a.id, name: a.name || 'Unnamed zone', places: (a.places || []).length,
+        pipelines: a.pipelines, postcodes: hit.length,
+        leads, booked: sum('booked'), won,
+        winPct: leads ? Math.round((won / leads) * 100) : null,
+      }
+    })
+    const claimed = new Set()
+    for (const a of (geo.areas || [])) for (const pl of (a.places || [])) claimed.add(norm(pl))
+    const unzoned = pts.filter((p) => !claimed.has(norm(p.value)))
+    return {
+      rows: rows.sort((a, b) => b.leads - a.leads),
+      unzonedLeads: unzoned.reduce((n, p) => n + (p.leads || 0), 0),
+      unzonedPlaces: unzoned.length,
+      // Zone totals can exceed the lead count when zones overlap, which is legal
+      // but needs saying out loud or the numbers look broken.
+      overlap: rows.reduce((n, r) => n + r.leads, 0) > pts.reduce((n, p) => n + (p.leads || 0), 0),
+    }
+  }, [areasOn, geo.areas, pts])
+
   // (Re)draw markers whenever the points or filter change; fit to bounds.
   const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
   useEffect(() => {
@@ -7227,6 +7371,32 @@ function LeadMap({ locs, tall, clientId, currency }) {
   return (
     <div className="lead-map-wrap">
       <div className="lead-map">
+        {zones && zones.rows.length ? (
+          <div className="lm-catch">
+            <div className="cap" style={{ fontWeight: 700, marginBottom: 7 }}>Service areas</div>
+            <div className="table-wrap"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Zone</th><th>Places</th><th>Leads</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
+              <tbody>
+                {zones.rows.map((r) => (
+                  <tr key={r.id}>
+                    <td className="lft">{r.name}{Array.isArray(r.pipelines) ? <span className="aud-tab">one pipeline</span> : null}</td>
+                    <td>{fmtNumber(r.postcodes)} of {fmtNumber(r.places)}</td>
+                    <td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
+                    <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
+                  </tr>
+                ))}
+                {zones.unzonedLeads ? (
+                  <tr className="lm-unzoned">
+                    <td className="lft">Outside every zone</td>
+                    <td>{fmtNumber(zones.unzonedPlaces)}</td>
+                    <td>{fmtNumber(zones.unzonedLeads)}</td><td colSpan={3}>-</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table></div>
+            {zones.overlap ? <p className="cap geo-warn" style={{ margin: '7px 0 0' }}>Zones overlap, so the totals above add to more than your lead count - a lead in two zones is counted in both.</p> : null}
+          </div>
+        ) : null}
         {catch_ ? (
           <div className="lm-catch">
             <div className="lm-catch-stats">

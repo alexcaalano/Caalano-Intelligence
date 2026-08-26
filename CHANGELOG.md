@@ -17,6 +17,45 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.382.0 - 2026-08-20 · `PENDING` - Catchment: how far people travelled to get there
+
+**Settings → (client) → Catchment.** Off by default, because "how far did they
+travel" only means something for a business people come *to*. For work that
+happens at the customer's address it says nothing, so nothing appears until it's
+switched on for that client.
+
+**Radius mode**
+- Origin is the **CRM business address** (read from Business Settings) or a
+  suburb / postcode you type. Both resolve locally against the 3,171 postcodes
+  and 16,196 suburbs already shipped for the map - no geocoding service.
+- On the lead map: a **pin for the business** and a dashed **radius ring**,
+  styled unmistakably differently from the lead markers.
+- Above the map: **median distance travelled**, the share of leads falling
+  **outside** the radius (amber past 30%), and counts by band -
+  ≤5 km / 5-15 km / 15-30 km / 30 km+.
+- **Per-pipeline radius**, optional. Blank uses the default; set one where an
+  offer genuinely has a different catchment - people drive further for a big job
+  than a routine one.
+
+**The median is lead-weighted**, not postcode-weighted. A postcode with 40 leads
+has to pull the median harder than one with a single lead, or the number
+describes your map rather than your patients.
+
+**Verified against real coordinates:** clinic at Norwest 2153 - Castle Hill
+reads 3.6 km, Parramatta 9.5 km, Sydney CBD 29.9 km, Melbourne 704 km. Bands,
+inside/outside counts and the weighted median all check out.
+
+Stated in the settings panel rather than buried: distance is measured between
+postcode centroids, so it is sound across a few hundred leads and unreliable for
+any single one - a city postcode is a couple of kilometres across, a rural one
+can be fifty. Leads with no location, and anything outside Australia, are
+counted separately rather than plotted wrong.
+
+Service areas (named zones for a business working across areas rather than from
+one) are stubbed in the mode picker and come next.
+
+---
+
 ## v3.381.0 - 2026-08-20 · `PENDING` - Client settings tabs wrap; one duplicate API call removed
 
 - The client-config modal's twelve tabs scrolled sideways, hiding everything

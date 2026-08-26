@@ -2397,6 +2397,8 @@ const VIEWER_REQ_TABS = {
   'scope:ccdrill': ['overall'],
   'scope:users': ['overall', 'users'],
   'scope:forms': ['meta', 'forms', 'location'],
+  // The business address, for the catchment pin on the lead map.
+  'scope:bizloc': ['meta', 'forms', 'location', 'overall'],
   'scope:cohorts': ['cohorts'],
   'scope:appts': ['appts'],
   'scope:speed': ['timing'],
@@ -2713,6 +2715,21 @@ export default async (req) => {
         .sort((a, b) => b.last - a.last)
       return json({ scope: 'auditlog', days, count: entries.length, summary, entries: entries.slice(0, 1500) })
     } catch (e) { return json({ scope: 'auditlog', error: String(e.message || e).slice(0, 200) }) }
+  }
+  // Business Settings address, for plotting where the business itself is and
+  // measuring how far leads travelled. Comes off the location record we already
+  // fetch for the timezone and logo, so this is a cache read in practice.
+  if (scope === 'bizloc') {
+    const cc = clientCfg(client)
+    if (!cc || !cc.ghl) return json({ scope: 'bizloc', client, ghl: false })
+    try {
+      const prof = await locationProfile(cc.ghl)
+      return json({
+        scope: 'bizloc', client,
+        name: prof.name, address: prof.address, city: prof.city,
+        state: prof.state, postalCode: prof.postalCode, country: prof.country,
+      }, 200, true)
+    } catch (e) { return json({ scope: 'bizloc', client, error: String(e.message || e).slice(0, 160) }) }
   }
   if (scope === 'diaglog') {
     if (me && me.role !== 'superadmin') return json({ error: 'Not authorised.' }, 403)

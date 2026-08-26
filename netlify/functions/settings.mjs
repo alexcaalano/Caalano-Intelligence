@@ -34,7 +34,7 @@ export default async (req) => {
           const pick = (obj) => { const o = {}; for (const k in (obj || {})) { if (allow.has(String(k).split(':')[0])) o[k] = obj[k] } return o }
           const scoped = {}
           // Client-keyed sections the viewer UI reads, filtered to their clients.
-          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames', 'clinic', 'campmap']) scoped[s] = pick(data[s])
+          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames', 'clinic', 'campmap', 'geo']) scoped[s] = pick(data[s])
           // campmap used to be passed through whole, on the belief that it was
           // campaign-name-keyed and so not per-client. It is actually keyed by
           // client id (SETTINGS.campmap[clientId]), and campaign names carry the

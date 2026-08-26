@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.381.0'
+const APP_VERSION = '3.382.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3070,6 +3070,7 @@ function UtmSection({ attr, currency, paid }) {
 const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
+const GEO_KEY = 'caalano_geo'             // { clientId: { mode, origin, place, radiusKm, byPipeline } }
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
 const RESTRICTED_KEY = 'caalano_restricted'       // { clientId: true } - client is visible to Super Admins only
@@ -3121,7 +3122,7 @@ const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendly
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -3151,8 +3152,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(GEO_KEY, SETTINGS.geo)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -3277,6 +3278,23 @@ function useDiscoverNames() {
   }, [d])
 }
 
+/* Catchment settings. Off by default - measuring how far people travelled only
+   means something for a business people travel TO, so it stays invisible until
+   someone turns it on for that client. */
+const GEO_DEFAULT = { mode: 'off', origin: 'business', place: '', radiusKm: 15, byPipeline: {} }
+function loadGeo(clientId) { return { ...GEO_DEFAULT, ...((SETTINGS.geo && SETTINGS.geo[clientId]) || {}) } }
+function saveGeo(clientId, obj) {
+  SETTINGS.geo = { ...(SETTINGS.geo || {}), [clientId]: obj }
+  writeLS(GEO_KEY, SETTINGS.geo); saveSettingsRemote({ geo: { [clientId]: obj } }); bumpSettings()
+}
+// Great-circle distance in km. Postcode centroids are coarse, so this is only
+// honest in aggregate - see the caveat wherever it is displayed.
+function kmBetween(a, b) {
+  const R = 6371, rad = (d) => (d * Math.PI) / 180
+  const dLat = rad(b[0] - a[0]), dLng = rad(b[1] - a[1])
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)))
+}
 function loadCampMap(clientId) { return SETTINGS.campmap[clientId] || {} }
 function saveCampMap(clientId, map) { SETTINGS.campmap = { ...SETTINGS.campmap, [clientId]: map }; writeLS(CMAP_KEY, SETTINGS.campmap); saveSettingsRemote({ campmap: { [clientId]: map } }); bumpSettings() }
 // Daily Performance visibility: which clients (and, for multi-pipeline clients, which
@@ -5778,6 +5796,117 @@ function useCalendars(clientId, nonce) {
   }, [clientId, nonce])
   return st
 }
+/* Catchment settings, per client.
+   Off by default: "how far did they travel" is a question about a business
+   people go TO. For a client whose work happens at the customer's address it
+   means nothing, so nothing appears on the map until it is switched on here. */
+function GeoSettings({ clientId }) {
+  useSettingsSync()
+  const [g, setG] = useState(() => loadGeo(clientId))
+  const [biz, setBiz] = useState({ status: 'loading' })
+  // scope=calendars already returns the pipeline list, so this needs no new call.
+  const [pipelines, setPipelines] = useState([])
+  useEffect(() => {
+    let a = true
+    fetch(`/.netlify/functions/windsor?scope=calendars&client=${encodeURIComponent(clientId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (a && j && Array.isArray(j.pipelines)) setPipelines(j.pipelines) })
+      .catch(() => {})
+    return () => { a = false }
+  }, [clientId])
+  const [tick, setTick] = useState(false)
+  useEffect(() => { setG(loadGeo(clientId)) }, [clientId])
+  useEffect(() => {
+    let a = true
+    apiJson(`/.netlify/functions/windsor?scope=bizloc&client=${encodeURIComponent(clientId)}`, { timeoutMs: 15000, tries: 1 })
+      .then((j) => { if (a) setBiz({ status: j && !j.error ? 'ok' : 'err', data: j }) })
+      .catch(() => { if (a) setBiz({ status: 'err' }) })
+    return () => { a = false }
+  }, [clientId])
+  const save = (next) => { setG(next); saveGeo(clientId, next); setTick(true); setTimeout(() => setTick(false), 1200) }
+  const b = biz.data || {}
+  const bizLine = [b.address, b.city, b.state, b.postalCode].filter(Boolean).join(', ')
+  // The origin has to resolve to a postcode or suburb we hold coordinates for.
+  const originText = g.origin === 'business' ? (b.postalCode || b.city || '') : g.place
+  return (
+    <div className="set-tabpane">
+      <div className="set-sec-t">Catchment - how far people travel</div>
+      <Caveat extra="geo-intro">
+        Only worth switching on for a business people come <b>to</b> - a clinic, a showroom, a studio. For work that
+        happens at the customer&rsquo;s address, distance-from-base says nothing useful, so this stays off unless you turn
+        it on.
+      </Caveat>
+
+      <div className="geo-modes">
+        {[['off', 'Off', 'No catchment reporting for this client.'],
+          ['radius', 'Radius from one location', 'Measure how far each lead travelled to reach the business.']].map(([k, lbl, hint]) => (
+          <button key={k} type="button" className={`geo-mode${g.mode === k ? ' on' : ''}`} onClick={() => save({ ...g, mode: k })}>
+            <b>{lbl}</b><span>{hint}</span>
+          </button>
+        ))}
+        <div className="geo-mode soon"><b>Service areas</b><span>Named zones for a business that works across areas rather than from one. Coming next.</span></div>
+      </div>
+
+      {g.mode === 'radius' ? (
+        <>
+          <div className="geo-row">
+            <div className="fld">
+              <label className="cap">Where they travel to</label>
+              <select className="inp" value={g.origin} onChange={(e) => save({ ...g, origin: e.target.value })}>
+                <option value="business">The business address in the CRM</option>
+                <option value="place">A suburb or postcode I&rsquo;ll type</option>
+              </select>
+            </div>
+            {g.origin === 'place' ? (
+              <div className="fld">
+                <label className="cap">Suburb or postcode</label>
+                <input className="inp" value={g.place} onChange={(e) => setG({ ...g, place: e.target.value })} onBlur={() => save(g)} placeholder="e.g. Norwest or 2153" />
+              </div>
+            ) : null}
+            <div className="fld">
+              <label className="cap">Radius (km)</label>
+              <input className="inp" type="number" min="1" max="500" value={g.radiusKm} onChange={(e) => setG({ ...g, radiusKm: Math.max(1, Math.min(500, Number(e.target.value) || 1)) })} onBlur={() => save(g)} />
+            </div>
+          </div>
+
+          <div className="geo-biz">
+            {biz.status === 'loading' ? <span className="cap">Reading the business address…</span>
+              : bizLine ? <><b>CRM business address:</b> {bizLine}</>
+                : <span className="geo-warn">No business address is set in the CRM (Settings → Business Profile). Type a suburb or postcode above instead.</span>}
+          </div>
+          {g.origin === 'business' && !b.postalCode && b.city ? (
+            <div className="geo-biz"><span className="geo-warn">No postcode on the business record - the suburb will be used, which is less precise.</span></div>
+          ) : null}
+          {!originText ? <div className="geo-biz"><span className="geo-warn">Nothing to measure from yet, so the map will show no catchment.</span></div> : null}
+
+          {pipelines && pipelines.length > 1 ? (
+            <>
+              <div className="set-sec-t" style={{ marginTop: 18 }}>Per pipeline <span className="cap">· optional</span></div>
+              <Caveat>Leave a pipeline blank to use the {g.radiusKm}km above. Set one where an offer genuinely has a different catchment - people will drive further for a big job than a routine one.</Caveat>
+              <div className="geo-pipes">{pipelines.map((p) => (
+                <div className="fld" key={p.id}>
+                  <label className="cap">{p.name}</label>
+                  <input className="inp" type="number" min="1" max="500" placeholder={`${g.radiusKm} (default)`}
+                    value={g.byPipeline[p.id] || ''}
+                    onChange={(e) => {
+                      const v = e.target.value.trim()
+                      const bp = { ...g.byPipeline }
+                      if (!v) delete bp[p.id]; else bp[p.id] = Math.max(1, Math.min(500, Number(v) || 1))
+                      setG({ ...g, byPipeline: bp })
+                    }}
+                    onBlur={() => save(g)} />
+                </div>
+              ))}</div>
+            </>
+          ) : null}
+          <Caveat>Distance is measured between postcode centroids, so it is sound across a few hundred leads and unreliable for any single one - a city postcode is a couple of kilometres across and a rural one can be fifty. Leads with no location captured, and anything outside Australia, are counted separately rather than plotted wrong.</Caveat>
+        </>
+      ) : null}
+      {tick ? <span className="set-saved-tick" style={{ position: 'static' }}>✓ saved</span> : null}
+    </div>
+  )
+}
+
 function ClinicSettings({ clientId, nonce }) {
   const cals = useCalendars(clientId, nonce)
   const [, bump] = useState(0)
@@ -6979,6 +7108,17 @@ function LeadMap({ locs, tall, clientId, currency }) {
   const layerRef = useRef(null)
   const LRef = useRef(null)
   useEffect(() => { let a = true; import('./data/aupostcodes.json').then((m) => { if (a) setDb(m.default || m) }).catch(() => { if (a) setDb(null) }); return () => { a = false } }, [])
+  // Catchment: off unless switched on for this client in Settings → Catchment.
+  const geo = clientId ? loadGeo(clientId) : GEO_DEFAULT
+  const geoOn = geo.mode === 'radius'
+  const [biz, setBiz] = useState(null)
+  useEffect(() => {
+    if (!geoOn || !clientId || geo.origin !== 'business') return
+    let a = true
+    fetch(`/.netlify/functions/windsor?scope=bizloc&client=${encodeURIComponent(clientId)}`)
+      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (a && j && !j.error) setBiz(j) }).catch(() => {})
+    return () => { a = false }
+  }, [geoOn, clientId, geo.origin])
 
   // Resolve every location answer to a [lat, lng], inferring the client's
   // dominant state so same-named suburbs elsewhere aren't mis-plotted.
@@ -7024,6 +7164,33 @@ function LeadMap({ locs, tall, clientId, currency }) {
     return () => { dead = true; setReady(false); if (mapRef.current) { mapRef.current.remove(); mapRef.current = null } }
   }, [db])
 
+  // Where the business is, and how far each pocket of leads sits from it.
+  const catch_ = useMemo(() => {
+    if (!geoOn || !db) return null
+    const want = geo.origin === 'business' ? (biz && (biz.postalCode || biz.city)) : geo.place
+    if (!want) return null
+    const v = String(want).trim()
+    let c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
+    if (!c) { const sv = db.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : ((sv.find((x) => x[2] === clientState) || sv[0]).slice(0, 2)) }
+    if (!c) return null
+    const withKm = pts.map((p) => ({ ...p, km: kmBetween(c, [p.lat, p.lng]) }))
+    // Weighted by leads: one postcode with 40 leads should pull the median, not
+    // count once alongside a postcode with a single lead.
+    const spread = []
+    for (const p of withKm) for (let i = 0; i < (p.leads || 0); i++) spread.push(p.km)
+    spread.sort((a, b) => a - b)
+    const median = spread.length ? spread[Math.floor(spread.length / 2)] : null
+    const R = geo.radiusKm || 15
+    const inside = withKm.reduce((n, p) => n + (p.km <= R ? (p.leads || 0) : 0), 0)
+    const total = withKm.reduce((n, p) => n + (p.leads || 0), 0)
+    const band = (lo, hi) => withKm.reduce((n, p) => n + (p.km >= lo && p.km < hi ? (p.leads || 0) : 0), 0)
+    return {
+      origin: c, label: geo.origin === 'business' ? (biz && [biz.city, biz.postalCode].filter(Boolean).join(' ')) || 'Business' : v,
+      radiusKm: R, median, total, inside, outside: total - inside,
+      bands: [['≤5 km', band(0, 5)], ['5-15 km', band(5, 15)], ['15-30 km', band(15, 30)], ['30 km+', band(30, Infinity)]],
+    }
+  }, [geoOn, db, geo.origin, geo.place, geo.radiusKm, biz, pts, clientState])
+
   // (Re)draw markers whenever the points or filter change; fit to bounds.
   const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
   useEffect(() => {
@@ -7041,8 +7208,17 @@ function LeadMap({ locs, tall, clientId, currency }) {
       m.on('click', () => selRef.current && selRef.current(p)) // open the leads breakdown
       m.addTo(layer); latlngs.push([p.lat, p.lng])
     }
+    // The business itself, plus the radius it expects to draw from. Added last
+    // so it sits above the lead markers, and styled unmistakably differently.
+    if (catch_) {
+      L.circle(catch_.origin, { radius: catch_.radiusKm * 1000, color: '#6d5efc', weight: 1.5, dashArray: '6 5', fill: false, interactive: false }).addTo(layer)
+      const pin = L.circleMarker(catch_.origin, { radius: 9, color: '#fff', weight: 3, fillColor: '#6d5efc', fillOpacity: 1 })
+      pin.bindTooltip(`${catch_.label} · the business${catch_.median != null ? ` · median lead ${catch_.median.toFixed(1)}km away` : ''}`, { permanent: false })
+      pin.addTo(layer)
+      latlngs.push(catch_.origin)
+    }
     if (latlngs.length) { try { map.fitBounds(latlngs, { padding: [34, 34], maxZoom: 13 }) } catch { /* single point */ } }
-  }, [pts, filter, maxLeads, ready])
+  }, [pts, filter, maxLeads, ready, catch_])
 
   if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
   if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
@@ -7051,9 +7227,18 @@ function LeadMap({ locs, tall, clientId, currency }) {
   return (
     <div className="lead-map-wrap">
       <div className="lead-map">
+        {catch_ ? (
+          <div className="lm-catch">
+            <div className="lm-catch-stats">
+              <span><b>{catch_.median != null ? `${catch_.median.toFixed(1)} km` : '-'}</b> median distance travelled</span>
+              <span><b className={catch_.total && (catch_.outside / catch_.total) > 0.3 ? 'geo-warn' : ''}>{catch_.total ? Math.round((catch_.outside / catch_.total) * 100) : 0}%</b> of leads beyond the {catch_.radiusKm} km radius</span>
+              {catch_.bands.filter(([, n]) => n > 0).map(([lab, n]) => <span key={lab}><b>{fmtNumber(n)}</b> {lab}</span>)}
+            </div>
+          </div>
+        ) : null}
         <div className="lead-map-bar">
           <div className="lead-map-tabs"><span className="lead-map-lab">Show</span>{FILTERS.map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
-          <div className="lm-legend2"><span><i style={{ background: LM_AMBER }} />Leads</span><span><i style={{ background: LM_BLUE }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span><span><i style={{ background: LM_RED }} />Lost</span></div>
+          <div className="lm-legend2"><span><i style={{ background: LM_AMBER }} />Leads</span><span><i style={{ background: LM_BLUE }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span><span><i style={{ background: LM_RED }} />Lost</span>{catch_ ? <span><i style={{ background: '#6d5efc' }} />The business</span> : null}</div>
         </div>
         <div ref={elRef} className={`lead-map-leaflet${tall ? ' lead-map-tall' : ''}`} />
       </div>
@@ -10502,6 +10687,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (canLink) tabs.push(['aliases', 'UTM aliases'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
   if (c.ghl) tabs.push(['forms', 'Forms'])
+  if (c.ghl) tabs.push(['geo', 'Catchment'])
   if (c.ghl) tabs.push(['qualstage', 'Qualified lead'])
   if (c.ghl) tabs.push(['clinic', 'Clinic'])
   tabs.push(['optlog', 'Optimisation Log'])
@@ -10548,6 +10734,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           </div>}
           {tab === 'profile' && <div className="set-tabpane"><div className="set-sec-t">Overview - client brand profile</div><ClientProfileEditor clientId={c.id} /></div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'geo' && <GeoSettings clientId={c.id} />}
           {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}
           {tab === 'links' && <div className="set-tabpane"><div className="set-sec-t">Link campaigns to pipelines</div><CampaignLinker clientId={c.id} embedded nonce={sig} /></div>}

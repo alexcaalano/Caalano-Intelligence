@@ -17,6 +17,40 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.380.0 - 2026-08-20 · `PENDING` - Leads and patients are different things, and the numbers now say so
+
+**The definition, applied properly**
+- A **lead** enquired. A **patient** booked an initial appointment and **showed
+  to it** - attendance is the threshold, so a booking nobody kept doesn't count,
+  and discovery / triage bookings were already excluded upstream.
+- Every attributed contact was being counted as a patient. That overstated the
+  count and, worse, **divided lifetime value by it** - which is why a campaign
+  with two enquiries and nobody through the door read *"2 patients · $0.00 avg
+  LTV"* instead of *"2 leads · no patients yet"*.
+- Avg LTV is now per patient. On the demo that moves Meta from $475 to **$1,113**
+  - the old figure was lifetime value spread across everyone who ever enquired,
+  which described neither group.
+
+**A new number that falls out of the split: lead → patient**
+- The share of a source's enquiries that actually became a patient, traffic-lit,
+  on both the channel and campaign tables. On the demo: Google converts 53% of
+  enquiries, Meta 44% - the kind of gap that moves budget, and it was invisible
+  while both were labelled the same thing.
+
+**Click any channel or campaign row for the people behind it**
+- Name, visits, lifetime spend, last appointment, practitioner - with anyone who
+  hasn't attended tagged `lead`.
+- The sample deliberately carries **both**: up to 50 patients by value plus up to
+  30 leads. Capping by value alone meant a source with more patients than the cap
+  never showed a single lead - which is exactly what you're looking at when you
+  click a row asking why the conversion is low.
+
+Caught while building: the drill's `useState` sat below `ClinicView`'s four
+early returns, so it changed React's hook count between the loading and loaded
+renders and blanked the tab. Second time this pattern has bitten in this file.
+
+---
+
 ## v3.379.0 - 2026-08-20 · `PENDING` - One-and-done by channel, and a demo that reflects its own roster
 
 **Which channels bring patients who stay**

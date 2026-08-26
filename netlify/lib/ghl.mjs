@@ -1670,12 +1670,32 @@ export async function buildClinic(locationId, opts = {}) {
       const camp = _contactCampaign(c)
       const lastAppt = val(m, 'last_appointment_date') || null
       if (ch) {
-        const e = channel.get(ch) || { channel: ch, patients: 0, ltv: 0, appts: 0, visits: 0, attended: 0, oneAndDone: 0, withNext: 0 }
-        e.patients++; e.ltv += spent || 0; e.appts += totalAppts
+        // A LEAD enquired. A PATIENT booked an initial appointment and SHOWED to
+        // it - attendance is the threshold, not payment and not a booking that
+        // was never kept. Triage/discovery bookings are already excluded from
+        // visits upstream, so this counts clinical attendance only.
+        // Counting every attributed contact as a patient overstated the count
+        // and, worse, divided lifetime value by it - which is why a campaign with
+        // two enquiries and nobody through the door showed "2 patients, $0.00
+        // avg LTV" rather than "2 leads, no patients yet".
+        const isPatient = arrived != null && arrived >= 1
+        const person = { contactId: c.id, name: nm, spent: spent || 0, visits: arrived != null ? arrived : null, lastAppt, practitioner: pr || null }
+        const e = channel.get(ch) || { channel: ch, leads: 0, patients: 0, ltv: 0, appts: 0, visits: 0, attended: 0, oneAndDone: 0, withNext: 0, people: [] }
+        e.leads++; e.ltv += spent || 0; e.appts += totalAppts
+        if (isPatient) e.patients++
         if (arrived != null) e.visits += arrived
         if (arrived != null && arrived >= 1) { e.attended++; if (arrived === 1 && upc === 0) e.oneAndDone++; if (upc > 0) e.withNext++ }
+        e.people.push(person)
         channel.set(ch, e)
-        if (camp) { const k = `${ch}||${camp}`; const ce = campaign.get(k) || { campaign: camp, channel: ch, patients: 0, ltv: 0, attended: 0 }; ce.patients++; ce.ltv += spent || 0; if (arrived >= 1) ce.attended++; campaign.set(k, ce) }
+        if (camp) {
+          const k = `${ch}||${camp}`
+          const ce = campaign.get(k) || { campaign: camp, channel: ch, leads: 0, patients: 0, ltv: 0, attended: 0, people: [] }
+          ce.leads++; ce.ltv += spent || 0
+          if (isPatient) ce.patients++
+          if (arrived >= 1) ce.attended++
+          ce.people.push(person)
+          campaign.set(k, ce)
+        }
       }
       const unpaid = _clinicNum(val(m, 'total_unpaid_balance'))
       if (unpaid && unpaid > 0) ar.push({ contactId: c.id, name: nm, unpaid, lastAppt, spent: spent || 0, channel: ch, practitioner: pr || null })
@@ -1842,6 +1862,15 @@ export async function buildClinic(locationId, opts = {}) {
         lastAppt: starts[starts.length - 1] ? new Date(starts[starts.length - 1]).toISOString().slice(0, 10) : null,
       })
     }
+  }
+  // The drill sample for a channel / campaign row. Capping by value alone means
+  // a source with more patients than the cap never shows a single lead - which
+  // is exactly the case someone is looking at when they click a row asking why
+  // the lead-to-patient rate is low. So take both groups.
+  const drillSample = (people) => {
+    const pats = people.filter((p) => p.visits >= 1).sort((a, b) => b.spent - a.spent)
+    const leads = people.filter((p) => !(p.visits >= 1))
+    return [...pats.slice(0, 50), ...leads.slice(0, 30)]
   }
   const round1 = (v) => Math.round(v * 10) / 10
   const pva = {
@@ -2016,14 +2045,25 @@ export async function buildClinic(locationId, opts = {}) {
     cancelReasons: [...cancelReasons.entries()].map(([reason, n]) => ({ reason, count: n })).sort((a, b) => b.count - a.count).slice(0, 12),
     apptTypes: [...apptTypes.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.patients - a.patients).slice(0, 12),
     channels: [...channel.values()].map((e) => ({
-      ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0,
+      ...e, ltv: Math.round(e.ltv),
+      // Per PAYING patient - averaging lifetime value across everyone who ever
+      // enquired describes neither group.
+      avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0,
+      // Share of enquiries that turned into someone who paid.
+      toPatientPct: e.leads ? Math.round((e.patients / e.leads) * 100) : null,
+      people: drillSample(e.people),
       avgAppts: e.patients ? Math.round((e.appts / e.patients) * 10) / 10 : 0,
       pva: e.attended ? Math.round((e.visits / e.attended) * 10) / 10 : null,
       dollarPerVisit: e.visits ? Math.round(e.ltv / e.visits) : null,
       pctWithNext: e.attended ? Math.round((e.withNext / e.attended) * 100) : null,
       oneAndDonePct: e.attended ? Math.round((e.oneAndDone / e.attended) * 100) : null,
     })).sort((a, b) => b.ltv - a.ltv),
-    campaigns: [...campaign.values()].map((e) => ({ ...e, ltv: Math.round(e.ltv), avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0 })).sort((a, b) => b.ltv - a.ltv).slice(0, 25),
+    campaigns: [...campaign.values()].map((e) => ({
+      ...e, ltv: Math.round(e.ltv),
+      avgLtv: e.patients ? Math.round(e.ltv / e.patients) : 0,
+      toPatientPct: e.leads ? Math.round((e.patients / e.leads) * 100) : null,
+      people: drillSample(e.people),
+    })).sort((a, b) => (b.ltv - a.ltv) || (b.leads - a.leads)).slice(0, 25),
     consent: { email: emailOptIn, sms: smsOptIn },
     nps: { score: npsScore, responses: npsVals.length },
     retention: [...retention.entries()].map(([status, n]) => ({ status, patients: n })).sort((a, b) => b.patients - a.patients),

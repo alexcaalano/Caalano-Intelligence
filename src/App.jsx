@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.379.0'
+const APP_VERSION = '3.380.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5871,6 +5871,7 @@ function ClinicSettings({ clientId, nonce }) {
 function ClinicView({ clientId, currency, nonce }) {
   const st = useClinic(clientId, nonce)
   const [work, setWork] = useState('winback')
+  const [peek, setPeek] = useState(null)   // { title, sub, people } - the row drill
   const money = (v) => fmtCurrency(v, currency)
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading clinic data…" /></div>
   const d = st.data
@@ -6214,10 +6215,10 @@ function ClinicView({ clientId, currency, nonce }) {
               </div>
             ))}</div> : null })()}
             <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-fit cl-fit-wide">
-              <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th title="Attended visits per patient seen">PVA</th><th title="Revenue per attended visit">$ / visit</th><th title="Came once and never returned - the sharpest read on whether a channel brings patients who stay">One &amp; done</th><th>With next appt</th></tr></thead>
-              <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.dollarPerVisit != null ? money(c.dollarPerVisit) : '-'}</td><td>{c.oneAndDonePct != null ? <span className={tlClass(100 - c.oneAndDonePct, 75, 60)}>{c.oneAndDonePct}%</span> : '-'}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
+              <thead><tr><th className="lft">Channel</th><th title="Enquired - hasn't attended an initial appointment yet">Leads</th><th title="Booked an initial appointment and showed to it">Patients</th><th title="Share of enquiries that became a patient">Lead → patient</th><th title="Lifetime value per patient, not per lead">Avg LTV</th><th title="Attended visits per patient seen">PVA</th><th title="Revenue per attended visit">$ / visit</th><th title="Came once and never returned - the sharpest read on whether a channel brings patients who stay">One &amp; done</th><th>With next appt</th></tr></thead>
+              <tbody>{d.channels.map((c) => <tr key={c.channel} className="cl-click" onClick={() => setPeek({ title: CLINIC_CHAN[c.channel] || c.channel, sub: `${fmtNumber(c.leads)} leads · ${fmtNumber(c.patients)} patients`, people: c.people })} title="Open the people behind this row"><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.leads)}</td><td>{fmtNumber(c.patients)}</td><td>{c.toPatientPct != null ? <span className={tlClass(c.toPatientPct, 50, 35)}>{c.toPatientPct}%</span> : '-'}</td><td>{money(c.avgLtv)}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.dollarPerVisit != null ? money(c.dollarPerVisit) : '-'}</td><td>{c.oneAndDonePct != null ? <span className={tlClass(100 - c.oneAndDonePct, 75, 60)}>{c.oneAndDonePct}%</span> : '-'}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
             </table></div>
-            <Caveat>Channel comes from each patient&rsquo;s first-touch attribution on their contact, so lifetime value traces back to the ad that produced them. Patients created directly in the practice-management system carry no attribution and are excluded.</Caveat>
+            <Caveat>A <b>lead</b> enquired. A <b>patient</b> booked an initial appointment and showed to it - attendance is the threshold, so a booking nobody kept doesn&rsquo;t count, and discovery / triage bookings are excluded before this point. <b>Avg LTV is per patient, not per lead</b>: dividing lifetime value across everyone who ever enquired describes neither group and made campaigns with no attendance yet read as $0. Channel comes from each contact&rsquo;s first-touch attribution, so value traces back to the ad that produced them; anyone created directly in the practice-management system carries no attribution and is excluded. Click any row for the people behind it.</Caveat>
           </div> : null}
           {d.heardAbout && d.heardAbout.length ? <div className="card">
             <div className="cap cl-cap">How patients heard about us</div>
@@ -6234,10 +6235,10 @@ function ClinicView({ clientId, currency, nonce }) {
         {d.campaigns && d.campaigns.length ? <div className="card">
           <div className="cap cl-cap">Lifetime value by campaign <span>· top {d.campaigns.length}</span></div>
           <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
-            <thead><tr><th className="lft">Campaign</th><th className="lft">Channel</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th></tr></thead>
-            <tbody>{d.campaigns.map((c, i) => <tr key={i}><td className="lft" title={c.campaign}>{c.campaign}</td><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td></tr>)}</tbody>
+            <thead><tr><th className="lft">Campaign</th><th className="lft">Channel</th><th title="Enquired - hasn't attended an initial appointment yet">Leads</th><th title="Booked an initial appointment and showed to it">Patients</th><th title="Share of this campaign's enquiries that became a patient">Lead → patient</th><th>Total LTV</th><th title="Lifetime value per patient, not per lead">Avg LTV</th></tr></thead>
+            <tbody>{d.campaigns.map((c, i) => <tr key={i} className="cl-click" onClick={() => setPeek({ title: c.campaign, sub: `${CLINIC_CHAN[c.channel] || c.channel} · ${fmtNumber(c.leads)} leads · ${fmtNumber(c.patients)} patients`, people: c.people })} title="Open the people behind this campaign"><td className="lft" title={c.campaign}>{c.campaign}</td><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.leads)}</td><td>{fmtNumber(c.patients)}</td><td>{c.toPatientPct != null ? <span className={tlClass(c.toPatientPct, 50, 35)}>{c.toPatientPct}%</span> : '-'}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td></tr>)}</tbody>
           </table></div>
-          <Caveat>This is the lifetime-ROAS view: set these against each campaign&rsquo;s spend to see cost per <i>patient</i> rather than cost per lead.</Caveat>
+          <Caveat>This is the lifetime-ROAS view: set these against each campaign&rsquo;s spend to see cost per <i>patient</i> rather than cost per lead - a campaign with cheap leads that never attend is more expensive than one with dear leads that do. <b>Lead → patient</b> is where that gap shows up first. Click a campaign for the people behind it.</Caveat>
         </div> : null}
       </ClinicSection>
 
@@ -6350,6 +6351,36 @@ function ClinicView({ clientId, currency, nonce }) {
           </> : null}
         </div>
       </ClinicSection> : null}
+
+      {peek ? (
+        <Overlay>
+          <div className="mr-drill-overlay no-print" onClick={() => setPeek(null)}>
+            <div className="mr-drill cl-peek" onClick={(e) => e.stopPropagation()}>
+              <div className="mr-drill-head">
+                <div><h3>{peek.title}</h3><span>{peek.sub}{peek.people && peek.people.length >= 80 ? ' · a sample of both' : ''}</span></div>
+                <button className="mr-drill-x" onClick={() => setPeek(null)} aria-label="Close">✕</button>
+              </div>
+              <div className="mr-drill-body">
+                {!peek.people || !peek.people.length ? <p className="cap">Nobody to show.</p> : (
+                  <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+                    <thead><tr><th className="lft">Name</th><th>Visits</th><th>Lifetime spend</th><th className="lft">Last appointment</th><th className="lft">Practitioner</th></tr></thead>
+                    <tbody>{peek.people.map((p, i) => (
+                      <tr key={p.contactId || i}>
+                        <td className="lft">{p.name || <span className="cap">-</span>}{!p.visits ? <span className="cl-leadtag">lead</span> : null}</td>
+                        <td>{p.visits != null ? fmtNumber(p.visits) : '-'}</td>
+                        <td>{money(p.spent)}</td>
+                        <td className="lft">{p.lastAppt || <span className="cap">-</span>}</td>
+                        <td className="lft">{p.practitioner || <span className="cap">-</span>}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+                <Caveat>Anyone with no visits is a <b>lead</b> - they enquired through this source but haven&rsquo;t attended an initial appointment, so they carry no lifetime value yet.</Caveat>
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      ) : null}
 
       <Caveat>Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Every sync <b>overwrites</b> them with current values, so everything here is a snapshot of right now. Period and trend figures come from the daily snapshots we take ourselves; rebooking and the retention curve are read from the calendars, which keep real per-booking history.</Caveat>
     </>

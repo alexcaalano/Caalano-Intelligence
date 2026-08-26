@@ -5,6 +5,10 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  # Shipped with the functions so the Super-Admin Logs panel can read the release
+  # history server-side. It used to be bundled into the public JS, where it was
+  # readable without a session.
+  included_files = ["CHANGELOG.md"]
 
 # Keep the whole dashboard out of search engines — it's a private client
 # reporting tool. Belt-and-braces alongside robots.txt + the noindex meta tag.

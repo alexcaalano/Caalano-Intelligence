@@ -17,6 +17,37 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.368.0 - 2026-08-20 · `PENDING` - No client is named in a public file any more
+
+`/assets/*` is served without a session, deliberately, so the login screen can
+load its own JavaScript. Two things were riding along in there.
+
+**Our written notes on thirteen named clients**
+- `CLIENT_PROFILE_SEEDS` sat in `src/App.jsx`, so it shipped in the app bundle:
+  each client's ICP, offer, objections, compliance risks, and the gaps we had
+  not confirmed (*"Confirm what Healan Centre offers"*). Readable by anyone who
+  found the URL - no login required.
+- Moved to `netlify/lib/profiles.mjs` and merged into the settings response
+  server-side, staff only. A saved profile still overrides its seed, field by
+  field. Viewers never receive the `profile` section at all, as before.
+
+**The entire release history**
+- `import('../CHANGELOG.md?raw')` built a **343KB** chunk under `/assets/`
+  naming nine clients and describing how every metric is calculated.
+- Now read by a Super-Admin-only function (`netlify/functions/changelog.mjs`),
+  with `CHANGELOG.md` shipped via `included_files`. Admins, staff and viewers
+  get 403; signed-out gets 401.
+- Also drops ~344KB (125KB gzip) from the deploy.
+
+**Result:** a case-sensitive scan of every file in `dist/assets` finds **no
+client name at all**. Before this release it found fifteen across two chunks.
+
+Caught while testing: the changelog function resolved its file paths at module
+load using `process.cwd()`, which is not guaranteed to be the working directory
+at invocation time. Resolved per call instead.
+
+---
+
 ## v3.367.0 - 2026-08-20 · `PENDING` - Before inviting clients: the roster stops being public
 
 **The roster and every client's spend were served to any logged-in user**

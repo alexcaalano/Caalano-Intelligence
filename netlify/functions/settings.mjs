@@ -5,6 +5,7 @@
 // update per section (last-write-wins per client), GET returns the whole blob.
 import { getStore } from '@netlify/blobs'
 import { currentUser } from '../lib/auth.mjs'
+import { CLIENT_PROFILE_SEEDS } from '../lib/profiles.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
@@ -37,7 +38,13 @@ export default async (req) => {
           return json({ ok: true, data: scoped })
         }
       }
-      return json({ ok: true, data })
+      // Seed brand profiles are merged in here rather than shipped in the app
+      // bundle - they name clients and carry our own notes on them, and the
+      // bundle is served without a session. A saved profile beats its seed.
+      // Viewers never receive the `profile` section at all (see above).
+      const profile = { ...(data.profile || {}) }
+      for (const id in CLIENT_PROFILE_SEEDS) profile[id] = { ...CLIENT_PROFILE_SEEDS[id], ...(profile[id] || {}) }
+      return json({ ok: true, data: { ...data, profile } })
     }
     if (req.method === 'POST') {
       // When multi-user login is enabled, only admins may change shared settings,

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.377.0'
+const APP_VERSION = '3.378.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5629,10 +5629,40 @@ function ClinicDelta({ value, pts, goodDown, money, suffix }) {
 // `ok` is amber, below is red. Targets are the ones published for allied health
 // (utilisation 80%, rebooking 85%, retention 70%) rather than invented here.
 const tlClass = (v, good, ok) => (v == null ? '' : v >= good ? 'tl-good' : v >= ok ? 'tl-ok' : 'tl-bad')
-function ClinicSection({ id, title, note, children }) {
+/* Every section says where its numbers come from. Three sources feed this tab
+   and they behave completely differently - synced fields are overwritten on
+   every sync (so they're always "now"), the calendar keeps real per-booking
+   history, and our own snapshots are the only thing that can show a trend. A
+   number read as the wrong kind is a number misread, so each section names its
+   own and lists the exact fields behind it. */
+const SRC_KIND = {
+  synced: ['Practice-management sync', 'Written onto each patient by Universal Plugins. Overwritten every run, so these are today\u2019s values - never a date range.'],
+  diary: ['Calendar history', 'Read from the booking calendars, which keep a real record per appointment - the only source here with genuine history.'],
+  snapshot: ['Our daily snapshots', 'Taken by us each night, because the sync overwrites its own numbers. The only source that can show a change over time.'],
+  crm: ['CRM contact record', 'Attribution and consent captured when the contact was created, not from the practice-management system.'],
+}
+function ClinicSrc({ kind, fields }) {
+  const [open, setOpen] = useState(false)
+  const meta = SRC_KIND[kind]
+  if (!meta) return null
+  return (
+    <div className="cl-src">
+      <button type="button" className="cl-src-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className={`cl-src-dot k-${kind}`} />{meta[0]}<span className="cl-src-chev">{open ? '▾' : '▸'}</span>
+      </button>
+      {open ? (
+        <div className="cl-src-body">
+          <p>{meta[1]}</p>
+          {fields && fields.length ? <p className="cl-src-fields"><b>Fields:</b> {fields.map((f) => <code key={f}>{f}</code>).reduce((a, b) => [a, ' ', b])}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+function ClinicSection({ id, title, note, src, fields, children }) {
   return (
     <section className="cl-sec" id={id}>
-      <div className="cl-sec-h"><h3>{title}</h3>{note ? <span>{note}</span> : null}</div>
+      <div className="cl-sec-h"><h3>{title}</h3>{note ? <span>{note}</span> : null}{src ? <ClinicSrc kind={src} fields={fields} /> : null}</div>
       {children}
     </section>
   )
@@ -5870,7 +5900,9 @@ function ClinicView({ clientId, currency, nonce }) {
     { key: 'returned', label: 'Came back (2+ visits)', value: re.returned || 0, color: '#12b886', hint: 'Genuinely retained - the cohort that produces the LTV.' },
     { key: 'next', label: 'Next appointment booked', value: re.attendedWithNext || 0, color: '#17b26a', hint: 'Has an appointment in the diary right now.' },
   ]
+  const db = d.dueBack || null
   const workTabs = [
+    { id: 'dueback', label: 'Due back', n: (db && db.list ? db.list.length : 0) },
     { id: 'winback', label: 'Win-back', n: (d.oneAndDoneList || []).length },
     { id: 'ar', label: 'Unpaid balances', n: (d.ar || []).length },
     { id: 'reactivate', label: 'Reactivation', n: (d.reactivate || []).length },
@@ -5907,7 +5939,7 @@ function ClinicView({ clientId, currency, nonce }) {
         <div className="tm-sc warn"><span className="tm-lab">Revenue at risk</span><b>{money(re.lostRevenue)}</b><span className="tm-sub">one &amp; done × the LTV gap</span></div>
       </div>
 
-      <ClinicSection id="cl-growth" title="Growth" note="what actually moved, from our daily snapshots">
+      <ClinicSection id="cl-growth" title="Growth" note="what actually moved, from our daily snapshots" src="snapshot" fields={['nightly clinic snapshot']}>
         {dl ? <div className="card">
           <div className="cap cl-cap">Last {dl.spanDays} days <span>· measured against our snapshot from {dl.since}</span></div>
           <div className="timing-scards">
@@ -5943,7 +5975,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection>
 
-      {di ? <ClinicSection id="cl-capacity" title="The book" note={`what's scheduled over the next ${di.windowDays || di.days.length} days`}>
+      {di ? <ClinicSection id="cl-capacity" title="The book" note={`what's scheduled over the next ${di.windowDays || di.days.length} days`} src="diary" fields={['calendar events', 'openHours']}>
         <div className="card">
           <div className="timing-scards">
             <div className="tm-sc hero"><span className="tm-lab">Booked ahead</span><b>{fmtNumber(di.appts)}</b><span className="tm-sub">clinical appointments{di.triage ? ` · +${fmtNumber(di.triage)} triage` : ''}</span></div>
@@ -5979,7 +6011,7 @@ function ClinicView({ clientId, currency, nonce }) {
       </ClinicSection> : null}
 
       {(ut && ut.available) || (crec && crec.judged) || d.revPerAppt != null ? (
-        <ClinicSection id="cl-util" title="Capacity &amp; recovery" note="how full the book is, and what the gaps cost">
+        <ClinicSection id="cl-util" title="Capacity &amp; recovery" note="how full the book is, and what the gaps cost" src="diary" fields={['calendar events', 'openHours', 'total_amount_spent', 'total_arrived']}>
           <div className="card">
             <div className="timing-scards">
               {ut && ut.available ? (
@@ -6037,7 +6069,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </ClinicSection>
       ) : null}
 
-      <ClinicSection id="cl-retention" title="Retention" note="who comes back, and what it costs when they don't">
+      <ClinicSection id="cl-retention" title="Retention" note="who comes back, and what it costs when they don't" src="diary" fields={['calendar events', 'total_arrived', 'total_appointments', 'total_amount_spent']}>
         <div className="card">
           <div className="cap cl-cap">Patient Visit Average <span>· and the averages that sit around it</span></div>
           <div className="timing-scards">
@@ -6078,6 +6110,22 @@ function ClinicView({ clientId, currency, nonce }) {
               { key: 'yes', label: 'Rebooked', value: rb.rebooked || 0, color: '#17b26a' },
               { key: 'none', label: 'Never rebooked', value: rb.notRebooked || 0, color: '#f0435b' },
             ]} />
+            {rb.byPractitioner && rb.byPractitioner.length > 1 ? <>
+              <div className="cl-cap" style={{ marginTop: 14 }}>Rebooking by practitioner <span className="cap">· target 85% · calendars with 10+ visits</span></div>
+              <div className="cl-kv-wrap"><table className="mini-tbl appt-tbl cl-fit">
+                <thead><tr><th className="lft">Calendar</th><th>Visits</th><th>Patients</th><th title="Share of visits followed by another booking">Rebooked</th><th title="Booked before they left, rather than chased later">At the desk</th></tr></thead>
+                <tbody>{rb.byPractitioner.map((r) => (
+                  <tr key={r.name}>
+                    <td className="lft">{r.name}</td>
+                    <td>{fmtNumber(r.visits)}</td>
+                    <td>{fmtNumber(r.patients)}</td>
+                    <td><span className={tlClass(r.rebookRate, 85, 70)}>{r.rebookRate}%</span></td>
+                    <td>{r.atCareRate}%</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+              <Caveat>The clinic-wide rebooking rate says whether there&rsquo;s a problem; this says where it is. Each visit is credited to the calendar it sat on, so where one practitioner runs several calendars they appear as several rows. Calendars under 10 visits are left out - below that a rate describes one patient&rsquo;s habits rather than a practitioner&rsquo;s. <b>At the desk</b> is the half worth managing: booking the next visit before the patient leaves is a front-desk habit, and it is the single biggest lever on the top number.</Caveat>
+            </> : null}
             {rb.timingAvailable ? <div className="cl-kv-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl cl-fit">
               <thead><tr><th className="lft">Outcome of a visit</th><th>Visits</th><th>Share</th></tr></thead>
               <tbody>
@@ -6113,7 +6161,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </div>
       </ClinicSection>
 
-      <ClinicSection id="cl-cohorts" title="Cohorts" note="patients grouped by when they first came in">
+      <ClinicSection id="cl-cohorts" title="Cohorts" note="patients grouped by when they first came in" src="synced" fields={['first_appointment_date', 'first_visit_date', 'total_arrived', 'total_amount_spent']}>
         <div className="card">
           <div className="cap cl-cap">Cohort value <span>· by first-appointment month</span></div>
           {d.cohorts && d.cohorts.length > 1 ? <ResponsiveContainer width="100%" height={190}>
@@ -6154,7 +6202,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection>
 
-      <ClinicSection id="cl-acq" title="Acquisition" note="where patients come from, and what they end up worth">
+      <ClinicSection id="cl-acq" title="Acquisition" note="where patients come from, and what they end up worth" src="crm" fields={['attributions', 'how_did_you_hear_about_us', 'total_amount_spent']}>
         <div className="mr-two">
           {d.channels && d.channels.length ? <div className="card">
             <div className="cap cl-cap">Lifetime value by channel</div>
@@ -6193,7 +6241,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection>
 
-      <ClinicSection id="cl-ops" title="Operations" note="attendance, billing and who delivers the care">
+      <ClinicSection id="cl-ops" title="Operations" note="attendance, billing and who delivers the care" src="synced" fields={['total_appointments', 'total_arrived', 'total_unpaid_balance', 'last_appt_practitioner', 'last_appt_type', 'last_appt_cancel_reason']}>
         <div className="mr-three">
           <div className="card">
             <div className="cap cl-cap">Attendance</div>
@@ -6258,11 +6306,27 @@ function ClinicView({ clientId, currency, nonce }) {
         <ClinicBenchmark clientId={clientId} currency={currency} nonce={nonce} />
       </ClinicSection>
 
-      {workTab ? <ClinicSection id="cl-work" title="Worklists" note="click any patient to read their CRM notes">
+      {workTab ? <ClinicSection id="cl-work" title="Worklists" note="click any patient to read their CRM notes" src="synced" fields={['upcoming_appt_count', 'last_appointment_date', 'total_arrived', 'total_unpaid_balance', 'total_amount_spent']}>
         <div className="card">
           <div className="cl-tabs">{workTabs.map((t) => (
             <button key={t.id} type="button" className={`cl-tab ${workTab === t.id ? 'on' : ''}`} onClick={() => setWork(t.id)}>{t.label} <em>{fmtNumber(t.n)}</em></button>
           ))}</div>
+          {workTab === 'dueback' ? <>
+            <p className="cap cl-worknote">
+              Overdue against <b>their own</b> visit rhythm, with nothing in the diary - worst first.
+              {db && db.value ? <> Together they&rsquo;ve spent {money(db.value)} here.</> : null}
+            </p>
+            <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
+              <thead><tr><th className="lft">Patient</th><th title="Their own median gap between visits">Usually every</th><th>Last seen</th><th title="Days past their usual gap">Overdue by</th><th>Lifetime spend</th><th className="lft">Last appointment</th><th className="lft">Channel</th></tr></thead>
+              <tbody>{db.list.map((p, i) => <ClinicPatientRow key={p.contactId || i} p={p} clientId={clientId} money={money} cols={7} extra={<>
+                <td>{p.typicalDays}d</td>
+                <td>{p.sinceDays}d ago</td>
+                <td><b className="cl-lost">+{p.overdueDays}d</b></td>
+                <td>{money(p.spent)}</td>
+              </>} />)}</tbody>
+            </table></div>
+            <Caveat>Each patient is judged against their <b>own</b> median gap between visits, not a clinic-wide rule - somebody who comes fortnightly and hasn&rsquo;t been in for six weeks is a different case from somebody who comes twice a year, and one threshold calls one of them wrong every time. They appear here once they&rsquo;re half again past their usual gap (and at least a week past it), have nothing booked, and have enough history to have a rhythm at all - two prior gaps minimum, so a new patient never lands on this list. This is the one worklist where the patient hasn&rsquo;t gone yet.</Caveat>
+          </> : null}
           {workTab === 'winback' ? <>
             <p className="cap cl-worknote">Attended once and never came back - the highest-intent reactivation list you have.</p>
             <div className="tbl-scroll"><table className="mini-tbl appt-tbl">

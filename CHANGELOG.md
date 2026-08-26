@@ -17,6 +17,44 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.378.0 - 2026-08-20 · `PENDING` - Clinic: who's drifting, whose patients come back, and where every number comes from
+
+All three built from fields **already synced** - no new CRM columns.
+
+**"Due back" - the first worklist where the patient hasn't gone yet**
+- Every other list here is retrospective: win-back and reactivation tell you who
+  already left. This one names who is *leaving*, while there's still something
+  to do about it.
+- Each patient is judged against **their own median gap between visits**, not a
+  clinic-wide rule. Somebody who comes fortnightly and hasn't been in for six
+  weeks is a different case from somebody who comes twice a year, and a single
+  "90 days" threshold calls one of them wrong every time.
+- They appear once they're half again past their usual gap (and at least a week
+  past it), have nothing booked, and have **two prior gaps minimum** - so a new
+  patient never lands on the list on the strength of one anecdote.
+- Sorted worst-overdue first, with lifetime spend, so the call list is ordered
+  by what's actually at stake. *(Demo: 29 patients, $16,820 of prior spend.)*
+
+**Rebooking by practitioner**
+- The clinic-wide rate says whether there's a problem; this says where it is.
+  Each visit is credited to the calendar it sat on, traffic-lit against 85%.
+- Splits **at the desk** from **chased later** per calendar - booking the next
+  visit before the patient leaves is a front-desk habit and the single biggest
+  lever on the top number.
+- Calendars under 10 visits are excluded: below that a rate describes one
+  patient's habits rather than a practitioner's.
+
+**Every section says where its numbers come from**
+- Three sources feed this tab and they behave completely differently - synced
+  fields are overwritten every run (always "now"), the calendar keeps real
+  per-booking history, and our nightly snapshots are the only thing that can
+  show a trend. A number read as the wrong kind is a number misread.
+- Each section now carries a colour-coded chip - **Practice-management sync /
+  Calendar history / Our daily snapshots / CRM contact record** - that expands
+  to explain the source and list the exact fields behind it.
+
+---
+
 ## v3.377.0 - 2026-08-20 · `PENDING` - Clinic tab moves to second
 
 - On a clinic, **Clinic** now sits directly after **Caalano360** and before

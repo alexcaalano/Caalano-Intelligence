@@ -1750,13 +1750,40 @@ export async function buildClinic(locationId, opts = {}) {
   if (hist && hist.available) {
     const dayKey = _dayKeyer(tz)
     const nowMs = Date.now()
+    // Rebooking BY practitioner - whose patients come back. The clinic-wide
+    // number tells an owner there is a problem; this tells them where it is,
+    // which is the difference between a statistic and something to act on.
+    // Attributed by the calendar each visit sat on, since that is the only
+    // per-visit practitioner signal the diary carries.
+    const byPrac = new Map()
     for (const [cid, list] of hist.byContact) {
       const r = _rebookOf(list, dayKey, nowMs)
       if (!r.visits) continue
       reb.patients++; reb.visits += r.visits
       reb.atPointOfCare += r.atCare; reb.afterLeaving += r.later; reb.notRebooked += r.none
       if (r.future > 0) reb.patientsWithNext++
+      // Credit each visit's outcome to the calendar that visit was on.
+      const seen = new Set()
+      const appts = list.filter((a) => { const k = `${a.start}`; if (seen.has(k)) return false; seen.add(k); return true }).sort((a, b) => a.start - b.start)
+      const past = appts.filter((a) => a.start <= nowMs)
+      for (let i = 0; i < past.length; i++) {
+        const nm = past[i].cal || 'Unattributed'
+        const e = byPrac.get(nm) || { name: nm, visits: 0, rebooked: 0, atCare: 0, patients: new Set() }
+        e.visits++; e.patients.add(cid)
+        const nxt = appts[i + 1]
+        if (nxt) { e.rebooked++; if (dayKey(nxt.added) <= dayKey(past[i].start)) e.atCare++ }
+        byPrac.set(nm, e)
+      }
     }
+    reb.byPractitioner = [...byPrac.values()]
+      // Below this a rate is noise - one patient's habits, not a practitioner's.
+      .filter((e) => e.visits >= 10)
+      .map((e) => ({
+        name: e.name, visits: e.visits, patients: e.patients.size,
+        rebookRate: Math.round((e.rebooked / e.visits) * 100),
+        atCareRate: Math.round((e.atCare / e.visits) * 100),
+      }))
+      .sort((a, b) => b.rebookRate - a.rebookRate)
     reb.available = reb.visits > 0
   }
   // ---- PVA and the averages that sit around it --------------------------
@@ -1784,11 +1811,36 @@ export async function buildClinic(locationId, opts = {}) {
   // Average gap between consecutive visits, from the diary - the cadence a
   // practice is actually running at, which no synced counter can give.
   let gapSum = 0, gapN = 0
+  // Who is overdue for a visit RIGHT NOW, judged against their own rhythm rather
+  // than a clinic-wide rule. A patient who comes fortnightly and hasn't been seen
+  // for six weeks is a different case from one who comes twice a year - a single
+  // "90 days since last visit" threshold calls the first one healthy and the
+  // second one lost, and both are wrong. Retrospective lists (reactivate,
+  // one-and-done) say who already went; this says who is going.
+  const dueBack = []
   if (hist && hist.available) {
     const nowMs = Date.now()
-    for (const list of hist.byContact.values()) {
+    for (const [cid, list] of hist.byContact.entries()) {
       const starts = [...new Set(list.map((a) => a.start))].filter((t) => t <= nowMs).sort((a, b) => a - b)
-      for (let i = 1; i < starts.length; i++) { gapSum += (starts[i] - starts[i - 1]) / 86400000; gapN++ }
+      const gaps = []
+      for (let i = 1; i < starts.length; i++) { const g = (starts[i] - starts[i - 1]) / 86400000; gapSum += g; gapN++; gaps.push(g) }
+      // Needs at least two prior gaps to have a rhythm worth measuring against;
+      // one gap is an anecdote and would generate noise for every new patient.
+      if (gaps.length < 2) continue
+      const p = pt.get(cid)
+      if (!p || p.upcoming > 0) continue          // something is booked - not overdue
+      const sorted = [...gaps].sort((a, b) => a - b)
+      const typical = sorted[Math.floor(sorted.length / 2)]   // median gap, so one long break doesn't skew it
+      const since = (nowMs - starts[starts.length - 1]) / 86400000
+      // Overdue by half again their usual gap, and at least a week past it - so a
+      // patient a couple of days late doesn't get chased.
+      if (typical <= 0 || since < Math.max(typical * 1.5, typical + 7)) continue
+      dueBack.push({
+        contactId: cid, name: p.name, spent: p.ltv || 0, visits: p.arrived, channel: p.channel,
+        typicalDays: Math.round(typical), sinceDays: Math.round(since),
+        overdueDays: Math.round(since - typical),
+        lastAppt: starts[starts.length - 1] ? new Date(starts[starts.length - 1]).toISOString().slice(0, 10) : null,
+      })
     }
   }
   const round1 = (v) => Math.round(v * 10) / 10
@@ -1999,6 +2051,12 @@ export async function buildClinic(locationId, opts = {}) {
       dollarPerVisit: e.visits ? Math.round(e.ltv / e.visits) : null,
     })).sort((a, b) => b.ltv - a.ltv).slice(0, 20),
     ar: ar.sort((a, b) => b.unpaid - a.unpaid).slice(0, 60),
+    // Who is drifting, worst-overdue first, with what they've been worth.
+    dueBack: {
+      patients: dueBack.length,
+      value: Math.round(dueBack.reduce((n, x) => n + (x.spent || 0), 0)),
+      list: dueBack.sort((a, b) => (b.overdueDays - a.overdueDays) || (b.spent - a.spent)).slice(0, 120),
+    },
     reactivate: reactivate.sort((a, b) => b.spent - a.spent).slice(0, 100),
     oneAndDoneList: oneAndDoneList.sort((a, b) => b.spent - a.spent).slice(0, 60),
   }

@@ -17,6 +17,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.373.0 - 2026-08-20 · `PENDING` - Where people sign in from, and when it looks wrong
+
+- Each session now records roughly where it started: city, region, country and
+  IP. Netlify resolves this at the edge and passes it in `x-nf-geo`, so there is
+  no lookup service, no third party and no added latency.
+- Shown under **Last active** in Settings → Team & access (Super Admin only, like
+  the rest of the activity data). The IP sits in the row tooltip.
+- **The part that's actually useful:** a session from a place that person has
+  never signed in from before is flagged in amber with a ⚠. A list of cities is
+  noise; *"this one isn't like the others for this person"* is a signal. It needs
+  at least three prior located sessions before it will call anything unusual, so
+  a new account doesn't light up on its second sign-in.
+- Degrades cleanly: no geo header → IP alone; malformed header → neither; neither
+  → the column just shows time as before. Unit-tested across all four.
+
+**Read it as a hint, not a fact.** IP geolocation is city-level at best, and a
+VPN or a mobile network will move someone hundreds of kilometres. It answers
+"does this look normal for them", never "where was this person".
+
+**Worth doing yourself:** terms clause 5 currently discloses *"when you sign in,
+when you are active, what you access"* - it doesn't mention location. You can add
+that in Settings → Terms of use without a deploy. Leave the re-sign box unticked
+and nobody is re-prompted.
+
+---
+
 ## v3.372.0 - 2026-08-20 · `PENDING` - Activity trail: where each person went, and for how long
 
 **Settings → Logs → Activity trail** (Super Admin only). A per-person record of

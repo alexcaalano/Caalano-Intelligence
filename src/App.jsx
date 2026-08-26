@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.372.0'
+const APP_VERSION = '3.373.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9651,6 +9651,22 @@ const VIEW_LABEL = {
   insights: 'Meta Insights', update: 'Client Update', monthly: 'Monthly Report', reports: 'Monthly Reports',
   social: 'Organic Social Media', settings: 'Settings', clients: 'Client workspace',
 }
+// "Sydney, NSW, AU" from whatever parts came back. Best-effort: a VPN or a mobile
+// network moves people hundreds of kilometres, so this is always a hint, never a
+// claim about where a person physically was.
+const placeOf = (x) => [x && x.city, x && x.region, x && x.country].filter(Boolean).join(', ') || null
+// The useful signal isn't a list of cities - it's "this one isn't like the others
+// for this person". Needs a few sessions of history before it will call anything
+// unusual, so a new account doesn't light up on its second sign-in.
+function unusualSessions(sessions) {
+  const list = (sessions || []).filter((x) => x.country || x.city)
+  if (list.length < 3) return new Set()
+  const seen = new Map()
+  for (const x of list) { const k = `${x.country || ''}|${x.city || ''}`; seen.set(k, (seen.get(k) || 0) + 1) }
+  const odd = new Set()
+  if (seen.size > 1) for (const x of list) { if (seen.get(`${x.country || ''}|${x.city || ''}`) === 1) odd.add(x.start) }
+  return odd
+}
 const auditMins = (n) => (n == null ? null : n < 60 ? `${n}m` : `${Math.floor(n / 60)}h ${n % 60}m`)
 const auditAgo = (ms) => {
   if (!ms) return null
@@ -10909,6 +10925,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
             const seen = seeActivity ? ago(u.lastSeen) : null
             const ls = seeActivity ? lastSession(u) : null
             const tot = seeActivity ? recentMins(u) : 0
+            const odd = seeActivity ? unusualSessions(u.sessions) : new Set()
             return (
               <tr key={u.email}>
                 <td className="lft">{u.name || <span className="cap">-</span>}{self && <span className="u-you">you</span>}</td>
@@ -10916,8 +10933,11 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
                 <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role}</span></td>
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
                 {seeActivity && <>
-                  <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
-                    {seen ? <span className="u-seen">{seen}{ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}</span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
+                  <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}${ls && ls.ip ? ` · IP ${ls.ip}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
+                    {seen ? <span className="u-seen">{seen}
+                      {ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}
+                      {placeOf(ls) ? <small className={`u-place${odd.has(ls.start) ? ' odd' : ''}`} title={odd.has(ls.start) ? 'They haven’t signed in from here before' : 'Approximate - from the network they connected over'}>{odd.has(ls.start) ? '⚠ ' : ''}{placeOf(ls)}</small> : null}
+                    </span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
                   </td>
                   <td className="lft" title={tot ? `${(u.sessions || []).filter((x) => Date.parse(x.start) >= Date.now() - 30 * 86400000).length} session(s) in the last 30 days` : ''}>
                     {tot ? <span className="u-seen">{mins(tot)}</span> : <span className="cap">-</span>}

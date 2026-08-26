@@ -3358,6 +3358,8 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .aud-tab { margin-left: 7px; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
 .logs-tbl td small { display: block; font-size: 10px; color: var(--faint); }
 .inp.sm { padding: 5px 9px; font-size: 12px; }
+.u-place { display: block; font-size: 10px; color: var(--faint); }
+.u-place.odd { color: var(--warn); font-weight: 700; }
 .terms-sig-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 15px; }
 .terms-sig-modal { --mr-drill-cols: 4; }
 .terms-sig-full { display: block; max-width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 12px; }

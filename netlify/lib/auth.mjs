@@ -244,7 +244,7 @@ export async function approveUser(email, patch, actor) {
   return { user: publicUser(u) }
 }
 
-export async function authenticate(email, password) {
+export async function authenticate(email, password, geo) {
   const u = await getUser(email)
   if (!u || u.status === 'disabled') return null
   if (u.status !== 'active') return null // invited-but-not-accepted can't log in
@@ -253,7 +253,7 @@ export async function authenticate(email, password) {
   // A deliberate sign-in always opens a new session, even if the previous one
   // was still inside the idle window.
   u.lastSeen = u.lastLogin
-  u.sessions = [...(Array.isArray(u.sessions) ? u.sessions : []), { start: u.lastLogin, last: u.lastLogin, mins: 0 }].slice(-SESSION_KEEP)
+  u.sessions = [...(Array.isArray(u.sessions) ? u.sessions : []), { start: u.lastLogin, last: u.lastLogin, mins: 0, ...(geo || {}) }].slice(-SESSION_KEEP)
   await saveUser(u)
   return publicUser(u)
 }
@@ -377,28 +377,50 @@ export async function revokeSessions(email) {
 // an unthrottled write would put a blob PUT on every API call for no extra
 // precision - a couple of minutes' granularity is plenty for "last seen" and
 // makes session lengths accurate to about the same.
+// Roughly where a request came from. Netlify resolves this at the edge and hands
+// it over in `x-nf-geo` (base64 JSON), so there is no lookup service and no
+// third party involved. City-level at best, and a VPN or a mobile network will
+// move someone hundreds of kilometres - so it is a "does this look normal"
+// signal, never an assertion about where a person physically was.
+export function geoFromReq(req) {
+  const out = { ip: null, city: null, region: null, country: null }
+  try {
+    out.ip = req.headers.get('x-nf-client-connection-ip') || req.headers.get('x-forwarded-for') || null
+    if (out.ip) out.ip = String(out.ip).split(',')[0].trim().slice(0, 45)
+  } catch { /* header unavailable */ }
+  try {
+    const raw = req.headers.get('x-nf-geo')
+    if (raw) {
+      const g = JSON.parse(atob(raw))
+      out.city = (g.city || null) && String(g.city).slice(0, 60)
+      out.region = (g.subdivision && (g.subdivision.name || g.subdivision.code)) || null
+      out.country = (g.country && (g.country.code || g.country.name)) || null
+    }
+  } catch { /* not on Netlify, or a shape we don't know - IP alone is still useful */ }
+  return out
+}
 const ACTIVITY_WRITE_MS = 2 * 60 * 1000   // don't re-stamp more often than this
 const SESSION_IDLE_MS = 30 * 60 * 1000    // a gap longer than this is a new session
 const SESSION_KEEP = 30                   // recent sessions retained per user
-function _touchSessions(u, nowMs) {
+function _touchSessions(u, nowMs, geo) {
   const list = Array.isArray(u.sessions) ? u.sessions : []
   const cur = list[list.length - 1]
   if (cur && cur.last && (nowMs - Date.parse(cur.last)) < SESSION_IDLE_MS) {
     cur.last = new Date(nowMs).toISOString()
     cur.mins = Math.max(0, Math.round((Date.parse(cur.last) - Date.parse(cur.start)) / 60000))
   } else {
-    list.push({ start: new Date(nowMs).toISOString(), last: new Date(nowMs).toISOString(), mins: 0 })
+    list.push({ start: new Date(nowMs).toISOString(), last: new Date(nowMs).toISOString(), mins: 0, ...(geo || {}) })
   }
   u.sessions = list.slice(-SESSION_KEEP)
   return u
 }
 // Best-effort: a failed stamp must never cost someone their request.
-async function touchActivity(u) {
+async function touchActivity(u, geo) {
   try {
     const now = Date.now()
     if (u.lastSeen && (now - Date.parse(u.lastSeen)) < ACTIVITY_WRITE_MS) return
     u.lastSeen = new Date(now).toISOString()
-    _touchSessions(u, now)
+    _touchSessions(u, now, geo)
     await saveUser(u)
   } catch { /* activity is a nice-to-have, never a blocker */ }
 }
@@ -420,7 +442,7 @@ export async function currentUser(req, secret, opts = {}) {
   if ((payload.v || 0) !== (u.tokenEpoch || 0)) return null
   // `track` is opt-in so background/ops checks don't register as someone using
   // the app - only real page traffic should count toward time in the product.
-  if (opts.track) await touchActivity(u)
+  if (opts.track) await touchActivity(u, geoFromReq(req))
   return publicUser(u)
 }
 

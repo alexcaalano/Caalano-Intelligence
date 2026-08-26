@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.368.0'
+const APP_VERSION = '3.369.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9861,7 +9861,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
       {isAdmin && section === 'fatigue' && <FatigueSettings />}
       {isAdmin && section === 'socialkpis' && <SocialKpiSettings clients={config.clients} />}
       {isAdmin && section === 'dailyperf' && <DailyPerfSettings clients={config.clients} />}
-      {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name }))} />}
+      {section === 'team' && (!authEnabled || isAdmin) && <UsersAdmin authUser={authUser} authEnabled={authEnabled} clients={(config.clients || []).map((c) => ({ id: c.id, name: c.name, meta: c.meta || null, google: c.google || null, ga4: c.ga4 || null, ghl: c.ghl || null }))} />}
       {authEnabled && section === 'account' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Your account</h3>
@@ -10467,6 +10467,98 @@ function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>
   return <div className="alloc-chips">{clients.map((c) => <button type="button" key={c.id} className={`chip ${selected.includes(c.id) ? 'on' : ''}`} onClick={() => onToggle(c.id)}>{c.name}</button>)}</div>
 }
+/* What this person will actually see, before you send the invite.
+   Once the server-side leaks are closed, the realistic way a client sees
+   something they shouldn't is a mis-ticked box - and until now there was no way
+   to check one except by sending the invite and hoping. This runs the draft
+   allocation through `allowedTabsFE`, the same function the client workspace
+   uses to build its tab strip, so what's listed here is what renders. */
+const SENSITIVE_TABS = {
+  timing: 'Grades their own sales team’s response times.',
+  users: 'Per-rep performance inside their business.',
+  optlog: 'Our change log for the account.',
+}
+// The tabs a client workspace offers, from the sources that client has wired up.
+// Mirrors the list built in ClientWorkspace.
+function offeredTabsFor(c) {
+  const out = [{ id: 'overall', label: 'Caalano360' }]
+  if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
+  if (c.google) out.push({ id: 'google', label: 'Google Ads' })
+  if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
+  if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' })
+  return out
+}
+function AccessPreview({ draft, clients, email, onClose }) {
+  const mine = (clients || []).filter((c) => (draft.clients || []).includes(c.id))
+  const asUser = { role: 'viewer', tabs: Array.isArray(draft.tabs) ? draft.tabs : null }
+  const rows = mine.map((c) => {
+    const offered = offeredTabsFor(c)
+    const shown = allowedTabsFE(asUser, offered)
+    // allowedTabsFE falls back to the first offered tab when none of the ticked
+    // tabs exist for that client - so a tick can silently become a different tab.
+    const fellBack = Array.isArray(asUser.tabs) && !offered.some((t) => asUser.tabs.includes(t.id))
+    return { c, offered, shown, fellBack }
+  })
+  const flagged = (draft.tabs || []).filter((t) => SENSITIVE_TABS[t])
+  return (
+    <Overlay>
+      <div className="mr-drill-overlay no-print" onClick={onClose}>
+        <div className="mr-drill prev-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="mr-drill-head">
+            <div>
+              <h3>What {email || 'this person'} will see</h3>
+              <span>{mine.length} account{mine.length === 1 ? '' : 's'} · the tab strip below is what their workspace renders</span>
+            </div>
+            <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
+          </div>
+          <div className="mr-drill-body prev-body">
+            {draft.role !== 'viewer' ? (
+              <p className="prev-note">
+                <b>{ROLE_LABEL[draft.role] || draft.role}s see every tab on every account they can reach.</b> This
+                preview only means something for a Viewer.
+              </p>
+            ) : !mine.length ? (
+              <p className="prev-note"><b>No accounts picked yet.</b> They would sign in and see nothing.</p>
+            ) : (
+              <>
+                {flagged.length ? (
+                  <div className="prev-warn">
+                    <b>Worth a second look</b>
+                    <ul>{flagged.map((t) => <li key={t}><b>{(TAB_OPTIONS.find((o) => o.id === t) || {}).label || t}</b> - {SENSITIVE_TABS[t]}</li>)}</ul>
+                  </div>
+                ) : null}
+                {rows.map(({ c, offered, shown, fellBack }) => (
+                  <div className="prev-client" key={c.id}>
+                    <div className="prev-client-h"><b>{c.name}</b><span className="cap">{shown.length} of {offered.length} tabs</span></div>
+                    <div className="prev-tabs">
+                      {offered.map((t) => {
+                        const on = shown.some((x) => x.id === t.id)
+                        return <span key={t.id} className={`prev-tab${on ? ' on' : ''}`} title={on ? 'They will see this' : 'Hidden from them'}>{t.label}</span>
+                      })}
+                    </div>
+                    {fellBack ? (
+                      <p className="prev-fallback">
+                        ⚠ None of the ticked tabs exist for this account, so the workspace falls back to
+                        <b> {shown[0] ? shown[0].label : 'the first tab'}</b> - they will see that instead of nothing.
+                        Tick a tab this account actually has, or take the account off them.
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </>
+            )}
+            <p className="caveat prev-caveat">
+              This shows what the app renders for that allocation. The real boundary is enforced on the server on every
+              request, so a tab they can’t see is one they can’t fetch either - this is here to catch a mis-ticked box,
+              not to prove the access rules.
+            </p>
+          </div>
+        </div>
+      </div>
+    </Overlay>
+  )
+}
+
 // Role + client/tab allocation control, reused by invite, approve and edit.
 function AllocationEditor({ value, clients, onChange, actorRole }) {
   const v = value
@@ -10560,6 +10652,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
       if (r.ok) { onChanged(); onClose() } else setErr(r.error || 'Could not save changes.')
     }
   }
+  const [preview, setPreview] = useState(false)
   const resend = async () => { const r = await authApi('resend-invite', { method: 'POST', body: JSON.stringify({ email: user.email, name: user.name, role: user.role, clients: user.clients, allClients: user.allClients, tabs: user.tabs, reports: user.reports === true }) }); if (r.ok) setLink(r.inviteUrl) }
   const toggleStatus = async () => { await authApi('update-user', { method: 'POST', body: JSON.stringify({ email: user.email, status: user.status === 'disabled' ? 'active' : 'disabled' }) }); onChanged(); onClose() }
   const remove = async () => { if (!window.confirm(`Remove ${user.name || user.email}? They’ll lose access immediately.`)) return; await authApi('delete-user', { method: 'POST', body: JSON.stringify({ email: user.email }) }); onChanged(); onClose() }
@@ -10607,12 +10700,14 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
               {!isInvite && !self && <button className="btn-ghost sm danger" onClick={remove}>Remove</button>}
             </div>
             <div className="u-modal-foot-r">
+              {draft.role === 'viewer' && <button type="button" className="btn-ghost" onClick={() => setPreview(true)}>👁 Preview what they’ll see</button>}
               <button className="btn-ghost" onClick={onClose}>{link ? 'Done' : 'Cancel'}</button>
               {!(link && isInvite) && <button className="btn-primary" onClick={submit} disabled={busy || self}>{busy ? 'Saving…' : isInvite ? 'Create invite' : 'Save access'}</button>}
             </div>
           </div>
         </div>
       </div>
+      {preview && <AccessPreview draft={draft} clients={clients} email={isInvite ? email : (user && (user.name || user.email))} onClose={() => setPreview(false)} />}
     </div>
   )
 }

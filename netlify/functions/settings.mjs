@@ -30,10 +30,13 @@ export default async (req) => {
           const pick = (obj) => { const o = {}; for (const k in (obj || {})) { if (allow.has(String(k).split(':')[0])) o[k] = obj[k] } return o }
           const scoped = {}
           // Client-keyed sections the viewer UI reads, filtered to their clients.
-          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames', 'clinic']) scoped[s] = pick(data[s])
-          // campmap is campaign-name-keyed (needed for spend attribution) and fatigue
-          // is global thresholds - neither is per-client-sensitive; pass as-is.
-          scoped.campmap = data.campmap || {}
+          for (const s of ['keyevents', 'kpis', 'enabled', 'clients', 'formmeta', 'qualstage', 'aliases', 'logos', 'metaconv', 'adnames', 'clinic', 'campmap']) scoped[s] = pick(data[s])
+          // campmap used to be passed through whole, on the belief that it was
+          // campaign-name-keyed and so not per-client. It is actually keyed by
+          // client id (SETTINGS.campmap[clientId]), and campaign names carry the
+          // brand - so it went out as a list of every client's campaigns. It is
+          // filtered like everything else now.
+          // fatigue is genuinely global (shared thresholds, no client in it).
           scoped.fatigue = data.fatigue || {}
           return json({ ok: true, data: scoped })
         }

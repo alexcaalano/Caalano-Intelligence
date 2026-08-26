@@ -3337,6 +3337,23 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
   font-size: 11.5px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); line-height: 1.55;
 }
 .terms-ed-sechead .cap { font-size: 11.5px; font-weight: 700; color: var(--faint); }
+/* "What they'll see" - the invite/edit access preview. */
+.prev-modal { --mr-drill-cols: 5; }
+.prev-body { max-height: 72vh; overflow-y: auto; }
+.prev-note { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.prev-warn { margin: 0 0 16px; padding: 12px 14px; border: 1px solid rgba(245,158,11,.4); border-radius: 10px; background: rgba(245,158,11,.09); }
+.prev-warn b { font-size: 12.5px; }
+.prev-warn ul { margin: 7px 0 0; padding-left: 18px; }
+.prev-warn li { font-size: 12px; line-height: 1.6; color: var(--muted); margin-bottom: 3px; }
+.prev-client { margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.prev-client-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.prev-client-h b { font-size: 13px; }
+.prev-client-h .cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+.prev-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.prev-tab { font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--border); background: transparent; color: var(--faint); opacity: .6; text-decoration: line-through; }
+.prev-tab.on { border-style: solid; border-color: var(--brand-2); background: color-mix(in srgb, var(--brand-2) 12%, transparent); color: var(--text); opacity: 1; text-decoration: none; }
+.prev-fallback { margin: 10px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--warn); }
+.prev-caveat { margin-top: 4px; }
 .terms-sig-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 15px; }
 .terms-sig-modal { --mr-drill-cols: 4; }
 .terms-sig-full { display: block; max-width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 12px; }

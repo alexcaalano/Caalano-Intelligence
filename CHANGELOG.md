@@ -17,6 +17,41 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.369.0 - 2026-08-20 · `PENDING` - See what a client will see, before you invite them
+
+**Preview an allocation before it goes out**
+- The invite / edit-access modal gets **👁 Preview what they'll see**. It runs the
+  draft allocation through `allowedTabsFE` - the same function the client
+  workspace uses to build its tab strip - and shows, per account, exactly which
+  tabs render and which are struck through.
+- Sensitive tabs are called out by name when ticked: Timing (grades their own
+  sales team's response times), Users (per-rep performance) and the Optimisation
+  Log (our change log for the account).
+- Now that the server-side leaks are shut, the realistic way a client sees
+  something they shouldn't is a mis-ticked box - and there was previously no way
+  to check one except by sending the invite.
+
+**It found something on its first run**
+- `allowedTabsFE` falls back to the first offered tab when *none* of the ticked
+  tabs exist for that account (`keep.length ? keep : offered.slice(0, 1)`), so a
+  viewer can be shown a tab that was never granted. With the new Users-only
+  default, any client without a CRM connected lands on **Caalano360** instead.
+- Not a cross-client leak - it's still their own account - but it is "they see a
+  tab you didn't tick". The preview now flags it per account, in amber, with
+  what to do about it. The fallback itself is left alone for now: removing it
+  means an empty workspace, which is a separate call.
+
+**`campmap` was going to viewers whole**
+- `settings.mjs` passed it through unfiltered on the stated grounds that it was
+  campaign-name-keyed and therefore not per-client. It is actually keyed by
+  client id (`SETTINGS.campmap[clientId]`), and campaign names carry the brand -
+  so every viewer received a list of every client's campaign names.
+- Filtered with the same `pick()` as the other client-keyed sections. Verified: a
+  viewer now gets only their own account's campaigns, and no other brand appears
+  anywhere in the settings payload. `fatigue` stays global - it genuinely is.
+
+---
+
 ## v3.368.0 - 2026-08-20 · `PENDING` - No client is named in a public file any more
 
 `/assets/*` is served without a session, deliberately, so the login screen can

@@ -703,8 +703,11 @@ tr.u-notes-row > td > * { max-width: calc(100vw - var(--drill-gutter, 320px)); b
 .set-details-save { background: var(--brand); color: #fff; border: none; border-radius: 9px; padding: 9px 16px; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .set-details-save:disabled { opacity: .5; cursor: not-allowed; }
 /* Tabbed config modal */
-.set-tabs { display: flex; gap: 4px; padding: 0 22px; border-bottom: 1px solid var(--border); position: sticky; top: 61px; background: var(--panel); z-index: 3; overflow-x: auto; }
-.set-tabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 12px 14px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
+/* Wraps onto a second line rather than scrolling sideways. There are a dozen
+   tabs here and a scrollbar hides the ones past the fold - on a modal this wide
+   there is no reason not to use the second row. */
+.set-tabs { display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 4px 22px 0; border-bottom: 1px solid var(--border); position: sticky; top: 61px; background: var(--panel); z-index: 3; }
+.set-tabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 9px 12px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .set-tabs button:hover { color: var(--text); }
 .set-tabs button.on { color: var(--brand); border-bottom-color: var(--brand); }
 .set-tabbody { min-height: 200px; }

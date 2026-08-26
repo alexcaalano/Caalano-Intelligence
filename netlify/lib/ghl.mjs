@@ -167,12 +167,8 @@ export async function locationTokenOrDemo(locationId) {
 export async function locationTimezone(locationId) {
   if (locTzCache.has(locationId)) return locTzCache.get(locationId)
   let tz = DEF_TZ
-  try {
-    const locTok = await locationTokenOrDemo(locationId)
-    const j = await ghlGet(locTok, `/locations/${locationId}`, {})
-    const cand = (j.location && j.location.timezone) || j.timezone || null
-    if (cand) { try { new Intl.DateTimeFormat('en-US', { timeZone: cand }); tz = cand } catch { /* keep default */ } }
-  } catch { /* keep default */ }
+  const cand = (await locationProfile(locationId)).tz
+  if (cand) { try { new Intl.DateTimeFormat('en-US', { timeZone: cand }); tz = cand } catch { /* keep default */ } }
   locTzCache.set(locationId, tz)
   return tz
 }
@@ -184,15 +180,23 @@ export async function locationTimezone(locationId) {
 const locProfileCache = new Map()
 export async function locationProfile(locationId) {
   if (locProfileCache.has(locationId)) return locProfileCache.get(locationId)
-  let out = { name: null, website: null, logoUrl: null }
+  let out = { name: null, website: null, logoUrl: null, tz: null, address: null, city: null, state: null, postalCode: null, country: null }
   try {
     const locTok = await locationTokenOrDemo(locationId)
     const j = await ghlGet(locTok, `/locations/${locationId}`, {})
     const L = (j && j.location) || j || {}
+    const str = (v) => { const t = String(v == null ? '' : v).trim(); return t || null }
     out = {
       name: L.name || L.businessName || L.business?.name || null,
       website: L.website || L.business?.website || null,
       logoUrl: L.logoUrl || L.logo || L.business?.logoUrl || null,
+      // Timezone and the Business Settings address ride along on the same
+      // response. This call was already being made twice - once here for the
+      // logo and once for the timezone - so folding them together removes a
+      // request as well as giving catchment reporting an origin for free.
+      tz: str(L.timezone),
+      address: str(L.address), city: str(L.city), state: str(L.state),
+      postalCode: str(L.postalCode || L.postal_code || L.postcode), country: str(L.country),
     }
   } catch { /* leave nulls - frontend falls back to initials */ }
   locProfileCache.set(locationId, out)

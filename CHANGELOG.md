@@ -17,6 +17,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.381.0 - 2026-08-20 · `PENDING` - Client settings tabs wrap; one duplicate API call removed
+
+- The client-config modal's twelve tabs scrolled sideways, hiding everything
+  past *Forms* behind a scrollbar. They **wrap onto a second row** instead - on a
+  modal that wide there was no reason to scroll.
+- Groundwork for catchment reporting: `locationProfile()` now also returns the
+  **Business Settings address**, timezone and postcode.
+- Found while doing it: `/locations/{id}` was being fetched **twice** - once by
+  `locationProfile()` for the logo and again by `locationTimezone()` for the
+  zone. They're one call now, so this adds the address and *removes* a request
+  rather than adding one.
+
+---
+
 ## v3.380.0 - 2026-08-20 · `PENDING` - Leads and patients are different things, and the numbers now say so
 
 **The definition, applied properly**

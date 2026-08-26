@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.369.0'
+const APP_VERSION = '3.370.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1566,7 +1566,7 @@ function TrendsTab({ rows, currency, nonce, onPick }) {
         return [<ClientTrend key={r.id} row={r} tr={t} currency={currency} onPick={onPick} domId={trCardId(r.id)} clientId={r.id} pipeId="all" stagePos={t.stagePos} />]
       })}
       {!list.length && <div className="card"><p className="cap" style={{ margin: 0 }}>No client trend data available for the last 8 weeks.</p></div>}
-      <p className="caveat">Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages; where UTM attribution is connected they're split by first-touch channel, so Meta / Google cost-per-booked uses that channel's own bookings. Otherwise the toggle divides that channel's spend by total booked calls.</p>
+      <Caveat>Each window compares the last N days to the previous N days. Green = cost fell (better), red = cost rose. Booked calls come from Caalano Systems pipeline stages; where UTM attribution is connected they're split by first-touch channel, so Meta / Google cost-per-booked uses that channel's own bookings. Otherwise the toggle divides that channel's spend by total booked calls.</Caveat>
     </div>
   )
 }
@@ -1773,7 +1773,7 @@ function WeeklyTab({ rows, currency, nonce, wonBasis = 'closed' }) {
                     </div>}
                   </>}
                 </div>
-                <p className="caveat">Weeks run Monday-Sunday (ISO week number shown). Leads = Meta leads + Google conversions. Appointments / shown / won come from Caalano Systems pipeline stages (opportunities created that week). KPI lines &amp; vs-KPI deltas use the weekly targets you set per client in Settings.</p>
+                <Caveat>Weeks run Monday-Sunday (ISO week number shown). Leads = Meta leads + Google conversions. Appointments / shown / won come from Caalano Systems pipeline stages (opportunities created that week). KPI lines &amp; vs-KPI deltas use the weekly targets you set per client in Settings.</Caveat>
               </>
             )
           })()}
@@ -2207,7 +2207,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
             </tr>
           ))}</tbody>
         </table></div>}
-        <p className="caveat">Spend / Impr. / CVR come from the Meta ads whose creative matches this form's submissions (utm_content); Leads / Booked / Shown / Won / Revenue are the CRM outcomes for leads that came through the form. CPL = spend ÷ CRM leads. Click a form to filter the campaigns, ad sets and creatives above to just the ads that drove it, or click a campaign / ad set / creative to filter this table to the forms it drove.</p>
+        <Caveat>Spend / Impr. / CVR come from the Meta ads whose creative matches this form's submissions (utm_content); Leads / Booked / Shown / Won / Revenue are the CRM outcomes for leads that came through the form. CPL = spend ÷ CRM leads. Click a form to filter the campaigns, ad sets and creatives above to just the ads that drove it, or click a campaign / ad set / creative to filter this table to the forms it drove.</Caveat>
       </>}
       {deep.meta.coreOnly ? <div className="lvl-title">Creatives <span className="sub">· loading…</span><div className="card" style={{ padding: 14, marginTop: 8 }}><Spinner label="Loading creative-level detail…" /></div></div> : <>
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
@@ -2253,7 +2253,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
           </div>
         )
       })()}
-      <p className="caveat">Creative thumbnails from the Meta and Google API (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by the API; ↗ opens the Instagram post where available.</p>
+      <Caveat>Creative thumbnails from the Meta and Google API (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by the API; ↗ opens the Instagram post where available.</Caveat>
       {preview && <img className="cre-preview" src={preview.src} alt="" style={{ left: Math.min(preview.x + 18, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 268), top: Math.min(Math.max(12, preview.y - 120), (typeof window !== 'undefined' ? window.innerHeight : 800) - 300) }} onError={() => setPreview(null)} />}
     </div>
   )
@@ -2780,7 +2780,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         <div className="table-wrap"><table><thead><tr><SortTh k="term" sort={sSort} on={onSSort}>Search term</SortTh><SortTh k="campaign" sort={sSort} on={onSSort}>Campaign</SortTh><SortTh k="adGroup" sort={sSort} on={onSSort}>Ad group</SortTh><SortTh k="cost" sort={sSort} on={onSSort}>Cost</SortTh><SortTh k="ctr" sort={sSort} on={onSSort}>CTR</SortTh><SortTh k="clicks" sort={sSort} on={onSSort}>Clicks</SortTh><SortTh k="conversions" sort={sSort} on={onSSort}>Conv.</SortTh><SortTh k="cvr" sort={sSort} on={onSSort}>Conv. rate</SortTh><SortTh k="costConv" sort={sSort} on={onSSort}>Cost / conv</SortTh></tr></thead>
           <tbody>{stView.map((s, i) => (<tr key={s.campaign + '|' + s.adGroup + '|' + s.term + i} className={sel.keyword && s.keyword === sel.keyword ? 'row-sel' : ''} style={{ cursor: s.keyword ? 'pointer' : 'default' }} onClick={() => s.keyword && pickTerm(s)}><td>{s.term}</td><td style={{ color: 'var(--muted)', fontSize: 12 }}>{s.campaign || '-'}</td><td style={{ color: 'var(--muted)', fontSize: 12 }}>{s.adGroup || '-'}</td><td>{fmtCurrency(s.cost, currency)}</td><td>{fmtPct(rate(s.clicks, s.impressions), 2)}</td><td>{fmtNumber(s.clicks)}</td><td>{fmtNumber(s.conversions)}</td><td>{fmtPct(rate(s.conversions, s.clicks), 1)}</td><td>{s.conversions ? fmtCurrency(s.cost / s.conversions, currency) : '-'}</td></tr>))}</tbody></table></div>
         <Pager page={stPg} pages={stPages} onPage={setStPage} total={searchTerms.length} unit="terms" />
-      </>) : <p className="caveat">No search-term data in this range{selLabel ? ` for ${selLabel}` : ''}.</p>}
+      </>) : <Caveat>No search-term data in this range{selLabel ? ` for ${selLabel}` : ''}.</Caveat>}
       {g.landingPages && g.landingPages.length > 0 && <>
         <div className="lvl-title">Landing page performance <span className="sub">· {g.landingPages.length} destination URLs by spend · where the budget sent traffic · account-wide{has360 ? ' · green = CRM outcomes (matched by first-touch URL)' : ''}</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="cost" sort={lpSort} on={onLpSort}>Cost</SortTh><SortTh k="impressions" sort={lpSort} on={onLpSort}>Impr.</SortTh><SortTh k="ctr" sort={lpSort} on={onLpSort}>CTR</SortTh><SortTh k="clicks" sort={lpSort} on={onLpSort}>Clicks</SortTh><SortTh k="conversions" sort={lpSort} on={onLpSort}>Conv.</SortTh><SortTh k="cvr" sort={lpSort} on={onLpSort}>Conv. rate</SortTh><SortTh k="costConv" sort={lpSort} on={onLpSort}>Cost/conv</SortTh>{has360 && <O360Head sort={lpSort} on={onLpSort} cols={o360cols} />}</tr></thead>
@@ -3055,7 +3055,7 @@ function UtmSection({ attr, currency, paid }) {
       <UtmTable label="By source" first="Source" rows={srcRows} currency={currency} renderDetail={(r) => <UtmSourceDetail d={r.detail} currency={currency} />} />
       {a.byCampaign && a.byCampaign.length ? <UtmTable label="By campaign" first="Campaign" rows={a.byCampaign} currency={currency} /> : null}
       {a.byCreative && a.byCreative.length ? <UtmTable label="By creative (utm_content)" first="Creative" rows={a.byCreative} currency={currency} /> : null}
-      <p className="caveat">First-touch UTMs from Caalano Systems attribution, mapped to down-funnel outcomes. "(not set)" = no UTM captured (direct / organic / untagged link). Cost/Won &amp; ROAS on By source attribute each channel's ad spend across its sources by lead share.</p>
+      <Caveat>First-touch UTMs from Caalano Systems attribution, mapped to down-funnel outcomes. "(not set)" = no UTM captured (direct / organic / untagged link). Cost/Won &amp; ROAS on By source attribute each channel's ad spend across its sources by lead share.</Caveat>
     </>
   )
 }
@@ -3910,7 +3910,7 @@ function KeyEventsFunnel({ rows, total, spend, currency, title, sub, caveat, sty
           )
         })}
       </div>
-      {caveat ? <p className="caveat">{caveat}</p> : null}
+      {caveat ? <Caveat>{caveat}</Caveat> : null}
       {drill && drillEvent ? <KeyPeopleModal event={drillEvent} clientId={drill.clientId} channel={drill.channel} range={drill.range} currency={currency} onClose={() => setDrillEvent(null)} /> : null}
     </div>
   )
@@ -4427,7 +4427,7 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
           </div>
         ))
         : <>{funnelBlock(single)}{openPanel(openStages, multiPipe)}</>}
-      <p className="caveat">Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost - the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</p>
+      <Caveat>Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost - the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</Caveat>
     </div>
     {showCals.length ? <div className="card exec-bottleneck">
       <div className="exec-panel-h">Show rate by calendar <span className="sub">· shown ÷ occurred per booked calendar{onNav ? ' · click a calendar to open every appointment, per user' : ''}</span></div>
@@ -4442,7 +4442,7 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
           </RowTag>
         ) })}
       </div>
-      <p className="caveat">Show rate is how many booked calls actually happened. Green ≥ 60%, red &lt; 40%.{onNav ? ' Click a calendar to open the Appointments tab, where you can filter every appointment by user and see who booked / showed.' : ''}</p>
+      <Caveat>Show rate is how many booked calls actually happened. Green ≥ 60%, red &lt; 40%.{onNav ? ' Click a calendar to open the Appointments tab, where you can filter every appointment by user and see who booked / showed.' : ''}</Caveat>
     </div> : null}
     </>
   )
@@ -5500,7 +5500,7 @@ function CohortView({ clientId, currency, nonce }) {
           </tr>)
         })}
       </tbody></table></div>
-      <p className="caveat" style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won. Channel: <b>All</b> = every lead source against total ad spend (blended MER - flatters paid efficiency if you get organic/referral leads); <b>Non-Paid</b> = organic / referral / direct leads (no ad spend, so cost columns are blank); <b>Paid</b> = Meta + Google combined; <b>Meta</b> / <b>Google</b> = only leads whose first-touch UTM is that channel, vs that channel's own spend (true paid efficiency).</p>
+      <Caveat style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won. Channel: <b>All</b> = every lead source against total ad spend (blended MER - flatters paid efficiency if you get organic/referral leads); <b>Non-Paid</b> = organic / referral / direct leads (no ad spend, so cost columns are blank); <b>Paid</b> = Meta + Google combined; <b>Meta</b> / <b>Google</b> = only leads whose first-touch UTM is that channel, vs that channel's own spend (true paid efficiency).</Caveat>
     </>
   )
 }
@@ -5705,7 +5705,7 @@ function ClinicBenchmark({ clientId, currency, nonce }) {
           </tr>
         ))}</tbody>
       </table></div>
-      <p className="caveat">Built from each clinic&rsquo;s stored nightly snapshot, so this costs one read per clinic rather than a rebuild. Medians rather than averages - one large practice would otherwise set the bar everyone else is measured against. A clinic marked <b>stale</b> hasn&rsquo;t produced a snapshot in three days or more, which is a sync problem rather than a performance one, and its numbers are frozen at that date.</p>
+      <Caveat>Built from each clinic&rsquo;s stored nightly snapshot, so this costs one read per clinic rather than a rebuild. Medians rather than averages - one large practice would otherwise set the bar everyone else is measured against. A clinic marked <b>stale</b> hasn&rsquo;t produced a snapshot in three days or more, which is a sync problem rather than a performance one, and its numbers are frozen at that date.</Caveat>
     </div>
   )
 }
@@ -5781,12 +5781,12 @@ function ClinicSettings({ clientId, nonce }) {
                 <span><b>{fmtNumber(clinical.length)}</b> clinical</span>
                 <span><b>{fmtNumber(triage.length)}</b> triage</span>
               </div>
-              {!clinical.length ? <p className="caveat cl-warn" style={{ marginTop: 0, marginBottom: 10 }}>
+              {!clinical.length ? <Caveat extra="cl-warn" style={{ marginTop: 0, marginBottom: 10 }}>
                 <b>No calendar here is clinical.</b> That&rsquo;s expected when the clinical diary lives in the practice-management
                 system and only the sales calls run through Caalano Systems - the patient counts, LTV and attendance still come
                 from the sync, but the retention curve, rebooking split and visit cadence need clinical bookings in a calendar,
                 so those stay empty until one exists here.
-              </p> : null}
+              </Caveat> : null}
               {[['service', 'Service calendars', 'What practitioners deliver - these are the clinical bookings'],
                 ['calendar', 'Calendars', 'Booking calendars - usually the discovery / intake layer']]
                 .map(([grp, gLabel, gHint]) => {
@@ -5824,11 +5824,11 @@ function ClinicSettings({ clientId, nonce }) {
                     </div>
                   )
                 })}
-              <p className="caveat" style={{ marginTop: 12 }}>
+              <Caveat style={{ marginTop: 12 }}>
                 Calendars marked <b>auto</b> are using the default rule above rather than a choice you&rsquo;ve made - an explicit choice always wins over the default, and
                 sticks even if the calendar is later renamed. Changes apply to the Clinic tab on its next load, and to
                 tonight&rsquo;s snapshot.
-              </p>
+              </Caveat>
             </>
           )}
     </div>
@@ -5879,9 +5879,9 @@ function ClinicView({ clientId, currency, nonce }) {
           : (sy.lastSyncAt ? <p className="cl-fresh">Practice-management sync last wrote {new Date(sy.lastSyncAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.{partial ? ' Still populating across the patient base.' : ''}</p> : null)}
       </div>
 
-      {cr && cr.triage && cr.triage.length ? <p className="caveat cl-triage">
+      {cr && cr.triage && cr.triage.length ? <Caveat extra="cl-triage">
         <b>{cr.triage.map((t) => t.name).join(', ')}</b> {cr.triage.length === 1 ? 'is' : 'are'} treated as <b>triage</b>, not clinical - {fmtNumber(cr.triageAppts)} booking{cr.triageAppts === 1 ? '' : 's'} excluded from patient visits, so {cr.triage.length === 1 ? 'it doesn\u2019t' : 'they don\u2019t'} open a cohort on the retention curve or count as a rebooking. {cr.configured ? 'Set explicitly in Settings → Clinic.' : 'Guessed from the calendar name - confirm it in Settings → Clinic.'} Triage bookings still appear in the book, because they still occupy real time.
-      </p> : null}
+      </Caveat> : null}
 
       {dq.warnings && dq.warnings.length ? <div className="card insight cl-dq">
         <div>
@@ -5912,7 +5912,7 @@ function ClinicView({ clientId, currency, nonce }) {
             <div className="tm-sc warn"><span className="tm-lab">No-shows</span><b>{fmtNumber(dl.noShows)}</b><span className="tm-sub">in the same window</span></div>
             <div className="tm-sc"><span className="tm-lab">Unpaid AR</span><b>{money(m.unpaid)}</b><span className="tm-sub">movement <ClinicDelta value={dl.unpaidDelta} money={money} goodDown /></span></div>
           </div>
-          <p className="caveat">Lifetime spend and the appointment counters only ever accumulate, so the difference between two daily snapshots is a genuine period figure. It reflects what the sync had recorded on each of those two days, so a backdated entry lands in the window we noticed it rather than the window it happened in.</p>
+          <Caveat>Lifetime spend and the appointment counters only ever accumulate, so the difference between two daily snapshots is a genuine period figure. It reflects what the sync had recorded on each of those two days, so a backdated entry lands in the window we noticed it rather than the window it happened in.</Caveat>
         </div> : (hist.length ? null : <div className="card insight">
           <div><b>Trends start building from today.</b><p style={{ margin: '4px 0 0' }}>The practice-management sync overwrites its values each run, so no history exists to read back. We now record this clinic&rsquo;s totals once a day - period revenue, patient growth and rate movement will appear here as those snapshots accumulate, and a month from now this becomes a like-for-like comparison.</p></div>
         </div>)}
@@ -5956,7 +5956,7 @@ function ClinicView({ clientId, currency, nonce }) {
               {di.occupancy != null ? <Line yAxisId="r" dataKey="occupancy" name="Occupancy %" stroke="#f5a524" strokeWidth={2} dot={{ r: 2 }} /> : null}
             </ComposedChart>
           </ResponsiveContainer>
-          <p className="caveat">Booked hours come from each appointment&rsquo;s actual start and end time, which only the calendars carry - the synced counters know how many appointments there were, never how long they ran.{di.occupancy != null ? ` Occupancy is measured against the opening hours the calendars declare (${DOW.filter((_, i) => (di.openHours.days || []).includes(i)).join(', ')}, ${Math.floor(di.openHours.startMin / 60)}:00-${Math.floor(di.openHours.endMin / 60)}:00, across ${fmtNumber(di.openHours.chairs)} calendar${di.openHours.chairs === 1 ? '' : 's'}).` : ' Occupancy isn\u2019t shown because the calendars don\u2019t declare opening hours - without a real denominator a percentage would be invented rather than measured.'}</p>
+          <Caveat>Booked hours come from each appointment&rsquo;s actual start and end time, which only the calendars carry - the synced counters know how many appointments there were, never how long they ran.{di.occupancy != null ? ` Occupancy is measured against the opening hours the calendars declare (${DOW.filter((_, i) => (di.openHours.days || []).includes(i)).join(', ')}, ${Math.floor(di.openHours.startMin / 60)}:00-${Math.floor(di.openHours.endMin / 60)}:00, across ${fmtNumber(di.openHours.chairs)} calendar${di.openHours.chairs === 1 ? '' : 's'}).` : ' Occupancy isn\u2019t shown because the calendars don\u2019t declare opening hours - without a real denominator a percentage would be invented rather than measured.'}</Caveat>
         </div>
 
         {di.byWeekday && di.byWeekday.some((w) => w.daysOpen) ? <div className="card">
@@ -5968,7 +5968,7 @@ function ClinicView({ clientId, currency, nonce }) {
               <span className="ct">{w.avgAppts}</span>
             </div>
           ))}</div> })()}
-          <p className="caveat">Averaged over the days the clinic actually opened, not over all 90 - a day the clinic is closed shouldn&rsquo;t drag its own average down. Cancelled and missed appointments are excluded, so this is delivered load rather than what was booked.</p>
+          <Caveat>Averaged over the days the clinic actually opened, not over all 90 - a day the clinic is closed shouldn&rsquo;t drag its own average down. Cancelled and missed appointments are excluded, so this is delivered load rather than what was booked.</Caveat>
         </div> : null}
       </ClinicSection> : null}
 
@@ -5994,13 +5994,13 @@ function ClinicView({ clientId, currency, nonce }) {
               </div>
             ))}</div> })()}
           </> : null}
-          <p className="caveat"><b>PVA</b> is attended visits per patient who has actually been seen - patients on file who never attended are excluded, because including them drags it toward zero and makes it incomparable with what your practice-management system reports. The <b>median</b> is the number to sanity-check it against: a PVA of 4 built from &ldquo;most come once, a few come thirty times&rdquo; is a completely different clinic from one where everybody comes four times, and only the spread tells them apart. <b>Dollar per visit</b> is what says whether a low PVA is a retention problem or a pricing one.{pv.gapSample ? ` Visit cadence is measured across ${fmtNumber(pv.gapSample)} consecutive visit pairs in the diary.` : ''}</p>
+          <Caveat><b>PVA</b> is attended visits per patient who has actually been seen - patients on file who never attended are excluded, because including them drags it toward zero and makes it incomparable with what your practice-management system reports. The <b>median</b> is the number to sanity-check it against: a PVA of 4 built from &ldquo;most come once, a few come thirty times&rdquo; is a completely different clinic from one where everybody comes four times, and only the spread tells them apart. <b>Dollar per visit</b> is what says whether a low PVA is a retention problem or a pricing one.{pv.gapSample ? ` Visit cadence is measured across ${fmtNumber(pv.gapSample)} consecutive visit pairs in the diary.` : ''}</Caveat>
         </div>
         <div className="mr-two">
           <div className="card">
             <div className="cap cl-cap">Patient retention funnel</div>
             <ClinicFunnel rows={funnelRows} />
-            <p className="caveat">Each bar is scaled against the synced patient base, so the drop between &ldquo;attended&rdquo; and &ldquo;came back&rdquo; is the retention problem in one picture.</p>
+            <Caveat>Each bar is scaled against the synced patient base, so the drop between &ldquo;attended&rdquo; and &ldquo;came back&rdquo; is the retention problem in one picture.</Caveat>
           </div>
           {rb.available ? <div className="card">
             <div className="cap cl-cap">Rebooking <span>· was a visit followed by another booking?</span></div>
@@ -6022,10 +6022,10 @@ function ClinicView({ clientId, currency, nonce }) {
                 <tr><td className="lft"><b>Of those who rebooked, booked at the desk</b></td><td>-</td><td><b>{pct(rb.shareAtPointOfCare)}</b></td></tr>
               </tbody>
             </table></div> : null}
-            {!rb.timingAvailable ? <p className="caveat cl-warn"><b>The at-the-desk split isn&rsquo;t shown for this clinic.</b> Appointments here are written into the CRM by the practice-management sync, so each booking&rsquo;s creation timestamp is the moment the sync ran, not the moment the patient booked{rb.bookingTimes && rb.bookingTimes.pctCreatedAfterStart > 0 ? `, and ${rb.bookingTimes.pctCreatedAfterStart}% are stamped after the appointment had already happened` : ''}. Splitting on that would produce a confident but meaningless number, so we report only whether a visit was followed by another booking - which depends on appointment dates, and those are real.</p>
-              : <p className="caveat">Read from the diary across {fmtNumber(rb.calendars)} calendar{rb.calendars === 1 ? '' : 's'}: for every visit that has already happened we compare when the <i>next</i> booking was created against the day of that visit. Booked on or before the visit day (at reception, or a course booked up front) counts as leaving with it booked; anything later counts as a chase.</p>}
-            {df ? <p className="caveat">Diary figures come from the overnight snapshot{df.ageHours != null ? ` taken ${df.ageHours}h ago` : ''}{df.stale ? ' - the live read couldn\u2019t finish in time, so this is the last complete walk of the diary' : ''}. Walking a busy clinic\u2019s calendars takes longer than a page load allows, so it\u2019s done overnight with a full budget instead of partially on every visit.</p> : null}
-            {!df && rb.truncated ? <p className="caveat cl-warn">Part of the diary was skipped to stay inside the request budget{rb.slices ? ` (${rb.slices.fetched} of ${rb.slices.total} windows read)` : ''}, so treat these as indicative until tonight\u2019s snapshot catches up.</p> : null}
+            {!rb.timingAvailable ? <Caveat extra="cl-warn"><b>The at-the-desk split isn&rsquo;t shown for this clinic.</b> Appointments here are written into the CRM by the practice-management sync, so each booking&rsquo;s creation timestamp is the moment the sync ran, not the moment the patient booked{rb.bookingTimes && rb.bookingTimes.pctCreatedAfterStart > 0 ? `, and ${rb.bookingTimes.pctCreatedAfterStart}% are stamped after the appointment had already happened` : ''}. Splitting on that would produce a confident but meaningless number, so we report only whether a visit was followed by another booking - which depends on appointment dates, and those are real.</Caveat>
+              : <Caveat>Read from the diary across {fmtNumber(rb.calendars)} calendar{rb.calendars === 1 ? '' : 's'}: for every visit that has already happened we compare when the <i>next</i> booking was created against the day of that visit. Booked on or before the visit day (at reception, or a course booked up front) counts as leaving with it booked; anything later counts as a chase.</Caveat>}
+            {df ? <Caveat>Diary figures come from the overnight snapshot{df.ageHours != null ? ` taken ${df.ageHours}h ago` : ''}{df.stale ? ' - the live read couldn\u2019t finish in time, so this is the last complete walk of the diary' : ''}. Walking a busy clinic\u2019s calendars takes longer than a page load allows, so it\u2019s done overnight with a full budget instead of partially on every visit.</Caveat> : null}
+            {!df && rb.truncated ? <Caveat extra="cl-warn">Part of the diary was skipped to stay inside the request budget{rb.slices ? ` (${rb.slices.fetched} of ${rb.slices.total} windows read)` : ''}, so treat these as indicative until tonight\u2019s snapshot catches up.</Caveat> : null}
           </div> : null}
         </div>
 
@@ -6044,7 +6044,7 @@ function ClinicView({ clientId, currency, nonce }) {
               <tr><td className="lft"><b>Revenue at risk</b></td><td>{fmtNumber(re.oneAndDone)}</td><td><b>{money(re.lostRevenue)}</b></td><td className="lft">One &amp; done patients × the {money(re.ltvGap)} gap between a retained and a lapsed patient.</td></tr>
             </tbody>
           </table></div>
-          <p className="caveat"><b>Revenue at risk</b> is an opportunity figure, not money already lost: it prices what the one-and-done cohort would have been worth had they retained at the same average as returning patients.</p>
+          <Caveat><b>Revenue at risk</b> is an opportunity figure, not money already lost: it prices what the one-and-done cohort would have been worth had they retained at the same average as returning patients.</Caveat>
         </div>
       </ClinicSection>
 
@@ -6067,7 +6067,7 @@ function ClinicView({ clientId, currency, nonce }) {
             <thead><tr><th className="lft">First appointment</th><th>Patients</th><th>Age</th><th>Total LTV</th><th>Avg LTV</th><th title="Average LTV divided by how many months the cohort has existed - the fair way to compare a two-year-old cohort against a new one">Avg LTV / month</th><th title="Attended visits per patient seen">PVA</th><th title="Share with an appointment in the diary right now">Still active</th><th title="Share that came back for a second visit">Came back</th></tr></thead>
             <tbody>{d.cohorts.map((c) => <tr key={c.month}><td className="lft">{c.month}</td><td>{fmtNumber(c.patients)}</td><td>{c.tenureMonths != null ? `${c.tenureMonths}mo` : '-'}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td><td>{c.ltvPerMonth != null ? money(c.ltvPerMonth) : '-'}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.activePct != null ? `${c.activePct}%` : '-'}</td><td>{c.returnedPct != null ? `${c.returnedPct}%` : '-'}</td></tr>)}</tbody>
           </table></div> : <p className="cap" style={{ margin: 0 }}>No first-appointment dates synced yet.</p>}
-          <p className="caveat">Cohorts are different ages, so raw LTV always flatters the older ones - a patient who first came two years ago has had two years to spend. <b>Avg LTV / month</b> divides by the cohort&rsquo;s age, which is the column to compare across rows.</p>
+          <Caveat>Cohorts are different ages, so raw LTV always flatters the older ones - a patient who first came two years ago has had two years to spend. <b>Avg LTV / month</b> divides by the cohort&rsquo;s age, which is the column to compare across rows.</Caveat>
         </div>
 
         {d.cohortCurve && d.cohortCurve.length ? <div className="card">
@@ -6085,7 +6085,7 @@ function ClinicView({ clientId, currency, nonce }) {
               </tr>
             ))}</tbody>
           </table></div>
-          <p className="caveat">Read a row left to right: M0 is the month of the first visit, M1 the month after, and each cell is the share of that cohort who attended in that month. Hatched cells are months the cohort hasn&rsquo;t reached yet, so a young cohort&rsquo;s short row isn&rsquo;t churn. Built from the appointment history on the CRM calendars.</p>
+          <Caveat>Read a row left to right: M0 is the month of the first visit, M1 the month after, and each cell is the share of that cohort who attended in that month. Hatched cells are months the cohort hasn&rsquo;t reached yet, so a young cohort&rsquo;s short row isn&rsquo;t churn. Built from the appointment history on the CRM calendars.</Caveat>
         </div> : null}
       </ClinicSection>
 
@@ -6104,7 +6104,7 @@ function ClinicView({ clientId, currency, nonce }) {
               <thead><tr><th className="lft">Channel</th><th>Patients</th><th>Avg LTV</th><th title="Attended visits per patient seen">PVA</th><th title="Revenue per attended visit">$ / visit</th><th>With next appt</th></tr></thead>
               <tbody>{d.channels.map((c) => <tr key={c.channel}><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.avgLtv)}</td><td>{c.pva != null ? c.pva : '-'}</td><td>{c.dollarPerVisit != null ? money(c.dollarPerVisit) : '-'}</td><td>{pct(c.pctWithNext)}</td></tr>)}</tbody>
             </table></div>
-            <p className="caveat">Channel comes from each patient&rsquo;s first-touch attribution on their contact, so lifetime value traces back to the ad that produced them. Patients created directly in the practice-management system carry no attribution and are excluded.</p>
+            <Caveat>Channel comes from each patient&rsquo;s first-touch attribution on their contact, so lifetime value traces back to the ad that produced them. Patients created directly in the practice-management system carry no attribution and are excluded.</Caveat>
           </div> : null}
           {d.heardAbout && d.heardAbout.length ? <div className="card">
             <div className="cap cl-cap">How patients heard about us</div>
@@ -6115,7 +6115,7 @@ function ClinicView({ clientId, currency, nonce }) {
                 <span className="ct">{fmtNumber(h.patients)}</span>
               </div>
             ))}</div> })()}
-            <p className="caveat">Self-reported at intake - complements, rather than replaces, UTM attribution.</p>
+            <Caveat>Self-reported at intake - complements, rather than replaces, UTM attribution.</Caveat>
           </div> : null}
         </div>
         {d.campaigns && d.campaigns.length ? <div className="card">
@@ -6124,7 +6124,7 @@ function ClinicView({ clientId, currency, nonce }) {
             <thead><tr><th className="lft">Campaign</th><th className="lft">Channel</th><th>Patients</th><th>Total LTV</th><th>Avg LTV</th></tr></thead>
             <tbody>{d.campaigns.map((c, i) => <tr key={i}><td className="lft" title={c.campaign}>{c.campaign}</td><td className="lft">{CLINIC_CHAN[c.channel] || c.channel}</td><td>{fmtNumber(c.patients)}</td><td>{money(c.ltv)}</td><td>{money(c.avgLtv)}</td></tr>)}</tbody>
           </table></div>
-          <p className="caveat">This is the lifetime-ROAS view: set these against each campaign&rsquo;s spend to see cost per <i>patient</i> rather than cost per lead.</p>
+          <Caveat>This is the lifetime-ROAS view: set these against each campaign&rsquo;s spend to see cost per <i>patient</i> rather than cost per lead.</Caveat>
         </div> : null}
       </ClinicSection>
 
@@ -6164,7 +6164,7 @@ function ClinicView({ clientId, currency, nonce }) {
               <thead><tr><th className="lft">Practitioner</th><th>Patients</th><th title="Attended visits per patient seen">PVA</th><th>Avg LTV</th></tr></thead>
               <tbody>{d.practitioners.map((p) => <tr key={p.name}><td className="lft" title={p.name}>{p.name}</td><td>{fmtNumber(p.patients)}</td><td>{p.pva != null ? p.pva : '-'}</td><td>{money(p.avgLtv)}</td></tr>)}</tbody>
             </table></div> : <p className="cap" style={{ margin: 0 }}>No practitioner recorded yet.</p>}
-            <p className="caveat">From each patient&rsquo;s most recent appointment.</p>
+            <Caveat>From each patient&rsquo;s most recent appointment.</Caveat>
           </div>
         </div>
         {(d.apptTypes && d.apptTypes.length) || (d.cancelReasons && d.cancelReasons.length) ? <div className="mr-two">
@@ -6184,7 +6184,7 @@ function ClinicView({ clientId, currency, nonce }) {
                 <span className="ct">{fmtNumber(c.count)}</span>
               </div>
             ))}</div> })()}
-            <p className="caveat">The cancellation reason recorded against each patient&rsquo;s most recent cancelled appointment.</p>
+            <Caveat>The cancellation reason recorded against each patient&rsquo;s most recent cancelled appointment.</Caveat>
           </div> : null}
         </div> : null}
       </ClinicSection>
@@ -6222,7 +6222,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </div>
       </ClinicSection> : null}
 
-      <p className="caveat">Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Every sync <b>overwrites</b> them with current values, so everything here is a snapshot of right now. Period and trend figures come from the daily snapshots we take ourselves; rebooking and the retention curve are read from the calendars, which keep real per-booking history.</p>
+      <Caveat>Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Every sync <b>overwrites</b> them with current values, so everything here is a snapshot of right now. Period and trend figures come from the daily snapshots we take ourselves; rebooking and the retention curve are read from the calendars, which keep real per-booking history.</Caveat>
     </>
   )
 }
@@ -6302,7 +6302,7 @@ function CalPerfView({ clientId, range, nonce }) {
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat">Show rate is measured against bookings with a <b>known outcome</b> (attended or no-show) - a booking whose status was never set isn&rsquo;t counted as a miss, so clinics that don&rsquo;t mark attendance aren&rsquo;t punished for it. Service Calendars are included alongside ordinary calendars; where a location runs a service menu, each service is reported on its own line.</p>
+        <Caveat>Show rate is measured against bookings with a <b>known outcome</b> (attended or no-show) - a booking whose status was never set isn&rsquo;t counted as a miss, so clinics that don&rsquo;t mark attendance aren&rsquo;t punished for it. Service Calendars are included alongside ordinary calendars; where a location runs a service menu, each service is reported on its own line.</Caveat>
       </div>
 
       <div className="card">
@@ -6318,8 +6318,8 @@ function CalPerfView({ clientId, range, nonce }) {
             </tr>
           })}</tbody>
         </table></div>
-        {d.attributedPct < 50 ? <p className="caveat cl-warn"><b>Only {d.attributedPct}% of bookings can be attributed to a source yet.</b> Channel comes from first-touch UTMs on the patient&rsquo;s contact, so a booking made by someone who never came through a tracked link has none. This split becomes the real answer once UTMs are captured on the booking journey - the view is here and will fill in on its own, with no change needed at that point.</p>
-          : <p className="caveat">Channel is the patient&rsquo;s first-touch attribution, so a calendar&rsquo;s show rate can be read per source - useful when paid traffic books readily but attends less reliably than a referral.</p>}
+        {d.attributedPct < 50 ? <Caveat extra="cl-warn"><b>Only {d.attributedPct}% of bookings can be attributed to a source yet.</b> Channel comes from first-touch UTMs on the patient&rsquo;s contact, so a booking made by someone who never came through a tracked link has none. This split becomes the real answer once UTMs are captured on the booking journey - the view is here and will fill in on its own, with no change needed at that point.</Caveat>
+          : <Caveat>Channel is the patient&rsquo;s first-touch attribution, so a calendar&rsquo;s show rate can be read per source - useful when paid traffic books readily but attends less reliably than a referral.</Caveat>}
       </div>
     </>
   )
@@ -6606,7 +6606,7 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
           })}</tbody>
         </table>
         </div>
-        {events.length ? <p className="caveat" style={{ marginTop: 8 }}>Key event columns count the people (of those listed) who reached each of this client&apos;s configured key events. Click an answer to see who gave it and where each person sits in the funnel; click a person for their CRM notes.</p> : <p className="caveat" style={{ marginTop: 8 }}>Set this client&apos;s <b>key events</b> in Settings to see a per-answer funnel here. Click an answer to see who gave it.</p>}
+        {events.length ? <Caveat style={{ marginTop: 8 }}>Key event columns count the people (of those listed) who reached each of this client&apos;s configured key events. Click an answer to see who gave it and where each person sits in the funnel; click a person for their CRM notes.</Caveat> : <Caveat style={{ marginTop: 8 }}>Set this client&apos;s <b>key events</b> in Settings to see a per-answer funnel here. Click an answer to see who gave it.</Caveat>}
         {s.more > 0 && <div className="form-seg-more">+{s.more} more written answer{s.more === 1 ? '' : 's'}</div>}
       </div>
     </div>
@@ -7069,7 +7069,7 @@ function LocationView({ clientId, range, nonce, currency }) {
                 </button>
               ))}</div>
               : <div className="cap">No {cur.label.toLowerCase()} recorded across these locations.</div>}
-            {isKe ? <p className="caveat" style={{ marginTop: 8 }}>Key-event counts are over the leads we captured per location (people are sampled per location server-side), so treat them as directional where a suburb has a very large lead count.</p> : null}
+            {isKe ? <Caveat style={{ marginTop: 8 }}>Key-event counts are over the leads we captured per location (people are sampled per location server-side), so treat them as directional where a suburb has a very large lead count.</Caveat> : null}
           </div>
         )
       })()}
@@ -7245,7 +7245,7 @@ function FormsView({ clientId, currency, range, nonce }) {
           )
         })}
       </table></div>
-      <p className="caveat">Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their Caalano Systems form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged - hover an answer to see what it combines.</p>
+      <Caveat>Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their Caalano Systems form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged - hover an answer to see what it combines.</Caveat>
       {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
     </>
   )
@@ -7431,7 +7431,7 @@ function AppointmentsView({ clientId, range, nonce }) {
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy - read the trend.</p>
+        <Caveat style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy - read the trend.</Caveat>
       </div>
 
       <div className="card">
@@ -7466,7 +7466,7 @@ function AppointmentsView({ clientId, range, nonce }) {
             </ResponsiveContainer>
           </div>
         </div>
-        <p className="caveat" style={{ marginTop: 8 }}>Bars = appointments that have occurred; line = show rate. Times are in the client's timezone ({dd.tz || '-'}). Use this to spot the days / times leads actually turn up.</p>
+        <Caveat style={{ marginTop: 8 }}>Bars = appointments that have occurred; line = show rate. Times are in the client's timezone ({dd.tz || '-'}). Use this to spot the days / times leads actually turn up.</Caveat>
       </div>
 
       <div className="card">
@@ -7486,7 +7486,7 @@ function AppointmentsView({ clientId, range, nonce }) {
             ) })}
           </tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Self-booked = the lead booked the call themselves (no staff user on the calendar event); staff-booked = a team member set it. Comparing show/win rates tells you whether pushing self-booking links helps or hurts.</p>
+        <Caveat style={{ marginTop: 10 }}>Self-booked = the lead booked the call themselves (no staff user on the calendar event); staff-booked = a team member set it. Comparing show/win rates tells you whether pushing self-booking links helps or hurts.</Caveat>
       </div>
 
       {(C.byUser || []).length > 1 && <div className="card">
@@ -7505,7 +7505,7 @@ function AppointmentsView({ clientId, range, nonce }) {
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>"User" is the person the appointment is assigned to on the calendar. Use the User filter above to scope the whole tab to one person.</p>
+        <Caveat style={{ marginTop: 10 }}>"User" is the person the appointment is assigned to on the calendar. Use the User filter above to scope the whole tab to one person.</Caveat>
       </div>}
 
       <div className="card">
@@ -7694,7 +7694,7 @@ function TimingView({ clientId, range, nonce, currency }) {
               <button className="tm-oc sub" onClick={() => dr('userBooked', 'Leads with a user-booked appointment')} disabled={!cr.userBooked}><span className="tm-oc-lab">↳ User-booked</span><b>{fmtNumber(cr.userBooked)}</b><span className="tm-oc-sub">staff booked the call</span></button>
               <button className="tm-oc sub" onClick={() => dr('selfBooked', 'Leads with a customer self-booked appointment')} disabled={!cr.selfBooked}><span className="tm-oc-lab">↳ Customer-booked</span><b>{fmtNumber(cr.selfBooked)}</b><span className="tm-oc-sub">lead self-booked</span></button>
             </div>
-            <p className="caveat" style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message or call</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap - the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</p>
+            <Caveat style={{ marginTop: 10 }}>Contacted = a lead we sent a <b>manual message or call</b> to <b>or</b> that had an <b>appointment booked</b>. User-booked = a team member created the appointment; Customer-booked = the lead self-booked via a calendar link. A lead can be both messaged and booked, so the rows overlap - the total rate counts each contacted lead once. Based on the same sample as Speed to Lead; “Scan the whole date range” above makes it exact.</Caveat>
           </div>
         )
       })()}
@@ -7725,7 +7725,7 @@ function TimingView({ clientId, range, nonce, currency }) {
             </div>
           ))}
         </div>
-        <p className="caveat" style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion - the first few minutes matter most.</p>
+        <Caveat style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion - the first few minutes matter most.</Caveat>
       </div>
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Does responding faster convert better? - outcomes by response speed</div>
@@ -7744,7 +7744,7 @@ function TimingView({ clientId, range, nonce, currency }) {
             </tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Each row is the measured leads whose first human reply fell in that window. Book % = booked ÷ leads, Show % = shown ÷ booked, Win % = won ÷ leads. If the top rows convert best, faster response is paying off. Small samples make single rows noisy - read the trend, not one cell.</p>
+        <Caveat style={{ marginTop: 10 }}>Each row is the measured leads whose first human reply fell in that window. Book % = booked ÷ leads, Show % = shown ÷ booked, Win % = won ÷ leads. If the top rows convert best, faster response is paying off. Small samples make single rows noisy - read the trend, not one cell.</Caveat>
       </div>
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How manual vs automated is decided ({(d.sourceBreakdown || []).length} message sources)</button>
@@ -8288,7 +8288,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                           <div className="u-stage-rows">{rows.map(([stage, g]) => <button type="button" key={stage} className={`u-stage-row ${statusView}`} onClick={() => { setDrillUser('all'); setDrill({ name: u.name, stage, status: statusView, deals: g.deals }) }}><span className="u-stage-name" title={stage}>{stage}</span><span className="u-stage-n"><b>{fmtNumber(g.n)}</b> {statusView}</span><span className="u-stage-v">{money(g.value)}</span><span className="u-stage-go">→</span></button>)}</div>
                         </div>
                       })()}
-                      <p className="caveat" style={{ marginTop: 8 }}>Funnel: reached is cumulative (a later stage counts the earlier ones). The by-stage panel below follows the card you select - <b>Open</b> = where live deals are sitting, <b>Won</b> = the stage each win closed at, <b>Lost</b> = where lost/abandoned deals died - click a stage (or a number) to drill into those deals.</p>
+                      <Caveat style={{ marginTop: 8 }}>Funnel: reached is cumulative (a later stage counts the earlier ones). The by-stage panel below follows the card you select - <b>Open</b> = where live deals are sitting, <b>Won</b> = the stage each win closed at, <b>Lost</b> = where lost/abandoned deals died - click a stage (or a number) to drill into those deals.</Caveat>
                     </div>
                     <div className="u-detail-side">
                       {u.lostReasons && u.lostReasons.length > 0 && <div className="u-lost">
@@ -8306,7 +8306,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
             )
           })}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended - it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</p>
+        <Caveat style={{ marginTop: 10 }}>Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended - it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</Caveat>
       </div>
 
       {stageCols.length > 0 && <div className="card">
@@ -8317,7 +8317,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
             <tr key={u.id}><td className="lft">{u.name}</td><td>{fmtNumber(u.leads)}</td>{stageCols.map((s) => <td key={s}>{fmtNumber(u.stages[s] || 0)}</td>)}<td>{fmtNumber(u.won)}</td></tr>
           ))}</tbody>
         </table></div>
-        <p className="caveat" style={{ marginTop: 10 }}>How many of each rep's leads reached each configured key stage (cumulative - reaching a later stage counts the earlier ones). Configure the stages in Settings → the client → Key events.</p>
+        <Caveat style={{ marginTop: 10 }}>How many of each rep's leads reached each configured key stage (cumulative - reaching a later stage counts the earlier ones). Configure the stages in Settings → the client → Key events.</Caveat>
       </div>}
       {drill && (() => {
         const repTabs = [...new Set(drill.deals.map((x) => x.user).filter(Boolean))].sort((a, b) => a.localeCompare(b))
@@ -8334,7 +8334,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
                 <thead><tr><th className="lft">Opportunity</th><th className="lft">Contact</th><th>Value</th><th>Days in stage</th></tr></thead>
                 <tbody>{shown.slice().sort((a, b) => b.value - a.value).map((d, i) => <OpenDealRow key={d.id || i} d={d} clientId={clientId} money={money} showPipe={showPipe} />)}</tbody>
               </table></div>
-              <p className="caveat">{drill.status === 'won' ? 'Deals won at this stage' : drill.status === 'lost' ? 'Deals lost / abandoned at this stage' : 'Live opportunities currently sitting at this stage (not won/lost)'}, highest value first. <b>Days in stage</b> = time since the deal last moved{drill.status === 'won' || drill.status === 'lost' ? '' : ' (amber = 30+ days, likely stalled)'}. <b>Click a deal to read its Caalano Systems notes.</b></p>
+              <Caveat>{drill.status === 'won' ? 'Deals won at this stage' : drill.status === 'lost' ? 'Deals lost / abandoned at this stage' : 'Live opportunities currently sitting at this stage (not won/lost)'}, highest value first. <b>Days in stage</b> = time since the deal last moved{drill.status === 'won' || drill.status === 'lost' ? '' : ' (amber = 30+ days, likely stalled)'}. <b>Click a deal to read its Caalano Systems notes.</b></Caveat>
             </div>
           </div>
         </div>
@@ -8670,7 +8670,7 @@ function TrackingHealth({ paid, crmLeads, attribData, channels, periodLabel }) {
         <span className="th-sources-l">Opportunity sources</span>
         {sources.slice(0, 10).map((s) => <span key={s.name} className={`th-src ${s.manual ? 'manual' : ''}`}>{s.name} <b>{fmtNumber(s.count)}</b>{s.manual ? ' ✋' : ''}</span>)}
       </div>}
-      <p className="caveat">Ad-reported leads are what Meta/Google count; CRM opportunities are what landed in Caalano Systems. <b>Manual (CRM UI)</b> opportunities were added by hand in the CRM (not driven by ads), so <b>True variance</b> compares ad-reported leads to CRM <b>excluding</b> those - the real gap. A remaining gap usually means duplicate/again-counted ad conversions, leads not reaching the CRM, or missing UTMs (see source-tag coverage). ✋ = a manually-added source.</p>
+      <Caveat>Ad-reported leads are what Meta/Google count; CRM opportunities are what landed in Caalano Systems. <b>Manual (CRM UI)</b> opportunities were added by hand in the CRM (not driven by ads), so <b>True variance</b> compares ad-reported leads to CRM <b>excluding</b> those - the real gap. A remaining gap usually means duplicate/again-counted ad conversions, leads not reaching the CRM, or missing UTMs (see source-tag coverage). ✋ = a manually-added source.</Caveat>
     </div>
   )
 }
@@ -8737,7 +8737,7 @@ function AttributionDiagnostics({ attribData, camps, currency }) {
             </ul> : <p className="attr-empty">Every tagged campaign matched a spend row.</p>}
           </div>
         </div>
-        <p className="caveat">A utm_campaign that carries the ad campaign ID (or a shortened slug) instead of the exact campaign name will land here even though it is really the same campaign - the "looks like" hint flags the likely pair. Set the campaign to pipeline links above to force a match for reporting.</p>
+        <Caveat>A utm_campaign that carries the ad campaign ID (or a shortened slug) instead of the exact campaign name will land here even though it is really the same campaign - the "looks like" hint flags the likely pair. Set the campaign to pipeline links above to force a match for reporting.</Caveat>
       </div>
     </details>
   )
@@ -9180,7 +9180,7 @@ function TagAudit({ clients }) {
               </tbody>
             </table>
           </div>
-          <p className="caveat">The tag is a lifetime flag on the contact, so the self-booking rate is "share of booked deals whose contact self-booked at least once," sampled from the most recent opportunities. For a per-appointment figure we would add the appointments API. Rate is split by channel in the data if you want it surfaced next.</p>
+          <Caveat>The tag is a lifetime flag on the contact, so the self-booking rate is "share of booked deals whose contact self-booked at least once," sampled from the most recent opportunities. For a per-appointment figure we would add the appointments API. Rate is split by channel in the data if you want it surfaced next.</Caveat>
         </>
       )}
     </div>
@@ -9316,7 +9316,7 @@ function AddClientModal({ existing, editClient, onClose }) {
                   {isEdit ? <button className="addcl-remove" onClick={remove}>Remove client</button> : <span className="cap">{!name.trim() ? 'Add a name to continue.' : (ghl || meta || google || (ga4 || '').trim()) ? `Linking${ghl ? ' CRM' : ''}${meta ? ' · Meta' : ''}${google ? ' · Google' : ''}${(ga4 || '').trim() ? ' · GA4' : ''}` : 'Pick at least one account (any one is fine).'}</span>}
                   <button className="addcl-save" disabled={!canSave || saved} onClick={save}>{saved ? '✓ Saved' : (isEdit ? 'Save changes' : 'Add client')}</button>
                 </div>
-                <p className="caveat" style={{ marginTop: 10 }}>You only need <b>one</b> account linked - a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> - so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</p>
+                <Caveat style={{ marginTop: 10 }}>You only need <b>one</b> account linked - a Meta-only (or Google-only, or CRM-only) client is fine. Saved to the shared settings store and merged in immediately. Meta / Google accounts come from Windsor (any account with activity in the last 12 months); Caalano Systems locations from the agency connection. <b>New account not showing?</b> Windsor only lists an account here once it has <b>synced data with activity in the last 12 months</b> - so a just-connected account (still backfilling) or a dormant one with no recent spend won't appear yet, even though Windsor may count it as "connected". That's why the numbers here can be lower than the account totals in your Windsor dashboard. In the meantime, paste its <b>account ID</b> into the box under the relevant column to link it right away, or hit <b>Refresh accounts</b>.</Caveat>
               </>}
         </div>
       </div>
@@ -9425,7 +9425,7 @@ function AutoOnboardModal({ existing, onClose }) {
                     <span className="cap">{selected.length} of {rows.length} selected{busy ? ` · creating ${done}/${selected.length}…` : ''}</span>
                     <button className="addcl-save" disabled={!selected.length || busy} onClick={createAll}>{busy ? 'Creating…' : `Create ${selected.length} client${selected.length === 1 ? '' : 's'}`}</button>
                   </div>
-                  <p className="caveat" style={{ marginTop: 10 }}>Matches are by account name - a location with no confident ad-account match is created CRM-only, which is fine (link Meta/Google later). Meta/Google accounts only appear once Windsor has synced them, so add the ad account to your Business Manager + Windsor first if it’s missing.</p>
+                  <Caveat style={{ marginTop: 10 }}>Matches are by account name - a location with no confident ad-account match is created CRM-only, which is fine (link Meta/Google later). Meta/Google accounts only appear once Windsor has synced them, so add the ad account to your Business Manager + Windsor first if it’s missing.</Caveat>
                 </>)}
         </div>
       </div>
@@ -9795,7 +9795,7 @@ function LogsPanel({ clients }) {
                   </tr>
                 ) })}</tbody>
               </table></div>
-              <p className="caveat" style={{ marginTop: 10 }}>Rolling log, ~400 entries/day, kept ~60 days. <b>Slow</b> = a build over 6s (close to the 10s function ceiling - a caching candidate). <b>Error (served cached)</b> = a rebuild failed but the user still saw the last good data instead of an error.</p>
+              <Caveat style={{ marginTop: 10 }}>Rolling log, ~400 entries/day, kept ~60 days. <b>Slow</b> = a build over 6s (close to the 10s function ceiling - a caching candidate). <b>Error (served cached)</b> = a rebuild failed but the user still saw the last good data instead of an error.</Caveat>
             </>))}
         </div>
       )}
@@ -10288,6 +10288,16 @@ function authApi(action, opts = {}) {
     .then((r) => r.json().catch(() => ({ ok: false, error: 'server ' + r.status })))
     .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
 }
+/* Methodology prose - the "how this number is calculated" paragraphs under each
+   card. It is the thinking behind the reporting rather than the reporting
+   itself, so it is shown to staff and withheld from client Viewers. Removed
+   from the tree, not hidden with CSS, so it isn't sitting in the DOM. */
+const ViewerCtx = React.createContext(false)
+function Caveat({ extra, children, ...rest }) {
+  const isViewer = React.useContext(ViewerCtx)
+  if (isViewer) return null
+  return <p className={`caveat${extra ? ' ' + extra : ''}`} {...rest}>{children}</p>
+}
 function AuthShell({ children }) {
   return (
     <div className="auth-screen">
@@ -10547,11 +10557,11 @@ function AccessPreview({ draft, clients, email, onClose }) {
                 ))}
               </>
             )}
-            <p className="caveat prev-caveat">
+            <Caveat extra="prev-caveat">
               This shows what the app renders for that allocation. The real boundary is enforced on the server on every
               request, so a tab they can’t see is one they can’t fetch either - this is here to catch a mis-ticked box,
               not to prove the access rules.
-            </p>
+            </Caveat>
           </div>
         </div>
       </div>
@@ -11280,10 +11290,10 @@ function TermsAdmin({ authUser }) {
           </label>
         </div>
       </div>
-      <p className="caveat" style={{ marginTop: 0 }}>
+      <Caveat style={{ marginTop: 0 }}>
         Leave the re-sign box off for wording fixes - existing signatures keep standing and nobody sees the gate. Tick it
         only when a change is material enough that an old signature shouldn’t be taken to cover it.
-      </p>
+      </Caveat>
 
       <div className="terms-ed-block">
         <h4>Notice above the terms</h4>
@@ -11417,11 +11427,11 @@ function TermsRegister() {
                 ))}</tbody>
               </table></div>
             )}
-      <p className="caveat" style={{ marginTop: 10 }}>
+      <Caveat style={{ marginTop: 10 }}>
         Each acceptance stores the terms version and a digest of the exact wording that was on screen, so a signature can
         always be matched back to what was actually agreed - even after the terms have since changed. Earlier acceptances
         are kept rather than overwritten.
-      </p>
+      </Caveat>
       {open ? <TermsRecordModal rec={open} onClose={() => setOpen(null)} /> : null}
     </div>
   )
@@ -11857,7 +11867,7 @@ function MetaFatiguePage({ clients, currency, range, nonce }) {
         <Sc label="Watch (Medium)" value={fmtNumber(agg.medium)} />
         <Sc label="Creatives scanned" value={fmtNumber(agg.total)} />
       </div>
-      <p className="caveat">A creative-fatigue proxy computed live from Meta delivery: frequency (impressions ÷ reach), CTR decline across the first vs second half of the window, and Meta’s quality ranking. Scored to <b>High 🔥</b> (refresh now), <b>Medium 👀</b> (watch) or ok. Thresholds are shared across clients and set in <b>Settings → Creative fatigue</b>. Not Meta’s official webhook signal (that needs a Meta App with App Review) - this is our best on-platform read of the same signals.</p>
+      <Caveat>A creative-fatigue proxy computed live from Meta delivery: frequency (impressions ÷ reach), CTR decline across the first vs second half of the window, and Meta’s quality ranking. Scored to <b>High 🔥</b> (refresh now), <b>Medium 👀</b> (watch) or ok. Thresholds are shared across clients and set in <b>Settings → Creative fatigue</b>. Not Meta’s official webhook signal (that needs a Meta App with App Review) - this is our best on-platform read of the same signals.</Caveat>
       <div className="fat-grid">{ordered.map((c) => <FatigueClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
     </>
   )
@@ -11930,7 +11940,7 @@ function MetaAnomaliesPage({ clients, currency, range, nonce }) {
         <Sc label="Watch (🟠)" value={fmtNumber(agg.med)} />
         <Sc label="Meta clients" value={fmtNumber(metaClients.length)} />
       </div>
-      <p className="caveat">Each active Meta client compared to the equal prior window: cost per lead, click-through rate, frequency, and spend-vs-leads movement, plus delivery stalls and any ad spending with zero leads. Computed live from Meta delivery data - no Meta App required. Clients needing attention float to the top.</p>
+      <Caveat>Each active Meta client compared to the equal prior window: cost per lead, click-through rate, frequency, and spend-vs-leads movement, plus delivery stalls and any ad spending with zero leads. Computed live from Meta delivery data - no Meta App required. Clients needing attention float to the top.</Caveat>
       <div className="fat-grid">{ordered.map((c) => <AnomalyClientCard key={c.id} client={c} currency={currency} range={range} nonce={nonce} onSummary={onSummary} />)}</div>
     </>
   )
@@ -12010,7 +12020,7 @@ function MetaFatigueWebhookPage({ clients, range, nonce }) {
         <p>This tab shows Meta’s <b>own</b> Low/Med/High creative-fatigue verdict - pushed by webhook, not computed. Once an ad account is <b>subscribed</b> (see the setup doc) and Meta detects fatigue on a live creative, its verdict appears here as a per-account card.</p>
         <p className="cap">Test events from Meta’s dashboard show in the receiver panel above (proving the pipe works) but won’t map to a client card - they carry a placeholder account id. Setup + subscription commands: <code>META-WEBHOOK-SETUP.md</code>. Meanwhile the <b>Creative fatigue · proxy</b> tab covers every client live.</p>
       </div>}
-      {anyConnected && <p className="caveat">Meta’s official verdicts for the {connectedCount} account{connectedCount === 1 ? '' : 's'} that have sent events so far. A card appears once Meta pushes its first event for an account; verdicts fill in as creatives tire. Compare against the proxy tab, which explains the “why”.</p>}
+      {anyConnected && <Caveat>Meta’s official verdicts for the {connectedCount} account{connectedCount === 1 ? '' : 's'} that have sent events so far. A card appears once Meta pushes its first event for an account; verdicts fill in as creatives tire. Compare against the proxy tab, which explains the “why”.</Caveat>}
       <div className="fat-grid">{metaClients.map((c) => <FatigueWebhookCard key={c.id} client={c} range={range} nonce={nonce} onStatus={onStatus} />)}</div>
       {(() => {
         // Meta clients that have resolved but sent no events yet - surfaced so
@@ -12045,7 +12055,7 @@ function RecommendationsPage({ clients, nonce }) {
   return (
     <>
       <div className="lvl-title">Ad recommendations · Meta’s signal <span className="sub">· pushed by webhook</span></div>
-      <p className="caveat">Meta’s own optimisation recommendations, delivered by webhook as they’re issued (the <code>ad_recommendations</code> field, per subscribed account). Each entry flags that Meta has a suggestion for an ad or account - open Ads Manager for the full write-up. Newest first.</p>
+      <Caveat>Meta’s own optimisation recommendations, delivered by webhook as they’re issued (the <code>ad_recommendations</code> field, per subscribed account). Each entry flags that Meta has a suggestion for an ad or account - open Ads Manager for the full write-up. Newest first.</Caveat>
       {st.status === 'loading' ? <div className="card"><Spinner label="Loading recommendations…" /></div>
         : !groups.length ? <div className="card empty-deep"><div className="big">💡</div><b>No recommendations received yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>They’ll appear here as Meta pushes them for your subscribed accounts. Make sure the <code>ad_recommendations</code> field is subscribed for each account.</p></div>
           : <div className="fat-grid">{groups.map((g, i) => (
@@ -12117,7 +12127,7 @@ function OpportunityPage({ clients, nonce }) {
         ? <div className="card mi-setup"><div className="mi-setup-h">🔌 Meta token not configured</div>
           <p>The opportunity score is pulled live from Meta’s Graph API, which needs your <b>System User token</b> stored on the server. Add an env var <code>META_SYSTEM_TOKEN</code> in Netlify (Site configuration → Environment variables) with the token you generated, then redeploy.</p>
           <p className="cap">It’s used for read-only calls only. Full steps are in <code>META-WEBHOOK-SETUP.md</code>.</p></div>
-        : <p className="caveat">Meta’s own 0–100 opportunity score per account, with its top recommendations ranked by expected <b>point lift</b>. Pulled live from the Graph API - higher means better aligned with Meta’s best practices. This is account-level, never per-campaign.</p>}
+        : <Caveat>Meta’s own 0–100 opportunity score per account, with its top recommendations ranked by expected <b>point lift</b>. Pulled live from the Graph API - higher means better aligned with Meta’s best practices. This is account-level, never per-campaign.</Caveat>}
       <div className="fat-grid">{metaClients.map((c) => <OpportunityCard key={c.id} client={c} nonce={nonce} onConfig={onConfig} />)}</div>
     </>
   )
@@ -12396,7 +12406,7 @@ function CreativeCockpit({ client, currency, range, nonce }) {
           </React.Fragment>
         )
       })}
-      <p className="caveat">Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.{pipeGroups.length > 1 ? ' A creative is placed in the pipeline its campaign is linked to (Settings → link a campaign to a pipeline to move it).' : ''}</p>
+      <Caveat>Every Meta creative in this period, with the real funnel behind it (leads → qualified) joined by <code>utm_content</code>. Format is auto-detected; tag awareness / persona / angle / destination / CTA / copy per creative - values save to {client.name} and feed the dropdowns next time. Click a row to edit its tags and open the ad.{pipeGroups.length > 1 ? ' A creative is placed in the pipeline its campaign is linked to (Settings → link a campaign to a pipeline to move it).' : ''}</Caveat>
       {d.unmatched && d.unmatched.length ? <p className="cap">{d.unmatched.length} CRM lead source{d.unmatched.length === 1 ? '' : 's'} (utm_content) didn’t match a live ad - likely paused or renamed creatives.</p> : null}
     </>
   )
@@ -15954,5 +15964,9 @@ export default function App() {
   if (auth.enabled && auth.user && previewTerms) {
     return <TermsGate preview user={auth.user} onAccepted={() => {}} onLogout={() => { clearInvite(); window.location.reload() }} />
   }
-  return <><Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator /></>
+  return (
+    <ViewerCtx.Provider value={!!(auth.enabled && auth.user && auth.user.role === 'viewer')}>
+      <Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator />
+    </ViewerCtx.Provider>
+  )
 }

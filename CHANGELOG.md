@@ -17,6 +17,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.370.0 - 2026-08-20 · `PENDING` - Methodology prose is staff-only
+
+- The "how this number is calculated" paragraphs under each card - blended MER,
+  maturing cohorts, appointment-accurate booking logic, what counts as a lead -
+  are the thinking behind the reporting rather than the reporting itself. They
+  are now shown to staff and withheld from client Viewers.
+- 64 of them, converted from `<p className="caveat">` to a `<Caveat>` component
+  reading a `ViewerCtx`. It returns `null` for a viewer, so the text is **absent
+  from the DOM** rather than hidden with CSS - hiding it would leave it one
+  inspector click away, which defeats the point.
+- The reports themselves are untouched: same cards, same numbers, same
+  drill-downs. Verified on the Forms tab - staff see the explanation, a viewer
+  sees the identical table without it.
+- `alloc-note` (the role descriptions in the access editor) was left alone: it
+  lives in Settings, which no Viewer can reach.
+
+Noted at the time: this is a trade. Those paragraphs are also part of why the
+reporting is worth paying for, and a determined client can still read the
+strings in the JS bundle. It raises the effort, it doesn't close the door.
+
+---
+
 ## v3.369.0 - 2026-08-20 · `PENDING` - See what a client will see, before you invite them
 
 **Preview an allocation before it goes out**

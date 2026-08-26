@@ -17,6 +17,45 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.367.0 - 2026-08-20 · `PENDING` - Before inviting clients: the roster stops being public
+
+**The roster and every client's spend were served to any logged-in user**
+- `public/data/config.json` and `public/data/snapshot.json` were static files
+  published with the site. The edge gate blocks `/data/*` only for people with
+  **no session**, so any valid session - including a client Viewer - could fetch
+  them whole. The UI filtered them; the files did not.
+- Between them they carried: all 14 clients with names, Meta ad-account ids,
+  Google Ads customer ids and GHL location ids; per-client spend, impressions,
+  clicks and leads for the current *and* prior period ($48,804 and 2,453 leads
+  in one file); industry descriptions; and **Caalano Digital's own pipeline**
+  (won value $242,284). Five of the clients are competing ADHD/assessment
+  practices.
+- The app itself downloaded both into every client's browser, so reading them
+  needed nothing more than the Network tab.
+
+**Fixed at the source**
+- `data/` moved out of `public/`, so **nothing is published under `/data` at
+  all** - there is no URL left to bypass. Verified against the build output.
+- New `netlify/functions/roster.mjs` serves both, filtered server-side by the
+  same rules the windsor function already applies: a viewer or restricted staff
+  member gets only their allocated clients, Super-Admin-only clients are dropped
+  below superadmin, and a viewer never receives the agency pipeline or the
+  Windsor account inventory. Unauthenticated requests are refused.
+- The baked per-client fallback (`data/clients/<id>.json`) went the same way -
+  it was fetchable by guessing another client's id, and is now behind the same
+  `canSeeClient` check.
+- Their own ad-account ids are kept: it's their account, and the tab set is
+  built from it.
+
+**New Viewers start with one tab**
+- `tabs: null` meant "all fourteen", so anyone invited without a second thought
+  received Timing (which grades the client's own sales team's response times),
+  the per-rep Users breakdown and the Optimisation Log.
+- New Viewers now default to `['users']` and are opened up deliberately from
+  there.
+
+---
+
 ## v3.366.0 - 2026-08-20 · `PENDING` - Who signed in and for how long is owner-only
 
 **Activity data is Super-Admin only**

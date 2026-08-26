@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.366.0'
+const APP_VERSION = '3.367.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8495,7 +8495,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   const [tab, setTab] = useState(initialTab || 'overall')
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
-  useEffect(() => { setBaked(undefined); setCrmAvgClose(null); fetch(`data/clients/${client.id}.json`).then((r) => (r.ok ? r.json() : null)).then(setBaked).catch(() => setBaked(null)) }, [client.id])
+  // Same function, same access check - a client id in the URL can't reach an
+  // account the caller isn't allocated.
+  useEffect(() => { setBaked(undefined); setCrmAvgClose(null); fetch(`/.netlify/functions/roster?client=${encodeURIComponent(client.id)}`).then((r) => (r.ok ? r.json() : null)).then((j) => setBaked(j && j.error ? null : j)).catch(() => setBaked(null)) }, [client.id])
   // Build this client's tab set, then narrow it to what the viewer is allowed to
   // see (admins/users: everything). curTab keeps a hidden tab from being active.
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
@@ -10462,6 +10464,8 @@ function AcceptInvite({ token, onSignedIn }) {
   )
 }
 // Team & access manager, shown inside Settings for admins.
+// What a newly invited client starts with. Everything else is a deliberate tick.
+const VIEWER_DEFAULT_TABS = ['users']
 const TAB_OPTIONS = [
   { id: 'overall', label: 'Caalano360' }, { id: 'meta', label: 'Meta Ads' }, { id: 'google', label: 'Google Ads' },
   { id: 'analytics', label: 'Analytics' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' },
@@ -10511,7 +10515,11 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
   )
 }
 function PendingRow({ u, clients, onApprove, onReject, actorRole }) {
-  const [draft, setDraft] = useState({ role: 'viewer', clients: [], allClients: true, tabs: null, reports: false })
+  // Viewers start with the Users tab only and are opened up deliberately from
+  // there. `tabs: null` used to mean "all of them", which quietly granted every
+  // tab - including Timing (which grades the client's own sales team) and the
+  // optimisation log - to anyone invited without a second thought.
+  const [draft, setDraft] = useState({ role: 'viewer', clients: [], allClients: true, tabs: VIEWER_DEFAULT_TABS, reports: false })
   const [busy, setBusy] = useState(false)
   return (
     <div className="u-pending">
@@ -10539,7 +10547,7 @@ function UserAccessModal({ user, clients, authUser, onClose, onChanged }) {
   const [name, setName] = useState(isInvite ? '' : (user.name || ''))
   const [email, setEmail] = useState(isInvite ? '' : user.email)
   const [draft, setDraft] = useState(isInvite
-    ? { role: 'viewer', clients: [], allClients: true, tabs: null, reports: false }
+    ? { role: 'viewer', clients: [], allClients: true, tabs: VIEWER_DEFAULT_TABS, reports: false }
     : { role: user.role, clients: user.clients || [], allClients: user.allClients !== false, tabs: user.tabs, reports: user.reports === true })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -15640,8 +15648,17 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); try { localStorage.setItem('caalano_theme', theme) } catch {} }, [theme])
   useEffect(() => {
     hydrateSettings()
-    fetch('data/snapshot.json').then((r) => { if (!r.ok) throw new Error('snapshot not found'); return r.json() }).then(setData).catch((e) => setErr(e.message))
-    fetch('data/config.json').then((r) => r.ok ? r.json() : null).then(setConfig).catch(() => {})
+    // The roster and baked snapshot come from a function that filters them to
+    // whoever is asking. They used to be static files under /data, published to
+    // the site and served whole to any valid session - so a client's own browser
+    // downloaded every other client's name, ad-account ids, spend and leads.
+    fetch('/.netlify/functions/roster')
+      .then((r) => { if (!r.ok) throw new Error('roster not available'); return r.json() })
+      .then((j) => {
+        if (!j || j.ok === false || !j.snapshot) throw new Error(j && j.error ? j.error : 'roster not available')
+        setData(j.snapshot); setConfig(j.config || null)
+      })
+      .catch((e) => setErr(e.message))
   }, [])
   // Resolve a ?c=<clientId> deep link to the picked client once the client list
   // has loaded (the list is async, so this can't run at first render).

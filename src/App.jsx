@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import 'leaflet/dist/leaflet.css'
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
@@ -12,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.364.0'
+const APP_VERSION = '3.365.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9848,8 +9849,12 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
         {(!authEnabled || isAdmin) && <button className={section === 'team' ? 'on' : ''} onClick={() => setSection('team')}>Team &amp; access</button>}
         {authEnabled && <button className={section === 'account' ? 'on' : ''} onClick={() => setSection('account')}>Your account</button>}
         <button className={section === 'appearance' ? 'on' : ''} onClick={() => setSection('appearance')}>Appearance</button>
+        {isSuper && authEnabled && <button className={section === 'terms' ? 'on' : ''} onClick={() => setSection('terms')}>Terms of use</button>}
         {isSuper && <button className={section === 'logs' ? 'on' : ''} onClick={() => setSection('logs')}>Logs</button>}
       </div>
+      {/* Super-Admin only: the document itself, and the register of who signed it.
+          Both hold the legal record, so neither is shown to Admins. */}
+      {isSuper && authEnabled && section === 'terms' && <><TermsAdmin authUser={authUser} /><TermsRegister /></>}
       {isSuper && section === 'logs' && <LogsPanel clients={config.clients} />}
       {section === 'appearance' && (
         <div className="card">
@@ -10726,7 +10731,6 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
           })}</tbody>
         </table></div>
       </div>
-      {actorRole === 'superadmin' && <TermsRegister />}
       {modal && <UserAccessModal user={modal.user || null} clients={clients} authUser={authUser} onClose={() => setModal(null)} onChanged={load} />}
     </div>
   )
@@ -10816,40 +10820,77 @@ function SignaturePad({ onChange }) {
     </div>
   )
 }
+/* Renders children at the end of <body>, out of whatever stacking context they
+   were declared in. The terms modal lives in the sidebar footer, and the sidebar
+   is position:sticky - which creates a stacking context, so the modal's z-index
+   only ever competed with its siblings inside the sidebar and <main> painted
+   over the top of it. Also locks page scroll while it's open. */
+function Overlay({ children }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
+  if (typeof document === 'undefined') return children
+  return createPortal(children, document.body)
+}
 // Read-only view of the terms already accepted, reachable from the footer.
 // Someone who signed months ago should be able to see what they agreed to
 // without having to ask for it.
 function TermsViewer({ onClose }) {
   const [terms, setTerms] = useState(null)
   const [mine, setMine] = useState(null)
+  // 'current' = the terms as they stand today, which is what governs use of the
+  // Platform. 'signed' = the wording this person actually put their name to, if
+  // it has since been revised. Both matter; showing only one would mislead.
+  const [which, setWhich] = useState('current')
   useEffect(() => {
     authApi('terms').then((r) => { if (r && r.ok) setTerms(r.terms) }).catch(() => {})
     authApi('my-terms').then((r) => { if (r && r.ok) setMine(r) }).catch(() => {})
   }, [])
+  const signedVer = mine && mine.latest ? mine.latest.version : null
+  const outdated = !!(signedVer && terms && signedVer !== terms.version)
+  const doc = which === 'signed' && mine && mine.signedDoc ? mine.signedDoc : terms
+  const when = (iso) => new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
   return (
+    <Overlay>
     <div className="mr-drill-overlay no-print" onClick={onClose}>
       <div className="mr-drill terms-view-modal" onClick={(e) => e.stopPropagation()}>
         <div className="mr-drill-head">
           <div>
-            <h3>{terms ? terms.title : 'Terms of Use'}</h3>
+            <h3>{doc ? doc.title : 'Terms of Use'}</h3>
             <span>
-              {terms ? `Version ${terms.version} · effective ${terms.effective}` : ''}
-              {mine && mine.latest ? ` · you accepted ${new Date(mine.latest.acceptedAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+              {doc ? `Version ${doc.version} · effective ${doc.effective}` : ''}
+              {which === 'current' ? ' · in force now' : ' · the version you signed'}
+              {mine && mine.latest ? ` · you signed ${when(mine.latest.acceptedAt)}` : ''}
             </span>
           </div>
           <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="mr-drill-body terms-view-body">
-          {!terms ? <Spinner label="Loading…" /> : (
+          {outdated ? (
+            <div className="terms-ver-switch">
+              <p className="cap">
+                You signed <b>version {signedVer}</b> on {when(mine.latest.acceptedAt)}. The current version is
+                {' '}<b>{terms.version}</b>. Your signature still stands - you are only asked to sign again when a change
+                is material.
+              </p>
+              <div className="terms-ver-btns">
+                <button type="button" className={which === 'current' ? 'on' : ''} onClick={() => setWhich('current')}>Current terms (v{terms.version})</button>
+                <button type="button" className={which === 'signed' ? 'on' : ''} onClick={() => setWhich('signed')} disabled={!mine.signedDoc} title={mine.signedDoc ? '' : 'The wording of that version isn’t on file.'}>What you signed (v{signedVer})</button>
+              </div>
+            </div>
+          ) : null}
+          {!doc ? <Spinner label="Loading…" /> : (
             <>
-              {terms.notice ? (
+              {doc.notice ? (
                 <div className="terms-notice">
-                  <h3>{terms.notice.h}</h3>
-                  {terms.notice.p.map((t, i) => <p key={i}>{t}</p>)}
+                  <h3>{doc.notice.h}</h3>
+                  {doc.notice.p.map((t, i) => <p key={i}>{t}</p>)}
                 </div>
               ) : null}
-              <p className="terms-intro">{terms.intro}</p>
-              {terms.sections.map((sec, i) => (
+              <p className="terms-intro">{doc.intro}</p>
+              {(doc.sections || []).map((sec, i) => (
                 <section key={i} className="terms-sec">
                   <h3>{sec.h}</h3>
                   {(sec.p || []).map((t, j) => <p key={j}>{t}</p>)}
@@ -10858,7 +10899,7 @@ function TermsViewer({ onClose }) {
               ))}
               {mine && mine.latest && mine.latest.signature ? (
                 <div className="terms-my-sig">
-                  <span className="cap">Your signature on file</span>
+                  <span className="cap">Your signature on file · {when(mine.latest.acceptedAt)} · version {mine.latest.version}</span>
                   <img className="sig-img" src={mine.latest.signature} alt="Your signature" />
                 </div>
               ) : null}
@@ -10867,10 +10908,11 @@ function TermsViewer({ onClose }) {
         </div>
       </div>
     </div>
+    </Overlay>
   )
 }
-function TermsGate({ user, onAccepted, onLogout, preview }) {
-  const [terms, setTerms] = useState(null)
+function TermsGate({ user, onAccepted, onLogout, preview, termsOverride }) {
+  const [terms, setTerms] = useState(termsOverride || null)
   const [sig, setSig] = useState(null)
   const [typed, setTyped] = useState('')
   // Captured at signing rather than taken from the invite: the person signing
@@ -10893,10 +10935,11 @@ function TermsGate({ user, onAccepted, onLogout, preview }) {
   // If the terms can't be fetched this screen must not become an infinite
   // spinner - that would lock a legitimate user out of their own dashboard.
   const load = () => {
+    if (termsOverride) { setTerms(termsOverride); setLoadErr(false); return }
     setLoadErr(false); setTerms(null)
     authApi('terms').then((r) => { if (r && r.ok) setTerms(r.terms); else setLoadErr(true) }).catch(() => setLoadErr(true))
   }
-  useEffect(load, [])
+  useEffect(load, [termsOverride])
   // "Read" means reached the bottom. Not proof of reading, but it removes the
   // "I never saw it" argument, and it's the reason Accept starts disabled.
   const onScroll = (e) => {
@@ -11005,6 +11048,201 @@ function TermsGate({ user, onAccepted, onLogout, preview }) {
     </div>
   )
 }
+/* ---------------------------------------------------------------------------
+   Terms of use, editable in the app (Super Admin only).
+
+   The wording used to live only in the source, which meant every comma needed a
+   developer and a deploy. The live document is now stored server-side; this is
+   the editor for it, and it can show the exact screen a person is asked to sign
+   before anything is published.
+
+   Paragraphs are edited as text - a blank line starts a new paragraph, one
+   bullet per line - because that is how people actually write, and it beats a
+   form with a hundred separate inputs.
+--------------------------------------------------------------------------- */
+const toParas = (arr) => (arr || []).join('\n\n')
+const fromParas = (t) => String(t || '').split(/\n\s*\n/).map((x) => x.trim()).filter(Boolean)
+const toLines = (arr) => (arr || []).join('\n')
+const fromLines = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean)
+const termsToDraft = (t) => ({
+  version: t.version || '', effective: t.effective || '', title: t.title || '', intro: t.intro || '',
+  noticeH: (t.notice && t.notice.h) || '', noticeText: toParas(t.notice && t.notice.p),
+  sections: (t.sections || []).map((s) => ({ h: s.h || '', pText: toParas(s.p), listText: toLines(s.list) })),
+  declText: toLines(t.signStatement),
+})
+const draftToTerms = (d) => ({
+  version: (d.version || '').trim(), effective: (d.effective || '').trim(), title: (d.title || '').trim(), intro: (d.intro || '').trim(),
+  notice: ((d.noticeH || '').trim() || (d.noticeText || '').trim()) ? { h: (d.noticeH || '').trim(), p: fromParas(d.noticeText) } : null,
+  sections: (d.sections || []).map((s) => ({ h: (s.h || '').trim(), p: fromParas(s.pText), list: fromLines(s.listText) })),
+  signStatement: fromLines(d.declText),
+})
+// Bumps the last numeric segment: 1.3 -> 1.4, 2.1.9 -> 2.1.10.
+const bumpVersion = (v) => {
+  const parts = String(v || '1.0').split('.')
+  parts[parts.length - 1] = String((parseInt(parts[parts.length - 1], 10) || 0) + 1)
+  return parts.join('.')
+}
+
+function TermsAdmin({ authUser }) {
+  const [st, setSt] = useState({ status: 'loading' })
+  const [draft, setDraft] = useState(null)
+  const [resign, setResign] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const load = () => {
+    setSt({ status: 'loading' })
+    authApi('terms-admin').then((r) => {
+      if (r && r.ok) { setSt({ status: 'ok', ...r }); setDraft(termsToDraft(r.terms)); setResign(false); setMsg(null) }
+      else setSt({ status: 'err', error: (r && r.error) || 'Couldn’t load the terms.' })
+    }).catch(() => setSt({ status: 'err', error: 'Couldn’t load the terms.' }))
+  }
+  useEffect(load, [])
+  const set = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }))
+  const setSec = (i, k) => (e) => setDraft((d) => ({ ...d, sections: d.sections.map((s, j) => (j === i ? { ...s, [k]: e.target.value } : s)) }))
+  const moveSec = (i, dir) => setDraft((d) => {
+    const to = i + dir
+    if (to < 0 || to >= d.sections.length) return d
+    const next = d.sections.slice()
+    const [row] = next.splice(i, 1)
+    next.splice(to, 0, row)
+    return { ...d, sections: next }
+  })
+  const delSec = (i) => setDraft((d) => ({ ...d, sections: d.sections.filter((_, j) => j !== i) }))
+  const addSec = () => setDraft((d) => ({ ...d, sections: [...d.sections, { h: `${d.sections.length + 1}. New section`, pText: '', listText: '' }] }))
+
+  // Compared in draft-space, not document-space: round-tripping the live doc
+  // through the same converter is the only comparison that can't be thrown off
+  // by key order or an empty list being absent rather than empty.
+  const dirty = st.status === 'ok' && draft && JSON.stringify(draft) !== JSON.stringify(termsToDraft(st.terms))
+
+  const publish = async () => {
+    setBusy(true); setMsg(null)
+    const terms = draftToTerms(draft)
+    const minVersion = resign ? terms.version : (st.minVersion || terms.version)
+    const r = await authApi('terms-save', { method: 'POST', body: JSON.stringify({ terms, minVersion }) })
+    setBusy(false)
+    if (r && r.ok) {
+      setSt((s) => ({ ...s, terms: r.terms, minVersion: r.minVersion, hash: r.hash, custom: true, updatedAt: r.updatedAt, updatedBy: r.updatedBy }))
+      setDraft(termsToDraft(r.terms)); setResign(false)
+      // Reports what this publish actually changed, not the standing state - the
+      // minimum can already equal the version without this save having raised it.
+      setMsg({ ok: true, t: `Published version ${r.terms.version}. ${resign ? 'Anyone not already on this version will be asked to sign it on their next load.' : `Nobody is re-prompted - signatures from ${r.minVersion} onwards still stand.`}` })
+    } else setMsg({ ok: false, t: (r && r.error) || 'Couldn’t publish.' })
+  }
+  const revert = async () => {
+    if (!window.confirm('Revert to the built-in terms? Your edited wording will be discarded. Signatures already on file are not affected.')) return
+    setBusy(true); setMsg(null)
+    const r = await authApi('terms-reset', { method: 'POST' })
+    setBusy(false)
+    if (r && r.ok) { load(); setMsg({ ok: true, t: 'Reverted to the built-in terms.' }) }
+    else setMsg({ ok: false, t: (r && r.error) || 'Couldn’t revert.' })
+  }
+
+  if (st.status === 'loading') return <div className="card"><Spinner label="Loading the terms…" /></div>
+  if (st.status === 'err') return <div className="card"><h3 style={{ marginTop: 0 }}>Terms of use</h3><p className="cap">{st.error}</p><button className="btn-ghost sm" onClick={load}>Try again</button></div>
+
+  return (
+    <div className="card">
+      <div className="u-head-row">
+        <div>
+          <h3 style={{ margin: 0 }}>Terms of use · the document</h3>
+          <p className="cap terms-ed-intro" style={{ margin: '4px 0 0', maxWidth: 720 }}>
+            This is what people are shown and asked to sign. Edit it here - no deploy needed. Live version <b>{st.terms.version}</b>
+            {' '}(effective {st.terms.effective}) · wording <b className="mono">{st.hash}</b> ·{' '}
+            {st.custom ? <>edited in-app{st.updatedBy ? ` by ${st.updatedBy}` : ''}{st.updatedAt ? ` on ${new Date(st.updatedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</> : <>the built-in wording</>}.
+            {' '}Signatures from <b>{st.minVersion}</b> onwards still stand.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn-ghost sm" onClick={() => setShowPreview(true)}>👁 Preview the signing screen</button>
+          <button className="btn-ghost sm" onClick={load} disabled={busy}>Discard changes</button>
+          {st.custom && <button className="btn-ghost sm" onClick={revert} disabled={busy}>Revert to built-in</button>}
+          <button className="btn-primary" onClick={publish} disabled={busy || !dirty}>{busy ? 'Publishing…' : 'Publish'}</button>
+        </div>
+      </div>
+      {msg && <p className="cap" style={{ color: msg.ok ? '#12b886' : '#ef4444', marginTop: 8 }}>{msg.t}</p>}
+
+      <div className="terms-ed-meta">
+        <div className="fld"><label className="cap">Title</label><input className="inp" value={draft.title} onChange={set('title')} /></div>
+        <div className="fld">
+          <label className="cap">Version</label>
+          <div className="terms-ed-ver">
+            <input className="inp" value={draft.version} onChange={set('version')} />
+            <button type="button" className="btn-ghost sm" title="Bump the last number" onClick={() => setDraft((d) => ({ ...d, version: bumpVersion(d.version) }))}>+1</button>
+          </div>
+        </div>
+        <div className="fld"><label className="cap">Effective date</label><input className="inp" type="date" value={draft.effective} onChange={set('effective')} /></div>
+        <div className="fld terms-ed-resign">
+          <label className="cap">On publish</label>
+          <label className="terms-ed-check">
+            <input type="checkbox" checked={resign} onChange={(e) => setResign(e.target.checked)} />
+            <span>Ask everyone to sign this version{resign ? '' : ' (off: nobody is re-prompted)'}</span>
+          </label>
+        </div>
+      </div>
+      <p className="caveat" style={{ marginTop: 0 }}>
+        Leave the re-sign box off for wording fixes - existing signatures keep standing and nobody sees the gate. Tick it
+        only when a change is material enough that an old signature shouldn’t be taken to cover it.
+      </p>
+
+      <div className="terms-ed-block">
+        <h4>Notice above the terms</h4>
+        <p className="cap">The bordered box at the top. Leave the heading blank to remove it entirely.</p>
+        <input className="inp" value={draft.noticeH} onChange={set('noticeH')} placeholder="Read this before proceeding" />
+        <textarea className="inp terms-ed-ta" rows={5} value={draft.noticeText} onChange={set('noticeText')} placeholder="One paragraph per blank line." />
+      </div>
+
+      <div className="terms-ed-block">
+        <h4>Opening line</h4>
+        <textarea className="inp terms-ed-ta" rows={2} value={draft.intro} onChange={set('intro')} />
+      </div>
+
+      <div className="terms-ed-block">
+        <div className="terms-ed-sechead">
+          <h4>Sections <span className="cap">{draft.sections.length}</span></h4>
+          <button type="button" className="btn-ghost sm" onClick={addSec}>+ Add section</button>
+        </div>
+        <p className="cap">Numbering is part of the heading text - renumber by hand if you reorder, so the cross-references in the wording stay correct.</p>
+        {draft.sections.map((s, i) => (
+          <div className="terms-ed-sec" key={i}>
+            <div className="terms-ed-sec-head">
+              <input className="inp" value={s.h} onChange={setSec(i, 'h')} placeholder="Heading" />
+              <div className="terms-ed-sec-btns">
+                <button type="button" className="btn-ghost sm" onClick={() => moveSec(i, -1)} disabled={i === 0} title="Move up">↑</button>
+                <button type="button" className="btn-ghost sm" onClick={() => moveSec(i, 1)} disabled={i === draft.sections.length - 1} title="Move down">↓</button>
+                <button type="button" className="btn-ghost sm" onClick={() => delSec(i)} title="Remove this section">✕</button>
+              </div>
+            </div>
+            <label className="cap">Paragraphs <span>· blank line between each</span></label>
+            <textarea className="inp terms-ed-ta" rows={4} value={s.pText} onChange={setSec(i, 'pText')} />
+            <label className="cap">Bullet list <span>· one per line, leave blank for none</span></label>
+            <textarea className="inp terms-ed-ta" rows={s.listText ? 5 : 2} value={s.listText} onChange={setSec(i, 'listText')} />
+          </div>
+        ))}
+      </div>
+
+      <div className="terms-ed-block">
+        <h4>Signing declaration</h4>
+        <p className="cap">One per line. The first line is the lead-in ("By signing below, I declare that:"); the rest become the bullets directly above the signature box.</p>
+        <textarea className="inp terms-ed-ta" rows={8} value={draft.declText} onChange={set('declText')} />
+      </div>
+
+      {showPreview && (
+        <Overlay>
+          <TermsGate
+            preview
+            termsOverride={{ ...draftToTerms(draft), hashNote: dirty ? 'unpublished draft' : null }}
+            user={authUser || { email: 'you@example.com', name: 'Preview' }}
+            onAccepted={() => {}}
+            onLogout={() => setShowPreview(false)}
+          />
+        </Overlay>
+      )}
+    </div>
+  )
+}
+
 /* The signed register - who accepted, when, on what version, and the signature
    they gave. This is the artefact the whole feature exists to produce. */
 function TermsRegister() {
@@ -11039,7 +11277,7 @@ function TermsRegister() {
       <div className="u-head-row">
         <div>
           <h3 style={{ margin: 0 }}>Terms of use · signed register</h3>
-          <p className="cap" style={{ margin: '4px 0 0' }}>
+          <p className="cap terms-reg-intro" style={{ margin: '4px 0 0' }}>
             Everyone who has accepted the Caalano360 terms, with the version they signed and their signature.
             Click a row to open their signed record - their details, their signature, and the agreement exactly as it was
             worded on the day. Current version <b>{st.current || '-'}</b>; signatures from <b>{st.minVersion || '-'}</b> onwards

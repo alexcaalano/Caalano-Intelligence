@@ -3285,6 +3285,58 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .terms-rec-doc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .terms-rec-doc-body { max-height: 46vh; overflow-y: auto; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
 .terms-rec-doc-body h4 { margin: 0 0 12px; font-size: 13.5px; }
+/* Which version am I reading - the current one, or the one I signed? */
+.terms-ver-switch { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.terms-ver-switch .cap { margin: 0 0 9px; line-height: 1.55; }
+.terms-ver-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.terms-ver-btns button { border: 1px solid var(--border); background: var(--panel); color: var(--muted); border-radius: 8px; padding: 6px 11px; font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.terms-ver-btns button:hover:not(:disabled) { color: var(--text); border-color: var(--border-2); }
+.terms-ver-btns button.on { background: var(--elev); color: var(--text); border-color: var(--border-2); }
+.terms-ver-btns button:disabled { opacity: .45; cursor: not-allowed; }
+/* The Super-Admin editor. */
+.terms-ed-meta { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr); gap: 12px; margin: 16px 0 8px; }
+@media (max-width: 1000px) { .terms-ed-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.terms-ed-meta .fld { min-width: 0; }
+.terms-ed-meta label.cap { display: block; margin-bottom: 5px; }
+.terms-ed-meta .inp { width: 100%; }
+.terms-ed-ver { display: flex; gap: 6px; }
+.terms-ed-ver .inp { min-width: 0; }
+.terms-ed-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.45; color: var(--muted); cursor: pointer; padding-top: 3px; }
+.terms-ed-check input { margin-top: 2px; flex: 0 0 auto; }
+.terms-ed-block { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.terms-ed-block h4 { margin: 0 0 4px; font-size: 13px; }
+.terms-ed-block > .cap { display: block; margin: 0 0 9px; line-height: 1.5; }
+.terms-ed-block .inp { width: 100%; }
+.terms-ed-ta { margin-top: 7px; font-family: inherit; font-size: 12.5px; line-height: 1.6; resize: vertical; }
+.terms-ed-sechead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.terms-ed-sec { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.terms-ed-sec-head { display: flex; gap: 8px; align-items: center; margin-bottom: 9px; }
+.terms-ed-sec-head .inp { flex: 1; min-width: 0; font-weight: 600; }
+.terms-ed-sec-btns { display: flex; gap: 4px; flex: 0 0 auto; }
+.terms-ed-sec label.cap { display: block; margin: 9px 0 0; }
+.terms-ed-sec label.cap span { opacity: .7; font-weight: 400; text-transform: none; letter-spacing: 0; }
+/* `.cap` on its own has no base style in this sheet - it only ever renders small
+   because a parent rule sizes it. Every terms surface is new, so each one has to
+   say what it means: short field labels read as labels, and the explanatory
+   sentences read as prose rather than shouting in uppercase. */
+.terms-ed-meta label.cap,
+.terms-ed-sec label.cap,
+.terms-who label.cap,
+.terms-rec-grid .cap,
+.terms-rec-sig .cap,
+.terms-my-sig .cap,
+.terms-rec-doc-head .cap {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint);
+}
+.terms-ed-block > p.cap,
+.terms-ed-sechead ~ p.cap,
+.terms-ver-switch .cap,
+.terms-ed-check,
+.terms-reg-intro,
+.terms-ed-intro {
+  font-size: 11.5px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); line-height: 1.55;
+}
+.terms-ed-sechead .cap { font-size: 11.5px; font-weight: 700; color: var(--faint); }
 .terms-sig-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 15px; }
 .terms-sig-modal { --mr-drill-cols: 4; }
 .terms-sig-full { display: block; max-width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 12px; }

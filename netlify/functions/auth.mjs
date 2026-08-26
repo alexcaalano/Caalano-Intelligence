@@ -9,7 +9,7 @@ import {
   checkLoginAllowed, recordLoginResult, revokeSessions, getUser,
   recordTermsAcceptance, listTermsAcceptances, getTermsAcceptance, getTermsDoc,
 } from '../lib/auth.mjs'
-import { TERMS_VERSION, TERMS_MIN_VERSION, termsPayload, termsHash, termsAcceptanceValid } from '../lib/terms.mjs'
+import { loadTerms, saveTerms, resetTerms, termsHash, termsAcceptanceValid, DEFAULT_TERMS, DEFAULT_MIN_VERSION } from '../lib/terms.mjs'
 
 const SESSION_MS = 14 * 86400 * 1000
 const secret = () => process.env.AUTH_SECRET || ''
@@ -23,9 +23,13 @@ const json = (obj, status = 200, cookie = null) => {
 // explicit sign-out-everywhere takes effect against stateless tokens.
 const mint = async (user) => signSession({ e: user.email, r: user.role, n: user.name, v: user.tokenEpoch || 0, exp: Date.now() + SESSION_MS }, secret())
 // Whether this person still has to sign. Decided here rather than in the app so
-// a version bump doesn't re-prompt everyone by accident - a signature stands
-// until TERMS_MIN_VERSION is deliberately raised past it.
-const withTerms = (user) => user && ({ ...user, needsTerms: !termsAcceptanceValid(user.termsVersion), termsMinVersion: TERMS_MIN_VERSION, termsCurrentVersion: TERMS_VERSION })
+// publishing a new version doesn't re-prompt everyone by accident - a signature
+// stands until the minimum accepted version is deliberately raised past it.
+const withTerms = async (user) => {
+  if (!user) return user
+  const { terms, minVersion } = await loadTerms()
+  return { ...user, needsTerms: !termsAcceptanceValid(user.termsVersion, minVersion), termsMinVersion: minVersion, termsCurrentVersion: terms.version }
+}
 
 export default async (req) => {
   const url = new URL(req.url)
@@ -44,15 +48,16 @@ export default async (req) => {
       // The app's own session check - genuine usage, so it counts toward activity.
       const user = await currentUser(req, S, { track: true })
       const needsSetup = (await countUsers()) === 0
-      return json({ ok: true, enabled: true, user: withTerms(user) || null, needsSetup })
+      return json({ ok: true, enabled: true, user: user ? await withTerms(user) : null, needsSetup })
     }
     if (action === 'terms') {
-      return json({ ok: true, terms: termsPayload(), hash: await termsHash(), minVersion: TERMS_MIN_VERSION })
+      const live = await loadTerms()
+      return json({ ok: true, terms: live.terms, hash: await termsHash(live.terms), minVersion: live.minVersion })
     }
     if (action === 'bootstrap' && req.method === 'POST') {
       const r = await bootstrapAdmin(body)
       if (r.error) return json({ ok: false, error: r.error }, 400)
-      return json({ ok: true, user: withTerms(r.user) }, 200, sessionCookie(await mint(r.user)))
+      return json({ ok: true, user: await withTerms(r.user) }, 200, sessionCookie(await mint(r.user)))
     }
     if (action === 'login' && req.method === 'POST') {
       const gate = await checkLoginAllowed(body.email)
@@ -60,7 +65,7 @@ export default async (req) => {
       const user = await authenticate(body.email, body.password)
       await recordLoginResult(body.email, !!user)
       if (!user) return json({ ok: false, error: 'Wrong email or password, or the account isn’t active.' }, 401)
-      return json({ ok: true, user: withTerms(user) }, 200, sessionCookie(await mint(user)))
+      return json({ ok: true, user: await withTerms(user) }, 200, sessionCookie(await mint(user)))
     }
     if (action === 'logout') {
       return json({ ok: true }, 200, clearCookie())
@@ -71,7 +76,7 @@ export default async (req) => {
     if (action === 'accept' && req.method === 'POST') {
       const r = await acceptInvite(body)
       if (r.error) return json({ ok: false, error: r.error }, 400)
-      return json({ ok: true, user: withTerms(r.user) }, 200, sessionCookie(await mint(r.user)))
+      return json({ ok: true, user: await withTerms(r.user) }, 200, sessionCookie(await mint(r.user)))
     }
     if (action === 'signup' && req.method === 'POST') {
       const r = await signupRequest(body)
@@ -101,21 +106,36 @@ export default async (req) => {
       // canvas produces a few tens of KB; anything far past that isn't one.
       if (sig && sig.length > 400000) return json({ ok: false, error: 'Signature image is too large.' }, 400)
       if (sig && !/^data:image\/(png|jpeg);base64,/.test(sig)) return json({ ok: false, error: 'Signature must be an image.' }, 400)
+      // Signed against whatever is live right now - which may be an edited
+      // document rather than the built-in one.
+      const live = await loadTerms()
       const r = await recordTermsAcceptance(me.email, {
-        version: TERMS_VERSION, hash: await termsHash(), signature: sig, typedName: typed || null,
+        version: live.terms.version, hash: await termsHash(live.terms), signature: sig, typedName: typed || null,
         firstName: first, lastName: last, phone,
         // Archived alongside the acceptance so the exact wording can be shown
         // back years later, after these terms have been revised.
-        doc: termsPayload(),
+        doc: live.terms,
         // Recorded for the audit trail: which device, and roughly from where.
         ip: req.headers.get('x-nf-client-connection-ip') || req.headers.get('x-forwarded-for') || null,
         userAgent: req.headers.get('user-agent') || null,
       })
-      return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, acceptedAt: r.acceptedAt, version: TERMS_VERSION })
+      return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, acceptedAt: r.acceptedAt, version: live.terms.version })
     }
     if (action === 'my-terms') {
       const rec = await getTermsAcceptance(me.email)
-      return json({ ok: true, current: TERMS_VERSION, latest: (rec && rec.latest) || null, history: (rec && rec.acceptances) || [] })
+      const live = await loadTerms()
+      const mine = (rec && rec.latest) || null
+      // Anyone may read back the exact version THEY signed - it is their own
+      // record. Reading anyone else's stays Super-Admin-only.
+      let signedDoc = null
+      if (mine && mine.version && mine.version !== live.terms.version) {
+        const archived = await getTermsDoc(mine.version, mine.hash)
+        if (archived && archived.doc) signedDoc = archived.doc
+      }
+      return json({
+        ok: true, current: live.terms.version, currentEffective: live.terms.effective,
+        latest: mine, signedDoc, history: (rec && rec.acceptances) || [],
+      })
     }
 
     if (action === 'change-password' && req.method === 'POST') {
@@ -149,10 +169,29 @@ export default async (req) => {
     // ---- super-admin only ----
     // The signed register is the legal record: names, phone numbers, IPs and
     // signature images. Admins run the day-to-day; only the owner sees this.
-    if (action === 'terms-log' || action === 'terms-record' || action === 'terms-doc') {
+    if (action === 'terms-log' || action === 'terms-record' || action === 'terms-doc'
+      || action === 'terms-admin' || action === 'terms-save' || action === 'terms-reset') {
       if (me.role !== 'superadmin') return json({ ok: false, error: 'Super Admins only.' }, 403)
+      const live = await loadTerms()
+      // The editor: what is live, who last changed it, and the built-in text to
+      // revert to - sent together so the editor can offer both.
+      if (action === 'terms-admin') {
+        return json({
+          ok: true, terms: live.terms, minVersion: live.minVersion, custom: live.custom,
+          updatedAt: live.updatedAt, updatedBy: live.updatedBy, hash: await termsHash(live.terms),
+          defaults: DEFAULT_TERMS, defaultMinVersion: DEFAULT_MIN_VERSION,
+        })
+      }
+      if (action === 'terms-save' && req.method === 'POST') {
+        const r = await saveTerms(body.terms, { minVersion: body.minVersion, actor: me.email })
+        return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, terms: r.terms, minVersion: r.minVersion, hash: r.hash, updatedAt: r.updatedAt, updatedBy: r.updatedBy })
+      }
+      if (action === 'terms-reset' && req.method === 'POST') {
+        const r = await resetTerms()
+        return r.error ? json({ ok: false, error: r.error }, 400) : json({ ok: true, terms: DEFAULT_TERMS, minVersion: DEFAULT_MIN_VERSION, custom: false })
+      }
       // Who has accepted, when, and on which version - with their signature.
-      if (action === 'terms-log') return json({ ok: true, current: TERMS_VERSION, minVersion: TERMS_MIN_VERSION, acceptances: await listTermsAcceptances() })
+      if (action === 'terms-log') return json({ ok: true, current: live.terms.version, minVersion: live.minVersion, acceptances: await listTermsAcceptances() })
       if (action === 'terms-record') {
         const rec = await getTermsAcceptance(String(body.email || url.searchParams.get('email') || '').toLowerCase().trim())
         return json({ ok: true, record: rec || null })
@@ -163,8 +202,7 @@ export default async (req) => {
       const hash = String(body.hash || url.searchParams.get('hash') || '')
       const archived = await getTermsDoc(version, hash)
       if (archived && archived.doc) return json({ ok: true, terms: archived.doc, version, hash, archivedAt: archived.archivedAt || null, source: 'archived' })
-      const live = await termsHash()
-      if (version === TERMS_VERSION && hash === live) return json({ ok: true, terms: termsPayload(), version, hash, source: 'current' })
+      if (version === live.terms.version && hash === await termsHash(live.terms)) return json({ ok: true, terms: live.terms, version, hash, source: 'current' })
       return json({ ok: false, error: 'That version of the terms was signed before wording was archived, so the exact text is no longer on file. The version and wording digest below still identify it.', version, hash }, 404)
     }
     if (action === 'invite' && req.method === 'POST') {

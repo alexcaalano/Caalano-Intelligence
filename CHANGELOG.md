@@ -17,6 +17,63 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.365.0 - 2026-08-20 · `PENDING` - Terms you can edit yourself, and terms v1.3
+
+**Edit the terms in the app - Super Admin only**
+- Settings gains a **Terms of use** section (Super Admin only) holding both the
+  document and the signed register. The live wording is now stored server-side
+  rather than only in the source, so changing a clause no longer needs a deploy.
+- Edit the title, version, effective date, the notice box, the opening line,
+  every section (add, remove, reorder) and the signing declaration. Paragraphs
+  are edited as text - blank line between paragraphs, one bullet per line.
+- **Preview the signing screen** renders the exact gate from the *unpublished
+  draft*, with the accept button inert, so wording can be checked in place
+  before anyone sees it.
+- Publishing has an explicit **"ask everyone to sign this version"** switch,
+  default off. Off means existing signatures stand and nobody is re-prompted;
+  the confirmation message says which of the two actually happened.
+- **Revert to built-in** restores the wording shipped with the code. Signatures
+  already on file are untouched either way.
+- Everything saved is rebuilt field by field with bounded strings and arrays -
+  a malformed save can't produce a document the gate then fails to render, and
+  the gate falls back to the built-in text if the store is unreachable.
+
+**Terms v1.3 - client viewers, and a duty to report**
+- Clause 2 now says plainly that the same agreement covers clients viewing their
+  own reporting, not just agency staff.
+- Clause 5 separates the two things people conflate: a client's own business
+  data stays theirs and they may do as they like with it in their own business;
+  the Platform that produces the reporting does not become theirs. *The numbers
+  are yours; the instrument that produces them is not.*
+- New clause 6: if you can see any account, client or screen that isn't yours,
+  you must report it to alex@caalanodigital.com.au immediately, must not use,
+  copy, export or share it, and must not go looking for more. Reporting in good
+  faith is never held against you. This is repeated in the declaration above the
+  signature.
+- This adds a duty, so it is material: the minimum accepted version moves to
+  **1.3** and everyone signs once more. Later versions won't re-prompt.
+
+**"Terms of use" in the footer now answers the right question**
+- It shows the terms **in force now** by default, with the date you signed. If
+  you signed an earlier version, a notice names both and a toggle switches
+  between the current wording and **the exact version you signed**.
+- Reading back your own signed version needs no special role - it's your record.
+  Reading anyone else's stays Super-Admin-only.
+
+**The footer modal rendered behind the page**
+- The sidebar is `position: sticky`, which makes it a stacking context, so a
+  modal rendered in its footer was pinned underneath `<main>` and the page's
+  sticky table headers painted straight through it. Overlays now portal to
+  `<body>` and lock page scroll while open.
+
+**Typography**
+- `.cap` has no base rule in the stylesheet - it only renders small inside a
+  parent that sizes it - so every new terms surface was showing labels and hints
+  at full body size. Each now states its own sizing: field labels read as
+  labels, explanatory sentences read as prose.
+
+---
+
 ## v3.364.0 - 2026-08-20 · `PENDING` - Terms v1.2: sign once, and a proper signed record
 
 **One signature, then never again**

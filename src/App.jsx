@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.373.0'
+const APP_VERSION = '3.374.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9667,6 +9667,15 @@ function unusualSessions(sessions) {
   if (seen.size > 1) for (const x of list) { if (seen.get(`${x.country || ''}|${x.city || ''}`) === 1) odd.add(x.start) }
   return odd
 }
+// Distinct places this person has signed in from, most recent first.
+const placesOf = (u) => {
+  const out = []
+  for (const x of [...((u && u.sessions) || [])].reverse()) {
+    const p = placeOf(x); if (p && !out.includes(p)) out.push(p)
+  }
+  return out
+}
+const placeList = (u) => { const p = placesOf(u); return p.length ? `Signed in from: ${p.join(' · ')}` : null }
 const auditMins = (n) => (n == null ? null : n < 60 ? `${n}m` : `${Math.floor(n / 60)}h ${n % 60}m`)
 const auditAgo = (ms) => {
   if (!ms) return null
@@ -9952,7 +9961,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
       </div>
       {/* Super-Admin only: the document itself, and the register of who signed it.
           Both hold the legal record, so neither is shown to Admins. */}
-      {isSuper && authEnabled && section === 'terms' && <><TermsAdmin authUser={authUser} /><TermsRegister /></>}
+      {isSuper && authEnabled && section === 'terms' && <><TermsRegister /><TermsAdmin authUser={authUser} /></>}
       {isSuper && section === 'logs' && <LogsPanel clients={config.clients} />}
       {section === 'appearance' && (
         <div className="card">
@@ -10888,6 +10897,7 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
     // Never seen sorts last on a descending "most recent first" click.
     if (key === 'seen') return u.lastSeen ? Date.parse(u.lastSeen) : -1
     if (key === 'time') return recentMins(u)
+    if (key === 'place') return placeOf(lastSession(u)) || 'zzz'   // unknown sorts last
     return (u.name || u.email || '').toLowerCase()
   }
   const sortedTeam = [...team].sort((a, b) => {
@@ -10919,8 +10929,8 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
         </div>
 
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl" style={{ marginTop: 12 }}>
-          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" />{seeActivity && <><Th k="seen" label="Last active" /><Th k="time" label="Time (30d)" /></>}<Th k="status" label="Status" /><th className="lft"></th></tr></thead>
-          <tbody>{state.status === 'loading' ? <tr><td colSpan={seeActivity ? 8 : 6}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
+          <thead><tr><Th k="name" label="Name" /><Th k="email" label="Email" /><Th k="role" label="Role" /><Th k="access" label="Access" />{seeActivity && <><Th k="seen" label="Last active" /><Th k="time" label="Time (30d)" /><Th k="place" label="Sign-in location" /></>}<Th k="status" label="Status" /><th className="lft"></th></tr></thead>
+          <tbody>{state.status === 'loading' ? <tr><td colSpan={seeActivity ? 9 : 6}><Spinner label="Loading team…" /></td></tr> : sortedTeam.map((u) => {
             const self = u.email === (authUser && authUser.email)
             const seen = seeActivity ? ago(u.lastSeen) : null
             const ls = seeActivity ? lastSession(u) : null
@@ -10934,13 +10944,20 @@ function UsersAdmin({ authUser, authEnabled, clients }) {
                 <td className="lft"><span className="cap">{accessSummary(u)}</span></td>
                 {seeActivity && <>
                   <td className="lft" title={u.lastSeen ? `Last active ${new Date(u.lastSeen).toLocaleString('en-AU')}${u.lastLogin ? ` · last signed in ${new Date(u.lastLogin).toLocaleString('en-AU')}` : ''}${ls && ls.ip ? ` · IP ${ls.ip}` : ''}` : (u.status === 'invited' ? 'Hasn\u2019t accepted their invite yet' : 'No activity recorded')}>
-                    {seen ? <span className="u-seen">{seen}
-                      {ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}
-                      {placeOf(ls) ? <small className={`u-place${odd.has(ls.start) ? ' odd' : ''}`} title={odd.has(ls.start) ? 'They haven’t signed in from here before' : 'Approximate - from the network they connected over'}>{odd.has(ls.start) ? '⚠ ' : ''}{placeOf(ls)}</small> : null}
-                    </span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
+                    {seen ? <span className="u-seen">{seen}{ls && ls.mins > 0 ? <small>{mins(ls.mins)} session</small> : null}</span> : <span className="cap">{u.status === 'invited' ? 'never' : '-'}</span>}
                   </td>
                   <td className="lft" title={tot ? `${(u.sessions || []).filter((x) => Date.parse(x.start) >= Date.now() - 30 * 86400000).length} session(s) in the last 30 days` : ''}>
                     {tot ? <span className="u-seen">{mins(tot)}</span> : <span className="cap">-</span>}
+                  </td>
+                  {/* Where their most recent session started, with every other place
+                      they've signed in from in the tooltip. Approximate by nature -
+                      see geoFromReq() in lib/auth.mjs. */}
+                  <td className="lft" title={placeList(u) || 'No location recorded yet'}>
+                    {placeOf(ls)
+                      ? <span className={`u-place-cell${odd.has(ls.start) ? ' odd' : ''}`}>{odd.has(ls.start) ? '⚠ ' : ''}{placeOf(ls)}
+                        {placesOf(u).length > 1 ? <small>{placesOf(u).length} places seen</small> : null}
+                      </span>
+                      : <span className="cap">-</span>}
                   </td>
                 </>}
                 <td className="lft">{badge(u)}</td>
@@ -11307,6 +11324,7 @@ function TermsAdmin({ authUser }) {
   const [draft, setDraft] = useState(null)
   const [resign, setResign] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
+  const [open, setOpen] = useState(false)
   const [msg, setMsg] = useState(null)
   const [busy, setBusy] = useState(false)
   const load = () => {
@@ -11365,7 +11383,11 @@ function TermsAdmin({ authUser }) {
     <div className="card">
       <div className="u-head-row">
         <div>
-          <h3 style={{ margin: 0 }}>Terms of use · the document</h3>
+          <h3 style={{ margin: 0 }}>
+            <button type="button" className="ed-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+              <span className={`ed-chev${open ? ' on' : ''}`}>▸</span>Terms of use · the document
+            </button>
+          </h3>
           <p className="cap terms-ed-intro" style={{ margin: '4px 0 0', maxWidth: 720 }}>
             This is what people are shown and asked to sign. Edit it here - no deploy needed. Live version <b>{st.terms.version}</b>
             {' '}(effective {st.terms.effective}) · wording <b className="mono">{st.hash}</b> ·{' '}
@@ -11375,13 +11397,18 @@ function TermsAdmin({ authUser }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn-ghost sm" onClick={() => setShowPreview(true)}>👁 Preview the signing screen</button>
-          <button className="btn-ghost sm" onClick={load} disabled={busy}>Discard changes</button>
-          {st.custom && <button className="btn-ghost sm" onClick={revert} disabled={busy}>Revert to built-in</button>}
-          <button className="btn-primary" onClick={publish} disabled={busy || !dirty}>{busy ? 'Publishing…' : 'Publish'}</button>
+          {!open && <button className="btn-ghost sm" onClick={() => setOpen(true)}>Edit the wording</button>}
+          {open && <>
+            <button className="btn-ghost sm" onClick={load} disabled={busy}>Discard changes</button>
+            {st.custom && <button className="btn-ghost sm" onClick={revert} disabled={busy}>Revert to built-in</button>}
+            <button className="btn-primary" onClick={publish} disabled={busy || !dirty}>{busy ? 'Publishing…' : 'Publish'}</button>
+          </>}
         </div>
       </div>
       {msg && <p className="cap" style={{ color: msg.ok ? '#12b886' : '#ef4444', marginTop: 8 }}>{msg.t}</p>}
+      {!open && dirty ? <p className="cap" style={{ color: 'var(--warn)', marginTop: 8 }}>You have unpublished changes - open the editor to publish or discard them.</p> : null}
 
+      {(open || dirty) && <>
       <div className="terms-ed-meta">
         <div className="fld"><label className="cap">Title</label><input className="inp" value={draft.title} onChange={set('title')} /></div>
         <div className="fld">
@@ -11446,6 +11473,8 @@ function TermsAdmin({ authUser }) {
         <p className="cap">One per line. The first line is the lead-in ("By signing below, I declare that:"); the rest become the bullets directly above the signature box.</p>
         <textarea className="inp terms-ed-ta" rows={8} value={draft.declText} onChange={set('declText')} />
       </div>
+
+      </>}
 
       {showPreview && (
         <Overlay>

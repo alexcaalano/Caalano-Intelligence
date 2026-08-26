@@ -17,6 +17,30 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.374.0 - 2026-08-20 · `PENDING` - Terms page tidied, sign-in location gets its own column
+
+**Settings → Terms of use**
+- The **signed register** moves to the top - it's what you actually come to this
+  page to look at. The document editor sits underneath it.
+- The editor is **collapsed by default**; the header still shows the live
+  version, effective date and wording digest, with **Edit the wording** to open
+  it. *Preview the signing screen* stays available without expanding.
+- One guard: if you have unpublished changes the editor won't collapse, and says
+  so - a draft shouldn't be hideable by a stray click on the header.
+
+**Sign-in location is its own column**
+- It was a footnote under *Last active*, which buried it. Now **Sign-in
+  location** sits between *Time (30d)* and *Status*, sortable like the rest,
+  still Super-Admin only (verified: an Admin still sees 5 columns, not 7).
+- Shows where their most recent session started, with `⚠` in amber when that
+  place is one they've never signed in from before.
+- A second line counts the distinct places they've been seen from, and the
+  tooltip lists them: *"Signed in from: Lagos, Lagos, NG · Sydney, NSW, AU"*.
+- Captured in `geoFromReq()` (`netlify/lib/auth.mjs`) and stamped onto a session
+  when it **starts** - at sign-in, or after a 30-minute idle gap opens a new one.
+
+---
+
 ## v3.373.0 - 2026-08-20 · `PENDING` - Where people sign in from, and when it looks wrong
 
 - Each session now records roughly where it started: city, region, country and

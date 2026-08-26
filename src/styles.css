@@ -3360,6 +3360,14 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .inp.sm { padding: 5px 9px; font-size: 12px; }
 .u-place { display: block; font-size: 10px; color: var(--faint); }
 .u-place.odd { color: var(--warn); font-weight: 700; }
+.u-place-cell { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.u-place-cell small { display: block; font-size: 10px; color: var(--faint); }
+.u-place-cell.odd { color: var(--warn); font-weight: 700; }
+/* Collapsible section header */
+.ed-toggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.ed-toggle:hover { color: var(--brand-2); }
+.ed-chev { display: inline-block; font-size: 11px; color: var(--faint); transition: transform .16s ease; }
+.ed-chev.on { transform: rotate(90deg); }
 .terms-sig-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 15px; }
 .terms-sig-modal { --mr-drill-cols: 4; }
 .terms-sig-full { display: block; max-width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 12px; }

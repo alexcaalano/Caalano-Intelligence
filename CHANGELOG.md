@@ -17,6 +17,39 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.372.0 - 2026-08-20 · `PENDING` - Activity trail: where each person went, and for how long
+
+**Settings → Logs → Activity trail** (Super Admin only). A per-person record of
+which views, clients and tabs someone opened and how long they stayed:
+
+> `26 Aug, 1:10 pm · Alex Serrano · Client workspace [Meta Ads] · Pool Haus · 4m`
+
+- **Navigation only.** Views, client opens and workspace tabs - not within-page
+  clicks. A click log is a firehose nobody reads and a privacy surface that is
+  hard to justify; where someone went and for how long is what actually answers
+  the questions people ask of an audit log.
+- A location is recorded when it is **left**, so every entry carries a real
+  duration. The last location of a visit is captured on tab-hide/close via a
+  `keepalive` beacon, so a single-page visit isn't invisible.
+- Bounces under a second are dropped, and any single stay is capped at 4 hours so
+  a tab left open overnight doesn't register as a working day.
+- The identity on each entry is resolved **server-side** from the session, not
+  asserted by the caller - so it can't be forged by editing the request.
+- Summary table (views, total time, accounts opened, last seen) with a
+  click-through to filter the timeline to one person; 1d / 7d / 30d windows.
+- Stored in its own `caalano-audit` blob store, day-partitioned with a per-day
+  cap and a 90-day index - the same shape as the reliability log, kept separate
+  so the two can't crowd each other out.
+- Legally already covered: terms clause 5 discloses exactly this ("when you sign
+  in, when you are active, what you access"), and everyone on v1.3 has signed it.
+
+Caught while building: the audit hook sat after Dashboard's `if (!data) return`
+guards, so it changed React's hook count between the loading and loaded renders
+(error #310, a blank app). It is a small component now - mounting and unmounting
+is legal where a varying hook count is not.
+
+---
+
 ## v3.371.0 - 2026-08-20 · `PENDING` - An anonymous caller is no longer trusted
 
 Auditing the login path turned up the opposite problem to the one being looked

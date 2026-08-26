@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.371.0'
+const APP_VERSION = '3.372.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9645,6 +9645,21 @@ function parseChangelog(raw) {
       : { version: head.split(/\s/)[0], date: '', status: '', title: head, bullets }
   })
 }
+// Human labels for the top-level views, for the activity trail.
+const VIEW_LABEL = {
+  overview: 'Agency Overview', trends: 'Trends', weekly: 'Weekly Traffic Light', cockpit: 'Creative Cockpit',
+  insights: 'Meta Insights', update: 'Client Update', monthly: 'Monthly Report', reports: 'Monthly Reports',
+  social: 'Organic Social Media', settings: 'Settings', clients: 'Client workspace',
+}
+const auditMins = (n) => (n == null ? null : n < 60 ? `${n}m` : `${Math.floor(n / 60)}h ${n % 60}m`)
+const auditAgo = (ms) => {
+  if (!ms) return null
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000))
+  if (s < 90) return 'just now'
+  const m = Math.round(s / 60); if (m < 60) return `${m} min ago`
+  const h = Math.round(m / 60); if (h < 24) return `${h} hour${h === 1 ? '' : 's'} ago`
+  const d = Math.round(h / 24); return `${d} day${d === 1 ? '' : 's'} ago`
+}
 // Logs - Super-Admin only. Two views: build/version history (from CHANGELOG.md)
 // and the live reliability failure log (server-side ring buffer).
 function LogsPanel({ clients }) {
@@ -9682,6 +9697,17 @@ function LogsPanel({ clients }) {
       .catch((e) => setLog({ status: 'err', data: { error: String(e.message || e) } }))
   }
   useEffect(() => { if (tab === 'failures') loadLog() /* eslint-disable-next-line */ }, [tab, days])
+  // Navigation audit trail.
+  const [audit, setAudit] = useState({ status: 'idle' })
+  const [aDays, setADays] = useState(7)
+  const [aUser, setAUser] = useState('')
+  const loadAudit = () => {
+    setAudit({ status: 'loading' })
+    apiJson(`/.netlify/functions/windsor?scope=auditlog&days=${aDays}${aUser ? `&user=${encodeURIComponent(aUser)}` : ''}&_r=${Date.now()}`, { timeoutMs: 20000, tries: 1 })
+      .then((j) => setAudit({ status: j && j.error ? 'err' : 'ok', data: j }))
+      .catch(() => setAudit({ status: 'err' }))
+  }
+  useEffect(() => { if (tab === 'activity') loadAudit() /* eslint-disable-next-line */ }, [tab, aDays, aUser])
   const sevMeta = { error: ['✗', 'bad', 'Error'], 'error-stale': ['◐', 'warn', 'Error (served cached)'], slow: ['⏱', 'warn', 'Slow'], client: ['◱', 'bad', 'Browser'] }
   // Download the current reliability log (with resolved client names) as a JSON
   // file - so it can be handed off for diagnosis without needing live log access.
@@ -9708,10 +9734,11 @@ function LogsPanel({ clients }) {
     <div className="logs-panel">
       <div className="card">
         <div className="logs-head">
-          <div><h3 style={{ margin: 0 }}>Logs</h3><p className="cap" style={{ margin: '4px 0 0' }}>Super-Admin only. Build/version history and the live reliability log used to find and fix what's failing.</p></div>
+          <div><h3 style={{ margin: 0 }}>Logs</h3><p className="cap" style={{ margin: '4px 0 0' }}>Super-Admin only. Build history, the reliability log, and where each person has been in the app.</p></div>
           <div className="chan-toggle">
             <button className={tab === 'versions' ? 'on' : ''} onClick={() => setTab('versions')}>Build versions</button>
             <button className={tab === 'failures' ? 'on' : ''} onClick={() => setTab('failures')}>Failure logs</button>
+            <button className={tab === 'activity' ? 'on' : ''} onClick={() => setTab('activity')}>Activity trail</button>
           </div>
         </div>
       </div>
@@ -9746,6 +9773,69 @@ function LogsPanel({ clients }) {
             ))}
           </div>
         </div>
+      )}
+      {tab === 'activity' && (
+        <>
+          <div className="card">
+            <div className="u-head-row">
+              <div>
+                <h3 style={{ margin: 0 }}>Activity trail</h3>
+                <p className="cap terms-reg-intro" style={{ margin: '4px 0 0', maxWidth: 760 }}>
+                  Where each person went and how long they stayed - views, clients and tabs. Navigation only: within-page
+                  clicks aren&rsquo;t recorded. Kept for 90 days. Disclosed in clause 5 of the terms everyone signs.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select className="inp sm" value={aUser} onChange={(e) => setAUser(e.target.value)} title="Filter to one person">
+                  <option value="">Everyone</option>
+                  {(audit.data && audit.data.summary || []).map((u) => <option key={u.user} value={u.user}>{u.name || u.user}</option>)}
+                </select>
+                <div className="chan-toggle">
+                  {[1, 7, 30].map((d) => <button key={d} className={aDays === d ? 'on' : ''} onClick={() => setADays(d)}>{d}d</button>)}
+                </div>
+                <button className="btn-ghost sm" onClick={loadAudit}>Refresh</button>
+              </div>
+            </div>
+            {audit.status === 'loading' ? <Spinner label="Loading the trail…" />
+              : audit.status === 'err' ? <p className="cap">Couldn&rsquo;t load the activity trail.</p>
+                : !(audit.data && audit.data.summary || []).length ? <p className="cap">Nothing recorded yet. Activity appears here as people use the app.</p>
+                  : (
+                    <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl appt-tbl users-tbl">
+                      <thead><tr><th className="lft">Person</th><th className="lft">Role</th><th className="lft">Views</th><th className="lft">Time</th><th className="lft">Accounts opened</th><th className="lft">Last seen</th></tr></thead>
+                      <tbody>{(audit.data.summary || []).map((u) => (
+                        <tr key={u.user} className="terms-row" onClick={() => setAUser(u.user === aUser ? '' : u.user)} title="Filter the timeline to this person">
+                          <td className="lft">{u.name || u.user}<small style={{ display: 'block', color: 'var(--faint)' }}>{u.user}</small></td>
+                          <td className="lft"><span className={`u-role-tag r-${u.role}`}>{ROLE_LABEL[u.role] || u.role || '-'}</span></td>
+                          <td className="lft">{u.views}</td>
+                          <td className="lft">{auditMins(Math.round(u.ms / 60000))}</td>
+                          <td className="lft" title={(u.clientList || []).map(nameOf).join(', ')}>{u.clients || '-'}</td>
+                          <td className="lft">{auditAgo(u.last) || '-'}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table></div>
+                  )}
+          </div>
+          {audit.status === 'ok' && (audit.data.entries || []).length ? (
+            <div className="card">
+              <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>
+                Timeline{aUser ? ` · ${aUser}` : ''} · {audit.data.count} event{audit.data.count === 1 ? '' : 's'} over {aDays}d
+                {audit.data.count > (audit.data.entries || []).length ? ` · showing the most recent ${(audit.data.entries || []).length}` : ''}
+              </div>
+              <div className="table-wrap"><table className="mini-tbl appt-tbl logs-tbl">
+                <thead><tr><th className="lft">When</th><th className="lft">Person</th><th className="lft">Where</th><th className="lft">Account</th><th className="lft">Stayed</th></tr></thead>
+                <tbody>{(audit.data.entries || []).map((e, i) => (
+                  <tr key={i}>
+                    <td className="lft">{new Date(e.t).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                    <td className="lft logs-who">{e.userName || e.user || <span className="cap">-</span>}{e.userRole ? <small>{ROLE_LABEL[e.userRole] || e.userRole}</small> : null}</td>
+                    <td className="lft">{VIEW_LABEL[e.view] || e.view}{e.tab ? <span className="aud-tab">{(TAB_OPTIONS.find((t) => t.id === e.tab) || {}).label || e.tab}</span> : null}</td>
+                    <td className="lft">{e.client ? nameOf(e.client) : <span className="cap">-</span>}</td>
+                    <td className="lft">{e.ms > 1000 ? (e.ms >= 60000 ? auditMins(Math.round(e.ms / 60000)) : `${Math.round(e.ms / 1000)}s`) : '-'}{e.ref === 'close' ? <small>left</small> : null}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            </div>
+          ) : null}
+        </>
       )}
       {tab === 'failures' && (
         <div className="card">
@@ -15662,6 +15752,47 @@ function readNavUrl() {
 // writeNavUrl takes a PATCH: each key is set (truthy) or deleted (falsy); keys not
 // present are left untouched, so partial writers (view vs range vs won-basis) compose
 // and unowned params (e.g. ?invite=) survive.
+/* Navigation audit trail.
+   Hooked on the DERIVED location rather than on the nav handlers, so a deep
+   link, a Back button press and a sidebar click all record identically - and a
+   date-range change, which also rewrites the URL, records nothing.
+   One beacon per view change, carrying the time spent on the PREVIOUS location.
+   `keepalive` so the last hop still lands when the tab is closing. */
+function useNavAudit(enabled, view, clientId, tab) {
+  const here = useRef(null)   // { view, client, tab, at }
+  const post = React.useCallback((entry, closing) => {
+    const body = JSON.stringify({ view: entry.view, client: entry.client, tab: entry.tab, ms: entry.ms, ref: closing ? 'close' : null })
+    try { fetch('/.netlify/functions/windsor?scope=navlog', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }).catch(() => {}) } catch { /* never block navigation */ }
+  }, [])
+  // A location is recorded when it is LEFT, so the entry carries how long it was
+  // open. The clock restarts rather than clearing, so a flush on tab-hide can't
+  // double-count the time when the person comes back.
+  const leave = React.useCallback((closing) => {
+    const p = here.current
+    if (!p) return
+    const ms = Date.now() - p.at
+    if (ms < 1000 && !closing) { return } // a bounce through a view isn't a visit
+    post({ ...p, ms }, closing)
+    here.current = { ...p, at: Date.now() }
+  }, [post])
+  useEffect(() => {
+    if (!enabled) return
+    leave(false)
+    here.current = { view, client: clientId || null, tab: tab || null, at: Date.now() }
+  }, [enabled, view, clientId, tab, leave])
+  // The last location of a visit is only ever recorded here - nothing follows it.
+  useEffect(() => {
+    if (!enabled) return
+    const onHide = () => { if (document.visibilityState === 'hidden') leave(true) }
+    window.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', () => leave(true))
+    return () => { window.removeEventListener('visibilitychange', onHide) }
+  }, [enabled, leave])
+}
+function NavAudit({ on, view, clientId, tab }) {
+  useNavAudit(on, view, clientId, tab)
+  return null
+}
 function writeNavUrl(patch, push) {
   try {
     const p = new URLSearchParams(window.location.search)
@@ -15833,9 +15964,12 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         : ((urlClientId && baseClients.find((c) => c.id === urlClientId && canSeeClientFE(authUser, c.id) && (seeRestricted || !restricted[c.id]))) || picked)))
     : picked
   const idx = curPicked ? Math.max(0, baseClients.findIndex((c) => c.id === curPicked.id)) : 0
-
   return (
     <div className={`shell ${collapsed ? 'sb-collapsed' : ''} ${present ? 'present' : ''}`}>
+      {/* Records where this person is. A component rather than a hook call in
+          Dashboard: Dashboard returns early while data loads, so a hook here
+          would change the hook count between renders. */}
+      <NavAudit on={!!(authEnabled && authUser)} view={curView} clientId={curPicked && curPicked.id} tab={curView === 'clients' ? clientTab : null} />
       {navOpen && <div className="nav-overlay" onClick={() => setNavOpen(false)} />}
       {collapsed && <button className="sb-expand" onClick={() => setCollapsed(false)} aria-label="Show sidebar" title="Show sidebar">»</button>}
       <aside className={`side ${navOpen ? 'open' : ''}`}>

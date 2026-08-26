@@ -2509,6 +2509,31 @@ function cacheKeyFrom(url) {
 // an acceptable trade for zero extra infrastructure. Never throws into the
 // request path.
 const diagStore = () => getStore({ name: 'caalano-diag', consistency: 'strong' })
+
+// Navigation audit trail - who opened which view, which client, which tab, and
+// how long they stayed. Deliberately NOT a click log: within-page interactions
+// are a firehose nobody reads and a privacy surface that's awkward to justify.
+// Where someone went, and for how long, is what actually answers the questions
+// people ask of an audit log. Same shape as the reliability log above: a capped
+// per-day bucket plus a small index, in its own store so the two never crowd
+// each other out. Terms clause 5 already discloses this ("what you access").
+const auditStore = () => getStore({ name: 'caalano-audit', consistency: 'strong' })
+const AUDIT_DAY_CAP = 4000
+const AUDIT_DAYS_KEEP = 90
+function auditDayKey(d) { return 'audit:' + new Date(d).toISOString().slice(0, 10) }
+async function auditLog(entry) {
+  try {
+    const now = Date.now()
+    const key = auditDayKey(now)
+    const store = auditStore()
+    const cur = (await store.get(key, { type: 'json' }).catch(() => null)) || []
+    cur.push({ t: now, ...entry })
+    await store.setJSON(key, cur.length > AUDIT_DAY_CAP ? cur.slice(cur.length - AUDIT_DAY_CAP) : cur)
+    const idx = (await store.get('audit:index', { type: 'json' }).catch(() => null)) || []
+    const day = key.slice(6)
+    if (!idx.includes(day)) { idx.push(day); idx.sort().reverse(); await store.setJSON('audit:index', idx.slice(0, AUDIT_DAYS_KEEP)) }
+  } catch { /* an audit write must never break the page */ }
+}
 const DIAG_DAY_CAP = 400
 function diagDayKey(d) { return 'diag:' + new Date(d).toISOString().slice(0, 10) }
 async function diagLog(entry) {
@@ -2659,6 +2684,36 @@ export default async (req) => {
   // ---- Reliability log reader (staff/admin) --------------------------------
   // Reads the failure/slow-build ring buffer so the Settings → Reliability panel
   // can show what's failing, where, and how close to the timeout each scope runs.
+  // Who went where. Super-Admin only - it names people and what they looked at,
+  // which is more sensitive than the "last active" column, not less.
+  if (scope === 'auditlog') {
+    if (me && me.role !== 'superadmin') return json({ error: 'Not authorised.' }, 403)
+    try {
+      const store = auditStore()
+      const idx = (await store.get('audit:index', { type: 'json' }).catch(() => null)) || []
+      const days = idx.slice(0, Math.max(1, Math.min(30, Number(url.searchParams.get('days')) || 7)))
+      const who = String(url.searchParams.get('user') || '').toLowerCase().trim()
+      let entries = []
+      for (const day of days) {
+        const rows = await store.get(`audit:${day}`, { type: 'json' }).catch(() => null)
+        if (Array.isArray(rows)) entries = entries.concat(rows)
+      }
+      if (who) entries = entries.filter((e) => String(e.user || '').toLowerCase() === who)
+      entries.sort((a, b) => b.t - a.t)
+      // Per-person roll-up so the panel can lead with a summary rather than a wall.
+      const byUser = {}
+      for (const e of entries) {
+        const k = e.user || 'unknown'
+        const u = byUser[k] || (byUser[k] = { user: k, name: e.userName || null, role: e.userRole || null, views: 0, ms: 0, clients: new Set(), last: 0 })
+        u.views++; u.ms += (e.ms || 0); u.last = Math.max(u.last, e.t)
+        if (e.client) u.clients.add(e.client)
+      }
+      const summary = Object.values(byUser)
+        .map((u) => ({ ...u, clients: [...u.clients].length, clientList: [...u.clients].slice(0, 20) }))
+        .sort((a, b) => b.last - a.last)
+      return json({ scope: 'auditlog', days, count: entries.length, summary, entries: entries.slice(0, 1500) })
+    } catch (e) { return json({ scope: 'auditlog', error: String(e.message || e).slice(0, 200) }) }
+  }
   if (scope === 'diaglog') {
     if (me && me.role !== 'superadmin') return json({ error: 'Not authorised.' }, 403)
     try {
@@ -2678,6 +2733,25 @@ export default async (req) => {
   // function itself never got to record.
   if (scope === 'clientlog' && req.method === 'POST') {
     try { const b = await req.json().catch(() => ({})); await diagLog({ sev: 'client', scope: String(b.scope || 'unknown').slice(0, 60), client: b.client || client || null, ms: Number(b.ms) || null, error: String(b.error || '').slice(0, 240), ..._actor }) } catch { /* ignore */ }
+    return json({ ok: true })
+  }
+
+  // Navigation beacon. The browser posts one entry per view change - never per
+  // click - carrying where it went and how long it spent on the previous place.
+  // `_actor` is resolved from the session above, so the identity is the server's,
+  // not something the caller can assert.
+  if (scope === 'navlog' && req.method === 'POST') {
+    try {
+      const b = await req.json().catch(() => ({}))
+      const clean = (v, n) => (v == null ? null : String(v).slice(0, n))
+      await auditLog({
+        view: clean(b.view, 40), client: clean(b.client, 60), tab: clean(b.tab, 40),
+        // Duration on the PREVIOUS location, capped at 4h so a tab left open
+        // overnight doesn't register as a working day.
+        ms: Math.max(0, Math.min(4 * 3600 * 1000, Number(b.ms) || 0)),
+        ref: clean(b.ref, 120), ..._actor,
+      })
+    } catch { /* ignore */ }
     return json({ ok: true })
   }
 

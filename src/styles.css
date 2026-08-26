@@ -3354,6 +3354,10 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .prev-tab.on { border-style: solid; border-color: var(--brand-2); background: color-mix(in srgb, var(--brand-2) 12%, transparent); color: var(--text); opacity: 1; text-decoration: none; }
 .prev-fallback { margin: 10px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--warn); }
 .prev-caveat { margin-top: 4px; }
+/* Activity trail */
+.aud-tab { margin-left: 7px; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
+.logs-tbl td small { display: block; font-size: 10px; color: var(--faint); }
+.inp.sm { padding: 5px 9px; font-size: 12px; }
 .terms-sig-typed { font-family: 'Segoe Script', 'Brush Script MT', cursive; font-size: 15px; }
 .terms-sig-modal { --mr-drill-cols: 4; }
 .terms-sig-full { display: block; max-width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 12px; }

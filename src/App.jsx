@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.376.0'
+const APP_VERSION = '3.377.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8555,13 +8555,15 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // Each is still gated on the client actually having that source connected, so a
   // CRM-only client shows no empty ad tab and vice-versa.
   const allTabs = [{ id: 'overall', label: 'Caalano360' }]
+  // Clinic sits second, right after the blended view: for a practice it is the
+  // tab that answers "how is the business doing", so it belongs ahead of the
+  // channel tabs rather than at the end of them. Self-detecting - it only
+  // appears where the practice-management sync has created its patient fields.
+  if (isClinic) allTabs.push({ id: 'clinic', label: 'Clinic' })
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
   if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' })
-  // Clinic is self-detecting rather than configured: it appears only where the
-  // practice-management sync has actually created its patient fields.
-  if (isClinic) allTabs.push({ id: 'clinic', label: 'Clinic' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')

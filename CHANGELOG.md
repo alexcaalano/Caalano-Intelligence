@@ -17,6 +17,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.377.0 - 2026-08-20 · `PENDING` - Clinic tab moves to second
+
+- On a clinic, **Clinic** now sits directly after **Caalano360** and before
+  **Meta Ads**. For a practice it is the tab that answers "how is the business
+  doing", so it belongs ahead of the channel tabs rather than at the end of them.
+- Still self-detecting: it only appears where the practice-management sync has
+  created its patient fields, so nothing changes for a non-clinic client.
+
+---
+
 ## v3.376.0 - 2026-08-20 · `PENDING` - Clinic: capacity & recovery
 
 Researched what [Allie](https://www.allieclinics.com/) reports on (Cliniko /

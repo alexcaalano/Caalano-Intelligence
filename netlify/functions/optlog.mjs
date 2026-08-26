@@ -2,6 +2,7 @@
 // The sheet must be shared "Anyone with the link → Viewer" (or published to web).
 // We only ever build a docs.google.com URL from a validated spreadsheet id + gid,
 // so this endpoint can't be pointed at an arbitrary host (no SSRF surface).
+import { requireSession } from '../lib/auth.mjs'
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 })
@@ -26,6 +27,8 @@ function parseCsv(text) {
 }
 
 export default async (req) => {
+  // Makes an outbound fetch to Google Sheets on the caller’s say-so.
+  const deny = await requireSession(req); if (deny) return deny
   try {
     const u = new URL(req.url)
     const id = (u.searchParams.get('id') || '').trim()

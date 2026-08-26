@@ -17,6 +17,56 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.371.0 - 2026-08-20 · `PENDING` - An anonymous caller is no longer trusted
+
+Auditing the login path turned up the opposite problem to the one being looked
+for. The front door is solid - PBKDF2 at 150k iterations, `timingSafeEqual`,
+escalating lockout, HMAC-signed HttpOnly cookies, instant revocation via the
+session epoch, single-use invites, and no self-service password reset. What was
+weak was what happened when a caller had **no session at all**.
+
+`SITE_PASSWORD` (the break-glass shared password) passes the edge gate but
+carries no identity, so `currentUser()` returns null downstream. Several
+functions read null as *"the trusted owner on the legacy path"* and skipped
+their checks.
+
+**`settings` - read and write (the serious one)**
+- GET fell through and returned the **entire unscoped settings blob**: every
+  client's key events, KPI targets, campaign maps, brand profiles, and the list
+  of which clients are Super-Admin-only.
+- POST was worse. `if (me && me.role !== 'admin')` **passes when `me` is null**,
+  so an anonymous caller could rewrite shared settings - including the
+  Super-Admin-only `clients` section that adds, removes and relinks accounts.
+- Both now refuse without a session. Viewer reads stay scoped; viewer writes
+  stay refused.
+
+**`windsor` - every client, no audit trail**
+- `if (me) { ...all the access checks... }` meant a null caller skipped
+  `canSeeClient`, the Super-Admin-only filter and the viewer scope map, reaching
+  every client's data with `_actor` null - so nothing they did appeared in the
+  reliability log against a name.
+- Now refuses anonymous callers when `AUTH_SECRET` is set. The ten warmers and
+  snapshot jobs are unaffected: they `import` their run functions from
+  `windsor.mjs` in-process and never come through the HTTP handler.
+
+**Endpoints that spend money or fetch outward**
+- `insights` (Claude, agency view) → staff only. `chat` (Claude, per message) and
+  `optlog` (outbound Google Sheets fetch) → any signed-in user. All three were
+  reachable by anyone past the edge gate, which meant the shared password could
+  burn `ANTHROPIC_API_KEY` indefinitely.
+
+Two new helpers, `requireSession` and `requireStaff`, alongside the existing
+`requireOpsAdmin` - all fail closed, all no-ops in legacy mode where the
+shared-password gate is the only control by design.
+
+**Still outstanding, and it needs a human:** check whether `SITE_PASSWORD` is
+still set in Netlify, and who has it. It no longer reaches client data, but it
+still opens the app, and unlike the login form it has **no rate limit at all**
+(`edge-functions/auth.js:55` is a plain string compare). Once everyone has a real
+account, delete it.
+
+---
+
 ## v3.370.0 - 2026-08-20 · `PENDING` - Methodology prose is staff-only
 
 - The "how this number is calculated" paragraphs under each card - blended MER,

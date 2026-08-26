@@ -3,6 +3,7 @@
 // already-computed weekly payload from the browser and asks Claude to interpret
 // the Meta + Google performance against the CRM outcomes / lost reasons.
 // Requires ANTHROPIC_API_KEY in Netlify env.
+import { requireStaff } from '../lib/auth.mjs'
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
 // Shared: call Claude and normalise the response into { insights, model }.
@@ -403,6 +404,8 @@ Both must be positive but honest: if something dropped, frame it constructively 
 }
 
 export default async (req) => {
+  // Weekly Traffic Light is an agency view, and each run spends Claude credits.
+  const deny = await requireStaff(req); if (deny) return deny
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return json({ error: 'AI insights not configured - add ANTHROPIC_API_KEY in Netlify, then redeploy.' }, 400)

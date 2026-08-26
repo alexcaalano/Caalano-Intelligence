@@ -2609,6 +2609,15 @@ export default async (req) => {
       if (s && s.restricted) for (const id in s.restricted) if (s.restricted[id]) restrictedSet.add(id)
     } catch { /* fail open to the OTHER checks below; a restricted client still needs canSeeClient */ }
   }
+  // A null caller used to mean "the trusted owner on the shared-password path",
+  // and every check below was skipped for it. That made SITE_PASSWORD a way to
+  // reach every client - including Super-Admin-only ones - with no identity, no
+  // entry in the reliability log, and no terms acceptance. When the login system
+  // is on, there is no legitimate anonymous caller here: the app always sends its
+  // session cookie, and the warmers import runMetaWarm() in-process rather than
+  // coming through this handler. Legacy mode (no AUTH_SECRET) is unchanged - the
+  // shared-password edge gate is the only control there by design.
+  if (!me && process.env.AUTH_SECRET) return json({ error: 'Not signed in.' }, 401)
   if (me) {
     if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (client && restrictedSet.has(client)) return json({ error: 'You don’t have access to this account.' }, 403)

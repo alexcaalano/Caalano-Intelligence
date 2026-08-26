@@ -25,7 +25,11 @@ export default async (req) => {
       const secret = process.env.AUTH_SECRET
       if (secret) {
         const me = await currentUser(req, secret).catch(() => null)
-        if (me && me.role === 'viewer') {
+        // No session, but the login system is on: the only way to be here is the
+        // shared-password edge gate, which has no identity attached. It used to
+        // fall through and return the whole unscoped blob.
+        if (!me) return json({ ok: false, error: 'Not signed in.' }, 401)
+        if (me.role === 'viewer') {
           const allow = new Set(me.clients || [])
           const pick = (obj) => { const o = {}; for (const k in (obj || {})) { if (allow.has(String(k).split(':')[0])) o[k] = obj[k] } return o }
           const scoped = {}
@@ -57,8 +61,12 @@ export default async (req) => {
       const body = await req.json().catch(() => ({}))
       if (secret) {
         const me = await currentUser(req, secret).catch(() => null)
-        if (me && me.role !== 'admin' && me.role !== 'superadmin') return json({ ok: false, error: 'Admins only.' }, 403)
-        if (me && me.role !== 'superadmin' && body && body.clients) return json({ ok: false, error: 'Only a Super Admin can add, remove or relink client accounts.' }, 403)
+        // Same hole on the write path, and worse: `me && ...` meant an anonymous
+        // caller passed BOTH checks and could rewrite shared settings, including
+        // the Super-Admin-only `clients` section.
+        if (!me) return json({ ok: false, error: 'Not signed in.' }, 401)
+        if (me.role !== 'admin' && me.role !== 'superadmin') return json({ ok: false, error: 'Admins only.' }, 403)
+        if (me.role !== 'superadmin' && body && body.clients) return json({ ok: false, error: 'Only a Super Admin can add, remove or relink client accounts.' }, 403)
       }
       const cur = (await store().get(KEY, { type: 'json' }).catch(() => null)) || {}
       const next = { ...cur }

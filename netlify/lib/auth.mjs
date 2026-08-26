@@ -430,6 +430,24 @@ export async function currentUser(req, secret, opts = {}) {
 // legacy single-password mode the shared-password edge gate already restricts
 // access, so we allow through. Returns a Response to send on denial, or null to
 // proceed.
+// Any signed-in person. Use on endpoints that spend money (the Claude-backed
+// ones) or proxy an outside fetch, where the question is "is this a real user"
+// rather than "which clients may they see".
+export async function requireSession(req) {
+  const secret = process.env.AUTH_SECRET
+  if (!secret) return null // legacy mode: the shared-password edge gate is the control
+  const me = await currentUser(req, secret).catch(() => null)
+  if (me) return null
+  return new Response(JSON.stringify({ error: 'Not signed in.' }), { status: 401, headers: { 'content-type': 'application/json' } })
+}
+// Staff (anyone who isn't a client viewer), for agency-only tooling.
+export async function requireStaff(req) {
+  const secret = process.env.AUTH_SECRET
+  if (!secret) return null
+  const me = await currentUser(req, secret).catch(() => null)
+  if (me && me.role !== 'viewer') return null
+  return new Response(JSON.stringify({ error: me ? 'Staff only.' : 'Not signed in.' }), { status: me ? 403 : 401, headers: { 'content-type': 'application/json' } })
+}
 export async function requireOpsAdmin(req) {
   const secret = process.env.AUTH_SECRET
   if (!secret) return null // legacy mode: already behind the shared-password edge gate

@@ -5,11 +5,14 @@
 // isolation guarantee is that only one client's numbers are ever in context.
 // Aggregate only: the snapshot the client sends carries no individual contact
 // PII. Requires ANTHROPIC_API_KEY in Netlify env.
+import { requireSession } from '../lib/auth.mjs'
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
 
 const ROLE_OK = new Set(['user', 'assistant'])
 
 export default async (req) => {
+  // Spends Claude credits on every message. Client viewers use it, so any signed-in person is the right bar.
+  const deny = await requireSession(req); if (deny) return deny
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405)
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return json({ error: 'Chatbot not configured - add ANTHROPIC_API_KEY in Netlify, then redeploy.' }, 400)

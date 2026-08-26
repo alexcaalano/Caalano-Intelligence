@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.374.0'
+const APP_VERSION = '3.375.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9926,7 +9926,31 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
   const role = authEnabled && authUser ? authUser.role : 'admin' // legacy/basic = full admin
   const isAdmin = isAdminishFE(role)
   const isSuper = !authEnabled || role === 'superadmin' // legacy/basic = super
-  const [section, setSection] = useState(isAdmin ? 'clients' : 'account')
+  // Sections this person can actually reach - a deep link to one they can't
+  // would otherwise render an empty page.
+  const allowedSections = [
+    ...(isAdmin ? ['clients', 'fatigue', 'socialkpis', 'dailyperf'] : []),
+    ...((!authEnabled || isAdmin) ? ['team'] : []),
+    ...(authEnabled ? ['account'] : []),
+    'appearance',
+    ...(isSuper && authEnabled ? ['terms'] : []),
+    ...(isSuper ? ['logs'] : []),
+  ]
+  const defaultSection = isAdmin ? 'clients' : 'account'
+  const sectionFromUrl = () => { const want = readNavUrl().s; return want && allowedSections.includes(want) ? want : defaultSection }
+  const [section, setSectionRaw] = useState(sectionFromUrl)
+  // Pushed, not replaced, so Back steps through the sections you visited.
+  const setSection = (v) => { setSectionRaw(v); writeNavUrl({ s: v }, true) }
+  // Back / Forward, and a first load that arrived with ?s= already set.
+  useEffect(() => {
+    // Back to a URL with no ?s means the default section, not whichever one
+    // happened to be open - otherwise Back appears to do nothing.
+    const sync = () => setSectionRaw(sectionFromUrl())
+    sync()
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
+    /* eslint-disable-next-line */
+  }, [])
   const names = useDiscoverNames()
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   if (!config) return <div className="card"><Spinner label="Loading settings…" /></div>
@@ -15796,7 +15820,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // link to a client you can't see simply returns 403 and falls back to home.
 const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
 function readNavUrl() {
-  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
+  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), s: p.get('s'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
 }
 // writeNavUrl takes a PATCH: each key is set (truthy) or deleted (falsy); keys not
 // present are left untouched, so partial writers (view vs range vs won-basis) compose
@@ -15845,7 +15869,7 @@ function NavAudit({ on, view, clientId, tab }) {
 function writeNavUrl(patch, push) {
   try {
     const p = new URLSearchParams(window.location.search)
-    for (const [k, val] of Object.entries(patch)) { val ? p.set(k, String(val)) : p.delete(k) }
+    for (const [k, val] of Object.entries(patch)) { if (val === undefined) continue; val ? p.set(k, String(val)) : p.delete(k) }
     const qs = p.toString()
     const url = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
     if (push) window.history.pushState(null, '', url); else window.history.replaceState(null, '', url)
@@ -15989,8 +16013,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // Config for the Settings page keeps deleted clients (so the Deleted filter can
   // restore them); the main app's baseClients above already hides them everywhere else.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
-  const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, m: null }, true) }
-  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', m: null }, true) }
+  const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, m: null, s: v === 'settings' ? undefined : null }, true) }
+  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', m: null, s: null }, true) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
   // views - they land straight in their assigned client(s).
   const role = authEnabled && authUser ? authUser.role : 'admin'

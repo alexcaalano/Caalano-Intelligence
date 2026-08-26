@@ -17,6 +17,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.375.0 - 2026-08-20 · `PENDING` - Settings sections are deep-linkable
+
+- Each Settings section now carries `?s=` in the URL, so a **refresh comes back
+  to the same tab** instead of dropping you on Clients. Same for a shared link:
+  `?v=settings&s=terms` opens straight on the terms document.
+- Pushed rather than replaced, so **Back steps through the sections you
+  visited**, and Back to a URL with no `?s=` returns to the default section
+  rather than leaving the last one open.
+- The section is validated against what that person can actually reach, so a
+  link to a section they don't have falls back to their default instead of
+  rendering an empty page. Verified: a deep link to `?s=logs` opens **Logs** for
+  a Super Admin, **Clients** for an Admin, and **Your account** for a Viewer.
+- `?s=` is dropped when you leave Settings, so it can't linger on an unrelated
+  view.
+
+Small fix underneath: `writeNavUrl` treated any falsy value as "delete this
+param", so there was no way to say "leave it alone". `undefined` now means leave
+it, which is what let `go('settings')` preserve `?s=` while every other
+destination clears it.
+
+---
+
 ## v3.374.0 - 2026-08-20 · `PENDING` - Terms page tidied, sign-in location gets its own column
 
 **Settings → Terms of use**

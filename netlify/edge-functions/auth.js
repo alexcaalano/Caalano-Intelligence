@@ -285,8 +285,9 @@ button.link:hover{color:var(--brand)}
     </div>
     <div class="pitch">
       <h1>From lead to <em>closed deal</em>.</h1>
-      <p>Built for service businesses where work is won over weeks, not minutes. Your ad spend and your
-         CRM in one place, so you can see what turns into revenue and what winning it actually costs.</p>
+      <p>Ad platforms can tell you what a lead cost. They cannot tell you which leads became clients,
+         because that happens in your CRM weeks later. Caalano360 joins the two, so you can back what
+         brings in revenue and stop paying for what only brings in forms.</p>
       <ul class="pts">
         <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Know which ad brought the client</b><span>Performance down to the campaign, ad set, creative or keyword, scored on deals won rather than forms filled in.</span></div></li>
         <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Cost per the thing you care about</b><span>Cost per meeting booked, per call attended, per quote sent, per new client. You set the steps your business runs on.</span></div></li>

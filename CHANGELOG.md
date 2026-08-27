@@ -18,6 +18,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.389.2 - 2026-08-20 · `PENDING` - Front door: lead with the actual proposition
+
+The opening line described the market rather than the value: "built for service
+businesses where work is won over weeks, not minutes" tells a reader who the
+product is for, not why they should want it.
+
+Replaced with the real gap the product closes:
+
+> Ad platforms can tell you what a lead cost. They cannot tell you which leads
+> became clients, because that happens in your CRM weeks later. Caalano360 joins
+> the two, so you can back what brings in revenue and stop paying for what only
+> brings in forms.
+
+Names the problem, says why it exists, and states the outcome. The audience is
+still implied by the six benefits underneath, which is where it belongs.
+
+---
+
 ## v3.389.1 - 2026-08-20 · `PENDING` - Front door: sell the product, not the feature list
 
 Rewrote the front door copy around what the product does for the business rather

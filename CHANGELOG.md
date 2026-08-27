@@ -18,6 +18,49 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.388.0 - 2026-08-20 · `PENDING` - Edge login page, so the app bundle can stop being public (flag off)
+
+Security backlog item 1, built. **Shipped with the flag off — this deploy
+changes nothing in production.**
+
+**The problem it solves.** The login screen lives inside the compiled bundle, so
+to show anyone a sign-in box we have to serve them the entire frontend first.
+That is why `/assets/*` is public today. Minification is not protection.
+
+**What's there now.** With `GATE_ASSETS=1` and no session, the edge refuses
+`/assets/*` and returns a self-contained login page for any HTML request —
+inline CSS, one nonce'd inline script, no bundle, no external origin. Anything
+not asking for HTML gets a 404 rather than the page.
+
+The page carries **every flow a signed-out person legitimately needs** and routes
+between them itself, by calling the auth endpoints that are already always
+reachable: sign in, accept an invite, first-admin bootstrap, request access. That
+self-routing is the point — the obvious shortcut of letting `?invite=` through to
+the bundle would have handed the whole app to anyone who appended it.
+
+**Verified — 44 assertions.** With the flag off, every path behaves exactly as
+before, assets included. With it on: the bundle is refused, while a valid
+session, an expired one, a tampered signature, the `SITE_PASSWORD` break-glass,
+legacy mode and the crawler block all still behave correctly. Driven in a real
+browser under a real nonce CSP header, all four flows post the right payloads and
+an expired invite dead-ends rather than falling through.
+
+**Deliberately one file.** Netlify auto-discovers every top-level file in
+`netlify/edge-functions/` as a function, so a shared helper with no default
+export is a deploy-time question — and this is the one file that can lock
+everybody out.
+
+### What still needs a person
+
+Turning it on cannot be done or verified from an agent session, which can't reach
+the deployed domain. In a **preview deploy**, set `GATE_ASSETS=1` and walk:
+sign in · an invite link in a clean browser profile · request access · a fresh
+bootstrap · the GoHighLevel OAuth callback · the Meta webhook. Then production,
+during a window when someone can unset the flag. Keep `SITE_PASSWORD` set
+throughout as break-glass.
+
+---
+
 ## v3.387.0 - 2026-08-20 · `PENDING` - Key events funnel: all pipelines, and cost per event that divides its own spend
 
 **The funnel now shows every pipeline when the filter says "All".**

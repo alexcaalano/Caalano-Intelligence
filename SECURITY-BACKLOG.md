@@ -11,7 +11,10 @@ against what was already true.
 
 ## 1. Serve the frontend bundle only to signed-in sessions
 
-**Status:** deferred by decision, 2026-08-25. Not blocked — scheduled.
+**Status:** BUILT, 2026-08-20 (v3.388.0) — shipped with the flag **off**, so
+production behaviour is unchanged. Steps 3–5 of the rollout below need a human
+with access to a preview deploy; they cannot be done from an agent session,
+which cannot reach the deployed domain.
 
 ### The exposure
 
@@ -40,6 +43,39 @@ It changes the login path, and the login path is the one thing that can lock the
 whole team out. It could not be verified against the live deploy from the session
 where it came up (the agent proxy blocks the deployed domain), and
 `SITE_PASSWORD` break-glass is a thin net to stake the team's access on.
+
+### What was built
+
+`netlify/edge-functions/auth.js` — approach (a), the edge-served login page.
+Deliberately kept in the one file rather than a shared module: Netlify
+auto-discovers every top-level file in `netlify/edge-functions/` as a function,
+and a helper file with no default export is a deploy-time question nobody wants
+to answer while locked out. 314 lines total.
+
+When `GATE_ASSETS=1` and there is no session:
+- `/assets/*` and `/data/*` are refused outright (404 / the existing 401)
+- any HTML request gets a self-contained login page — inline CSS and one
+  nonce'd inline script, no bundle, no external origin
+- anything not asking for HTML gets 404 rather than the page
+
+The page carries **all three** signed-out flows and routes between them itself
+by calling `?action=me` and `?action=invite-info` (both on `excludedPath`):
+sign in, accept an invite, first-admin bootstrap, plus request-access. That
+self-routing is what removes the need for edge exceptions — an earlier sketch
+let `?invite=` through to the bundle, which would have handed the whole app to
+anyone who appended it.
+
+The page sets its own CSP (`script-src 'nonce-…'`) because the site policy is
+`script-src 'self'` and would otherwise block it. A fresh nonce per request; no
+`unsafe-inline`.
+
+**Verified (27 edge assertions + 17 browser assertions, all passing):** with the
+flag off every path behaves exactly as before, including assets passing through;
+with it on the bundle is refused while a valid session, an expired one, a
+tampered signature, the `SITE_PASSWORD` break-glass, legacy mode and the crawler
+block all behave correctly. In a real browser under a real nonce CSP header, all
+four flows submit the right payloads to the right actions and an expired invite
+dead-ends instead of falling through.
 
 ### The approach
 
@@ -71,8 +107,11 @@ for an unauthenticated visitor:
 
 ### Rollout
 
-1. Build the edge login page behind an env flag (`GATE_ASSETS=1`), default off.
-2. Deploy with the flag off — zero behaviour change; confirm nothing moved.
+1. ~~Build the edge login page behind an env flag (`GATE_ASSETS=1`), default
+   off.~~ **Done, v3.388.0.**
+2. ~~Deploy with the flag off — zero behaviour change.~~ **Done** — the flag is
+   unset in production, so this deploy changed nothing. Worth a glance to
+   confirm.
 3. Turn it on in a preview deploy. Walk every path above, including an invite link
    in a clean browser profile and a fresh bootstrap.
 4. Turn it on in production during a window when someone can flip the flag back.

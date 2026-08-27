@@ -18,6 +18,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.392.0 - 2026-08-20 · `PENDING` - Front door: new headline, a slogan, and the marks unboxed
+
+- **Headline** is now *"The cheapest lead is rarely the best client."* It states
+  the insight the product is built on rather than describing a journey, and it
+  sets up the paragraph underneath instead of repeating it.
+- **Slogan** replaces "Client Reporting": **Data that closes.** It reads two
+  ways, both true here: data that closes deals, and data that closes the loop
+  between what an ad cost and what it earned.
+- **Private / invitation only** moved to the top right, balancing the brand mark
+  and clearing the footer.
+- **Marks unboxed.** The chips lost their pill background and border; the logos
+  now sit on the panel with the platform name beside them, spaced further apart.
+  Less furniture, and the marks themselves do the work.
+- **Measure widened.** The headline runs to 19 characters a line and the
+  paragraph to about 60, which is where prose reads fastest. Deliberately not
+  the full panel width: a 100-character line is a wall, not a paragraph.
+
+---
+
 ## v3.391.0 - 2026-08-20 · `PENDING` - Front door: real brand marks in the Syncs with row
 
 Replaced the text chips with drawn brand marks: Meta Ads, Google Ads, Google

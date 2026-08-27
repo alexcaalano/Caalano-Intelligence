@@ -219,6 +219,7 @@ body{margin:0;background:var(--ink);color:var(--text);
   background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),
   linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);background-size:52px 52px}
 .tell>*{position:relative;z-index:1}
+.top{display:flex;align-items:center;justify-content:space-between;gap:20px}
 .mark{display:flex;align-items:center;gap:13px}
 .badge{width:46px;height:46px;border-radius:14px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;line-height:1;
   font-size:14px;font-weight:800;letter-spacing:-.02em;color:#fff;
@@ -228,25 +229,24 @@ body{margin:0;background:var(--ink);color:var(--text);
 .mark b i{font-style:normal;color:#a9b4ff}
 .mark>div>span{display:block;font-size:11.5px;color:#8b93ad;letter-spacing:.06em;text-transform:uppercase}
 .pitch{margin:52px 0}
-.pitch h1{margin:0 0 16px;font-size:35px;line-height:1.16;letter-spacing:-.028em;color:#fff;max-width:14ch}
+.pitch h1{margin:0 0 17px;font-size:38px;line-height:1.12;letter-spacing:-.03em;color:#fff;max-width:19ch}
 .pitch h1 em{font-style:normal;background:linear-gradient(96deg,#9fb0ff,#c9a6ff);
   -webkit-background-clip:text;background-clip:text;color:transparent}
-.pitch p{margin:0;font-size:14.5px;line-height:1.65;color:#98a1bb;max-width:44ch}
+.pitch p{margin:0;font-size:15px;line-height:1.62;color:#9aa3bd;max-width:62ch}
 .pts{list-style:none;margin:30px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:20px 30px}
 .pts li{display:flex;gap:9px;align-items:flex-start}
 .pts svg{flex:0 0 auto;margin-top:3px}
 .pts b{display:block;color:#eef1f8;font-size:13px;font-weight:650;letter-spacing:-.005em;margin-bottom:3px}
 .pts span{display:block;font-size:12.5px;line-height:1.5;color:#98a1bb}
 @media(max-width:1240px){.pts{grid-template-columns:1fr;max-width:46ch}}
-.foot{display:flex;justify-content:space-between;align-items:flex-end;gap:22px;flex-wrap:wrap}
-.foot-l{font-size:11.5px;color:#6d7590;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:22px;flex-wrap:wrap}
+.cr{font-size:11.5px;color:#6d7590;white-space:nowrap}
 /* Named in plain text rather than as redrawn brand marks. An approximated Google
    or Meta logo is a distorted trademark, which is a worse thing to put on a page
    than the product's name spelled correctly. */
-.syncs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+.syncs{display:flex;align-items:center;gap:20px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
 .syncs-lab{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#6d7590;margin-right:3px}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 8px;border-radius:7px;
-  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09)}
+.chip{display:inline-flex;align-items:center;gap:6px}
 .chip svg{flex:0 0 auto;display:block}
 .chip b{font-size:10.5px;font-weight:500;color:#b3bacd;line-height:1.2;letter-spacing:.005em}
 .lock{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
@@ -290,12 +290,15 @@ button.link:hover{color:var(--brand)}
 </style></head><body>
 <div class="wrap">
   <section class="tell">
-    <div class="mark">
-      <span class="badge">360</span>
-      <div><b>Caalano<i>360</i></b><span>Client Reporting</span></div>
+    <div class="top">
+      <div class="mark">
+        <span class="badge">360</span>
+        <div><b>Caalano<i>360</i></b><span>Data that closes</span></div>
+      </div>
+      <span class="lock"><svg width="10" height="11" viewBox="0 0 12 13" fill="none" aria-hidden="true"><rect x="1.6" y="5.4" width="8.8" height="6.6" rx="1.8" stroke="#8b93ad" stroke-width="1.1"/><path d="M3.9 5.2V3.7a2.1 2.1 0 014.2 0v1.5" stroke="#8b93ad" stroke-width="1.1" stroke-linecap="round"/></svg> Private &middot; invitation only</span>
     </div>
     <div class="pitch">
-      <h1>From lead to <em>closed deal</em>.</h1>
+      <h1>The cheapest lead is rarely <em>the best client</em>.</h1>
       <p>Ad platforms can tell you what a lead cost. They cannot tell you which leads became clients.
          Caalano360 joins the two, so you can back what brings in revenue and stop paying for what only
          brings in forms.</p>
@@ -309,10 +312,7 @@ button.link:hover{color:var(--brand)}
       </ul>
     </div>
     <div class="foot">
-      <div class="foot-l">
-      <span class="lock"><svg width="10" height="11" viewBox="0 0 12 13" fill="none" aria-hidden="true"><rect x="1.6" y="5.4" width="8.8" height="6.6" rx="1.8" stroke="#8b93ad" stroke-width="1.1"/><path d="M3.9 5.2V3.7a2.1 2.1 0 014.2 0v1.5" stroke="#8b93ad" stroke-width="1.1" stroke-linecap="round"/></svg> Private &middot; invitation only</span>
-      <span>&copy; Caalano Digital</span>
-      </div>
+      <span class="cr">&copy; Caalano Digital</span>
       <div class="syncs"><span class="syncs-lab">Syncs with</span><span class="chip"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><defs><linearGradient id="mtg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0064E1"/><stop offset="1" stop-color="#0082FB"/></linearGradient></defs><path d="M4.6 15.9c0 1.4.6 2.2 1.6 2.2.9 0 1.5-.5 2.6-2.4l1.9-3.3c.3-.5.5-.9.8-1.4.4.7.8 1.3 1.1 1.9l1.5 2.6c1.3 2.2 2.3 3 3.9 3 1.9 0 3.1-1.6 3.1-4.4 0-3.6-1.9-7.5-5-7.5-1.6 0-2.9 1.1-4 2.8-.9-1.5-2-2.8-3.7-2.8C5.6 6.6 3.6 9.7 3.6 13c0 1.1.2 2.1.5 2.9z" fill="none" stroke="url(#mtg)" stroke-width="2.1" stroke-linecap="round"/></svg><b>Meta Ads</b></span><span class="chip"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="11.2" y="2.2" width="4.7" height="18" rx="2.35" fill="#FBBC04" transform="rotate(28 13.55 3)"/><rect x="11.2" y="2.2" width="4.7" height="18" rx="2.35" fill="#4285F4" transform="rotate(-28 13.55 3)" opacity=".95"/><circle cx="6.4" cy="18.4" r="3.3" fill="#34A853"/></svg><b>Google Ads</b></span><span class="chip"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="16.4" y="2.2" width="5.4" height="19.6" rx="2.7" fill="#F9AB00"/><rect x="9.3" y="8.4" width="5.4" height="13.4" rx="2.7" fill="#E37400" opacity=".92"/><circle cx="4.9" cy="18.9" r="2.9" fill="#E37400"/></svg><b>Google Analytics</b></span><span class="chip"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M16.6 5.8A4.3 4.3 0 0 1 15.5 3h-3.1v12.4a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.7a5.7 5.7 0 1 0 4.9 5.6V9a7.3 7.3 0 0 0 4.3 1.4V7.3a4.4 4.4 0 0 1-3.2-1.5z" fill="#25F4EE" transform="translate(-1.1 -.7)"/><path d="M16.6 5.8A4.3 4.3 0 0 1 15.5 3h-3.1v12.4a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.7a5.7 5.7 0 1 0 4.9 5.6V9a7.3 7.3 0 0 0 4.3 1.4V7.3a4.4 4.4 0 0 1-3.2-1.5z" fill="#FE2C55" transform="translate(.9 .6)"/><path d="M16.6 5.8A4.3 4.3 0 0 1 15.5 3h-3.1v12.4a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.7a5.7 5.7 0 1 0 4.9 5.6V9a7.3 7.3 0 0 0 4.3 1.4V7.3a4.4 4.4 0 0 1-3.2-1.5z" fill="#F4F6FC"/></svg><b>TikTok Ads</b></span><span class="chip"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><defs><linearGradient id="csg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7D8CFF"/><stop offset="1" stop-color="#B47CFF"/></linearGradient></defs><circle cx="12" cy="12" r="9.1" fill="none" stroke="url(#csg)" stroke-width="2.1" stroke-linecap="round" stroke-dasharray="40 17" transform="rotate(-58 12 12)"/><circle cx="12" cy="12" r="3.1" fill="url(#csg)"/></svg><b>Caalano Systems</b></span></div>
     </div>
   </section>

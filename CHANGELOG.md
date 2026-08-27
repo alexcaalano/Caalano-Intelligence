@@ -18,6 +18,36 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.389.0 - 2026-08-20 · `PENDING` - A front door, not a login box
+
+The edge page from v3.388.0 is now the product's front door: a two-panel layout
+with what Caalano360 actually is on the left and the sign-in desk on the right,
+stacking to one column under 900px.
+
+This falls out of the gate rather than being bolted on. Once the compiled app is
+withheld until there's a session, this page is the *only* public surface - so it
+may as well say what the product is, instead of showing a bare form to someone
+who was sent a link and has no idea what they're looking at.
+
+- Still entirely self-contained: inline CSS, inline SVG, one nonce'd script, no
+  bundle, no external font or image, nothing fetched from another origin.
+- All four flows unchanged and still passing: sign in, accept an invite,
+  first-admin bootstrap, request access.
+- Fixed while building it: `.mark span` also matched the brand badge, which is a
+  span - so `display:block` and the grey uppercase treatment won and the glyph
+  fell out of its own tile.
+
+**Not indexed, deliberately.** robots.txt disallows everything on this host and
+the edge refuses crawler user-agents, so this page is for people who already
+have a reason to be here. A page Google can see belongs on a separate public
+site - see the domain note below.
+
+**Only visible once `GATE_ASSETS=1`.** Until then the in-bundle login screen is
+what people see. Verified at 1440px and 400px, no horizontal overflow, 44
+assertions still green.
+
+---
+
 ## v3.388.0 - 2026-08-20 · `PENDING` - Edge login page, so the app bundle can stop being public (flag off)
 
 Security backlog item 1, built. **Shipped with the flag off — this deploy

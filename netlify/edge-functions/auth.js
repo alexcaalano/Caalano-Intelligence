@@ -162,43 +162,143 @@ export default async (request, context) => {
 // deliberately vague about whether an account exists, and rewording it here
 // would undo that.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// The front door: what a signed-out visitor sees when GATE_ASSETS is on.
+//
+// It is the login page and the product's landing page in one. That is not a
+// shortcut - it falls out of the gate. Once the compiled app is withheld until
+// there is a session, this page IS the only public surface, so it may as well
+// say what the product is rather than showing a bare form to someone who was
+// sent a link and has no idea what they are looking at.
+//
+// Self-contained on purpose: inline CSS, inline SVG, one nonce'd script, no
+// bundle, no external font or image. It sets its own CSP (the site policy is
+// script-src 'self' and would block it dead), so widening anything here never
+// touches the policy protecting the app.
+//
+// It carries every flow a signed-out person legitimately needs - sign in,
+// accept an invite, first-admin bootstrap, request access - and routes between
+// them itself via ?action=me and ?action=invite-info, both always reachable.
+// That self-routing is what removes the need for edge exceptions: letting
+// ?invite= through to the bundle would hand the whole app to anyone appending
+// it.
+//
+// NOT indexed, deliberately: robots.txt disallows everything on this host and
+// the edge refuses crawler user-agents. If the product ever wants a page Google
+// can see, that belongs on a separate public site, not here.
+// ---------------------------------------------------------------------------
 export function loginPage(nonce) {
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>Caalano360</title>
+<meta name="theme-color" content="#10121b">
+<title>Caalano360 &middot; Client Reporting</title>
 <style>
-:root{--bg:#f6f7fb;--card:#fff;--text:#141a2e;--muted:#6b7488;--line:#e3e6ef;--brand:#5b6ff5;--neg:#e0566c}
-@media(prefers-color-scheme:dark){:root{--bg:#0e1017;--card:#161a26;--text:#eef1f8;--muted:#98a0b5;--line:#252a3a;--brand:#7d8cff}}
+:root{
+  --ink:#0f1220;--ink-2:#1b2033;--paper:#fff;--text:#141a2e;--muted:#6b7488;--faint:#98a0b5;
+  --line:#e5e8f0;--field:#f7f8fc;--brand:#5b6ff5;--brand-2:#8d5bf5;--neg:#d64562;--pos:#0f9e6e;
+}
+@media(prefers-color-scheme:dark){
+  :root{--paper:#151827;--text:#eef1f8;--muted:#98a0b5;--faint:#767f96;--line:#262b3d;--field:#1c2032}
+}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:var(--bg);color:var(--text);
-font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-.card{width:100%;max-width:380px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;
-box-shadow:0 12px 40px rgba(16,20,40,.10)}
-.brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
-.dot{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#5b6ff5,#8d5bf5);flex:0 0 auto}
-.brand b{font-size:16px;letter-spacing:-.01em}.brand span{display:block;font-size:11.5px;color:var(--muted);font-weight:400}
-h2{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}
-.sub{margin:0 0 18px;font-size:12.5px;color:var(--muted)}
-label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:12px}
-input{display:block;width:100%;margin-top:5px;padding:10px 12px;font:inherit;color:var(--text);
-background:var(--bg);border:1px solid var(--line);border-radius:9px}
-input:focus{outline:2px solid var(--brand);outline-offset:1px;border-color:transparent}
-button.go{width:100%;padding:11px;font:inherit;font-weight:700;color:#fff;background:var(--brand);
-border:0;border-radius:9px;cursor:pointer;margin-top:4px}
-button.go[disabled]{opacity:.55;cursor:default}
-button.link{width:100%;margin-top:12px;padding:6px;font:inherit;font-size:12.5px;color:var(--muted);
-background:none;border:0;cursor:pointer;text-decoration:underline}
-.err{margin:0 0 12px;padding:9px 11px;font-size:12.5px;border-radius:8px;
-background:rgba(224,86,108,.12);color:var(--neg)}
-.ok{margin:0;padding:9px 11px;font-size:12.5px;border-radius:8px;
-background:rgba(18,184,134,.12);color:#0f9e6e}
-.hint{margin:14px 0 0;font-size:11.5px;color:var(--muted);text-align:center}
+html,body{height:100%}
+body{margin:0;background:var(--ink);color:var(--text);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{min-height:100%;display:grid;grid-template-columns:1.05fr .95fr}
+
+/* ---- left: the product ---- */
+.tell{position:relative;overflow:hidden;padding:56px 56px 48px;display:flex;flex-direction:column;
+  justify-content:space-between;background:
+  radial-gradient(900px 620px at 12% 4%,rgba(91,111,245,.34),transparent 62%),
+  radial-gradient(760px 560px at 92% 92%,rgba(141,91,245,.28),transparent 60%),
+  linear-gradient(158deg,#10121b 0%,#161a2b 58%,#12141f 100%)}
+.tell:after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);background-size:52px 52px}
+.tell>*{position:relative;z-index:1}
+.mark{display:flex;align-items:center;gap:13px}
+.badge{width:46px;height:46px;border-radius:14px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;line-height:1;
+  font-size:14px;font-weight:800;letter-spacing:-.02em;color:#fff;
+  background:linear-gradient(140deg,var(--brand),var(--brand-2));
+  box-shadow:0 8px 22px rgba(91,111,245,.42)}
+.mark b{display:block;font-size:19px;letter-spacing:-.02em;color:#fff}
+.mark b i{font-style:normal;color:#a9b4ff}
+.mark>div>span{display:block;font-size:11.5px;color:#8b93ad;letter-spacing:.06em;text-transform:uppercase}
+.pitch{margin:52px 0}
+.pitch h1{margin:0 0 16px;font-size:35px;line-height:1.16;letter-spacing:-.028em;color:#fff;max-width:14ch}
+.pitch h1 em{font-style:normal;background:linear-gradient(96deg,#9fb0ff,#c9a6ff);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.pitch p{margin:0;font-size:14.5px;line-height:1.65;color:#98a1bb;max-width:44ch}
+.pts{list-style:none;margin:30px 0 0;padding:0;display:grid;gap:13px;max-width:46ch}
+.pts li{display:flex;gap:11px;align-items:flex-start;font-size:13.5px;color:#b6bdd2}
+.pts svg{flex:0 0 auto;margin-top:2px}
+.pts b{color:#e8ebf5;font-weight:600}
+.foot{font-size:11.5px;color:#6d7590;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.foot a{color:#8b93ad}
+.lock{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#8b93ad;font-size:11px}
+
+/* ---- right: the desk ---- */
+.desk{background:var(--paper);display:flex;align-items:center;justify-content:center;padding:48px 40px}
+.form-col{width:100%;max-width:352px}
+h2{margin:0 0 5px;font-size:23px;letter-spacing:-.02em}
+.sub{margin:0 0 24px;font-size:13px;color:var(--muted)}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:14px}
+input{display:block;width:100%;margin-top:6px;padding:11px 13px;font:inherit;color:var(--text);
+  background:var(--field);border:1px solid var(--line);border-radius:10px;transition:border-color .12s}
+input:hover{border-color:#cdd3e2}
+input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(91,111,245,.16)}
+button.go{width:100%;padding:12px;margin-top:6px;font:inherit;font-weight:700;color:#fff;border:0;
+  border-radius:10px;cursor:pointer;background:linear-gradient(135deg,var(--brand),#6b56f0);
+  box-shadow:0 6px 18px rgba(91,111,245,.32)}
+button.go:hover{filter:brightness(1.06)}
+button.go[disabled]{opacity:.55;cursor:default;box-shadow:none}
+button.link{width:100%;margin-top:14px;padding:6px;font:inherit;font-size:12.5px;color:var(--muted);
+  background:none;border:0;cursor:pointer}
+button.link:hover{color:var(--brand)}
+.err{margin:0 0 14px;padding:10px 12px;font-size:12.5px;border-radius:9px;
+  background:rgba(214,69,98,.11);color:var(--neg);border:1px solid rgba(214,69,98,.2)}
+.ok{margin:0;padding:11px 13px;font-size:13px;border-radius:9px;
+  background:rgba(15,158,110,.11);color:var(--pos);border:1px solid rgba(15,158,110,.2)}
+.hint{margin:16px 0 0;font-size:11.5px;color:var(--faint);text-align:center}
+
+@media(max-width:900px){
+  .wrap{grid-template-columns:1fr}
+  .tell{padding:34px 26px 30px}
+  .pitch{margin:30px 0}
+  .pitch h1{font-size:27px;max-width:none}
+  .pts{display:none}
+  .desk{padding:34px 26px 48px}
+  .form-col{max-width:none}
+}
 </style></head><body>
-<div class="card">
-  <div class="brand"><span class="dot"></span><div><b>Caalano360</b><span>360&deg; Reporting</span></div></div>
-  <div id="app"><p class="sub">Loading&hellip;</p></div>
+<div class="wrap">
+  <section class="tell">
+    <div class="mark">
+      <span class="badge">360</span>
+      <div><b>Caalano<i>360</i></b><span>Client Reporting</span></div>
+    </div>
+    <div class="pitch">
+      <h1>Every channel, <em>one honest number</em>.</h1>
+      <p>Ad spend, enquiries and revenue from your CRM, joined up and reconciled &mdash;
+         so the cost of a booking is the real one, not the platform&rsquo;s version of it.</p>
+      <ul class="pts">
+        <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="#6b7bf7" stroke-width="1.2" opacity=".55"/><path d="M5 8.2l2 2 4-4.4" stroke="#9fb0ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Paid and pipeline together.</b> Meta and Google spend matched to the leads, bookings and deals they actually produced.</span></li>
+        <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="#6b7bf7" stroke-width="1.2" opacity=".55"/><path d="M5 8.2l2 2 4-4.4" stroke="#9fb0ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Your funnel, not a template.</b> The stages your business runs, with the cost of reaching each one.</span></li>
+        <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="#6b7bf7" stroke-width="1.2" opacity=".55"/><path d="M5 8.2l2 2 4-4.4" stroke="#9fb0ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Built to be checked.</b> Every figure opens up to the records behind it.</span></li>
+      </ul>
+    </div>
+    <div class="foot">
+      <span class="lock"><svg width="10" height="11" viewBox="0 0 12 13" fill="none" aria-hidden="true"><rect x="1.6" y="5.4" width="8.8" height="6.6" rx="1.8" stroke="#8b93ad" stroke-width="1.1"/><path d="M3.9 5.2V3.7a2.1 2.1 0 014.2 0v1.5" stroke="#8b93ad" stroke-width="1.1" stroke-linecap="round"/></svg> Private &middot; invitation only</span>
+      <span>&copy; Caalano Digital</span>
+    </div>
+  </section>
+  <section class="desk">
+    <div class="form-col" id="app"><p class="sub">Loading&hellip;</p></div>
+  </section>
 </div>
 <script nonce="${nonce}">
 (function(){

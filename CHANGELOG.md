@@ -17,6 +17,65 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.384.0 - 2026-08-20 · `PENDING` - Biggest movers on the agency overview
+
+A second movers panel, on the Overview between Paid performance and Account
+health, answering a wider question than the Trends one: **what changed most
+across the whole book**, in paid *or* in the CRM.
+
+**Controls**
+- Window: 3 / 7 / 14 / 21 / 28 days, each against the prior equal window.
+- Lens: **All / Paid / CRM**.
+
+**Paid** - per client and per channel (Meta, Google, and both together):
+cost per result, results, spend, cost per booking, cost per won, ROAS, and
+**cost per key event** - which is where cost per booked / shown / consult lands
+without hard-coding anyone's funnel, since it reads each client's own configured
+key events.
+
+**CRM** - leads, bookings, deals won, **deals lost**, **revenue**, **average
+deal size**, booking rate, win rate, and a mover per configured key event.
+
+**Ranking is by materiality, not percentage**
+- A client going 1 -> 3 bookings is +200% and would bury one going 180 -> 140.
+  Moves are scored by percentage weighted by the square root of the volume
+  behind them, so they stay comparable across metrics and units.
+- Hard floors on the *prior* window (>= $200 spend, >= 10 leads, >= 5 bookings,
+  >= 3 wins) keep thin accounts out entirely rather than ranking them low.
+- Each client is capped at its three biggest moves, so one account having a bad
+  fortnight can't take all ten slots and hide the other fourteen clients.
+- A rate and its count are folded into one when lead volume held steady -
+  "bookings 180 -> 140" and "booking rate 26% -> 20%" are one fact, not two.
+  The rate only surfaces when leads genuinely moved, which is when volume and
+  quality have come apart.
+
+**Every mover explains itself**
+- A why-line decomposes the move: cost per booking into spend vs bookings,
+  revenue into deal count vs average deal size.
+- Clicking one opens the **funnel behind it** - leads -> that client's key
+  events -> won, current vs prior, for the channel the mover is about. It costs
+  no extra request; it is the data the mover was computed from. Paid movers on a
+  single channel also keep the existing creative breakdown.
+- A chip flags clients whose channel split is text-matched from the lead source
+  rather than real UTMs, so a Meta cost-per-won never looks more precise than it
+  is.
+
+**Created-in-period basis, stated plainly**
+- CRM figures are cohorted by when the **lead** was created, not when the deal
+  closed. Over 3 days almost no cohort has had time to close, so won, revenue,
+  average deal size and win rate are offered from 14 days up and the panel says
+  why rather than showing noise. Closed-in-period is the follow-up.
+
+**Backend**
+- The trends feed now carries the prior window for every CRM figure, plus
+  revenue and lost. The daily arrays already spanned 56 days, so this is a
+  second sum over memory we held - no extra API calls, one cached request.
+- Fixed alongside: key events are read from settings, which hydrate after the
+  trends feed resolves. The panel now recomputes on settings load - without it
+  every key-event metric silently never appeared.
+
+---
+
 ## v3.383.1 - 2026-08-20 · `PENDING` - Catchment: read the CRM business address properly
 
 Catchment reported "No business address is set in the CRM" for a client whose

@@ -2377,7 +2377,9 @@ export async function crmTrends(locationId, from, to) {
     const booked = isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)
     const reached = []
     if (pi && pi.stages) for (const s of pi.stages) { if (isWon || (pos >= 0 && s.pos <= pos)) reached.push(s.name) }
-    out.push({ date, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked })
+    // `value` and `lost` ride along for the movers panel: revenue and average
+    // deal size per rolling window, and lost as a mover in its own right.
+    out.push({ date, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked, lost: st === 'lost', value: num(o.monetaryValue) })
   }
   return out
 }

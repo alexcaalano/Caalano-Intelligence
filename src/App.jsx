@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.383.1'
+const APP_VERSION = '3.384.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -736,6 +736,8 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, won
         <Kpi label={<>Revenue Generated <WonBasisChip basis={wonBasis} /></>} tag="CRM" value={crmIds.length ? (crmReady ? fmtCurrency(totalRev, currency) : '…') : '-'} flat={crmPending > 0 ? `${crmReady}/${crmIds.length} clients loaded` : undefined} />
         <Kpi label="ROAS" tag="CRM" value={crmReady && t.spend ? `${roas.toFixed(2)}×` : '-'} flat={crmPending > 0 ? 'loading CRM…' : undefined} />
       </div>
+      <div className="section-title">Biggest movers <span className="sub">· what changed most across every client vs the prior equal window</span></div>
+      <AgencyMovers rows={rows} currency={currency} nonce={nonce} onPick={onPick} />
       {alerts && (alerts.meta || alerts.google) && <>
         <div className="section-title">Account health <span className="sub">· $0 spend yesterday with an active prior week - likely paused / failed payment</span></div>
         <div className="grid alerts-2">
@@ -1533,6 +1535,336 @@ function MoversPanel({ list, clients, currency, onPick }) {
             {open === i ? <MoverDrill clientId={m.clientId} channel={m.chan} days={win} money={money} /> : null}
           </div>
         ))}</div>}
+    </div>
+  )
+}
+/* ============ Agency overview: biggest movers (paid + CRM) ============ */
+// A second movers panel, on the Overview rather than Trends, and answering a
+// wider question than "what happened to cost per lead". It reads the same
+// cached agency trends feed, which carries 56 days of daily arrays per client -
+// so every "vs the prior window" figure here is a second sum over memory we
+// already hold, not another request.
+//
+// Basis: everything CRM-side is CREATED-date cohorted. A win counts in the
+// window its LEAD was created in, not the window it was won in. Over three days
+// almost no cohort has had time to close, so won / revenue / avg deal / win rate
+// are only offered from 14 days up (MATURE_WIN) rather than shown as noise.
+const AGY_MOVER_WINS = [3, 7, 14, 21, 28]
+const MATURE_WIN = 14
+const AGY_LENSES = [['all', 'All'], ['paid', 'Paid'], ['crm', 'CRM']]
+// Ad spend is split Meta / Google; CRM outcomes are split by the lead's source.
+// "Paid" means Meta + Google together, and deliberately excludes non-paid leads -
+// dividing ad spend by organic bookings would flatter every cost-per figure.
+const PAID_CHANS = [['meta', 'Meta'], ['google', 'Google'], ['paid', 'Paid']]
+
+const mergeReachMaps = (...maps) => { const o = {}; for (const m of maps) for (const k in (m || {})) o[k] = (o[k] || 0) + m[k]; return o }
+// Channel slice of a {all, meta, google, other} bundle. 'paid' = Meta + Google.
+const chanN = (bun, ch) => { if (!bun) return 0; if (ch === 'paid') return (bun.meta || 0) + (bun.google || 0); return bun[ch] || 0 }
+const chanReach = (R, ch) => { if (!R) return {}; if (ch === 'paid') return mergeReachMaps(R.meta, R.google); return R[ch] || {} }
+const safeDiv = (a, b) => (b > 0 ? a / b : null)
+
+// Rank: percentage change alone is useless here - a client going 1 -> 3 bookings
+// is +200% and would bury one going 180 -> 140. Weighting by the square root of
+// the volume behind the move makes moves comparable across metrics and units,
+// and the hard floors below stop anything thin qualifying in the first place.
+const moverScore = (pct, vol, volPrev) => Math.abs(pct) * Math.sqrt(Math.max(1, Math.min(vol, volPrev)))
+const pp = (v) => (v == null ? '–' : `${v > 0 ? '+' : ''}${v.toFixed(0)}%`)
+// Why a ratio moved, decomposed into its two sides. Always true, and short
+// enough to sit on one line; the two "roughly flat" cases are the ones worth
+// naming because they say which side to go and look at.
+function ratioWhy(numLabel, numPct, denLabel, denPct) {
+  const flat = (v) => v != null && Math.abs(v) <= 8
+  if (flat(numPct) && denPct != null) return `${denLabel} ${pp(denPct)} on roughly flat ${numLabel}`
+  if (flat(denPct) && numPct != null) return `${numLabel} ${pp(numPct)} on roughly flat ${denLabel}`
+  return `${numLabel} ${pp(numPct)} vs ${denLabel} ${pp(denPct)}`
+}
+
+// Build every candidate mover for one subject (a client, or one pipeline of a
+// multi-pipeline client) in one window. Each candidate declares the volume
+// behind it so the ranking can compare a cost move against a count move.
+function subjectMovers(s, win, fmt) {
+  const w = s.w, crm = w.crm, out = []
+  const money = fmt.money, int = fmt.int
+  const mature = win >= MATURE_WIN
+  const add = (o) => {
+    const pct = pctChg(o.cur, o.prev)
+    if (pct == null || !isFinite(pct)) return
+    if (Math.abs(pct) < (o.minPct || 10)) return
+    out.push({ ...o, pct, score: moverScore(pct, o.vol, o.volPrev), subject: s, win })
+  }
+  // ---- Paid: spend, results and cost per result, per channel ----
+  const paidOf = (ch) => {
+    if (ch === 'paid') {
+      const m = w.meta || {}, g = w.google || {}
+      return { spend: (m.spend || 0) + (g.spend || 0), spendPrev: (m.spendPrev || 0) + (g.spendPrev || 0), results: (m.results || 0) + (g.results || 0), resultsPrev: (m.resultsPrev || 0) + (g.resultsPrev || 0), booked: (m.booked || 0) + (g.booked || 0), bookedPrev: (m.bookedPrev || 0) + (g.bookedPrev || 0) }
+    }
+    return w[ch] || {}
+  }
+  for (const [ch, chLabel] of PAID_CHANS) {
+    if (ch === 'meta' && !s.hasMeta) continue
+    if (ch === 'google' && !s.hasGoogle) continue
+    if (ch === 'paid' && !(s.hasMeta && s.hasGoogle)) continue   // same as one channel otherwise
+    const d = paidOf(ch); if (!d.spend && !d.spendPrev) continue
+    const spendPct = pctChg(d.spend, d.spendPrev), resPct = pctChg(d.results, d.resultsPrev)
+    const scope = chLabel
+    const cpr = safeDiv(d.spend, d.results), cprP = safeDiv(d.spendPrev, d.resultsPrev)
+    if (d.spendPrev >= 200 && d.results >= 5 && d.resultsPrev >= 5) {
+      add({ lens: 'paid', id: `cpr:${ch}`, metric: 'Cost per result', scope, cur: cpr, prev: cprP, vol: d.results, volPrev: d.resultsPrev, good: 'down', fmt: money, minPct: 8,
+        why: ratioWhy('spend', spendPct, 'results', resPct) })
+    }
+    if (d.resultsPrev >= 10) {
+      add({ lens: 'paid', id: `res:${ch}`, metric: 'Results', scope, cur: d.results, prev: d.resultsPrev, vol: d.results, volPrev: d.resultsPrev, good: 'up', fmt: int, minPct: 10,
+        why: ratioWhy('spend', spendPct, 'cost per result', pctChg(cpr, cprP)) })
+    }
+    if (d.spendPrev >= 300) {
+      add({ lens: 'paid', id: `spend:${ch}`, metric: 'Spend', scope, cur: d.spend, prev: d.spendPrev, vol: Math.max(1, d.results), volPrev: Math.max(1, d.resultsPrev), good: null, fmt: money, minPct: 20,
+        why: `results ${pp(resPct)} · cost per result ${pp(pctChg(cpr, cprP))}` })
+    }
+    if (!crm) continue
+    // Cost per booking is only sound at account level: a pipeline tile carries the
+    // pipeline's total bookings against every channel, so a per-channel divide there
+    // would charge Meta for Google's bookings too.
+    if (!s.pipeId && d.bookedPrev >= 5 && d.booked >= 5 && d.spendPrev >= 200) {
+      add({ lens: 'paid', id: `cpb:${ch}`, metric: 'Cost per booking', scope, cur: safeDiv(d.spend, d.booked), prev: safeDiv(d.spendPrev, d.bookedPrev), vol: d.booked, volPrev: d.bookedPrev, good: 'down', fmt: money, minPct: 10,
+        why: ratioWhy('spend', spendPct, 'bookings', pctChg(d.booked, d.bookedPrev)) })
+    }
+    const won = chanN(crm.won, ch), wonP = chanN(crm.wonPrev, ch)
+    if (mature && won >= 3 && wonP >= 3 && d.spendPrev >= 200) {
+      add({ lens: 'paid', id: `cpw:${ch}`, metric: 'Cost per won', scope, cur: safeDiv(d.spend, won), prev: safeDiv(d.spendPrev, wonP), vol: won, volPrev: wonP, good: 'down', fmt: money, minPct: 10, mature: true,
+        why: ratioWhy('spend', spendPct, 'deals won', pctChg(won, wonP)) })
+      const rev = chanN(crm.revenue, ch), revP = chanN(crm.revenuePrev, ch)
+      if (d.spendPrev >= 300 && (rev > 0 || revP > 0)) {
+        add({ lens: 'paid', id: `roas:${ch}`, metric: 'ROAS', scope, cur: safeDiv(rev, d.spend), prev: safeDiv(revP, d.spendPrev), vol: won, volPrev: wonP, good: 'up', fmt: fmt.mult, minPct: 10, mature: true,
+          why: ratioWhy('revenue', pctChg(rev, revP), 'spend', spendPct) })
+      }
+    }
+    // Cost per key event - one per event this client has configured, which is where
+    // cost per booked / shown / consult lands without hard-coding anyone's funnel.
+    for (const k of s.keRows) {
+      const c = k.byChan[ch], p = k.byChanPrev[ch]
+      if (!(c >= 5 && p >= 5 && d.spendPrev >= 200)) continue
+      add({ lens: 'paid', id: `cpk:${ch}:${k.label}`, metric: `Cost per ${k.label.toLowerCase()}`, scope, cur: safeDiv(d.spend, c), prev: safeDiv(d.spendPrev, p), vol: c, volPrev: p, good: 'down', fmt: money, minPct: 10,
+        why: ratioWhy('spend', spendPct, k.label.toLowerCase(), pctChg(c, p)) })
+    }
+  }
+  // ---- CRM: the funnel itself, all lead sources ----
+  if (crm) {
+    const leads = chanN(crm.leads, 'all'), leadsP = chanN(crm.leadsPrev, 'all')
+    const leadsPct = pctChg(leads, leadsP)
+    const booked = (w.blended || {}).booked || 0, bookedP = (w.blended || {}).bookedPrev || 0
+    const won = chanN(crm.won, 'all'), wonP = chanN(crm.wonPrev, 'all')
+    const lost = chanN(crm.lost, 'all'), lostP = chanN(crm.lostPrev, 'all')
+    const rev = chanN(crm.revenue, 'all'), revP = chanN(crm.revenuePrev, 'all')
+    if (leadsP >= 10) {
+      add({ lens: 'crm', id: 'leads', metric: 'Leads', scope: 'CRM', cur: leads, prev: leadsP, vol: leads, volPrev: leadsP, good: 'up', fmt: int, minPct: 10,
+        why: `Meta ${int(chanN(crm.leadsPrev, 'meta'))}→${int(chanN(crm.leads, 'meta'))} · Google ${int(chanN(crm.leadsPrev, 'google'))}→${int(chanN(crm.leads, 'google'))} · other ${int(chanN(crm.leadsPrev, 'other'))}→${int(chanN(crm.leads, 'other'))}` })
+    }
+    if (bookedP >= 5) {
+      add({ lens: 'crm', id: 'booked', metric: 'Bookings', scope: 'CRM', cur: booked, prev: bookedP, vol: booked, volPrev: bookedP, good: 'up', fmt: int, minPct: 10,
+        why: ratioWhy('leads', leadsPct, 'booking rate', pctChg(safeDiv(booked, leads), safeDiv(bookedP, leadsP))) })
+    }
+    // A rate and its count are two ways of saying one thing when lead volume held
+    // steady - "bookings 180 -> 140" and "booking rate 26% -> 20%" would take two
+    // slots to report one fact. Keep the count then, and only surface the rate when
+    // leads genuinely moved, which is when volume and quality have come apart.
+    const leadsFlat = leadsPct != null && Math.abs(leadsPct) <= 8
+    if (!leadsFlat && leadsP >= 20 && leads >= 20 && bookedP >= 3) {
+      add({ lens: 'crm', id: 'bookRate', metric: 'Booking rate', scope: 'CRM', cur: safeDiv(booked, leads) * 100, prev: safeDiv(bookedP, leadsP) * 100, vol: leads, volPrev: leadsP, good: 'up', fmt: fmt.pct, minPct: 10,
+        why: ratioWhy('bookings', pctChg(booked, bookedP), 'leads', leadsPct) })
+    }
+    for (const k of s.keRows) {
+      const c = k.byChan.all, p = k.byChanPrev.all
+      if (!(p >= 5)) continue
+      add({ lens: 'crm', id: `ke:${k.label}`, metric: k.label, scope: 'CRM', cur: c, prev: p, vol: c, volPrev: p, good: 'up', fmt: int, minPct: 10,
+        why: ratioWhy('leads', leadsPct, `${k.label.toLowerCase()} rate`, pctChg(safeDiv(c, leads), safeDiv(p, leadsP))) })
+    }
+    if (mature) {
+      if (wonP >= 3) {
+        add({ lens: 'crm', id: 'won', metric: 'Deals won', scope: 'CRM', cur: won, prev: wonP, vol: won, volPrev: wonP, good: 'up', fmt: int, minPct: 15, mature: true,
+          why: ratioWhy('leads', leadsPct, 'win rate', pctChg(safeDiv(won, leads), safeDiv(wonP, leadsP))) })
+      }
+      if (lostP >= 3) {
+        add({ lens: 'crm', id: 'lost', metric: 'Deals lost', scope: 'CRM', cur: lost, prev: lostP, vol: lost, volPrev: lostP, good: 'down', fmt: int, minPct: 15, mature: true,
+          why: `against ${int(won)} won (was ${int(wonP)}) from ${int(leads)} leads` })
+      }
+      if (wonP >= 3 && won >= 3) {
+        if (revP > 0) {
+          add({ lens: 'crm', id: 'revenue', metric: 'Revenue', scope: 'CRM', cur: rev, prev: revP, vol: won, volPrev: wonP, good: 'up', fmt: money, minPct: 15, mature: true,
+            why: `${int(won)} deals at ${money(safeDiv(rev, won))} avg (was ${int(wonP)} at ${money(safeDiv(revP, wonP))})` })
+          add({ lens: 'crm', id: 'avgDeal', metric: 'Avg deal size', scope: 'CRM', cur: safeDiv(rev, won), prev: safeDiv(revP, wonP), vol: won, volPrev: wonP, good: 'up', fmt: money, minPct: 10, mature: true,
+            why: ratioWhy('revenue', pctChg(rev, revP), 'deals won', pctChg(won, wonP)) })
+        }
+      }
+      if (!leadsFlat && leadsP >= 20 && leads >= 20) {
+        add({ lens: 'crm', id: 'winRate', metric: 'Win rate', scope: 'CRM', cur: safeDiv(won, leads) * 100, prev: safeDiv(wonP, leadsP) * 100, vol: leads, volPrev: leadsP, good: 'up', fmt: fmt.pct, minPct: 10, mature: true,
+          why: ratioWhy('deals won', pctChg(won, wonP), 'leads', leadsPct) })
+      }
+    }
+  }
+  return out
+}
+// One subject per client, plus one per pipeline for multi-pipeline clients, so a
+// mover can say which pipeline it belongs to instead of averaging them together.
+// Key events are resolved per channel against the window's stage-reach map with
+// the same engine the funnels use, so each client's own configured events drive
+// the metrics rather than a hard-coded booked/shown/won ladder.
+function moverSubjects(rows, clients, win) {
+  const KE_CH = ['all', 'meta', 'google', 'paid']
+  const subs = []
+  const mk = (r, t, w, pipeId, pipeName) => {
+    if (!w) return null
+    const crm = w.crm
+    const sp = new Map(Object.entries(t.stagePos || {}))
+    const keList = keyEventsForPipe(loadKeyEvents(r.id), pipeId || 'all')
+    const keRows = []
+    if (crm) {
+      const byLabel = new Map()
+      for (const ch of KE_CH) {
+        const run = (which, wonBun) => {
+          const rmap = { m: new Map(Object.entries(chanReach(crm[which], ch))), total: chanN(crm[which === 'reach' ? 'leads' : 'leadsPrev'], ch) }
+          return keyEventRows(keList, rmap, new Map(), sp, chanN(wonBun, ch)).filter((k) => k.kind !== 'lead' && k.kind !== 'won')
+        }
+        for (const k of run('reach', crm.won)) {
+          let e = byLabel.get(k.label); if (!e) { e = { label: k.label, byChan: {}, byChanPrev: {} }; byLabel.set(k.label, e) }
+          e.byChan[ch] = k.count
+        }
+        for (const k of run('reachPrev', crm.wonPrev)) {
+          let e = byLabel.get(k.label); if (!e) { e = { label: k.label, byChan: {}, byChanPrev: {} }; byLabel.set(k.label, e) }
+          e.byChanPrev[ch] = k.count
+        }
+      }
+      for (const e of byLabel.values()) { for (const ch of KE_CH) { e.byChan[ch] = e.byChan[ch] || 0; e.byChanPrev[ch] = e.byChanPrev[ch] || 0 } keRows.push(e) }
+    }
+    return { key: `${r.id}${pipeId ? '--' + pipeId : ''}`, clientId: r.id, c: r.c, pipeId: pipeId || null,
+      name: pipeName ? `${r.name} · ${pipeName}` : r.name, w, keRows,
+      hasMeta: pipeId ? !!(w.meta && (w.meta.spend > 0 || w.meta.spendPrev > 0)) : !!r.hasMeta,
+      hasGoogle: pipeId ? !!(w.google && (w.google.spend > 0 || w.google.spendPrev > 0)) : !!r.hasGoogle,
+      utm: !!(w.crm && w.crm.utm) }
+  }
+  for (const r of rows) {
+    const t = clients[r.id]; if (!t) continue
+    const pick = (ws) => (ws || []).find((x) => x.n === win)
+    if (t.pipelines && t.pipelines.length > 1) {
+      for (const p of t.pipelines) {
+        if (p.unlinked) continue
+        const s = mk(r, t, pick(p.windows), p.id, p.name); if (s) subs.push(s)
+      }
+    } else {
+      const s = mk(r, t, pick(t.windows), null, null); if (s) subs.push(s)
+    }
+  }
+  return subs
+}
+// Funnel behind a mover: the same window's leads -> configured key events -> won,
+// current vs prior, for the channel the mover is about. Costs nothing extra - it
+// is the data the mover was computed from, shown a level down.
+function MoverFunnel({ m, fmt }) {
+  const s = m.subject, crm = s.w.crm
+  if (!crm) return <div className="mov-drill"><span className="cap">No CRM connected for this client, so there's no funnel behind this move.</span></div>
+  const ch = m.id.includes(':') && /^(cpr|res|spend|cpb|cpw|roas|cpk):/.test(m.id) ? m.id.split(':')[1] : 'all'
+  const steps = [{ label: 'Leads', cur: chanN(crm.leads, ch), prev: chanN(crm.leadsPrev, ch) }]
+  for (const k of s.keRows) steps.push({ label: k.label, cur: k.byChan[ch], prev: k.byChanPrev[ch] })
+  steps.push({ label: 'Won', cur: chanN(crm.won, ch), prev: chanN(crm.wonPrev, ch) })
+  const chLabel = ch === 'all' ? 'all lead sources' : (PAID_CHANS.find(([k]) => k === ch) || [, ch])[1]
+  return (
+    <div className="mov-drill">
+      <div className="agy-fn-head"><span className="mov-drill-lab">Funnel · {chLabel} · last {m.win}d vs prior {m.win}d</span>
+        {!s.utm ? <span className="agy-chip warn" title="This client's CRM app isn't connected, so the channel split falls back to matching the lead-source text rather than real UTMs.">source-matched split</span> : null}</div>
+      <div className="agy-fn">{steps.map((st, i) => {
+        const pct = pctChg(st.cur, st.prev)
+        const rate = i > 0 && steps[0].cur ? (st.cur / steps[0].cur) * 100 : null
+        return (
+          <div className="agy-fn-step" key={i}>
+            <span className="agy-fn-lab">{st.label}</span>
+            <span className="agy-fn-val">{fmt.int(st.prev)} → <b>{fmt.int(st.cur)}</b></span>
+            <span className={`agy-fn-pct ${pct == null ? '' : pct > 0 ? 'good' : pct < 0 ? 'bad' : ''}`}>{pct == null ? '–' : pp(pct)}</span>
+            <span className="agy-fn-rate">{rate == null ? '' : `${rate.toFixed(0)}% of leads`}</span>
+          </div>
+        )
+      })}</div>
+    </div>
+  )
+}
+
+function AgencyMovers({ rows, currency, nonce, onPick }) {
+  const tr = useTrends(nonce)
+  const [win, setWin] = useState(7)
+  const [lens, setLens] = useState('all')
+  const [open, setOpen] = useState(null)
+  const fmt = useMemo(() => ({
+    money: (v) => (v == null ? '–' : fmtCurrency(v, currency)),
+    int: (v) => (v == null ? '–' : fmtNumber(Math.round(v))),
+    pct: (v) => (v == null ? '–' : `${v.toFixed(1)}%`),
+    mult: (v) => (v == null ? '–' : `${v.toFixed(2)}×`),
+  }), [currency])
+  // Key events come from settings, which hydrate on their own schedule - often
+  // after the trends feed has already resolved. Without a settings tick in the
+  // memo deps below, the panel computes once with no key events configured and
+  // every cost-per-key-event and key-event-count mover silently never appears.
+  const [setTick, bumpTick] = React.useReducer((x) => x + 1, 0)
+  useEffect(() => onSettings(bumpTick), [])
+  const clients = (tr.data && tr.data.clients) || null
+  const movers = useMemo(() => {
+    if (!clients) return []
+    const all = []
+    for (const s of moverSubjects(rows, clients, win)) all.push(...subjectMovers(s, win, fmt))
+    // Cap each client at its three biggest moves. This is meant to be a read across
+    // the whole book - without a cap, one account having a bad fortnight takes every
+    // slot and hides the other fourteen clients entirely.
+    const per = new Map(), keep = []
+    for (const m of all.filter((m) => lens === 'all' || m.lens === lens).sort((a, b) => b.score - a.score)) {
+      const n = per.get(m.subject.key) || 0
+      if (n >= 3) continue
+      per.set(m.subject.key, n + 1); keep.push(m)
+      if (keep.length >= 10) break
+    }
+    return keep
+  }, [clients, rows, win, lens, fmt, setTick])
+  const setWinSafe = (n) => { setWin(n); setOpen(null) }
+  const setLensSafe = (l) => { setLens(l); setOpen(null) }
+  const immature = win < MATURE_WIN
+  const head = (
+    <div className="mov-head agy-mov-head">
+      <b>📊 Biggest movers</b>
+      <div className="chan-toggle sm">{AGY_MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => setWinSafe(n)}>{n}d</button>)}</div>
+      <div className="chan-toggle sm">{AGY_LENSES.map(([k, l]) => <button key={k} className={lens === k ? 'on' : ''} onClick={() => setLensSafe(k)}>{l}</button>)}</div>
+      <span className="cap">last {win} days vs the prior {win} · ranked by how much moved, not just the percentage · click one for the funnel behind it</span>
+    </div>
+  )
+  if (tr.status === 'loading') return <div className="card mov-panel">{head}<Spinner label="Loading movers…" /></div>
+  if (tr.status === 'err' || !clients) return <div className="card mov-panel">{head}<p className="cap" style={{ margin: 0 }}>Couldn&rsquo;t load the trends feed movers are built from - try Refresh.</p></div>
+  return (
+    <div className="card mov-panel">
+      {head}
+      {immature && lens !== 'paid' ? (
+        <div className="agy-basis">
+          <span className="agy-chip">Created-in-period</span>
+          Deals won and revenue count against the window the <b>lead</b> was created in, so over {win} days almost nothing has had time to close.
+          Won, revenue, avg deal size and win rate appear from {MATURE_WIN} days up.
+        </div>
+      ) : null}
+      {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved enough to report over the last {win} days{lens === 'all' ? '' : ` in ${lens === 'paid' ? 'paid' : 'CRM'}`}. Thin accounts are held back deliberately - a jump from 2 to 5 isn&rsquo;t a trend.</p>
+        : <div className="mov-list agy-mov-list">{movers.map((m, i) => {
+          const dir = m.good == null ? 'neu' : ((m.pct > 0) === (m.good === 'up') ? 'good' : 'bad')
+          return (
+            <div className={`mov-item2${open === i ? ' open' : ''}`} key={m.subject.key + m.id}>
+              <div className="mov-item-h">
+                <button className="mov-exp" onClick={() => setOpen(open === i ? null : i)} title="Show the funnel behind this move">
+                  <span className={`mov-badge ${dir}`}>{m.pct > 0 ? '▲' : '▼'} {Math.abs(m.pct).toFixed(0)}%</span>
+                  <span className="mov-txt">
+                    <b>{m.subject.name}</b> <span className="agy-scope">{m.scope}</span> · {m.metric} {m.fmt(m.prev)} → {m.fmt(m.cur)}
+                    <span className="mov-why">{m.why} · {open === i ? '▾' : '▸'} funnel</span>
+                  </span>
+                </button>
+                <button className="mov-open" onClick={() => onPick(m.subject.c)} title="Open this client">→</button>
+              </div>
+              {open === i ? <>
+                <MoverFunnel m={m} fmt={fmt} />
+                {/^(cpr|spend|res):(meta|google)$/.test(m.id) ? <MoverDrill clientId={m.subject.clientId} channel={m.id.split(':')[1]} days={m.win} money={fmt.money} /> : null}
+              </> : null}
+            </div>
+          )
+        })}</div>}
     </div>
   )
 }

@@ -1221,7 +1221,7 @@ async function buildTrends(key) {
       .catch(() => windsorFetch('facebook', baseFbFields, dstr(start), dstr(today), null, key))
       .catch(() => { metaOk = false; return [] }),
     windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => { googleOk = false; return [] }),
-    windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at', 'opportunity_source'], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at', 'opportunity_source', 'opportunity_monetary_value'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
   ])
   const days = []; for (let i = 0; i < 56; i++) { const d = new Date(today); d.setUTCDate(d.getUTCDate() - i); days.push(dstr(d)) }
@@ -1237,10 +1237,10 @@ async function buildTrends(key) {
   const SRC_GOOGLE = /(google|adwords|youtube|\bgdn\b|gclid|goog|paid.?search|\bcpc\b|\bppc\b|\bsem\b|search.?engine)/i
   const classifySrc = (s) => { const h = String(s || '').toLowerCase(); if (SRC_META.test(h)) return 'meta'; if (SRC_GOOGLE.test(h)) return 'google'; return 'other' }
   const CH = ['meta', 'google', 'other']
-  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), wonAll: mk(), leadsAll: mk(), leadsCh: { meta: mk(), google: mk(), other: mk() }, wonCh: { meta: mk(), google: mk(), other: mk() }, bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false, pipe: new Map(), campMeta: new Map(), campMetaLeads: new Map(), campGoogle: new Map(), campGoogleConv: new Map(), reach: new Map(), reachCh: { meta: new Map(), google: new Map(), other: new Map() } })
+  const ensure = (id) => (cl[id] = cl[id] || { metaSpend: mk(), metaLeads: mk(), gSpend: mk(), gConv: mk(), wBooked: mk(), wonAll: mk(), leadsAll: mk(), leadsCh: { meta: mk(), google: mk(), other: mk() }, wonCh: { meta: mk(), google: mk(), other: mk() }, lostAll: mk(), lostCh: { meta: mk(), google: mk(), other: mk() }, revAll: mk(), revCh: { meta: mk(), google: mk(), other: mk() }, bAll: mk(), bMeta: mk(), bGoogle: mk(), ghlBooked: false, pipe: new Map(), campMeta: new Map(), campMetaLeads: new Map(), campGoogle: new Map(), campGoogleConv: new Map(), reach: new Map(), reachCh: { meta: new Map(), google: new Map(), other: new Map() } })
   const ensureReachIn = (m, key) => { let a = m.get(key); if (!a) { a = mk(); m.set(key, a) } return a }
   const ensureReach = (e, key) => ensureReachIn(e.reach, key)
-  const ensurePipe = (e, pid, name) => { let p = e.pipe.get(pid); if (!p) { p = { id: pid, name: name || 'Pipeline', leads: mk(), booked: mk(), won: mk(), leadsCh: { meta: mk(), google: mk(), other: mk() }, wonCh: { meta: mk(), google: mk(), other: mk() } }; e.pipe.set(pid, p) } else if (name && (!p.name || p.name === 'Pipeline')) p.name = name; return p }
+  const ensurePipe = (e, pid, name) => { let p = e.pipe.get(pid); if (!p) { p = { id: pid, name: name || 'Pipeline', leads: mk(), booked: mk(), won: mk(), lost: mk(), rev: mk(), leadsCh: { meta: mk(), google: mk(), other: mk() }, wonCh: { meta: mk(), google: mk(), other: mk() }, lostCh: { meta: mk(), google: mk(), other: mk() }, revCh: { meta: mk(), google: mk(), other: mk() } }; e.pipe.set(pid, p) } else if (name && (!p.name || p.name === 'Pipeline')) p.name = name; return p }
   const ensureCamp = (m, name) => { let a = m.get(name); if (!a) { a = mk(); m.set(name, a) } return a }
   for (const r of fb) { const id = metaId[acctKey(r.account_id)]; if (!id) continue; const di = dayIndex.get(String(r.date || '').slice(0, 10)); if (di == null) continue; const e = ensure(id); const sp = num(r.spend); const ld = metaResultOf(id, r); e.metaSpend[di] += sp; e.metaLeads[di] += ld; if (r.campaign) { ensureCamp(e.campMeta, r.campaign)[di] += sp; ensureCamp(e.campMetaLeads, r.campaign)[di] += ld } }
   // Custom-conversion primaries aren't insights columns, so the metaResultOf sum
@@ -1279,13 +1279,15 @@ async function buildTrends(key) {
     const e = ensure(id); const idx = idxByAcct[id]; const pi = idx && idx.get(r.opportunity_pipeline_id)
     const st = String(r.opportunity_status || '').toLowerCase(); const stg = pi ? pi.byId[r.opportunity_pipeline_stage_id] : null; const pos = stg ? stg.pos : -1
     const isWon = st === 'won'; const isBooked = isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)
+    const isLost = st === 'lost'; const val = num(r.opportunity_monetary_value)
     const chan = classifySrc(r.opportunity_source)
     if (isBooked) e.wBooked[di]++
-    if (isWon) { e.wonAll[di]++; e.wonCh[chan][di]++ }
+    if (isWon) { e.wonAll[di]++; e.wonCh[chan][di]++; e.revAll[di] += val; e.revCh[chan][di] += val }
+    if (isLost) { e.lostAll[di]++; e.lostCh[chan][di]++ }
     e.leadsAll[di]++; e.leadsCh[chan][di]++
     // Per-pipeline daily CRM (created-on): every opp is a lead for its pipeline.
     const pid = r.opportunity_pipeline_id || 'none'
-    const pp = ensurePipe(e, pid, (pipeNameByAcct[id] || {})[pid]); pp.leads[di]++; pp.leadsCh[chan][di]++; if (isBooked) pp.booked[di]++; if (isWon) { pp.won[di]++; pp.wonCh[chan][di]++ }
+    const pp = ensurePipe(e, pid, (pipeNameByAcct[id] || {})[pid]); pp.leads[di]++; pp.leadsCh[chan][di]++; if (isBooked) pp.booked[di]++; if (isWon) { pp.won[di]++; pp.wonCh[chan][di]++; pp.rev[di] += val; pp.revCh[chan][di] += val }; if (isLost) { pp.lost[di]++; pp.lostCh[chan][di]++ }
     // Cumulative stage reach (for the per-window key-events breakdown): an opp at
     // position P reached every stage with pos ≤ P; a won opp reached them all. Keyed
     // by bare name (aggregated across pipelines) AND pipeline-scoped name, mirroring
@@ -1304,16 +1306,21 @@ async function buildTrends(key) {
       try {
         const rows = await crmTrends(c.ghl, dstr(start), dstr(today))
         const e = ensure(id); e.ghlBooked = true
-        const dc = { ok: true, leads: { all: mk(), meta: mk(), google: mk(), other: mk() }, won: { all: mk(), meta: mk(), google: mk(), other: mk() }, reach: { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }, pipe: new Map() }
-        const dEnsurePipe = (pid) => { let p = dc.pipe.get(pid); if (!p) { p = { leads: { all: mk(), meta: mk(), google: mk(), other: mk() }, won: { all: mk(), meta: mk(), google: mk(), other: mk() } }; dc.pipe.set(pid, p) } return p }
+        const bun = () => ({ all: mk(), meta: mk(), google: mk(), other: mk() })
+        const dc = { ok: true, leads: bun(), won: bun(), lost: bun(), rev: bun(), reach: { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }, pipe: new Map() }
+        const dEnsurePipe = (pid) => { let p = dc.pipe.get(pid); if (!p) { p = { leads: bun(), won: bun(), lost: bun(), rev: bun() }; dc.pipe.set(pid, p) } return p }
         for (const r of rows) {
           const di = dayIndex.get(r.date); if (di == null) continue
           const ch = r.channel === 'meta' ? 'meta' : r.channel === 'google' ? 'google' : 'other'
           // Booked-calls split (was bookedTrends).
           if (r.booked) { e.bAll[di]++; if (ch === 'meta') e.bMeta[di]++; else if (ch === 'google') e.bGoogle[di]++ }
           dc.leads.all[di]++; dc.leads[ch][di]++
-          if (r.won) { dc.won.all[di]++; dc.won[ch][di]++ }
-          const pp = dEnsurePipe(r.pipelineId); pp.leads.all[di]++; pp.leads[ch][di]++; if (r.won) { pp.won.all[di]++; pp.won[ch][di]++ }
+          const val = num(r.value)
+          if (r.won) { dc.won.all[di]++; dc.won[ch][di]++; dc.rev.all[di] += val; dc.rev[ch][di] += val }
+          if (r.lost) { dc.lost.all[di]++; dc.lost[ch][di]++ }
+          const pp = dEnsurePipe(r.pipelineId); pp.leads.all[di]++; pp.leads[ch][di]++
+          if (r.won) { pp.won.all[di]++; pp.won[ch][di]++; pp.rev.all[di] += val; pp.rev[ch][di] += val }
+          if (r.lost) { pp.lost.all[di]++; pp.lost[ch][di]++ }
           for (const nm of r.reached) {
             ensureReachIn(dc.reach.all, nm)[di]++; ensureReachIn(dc.reach.all, r.pipelineId + '::' + nm)[di]++
             ensureReachIn(dc.reach[ch], nm)[di]++; ensureReachIn(dc.reach[ch], r.pipelineId + '::' + nm)[di]++
@@ -1332,28 +1339,50 @@ async function buildTrends(key) {
     const blendedBooked = E.ghlBooked ? E.bAll : E.wBooked
     // Per-window stage reach (for the key-events breakdown popup), from a given reach
     // Map. filterPid limits to one pipeline's scoped keys; null returns every key.
-    const reachWinFrom = (m, n, filterPid) => { const o = {}; for (const [k, arr] of m) { if (filterPid && !k.startsWith(filterPid + '::')) continue; const v = Math.round(sumR(arr, 0, n)); if (v) o[k] = v } return o }
+    const reachWinFrom = (m, n, filterPid) => reachWinRange(m, 0, n, filterPid)
+    const reachWinRange = (m, a, b, filterPid) => { const o = {}; for (const [k, arr] of m) { if (filterPid && !k.startsWith(filterPid + '::')) continue; const v = Math.round(sumR(arr, a, b)); if (v) o[k] = v } return o }
     // CRM breakdown for one window, split by lead-source channel (all / meta / google /
-    // other=non-paid) for the key-events popup. L / W are {all, meta, google, other}
-    // daily-array bundles for leads / won; RM is the matching {all, meta, google, other}
-    // reach Maps. When the GHL app is connected we use the accurate UTM-based split
-    // (E.dc); otherwise the Windsor opportunity_source classification.
-    const crmWin = (n, L, W, RM, filterPid) => ({
-      leads: { all: Math.round(sumR(L.all, 0, n)), meta: Math.round(sumR(L.meta, 0, n)), google: Math.round(sumR(L.google, 0, n)), other: Math.round(sumR(L.other, 0, n)) },
-      won: { all: Math.round(sumR(W.all, 0, n)), meta: Math.round(sumR(W.meta, 0, n)), google: Math.round(sumR(W.google, 0, n)), other: Math.round(sumR(W.other, 0, n)) },
-      reach: { all: reachWinFrom(RM.all, n, filterPid), meta: reachWinFrom(RM.meta, n, filterPid), google: reachWinFrom(RM.google, n, filterPid), other: reachWinFrom(RM.other, n, filterPid) },
-      utm: !!(E.dc && E.dc.ok),
-    })
+    // other=non-paid) for the key-events popup and the agency movers panel. `S`
+    // bundles the daily arrays - L leads, W won, X lost, R revenue, RM stage-reach
+    // maps - each keyed {all, meta, google, other}. When the GHL app is connected we
+    // use the accurate UTM-based split (E.dc); otherwise the Windsor
+    // opportunity_source classification.
+    //
+    // Every figure carries its prior equal window alongside, so movers can be ranked
+    // without a second request: the daily arrays already span 56 days, so the prior
+    // window is a second sum over the same memory rather than another fetch. All of
+    // it is created-date cohorted - a win counts in the window its LEAD was created
+    // in, not the window it was won in - which is why the frontend only offers
+    // won / revenue / avg-deal on the longer windows.
+    const ZBUN = { all: mk(), meta: mk(), google: mk(), other: mk() }
+    const bunWin = (B, a, b) => ({ all: Math.round(sumR(B.all, a, b)), meta: Math.round(sumR(B.meta, a, b)), google: Math.round(sumR(B.google, a, b)), other: Math.round(sumR(B.other, a, b)) })
+    const crmWin = (n, S, filterPid) => {
+      const L = S.L, W = S.W, X = S.X || ZBUN, R = S.R || ZBUN, RM = S.RM
+      return {
+        leads: bunWin(L, 0, n), leadsPrev: bunWin(L, n, 2 * n),
+        won: bunWin(W, 0, n), wonPrev: bunWin(W, n, 2 * n),
+        lost: bunWin(X, 0, n), lostPrev: bunWin(X, n, 2 * n),
+        revenue: bunWin(R, 0, n), revenuePrev: bunWin(R, n, 2 * n),
+        reach: { all: reachWinFrom(RM.all, n, filterPid), meta: reachWinFrom(RM.meta, n, filterPid), google: reachWinFrom(RM.google, n, filterPid), other: reachWinFrom(RM.other, n, filterPid) },
+        reachPrev: { all: reachWinRange(RM.all, n, 2 * n, filterPid), meta: reachWinRange(RM.meta, n, 2 * n, filterPid), google: reachWinRange(RM.google, n, 2 * n, filterPid), other: reachWinRange(RM.other, n, 2 * n, filterPid) },
+        utm: !!(E.dc && E.dc.ok),
+      }
+    }
     const dcOK = !!(E.dc && E.dc.ok)
     const wsReach = { all: E.reach, meta: E.reachCh.meta, google: E.reachCh.google, other: E.reachCh.other }
     const acctReach = dcOK ? E.dc.reach : wsReach
     const acctL = dcOK ? E.dc.leads : { all: E.leadsAll, meta: E.leadsCh.meta, google: E.leadsCh.google, other: E.leadsCh.other }
     const acctW = dcOK ? E.dc.won : { all: E.wonAll, meta: E.wonCh.meta, google: E.wonCh.google, other: E.wonCh.other }
-    const ZBUN = { all: mk(), meta: mk(), google: mk(), other: mk() }
+    const acctX = dcOK ? E.dc.lost : { all: E.lostAll, meta: E.lostCh.meta, google: E.lostCh.google, other: E.lostCh.other }
+    const acctR = dcOK ? E.dc.rev : { all: E.revAll, meta: E.revCh.meta, google: E.revCh.google, other: E.revCh.other }
+    const acctSrc = { L: acctL, W: acctW, X: acctX, R: acctR, RM: acctReach }
     // Per-pipeline CRM source bundle (direct API when connected, else Windsor).
-    const pipeCrmSrc = (p) => (dcOK
-      ? { L: (E.dc.pipe.get(p.id) || { leads: ZBUN }).leads, W: (E.dc.pipe.get(p.id) || { won: ZBUN }).won, RM: E.dc.reach }
-      : { L: { all: p.leads, meta: p.leadsCh.meta, google: p.leadsCh.google, other: p.leadsCh.other }, W: { all: p.won, meta: p.wonCh.meta, google: p.wonCh.google, other: p.wonCh.other }, RM: wsReach })
+    const pipeCrmSrc = (p) => {
+      const d = dcOK ? E.dc.pipe.get(p.id) : null
+      return dcOK
+        ? { L: (d || { leads: ZBUN }).leads, W: (d || { won: ZBUN }).won, X: (d || { lost: ZBUN }).lost, R: (d || { rev: ZBUN }).rev, RM: E.dc.reach }
+        : { L: { all: p.leads, meta: p.leadsCh.meta, google: p.leadsCh.google, other: p.leadsCh.other }, W: { all: p.won, meta: p.wonCh.meta, google: p.wonCh.google, other: p.wonCh.other }, X: { all: p.lost, meta: p.lostCh.meta, google: p.lostCh.google, other: p.lostCh.other }, R: { all: p.rev, meta: p.revCh.meta, google: p.revCh.google, other: p.revCh.other }, RM: wsReach }
+    }
     // stage name → funnel position (bare + pipeline-scoped) so the frontend can order
     // and resolve the configured key events, same as everywhere else.
     const stagePos = {}
@@ -1369,7 +1398,7 @@ async function buildTrends(key) {
         meta: { spend: ms, spendPrev: msp, results: ml, resultsPrev: mlp, booked: sumR(E.bMeta, 0, n), bookedPrev: sumR(E.bMeta, n, 2 * n) },
         google: { spend: gs, spendPrev: gsp, results: gc, resultsPrev: gcp, booked: sumR(E.bGoogle, 0, n), bookedPrev: sumR(E.bGoogle, n, 2 * n) },
         blended: { spend: ms + gs, spendPrev: msp + gsp, results: ml + gc, resultsPrev: mlp + gcp, booked: sumR(blendedBooked, 0, n), bookedPrev: sumR(blendedBooked, n, 2 * n) },
-        crm: crmWin(n, acctL, acctW, acctReach, null),
+        crm: crmWin(n, acctSrc, null),
       }
     })
     // Last 28 days, chronological (oldest first), per channel: ad spend + ad-reported
@@ -1427,7 +1456,7 @@ async function buildTrends(key) {
             meta: { spend: r2(ms), spendPrev: r2(msp), results: ml, resultsPrev: mlp, booked: bk, bookedPrev: bkp },
             google: { spend: r2(gs), spendPrev: r2(gsp), results: gc, resultsPrev: gcp, booked: bk, bookedPrev: bkp },
             blended: { spend: r2(ms + gs), spendPrev: r2(msp + gsp), results: ml + gc, resultsPrev: mlp + gcp, booked: bk, bookedPrev: bkp },
-            crm: src ? crmWin(n, src.L, src.W, src.RM, pipeObj.id) : null,
+            crm: src ? crmWin(n, src, pipeObj.id) : null,
           }
         })
       }

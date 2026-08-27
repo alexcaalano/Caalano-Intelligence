@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.386.0'
+const APP_VERSION = '3.387.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2277,13 +2277,16 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
   const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
-  // Per-pipeline ad spend (whole account) → the Key events funnel defaults to the
-  // highest-spend pipeline; a local dropdown on the panel switches it. When the
-  // top filter is on a pipeline, the funnel follows it.
+  // Per-pipeline ad spend (whole account). Feeds the funnel's pipeline dropdown -
+  // each option shows its spend - and scopes cost per event when one is picked.
   const pipeSpend = {}
   for (const c of (deep.meta.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.spend || 0) }
-  const topSpendPipe = Object.keys(pipeSpend).sort((a, b) => pipeSpend[b] - pipeSpend[a])[0] || null
-  const kePipeEff = kePipe != null ? kePipe : (pipe !== 'all' ? pipe : (topSpendPipe || 'all'))
+  // The funnel follows the top filter. When that says "All", the funnel shows all
+  // pipelines too - it used to quietly narrow to the highest-spend one while the
+  // spend above it stayed whole-account, so every cost-per-event was divided by a
+  // subset of its own numerator and read high. The dropdown still narrows it, and
+  // now scopes the spend to match (see keSpend below).
+  const kePipeEff = kePipe != null ? kePipe : (pipe !== 'all' ? pipe : 'all')
   const keListFunnel = keyEventsForPipe(loadKeyEvents(clientId), kePipeEff)
   // Green Caalano360 columns: the client's key events (cost per each) when
   // configured, else the legacy Booked/Shown/Won block. Ordered by where each
@@ -2451,6 +2454,10 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
   // or account Meta leads when showing all.
   const mePipeLeads = kePipeEff !== 'all' && meCh ? ((meCh.pipelines || []).find((p) => p.id === kePipeEff) || {}).leads : null
   const meTotal = Math.max(1, mePipeLeads != null ? mePipeLeads : (meCh ? meCh.totals.leads : 0))
+  // Cost per event has to divide the spend that produced THOSE events. Narrowing
+  // the funnel to one pipeline while dividing whole-account spend inflates every
+  // figure in it. `pipeSpend` is already the per-pipeline campaign spend.
+  const meKeSpend = kePipeEff === 'all' ? (m.totals ? m.totals.spend : 0) : (pipeSpend[kePipeEff] || 0)
   return (
     <div ref={scrollRootRef}>
       {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="meta" range={range} currency={currency} onClose={() => setKeyDrill(null)} /> : null}
@@ -2570,15 +2577,15 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
           </div>
         </div>}
         {has360 && meRows.some((r) => r.count > 0) && <KeyEventsFunnel
-          rows={meRows} total={meTotal} spend={m.totals ? m.totals.spend : 0} currency={currency}
+          rows={meRows} total={meTotal} spend={meKeSpend} currency={currency}
           drill={{ clientId, channel: 'meta', range, pipeline: kePipeEff !== 'all' ? kePipeEff : null }}
           title="Key events · Meta" style={{ marginTop: 0 }} className="meta-split-col"
           headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
             <option value="all">All pipelines</option>
             {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}{pipeSpend[p.id] ? ` · ${fmtCurrency(pipeSpend[p.id], currency)}` : ''}</option>)}
           </select> : null}
-          sub={`Meta-attributed leads through your key pipeline stages and booked calendars · cost per event = whole Meta spend ÷ count · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}`}
-          caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta; cost per event divides the full Meta spend. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline - it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
+          sub={`Meta-attributed leads through your key pipeline stages and booked calendars · ${kePipeEff === 'all' ? 'all pipelines · cost per event = whole Meta spend ÷ count' : `${(allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline'} only · cost per event = that pipeline's Meta spend ÷ count`}`}
+          caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta. {allPipes.length > 1 ? 'Narrowing to one pipeline scopes the spend to that pipeline\u2019s linked campaigns too, so cost per event always divides the spend that produced those events. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
         />}
       </div>
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
@@ -2881,11 +2888,15 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   const A = pipeAttr && pipeAttr.data && pipeAttr.data.attribution
   const has360 = !!A
   const keList = keyEventsForPipe(loadKeyEvents(clientId), pipe)
-  // Per-pipeline Google spend → the key-events funnel defaults to the highest-spend one.
+  // Per-pipeline Google spend. Feeds the funnel's dropdown and scopes cost per event.
   const pipeSpend = {}
   for (const c of (deep.google.campaigns || [])) { const pid = pipeOfCampaign(clientId, c.name, allPipes); if (pid) pipeSpend[pid] = (pipeSpend[pid] || 0) + (c.cost || 0) }
-  const topSpendPipe = Object.keys(pipeSpend).sort((a, b) => pipeSpend[b] - pipeSpend[a])[0] || null
-  const kePipeEff = kePipe != null ? kePipe : (pipe !== 'all' ? pipe : (topSpendPipe || 'all'))
+  // The funnel follows the top filter. When that says "All", the funnel shows all
+  // pipelines too - it used to quietly narrow to the highest-spend one while the
+  // spend above it stayed whole-account, so every cost-per-event was divided by a
+  // subset of its own numerator and read high. The dropdown still narrows it, and
+  // now scopes the spend to match (see keSpend below).
+  const kePipeEff = kePipe != null ? kePipe : (pipe !== 'all' ? pipe : 'all')
   const keListFunnel = keyEventsForPipe(loadKeyEvents(clientId), kePipeEff)
   // Full pipeline registry (allPipelines) drives the stage-position map so every
   // key event resolves to its real funnel position (the channel funnel pipelines
@@ -3001,6 +3012,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
   })()
   const gPipeLeads = kePipeEff !== 'all' && gCh ? ((gCh.pipelines || []).find((p) => p.id === kePipeEff) || {}).leads : null
   const gTotal = Math.max(1, gPipeLeads != null ? gPipeLeads : (gCh ? gCh.totals.leads : 0))
+  // Same as Meta: the cost-per-event numerator follows whatever the funnel shows.
+  const gKeSpend = kePipeEff === 'all' ? (t.cost || 0) : (pipeSpend[kePipeEff] || 0)
   return (
     <div ref={scrollRootRef}>
       {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="google" range={range} currency={currency} onClose={() => setKeyDrill(null)} /> : null}
@@ -3078,15 +3091,15 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
         return groupFor(null, 'Caalano360 metrics', t.cost, totalSpendPrev, totalsCrm, gCh ? gCh.totals.leads : 0, 'Google-attributed CRM outcomes vs Google spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
       })()}
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
-        rows={gRows} total={gTotal} spend={t.cost} currency={currency}
+        rows={gRows} total={gTotal} spend={gKeSpend} currency={currency}
         drill={{ clientId, channel: 'google', range, pipeline: kePipeEff !== 'all' ? kePipeEff : null }}
         title="Key events · Google" style={{ marginTop: 14 }}
         headerRight={allPipes.length > 1 ? <select className="kef-pipe-sel" value={kePipeEff} onChange={(e) => setKePipe(e.target.value)} title="Show the key-events funnel for one pipeline">
           <option value="all">All pipelines</option>
           {allPipes.map((p) => <option key={p.id} value={p.id}>{p.name}{pipeSpend[p.id] ? ` · ${fmtCurrency(pipeSpend[p.id], currency)}` : ''}</option>)}
         </select> : null}
-        sub={`Google-attributed leads through your key pipeline stages and booked calendars · cost per event = Google spend ÷ count · ${kePipeEff === 'all' ? 'all pipelines' : ((allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline')}`}
-        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google; cost per event divides the Google spend in this range. {allPipes.length > 1 ? 'Use the dropdown to switch pipeline - it defaults to the highest ad-spend one. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
+        sub={`Google-attributed leads through your key pipeline stages and booked calendars · ${kePipeEff === 'all' ? 'all pipelines · cost per event = whole Google spend ÷ count' : `${(allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline'} only · cost per event = that pipeline's Google spend ÷ count`}`}
+        caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google. {allPipes.length > 1 ? 'Narrowing to one pipeline scopes the spend to that pipeline\u2019s linked campaigns too, so cost per event always divides the spend that produced those events. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
       />}
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Daily trend</h3><p className="cap">Spend, Conversions and Cost / Conversion by day{pipe !== 'all' ? ' · whole account' : ''}</p>

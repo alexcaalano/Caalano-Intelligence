@@ -17,7 +17,36 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.386.0 - 2026-08-20 · `PENDING` - Three more places a failed read reported itself as good news
+## v3.387.0 - 2026-08-20 · `PENDING` - Key events funnel: all pipelines, and cost per event that divides its own spend
+
+**The funnel now shows every pipeline when the filter says "All".**
+It used to quietly narrow to whichever pipeline spent the most, while the table
+underneath showed all of them - so the two disagreed and nothing on screen said
+why. The dropdown still narrows it by hand.
+
+**The cost figures inside it were wrong, not just confusing.** On "All" the
+numerator was whole-account spend and the denominator was one pipeline's counts,
+so every cost-per-event read high. On a two-pipeline client spending $8,000 on
+one and $2,000 on the other, cost per booking showed **$250 when the true
+blended figure was $142.86** - overstated by 75%.
+
+- Cost per event now always divides the spend that produced those events.
+  All pipelines -> whole-account spend. One pipeline -> that pipeline's linked
+  campaign spend, which was already being computed for the dropdown.
+- Applies to both Meta and Google.
+- Single-pipeline clients are unaffected.
+
+**Also: the changelog's own rollback instructions now work.**
+The file said "every release below is also a git tag" and listed 378 releases as
+`PENDING` with no commit. The tags did exist - the working clone was shallow and
+could not see them. Every entry is now stamped with the commit that produced it,
+cross-checked against its tag (381 checked, 0 mismatches), and the 42 releases
+that genuinely had no tag - the earliest 38 plus v3.89.0, v3.237.0, v3.380.0 and
+v3.381.0, which slipped - have been tagged at their real commits.
+
+---
+
+## v3.386.0 - 2026-08-20 · `024e1e2` - Three more places a failed read reported itself as good news
 
 A sweep of the ~350 caught failures across the backend, looking for the shape
 behind the v3.385.1 bug: **a fetch fails, the empty result flows into a
@@ -60,7 +89,7 @@ look worse than it is. Would need a flag on that response to distinguish
 
 ---
 
-## v3.385.1 - 2026-08-20 · `PENDING` - Movers: say the real reason a client has no close dates
+## v3.385.1 - 2026-08-20 · `a175915` - Movers: say the real reason a client has no close dates
 
 The "N clients excluded" note added in v3.385.0 was wrong, and it hid a real
 failure behind a made-up one.
@@ -89,7 +118,7 @@ So a client missing close dates is one of exactly two things:
 
 ---
 
-## v3.385.0 - 2026-08-20 · `PENDING` - Movers: closed-in-period basis
+## v3.385.0 - 2026-08-20 · `8011507` - Movers: closed-in-period basis
 
 The second half of the movers work. A **Closed / Created** toggle on the panel,
 defaulting to Closed.
@@ -129,7 +158,7 @@ defaulting to Closed.
 
 ---
 
-## v3.384.1 - 2026-08-20 · `PENDING` - Movers: compact cards, and a floor bug the live data exposed
+## v3.384.1 - 2026-08-20 · `a26c351` - Movers: compact cards, and a floor bug the live data exposed
 
 **Layout** - the panel now uses the same compact auto-fill card grid as the
 Daily Performance movers rather than full-width rows. A dozen small insights
@@ -159,7 +188,7 @@ it stretching every sibling in its row.
 
 ---
 
-## v3.384.0 - 2026-08-20 · `PENDING` - Biggest movers on the agency overview
+## v3.384.0 - 2026-08-20 · `4458993` - Biggest movers on the agency overview
 
 A second movers panel, on the Overview between Paid performance and Account
 health, answering a wider question than the Trends one: **what changed most
@@ -218,7 +247,7 @@ deal size**, booking rate, win rate, and a mover per configured key event.
 
 ---
 
-## v3.383.1 - 2026-08-20 · `PENDING` - Catchment: read the CRM business address properly
+## v3.383.1 - 2026-08-20 · `7e78031` - Catchment: read the CRM business address properly
 
 Catchment reported "No business address is set in the CRM" for a client whose
 Business Profile plainly had one filled in.
@@ -245,7 +274,7 @@ Business Profile plainly had one filled in.
 
 ---
 
-## v3.383.0 - 2026-08-20 · `PENDING` - Catchment: service areas
+## v3.383.0 - 2026-08-20 · `e59bac6` - Catchment: service areas
 
 The other half of catchment, for a business that works **across areas** rather
 than from one place - a builder covering several parts of Sydney.
@@ -280,7 +309,7 @@ actual, correctly detected).
 
 ---
 
-## v3.382.0 - 2026-08-20 · `PENDING` - Catchment: how far people travelled to get there
+## v3.382.0 - 2026-08-20 · `af391ab` - Catchment: how far people travelled to get there
 
 **Settings → (client) → Catchment.** Off by default, because "how far did they
 travel" only means something for a business people come *to*. For work that
@@ -319,7 +348,7 @@ one) are stubbed in the mode picker and come next.
 
 ---
 
-## v3.381.0 - 2026-08-20 · `PENDING` - Client settings tabs wrap; one duplicate API call removed
+## v3.381.0 - 2026-08-20 · `f73c487` - Client settings tabs wrap; one duplicate API call removed
 
 - The client-config modal's twelve tabs scrolled sideways, hiding everything
   past *Forms* behind a scrollbar. They **wrap onto a second row** instead - on a
@@ -333,7 +362,7 @@ one) are stubbed in the mode picker and come next.
 
 ---
 
-## v3.380.0 - 2026-08-20 · `PENDING` - Leads and patients are different things, and the numbers now say so
+## v3.380.0 - 2026-08-20 · `8640d6c` - Leads and patients are different things, and the numbers now say so
 
 **The definition, applied properly**
 - A **lead** enquired. A **patient** booked an initial appointment and **showed
@@ -367,7 +396,7 @@ renders and blanked the tab. Second time this pattern has bitten in this file.
 
 ---
 
-## v3.379.0 - 2026-08-20 · `PENDING` - One-and-done by channel, and a demo that reflects its own roster
+## v3.379.0 - 2026-08-20 · `94d39ce` - One-and-done by channel, and a demo that reflects its own roster
 
 **Which channels bring patients who stay**
 - The Acquisition table gains **One & done** - the share of a channel's patients
@@ -393,7 +422,7 @@ renders and blanked the tab. Second time this pattern has bitten in this file.
 
 ---
 
-## v3.378.0 - 2026-08-20 · `PENDING` - Clinic: who's drifting, whose patients come back, and where every number comes from
+## v3.378.0 - 2026-08-20 · `429303c` - Clinic: who's drifting, whose patients come back, and where every number comes from
 
 All three built from fields **already synced** - no new CRM columns.
 
@@ -431,7 +460,7 @@ All three built from fields **already synced** - no new CRM columns.
 
 ---
 
-## v3.377.0 - 2026-08-20 · `PENDING` - Clinic tab moves to second
+## v3.377.0 - 2026-08-20 · `39b6db8` - Clinic tab moves to second
 
 - On a clinic, **Clinic** now sits directly after **Caalano360** and before
   **Meta Ads**. For a practice it is the tab that answers "how is the business
@@ -441,7 +470,7 @@ All three built from fields **already synced** - no new CRM columns.
 
 ---
 
-## v3.376.0 - 2026-08-20 · `PENDING` - Clinic: capacity & recovery
+## v3.376.0 - 2026-08-20 · `12ca0ea` - Clinic: capacity & recovery
 
 Researched what [Allie](https://www.allieclinics.com/) reports on (Cliniko /
 Halaxy / Nookal / Splose, the same PMS layer our clinics sync from) and closed
@@ -476,7 +505,7 @@ DVA / WorkCover / EPC) both need PMS fields we can't yet confirm sync through.
 
 ---
 
-## v3.375.0 - 2026-08-20 · `PENDING` - Settings sections are deep-linkable
+## v3.375.0 - 2026-08-20 · `6857bee` - Settings sections are deep-linkable
 
 - Each Settings section now carries `?s=` in the URL, so a **refresh comes back
   to the same tab** instead of dropping you on Clients. Same for a shared link:
@@ -498,7 +527,7 @@ destination clears it.
 
 ---
 
-## v3.374.0 - 2026-08-20 · `PENDING` - Terms page tidied, sign-in location gets its own column
+## v3.374.0 - 2026-08-20 · `e49169a` - Terms page tidied, sign-in location gets its own column
 
 **Settings → Terms of use**
 - The **signed register** moves to the top - it's what you actually come to this
@@ -522,7 +551,7 @@ destination clears it.
 
 ---
 
-## v3.373.0 - 2026-08-20 · `PENDING` - Where people sign in from, and when it looks wrong
+## v3.373.0 - 2026-08-20 · `43fb68f` - Where people sign in from, and when it looks wrong
 
 - Each session now records roughly where it started: city, region, country and
   IP. Netlify resolves this at the edge and passes it in `x-nf-geo`, so there is
@@ -548,7 +577,7 @@ and nobody is re-prompted.
 
 ---
 
-## v3.372.0 - 2026-08-20 · `PENDING` - Activity trail: where each person went, and for how long
+## v3.372.0 - 2026-08-20 · `2b0e939` - Activity trail: where each person went, and for how long
 
 **Settings → Logs → Activity trail** (Super Admin only). A per-person record of
 which views, clients and tabs someone opened and how long they stayed:
@@ -581,7 +610,7 @@ is legal where a varying hook count is not.
 
 ---
 
-## v3.371.0 - 2026-08-20 · `PENDING` - An anonymous caller is no longer trusted
+## v3.371.0 - 2026-08-20 · `4b94673` - An anonymous caller is no longer trusted
 
 Auditing the login path turned up the opposite problem to the one being looked
 for. The front door is solid - PBKDF2 at 150k iterations, `timingSafeEqual`,
@@ -631,7 +660,7 @@ account, delete it.
 
 ---
 
-## v3.370.0 - 2026-08-20 · `PENDING` - Methodology prose is staff-only
+## v3.370.0 - 2026-08-20 · `6d3f39a` - Methodology prose is staff-only
 
 - The "how this number is calculated" paragraphs under each card - blended MER,
   maturing cohorts, appointment-accurate booking logic, what counts as a lead -
@@ -653,7 +682,7 @@ strings in the JS bundle. It raises the effort, it doesn't close the door.
 
 ---
 
-## v3.369.0 - 2026-08-20 · `PENDING` - See what a client will see, before you invite them
+## v3.369.0 - 2026-08-20 · `24a3e69` - See what a client will see, before you invite them
 
 **Preview an allocation before it goes out**
 - The invite / edit-access modal gets **👁 Preview what they'll see**. It runs the
@@ -688,7 +717,7 @@ strings in the JS bundle. It raises the effort, it doesn't close the door.
 
 ---
 
-## v3.368.0 - 2026-08-20 · `PENDING` - No client is named in a public file any more
+## v3.368.0 - 2026-08-20 · `f7c2865` - No client is named in a public file any more
 
 `/assets/*` is served without a session, deliberately, so the login screen can
 load its own JavaScript. Two things were riding along in there.
@@ -719,7 +748,7 @@ at invocation time. Resolved per call instead.
 
 ---
 
-## v3.367.0 - 2026-08-20 · `PENDING` - Before inviting clients: the roster stops being public
+## v3.367.0 - 2026-08-20 · `bca7215` - Before inviting clients: the roster stops being public
 
 **The roster and every client's spend were served to any logged-in user**
 - `public/data/config.json` and `public/data/snapshot.json` were static files
@@ -758,7 +787,7 @@ at invocation time. Resolved per call instead.
 
 ---
 
-## v3.366.0 - 2026-08-20 · `PENDING` - Who signed in and for how long is owner-only
+## v3.366.0 - 2026-08-20 · `17963ad` - Who signed in and for how long is owner-only
 
 **Activity data is Super-Admin only**
 - **Last active** and **Time (30d)** in Settings → Team & access - when someone
@@ -780,7 +809,7 @@ different powers and were being granted together.
 
 ---
 
-## v3.365.0 - 2026-08-20 · `PENDING` - Terms you can edit yourself, and terms v1.3
+## v3.365.0 - 2026-08-20 · `ce9a44c` - Terms you can edit yourself, and terms v1.3
 
 **Edit the terms in the app - Super Admin only**
 - Settings gains a **Terms of use** section (Super Admin only) holding both the
@@ -837,7 +866,7 @@ different powers and were being granted together.
 
 ---
 
-## v3.364.0 - 2026-08-20 · `PENDING` - Terms v1.2: sign once, and a proper signed record
+## v3.364.0 - 2026-08-20 · `fb92edc` - Terms v1.2: sign once, and a proper signed record
 
 **One signature, then never again**
 - Terms **v1.2** now says in the notice, in clause 9 and in the declaration that
@@ -882,7 +911,7 @@ different powers and were being granted together.
 
 ---
 
-## v3.363.0 - 2026-08-20 · `PENDING` - Preview the signing screen, and no way to be stuck on it
+## v3.363.0 - 2026-08-20 · `abf4f40` - Preview the signing screen, and no way to be stuck on it
 
 **Preview mode for the terms gate**
 - The signed register (Settings → Users) gets a **Preview signing screen**
@@ -902,7 +931,7 @@ different powers and were being granted together.
 
 ---
 
-## v3.362.0 - 2026-08-20 · `PENDING` - Terms of use: stronger, and a real decision to make (v1.1)
+## v3.362.0 - 2026-08-20 · `d9e5753` - Terms of use: stronger, and a real decision to make (v1.1)
 - The terms now open with a bordered **"Read this before proceeding"** notice stating plainly that this is a binding
   legal agreement between the individual and Caalano Digital, that acceptance is a **condition of using the Platform**,
   and that anyone who does not agree must **not proceed - sign out now and contact us**.
@@ -917,7 +946,7 @@ different powers and were being granted together.
 - Version bumped to **1.1**, so everyone - including anyone who already signed v1.0 - is asked to read and sign the
   stronger wording on their next load. Their v1.0 acceptance is kept on record rather than replaced.
 
-## v3.361.0 - 2026-08-20 · `PENDING` - Terms of use, signed and recorded
+## v3.361.0 - 2026-08-20 · `affa1ea` - Terms of use, signed and recorded
 - **Terms of Use** for Caalano360, covering ownership of the platform (interface, reports, metrics and how they're
   calculated, data models, integrations, code), a personal revocable right of access, and explicit restrictions: no
   copying, no reverse engineering, no rebuilding it elsewhere, no scraping, and no feeding its screens, outputs or code
@@ -936,7 +965,7 @@ different powers and were being granted together.
 - Signature images are held in their own store with only a lightweight version marker on the user record, so the gate
   check stays free and no signature weighs down an ordinary user listing.
 
-## v3.360.0 - 2026-08-20 · `PENDING` - Demo: drop the discovery call, and fix a funnel that couldn't happen
+## v3.360.0 - 2026-08-20 · `fefa817` - Demo: drop the discovery call, and fix a funnel that couldn't happen
 - The demo's pipeline card showed **Booked Initial Appointment (107) above Discovery Call Attended (57)** - a later step
   outranking an earlier one, which is impossible in a funnel. The tell was the show rate underneath it: only
   calendar-linked key events carry one. Both "Booked…" events had matched a **calendar by name**, so every follow-up
@@ -951,7 +980,7 @@ different powers and were being granted together.
 - Resulting funnel over 90 days: 338 enquiries → 303 contacted (90%) → 194 booked (57%) → 157 attended (46%) → 100 on a
   treatment plan (30%). Clinic side: PVA 6.7 (median 6), $157/visit, 96% show rate, 11% one-and-done.
 
-## v3.359.0 - 2026-08-20 · `PENDING` - Demo account: Norwest Multi-Disciplinary
+## v3.359.0 - 2026-08-20 · `e1c65d2` - Demo account: Norwest Multi-Disciplinary
 - A complete, self-consistent demo clinic - physio, chiro, psychology and OT - that loads instantly and needs no
   integrations behind it. Pipeline runs **New Enquiry → Contacted → Booked Discovery Call → Discovery Call Attended →
   Booked Initial Appointment → Initial Appointment Attended → Ongoing Care Plan**, with key events pre-seeded so the
@@ -974,7 +1003,7 @@ different powers and were being granted together.
   client being asked for, so there's no shared state to race. Agency-wide pulls append demo rows instead of replacing,
   and every consumer maps rows to a client by account id, so a real client can neither see them nor lose its own data.
 
-## v3.358.0 - 2026-08-20 · `PENDING` - Security: a password change now actually ends other sessions
+## v3.358.0 - 2026-08-20 · `6b44790` - Security: a password change now actually ends other sessions
 - Found during a review of the auth layer. Login sessions are stateless signed tokens valid for **14 days**, and the
   signature covered only email, role, name and expiry - so changing a password rewrote the hash but **left every existing
   session working**. That's precisely backwards: changing your password is what people do when they think an account has
@@ -993,7 +1022,7 @@ different powers and were being granted together.
   settings writes with Super-Admin-only client linking, PBKDF2 150k with timing-safe comparison, HttpOnly/Secure/SameSite
   cookies, login lockout, no source maps published, and no secrets reachable from the client bundle.
 
-## v3.357.0 - 2026-08-20 · `PENDING` - Refuse AI crawlers at the edge
+## v3.357.0 - 2026-08-20 · `1b83ad2` - Refuse AI crawlers at the edge
 - Known AI training / answer-engine crawlers (GPTBot, ClaudeBot, PerplexityBot, CCBot, Bytespider, Google-Extended,
   Amazonbot, Applebot-Extended and the rest) and generic scraping stacks (Scrapy, python-requests, curl, wget,
   Go-http-client, node-fetch) are now **refused with a 403 at the edge**, before even the app shell is served. That's what
@@ -1008,7 +1037,7 @@ different powers and were being granted together.
 - Note: the on-demand ops endpoints (`*-now`) are behind this too, so they must be opened in a signed-in browser rather
   than curled.
 
-## v3.356.0 - 2026-08-20 · `PENDING` - Forms: the expanded notes panel no longer scrolls sideways
+## v3.356.0 - 2026-08-20 · `6fc12cd` - Forms: the expanded notes panel no longer scrolls sideways
 - Expanding a lead in the Forms drill pushed its CRM notes off the right edge behind a horizontal scrollbar. The cause was
   subtle: the notes panel is a single full-width cell, which makes it the row's `:last-child` - and `.mini-tbl`
   right-aligns last cells, because they're normally numbers. So the entire note inherited **right alignment** and its
@@ -1018,7 +1047,7 @@ different powers and were being granted together.
 - Verified in a browser at 1600 and 1280px: computed alignment, the note's right edge against the viewport, and that the
   text no longer overflows its own box.
 
-## v3.355.0 - 2026-08-20 · `PENDING` - Reliability log: who was on screen when it failed
+## v3.355.0 - 2026-08-20 · `4a29be8` - Reliability log: who was on screen when it failed
 - Every failure and slow build now records **which signed-in user** triggered it - name, email and role - shown in a new
   **Who** column and included in both the JSON and CSV exports.
 - A **per-person summary** sits under the scope chips. One person dominating the list usually points at their session,
@@ -1028,7 +1057,7 @@ different powers and were being granted together.
 - Name and role are stored on the entry rather than looked up later, so a log line still reads correctly after someone is
   renamed, has their role changed, or is removed from the team.
 
-## v3.354.0 - 2026-08-20 · `PENDING` - Team & access: last active, and time spent in the app
+## v3.354.0 - 2026-08-20 · `59e088f` - Team & access: last active, and time spent in the app
 - **Last login was already being recorded** on every sign-in - it just wasn't shown anywhere. Duration wasn't recorded at
   all: login sessions are stateless signed tokens, so nothing server-side knows when one starts or ends.
 - Activity is now stamped as requests come through and stitched into sessions: consecutive activity inside a 30-minute
@@ -1043,7 +1072,7 @@ different powers and were being granted together.
   overnight never looks like someone using the product.
 - Stamping is best-effort throughout: a failed write never costs anyone their request.
 
-## v3.353.0 - 2026-08-20 · `PENDING` - Pipeline stage names: cached for a day, now an hour (and live in Settings)
+## v3.353.0 - 2026-08-20 · `2a6b7a2` - Pipeline stage names: cached for a day, now an hour (and live in Settings)
 - Stage names were showing their **old** values after a rename in Caalano Systems. The cause was not the data source -
   pipelines already come straight from the GoHighLevel API - it was the cache in front of it: `caalano-pipecache` held
   them for **24 hours**, on the reasoning that pipelines rarely change. They rarely do; but when they do, a full day of
@@ -1056,7 +1085,7 @@ different powers and were being granted together.
   merged onto them by stage id, rather than one source winning outright. A stage renamed, added or deleted in the CRM is
   reflected immediately, and its open-deal counts still ride along.
 
-## v3.352.0 - 2026-08-20 · `PENDING` - Clinic settings: calendar TYPE decides, not the name
+## v3.352.0 - 2026-08-20 · `8c480d2` - Clinic settings: calendar TYPE decides, not the name
 - Where a clinic runs **Service Calendars**, that is the clinical layer - services are what a practitioner delivers - and
   the ordinary calendars are the discovery / intake layer in front of them. That's a structural fact, far more reliable
   than reading names, so it is now the default: **services are clinical, calendars are discovery**.
@@ -1069,7 +1098,7 @@ different powers and were being granted together.
 - The front end no longer re-derives the default from the name - it uses the server's, so the picker can't disagree with
   the numbers on the Clinic tab.
 
-## v3.351.0 - 2026-08-20 · `PENDING` - Clinic settings: resolve template calendar names, show what's booked on each
+## v3.351.0 - 2026-08-20 · `7c36971` - Clinic settings: resolve template calendar names, show what's booked on each
 - Checking a live location immediately found the hole in yesterday's name-based fallback: a template calendar ships as
   `{{custom_values.appointment_name}} with {{location.name}}` and the API returns it **verbatim**. Its bookings were all
   discovery calls, but the words that say so live in the custom value, not the name - so it read as clinical, and in the
@@ -1085,7 +1114,7 @@ different powers and were being granted together.
   clinical bookings in a calendar and stay empty until one exists. That is the expected shape for a clinic whose clinical
   diary lives entirely in Cliniko / Nookal and runs only sales calls through the CRM.
 
-## v3.350.0 - 2026-08-20 · `PENDING` - Clinic settings: which calendars actually make someone a patient
+## v3.350.0 - 2026-08-20 · `cfa71ac` - Clinic settings: which calendars actually make someone a patient
 - A discovery / triage call is a sales conversation, not a visit - but the diary sweep was counting it as one. That put a
   **phantom first visit at the head of the retention curve**, handed the clinic a **free "rebooking"** when the real first
   appointment followed it, and **dragged the visit-cadence average down**. All three now exclude triage bookings.
@@ -1103,7 +1132,7 @@ different powers and were being granted together.
   guessed - so the setting is discoverable from the numbers it changes rather than buried in a menu.
 - Applies to both the live tab and the overnight snapshot.
 
-## v3.349.0 - 2026-08-20 · `PENDING` - Monthly report: creative + form funnels are clickable, form names fit
+## v3.349.0 - 2026-08-20 · `4fe82e9` - Monthly report: creative + form funnels are clickable, form names fit
 - **Creative performance key events are clickable again in the monthly deck.** The drill was already built - the deck's
   call site just never passed `clientId`, `range` or `channel`, so `canDrill` was false and every row rendered static. Now
   wired, so each key-event row opens the same people drill as the Meta view.
@@ -1119,7 +1148,7 @@ different powers and were being granted together.
 - Both fixes measured in a browser rather than by eye: the name element's right edge against the Leads column's left edge
   at 1920 and 1440px, with no table overflow at either.
 
-## v3.348.0 - 2026-08-20 · `PENDING` - Clinic: tiles fit their column instead of scrolling
+## v3.348.0 - 2026-08-20 · `3f3cc56` - Clinic: tiles fit their column instead of scrolling
 - The Operations tiles were clipping their own label column - "Unpaid balance (AR)" rendered as "ce (AR)" behind a
   horizontal scrollbar, and the same for Attendance and By practitioner. Every tile in a narrow grid track now fits
   without scrolling.
@@ -1133,7 +1162,7 @@ different powers and were being granted together.
 - Verified in a real browser rather than by eye: measured `scrollWidth` against `clientWidth` for every tile at 1920,
   1440 and 1180px, and checked no first-column cell is visually clipped. All fit at every width.
 
-## v3.347.0 - 2026-08-20 · `PENDING` - Clinic: benchmark against the rest of the cohort
+## v3.347.0 - 2026-08-20 · `f3cd2cd` - Clinic: benchmark against the rest of the cohort
 - A **Benchmark** section on each Clinic tab: this clinic's PVA, show rate, next-booking rate, one-and-done, avg LTV and
   dollar-per-visit set against the **cohort median**, with a standing for each, plus a table of every clinic on the sync.
 - Built entirely from the stored nightly snapshots, so comparing the whole Allied Health cohort costs **one blob read per
@@ -1145,7 +1174,7 @@ different powers and were being granted together.
 - Direction is measured per metric rather than assumed: being *below* the median on one-and-done is the win, being above
   it on PVA is.
 
-## v3.346.0 - 2026-08-20 · `PENDING` - Clinic: the forward book, busiest days, and a data-quality guard
+## v3.346.0 - 2026-08-20 · `18bc95e` - Clinic: the forward book, busiest days, and a data-quality guard
 - **Data-quality guard.** A synced field can exist on a location but be populated on only a fraction of patients, and a
   headline built on a thin field reads confidently wrong. Coverage is now measured per field, with a banner above the
   numbers when it's low. The sharp case is called out explicitly: if attendance is recorded on far fewer patients than
@@ -1165,7 +1194,7 @@ different powers and were being granted together.
 - The forward book decays, so a reused overnight copy now has elapsed days trimmed and its totals recomputed - a snapshot
   taken yesterday no longer lists yesterday as part of the fortnight ahead.
 
-## v3.345.0 - 2026-08-20 · `PENDING` - Clinic: PVA and the averages that sit around it
+## v3.345.0 - 2026-08-20 · `aa93437` - Clinic: PVA and the averages that sit around it
 - **PVA (Patient Visit Average)** - the number allied-health practices actually run on - is now a headline metric, defined
   as attended visits per patient *who has actually been seen*. Patients on file who never attended are excluded: including
   them drags the figure toward zero and makes it incomparable with what a practice-management system reports. The
@@ -1182,7 +1211,7 @@ different powers and were being granted together.
   patients stick as well as referrals), and **by cohort**. Both are recorded in the daily snapshot too, so they carry
   movement chips and a PVA line on the trend chart.
 
-## v3.344.0 - 2026-08-20 · `PENDING` - Clinic detection fixed, and the diary sweep sized for a real clinic
+## v3.344.0 - 2026-08-20 · `71d1f85` - Clinic detection fixed, and the diary sweep sized for a real clinic
 - **The Clinic tab was appearing for clients that aren't clinics.** Detection asked "does this location define *any* of the
   ~30 fields we read", and several of those - a satisfaction survey, marketing-consent boxes, "how did you hear about
   us" - are fields any client can have. Verified against a live non-clinic location carrying three of them from a March
@@ -1202,7 +1231,7 @@ different powers and were being granted together.
 - Either way the tab **says where the numbers came from** and how old they are, so a snapshot figure is never mistaken for
   a live one.
 
-## v3.343.0 - 2026-08-20 · `PENDING` - Service Calendars wired end-to-end, and a Calendars performance tab
+## v3.343.0 - 2026-08-20 · `242f84d` - Service Calendars wired end-to-end, and a Calendars performance tab
 - **Service Calendars now work as key events, not just appear in the list.** They arrive in two different shapes and the
   wiring handles both: some are ordinary calendars carrying `calendarType: service` (their bookings come back from the
   events endpoint like any other), while locations on the newer Services catalog keep a service menu whose bookings live
@@ -1223,7 +1252,7 @@ different powers and were being granted together.
   organic. The view is built now so it fills in on its own once UTMs are captured on the booking journey, with no further
   change needed at that point.
 
-## v3.342.0 - 2026-08-20 · `PENDING` - Clinic: lay the page out properly, and read the fields we were ignoring
+## v3.342.0 - 2026-08-20 · `bb44d1f` - Clinic: lay the page out properly, and read the fields we were ignoring
 - The tab had become one long column of equally-weighted cards. It's now banded into labelled sections - **Growth**,
   **Retention**, **Cohorts**, **Acquisition**, **Operations**, **Worklists** - so it reads as chapters rather than a wall.
 - The headline scorecard is trimmed from nine tiles to **five**; the rest moved into the section they belong to. The three
@@ -1241,7 +1270,7 @@ different powers and were being granted together.
 - Confirmed there is **no booking-created date** among the synced fields, so the at-the-desk rebooking split can't be
   recovered from contact data - it needs per-booking creation times, which only genuine CRM bookings carry.
 
-## v3.341.0 - 2026-08-20 · `PENDING` - Clinic: refuse to split rebooking on timestamps the sync fabricated
+## v3.341.0 - 2026-08-20 · `d2bf606` - Clinic: refuse to split rebooking on timestamps the sync fabricated
 - Confirmed against a live location that when the practice-management sync writes appointments **into** the CRM, each
   booking's `dateAdded` is *the moment the sync ran*, not the moment the patient booked - a batch of appointments spread
   across a month all carried creation stamps inside the same minute, flagged `createdBy.source: third_party`.
@@ -1256,7 +1285,7 @@ different powers and were being granted together.
   an absent one, so this is deliberately conservative: it needs a 20-booking sample, under 15% created-after-start, and
   creation times spread across more than a quarter as many distinct minutes as there are bookings.
 
-## v3.340.0 - 2026-08-20 · `PENDING` - Clinic: a patient cohort analysis, separate from the lead cohort
+## v3.340.0 - 2026-08-20 · `8cde5e0` - Clinic: a patient cohort analysis, separate from the lead cohort
 - The existing **Cohorts** tab is a *lead-acquisition* cohort: it buckets opportunities by the week the lead was created
   and tracks leads → booked → shown → won by channel. That's the right analysis for the ad-driven funnel and it stays as
   it is - but it can't describe a clinic's patient base. It only sees contacts that have a CRM opportunity (most patients
@@ -1273,7 +1302,7 @@ different powers and were being granted together.
 - Both are honest about their source: the curve needs appointments that reach a Caalano calendar, so clinics whose
   clinical diary lives only in the practice-management system will see the age-normalised table but not the curve.
 
-## v3.339.0 - 2026-08-20 · `PENDING` - Clinic: daily snapshots, so period revenue and trend actually exist
+## v3.339.0 - 2026-08-20 · `5f3b24b` - Clinic: daily snapshots, so period revenue and trend actually exist
 - The practice-management sync **overwrites** each patient's stats on every run - lifetime spend, next appointment date,
   balances are all replaced with current values. That means the CRM only ever holds *today*: there is no history to read
   back, and a rolling field like `total spent this month` silently resets on the 1st. The Clinic tab now says so plainly
@@ -1292,7 +1321,7 @@ different powers and were being granted together.
   notes that a backdated entry lands in the window we noticed it, not the window it happened in.
 - Rebooking timing is unaffected by any of this: it's read from the calendars, which keep real per-booking history.
 
-## v3.338.0 - 2026-08-20 · `PENDING` - Clinic: rebooking from the diary, retention economics, LTV by channel
+## v3.338.0 - 2026-08-20 · `6755915` - Clinic: rebooking from the diary, retention economics, LTV by channel
 - The Clinic tab now answers the questions that actually move clinic revenue, and it only appears where it applies.
 - **Rebooking, read from the diary.** The synced practice-management fields carry lifetime *counters* but no timeline, so
   they can't say *when* a next appointment was made. We now sweep the location's calendars (every type, Service Calendars
@@ -1316,7 +1345,7 @@ different powers and were being granted together.
   practice-management sync has actually created its patient fields, decided by a cheap capability probe (one custom-field
   read, no contact paging).
 
-## v3.337.0 - 2026-08-20 · `PENDING` - Health Clinics module: per-client Clinic tab (appointments, LTV, retention, AR)
+## v3.337.0 - 2026-08-20 · `e8b1e5a` - Health Clinics module: per-client Clinic tab (appointments, LTV, retention, AR)
 - New **Clinic** tab (clients with a GHL location) that reads practice-management data synced onto GHL contacts by the
   Universal Plugins integration - appointment/service-calendar stats, revenue and retention - and turns it into a clinic
   operations view. Backend `buildClinic()` pages every contact in the location, resolves the sync custom fields by their
@@ -1329,7 +1358,7 @@ different powers and were being granted together.
 - Cached as its own `clinic` scope. Data is only as complete as the practice-management sync - clinics mid-sync will show
   a subset of patients until every contact is populated.
 
-## v3.336.0 - 2026-08-20 · `PENDING` - Creative Cockpit: split the whole breakdown per pipeline (replaces the selector)
+## v3.336.0 - 2026-08-20 · `a6dc97b` - Creative Cockpit: split the whole breakdown per pipeline (replaces the selector)
 - Replaced the pipeline *selector* with a proper **per-pipeline split**. A creative belongs to a pipeline (via its
   campaign's Settings link / name match), so a multi-pipeline client's Creative Cockpit is now **one labelled section per
   pipeline** - each with only that pipeline's creatives, its own "What's working" persona/angle rollup, and its own key-event
@@ -1340,7 +1369,7 @@ different powers and were being granted together.
 - Filters + the dimension toggle are shared across sections; each section's grid still sorts, tags and drags to pan on its
   own. Single-pipeline clients are unchanged (one flat section, no labels).
 
-## v3.335.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key-events pipeline selector for multi-pipeline clients
+## v3.335.0 - 2026-08-20 · `77377b1` - Creative Cockpit: key-events pipeline selector for multi-pipeline clients
 - Multi-pipeline clients now get a **Key events** pipeline selector on the Creative Cockpit. The green key-event columns
   otherwise show the *union* of every pipeline's events, which produces duplicate / misaligned columns (e.g. two
   "15 Minute Call" and two "Payment Collected" from two different pipelines).
@@ -1348,7 +1377,7 @@ different powers and were being granted together.
   pipeline's key events, so they line up and the counts resolve against that pipeline's stages. "All pipelines (combined)"
   keeps the previous side-by-side union. The selector only appears when a client actually has more than one pipeline.
 
-## v3.334.0 - 2026-08-20 · `PENDING` - Speed: health score reuses the warm blend (no second heavy build)
+## v3.334.0 - 2026-08-20 · `ec5e395` - Speed: health score reuses the warm blend (no second heavy build)
 - The Caalano360 tab built the blend **twice** on every open - once for the tab and once inside the executive health score -
   and the second heavy build is what pushed the score past the 10s budget and produced "Couldn't load the executive health
   score". The health score now **reuses the warm blend** (the one the tab / warmer already built for that client + range) and
@@ -1356,14 +1385,14 @@ different powers and were being granted together.
 - It also reuses the blend's already-computed won-in-period figure instead of a fresh CRM pull on the closed-basis view.
 - Falls back to a fresh build when no warm blend is available, so nothing breaks on an uncached range.
 
-## v3.333.0 - 2026-08-20 · `PENDING` - Speed: warmer now covers Google Ads + the Caalano360 (blend) tab
+## v3.333.0 - 2026-08-20 · `60c826e` - Speed: warmer now covers Google Ads + the Caalano360 (blend) tab
 - Extended the scheduled warmer (which already warmed Meta) to also pre-build each client's **Google Ads** and
   **Caalano360 blend** (the default tab) payloads for last-30-days into the result cache. Those two tabs now open as warm
   hits (<1s) instead of a cold GHL + Windsor fan-out - the same treatment the Meta tab already got.
 - Meta stays warmed for last 7 + 30 days; Google + blend are warmed for last 30 days only, to keep the standing upstream
   load in check. Cadence and range coverage are easy to tune.
 
-## v3.332.0 - 2026-08-20 · `PENDING` - Speed: cache finalised ad ranges for longer + deeper opp snapshot (health-score fix)
+## v3.332.0 - 2026-08-20 · `caf6c48` - Speed: cache finalised ad ranges for longer + deeper opp snapshot (health-score fix)
 - **Historical ad ranges cached much longer.** Once Meta/Google's attribution window has closed, a past range's numbers
   never change - so for the pure ad channels the cache now keeps a finalised range far longer than the live 10-minute
   window (1h once the range end is 2+ days old, 24h once it's 8+ days old). Opening any older period is now a near-instant
@@ -1374,7 +1403,7 @@ different powers and were being granted together.
   build fell back to slow live paging and timed out. The scheduled warmer (which has a long background budget, unlike the
   10s request path) now pages the snapshot to full depth, so those builds read the warm cache and complete in time.
 
-## v3.331.0 - 2026-08-20 · `PENDING` - Meta tab: progressive first paint on cold loads
+## v3.331.0 - 2026-08-20 · `1bda8be` - Meta tab: progressive first paint on cold loads
 - On a cold Meta load (a range the warmer doesn't cover, e.g. last 90 days / custom), if the full pull is slow the tab now
   paints a fast **core** payload first - campaigns, ad-sets, totals, daily chart and the Caalano360 key-event columns - so
   you're reading numbers in ~2s instead of staring at a spinner for 8s.
@@ -1384,7 +1413,7 @@ different powers and were being granted together.
   7 / 30-day ranges) still returns the full payload first with no extra Windsor work. If the full pull ultimately fails, the
   core numbers stay on screen instead of an error card.
 
-## v3.330.0 - 2026-08-20 · `PENDING` - Meta data: scheduled warmer so the Meta tab loads fast (fewer failures)
+## v3.330.0 - 2026-08-20 · `10d8dd3` - Meta data: scheduled warmer so the Meta tab loads fast (fewer failures)
 - Opening the Meta Ads tab fired 8 heavy Windsor queries in parallel every time you switched client or changed the date
   range - a cold pull that was slow and, when one of those calls was slow that minute, occasionally tipped past the 10s
   function budget and failed.
@@ -1396,13 +1425,13 @@ different powers and were being granted together.
   entry (and the warmer's entry) instead of missing on it. Owner can force a warm via `/.netlify/functions/meta-warm-now`.
 - Ranges other than 7 / 30 days still load live for now; a follow-up can add progressive first-paint for cold pulls.
 
-## v3.329.0 - 2026-08-20 · `PENDING` - Forms person drill: styled key-events popup + tidied columns
+## v3.329.0 - 2026-08-20 · `84d2af5` - Forms person drill: styled key-events popup + tidied columns
 - The **Key Events** number now hovers into a proper styled popup (matching the rest of the app) instead of the plain
   browser tooltip - it lists each key event the person reached, and the calendars they booked (with showed / occurred).
 - Moved the **Key Events** column to sit right after **Days in stage**, and **removed the Booked column** - the booked
   calendar detail now lives inside that Key Events popup. (Clients with no configured key events keep the Booked column.)
 
-## v3.328.0 - 2026-08-20 · `PENDING` - Monthly report lost reasons: per-channel split (Meta / Google / Other)
+## v3.328.0 - 2026-08-20 · `dff504e` - Monthly report lost reasons: per-channel split (Meta / Google / Other)
 - The "Lost reasons & pipeline status" tables now carry **Meta / Google / Other** columns, so each lost reason shows how
   many of those deals' leads came from each platform - the per-channel behaviour of why deals are lost.
 - Made the lost-reason tables **full width** and removed the "This month's leads by status" pie chart (that same donut still
@@ -1410,7 +1439,7 @@ different powers and were being granted together.
 - The lost-deal **popup** now shows a channel summary in its header - e.g. "Meta 41 · 72% · Google 14 · 25% · Other 2 · 3%"
   - so you can see each reason's platform split at a glance while reading the people behind it.
 
-## v3.327.0 - 2026-08-20 · `PENDING` - Forms person drill: fits the screen (no horizontal scroll)
+## v3.327.0 - 2026-08-20 · `67b8073` - Forms person drill: fits the screen (no horizontal scroll)
 - The expanded people table under a form answer is now pinned to the left of the screen and capped to the visible width
   (the same trick the Users tab detail row uses), so the wide parent answer table no longer drags the person columns
   off-screen.
@@ -1418,14 +1447,14 @@ different powers and were being granted together.
   Creative / Key Events) fit without a horizontal scrollbar. Hover any clipped cell (stage, booked calendar, campaign, ad
   set, creative, name) to see its full value.
 
-## v3.326.0 - 2026-08-20 · `PENDING` - Forms drill: resolve campaign/ad-set/creative ids to names via Windsor
+## v3.326.0 - 2026-08-20 · `80715a5` - Forms drill: resolve campaign/ad-set/creative ids to names via Windsor
 - The Forms person drill's Campaign / Ad Set / Creative columns now show the real **names** even when the CRM's UTM carried
   a numeric platform **id**. The `forms` scope builds the same Windsor id→name maps the attribution channel uses (Meta +
   Google campaign / ad-set / ad-group / ad pairs) and rewrites each person's source.
 - The id→name lookups hit Windsor (the ad platforms), NOT GoHighLevel, and run in parallel with the CRM build - so they add
   no latency and don't touch the CRM rate limit. Best-effort: anything that can't be matched keeps its raw value.
 
-## v3.325.0 - 2026-08-20 · `PENDING` - Forms drill: where each lead came from + key events achieved
+## v3.325.0 - 2026-08-20 · `57ab9b2` - Forms drill: where each lead came from + key events achieved
 - When you expand a form answer to see the people, each person now shows **Campaign / Ad Set / Creative** they came from
   (their first-touch UTMs), next to the existing Channel column. Free - the opportunity already carries attribution, so no
   extra data pull.
@@ -1435,7 +1464,7 @@ different powers and were being granted together.
 - Note: campaign sometimes shows as the numeric campaign id (that's what the CRM's UTM carries); ad set and creative are
   usually names. Say the word and the next pass can resolve campaign ids to names.
 
-## v3.324.0 - 2026-08-20 · `PENDING` - Reliability: ccdrill reads the warm snapshot (kills the biggest 429 source)
+## v3.324.0 - 2026-08-20 · `37a9517` - Reliability: ccdrill reads the warm snapshot (kills the biggest 429 source)
 - `ccdrill` (the command-centre drill behind every clickable tile) was the single biggest source of GHL `429` errors in the
   logs. It pulls a 120-day opportunity window for name resolution, but for high-volume clients (e.g. Nexia) the shared
   opportunity snapshot truncates at its cap and reaches back less than 120 days - so that pull fell through to a live
@@ -1446,7 +1475,7 @@ different powers and were being granted together.
 - Also, `allOpportunities` now serves any window from a NON-truncated snapshot (one holding every opportunity) instead of
   making a live call that returns the same set - a free latency win for smaller clients, with identical numbers.
 
-## v3.323.0 - 2026-08-20 · `PENDING` - Reliability: per-client request governor to cut GHL 429s
+## v3.323.0 - 2026-08-20 · `4c3f3a2` - Reliability: per-client request governor to cut GHL 429s
 - The reliability logs showed most hard errors are GoHighLevel `429 Too Many Requests` bursts - because opening a client
   dashboard fires several CRM scopes (attribution + blend + users + …) for the SAME client at once, and GHL rate-limits per
   location.
@@ -1456,7 +1485,7 @@ different powers and were being granted together.
 - (Next, separately: the biggest single offender - `ccdrill` for high-volume clients - is a server-side snapshot-coverage
   gap; that fix touches the opportunity-cache sizing and will land on its own so it can be watched carefully.)
 
-## v3.322.0 - 2026-08-20 · `PENDING` - Creative Cockpit: sortable key-event columns, mouse-friendly scrolling, per-event rollup
+## v3.322.0 - 2026-08-20 · `f7cbfe9` - Creative Cockpit: sortable key-event columns, mouse-friendly scrolling, per-event rollup
 - **Sort by any column, including key events.** Every green key-event column (Booked, Cost/Booked, Show Rate, Won, …) is
   now click-to-sort in the creative grid, alongside the existing Spend / Leads / Fatigue columns.
 - **Easier horizontal scrolling with a mouse.** The wide green tables are now click-and-drag to pan (grab anywhere and
@@ -1466,7 +1495,7 @@ different powers and were being granted together.
   Destination) now shows, for each configured key event, the total count and the cost per event (spend ÷ count), grouped
   under the event name - so you can see which angle books the cheapest site visits / calls / jobs at a glance.
 
-## v3.321.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key events as columns in the tagging grid (not a separate table)
+## v3.321.0 - 2026-08-20 · `1633edc` - Creative Cockpit: key events as columns in the tagging grid (not a separate table)
 - Moved the key-event tracking **into the existing creative grid** as green Caalano360 columns, instead of the separate
   "Key events by creative" table. The full tagging grid is back in full - every creative is still click-to-expand for the
   awareness / persona / angle / destination / CTA / copy / notes editor, and all previously saved tags are untouched.
@@ -1475,13 +1504,13 @@ different powers and were being granted together.
 - The green columns fill in a moment after the grid first paints (they come from the attribution build, an independent
   fetch), so tagging is available immediately and nothing blocks on the CRM funnel.
 
-## v3.320.0 - 2026-08-20 · `PENDING` - Creative Cockpit: selected client saved in the URL
+## v3.320.0 - 2026-08-20 · `397586d` - Creative Cockpit: selected client saved in the URL
 - The client picked in the Creative Cockpit is now written to the URL (`?c=`), so a link like
   `…?v=cockpit&c=<client>` opens the Cockpit straight on that client and any Cockpit link you copy remembers the selection.
 - Deep-linking a client no longer forces the client workspace when the URL asks for another view, so `?v=cockpit&c=` lands
   on the Cockpit (not the client dashboard).
 
-## v3.319.0 - 2026-08-20 · `PENDING` - Creative Cockpit: key-event tracking per creative
+## v3.319.0 - 2026-08-20 · `2a5199e` - Creative Cockpit: key-event tracking per creative
 - Added a **"Key events by creative"** table to the Creative Cockpit (Creative Breakdown), showing the client's configured
   green Caalano360 key events (booked / shown / stage reach / won, with cost-per-event and rates) behind every creative,
   joined to each ad by `utm_content`.
@@ -1490,10 +1519,10 @@ different powers and were being granted together.
 - Pulls the funnel from the same attribution build the other tabs use, so the cockpit now gives a full outlook from ad
   spend all the way through to the CRM outcome.
 
-## v3.318.0 - 2026-08-20 · `PENDING` - Removed the AI creative strategy panel from Creative Cockpit
+## v3.318.0 - 2026-08-20 · `ac8ba0b` - Removed the AI creative strategy panel from Creative Cockpit
 - Removed the "✨ AI creative strategy" card (the "Generate strategy" read) from the Creative Breakdown view.
 
-## v3.317.0 - 2026-08-20 · `PENDING` - Call Reporting: rep drill-down, talk-minutes line, weekday labels + faster pull
+## v3.317.0 - 2026-08-20 · `a5b33ad` - Call Reporting: rep drill-down, talk-minutes line, weekday labels + faster pull
 - **Rep drill-down on the volume chart.** A rep dropdown above "Call volume by day" filters the chart to that rep's calls
   (defaults to All reps).
 - **Talk-minutes line.** The chart is now a combo: outbound/inbound bars (left axis) plus a talk-minutes line (right axis),
@@ -1503,9 +1532,9 @@ different powers and were being granted together.
   rows/page (most days finish in one request), day-chunk concurrency is up to 5, and past (immutable) days are cached again
   so repeat loads are instant. A cold wide range loads noticeably quicker.
 
-## v3.316.0 - 2026-08-20 · `PENDING` - Call Reporting: bigger pages + longer per-day cutoff for complete day counts
+## v3.316.0 - 2026-08-20 · `3129b21` - Call Reporting: bigger pages + longer per-day cutoff for complete day counts
 
-## v3.315.0 - 2026-08-20 · `PENDING` - Call Reporting FIXED: the export needs locationId in the query
+## v3.315.0 - 2026-08-20 · `44ba10a` - Call Reporting FIXED: the export needs locationId in the query
 - **Root cause found and fixed.** The `/conversations/messages/export` endpoint returns `400 CONVERSATIONS_LOCATION_ID_REQUIRED`
   unless `locationId` is passed as a query param - even though we authenticate with the location token (most other GHL reads
   don't need it). We weren't sending it, so every call export failed instantly and the `.catch` returned zero, which showed
@@ -1513,16 +1542,16 @@ different powers and were being granted together.
   map). Call Reporting and full Speed-to-Lead now populate. (The earlier call-reporting changes - ISO dates, dropping the bad
   sortBy, day-batching, smaller pages - were real issues, but this missing param was the one pinning it at zero.)
 
-## v3.314.0 - 2026-08-20 · `PENDING` - Call Reporting: surface the export error in _diag (found the 400)
+## v3.314.0 - 2026-08-20 · `7fc0515` - Call Reporting: surface the export error in _diag (found the 400)
 
-## v3.313.0 - 2026-08-20 · `PENDING` - Call Reporting: 50-row pages + always-fresh chunks + diagnostics
+## v3.313.0 - 2026-08-20 · `f8094ce` - Call Reporting: 50-row pages + always-fresh chunks + diagnostics
 - Dropped the call-export page to 50 rows (a 100-row page for a busy day can exceed the 9s per-request timeout, which the
   loop swallowed and returned 0 calls), reduced day-chunk concurrency to 2 (avoids the export contending with itself), and
   made the day chunks always bypass the server result cache so a stale empty can't mask real calls. Added a `_diag` block to
   the usercalls response (pages fetched, the export's reported total, the ISO bounds) so a single day URL reveals what's
   happening if it's still empty.
 
-## v3.312.0 - 2026-08-20 · `PENDING` - Call Reporting now loads wide ranges by batching day-by-day
+## v3.312.0 - 2026-08-20 · `5854aed` - Call Reporting now loads wide ranges by batching day-by-day
 - **Call Reporting fetches the range one day at a time and merges the results**, with a "X/Y days" progress indicator. Each
   day is small enough to page fully inside one request (the export streams too slowly to pull a whole busy month at once),
   so a 30-day view of a high-volume dialer now shows **complete** calls / talk-minutes / per-rep scoreboard instead of a
@@ -1532,39 +1561,39 @@ different powers and were being granted together.
   counts/seconds so the day chunks merge exactly and rates are re-derived. Speed-to-lead needs the whole range in one pull,
   so it's shown only on shorter windows (≤ a few days) with a note; the call totals are complete on any range.
 
-## v3.311.0 - 2026-08-20 · `PENDING` - Call Reporting: smaller pages so partial data always shows on heavy windows
+## v3.311.0 - 2026-08-20 · `865a4b3` - Call Reporting: smaller pages so partial data always shows on heavy windows
 - Dropped the call-export page size to 100 so the first page always returns inside the per-request timeout - a very
   high-volume window now shows its most recent calls (labelled "high volume") instead of a blank "No dialer calls". The
   GoHighLevel message export streams at only ~30-35 rows/sec, so a busy dialer's 30-day history (2,000+ calls) genuinely
   can't be fetched inside one ~10s function; full coverage on wide windows needs a background pre-compute (planned).
 
-## v3.310.0 - 2026-08-20 · `PENDING` - Call Reporting: page the export so heavy windows don't time out
+## v3.310.0 - 2026-08-20 · `7a265e8` - Call Reporting: page the export so heavy windows don't time out
 - **The v3.309.0 fix (removing the broken `sortBy`) exposed a second problem:** at `limit: 1000` the export payload (recording
   URLs + full metadata per call) is so large a single page can't return inside the function's ~10s budget - so it timed out
   and still showed nothing. Now it pages in 200-row chunks under a wall-clock deadline, banking each page as it arrives, and
   the Speed-to-Lead bulk map does the same. Normal windows load fully; a very high-volume window that can't finish in time
   now shows the most recent calls in range (labelled "high volume — showing the most recent calls") instead of zero.
 
-## v3.309.0 - 2026-08-20 · `PENDING` - Fix: Call Reporting showed "No dialer calls" despite thousands of calls
+## v3.309.0 - 2026-08-20 · `8a35b55` - Fix: Call Reporting showed "No dialer calls" despite thousands of calls
 - **Call Reporting (and Speed-to-Lead) were silently empty.** The message-export call passed `sortBy: 'createdAt'`, and for
   that sort value the GoHighLevel export returns HTTP 200 with **zero** messages instead of an error - so the whole call
   section read as "No dialer calls in this period" even when there were thousands (Nexia: 2,320 calls in the last 30 days).
   Removed the `sortBy`/`sortOrder` params (the export already returns newest-first), so calls, talk minutes, the per-rep
   scoreboard and speed-to-lead all populate again.
 
-## v3.308.0 - 2026-08-19 · `PENDING` - Fix: single custom-conversion primary still showed the id
+## v3.308.0 - 2026-08-19 · `ebd2086` - Fix: single custom-conversion primary still showed the id
 - **Follow-up to v3.307.0.** A client with a SINGLE custom conversion as its primary (e.g. Feel Better Medical → B_Page_View)
   still showed "Offsite Conversion Custom <id>" because the single-field result path built its label straight from the field
   id, bypassing the name-resolved label. It now uses the resolved label, so single-primary clients read the real name too
   (multi-primary clients were already fixed).
 
-## v3.307.0 - 2026-08-19 · `PENDING` - Custom conversions labelled by their real name
+## v3.307.0 - 2026-08-19 · `4cd8464` - Custom conversions labelled by their real name
 - **Custom conversions now show their name (e.g. "B_Page_View") instead of "Offsite Conversion Custom 1339475751097032".**
   Windsor's Custom Conversion Definition table maps each conversion id to its name; the Meta tab / Monthly Report Results
   chips + the "primary = …" hover, and the Settings → Meta conversions list, all now read the real name. Falls back to the
   id form only if a name can't be resolved.
 
-## v3.306.0 - 2026-08-19 · `PENDING` - Time in stage → rolling 90 days; Daily Performance custom conversions now exact
+## v3.306.0 - 2026-08-19 · `d3b4fdb` - Time in stage → rolling 90 days; Daily Performance custom conversions now exact
 - **Time in stage (Timing board) now only considers open deals created in the last 90 days**, and says so in the header and
   caveat. Previously it loaded every open deal ever (sampled to 3,000), so ancient/stale deals skewed the dwell times and
   the pull was heavier. The window is applied at the source (paging stops once it passes 90 days back), so it's lighter too.
@@ -1574,13 +1603,13 @@ different powers and were being granted together.
   its real count, matching Ads Manager for every rolling window (3/7/14/21/28-day). Matched by the single action-name each
   primary maps to, so no double counting.
 
-## v3.305.0 - 2026-08-19 · `PENDING` - "GoHighLevel / GHL" renamed to "Caalano Systems" in the UI
+## v3.305.0 - 2026-08-19 · `b9860f3` - "GoHighLevel / GHL" renamed to "Caalano Systems" in the UI
 - **All user-facing mentions of GoHighLevel / GHL now read "Caalano Systems"** - the forms caveat, the Time-in-stage note,
   the Call-activity dialer label, the add-client "not connected" status, the auto-onboard copy, the social inbox note, and
   the "not connected" error. Internal code identifiers, the `gohighlevel` Windsor connector and the `GHL_*` environment
   variables are unchanged (renaming them would break integrations).
 
-## v3.304.0 - 2026-08-19 · `PENDING` - Custom conversions now count in every Meta Results surface
+## v3.304.0 - 2026-08-19 · `1bec279` - Custom conversions now count in every Meta Results surface
 - **Custom-conversion primaries now flow through to every Meta Results view**, not just the campaign table + account total:
   - **Ad-set & ad drill-downs** (Meta tab + Monthly Report): each campaign's custom count is allocated to its ad sets / ads
     by spend share (Windsor only breaks custom conversions to campaign), so drill-downs reflect it and campaign totals stay
@@ -1592,14 +1621,14 @@ different powers and were being granted together.
 - Agency Overview and Weekly Traffic Light intentionally still show native Meta **leads** (a blended leads view, not a
   per-client-primary Results view), so they're unchanged.
 
-## v3.303.0 - 2026-08-19 · `PENDING` - Caalano360 Channel split now breaks out per pipeline
+## v3.303.0 - 2026-08-19 · `f33497a` - Caalano360 Channel split now breaks out per pipeline
 - **Channel split splits per pipeline for multi-pipeline clients** - no more duplicated key-event columns (e.g. "15 Minute
   Call" / "Payment Collected" appearing twice). Each pipeline gets its own Meta/Google table with only that pipeline's key
   events, plus its per-channel leads/won/revenue/avg-deal (from the CRM's per-pipeline channel split). Each channel's spend
   is allocated to a pipeline by its share of that channel's leads (there's no native per-pipeline spend), and CAC follows.
   Single-pipeline clients keep the one account-wide table. Backend `buildCcDrill` now exposes `pipeContribution`.
 
-## v3.302.0 - 2026-08-19 · `PENDING` - Custom conversions now count in the headline Results (Meta tab, Monthly Report)
+## v3.302.0 - 2026-08-19 · `b4f798d` - Custom conversions now count in the headline Results (Meta tab, Monthly Report)
 - **Custom-conversion primaries now count toward Results everywhere**, not just in Settings. The Meta tab's Results KPI,
   the campaign table, and the Monthly Report's Meta slide add each configured custom PRIMARY conversion's real count (from
   Windsor's Custom Conversions table) - per campaign and to the account total - on top of the standard results. Example
@@ -1609,7 +1638,7 @@ different powers and were being granted together.
   *Re-refresh a Monthly Report snapshot to pick it up.* (Daily Performance uses a separate per-day builder and is the next
   step.)
 
-## v3.301.0 - 2026-08-19 · `PENDING` - Custom conversions now count (Windsor Custom Conversions table); Logs load robustly; Creative Curator hidden
+## v3.301.0 - 2026-08-19 · `5ba9b62` - Custom conversions now count (Windsor Custom Conversions table); Logs load robustly; Creative Curator hidden
 - **Custom Meta conversions now show their real count** (Settings → Meta conversions). They were always reading 0 because
   the app asked Windsor for per-id insights columns (`conversions_offsite_conversion_custom_<id>`) that Windsor doesn't
   expose - custom conversions live in Windsor's separate **Custom Conversions** table (`custom_conversion_action_name` +
@@ -1625,7 +1654,7 @@ different powers and were being granted together.
 - **Creative Curator is hidden for now** (not good enough yet) - the Creative Cockpit shows just Creative Breakdown. Easily
   resurfaced later via a single flag.
 
-## v3.300.0 - 2026-08-19 · `PENDING` - Caalano360 Key event reach split per pipeline; light mode is now the default
+## v3.300.0 - 2026-08-19 · `ee42c8f` - Caalano360 Key event reach split per pipeline; light mode is now the default
 - **Caalano360 "Key event reach" cards now split per pipeline** (multi-pipeline clients), matching the Meta Ads view.
   Instead of one union row that repeated the same stage once per pipeline (e.g. "15 Minute Call" twice), each pipeline gets
   its own labelled row of key-event reach cards, each measured against that pipeline's own leads. Single-pipeline clients
@@ -1634,7 +1663,7 @@ different powers and were being granted together.
   is applied before first paint so there's no flash of dark. Anyone who previously chose a theme keeps their choice, and the
   Light/Dark toggle in Settings still works.
 
-## v3.299.0 - 2026-08-19 · `PENDING` - Creative screen split by pipeline, sortable key-events-by-campaign, CAC on ROI by channel, Form performance split by pipeline
+## v3.299.0 - 2026-08-19 · `2fb3ec4` - Creative screen split by pipeline, sortable key-events-by-campaign, CAC on ROI by channel, Form performance split by pipeline
 - **Form performance (monthly report) now splits per pipeline — no more duplicated columns.** For multi-pipeline clients
   the union view listed the same key event once per pipeline (e.g. "15 Minute Call" and "Payment Collected" twice). The
   slide now renders one table per pipeline, each under its own heading with only that pipeline's key-event columns and its
@@ -1650,13 +1679,13 @@ different powers and were being granted together.
 - **CAC added to "ROI by channel".** The Caalano360 account-summary "ROI by channel (closed this month)" table now has a
   CAC column (ad spend ÷ deals won) for Meta and Google, next to ROAS.
 
-## v3.298.0 - 2026-08-19 · `PENDING` - Fix: purple report buttons went blank on hover
+## v3.298.0 - 2026-08-19 · `918783c` - Fix: purple report buttons went blank on hover
 - **Fixed the Monthly Report toolbar / Publish buttons "going white" on hover.** The generic light hover applied to every
   `.mr-btn`, including the purple (primary / on) ones - so hovering Publish, Refresh snapshot, Reports or the PDF toggle
   swapped the fill to a light colour while the text stayed white, making the label vanish. Coloured buttons now darken the
   brand on hover instead, so they stay readable.
 
-## v3.297.0 - 2026-08-19 · `PENDING` - Location key events + Speed to Lead now covers the full list
+## v3.297.0 - 2026-08-19 · `8d150c9` - Location key events + Speed to Lead now covers the full list
 - **Key events by location.** The Location tab has a new ranked panel: pick any outcome or **configured key event** from the
   dropdown and see which suburbs / postcodes fire it the most (click a place for its leads). The pipeline filter above
   scopes it, so multi-pipeline clients see it per pipeline.
@@ -1665,12 +1694,12 @@ different powers and were being granted together.
   paged requests for the whole location - so the median, average, ≤5-min and contacted figures cover **every** lead in the
   range. (Falls back to the sampled scan if the export is unavailable.)
 
-## v3.296.0 - 2026-08-19 · `PENDING` - Bottleneck: open pipeline list split per pipeline
+## v3.296.0 - 2026-08-19 · `60f3f72` - Bottleneck: open pipeline list split per pipeline
 - **Each pipeline's funnel now has its own "open pipeline by stage" list directly underneath it** (multi-pipeline clients),
   so the live deals line up with the funnel they belong to instead of one merged list. Single-pipeline clients keep the one
   combined list.
 
-## v3.295.0 - 2026-08-19 · `PENDING` - Caalano360: richer Channel split, funnel % of total, per-pipeline bottleneck
+## v3.295.0 - 2026-08-19 · `1104d47` - Caalano360: richer Channel split, funnel % of total, per-pipeline bottleneck
 - **Revenue bottleneck funnel now shows % of total leads AND next-step conversion** on every stage, alongside the existing
   step %, with a header row - so you see both "share of all leads still here" and "conversion into the next step".
 - **Multi-pipeline clients default to one funnel per pipeline** (instead of picking the biggest), so each pipeline's
@@ -1682,7 +1711,7 @@ different powers and were being granted together.
   filterable by user (who booked / who showed).
 - Backend: the CRM drill now returns per-channel revenue + lead counts for the channel scoreboard.
 
-## v3.294.0 - 2026-08-19 · `PENDING` - Forms: readable answer viz, sortable, full-width charts + report match
+## v3.294.0 - 2026-08-19 · `4351334` - Forms: readable answer viz, sortable, full-width charts + report match
 - **Form tab charts use the full width.** The donut + "key events by form" share the top row and the "conversion" chart now
   spans the whole width underneath, so the busy multi-series bars are legible instead of squeezed into a third of the screen.
 - **The per-answer breakdown is redesigned.** Expanding a question now shows a **🏆 Top answers by wins** scoreboard beside a
@@ -1693,7 +1722,7 @@ different powers and were being granted together.
   form's leads) → Revenue → Avg deal, instead of the generic booked/shown/won columns. (Needs a fresh snapshot - hit
   **Refresh snapshot**; older reports keep the simple table.)
 
-## v3.293.0 - 2026-08-19 · `PENDING` - Leaderboard: status filter (open/won/lost), no side-scroll, tab reorder
+## v3.293.0 - 2026-08-19 · `99d73a6` - Leaderboard: status filter (open/won/lost), no side-scroll, tab reorder
 - **The rep expansion now filters by status.** The Total pipeline / Open / Won / Lost cards are **clickable** - pick one and
   the by-stage panel below shows exactly those deals per stage: **Open** = where live deals are sitting, **Won** = the stage
   each win closed at, **Lost** = where lost/abandoned deals died (lost + abandoned combined). "All" shows open/won/lost side
@@ -1707,7 +1736,7 @@ different powers and were being granted together.
   · Location · Appointments · Timing · Optimisation Log.
 - Backend: the Users scope now returns per-rep won/lost deal lists (with their stage) alongside the existing open list.
 
-## v3.292.0 - 2026-08-19 · `PENDING` - Fix: rep funnel + "open pipeline by stage" going blank
+## v3.292.0 - 2026-08-19 · `ef38822` - Fix: rep funnel + "open pipeline by stage" going blank
 - **Fixed: the rep leaderboard's funnel and "open pipeline by stage" (where each rep's open leads are sitting) were
   showing 0 / empty.** Opportunities are served from the warm snapshot so their counts (leads / won / lost / open) always
   loaded, but the pipeline definitions were fetched live on every load with no cache - so under the same GoHighLevel
@@ -1717,7 +1746,7 @@ different powers and were being granted together.
   the last-good copy instead of blanking the funnel - and the scheduled warmer refreshes them alongside the opportunity
   snapshot, so interactive loads never depend on the live call.
 
-## v3.291.0 - 2026-08-19 · `PENDING` - Call Reporting tab + fix: dialer calls were always blank
+## v3.291.0 - 2026-08-19 · `0d4004d` - Call Reporting tab + fix: dialer calls were always blank
 - **Fixed: call activity was always empty.** The GoHighLevel message-export API validates its date filters as full ISO 8601
   datetimes (`YYYY-MM-DDTHH:mm:ss.sssZ`); we were sending bare `YYYY-MM-DD`, which the API accepts with HTTP 200 but
   silently matches **zero** calls. Now sends timezone-correct ISO day bounds - so the dialer's calls actually come through
@@ -1731,7 +1760,7 @@ different powers and were being granted together.
 - Backend `buildUserCalls` now also returns sub-account totals, a daily series, inbound talk time, unique contacts and
   missed-inbound counts.
 
-## v3.290.0 - 2026-08-19 · `PENDING` - Monthly Report: shareable links, truer Meta metrics, page-view results, creative order
+## v3.290.0 - 2026-08-19 · `f8c724a` - Monthly Report: shareable links, truer Meta metrics, page-view results, creative order
 - **Shareable report links.** The Monthly Report (admin) and Monthly Reports (client) views now carry the selected client
   and report in the URL (`?c=&m=`), and there's a **🔗 Copy link** button. Send the link and it opens straight onto that
   client's report - deep-linkable, just like the rest of the app.
@@ -1743,7 +1772,7 @@ different powers and were being granted together.
 - **Creative performance: cards first.** The creative cards now sit above the data table, with the table underneath.
 - Note: the Meta results + green ad-set columns only refresh on **newly generated** snapshots - hit **Refresh snapshot**.
 
-## v3.289.0 - 2026-08-19 · `PENDING` - Monthly Report: click a campaign to drill into ad sets / ad groups
+## v3.289.0 - 2026-08-19 · `6b0d64b` - Monthly Report: click a campaign to drill into ad sets / ad groups
 - **"Key events by campaign" is now expandable.** Click any campaign row (▸) to break it into its **ad sets** (Meta) or
   **ad groups** (Google) - shown **by name, not ID** - each with the same green key-event columns (count reached, cost per
   each, Won revenue, ROAS), matched by **utm_medium**.
@@ -1755,7 +1784,7 @@ different powers and were being granted together.
   offline from the frozen report.
 - Note: this only appears on **newly generated** snapshots - hit **Refresh snapshot** on an existing month to pull it in.
 
-## v3.288.0 - 2026-08-19 · `PENDING` - Monthly Report: Form performance slide, reordered decks, clickable cohort wins, no side-scroll
+## v3.288.0 - 2026-08-19 · `fb0974b` - Monthly Report: Form performance slide, reordered decks, clickable cohort wins, no side-scroll
 - **New "Form performance" slide.** Added between Key events and User performance: every lead form this month with Leads →
   Booked → Book % → Shown → Won → Win % → Revenue, plus a totals row, so you can compare form friction vs lead quality.
   (Meta Lead Form vs Website form are labelled.)
@@ -1768,7 +1797,7 @@ different powers and were being granted together.
 - Note: the Form performance slide only appears on **newly generated** snapshots - hit **Refresh snapshot** on an existing
   month to pull it in.
 
-## v3.287.0 - 2026-08-18 · `PENDING` - Monthly Report deal drill: no side-scroll, real names + sources
+## v3.287.0 - 2026-08-18 · `d6ecb18` - Monthly Report deal drill: no side-scroll, real names + sources
 - **No more horizontal scrolling** in the deals drill (the "Deals won / lost" pop-up): the window is bigger and every
   cell wraps, so the long Pipeline · stage and campaign names fit instead of forcing a sideways scroll.
 - **Google campaign / ad group shown by name, not ID.** The Campaign/creative column folds Google's numeric
@@ -1779,14 +1808,14 @@ different powers and were being granted together.
 - Note: the new source / ad-group detail only appears on **newly generated** snapshots - hit **Refresh snapshot** on an
   existing month to pull it in.
 
-## v3.286.0 - 2026-08-18 · `PENDING` - Monthly Report generate no longer needs a few refreshes
+## v3.286.0 - 2026-08-18 · `933f4d3` - Monthly Report generate no longer needs a few refreshes
 - **"Generate snapshot" now retries each section** (Meta / Google / Overview / CRM attribution / trend / deals) before
   giving up, instead of silently baking a `null` section into the frozen report on a cold-cache first click. That's why
   it used to take a couple of refreshes to pull everything in.
 - If a section still fails after retries, a **warning** names it ("Meta Ads didn't load…") so you know to refresh,
   rather than freezing an incomplete report without telling you.
 
-## v3.285.0 - 2026-08-18 · `PENDING` - Location map: click a dot for the leads behind it
+## v3.285.0 - 2026-08-18 · `17ff9f5` - Location map: click a dot for the leads behind it
 - **Click any postcode/suburb dot on the Location map** to open a breakdown of the leads that make it up. Each lead
   shows its **status, value, pipeline stage and how long it's sat in that stage**, and expands to reveal **what they
   answered on their first form submission** and their **Caalano Systems notes** (loaded on demand).
@@ -1794,7 +1823,7 @@ different powers and were being granted together.
 - Backend: the Forms feed now attaches the per-lead detail (funnel fields + form answers) to each location, deduped by
   contact and capped. It's live data - press **Refresh** if a just-opened dot shows no detail yet.
 
-## v3.284.0 - 2026-08-18 · `PENDING` - PDF page breaks land on rows; fix Daily conversion-actions overlap
+## v3.284.0 - 2026-08-18 · `d23e686` - PDF page breaks land on rows; fix Daily conversion-actions overlap
 - **PDF: table rows no longer cut across a page break.** The break detector now (1) re-measures the slide's position
   *after* html2canvas renders (its async pass could shift scroll and throw the break points off by a bit), and
   (2) collects table-row / card edges unconditionally - the compressed 8px export rows were under the old height filter,
@@ -1804,7 +1833,7 @@ different powers and were being granted together.
   actions" expanded a wide table inside the narrow left column, overlapping the "Key events by source" panel. It now
   renders full-width **below** the two-column grid, where it has room.
 
-## v3.283.0 - 2026-08-18 · `PENDING` - PDF export back to standard A4 (landscape)
+## v3.283.0 - 2026-08-18 · `802f39a` - PDF export back to standard A4 (landscape)
 - **PDF now exports as standard A4** (landscape), so it prints and shares like a normal document. Each slide is fit to
   the full page width (kept readable - not shrunk to cram a tall slide onto one page). A slide that fits sits on one page
   centred vertically; a taller slide (e.g. the big creative table) flows across as many A4 pages as it needs, with every
@@ -1812,7 +1841,7 @@ different powers and were being granted together.
   portrait because the slides are wide - it keeps text larger. (Supersedes the dynamic per-slide page heights, which
   weren't a standard paper size.)
 
-## v3.282.0 - 2026-08-18 · `PENDING` - PDF: one page per slide, sized to content; per-client download
+## v3.282.0 - 2026-08-18 · `c80be54` - PDF: one page per slide, sized to content; per-client download
 - **Each PDF page is now sized to its slide** - fixed width, natural height, one page per slide. No shrinking, no
   content sliced mid-row/card, and **no trailing white space** (the page ends where the card ends). The cover's tall
   min-height is collapsed on export so it's no longer a near-empty title page. An unusually long slide (beyond the PDF
@@ -1821,7 +1850,7 @@ different powers and were being granted together.
   (e.g. "A2Z PDF: Off") and controls only that client. Still **off by default** and enforced server-side, so a client
   gets the download button only for a client an admin has explicitly switched on.
 
-## v3.281.0 - 2026-08-18 · `PENDING` - Better PDF export + report list dates + client-download control
+## v3.281.0 - 2026-08-18 · `d6a2c1b` - Better PDF export + report list dates + client-download control
 - **PDF export keeps full width and spills over pages.** Previously a dense page was shrunk to fit one page (tiny).
   Now every slide fills the full page width at its natural height, and when it's taller than a page it flows onto extra
   pages - with page breaks snapped to the nearest element edge so cards / charts / table rows aren't sliced in half.
@@ -1833,13 +1862,13 @@ different powers and were being granted together.
   default** - so a client can never download unless you switch it on, and it's enforced server-side (a viewer can't force
   it). Ties report downloads to your control, alongside the existing Monthly Reports access permission.
 
-## v3.280.0 - 2026-08-18 · `PENDING` - Enforce the Content-Security-Policy
+## v3.280.0 - 2026-08-18 · `77b74d2` - Enforce the Content-Security-Policy
 - **CSP is now enforcing.** After a full app tour (Meta embeds, maps, drill-downs, PDF export) in report-only mode
   produced **zero** CSP violations, the header was switched from `Content-Security-Policy-Report-Only` to
   `Content-Security-Policy`. The dashboard now blocks any script/frame/connection outside the allow-list, closing off the
   main injected-content / XSS avenues. Instant rollback if ever needed: append `-Report-Only` back onto the header name.
 
-## v3.279.0 - 2026-08-18 · `PENDING` - Security hardening pass 2: login throttle + CSP (report-only)
+## v3.279.0 - 2026-08-18 · `dcc3126` - Security hardening pass 2: login throttle + CSP (report-only)
 - **Login brute-force throttle.** Failed logins are now counted per email; after 5 failures in 15 min the account is
   temporarily locked with an escalating cooldown (1 → 5 → 15 → 30 min), returning HTTP 429. A successful login clears the
   counter. Best-effort (fails open if the store is unavailable), so it can't lock legitimate users out during an outage.
@@ -1850,7 +1879,7 @@ different powers and were being granted together.
 - Verified (no change needed): the auth API gates every privileged action server-side - session check, then admin/role
   check, then per-action role hierarchy - so nothing relies on the client to hide buttons.
 
-## v3.278.0 - 2026-08-18 · `PENDING` - Security hardening pass
+## v3.278.0 - 2026-08-18 · `5e48803` - Security hardening pass
 - **Security headers** added site-wide (netlify.toml): `X-Frame-Options: SAMEORIGIN` (anti-clickjacking),
   `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security`
   (2-yr HSTS), and a `Permissions-Policy` denying geolocation/camera/mic/payment/USB (the app uses none).
@@ -1866,7 +1895,7 @@ different powers and were being granted together.
   HttpOnly/Secure/SameSite cookies, no secrets are shipped to the browser, and the `client` param can only resolve to a
   known location (no SSRF).
 
-## v3.277.0 - 2026-08-18 · `PENDING` - Kill the /opportunities/search 429 storms (scheduled warmer)
+## v3.277.0 - 2026-08-18 · `8a1238c` - Kill the /opportunities/search 429 storms (scheduled warmer)
 - **Root cause from the reliability log:** nearly every failure was `GET /opportunities/search 429`. Many scopes
   (users, ccdrill, speed, appts, forms, health) each page that endpoint, and when they fire as concurrent cold
   serverless calls with no warm snapshot they all hit GHL at once and get rate-limited.
@@ -1878,7 +1907,7 @@ different powers and were being granted together.
   the snapshot) and runs **serially**, so warming Paid/Non-paid/Google/Meta reads the snapshot and can never add to a
   429 burst.
 
-## v3.276.0 - 2026-08-18 · `PENDING` - Instant tab / filter switching (no reload)
+## v3.276.0 - 2026-08-18 · `cf70c27` - Instant tab / filter switching (no reload)
 - **Switching sub-tabs and filters no longer reloads.** Added a stale-while-revalidate cache that keeps parsed
   responses in memory across tab switches (React state was thrown away on unmount before). Re-opening a tab or flipping
   the All / Paid / Non-paid / Google / Meta filter you've already viewed is now **instant, with no spinner** - it shows
@@ -1891,7 +1920,7 @@ different powers and were being granted together.
   so momentary upstream hiccups no longer flash an error or a blank.
 - The main tab pulls (Meta / Google / Analytics) seed from the same cache, so revisiting a tab in a session is instant too.
 
-## v3.275.0 - 2026-08-18 · `PENDING` - Date range + Won-basis in the URL too
+## v3.275.0 - 2026-08-18 · `08ee86b` - Date range + Won-basis in the URL too
 - **The date range now lives in the URL**, finishing the deep-link set. It's smart about relative vs frozen: a **preset**
   ("Last 30 days", "This month"…) stays **relative** - the link carries `?r=last_30d`, so a shared link always means the
   recipient's own last 30 days. A **custom** range **freezes** to its exact dates (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). The
@@ -1900,7 +1929,7 @@ different powers and were being granted together.
   same view. On load a URL value wins over the saved preference; otherwise your saved choice still applies.
 - Both restore correctly on refresh and through Back / Forward.
 
-## v3.274.0 - 2026-08-18 · `PENDING` - Deep-linkable URLs (refresh keeps your place)
+## v3.274.0 - 2026-08-18 · `b7a1416` - Deep-linkable URLs (refresh keeps your place)
 - **Every screen now has its own URL.** The current section, open client and client sub-tab are mirrored into the query
   string (`?v=…&c=…&t=…`). So a **refresh keeps you exactly where you were** instead of dropping back to the default
   page, browser **Back/Forward** work, and you can **paste a link that opens the exact screen** (e.g. a client's Meta Ads
@@ -1912,13 +1941,13 @@ different powers and were being granted together.
 - Date range and Won-basis are **not** in the URL yet (deliberately deferred - relative ranges like "last 30 days" need a
   design decision on whether a shared link should stay relative or freeze to dates).
 
-## v3.273.0 - 2026-08-18 · `PENDING` - Sortable Team & access table
+## v3.273.0 - 2026-08-18 · `e9f0844` - Sortable Team & access table
 - **Team & access table is now sortable.** Click any column header (Name, Email, Role, Access, Status) to sort by it;
   click again to reverse. An arrow shows the active column and direction.
 - **Defaults to Role in order of access** - Super Admin, then Admin, User, Viewer - so the most privileged people sit at
   the top. Access sorts by breadth (all-clients first), Status by active-first.
 
-## v3.272.0 - 2026-08-18 · `PENDING` - Fix Command Centre scorecards reading 0 with unassigned opps
+## v3.272.0 - 2026-08-18 · `05b5924` - Fix Command Centre scorecards reading 0 with unassigned opps
 - **Scorecards now populate to match the drills.** The Caalano360 Command Centre tiles (Opportunities, Booked, Shown,
   Won, Revenue, Open pipeline, Lost) were summed **per assigned rep**, so a client whose opportunities have no owner
   showed **0** on the tiles even though the drill behind them listed all 35. The tiles now read from the same
@@ -1926,7 +1955,7 @@ different powers and were being granted together.
 - The **Lost reasons** panel was aligned to the same feed so its total matches the Lost tile.
 - Per-rep figures (the Users tab, Team performance) are unchanged - those are *meant* to be per assigned rep.
 
-## v3.271.0 - 2026-08-18 · `PENDING` - Opportunities drill: status-first + source pills; "Resulted" rename
+## v3.271.0 - 2026-08-18 · `5fbb88b` - Opportunities drill: status-first + source pills; "Resulted" rename
 - **Opportunities drill reworked.** Clicking the Opportunities tile now opens the full list of every opportunity in the
   period up front, instead of a channel-first "click a source" menu. Filter chips across the top switch between **All /
   Open / Won / Lost** (by status, not by channel), each with its own count, and every row carries a coloured **source
@@ -1939,7 +1968,7 @@ different powers and were being granted together.
   the Monthly Report Win-rate caption. The top **Won basis: Closed / Created** toggle is unchanged (there "Closed"
   genuinely means closed-won).
 
-## v3.270.0 - 2026-08-18 · `PENDING` - Australian dates + em dashes removed everywhere
+## v3.270.0 - 2026-08-18 · `a6ad530` - Australian dates + em dashes removed everywhere
 - **Dates now DD/MM/YYYY everywhere.** Any date/time that previously rendered in the viewer's browser locale (which
   showed American MM/DD/YYYY for some clients) is now pinned to Australian formatting (`en-AU`) - across the client
   Monthly Reports view, drill-downs, notes, logs, and every internal panel.
@@ -1948,7 +1977,7 @@ different powers and were being granted together.
   the SPA, styles, the server-side report/label strings (Meta field labels, alert copy, contact-name fallbacks) and the
   seed snapshot. The GHL note author-prefix parser still recognises em-dash-separated authors in external CRM notes.
 
-## v3.269.0 — 2026-08-18 · `PENDING` — Monthly Reports: client drill-downs + prettier ranges
+## v3.269.0 — 2026-08-18 · `0d79be1` — Monthly Reports: client drill-downs + prettier ranges
 - **Client-facing drill-downs.** In the client's Monthly Reports view, every headline number in the deck is now
   clickable and opens the same drill-down modal as the agency view — the client can see the individual deals /
   records behind each figure, straight from the frozen published snapshot.
@@ -1956,7 +1985,7 @@ different powers and were being granted together.
   multi-month reports as a proper range label (e.g. "Jun–Jul 2026") via a shared `snapLabel` helper, instead of a
   raw `YYYY-MM_YYYY-MM` key. Clicking a range row in the agency reports list restores both the from- and to-month.
 
-## v3.268.0 — 2026-08-18 · `PENDING` — Monthly Reports: client access + publish barrier
+## v3.268.0 — 2026-08-18 · `49ef7ad` — Monthly Reports: client access + publish barrier
 - **New "Monthly Reports" permission** (Team & access → viewer): grant a client access to their **published** monthly
   reports for the clients they're allocated. Can be granted on its own (a reports-only client) or alongside dashboard
   tabs. Admins/agency users always have report access.
@@ -1971,7 +2000,7 @@ different powers and were being granted together.
 - **Client view:** a dedicated **Monthly Reports** screen for permitted clients — pick their client (if more than one),
   choose a published month, read the report on screen, download the PDF. No agency controls.
 
-## v3.267.0 — 2026-08-18 · `PENDING` — Monthly Report: break "other sources" into named channels (colour-coded)
+## v3.267.0 — 2026-08-18 · `08ac978` — Monthly Report: break "other sources" into named channels (colour-coded)
 - On the **Paid vs all lead sources** chart, the non-paid grey "Other sources" block is now **split into named channels**
   — Organic search, Referral, Social (organic), Email, Direct, CRM / manual, and Untracked / other — each its **own
   colour**, stacked alongside the green Paid segment. **Hover any step to see the full split**, and a "Non-paid lead
@@ -1983,7 +2012,7 @@ different powers and were being granted together.
   **Regenerate the report (Refresh snapshot)** to populate it on already-frozen months; older snapshots fall back to
   the previous Paid-vs-Other bar.
 
-## v3.266.0 — 2026-08-18 · `PENDING` — Monthly Report: fix Google key-events by campaign + time-to-close per channel
+## v3.266.0 — 2026-08-18 · `5879d23` — Monthly Report: fix Google key-events by campaign + time-to-close per channel
 - **Fix:** on the Monthly Report's **Key events by campaign** slide, Google campaigns showed "—" for every key event
   even though the live Google Ads view matched them fine. Cause: Google's `utm_campaign` carries the numeric campaign
   **ID**, not the name, and the report wasn't given the **ID→name fold** (`campIdMap`) that the live views pass to the
@@ -1994,7 +2023,7 @@ different powers and were being granted together.
   (lead → won) **per channel** (Meta vs Google), alongside spend / won / revenue / ROAS. Backend computes it per channel
   on the same span basis as the overall figure.
 
-## v3.265.0 — 2026-08-18 · `PENDING` — Funnels: a Won deal now counts as having reached every pipeline stage
+## v3.265.0 — 2026-08-18 · `8dd88f9` — Funnels: a Won deal now counts as having reached every pipeline stage
 - **Fix:** in the funnel key-event steps (Monthly Report cohort funnel, Meta/Google funnels, Command Centre, Daily
   Performance breakdown), a **won deal is now credited with reaching every pipeline stage**. Previously a deal marked
   **Won at an earlier stage** (e.g. "15 Minute Call") without the pipeline stage being dragged forward showed **0 at
@@ -2006,7 +2035,7 @@ different powers and were being granted together.
   in GoHighLevel when you mark them won is still the cleanest source of truth — but the report no longer under-reports
   the final stages when that hasn't happened.
 
-## v3.264.0 — 2026-08-17 · `PENDING` — Users tab: instant filters (no reload on channel / pipeline / won-basis)
+## v3.264.0 — 2026-08-17 · `dd7224a` — Users tab: instant filters (no reload on channel / pipeline / won-basis)
 - The Users tab used to **refetch** every time you changed the **All/Paid/Non-Paid/Meta/Google** toggle, the **pipeline
   selector**, or the **Created/Closed won-basis** — a spinner each time. But those filters only change *which
   opportunities are counted*; the expensive GHL fetches (opportunities, appointments, pipelines, users, lost-reasons)
@@ -2018,7 +2047,7 @@ different powers and were being granted together.
   toggle applies the same won-in-period overlay the server used to. Falls back to the old behaviour for any cached
   pre-deploy response. Also improves cache hit-rate (one cache entry per client+range instead of one per filter combo).
 
-## v3.263.0 — 2026-08-17 · `PENDING` — Shared per-location opportunity snapshot (cut GHL request volume ~10×)
+## v3.263.0 — 2026-08-17 · `8c64c62` — Shared per-location opportunity snapshot (cut GHL request volume ~10×)
 - **The root-cause reliability fix.** Every CRM scope (users, blend, attribution, appts, speed, ccdrill, forms,
   updateextra, health…) used to page GoHighLevel's `/opportunities/search` **independently** — the same client's
   opportunity list fetched 6-15× per view — which is what blew GHL's rate limit and caused the 429 storms.
@@ -2032,7 +2061,7 @@ different powers and were being granted together.
   identical to the previous behaviour**. Opportunity objects are read-only across the codebase (verified), so sharing
   them is safe. Worst case on a wrong-coverage call is an undercount, same failure mode as the existing paging cap.
 
-## v3.262.0 — 2026-08-17 · `PENDING` — GHL request governor (kill the 429 storms)
+## v3.262.0 — 2026-08-17 · `fafada3` — GHL request governor (kill the 429 storms)
 - **The big reliability fix.** The 7-day failure log showed **93% of all errors were GoHighLevel `429 Too Many
   Requests`** — we were exceeding GHL's per-location rate limit (~100 req/10s) because every scope pages
   `/opportunities/search` independently and several fire at once (agency overview, a client dashboard opening many
@@ -2044,7 +2073,7 @@ different powers and were being granted together.
 - Next in the reliability plan (separate change): a **shared per-location opportunity snapshot cache** so scopes stop
   re-fetching the same opportunity list — the fix that cuts total GHL request volume across invocations.
 
-## v3.261.0 — 2026-08-17 · `PENDING` — Reliability log export + opportunity-paging budget guard
+## v3.261.0 — 2026-08-17 · `4f6e99e` — Reliability log export + opportunity-paging budget guard
 - **New:** the Failure logs panel (Super-Admin → Logs) now has **Export JSON** and **CSV** buttons — download the
   current reliability log (with resolved client names) to share for diagnosis. JSON is best for analysis; CSV opens in
   Excel/Sheets.
@@ -2055,7 +2084,7 @@ different powers and were being granted together.
   already flagged by callers) instead of killing the whole function. This lifts the single biggest timeout source
   identified in the failure-path audit.
 
-## v3.260.0 — 2026-08-16 · `PENDING` — Daily Performance: fix flaky Meta results + load indicator
+## v3.260.0 — 2026-08-16 · `2d1029d` — Daily Performance: fix flaky Meta results + load indicator
 - **Fix:** on Daily Performance, Meta results often loaded blank until you hit Refresh a few times. The trends pull runs
   a heavy 56-day, all-accounts Meta query near the function timeout; when it timed out, the empty result was returned
   **and cached** for 10 minutes, so it showed "0 Meta" until a fast pull happened to land.
@@ -2066,7 +2095,7 @@ different powers and were being granted together.
   flipping to a green *"All data loaded — Meta & Google in"* that tidies itself away once everything's in. If it still
   can't get a complete pull after retries, it shows what arrived with a clear "hit Refresh for the rest" note.
 
-## v3.259.0 — 2026-08-16 · `PENDING` — Surface paused/dormant Meta & Google accounts in discovery
+## v3.259.0 — 2026-08-16 · `a739d57` — Surface paused/dormant Meta & Google accounts in discovery
 - **Fix attempt for the 18-vs-23 gap:** the account listing used a metric (`spend`) query, which only returns accounts
   that had **delivery in the window** — so a connected-but-paused ad account (zero spend/impressions) was dropped.
   (GA4 didn't hit this because `sessions` exists for any property with traffic — that's why it matched 10/10.)
@@ -2077,7 +2106,7 @@ different powers and were being granted together.
 - If Windsor rejects the metric-less shape for a connector, the count is unchanged from before (paste the account ID to
   link it directly) — no regression.
 
-## v3.258.0 — 2026-08-16 · `PENDING` — Fix GA4 connector discovery (wrong Windsor slug) + clearer account-count messaging
+## v3.258.0 — 2026-08-16 · `815ce37` — Fix GA4 connector discovery (wrong Windsor slug) + clearer account-count messaging
 - **Fix:** the Analytics (GA4) connector always showed **0 accounts** with Windsor's error *"We don't have this
   connector yet!"*, even though the Windsor account has GA4 properties connected. The cause was the wrong connector
   **slug** in the Windsor API URL (`google_analytics_4`). Windsor's GA4 slug differs (and has changed across their API
@@ -2091,7 +2120,7 @@ different powers and were being granted together.
   appear here yet. The footer note now explains this and reminds you to paste the account ID to link one immediately.
 - The discover response now includes the resolved `ga4Slug` for transparency.
 
-## v3.257.0 — 2026-08-16 · `PENDING` — Call activity no longer gated behind the leaderboard
+## v3.257.0 — 2026-08-16 · `225a36b` — Call activity no longer gated behind the leaderboard
 - **Fix:** the **Call activity** (and **Appointments by rep**) sections were only rendered once the rep **leaderboard**
   finished loading. On a heavy account (e.g. Nexia) that leaderboard pull — opportunities + pipelines + appointments +
   users + lost-reasons — can be slow or time out, and when it did, the whole Users tab showed a spinner or an error and
@@ -2100,7 +2129,7 @@ different powers and were being granted together.
   leaderboard is in — loading, error, empty or full. So the call stats show even when the leaderboard is still loading
   or couldn't load for the window. The leaderboard error message now says so, and points to trying a smaller range.
 
-## v3.256.0 — 2026-08-16 · `PENDING` — App-wide "loading… / all data is in" indicator
+## v3.256.0 — 2026-08-16 · `dc36e0c` — App-wide "loading… / all data is in" indicator
 - Added a single, app-wide status pill (bottom-right) that shows a spinner **whenever any data is still loading**
   anywhere in Caalano360 — deep views, attribution, Users, Timing, GA4, Forms, Location, Appointments, agency rollup —
   and then flashes **"All data is in"** for a couple of seconds once everything settles. The same reassurance the Meta
@@ -2110,7 +2139,7 @@ different powers and were being granted together.
   flicker between back-to-back requests (e.g. a view loading its data then its sub-sections).
 - The existing detailed Meta/Google load bars are unchanged; this pill complements them across the rest of the app.
 
-## v3.255.0 — 2026-08-16 · `PENDING` — HOTFIX: Call activity vanished on large accounts (e.g. Nexia)
+## v3.255.0 — 2026-08-16 · `8a8cdc8` — HOTFIX: Call activity vanished on large accounts (e.g. Nexia)
 - **Fix:** on high-volume accounts the whole **Call activity** section could disappear. The speed-to-lead feature
   (v3.252.0) added an opportunities pull inside the calls scope; on a big account, viewed for an older window, that
   pull pages back through weeks of newer deals and blew the ~10s function budget — the timeout then blanked the entire
@@ -2120,7 +2149,7 @@ different powers and were being granted together.
   for that load and populate on a subsequent one). Call volume, talk minutes, connect rate, inbound, calls-per-outcome
   and Rev/talk-hr no longer depend on it.
 
-## v3.254.0 — 2026-08-15 · `PENDING` — Users tab: rank movement, talk-time efficiency, coverage flags, value win rate
+## v3.254.0 — 2026-08-15 · `fe26b41` — Users tab: rank movement, talk-time efficiency, coverage flags, value win rate
 - **Rank + movement arrows** on the leaderboard: a new **#** column ranks reps by wins and shows ▲/▼ movement vs the
   **previous equal-length period** (▲2 = up two spots, `new` = not ranked last period). Best-effort second fetch of the
   same scope for the prior window with the same pipeline/channel filters; arrows simply hide if it can't load.
@@ -2131,14 +2160,14 @@ different powers and were being granted together.
 - **Value win rate** card in each rep's expandable row: won value ÷ (won + lost value) — a size-weighted win rate, so a
   few big wins or losses aren't hidden by the count-based win %.
 
-## v3.253.0 — 2026-08-15 · `PENDING` — Users tab: response SLA + activity-to-outcome ratios
+## v3.253.0 — 2026-08-15 · `360cd0a` — Users tab: response SLA + activity-to-outcome ratios
 - **≤5 min %** column on the Call activity table: share of a rep's leads they called back within 5 minutes (the classic
   speed-to-lead SLA). Backend `scope=usercalls` computes it from the same per-lead gaps used for the median.
 - **Calls / booked** and **Calls / won** columns: outbound calls per appointment booked and per deal won by each rep —
   activity-to-outcome efficiency. Joined in the front end from the leaderboard's booked/won so no extra fetch.
 - Pipeline velocity per rep (avg days lead→won) was already the leaderboard's **Avg close** column, so no new work there.
 
-## v3.252.0 — 2026-08-15 · `PENDING` — Users tab: Speed-to-lead per rep + CAC per rep
+## v3.252.0 — 2026-08-15 · `b4a4bd5` — Users tab: Speed-to-lead per rep + CAC per rep
 - **Speed to lead** column added to the Call activity table: for each rep, the **median time from a lead coming in
   to that rep's first outbound call** to the contact. Shown in the most readable unit (minutes / hours / days) with a
   tooltip of the sample size. Backend `scope=usercalls` now also pulls opportunities for the range to establish each
@@ -2149,14 +2178,14 @@ different powers and were being granted together.
 - Rounds out the Users-tab deep-dive: **lost reasons by rep**, **close rate & deals won**, and the **per-rep funnel**
   were already present in each rep's expandable row, so those metrics needed no new work.
 
-## v3.251.0 — 2026-08-13 · `PENDING` — Users tab: Appointments by rep (self vs rep booked + show rates)
+## v3.251.0 — 2026-08-13 · `b411619` — Users tab: Appointments by rep (self vs rep booked + show rates)
 - New **Appointments by rep** section on the Users tab: per rep — total **booked**, **self-booked** vs **rep-booked**,
   the **show rate for each** (self-booked vs rep-booked), and won. Answers "who's booking, and do self-booked or
   rep-booked appts show up more?".
 - Backend: extended the appointments builder's per-user breakdown to split self vs staff booking within each rep
   (show rate per booking type). Renders on the Users tab even when the client doesn't assign opportunities to reps.
 
-## v3.250.0 — 2026-08-13 · `PENDING` — Users tab: per-rep Call Activity (GHL dialer)
+## v3.250.0 — 2026-08-13 · `8a10e8c` — Users tab: per-rep Call Activity (GHL dialer)
 - New **Call activity** section on the Users tab: per rep, **outbound calls**, **talk minutes**, **connect rate**,
   **avg talk time**, and **inbound handled** — pulled from GoHighLevel's dialer for the selected range.
 - Backend: new `scope=usercalls` (cached) aggregates the bulk **Call export** (`channel=Call`) by `userId` — efficient
@@ -2164,7 +2193,7 @@ different powers and were being granted together.
 - First chunk of the User-review expansion. Next: appointments-booked / self-vs-user-booked show rates, lost reasons
   by rep, per-user speed-to-lead, CAC per rep (spend by lead share), and a per-rep funnel.
 
-## v3.249.0 — 2026-08-13 · `PENDING` — Timing tab: "Time in stage" (where deals are piling up)
+## v3.249.0 — 2026-08-13 · `6bc1f6d` — Timing tab: "Time in stage" (where deals are piling up)
 - New **Time in stage** section at the top of the Timing tab. For every **open** deal it measures how long it's been
   sitting in its **current pipeline stage** (straight from the stage moves — no appointment/creation inference), then
   shows **avg / median / oldest days + deal count** per stage, per pipeline, with a dwell bar (green < 14d, amber < 30d,
@@ -2175,25 +2204,25 @@ different powers and were being granted together.
   spent in a stage it already left — GoHighLevel doesn't retain that history. Full stage-to-stage journey timing is the
   next phase (a background recorder that accumulates going forward).
 
-## v3.248.0 — 2026-08-13 · `PENDING` — Clearer "session expired" message on data tabs
+## v3.248.0 — 2026-08-13 · `e8dd9bb` — Clearer "session expired" message on data tabs
 - When a data pull fails because the **login session expired** (the error was "Not authenticated"), the tab now shows a
   clear **"Your session expired — sign in again"** message with a reload button, instead of the misleading "temporary
   timeout, try a shorter range." Reloading re-runs the auth check and lands on the login screen; no data is lost.
 
-## v3.247.0 — 2026-08-13 · `PENDING` — Location view: pipeline selector
+## v3.247.0 — 2026-08-13 · `609febc` — Location view: pipeline selector
 - The **Location** view now has a **pipeline selector** (for multi-pipeline clients like FINR — Buyers Agent vs
   Mortgage Broker). Pick a pipeline to see the lead map, scorecards and location list for just that pipeline's leads.
 - Backend: each form location now carries a per-pipeline split (`byPipe`), so the selector projects leads / booked /
   won / lost accurately per pipeline rather than lumping every pipeline together.
 
-## v3.246.0 — 2026-08-13 · `PENDING` — Faster loads: de-dupe per-tab data fetches (part 3)
+## v3.246.0 — 2026-08-13 · `9d99093` — Faster loads: de-dupe per-tab data fetches (part 3)
 - **Clicking through a client's tabs no longer refetches the same data.** Several views each independently pulled the
   same `channel=blend`, `channel=attribution` and `scope=users` feed for the same client/range — up to 3× the round
   trips. A shared client-side de-dupe (`dedupeFetch`) now collapses identical in-flight/recent requests into one, so
   moving between the Caalano360, Users, CRM and scorecard views reuses the first pull instead of re-hitting the
   function. The refresh nonce still forces a fully live pull, and failures are never cached.
 
-## v3.245.0 — 2026-08-13 · `PENDING` — Faster loads: cache the agency first-load call + trim the bundle (part 2)
+## v3.245.0 — 2026-08-13 · `8f2db2d` — Faster loads: cache the agency first-load call + trim the bundle (part 2)
 - **Agency Overview is now cached.** The `scope=agency` whole-roster pull (Windsor + GoHighLevel fan-out across every
   client) fires on every first load and was **completely uncached** — the single biggest wall-clock cost on landing.
   Now cached like the per-client scopes (10-min fresh, 6-hour stale-on-error, Refresh still forces live). Only for
@@ -2204,7 +2233,7 @@ different powers and were being granted together.
   in v3.244.0, the always-loaded app chunk drops from **424 KB → 192 KB gzip**; charts (115 KB) and React (45 KB) load
   in parallel and stay cached across deploys.
 
-## v3.244.0 — 2026-08-13 · `PENDING` — Faster loads: split vendor bundles (part 1 of perf pass)
+## v3.244.0 — 2026-08-13 · `e81ac99` — Faster loads: split vendor bundles (part 1 of perf pass)
 - **Smaller, cacheable JS.** The whole app shipped as one ~1.5 MB chunk (424 KB gzip) that re-downloaded on every
   deploy. Split the stable vendor libs into their own chunks — **Recharts + d3** (115 KB gzip) and **React/React-DOM**
   (45 KB gzip) — so the app chunk drops to ~272 KB gzip, the three load in parallel on first paint, and a normal
@@ -2212,14 +2241,14 @@ different powers and were being granted together.
   postcode map stay lazy-loaded (only pulled when the Monthly Report or Location map is opened).
 - Backend data-path speedups (caching, duplicate-fetch removal, tighter timeouts) follow in the next part.
 
-## v3.243.0 — 2026-08-13 · `PENDING` — Landing Page Performance: green Caalano360 columns matched by URL
+## v3.243.0 — 2026-08-13 · `8929f3a` — Landing Page Performance: green Caalano360 columns matched by URL
 - The **Landing Page Performance** table now carries the full green Caalano360 outcome columns, matched by the CRM's
   **first-touch URL** (`attributions[].url`) to the Google landing-page report. This is a robust matching path that
   doesn't depend on ID mapping — GHL exposes the clean landing URL on every opportunity.
 - Backend (`ghl.mjs`): `utmOf` now returns the first-touch `url`; `buildAttribution` adds a `byUrl` dimension
   (normalised: no protocol/www/query/hash/trailing slash) threaded through every outcome bump, exposed as `byUrl`.
 
-## v3.242.0 — 2026-08-13 · `PENDING` — Fix: ad-group attribution (byCreative) + connector discovery timeout
+## v3.242.0 — 2026-08-13 · `6ecb0ec` — Fix: ad-group attribution (byCreative) + connector discovery timeout
 - **Ad-group Caalano360 columns now match.** Root cause: the attribution builder exposes the `utm_content` dimension
   as `byCreative`, but the Google view's ad-group matcher (and its diagnostic) read a non-existent `byContent`, so the
   ad-group IDs the CRM stores in `utm_content` were never used (0/10 matched). Confirmed against live GHL data that
@@ -2229,7 +2258,7 @@ different powers and were being granted together.
   surfacing as "a connector is erroring" with 0 Meta / Google / GA4 accounts. Reverted to a 12-month window, which
   returns inside the function budget.
 
-## v3.241.0 — 2026-08-13 · `PENDING` — GA4 connector picker, wider account discovery, Google Ads polish
+## v3.241.0 — 2026-08-13 · `4f8864f` — GA4 connector picker, wider account discovery, Google Ads polish
 - **Settings connector editor**: Google Analytics 4 is now a proper **picker column** (like Meta / Google / CRM),
   populated from the accounts Windsor exposes on its GA4 connector — pick the property or paste its ID. This also
   surfaces the exact GA4 account ID Windsor uses, which is what the Analytics tab filters on (pasting the raw GA4
@@ -2244,7 +2273,7 @@ different powers and were being granted together.
   the fuller text match** and only split by match type when a keyword genuinely runs in 2+ match types; **landing-page
   URLs show in full**; and **Search terms gained an Ad group column**.
 
-## v3.240.0 — 2026-08-13 · `PENDING` — Google Ads matching: ad-level on `utm_ad_id`, keywords split by match type
+## v3.240.0 — 2026-08-13 · `1a35f92` — Google Ads matching: ad-level on `utm_ad_id`, keywords split by match type
 - **Ad-level green columns now match on `utm_ad_id`** (the ad ID the CRM stores in its own param) instead of
   `utm_content` (which is the ad-GROUP ID). The attribution backend now emits a `byAd` breakdown keyed by ad ID with
   full CRM outcomes (leads / booked / shown / won + calendar & stage key events), so the Ads table's Caalano360 columns
@@ -2256,7 +2285,7 @@ different powers and were being granted together.
 - Backend (`ghl.mjs`): `utmOf` now reads `utm_ad_id` and `utm_matchtype`; `buildAttribution` threads the two new
   dimensions through every outcome bump (leads, booked, shown, cancelled, stages, per-calendar).
 
-## v3.239.0 — 2026-08-13 · `PENDING` — New Google Analytics (GA4) tab
+## v3.239.0 — 2026-08-13 · `4b22314` — New Google Analytics (GA4) tab
 - New **Analytics** tab in the client workspace, shown whenever a client has a **GA4 property** linked. Add the property
   ID in Settings → the connector editor now has a "📊 Google Analytics 4" field alongside Meta / Google / Caalano Systems.
 - The tab shows **Sessions, Engaged sessions, Engagement rate, Bounce rate, Key events, Event count, Page views, Users,
@@ -2269,12 +2298,12 @@ different powers and were being granted together.
   scoped per client by property ID; every query is independently guarded with a diagnostic panel so a Windsor field-name
   mismatch degrades one section rather than the whole tab (a `?probe=1` endpoint reports the exact recognised fields).
 
-## v3.238.1 — 2026-08-13 · `PENDING` — Hotfix: Google Ads views crashing (`matchCA is not defined`)
+## v3.238.1 — 2026-08-13 · `e3cefbc` — Hotfix: Google Ads views crashing (`matchCA is not defined`)
 - Fixed a regression from v3.237.0 (the cascading-filter refactor) that renamed the `matchCA` drill-filter helper to
   `baseCA` but left one reference in the conversion-actions aggregation. That runs on every Google view render, so
   **all Google Ads views threw "Something went wrong loading this view"**. Repointed the reference to `baseCA`.
 
-## v3.238.0 — 2026-08-13 · `PENDING` — Google Ads view: ad-level (Ad ID) table with labels + friendly names
+## v3.238.0 — 2026-08-13 · `9d5e670` — Google Ads view: ad-level (Ad ID) table with labels + friendly names
 - New **Ads** table in the Google Ads view (below Ad groups), one row per `ad_id`, **scoped to the drilled-into
   campaign / ad group** so you can see exactly which ads belong to which ad group. Full metrics + Conv. rate + green
   Caalano360 columns (matched on `utm_content`, which usually carries the ad ID).
@@ -2284,7 +2313,7 @@ different powers and were being granted together.
 - Backend: `buildGoogle` now pulls ad-level rows and a guarded ad-labels query from Windsor (falls back silently if
   the connector doesn't expose labels); new `adnames` settings section persists the friendly-name overrides.
 
-## v3.237.0 — 2026-08-13 · `PENDING` — Google Ads view: Conversion Rate, pagination, fully-dynamic drill-down, landing-page reorder
+## v3.237.0 — 2026-08-13 · `93572d6` — Google Ads view: Conversion Rate, pagination, fully-dynamic drill-down, landing-page reorder
 - **Conversion Rate (conv / clicks)** is now a standard column across **every** Google Ads table — campaigns, ad groups,
   keywords, match type, search terms and landing pages — sortable like the rest.
 - **Landing Page Performance** moved down to sit just **above Day-by-day** (previously above Keywords), keeping the
@@ -2300,7 +2329,7 @@ different powers and were being granted together.
   (Google auto-tagging typically writes `cpc` to utm_medium and the ad-group / ad ID to utm_content). Ad-group ID→name
   resolution already spans both UTM dimensions plus the ad-id→ad-group fold from the prior release.
 
-## v3.236.0 — 2026-08-13 · `PENDING` — Won-basis toggle: Weekly board done (rollout complete)
+## v3.236.0 — 2026-08-13 · `2e135c5` — Won-basis toggle: Weekly board done (rollout complete)
 - The **Weekly Traffic Light** board now honours the Won-basis toggle — the last surface. In **Closed** mode, each
   week's Won / Won Value is bucketed by the deal's **won-date** (a deal created months earlier counts in the week it
   was banked), fetching ~180 extra days of opportunities to catch earlier-created wins; leads / booked / shown stay
@@ -2309,7 +2338,7 @@ different powers and were being granted together.
   Added `opportunity_won_at` (last status-change date) to the direct-API opportunity adapter to power the closed-basis
   weekly bucketing.
 
-## v3.235.0 — 2026-08-13 · `PENDING` — Google ad-group ID/ad-ID auto-resolve (Meta left as-is by name)
+## v3.235.0 — 2026-08-13 · `702f1b9` — Google ad-group ID/ad-ID auto-resolve (Meta left as-is by name)
 - **Google Ads:** the ad-group green Caalano360 columns now resolve the CRM's numeric UTM to the live ad-group name —
   robustly, whether the client's Google template put the **ad-group ID** or the **ad ID** in `utm_content`. Added a
   separate Windsor query mapping `ad_id → its ad group` (Google has no ad-level table — responsive search ads have no
@@ -2318,13 +2347,13 @@ different powers and were being granted together.
 - **Meta left exactly as it was** — Meta ad sets / creatives match by **name** (already working), so the earlier
   attempt to ID-resolve them was reverted. Nothing about Meta matching changed.
 
-## v3.234.0 — 2026-08-13 · `PENDING` — Ad/creative + ad-set ID resolution for the Meta Caalano360 columns
+## v3.234.0 — 2026-08-13 · `436467e` — Ad/creative + ad-set ID resolution for the Meta Caalano360 columns
 - Applied the ad-group/ad id↔name maps to the **Meta** view: **ad sets** now resolve `adset_id`→name (utm_medium) and
   **creatives/ads** resolve `ad_id`→name (utm_content), so the green Caalano360 outcome columns populate on those tables
   the same way campaigns already do. This is the "Ad/Creative" link (Google has no distinct ad-level table — responsive
   search ads have no real names — so Meta creatives are where ad-level outcomes live).
 
-## v3.233.0 — 2026-08-13 · `PENDING` — Caalano360 green columns extend to ad groups, keywords + a new Match-type table
+## v3.233.0 — 2026-08-13 · `ab1d330` — Caalano360 green columns extend to ad groups, keywords + a new Match-type table
 - Following the campaign ID→name auto-resolve, the attribution feed now also returns **ad-group** (`ad_group_id` /
   `adset_id`) and **ad** (`ad_id`) id↔name maps from Windsor.
 - **Ad groups (Google):** now resolve the CRM's ad-group ID to its name — across both `utm_medium` and `utm_content`,
@@ -2338,7 +2367,7 @@ different powers and were being granted together.
   and Google **network** (Search / Display / YouTube), **device**, or **location** dimensions if you want green columns
   on those too.
 
-## v3.232.0 — 2026-08-13 · `PENDING` — Won-basis toggle now covers Overview + Caalano360/Executive
+## v3.232.0 — 2026-08-13 · `7f83a96` — Won-basis toggle now covers Overview + Caalano360/Executive
 - The **Won basis** toggle (Closed vs Created) now also drives the **Agency Overview** (headline Revenue + leaderboard,
   via the ovrow feed) and the **Caalano360 / Executive** tab (revenue + ROAS in the health score), in addition to Users.
   The toggle appears in the header on both the Overview and the client workspace. Backend overlays use `wonInPeriod`'s
@@ -2347,7 +2376,7 @@ different powers and were being granted together.
 - Still to come: the **Weekly Traffic Light** board (needs a won-by-week, by-won-date engine) and basis chips on the
   Executive cards.
 
-## v3.231.0 — 2026-08-13 · `PENDING` — Auto-resolve Google/Meta campaign IDs → names for Caalano360 attribution
+## v3.231.0 — 2026-08-13 · `05d000e` — Auto-resolve Google/Meta campaign IDs → names for Caalano360 attribution
 - Google (and Meta) UTMs usually carry the numeric **campaign ID** (e.g. `utm_campaign=24053934849`), not the name —
   so CRM outcomes keyed by that ID never matched the ad tables (keyed by name) and the **Caalano360 outcome columns
   came up empty**. Now the attribution feed pulls Windsor's **`campaign_id ↔ campaign name`** pairing and hands the UI a
@@ -2357,7 +2386,7 @@ different powers and were being granted together.
   shows as "unmatched"). The manual **UTM-aliases** editor still wins on conflict, as the override for genuinely orphaned
   UTMs (e.g. a deleted campaign whose ID still has historical leads).
 
-## v3.230.0 — 2026-08-13 · `PENDING` — Google Ads: Landing Page Performance (above Keywords)
+## v3.230.0 — 2026-08-13 · `837aca3` — Google Ads: Landing Page Performance (above Keywords)
 - The **Google Ads** view now pulls **Landing Page Performance** — a new section above Keywords showing which
   destination **pages** the budget drove traffic to, with cost, impressions, CTR, clicks, conversions and cost/conv
   (sortable, each page links out). Source: Google's expanded landing-page report via Windsor
@@ -2366,7 +2395,7 @@ different powers and were being granted together.
   variants of the same page collapse into one real landing-page row instead of dozens of near-identical URLs. It's its
   own Windsor query, so a failure can't blank the campaigns/keywords tables; the section is account-wide.
 
-## v3.229.0 — 2026-08-13 · `PENDING` — Won-basis toggle (live on Users) + Google conversion-actions overlap fix
+## v3.229.0 — 2026-08-13 · `4a39582` — Won-basis toggle (live on Users) + Google conversion-actions overlap fix
 - **Won basis toggle** — a global `Won basis: ⟨Closed | Created⟩` control now appears in the header on the client
   workspace (default **Closed**, persisted). Only Won / revenue / win-rate flip; leads, funnel and appointments stay
   created-basis. A **basis chip** on the Won card shows which is active.
@@ -2378,7 +2407,7 @@ different powers and were being granted together.
   table bleed over the Key-events panel (grid children default to `min-width:auto`). Columns can now shrink and the
   drill table scrolls within its own box instead of overlapping.
 
-## v3.228.0 — 2026-08-13 · `PENDING` — Won-basis toggle: backend foundation (Closed-in vs Created-in period)
+## v3.228.0 — 2026-08-13 · `3b3eaa3` — Won-basis toggle: backend foundation (Closed-in vs Created-in period)
 - Groundwork for the upcoming **Won basis** toggle (Closed-in-period vs Created-in-period). Adds a backend overlay
   (`applyClosedBasis`) that swaps a CRM board's Won / revenue / avg-won-value / close-rate to the **closed-in-period**
   figures (won by their won-date, from `wonInPeriod`) while leaving leads, the funnel and appointments on their
@@ -2387,7 +2416,7 @@ different powers and were being granted together.
   it passes `wonBasis=closed`. This lets the toggle roll out one revenue surface at a time (Caalano360, Users, Overview)
   without disturbing anything else. Next: the header toggle + basis chip and wiring those surfaces.
 
-## v3.227.0 — 2026-08-13 · `PENDING` — Agency Overview CRM moves to the direct GoHighLevel API
+## v3.227.0 — 2026-08-13 · `c1a06a4` — Agency Overview CRM moves to the direct GoHighLevel API
 - The agency **Overview** rollup now reads each client's won revenue + won count **straight from the GoHighLevel API**
   instead of Windsor's GoHighLevel feed — the last GHL-through-Windsor dependency on any client-facing view. Its numbers
   now reconcile with the CRM tab and Caalano360, and don't lag on newly-connected accounts.
@@ -2398,7 +2427,7 @@ different powers and were being granted together.
 - With this, **every client-facing view now reads GoHighLevel data from the direct API.** The only GHL-on-Windsor left is
   a dormant fallback in the Trends tab (already direct-primary via `crmTrends` whenever a client's CRM is connected).
 
-## v3.226.0 — 2026-08-13 · `PENDING` — Auto-onboard: API-readiness check (flags sub-accounts missing the marketplace app)
+## v3.226.0 — 2026-08-13 · `6d6ae6b` — Auto-onboard: API-readiness check (flags sub-accounts missing the marketplace app)
 - Auto-onboard now **tests whether each sub-account's API is actually reachable** before offering it. The direct API
   needs the GoHighLevel marketplace app installed on a sub-account (that's what lets us mint its location token), so a
   location can be listed but not yet pullable.
@@ -2406,7 +2435,7 @@ different powers and were being granted together.
   unticked, with a note to install the app (or enable “install on all sub-accounts” in your GHL app) and Refresh. Only
   API-ready locations can be created, so Auto-onboard never makes a client it can’t pull.
 
-## v3.225.0 — 2026-08-13 · `PENDING` — Auto-onboard: one-click link every Caalano Systems location to its Meta & Google accounts
+## v3.225.0 — 2026-08-13 · `c187e1a` — Auto-onboard: one-click link every Caalano Systems location to its Meta & Google accounts
 - New **✨ Auto-onboard** button in Settings → Clients (Super-Admin). It scans every Caalano Systems (GoHighLevel) agency
   location that isn't linked to a client yet, and **fuzzy-matches each one to its Meta & Google ad accounts by name**
   (e.g. "Quad Care" GHL ↔ "Quad Care" Meta), showing a confidence badge.
@@ -2417,7 +2446,7 @@ different powers and were being granted together.
   still pair up. Ad accounts only appear once Windsor has synced them, so add the account to your Business Manager +
   Windsor first if it's missing, then hit Refresh.
 
-## v3.224.0 — 2026-08-13 · `PENDING` — CRM data moves to the direct GoHighLevel API (blend / Executive / Client Update / Weekly)
+## v3.224.0 — 2026-08-13 · `bcde228` — CRM data moves to the direct GoHighLevel API (blend / Executive / Client Update / Weekly)
 - The **Caalano360 blend**, **Executive** health score, **Client Update** and the **Weekly Traffic Light** board now
   read their CRM opportunities, pipelines and user names **straight from the GoHighLevel API** instead of Windsor's
   GoHighLevel feed. This means:
@@ -2435,7 +2464,7 @@ different powers and were being granted together.
 - Note: Caalano360 / Executive / Weekly figures may shift slightly with this change — that shift is them becoming
   consistent with the CRM tab.
 
-## v3.223.0 — 2026-08-13 · `PENDING` — Key events: pipeline stages load for just-linked clients; Settings client editor opens on Summary
+## v3.223.0 — 2026-08-13 · `6acd4e8` — Key events: pipeline stages load for just-linked clients; Settings client editor opens on Summary
 - **Pipeline stages now load straight from GoHighLevel** in the Key-events editor, instead of only from Windsor. Windsor
   only returns a client's pipelines once it has synced opportunity data for the account, so a **just-linked client**
   (e.g. Quad Care) showed *"No Caalano Systems pipeline stages found"* even though the CRM was connected and calendars
@@ -2443,7 +2472,7 @@ different powers and were being granted together.
 - The **client editor in Settings** now opens on the **Summary** tab (linked accounts, timezone, sales cycle) again,
   and Summary is the first tab.
 
-## v3.222.0 — 2026-08-13 · `PENDING` — Speed + reliability: server result cache, stale-on-error, failure log, Super-Admin Logs
+## v3.222.0 — 2026-08-13 · `0166101` — Speed + reliability: server result cache, stale-on-error, failure log, Super-Admin Logs
 - **Server-side result cache (10-min, stale-while-error).** Heavy client-scoped views (Users, CRM, Meta, Google,
   appointments, cohorts, forms, weekly, health…) now cache their assembled payload in Netlify Blobs. Repeat loads —
   tab switches, reopening a client, teammates — return in **<1s** instead of rebuilding from Windsor/GoHighLevel each
@@ -2461,7 +2490,7 @@ different powers and were being granted together.
 - **Trimmed CRM over-fetch.** The Users view no longer pages 120 extra days of opportunities it immediately discards —
   fewer sequential CRM calls, faster loads, far fewer timeouts.
 
-## v3.221.0 — 2026-08-13 · `PENDING` — Users: "All users" stacked funnel + rep-filter tabs in the deal drill
+## v3.221.0 — 2026-08-13 · `ea40652` — Users: "All users" stacked funnel + rep-filter tabs in the deal drill
 - The **Users** leaderboard now has a pinned **All users** summary row at the top. Expand it to see the whole-team
   funnel where **every stage bar is coloured per rep** (stacked segments) so you can see, at a glance, who holds
   leads at each stage. A colour legend maps each segment to a rep.
@@ -2470,31 +2499,31 @@ different powers and were being granted together.
 - Fixed the **horizontal scroller** in the open-deals drill modal: the modal is now full-width
   (`min(1080px, 96vw)`) so the fixed-layout deal table fits without a horizontal scrollbar.
 
-## v3.220.0 — 2026-08-12 · `PENDING` — Meta conversions: allow multiple primary conversions (summed headline)
+## v3.220.0 — 2026-08-12 · `28789ed` — Meta conversions: allow multiple primary conversions (summed headline)
 - You can now tick **multiple primary conversions** per account (checkboxes instead of a single radio). The
   headline result + cost-per on the Meta tab, Monthly Report and Daily Performance becomes the **sum** of
   every primary ticked — for accounts that optimise to / report on more than one event (e.g. Nexia).
 - Legacy single-primary configs are read as a one-item list automatically; the result engine
   (resultCount / readField / rowResult) and the trends builder sum an array of primary fields.
 
-## v3.219.1 — 2026-08-12 · `PENDING` — Meta detect: don't CDN-cache the detect/probe responses (fresh on load)
+## v3.219.1 — 2026-08-12 · `b4666d1` — Meta detect: don't CDN-cache the detect/probe responses (fresh on load)
 - The Meta conversion auto-detect + probe responses are no longer cached for 10 min, so changes appear as
   soon as the tab loads instead of being masked by a stale response.
 
-## v3.219.0 — 2026-08-12 · `PENDING` — Meta detect: surface the detected optimisation custom conversion by name
+## v3.219.0 — 2026-08-12 · `c226650` — Meta detect: surface the detected optimisation custom conversion by name
 - The detector now reads the custom conversion's **event name from the ad set's pixel rule** (e.g.
   `B_page_view`) and its numeric id, and **lists it in the picker even at 0 count** — a rarely-firing custom
   conversion is still the account's true optimised "Results" event and should be selectable. It's now the
   **auto-suggested primary**, using the confirmed-valid `conversions_offsite_conversion_custom_<id>` field.
 - Set it Primary and it flows to the Meta tab / Monthly Report / Daily Performance, counting the moment it fires.
 
-## v3.218.1 — 2026-08-12 · `PENDING` — Meta detect: report which result fields Windsor accepts (native `results` probe)
+## v3.218.1 — 2026-08-12 · `98bab44` — Meta detect: report which result fields Windsor accepts (native `results` probe)
 - The auto-detect now records per-field whether Windsor **accepts** a field (valid) vs **rejects** it, and
   surfaces the accepted list in the diagnostic — so we can tell whether Meta's native `results`/`cost_per_result`
   metrics are available on the account (the clean per-campaign Results answer) or it's a Windsor data gap.
 - Widened the numeric custom-conversion-ID field variants tried.
 
-## v3.218.0 — 2026-08-12 · `PENDING` — Meta custom-conversion detect: probe by ID + native Results, plus diagnostics
+## v3.218.0 — 2026-08-12 · `e697702` — Meta custom-conversion detect: probe by ID + native Results, plus diagnostics
 - Auto-detect now probes custom conversions **one field at a time** (a single unknown field name no longer
   silently drops a whole batch), tries the custom-conversion's **numeric ID** from the ad set's promoted
   object, and tries Meta's native **`results`** field — the widest net for surfacing a non-standard
@@ -2503,19 +2532,19 @@ different powers and were being granted together.
   detected goal, ad-set event names, custom-conversion IDs, the raw promoted object, and how many field
   names were tried — so a genuinely non-standard field id can be identified and hard-mapped.
 
-## v3.217.1 — 2026-08-12 · `PENDING` — Google conversion actions: star the primary conversions
+## v3.217.1 — 2026-08-12 · `7b40628` — Google conversion actions: star the primary conversions
 - The Google conversion-actions breakdown now marks each **primary** conversion with a **⭐** — the ones
   with a non-zero Conversions count that make up the Results number. Un-starred rows are secondary actions
   (counted only in “All conv.”).
 
-## v3.217.0 — 2026-08-12 · `PENDING` — Window popup: Google conversion-actions drill + Meta-detect diagnostics
+## v3.217.0 — 2026-08-12 · `a0300d6` — Window popup: Google conversion-actions drill + Meta-detect diagnostics
 - The window breakdown popup's **Google** row (Ad spend → results) is now clickable and expands the Google
   **conversion actions** for that exact window (3/7/14/21/28 days), same as the 28-day source table.
 - Settings → Meta conversions now shows **auto-detect diagnostics** when nothing is found: the detected
   optimisation goal, any event names read off the ad sets, and the Windsor field names tried — so a custom
   conversion whose field name differs can be identified and mapped without hitting a URL.
 
-## v3.216.0 — 2026-08-12 · `PENDING` — Meta conversions: auto-detect the optimisation event (no typing)
+## v3.216.0 — 2026-08-12 · `05d0129` — Meta conversions: auto-detect the optimisation event (no typing)
 - The Meta conversions tab now **auto-detects** the client's optimisation event: it reads the ad sets'
   optimisation goal + promoted object to learn which conversion the account optimises to (matching Ads
   Manager's Results column), probes every firing conversion, and surfaces a **“🎯 Auto-detected … · Use as
@@ -2524,7 +2553,7 @@ different powers and were being granted together.
   unknown field name can't time out the picker (fixes the “operation was aborted”).
 - Widened the custom-conversion field-name variants tried, and the manual “add by name” remains as a fallback.
 
-## v3.215.0 — 2026-08-12 · `PENDING` — Custom Meta conversions: add-by-name + flow through results everywhere
+## v3.215.0 — 2026-08-12 · `621a256` — Custom Meta conversions: add-by-name + flow through results everywhere
 - **Any custom Meta conversion can now be a client's result.** In Settings → Meta conversions, type a custom
   conversion by its Ads-Manager name (e.g. `B_Page_View`) and click **Find + add** — it probes the account,
   confirms it's firing (90-day count), and adds it to the picker so you can set it Primary. Works for any
@@ -2536,17 +2565,17 @@ different powers and were being granted together.
   set; `buildTrends` counts each client's configured primary conversion for its daily Meta results (with a
   safe fallback so a bad field can't blank everyone out); new `metaprobe` scope powers add-by-name.
 
-## v3.214.0 — 2026-08-12 · `PENDING` — Window breakdown: drill each key event to the exact people
+## v3.214.0 — 2026-08-12 · `735d0a2` — Window breakdown: drill each key event to the exact people
 - In the window breakdown popup, every key event in the **Key events by source** table is now clickable
   and opens the full people list behind it — the exact opportunities that reached that event in that window,
   scoped to the selected source (All / Paid / Non-paid / Meta / Google, via UTM attribution). Reuses the
   same people modal (status filter, per-contact notes) as the Caalano360 funnel.
 
-## v3.213.1 — 2026-08-12 · `PENDING` — Daily graph: make the Google stacked bar a distinct light blue
+## v3.213.1 — 2026-08-12 · `d8fa3e3` — Daily graph: make the Google stacked bar a distinct light blue
 - Changed the Google segment of the stacked results bar (and its tooltip dot) from violet to a light sky
   blue so it's clearly distinguishable from Meta's indigo.
 
-## v3.213.0 — 2026-08-12 · `PENDING` — Daily graph: stacked Meta/Google bars + Google conversion-action drill
+## v3.213.0 — 2026-08-12 · `e0ccaeb` — Daily graph: stacked Meta/Google bars + Google conversion-action drill
 - **The 28-day daily graph now stacks Meta vs Google results** (two colours) in the Blended view for
   two-channel clients, so you can see at a glance which channel is driving the conversions. The hover card
   shows the Meta / Google split for each day. Single-channel and Meta/Google-only views keep the single bar.
@@ -2554,11 +2583,11 @@ different powers and were being granted together.
   table is now clickable — it expands to show every Google **conversion action** behind the Results number
   (primary conversions, all-conversions, and % of total), so you can see exactly what’s being counted.
 
-## v3.212.1 — 2026-08-12 · `PENDING` — Remove “Explain with AI” from Daily Performance movers
+## v3.212.1 — 2026-08-12 · `206d165` — Remove “Explain with AI” from Daily Performance movers
 - Removed the “🤖 Explain with AI” button (and its output box) from the Biggest movers panel on the Daily
   Performance tab. The rules-based “what moved” reasons and per-mover creative breakdown remain.
 
-## v3.212.0 — 2026-08-12 · `PENDING` — Key-events source split now uses UTM attribution (not lead-source)
+## v3.212.0 — 2026-08-12 · `50ab99e` — Key-events source split now uses UTM attribution (not lead-source)
 - The Key events by source breakdown now classifies each key event by the opportunity's **first-touch UTM
   attribution** (the same Meta / Google / non-paid model the rest of Caalano360 uses), pulled from the GHL
   direct API — so "Paid" key events genuinely match ad-attributed opportunities, giving true visibility on
@@ -2566,7 +2595,7 @@ different powers and were being granted together.
   fallback when the app isn't connected (the popup footnote says which is in use).
 - No extra API calls — the direct-API opportunities already fetched for booked-call splits are reused.
 
-## v3.211.0 — 2026-08-12 · `PENDING` — Daily Performance: key-events breakdown split by lead source
+## v3.211.0 — 2026-08-12 · `77f5eff` — Daily Performance: key-events breakdown split by lead source
 - The window breakdown popup's **Key events** section now has an **All CRM / Paid / Non-paid / Meta / Google**
   toggle, so you can see which key events were attributed to each channel (Paid = Meta + Google, Non-paid =
   organic / referral / direct). Counts, % of leads and cost per event all re-scope to the chosen source
@@ -2575,14 +2604,14 @@ different powers and were being granted together.
 - Backend: `buildTrends` now classifies each CRM opportunity by its Caalano Systems lead source and tracks
   per-window stage reach + leads/won per channel.
 
-## v3.210.0 — 2026-08-12 · `PENDING` — Settings: new “Daily performance” tab (per-client + per-pipeline visibility)
+## v3.210.0 — 2026-08-12 · `0bbe12e` — Settings: new “Daily performance” tab (per-client + per-pipeline visibility)
 - **New Settings → Daily performance tab.** Toggle, per client, whether it appears on the Daily
   Performance tab — and, for clients running more than one pipeline, which pipeline tiles show. Everything
   is on by default; “Show all / Hide all” bulk buttons included. Saved to the server & shared across the team.
 - The Daily Performance tab (and its Biggest-movers panel) now respect these toggles: hidden clients drop
   out entirely, hidden pipelines drop their tile.
 
-## v3.209.0 — 2026-08-12 · `PENDING` — Daily Performance: click a window tile for a full breakdown
+## v3.209.0 — 2026-08-12 · `1e704c2` — Daily Performance: click a window tile for a full breakdown
 - **Each window scorecard (Last 3 / 7 / 14 / 21 / 28 days) is now clickable** and opens a breakdown for
   that period:
   - **Ad spend → results split by Meta and Google**, with cost per result per channel + a total row.
@@ -2593,7 +2622,7 @@ different powers and were being granted together.
   tile shows the whole client. Backend now sends per-window per-stage reach + CRM leads/won so the
   breakdown reuses the shared key-event resolver.
 
-## v3.208.0 — 2026-08-12 · `PENDING` — Daily Performance: alphabetical tiles, per-pipeline movers, scroll-to-tile
+## v3.208.0 — 2026-08-12 · `2d082de` — Daily Performance: alphabetical tiles, per-pipeline movers, scroll-to-tile
 - **Client tiles are now in alphabetical order** (multi-pipeline tiles group under their client, pipelines
   alphabetical with "Unlinked campaigns" last).
 - **Biggest-movers insights are now per pipeline** for multi-pipeline clients — each mover names the exact
@@ -2602,7 +2631,7 @@ different powers and were being granted together.
 - **The mover jump button (↓) now scrolls straight to that client's tile** on the page (with a brief
   highlight) instead of opening the full client workspace — the tile's name still opens the workspace.
 
-## v3.207.1 — 2026-08-12 · `PENDING` — Fix: single-pipeline clients no longer split; campaign links now read correctly
+## v3.207.1 — 2026-08-12 · `be29aa9` — Fix: single-pipeline clients no longer split; campaign links now read correctly
 - **Single-pipeline clients (e.g. Pool Haus) are no longer split** into a pipeline tile + a stray "Unlinked
   campaigns" tile — the per-pipeline layout now only applies when a client genuinely runs 2+ pipelines
   with activity.
@@ -2613,7 +2642,7 @@ different powers and were being granted together.
 - The "Unlinked campaigns" tile now only appears when unattributed spend is a **material slice (>5%)** of
   the client's 28-day spend, so a stray dollar doesn't spawn a whole tile.
 
-## v3.207.0 — 2026-08-12 · `PENDING` — Daily Performance: multi-pipeline clients render as separate tiles
+## v3.207.0 — 2026-08-12 · `efc1631` — Daily Performance: multi-pipeline clients render as separate tiles
 - **Multi-pipeline clients now show one full tile per pipeline** instead of a combined card with sub-tables
   at the bottom. e.g. Nexia becomes **“Nexia Health Care · ADHD - Leads & Sales Pipeline”** and
   **“Nexia Health Care · Allied Health - Lead & Sales Pipeline”**, each a complete card: CPL window
@@ -2624,7 +2653,7 @@ different powers and were being granted together.
   pipeline appears as its own **“Unlinked campaigns”** tile so every dollar still reconciles.
 - Removed the per-pipeline sub-tables added in v3.206 in favour of this cleaner, fully-visual layout.
 
-## v3.206.0 — 2026-08-12 · `PENDING` — Monthly Report per-pipeline split + Daily Performance Phase 2 & 3
+## v3.206.0 — 2026-08-12 · `531da1a` — Monthly Report per-pipeline split + Daily Performance Phase 2 & 3
 - **Monthly Report — key-event consolidation fixed.** Calendar-linked key events now merge cleanly with
   their pipeline stage even when the calendar carries a `[PIPE]` tag, so the "leads → key events" funnel
   no longer shows the same step twice (once as 📅 calendar, once as the plain stage). Hardened the shared
@@ -2643,7 +2672,7 @@ different powers and were being granted together.
   are now plotted by their fired date as markers on the daily graph, and the hover card shows that day's
   booked + won alongside spend / results / cost-per-result.
 
-## v3.205.0 — 2026-08-11 · `PENDING` — Daily Performance: 28-day daily graph per client (Looker-style)
+## v3.205.0 — 2026-08-11 · `87538b7` — Daily Performance: 28-day daily graph per client (Looker-style)
 - **Each client now shows a 28-day daily graph** of ad Spend (line), Results (bars) and Cost per Result
   (line), plus a **Source table** (Google / Facebook cost, results, cost-per-result over 28 days) — a
   native version of the Looker daily view. Results are ad-reported (the campaign's optimisation event:
@@ -2651,7 +2680,7 @@ different powers and were being granted together.
 - Respects the existing **Blended / Meta / Google** toggle, and sits below the CPL window scorecards.
 - (Next: per-pipeline sub-tables for multi-pipeline clients, and a CRM key-events overlay on the graph.)
 
-## v3.204.0 — 2026-08-11 · `PENDING` — Movers: creative breakdown + Client Update loads faster
+## v3.204.0 — 2026-08-11 · `d5f0024` — Movers: creative breakdown + Client Update loads faster
 - **Biggest movers now drill to the creative/campaign level.** Click any mover to expand a live
   breakdown for that client + channel + window: which creatives are **fatiguing** (cost rising),
   **scaling / new**, **pulled back**, and the **best right now** — so you can see what actually drove
@@ -2661,7 +2690,7 @@ different powers and were being granted together.
   client view uses) load, and the extra detail (creatives, forms, speed to lead, cohorts, etc.) merges
   in as it arrives instead of blocking. A slow or timing-out extra can't hold up the update.
 
-## v3.203.0 — 2026-08-11 · `PENDING` — Daily Performance biggest movers + exact per-channel CPL in updates
+## v3.203.0 — 2026-08-11 · `99c03d8` — Daily Performance biggest movers + exact per-channel CPL in updates
 - **Daily Performance now surfaces the biggest movers.** A "Biggest movers" panel at the top ranks the
   largest cost-per-result changes across all clients for a chosen window (3/7/14/21/28 days), each with
   a rules-based reason decomposed from the spend vs results move (for example "spend rose 22% but leads
@@ -2670,7 +2699,7 @@ different powers and were being granted together.
 - **Client Update now quotes the exact CPL per channel** (Meta CPL and Google cost per conversion),
   never a single merged figure, and the word "blended" is banned from client-facing copy.
 
-## v3.202.0 — 2026-08-11 · `PENDING` — Organic Social: daily snapshots so data never disappears
+## v3.202.0 — 2026-08-11 · `ef7da0d` — Organic Social: daily snapshots so data never disappears
 - **New daily social snapshot** (`social-snapshot`, scheduled @daily; `social-snapshot-now` to run/seed
   on demand) captures each connected client's Instagram + Facebook-organic **daily metrics, follower
   count and audience demographics** into a `caalano-social` blob store. The first run per client
@@ -2679,7 +2708,7 @@ different powers and were being granted together.
   insights window (where daily series, followers and demographics normally blank out), the saved history
   is merged into the live view and folded into the period totals, so long ranges keep working.
 
-## v3.201.0 — 2026-08-11 · `PENDING` — Client Update matches the fortnightly house style
+## v3.201.0 — 2026-08-11 · `73816dd` — Client Update matches the fortnightly house style
 - **The Client Update email now follows Caalano's real fortnightly template:** warm one-line opener →
   overall spend/leads → Meta & Google breakdown → bookings / won / pipeline value → **Key insights**
   (naming creatives with a plain-English description inferred from the ad name) → **Actions** (with a
@@ -2689,12 +2718,12 @@ different powers and were being granted together.
 - **The Client Update AI now also reads the client's brand profile** (Settings → Overview), alongside
   the free-text context, so the tone and framing fit the brand.
 
-## v3.200.0 — 2026-08-11 · `PENDING` — Creative Cockpit → two sub-tabs (Breakdown + Curator)
+## v3.200.0 — 2026-08-11 · `fc30c64` — Creative Cockpit → two sub-tabs (Breakdown + Curator)
 - **Creative Cockpit is now a two-tab page:** **Creative Breakdown** (the existing per-client creative
   performance + categorisation + AI strategy, renamed) and **Creative Curator** (the idea studio).
   The Curator moved in here from its own top-level menu item, so all creative work lives in one place.
 
-## v3.199.0 — 2026-08-11 · `PENDING` — Overview tab first + seeded starter brand profiles
+## v3.199.0 — 2026-08-11 · `b7255ed` — Overview tab first + seeded starter brand profiles
 - **Overview is now the first tab** in each client's Settings (and opens by default).
 - **Starter brand profiles seeded for every client** from what we know: Pool Haus, Nexia Health,
   Finr Advisory, Psychology Hub, Book a Midwife and others get inferred industry, ICP, brand voice,
@@ -2702,7 +2731,7 @@ different powers and were being granted together.
   guarantees, competitors, website) is left blank or marked `[confirm]` so nothing fabricated can end
   up in an ad. Editing a field overrides the seed and saves as normal.
 
-## v3.198.0 — 2026-08-11 · `PENDING` — Client Brand Profile (Settings → Overview) feeding the Curator
+## v3.198.0 — 2026-08-11 · `49b4c7c` — Client Brand Profile (Settings → Overview) feeding the Curator
 - **New "Overview" tab on each client in Settings** — a structured **Client Brand Profile**: website,
   one-liner, industry, brand voice, ICP, offer & pricing, differentiators, objections, proof points,
   competitors, on-brand keywords, words to avoid, winning ad-copy angles, and free notes. Auto-saves,
@@ -2711,7 +2740,7 @@ different powers and were being granted together.
   context), so AI concepts are grounded in the brand's real voice, offer and customers. The Curator
   shows how much of the profile is filled and nudges you to complete it.
 
-## v3.197.0 — 2026-08-11 · `PENDING` — New module: Creative Curator (v1)
+## v3.197.0 — 2026-08-11 · `10085e1` — New module: Creative Curator (v1)
 - **New "Creative Curator" menu item** (under Creative Cockpit) to strategise new creatives. Pick any
   mix of **Format × Style × CTA × Audience × Angle** and generate ready-to-brief concepts:
   - **Instant** concepts from a researched library of **20 paid-social creative styles** (Before &
@@ -2723,14 +2752,14 @@ different powers and were being granted together.
   - **Save-to-board:** star concepts to a per-client (or Research) board, synced to the server like
     every other setting. A browsable style-library reference is built in.
 
-## v3.196.0 — 2026-08-11 · `PENDING` — Speed to Lead measured within business hours by default
+## v3.196.0 — 2026-08-11 · `556ea2f` — Speed to Lead measured within business hours by default
 - **Every client now measures Speed to Lead within business hours by default** (Mon–Fri 9am–5pm), so a
   lead that arrives at 11pm and gets a reply at 9am counts as a fast morning response, not a 10-hour
   one. The Settings → Working hours toggle is ticked by default; a client can still change the hours or
   switch it off (that choice is remembered). The Caalano360 speed summary now honours the same hours as
   the Timing tab.
 
-## v3.195.0 — 2026-08-11 · `PENDING` — Self-healing data loads on date-range changes
+## v3.195.0 — 2026-08-11 · `77adf90` — Self-healing data loads on date-range changes
 - **The Meta / Google deep views now retry automatically** when a pull times out. The single-call
   path had no retry, so a transient timeout right after a date-range change showed the "couldn't load"
   card immediately — and the fix was to refresh again by hand. It now retries up to 3× with backoff
@@ -2738,7 +2767,7 @@ different powers and were being granted together.
   "Taking longer than usual — retrying…" while it does. The Executive (health) view got the same
   treatment; the attribution/Caalano360 feed already retried.
 
-## v3.194.0 — 2026-08-11 · `PENDING` — UTM aliases: hide anything that matches a live entity (names + IDs)
+## v3.194.0 — 2026-08-11 · `4b17513` — UTM aliases: hide anything that matches a live entity (names + IDs)
 - **The unmatched list now hides any UTM that matches a live Meta or Google entity by name _or_ by ID.**
   A UTM that carries a raw campaign/ad-set/ad **ID** (e.g. `120242333973070146`) instead of the name is
   now recognised as a live campaign and dropped from the list — only genuinely orphaned UTMs remain.
@@ -2746,7 +2775,7 @@ different powers and were being granted together.
   query even if the heavier ad-level pull is slow, so live Meta campaigns/ad sets reliably match and
   disappear from the list.
 
-## v3.193.0 — 2026-08-11 · `PENDING` — UTM aliases: load Meta names + link by channel
+## v3.193.0 — 2026-08-11 · `a18132e` — UTM aliases: load Meta names + link by channel
 - **Fixed: the UTM-alias linker now loads Meta campaign / ad-set / creative names**, not just Google.
   The "current names" pull was fetching Meta ad-level data over 90 days, which often timed out and was
   silently dropped — leaving only Google in the dropdown and, worse, making live **Meta** campaigns
@@ -2757,13 +2786,13 @@ different powers and were being granted together.
 - Net effect: only genuinely unmatched UTMs (that match no live Meta *or* Google entity) remain in the
   list, and each can be linked to the correct channel's current name.
 
-## v3.192.0 — 2026-08-11 · `PENDING` — Creative sort: dropdown + asc/desc toggle
+## v3.192.0 — 2026-08-11 · `2908fc1` — Creative sort: dropdown + asc/desc toggle
 - Replaced the long row of Creative-performance sort chips with a compact **dropdown** (grouped:
   Performance · Key event volume · Cheapest cost per event) plus an **↑/↓ direction toggle**. Picking
   a metric defaults to its natural direction (cost metrics low→high, everything else high→low); the
   arrow flips it either way.
 
-## v3.191.0 — 2026-08-11 · `PENDING` — Click a creative's key events to see the people (+ appointment detail)
+## v3.191.0 — 2026-08-11 · `182bcec` — Click a creative's key events to see the people (+ appointment detail)
 - **Every key-event row on a creative card is now clickable** — Leads, each stage, each booked
   calendar and Won open the list of the actual people behind that number, **scoped to that creative**
   (matched on the lead's utm_content). Same drill-down as the scorecards at the top: name, status
@@ -2775,7 +2804,7 @@ different powers and were being granted together.
 - **Column order tidied** on the creative key-events table: Key event · Count · Cost per · % leads ·
   Next · Show %.
 
-## v3.190.0 — 2026-08-11 · `PENDING` — Frozen key-event name column + "cheapest cost per event" sort
+## v3.190.0 — 2026-08-11 · `3fbe0e9` — Frozen key-event name column + "cheapest cost per event" sort
 - **The Key Event name column now stays frozen** while the metric columns (Count → % leads → Next →
   Show % → Cost per) scroll sideways on the creative cards — so you always know which row you're
   reading.
@@ -2784,12 +2813,12 @@ different powers and were being granted together.
   (spend ÷ people who reached it, low→high) — e.g. cheapest cost per Quote, per Booked Discovery
   Call, per Site Visit. Creatives that never reached the event sort to the bottom.
 
-## v3.189.0 — 2026-08-11 · `PENDING` — Creative key-events header cue for the Cost-per column
+## v3.189.0 — 2026-08-11 · `a19b04a` — Creative key-events header cue for the Cost-per column
 - Added a small header cue on each creative card's key-events table — **"Cost per" = spend ÷ reached** —
   so the (already-present) Show % and Cost per columns are obviously there. Doubles as a fresh-bundle
   "tell": if you can see this cue, you're on the current deploy and the Cost-per column is rendering.
 
-## v3.188.0 — 2026-08-11 · `PENDING` — Wider popups, no sideways scroll
+## v3.188.0 — 2026-08-11 · `d714df3` — Wider popups, no sideways scroll
 - **All modal windows are now wider** (up to 1040px, 96vw) and no longer scroll horizontally as a
   whole — the window grows to fit instead.
 - **The Settings modal is wider still** (up to 1240px) so its full tab strip (Versions → Campaign
@@ -2801,14 +2830,14 @@ different powers and were being granted together.
   and "Cost per" columns were being hidden by an `overflow: hidden` wrapper on narrower cards; the
   wrapper now lets them scroll into view instead, so the Cost-per-stage figure is always reachable.
 
-## v3.187.0 — 2026-08-11 · `PENDING` — Creative cards: clearer "Cost per" stage column
+## v3.187.0 — 2026-08-11 · `8bff795` — Creative cards: clearer "Cost per" stage column
 - **The Caalano360 key-events table on each creative card now has a clearly-labelled "Cost per"
   column** — the creative's total ad spend ÷ the number of people who reached that stage (e.g.
   $2,652 ÷ 6 Site Visits Booked = $442 per site visit). This is the cost-efficiency read per key
   event, right beside the count and % of leads. (The figure was already computed under the old
   "Cost / stage" heading; this makes it explicit and matches the funnel language.)
 
-## v3.186.0 — 2026-08-11 · `PENDING` — Status filter in the people drill + longer date-range presets
+## v3.186.0 — 2026-08-11 · `15883dd` — Status filter in the people drill + longer date-range presets
 - **The people drill now has a status filter** (Open / Won / Lost / Abandoned / All) at the top of the
   modal. It **defaults to Open** so you land on the deals still in play; each chip shows its count and
   disables when empty. Opening a Won-only tile (or any group with no open deals) auto-selects All so the
@@ -2823,7 +2852,7 @@ different powers and were being granted together.
 - **The drill modal is wider (94vw, up to 1120px) and no longer scrolls sideways** — the current-stage
   column wraps instead, so every column (name, status, stage, source, value, age) is visible at once.
 
-## v3.184.0 — 2026-08-10 · `PENDING` — Click any key event to see the people behind it
+## v3.184.0 — 2026-08-10 · `8c4c1a8` — Click any key event to see the people behind it
 - **Every step in the Key Events funnel (Meta & Google) is now clickable** and opens the list of the
   actual people that make up that number — channel-scoped, so a Meta key event shows only the
   Meta-attributed people. Each row shows the person's **name, status (won / open / lost), current
@@ -2835,7 +2864,7 @@ different powers and were being granted together.
 - This is the fastest way to sanity-check a number (e.g. "why does the CRM show more Meta leads than
   Meta's pixel?") — you can now read the exact opportunities behind each step.
 
-## v3.183.0 — 2026-08-10 · `PENDING` — Meta Ads Caalano360 metrics are Meta-attributed only (not blended)
+## v3.183.0 — 2026-08-10 · `6eead21` — Meta Ads Caalano360 metrics are Meta-attributed only (not blended)
 - **Fixed: the Caalano360 metrics on the Meta Ads view were blending in other channels.** The aggregate
   Won / Revenue / Booked / Shown summed **every** utm_campaign's CRM outcomes — including Google and
   other-channel deals — so a client running both Meta and Google saw inflated Won / Revenue / ROAS on
@@ -2847,7 +2876,7 @@ different powers and were being granted together.
 - Relabelled both headers from "blended CRM outcomes" to **"Meta-attributed / Google-attributed CRM
   outcomes"** (Google's aggregate was already channel-scoped correctly — only its label was wrong).
 
-## v3.182.0 — 2026-08-10 · `PENDING` — Key Events funnel is mobile-friendly
+## v3.182.0 — 2026-08-10 · `a8cb16d` — Key Events funnel is mobile-friendly
 - **The Key Events funnel no longer spills off the right edge on phones.** The 6-column table (Step /
   Reached / % leads / Next step / Show % / Cost per event) couldn't fit a phone width, so the Cost per
   event column was cut off. On screens ≤600px each step now reflows into a **self-labelled card**: the
@@ -2855,7 +2884,7 @@ different powers and were being granted together.
   `Show %: 54%`, `Cost / event: $149.96`) that wrap — everything visible, nothing clipped. Tablet and
   desktop keep the table layout.
 
-## v3.181.0 — 2026-08-10 · `PENDING` — Large Meta windows (YTD) now load by chunking into months
+## v3.181.0 — 2026-08-10 · `070d447` — Large Meta windows (YTD) now load by chunking into months
 - **Year-to-date and other large Meta windows now actually load.** A full year of campaign / ad-set /
   creative data can't finish inside the serverless time limit in one call, so the Meta Ads view now
   **splits a window over ~3 months into monthly pulls, fetches them 4 at a time (with one retry each),
@@ -2870,7 +2899,7 @@ different powers and were being granted together.
   deltas are omitted on these long chunked windows (noted under the header).
 - Google Ads keeps the single-call path for now — same chunking for Google is the next step.
 
-## v3.180.0 — 2026-08-10 · `PENDING` — Account discovery shows connector status + errors
+## v3.180.0 — 2026-08-10 · `3c5cec2` — Account discovery shows connector status + errors
 - **The Add-client "Refresh accounts" flow now shows whether Windsor is actually live.** The discover
   endpoint was already fully uncached (`no-store`) — every refresh re-queries Windsor directly — but a
   failing Windsor connector (e.g. expired auth) was silently swallowed and shown as "No accounts found".
@@ -2881,7 +2910,7 @@ different powers and were being granted together.
 - Reminder (unchanged): a just-connected account only appears once Windsor has ingested some data for
   it; until then, paste its account ID into the box under the column to link it immediately.
 
-## v3.179.0 — 2026-08-10 · `PENDING` — Hide stale / renamed key events everywhere
+## v3.179.0 — 2026-08-10 · `c801996` — Hide stale / renamed key events everywhere
 - **Configured key events that no longer match a current pipeline stage are now hidden** across every
   view — the creative key-event funnels, the green Caalano360 column groups (campaigns / ad sets /
   formats / creatives), and the per-pipeline scorecards. Previously a renamed or removed stage stayed
@@ -2894,7 +2923,7 @@ different powers and were being granted together.
   has loaded (nothing is hidden while data is still loading). Clean up the entries permanently any time
   in Settings → Key events; until then they just won't clutter the reports.
 
-## v3.178.0 — 2026-08-10 · `PENDING` — Bigger multi-line key-event scorecards on Meta & Google too
+## v3.178.0 — 2026-08-10 · `6b46d73` — Bigger multi-line key-event scorecards on Meta & Google too
 - The Meta and Google per-pipeline Caalano360 tiles now use the same **bigger multi-line scorecard** as
   the Caalano360 tab: the count (large, +vs-prev arrow) with **% of leads**, **cost per event**, and
   (calendar events) **show rate with shown / occurred** each on their own line with a vs-prev arrow —
@@ -2902,7 +2931,7 @@ different powers and were being granted together.
   preserved. Cost per event here still uses the real per-pipeline Meta / Google spend (not blended).
 - The Meta / Google platform-metric tiles (Cost, Impressions, CPM, …) stay as the compact cards.
 
-## v3.177.0 — 2026-08-10 · `PENDING` — Caalano360: Meta-style key-event scorecards (all channels)
+## v3.177.0 — 2026-08-10 · `c72fb48` — Caalano360: Meta-style key-event scorecards (all channels)
 - **The Pipeline performance card now uses the Meta view's per-pipeline scorecard layout, but counting
   ALL channels** (not just Meta-attributed). Each pipeline shows a Meta/Google/Other contribution bar
   plus a row of key-event scorecards: Leads → each configured key event → Won → Revenue.
@@ -2917,7 +2946,7 @@ different powers and were being granted together.
 - The section follows the command-centre channel toggle, so All / Paid / Meta / Google re-scope every
   scorecard.
 
-## v3.176.0 — 2026-08-10 · `PENDING` — Fix "linked but empty" Meta accounts + styled key-event hover
+## v3.176.0 — 2026-08-10 · `e749003` — Fix "linked but empty" Meta accounts + styled key-event hover
 - **Root-cause fix for a Meta account that's linked but shows no data.** The account-id match was
   exact-after-normalising, so a stored id like `1234` never matched Windsor's `act_1234` (or vice
   versa) — every row got filtered out and the Meta deep pull, agency spend rollups and weekly board
@@ -2929,7 +2958,7 @@ different powers and were being granted together.
   tiles and the Key Events funnel. It lists each calendar's bookings (with shown/occurred) and any
   reached-the-stage count with no calendar booking.
 
-## v3.175.0 — 2026-08-10 · `PENDING` — Meta/Google tab only shows when connected + honest empty states
+## v3.175.0 — 2026-08-10 · `2d46d33` — Meta/Google tab only shows when connected + honest empty states
 - **The Meta Ads tab now only appears when the client actually has a Meta account connected** (same as
   Google always has). Previously it was added for *every* client, so a CRM-only or Google-only client
   (e.g. IDO IDO) showed an empty Meta tab — which is where the confusing placeholder came from.
@@ -2941,7 +2970,7 @@ different powers and were being granted together.
 - **A genuinely unlinked account** (backend returns "no Meta account") now shows a clear *"No Meta
   account connected for this client"* message with connect guidance, not a timeout-style error.
 
-## v3.174.0 — 2026-08-10 · `PENDING` — Caalano360: team performance, locations & timing summary
+## v3.174.0 — 2026-08-10 · `fa4ed9c` — Caalano360: team performance, locations & timing summary
 - **Team performance** card: per-rep leaderboard (leads → booked → won → win % → revenue → open value
   → avg close). Click a rep to expand their open deals and see where each one is held up — every deal
   drills into that contact's Caalano Systems **notes** ("why is this stuck?").
@@ -2953,7 +2982,7 @@ different powers and were being granted together.
   revenue-at-risk, the Caalano360 tab now reads as a top-line summary of every client tab. (Team,
   locations and timing reuse the existing per-tab feeds — no new backend.)
 
-## v3.173.0 — 2026-08-10 · `PENDING` — Caalano360: Pipeline performance + channel contribution
+## v3.173.0 — 2026-08-10 · `3d8582e` — Caalano360: Pipeline performance + channel contribution
 - **New "Pipeline performance" card on the Caalano360 tab.** For each pipeline it shows the top-line
   outcomes (leads, won, revenue, open + open value, lost) and a **Meta vs Google vs Other** contribution
   bar for both leads and won — so you can see at a glance how much each channel drives each pipeline.
@@ -2966,7 +2995,7 @@ different powers and were being granted together.
   inside the function time budget. (This is the first slice of the broader Caalano360 "summary of every
   tab" — user performance, held-up deals, locations and a timing summary follow.)
 
-## v3.172.0 — 2026-08-10 · `PENDING` — Large-window Meta/Google pulls no longer hard-fail
+## v3.172.0 — 2026-08-10 · `043a516` — Large-window Meta/Google pulls no longer hard-fail
 - **Root cause fixed:** the Windsor fetch timeouts (22s / 16s for big windows) were set for a
   26s function budget that was never granted — the functions actually hard-stop at ~10s, so a
   large window (e.g. *This year*) was killed mid-pull and the browser got a raw 502. The Meta/Google
@@ -2983,7 +3012,7 @@ different powers and were being granted together.
   *"couldn't load for this range — it's large and ran out of time, try a shorter range"* card with a
   **Retry** button, instead of the "never built" placeholder. The retry re-runs just that pull.
 
-## v3.171.0 — 2026-08-10 · `PENDING` — Per-calendar breakdown on hover
+## v3.171.0 — 2026-08-10 · `ae40430` — Per-calendar breakdown on hover
 - **Calendar key events now show their per-calendar split on hover.** When several calendars are
   linked to the same pipeline stage they merge into one key event (e.g. three reps' Discovery
   Calls → one "Discovery Call" number). Hovering that key event — in the Meta/Google Caalano360
@@ -2991,7 +3020,7 @@ different powers and were being granted together.
   contributed to the total (plus shown/occurred where known), and notes any reached-the-stage
   count that came in without a calendar booking. A dotted underline marks the hoverable labels.
 
-## v3.170.0 — 2026-08-10 · `PENDING` — Meta/Google Caalano360 tile + calendar label tidy
+## v3.170.0 — 2026-08-10 · `d1dfe1e` — Meta/Google Caalano360 tile + calendar label tidy
 - **Removed the standalone "Scheduled Appts" tile** from the per-pipeline Caalano360 metrics on the
   Meta and Google ad views. It was a blanket CRM booked-count that isn't a configured key event and
   duplicated the linked-calendar key event beside it. Only the key events you actually configure in
@@ -3001,7 +3030,7 @@ different powers and were being granted together.
   stage name) instead of the calendar's own name — including when the calendar was deliberately
   `[PIPE]`-tagged. This makes the Key Events pipeline/funnel view consistent with the funnel stages.
 
-## v3.169.0 — 2026-08-09 · `PENDING` — Large-window (YTD) reliability + load status
+## v3.169.0 — 2026-08-09 · `ffe2fdc` — Large-window (YTD) reliability + load status
 - **Big windows no longer time out or truncate.** Three fixes to the Meta + CRM pulls:
   - **Window-aware fetch timeouts:** each Windsor call now gets more time for a larger window
     (up to ~22s for a year) instead of the small-window default that was aborting YTD pulls.
@@ -3024,7 +3053,7 @@ different powers and were being granted together.
 - **Action for you:** on Netlify (Pro), raise **Site configuration → Functions → Function timeout**
   toward **26s** so the largest pulls have the full runway; the code now uses it when available.
 
-## v3.168.0 — 2026-08-09 · `PENDING` — Viewer access lock-down
+## v3.168.0 — 2026-08-09 · `530aab8` — Viewer access lock-down
 - **Client (viewer) accounts are now confined to exactly what they're assigned — enforced
   server-side, not just hidden in the UI.** Previously a viewer was limited to their allocated
   *clients* (`canSeeClient`) but, for a client they could see, could reach any data scope or agency
@@ -3041,7 +3070,7 @@ different powers and were being granted together.
 - Together with the earlier per-caller `private` caching and the Super-Admin-only-clients feature,
   a client can now only ever see the clients, views and configuration explicitly allocated to them.
 
-## v3.167.0 — 2026-08-09 · `PENDING`
+## v3.167.0 — 2026-08-09 · `3ebb2de`
 - **Add/Edit client: link an account by ID even before discovery lists it.** The Meta / Google /
   Caalano Systems pickers only showed accounts Windsor had synced data for (any account with
   activity in the last 12 months), so a just-connected Windsor account — which Windsor hasn't
@@ -3051,7 +3080,7 @@ different powers and were being granted together.
   link whose account has gone quiet still shows as selected in Edit). Clarified the footnote:
   Windsor lists an account only once it has data for it; a new account can take a while to backfill.
 
-## v3.166.0 — 2026-08-09 · `PENDING`
+## v3.166.0 — 2026-08-09 · `4387bb0`
 - **Super-Admin-only clients.** You can now restrict a client so it's visible **only to Super
   Admins** — hidden from every other Admin, User and Viewer. Toggle it per client in Settings →
   Clients ("🔒 Super-Admin only" on each card; a lock badge marks restricted ones). Enforced
@@ -3067,7 +3096,7 @@ different powers and were being granted together.
   every key event orders by its real funnel position across the Meta view, Google view and Monthly
   Report. **Regenerate frozen monthly reports** to pick this up.
 
-## v3.165.0 — 2026-08-09 · `PENDING`
+## v3.165.0 — 2026-08-09 · `6c305db`
 - **Security: the GoHighLevel OAuth connect endpoint is now admin-only and CSRF-protected.** The
   `caalano-connect` function is excluded from the site gate (so the OAuth redirect is always
   reachable), which left it fully public — anyone could hit the callback and overwrite the stored
@@ -3079,7 +3108,7 @@ different powers and were being granted together.
   SameSite=Lax session cookie is sent on GoHighLevel's top-level redirect back, so a legitimate admin
   reconnect is unchanged.
 
-## v3.164.0 — 2026-08-09 · `PENDING`
+## v3.164.0 — 2026-08-09 · `2bbd1df`
 - **Fix: Meta "Results" auto-detection was silently disabled by a field-name typo.** The ad-set
   optimisation-goal field was requested and read as `adsset_optimization_goal` (double-s), but
   Windsor's real field is `adset_optimization_goal` (single-s, matching its sibling
@@ -3092,7 +3121,7 @@ different powers and were being granted together.
   already returning nothing, so requesting the correct name can only improve or match the old
   behaviour.)
 
-## v3.163.0 — 2026-08-09 · `PENDING`
+## v3.163.0 — 2026-08-09 · `e17dccc`
 - **Monthly Report: wide Caalano360 green tables no longer clip when exported or printed.** The
   creatives table (and any `o360-tbl` with the union key-event columns) is fixed-width and, for a
   multi-pipeline client, can be wider than an A4-landscape page — so both the native **Print**
@@ -3103,7 +3132,7 @@ different powers and were being granted together.
   two export buttons now produce the same complete output. On-screen behaviour is unchanged (the
   tables still scroll horizontally inside their card).
 
-## v3.162.0 — 2026-08-09 · `PENDING` — Backend resilience
+## v3.162.0 — 2026-08-09 · `e4bcf7d` — Backend resilience
 - **Every connector call now has a timeout and retries transient failures.** A new shared
   `resilientFetch` (in `ghl.mjs`, used by `windsorFetch` and the GHL token/GET/POST helpers) bounds
   each outbound request with a ~9s timeout so a hung upstream can't stall the whole function, and
@@ -3118,7 +3147,7 @@ different powers and were being granted together.
   genuinely can't load rather than showing silently-empty numbers. (The blend / trends / snapshot
   builds already had this per-fetch tolerance and now also gain the timeout + retry.)
 
-## v3.161.0 — 2026-08-09 · `PENDING`
+## v3.161.0 — 2026-08-09 · `86310e3`
 - **Fix: unscoped key events no longer leak cross-pipeline totals into a per-pipeline view.** A
   key event configured as a bare stage name (or a Won/calendar with no pipeline link) carried no
   pipeline, so in a pipeline-scoped funnel, tile, green column, creative card or monthly-report
@@ -3131,7 +3160,7 @@ different powers and were being granted together.
   (Meta/Google Key Events funnels + per-pipeline metric tiles, creative cards, Monthly Report
   per-campaign columns, Forms drill, Timing matrix).
 
-## v3.160.0 — 2026-08-09 · `PENDING`
+## v3.160.0 — 2026-08-09 · `65ff91a`
 - **Caalano360 tab: the Revenue bottleneck funnel gets a pipeline selector.** For multi-pipeline
   clients the funnel (in `ExecutiveDashboard` → `BottleneckPanel`) previously stacked every
   pipeline; it now shows **one pipeline at a time** with a dropdown that defaults to the **biggest
@@ -3146,7 +3175,7 @@ different powers and were being granted together.
   (the latter carried a latent crash on UI-added clients). No behaviour change — everything removed
   was unreachable. Any future key-events / funnel edits now have exactly one live implementation.
 
-## v3.159.0 — 2026-08-09 · `PENDING` — Trust & correctness batch
+## v3.159.0 — 2026-08-09 · `bdb7528` — Trust & correctness batch
 - **Security (cross-client leak): authorised API responses are no longer shared-CDN cached when
   multi-user login is on.** `windsor.mjs` set `cache-control: public` on cached responses, but the
   per-caller access checks (`canSeeClient` / `restrictTo`) run *inside* the function — a shared-CDN
@@ -3170,7 +3199,7 @@ different powers and were being granted together.
 - **Fix: creative cards keyed by name.** `MRCreative` used positional keys, so the inline-play state
   could stick to the wrong creative after sorting/paging; now keyed by creative name.
 
-## v3.158.0 — 2026-08-09 · `PENDING`
+## v3.158.0 — 2026-08-09 · `170a29e`
 - **Monthly Report Creative Performance now has a data table too (like the Meta ads view).**
   Above the creative cards, the report now shows a **sortable green Caalano360 creatives table**
   (Creative · Type · Spend · Impr. · CTR · Freq · Results · Cost/res + a green column per key
@@ -3179,7 +3208,7 @@ different powers and were being granted together.
   scoped to each creative's own campaign pipeline. The Meta client view keeps its own existing
   Creatives table (the report table is gated to the report only, so there's no duplicate).
 
-## v3.157.0 — 2026-08-09 · `PENDING`
+## v3.157.0 — 2026-08-09 · `91b79de`
 - **Meta client view: Creative performance now uses the Monthly Report card exactly.** The old
   "Visual previews" mini-cards are replaced with the **same rich creative cards as the Monthly
   Report** (`MRCreativeSection`) — a large 9:16 thumbnail with inline Instagram play, a header
@@ -3191,7 +3220,7 @@ different powers and were being granted together.
   pipeline is named on the card for multi-pipeline clients. The sortable "Creatives" data table
   above it is unchanged.
 
-## v3.156.0 — 2026-08-09 · `PENDING`
+## v3.156.0 — 2026-08-09 · `e7fcd8b`
 - **Key events now render in correct pipeline order, with calendars combined into their linked
   stage.** The ordering engine (`orderKeyEvents`) now anchors a pipeline-tagged calendar
   (`[FIN] Booked Discovery Call`) to its stage position by matching the **de-tagged label** when
@@ -3214,7 +3243,7 @@ different powers and were being granted together.
   pipeline's stage-by-stage funnel (defaulting to highest ad-spend) without changing the whole
   page's pipeline filter; cost/stage divides that pipeline's attributed spend.
 
-## v3.155.0 — 2026-08-08 · `PENDING`
+## v3.155.0 — 2026-08-08 · `cb19403`
 - **Cost efficiency in the per-pipeline Caalano360 metrics (Meta + Google).** Every tile now
   carries a **cost-per-unit with its own up/down chip** vs the previous period (green when it
   gets cheaper) — so "Scheduled Appts ▲26%" now reads "…$117/appt ▼12%", giving the volume
@@ -3224,7 +3253,7 @@ different powers and were being granted together.
 - **Monthly Report:** the creative funnel's cost column is relabelled **"Cost / stage"** (it
   already computed the creative's ad-level spend ÷ each key event's count).
 
-## v3.154.0 — 2026-08-08 · `PENDING`
+## v3.154.0 — 2026-08-08 · `dd0301f`
 - **Creative cards only show their own campaign's key events.** Each creative card's Caalano360
   funnel is now scoped to the **pipeline of the campaign that creative ran in** — so a BA
   creative shows only the [BA] key events, not the [FIN] ones too (no more mixed lists or
@@ -3232,14 +3261,14 @@ different powers and were being granted together.
   **count · next-step conversion · cost per event**, and appointment-linked events show the
   **show rate (shown ÷ occurred)**.
 
-## v3.153.0 — 2026-08-08 · `PENDING`
+## v3.153.0 — 2026-08-08 · `2437179`
 - **Show rate on appointment-linked key-event tiles (shown ÷ occurred).** In the per-pipeline
   Caalano360 metrics (Meta + Google), any key event tied to a booked calendar now shows its
   **show rate beneath the count** — computed as **shown ÷ occurred** (appointments whose date
   has passed), not shown ÷ total booked, so upcoming bookings don't drag it down. Matches the
   funnel's Show % column.
 
-## v3.152.0 — 2026-08-08 · `PENDING`
+## v3.152.0 — 2026-08-08 · `5531a1b`
 - **Google Ads view gets the Meta treatment.** The improvements that make sense on the search
   side are now live in Google Ads: the **pipeline selector scopes the whole ad side** to its
   linked campaigns (cost / clicks / conversions / campaign / ad-group / keyword / search-term
@@ -3249,7 +3278,7 @@ different powers and were being granted together.
   The styled green-cell popups already applied everywhere (shared component). Creative cards /
   10-per-page pagination don't apply to Google (no image/video creatives there).
 
-## v3.151.0 — 2026-08-08 · `PENDING`
+## v3.151.0 — 2026-08-08 · `98f27c8`
 - **Per-pipeline Caalano360 metrics: Leads first, % of leads, vs-previous, and combined
   cost tiles.** Each pipeline group now opens with a **Leads** tile, every tile shows its
   **▲/▼ change vs the previous period** (new prior-period attribution fetch) and its **% of
@@ -3260,7 +3289,7 @@ different powers and were being granted together.
   app (header + per-calendar / pipeline-stage breakdown) instead of the plain grey browser
   tooltip. Already-styled popups were left untouched.
 
-## v3.150.0 — 2026-08-08 · `PENDING`
+## v3.150.0 — 2026-08-08 · `15921b8`
 - **Caalano360 metrics now break out by pipeline (business unit).** Each key event shows its
   **count** with the **cost per event** beneath it, alongside Scheduled Appts, Cost/Appt, Won,
   Cost/Won, Revenue and ROAS. For multi-pipeline clients these render as **one labelled group
@@ -3268,14 +3297,14 @@ different powers and were being granted together.
   near-independent business units — each group divides that pipeline's own Meta spend by its
   own counts. Single-pipeline clients keep the one combined group.
 
-## v3.149.0 — 2026-08-08 · `PENDING`
+## v3.149.0 — 2026-08-08 · `4984179`
 - **Meta Ads creative cards go horizontal — media left, all stats right (monthly-report
   style).** Each card now puts the creative preview on the left and the full read-out on the
   right: spend/leads/CPL/CTR/CVR/hook plus the Caalano360 key-events funnel (Count · Next-step
   · Cost/event · Show %, with booked & shown appointments) and Revenue/Cost-per-won/ROAS.
   Cards are wider (1–2 per row) and stack back to vertical on narrow screens.
 
-## v3.148.0 — 2026-08-08 · `PENDING`
+## v3.148.0 — 2026-08-08 · `0bf4482`
 - **Key events · Meta funnel is now per-pipeline.** For multi-pipeline clients the funnel no
   longer mixes every pipeline's stages together (which produced duplicate rows and nonsense
   next-step %). A **pipeline dropdown** on the panel shows one pipeline at a time — defaulting
@@ -3288,7 +3317,7 @@ different powers and were being granted together.
   (per booked call, qualified, etc.), Won, Cost/Won, Revenue and ROAS — scoped to the funnel's
   pipeline.
 
-## v3.147.0 — 2026-08-08 · `PENDING`
+## v3.147.0 — 2026-08-08 · `65ef5a8`
 - **Meta Ads creative cards — richer Caalano360 funnel (like the Monthly Report).** Each
   visual-preview card's key-events funnel now shows **Count · Next-step conversion · Cost per
   event · Show %** per stage (Leads row carries CPL), and the cards are wider to fit it.
@@ -3302,7 +3331,7 @@ different powers and were being granted together.
   formatted hover card — every conversion action (primary starred) with a **Total actions**
   line — instead of the plain grey browser tooltip.
 
-## v3.146.0 — 2026-08-08 · `PENDING`
+## v3.146.0 — 2026-08-08 · `0e093f7`
 - **Meta Ads: the pipeline selector now scopes the whole ad side, not just the green
   columns.** Picking a pipeline used to leave Cost / Impressions / Reach / the campaign,
   ad-set and creative tables and the daily trend at whole-account (the old "ad spend is
@@ -3313,7 +3342,7 @@ different powers and were being granted together.
   the note. If no campaigns resolve to the pipeline, a hint points to Settings → Campaign
   links. (Google Ads mirrors this next.)
 
-## v3.145.0 — 2026-08-08 · `PENDING`
+## v3.145.0 — 2026-08-08 · `fdf46c4`
 - **UTM aliases: clearer "leave as is" default + "Keep separate" for legit standalones.**
   Not every unmatched UTM is a rename — a paused-but-legit campaign shows as unmatched
   simply because it isn't in the live names list, and it should NOT be merged into another
@@ -3323,7 +3352,7 @@ different powers and were being granted together.
   the unmatched list and its data stays under its own name, with an undo in a "kept separate"
   strip. Stored under a reserved `_keep` key so it never affects aggregation.
 
-## v3.144.0 — 2026-08-08 · `PENDING`
+## v3.144.0 — 2026-08-08 · `0af4eee`
 - **UTM-alias editor now matches on the ad number, with explicit approve.** The suggestion
   engine used to match on wording (`Single_Video`, `Free Training`), which mis-linked ads
   (e.g. `CDa_72…` → `CDa_62…`) and piled many old UTMs onto whichever current ad shared
@@ -3333,7 +3362,7 @@ different powers and were being granted together.
   dropdown is prefixed with its code, and organic sources (`link_in_bio`, `linktree`, …) are
   filtered out of the ad-set/creative lists. Nothing links until you approve or pick.
 
-## v3.143.0 — 2026-08-08 · `PENDING`
+## v3.143.0 — 2026-08-08 · `841825c`
 - **Meta "Results" cell no longer truncates to "77…".** The campaigns / ad-sets tables are
   fixed-layout, so packing the count + conversion-action label + "+N" badge into one narrow
   column clipped it to an unreadable "77…". The cell now **stacks**: the count sits on top
@@ -3348,7 +3377,7 @@ different powers and were being granted together.
   and non-ad-set traffic sources (`social`, `organic`, `manual`, `calendar`, …) are filtered
   out of the ad-set list so only real renamed-ad-set candidates appear.
 
-## v3.142.0 — 2026-08-08 · `PENDING`
+## v3.142.0 — 2026-08-08 · `ed12cff`
 - **Real business logos as client avatars, app-wide.** Each client's website and
   uploaded logo are now pulled from their Caalano Systems (GoHighLevel) location and shown
   as the avatar everywhere one appears — agency leaderboard, client switcher, client header,
@@ -3359,7 +3388,7 @@ different powers and were being granted together.
   + optional **override URL** to force a specific image. New non-gated `logos` settings
   section + `scope=logos` backend endpoint (`locationProfile` reads website/logoUrl).
 
-## v3.141.0 — 2026-08-08 · `PENDING`
+## v3.141.0 — 2026-08-08 · `4655a08`
 - **Agency Overview headline now reconciles with the leaderboard.** The top "Revenue
   Generated" and "ROAS" KPIs used to pull from a *separate* agency feed (Windsor's bulk
   GHL blend) while the client leaderboard below pulled per-client attribution — two
@@ -3370,7 +3399,7 @@ different powers and were being granted together.
   while CRM data streams in the KPI shows an `n/N clients loaded` progress line so a
   half-loaded total is never mistaken for the final figure.
 
-## v3.140.0 — 2026-08-05 · `PENDING`
+## v3.140.0 — 2026-08-05 · `f078906`
 - **UTM aliases — fix attribution after a rename.** When a campaign, ad set or creative is
   renamed, historical CRM leads keep the **old** UTM they were stamped with, so their
   results stop rolling into the new name. New **Settings → (client) → UTM aliases** tab
@@ -3616,7 +3645,7 @@ different powers and were being granted together.
     key-events funnel.
   - **PDF export replicates the slides** — all drill-downs render expanded on paper.
 
-## v3.123.0 — 2026-07-31 · `PENDING`
+## v3.123.0 — 2026-07-31 · `09e11a2`
 - **Delete a client (Settings), not just deactivate.** The client Edit modal now has a
   **Delete client** action (Super Admin, with a confirm). Deleting removes the client
   from **every** list — dashboard, sidebar switcher, Settings and agency-wide
@@ -3625,7 +3654,7 @@ different powers and were being granted together.
   new **Deleted** filter in Settings → Clients lists deleted clients with a **Restore**
   button. Backend drops deleted clients from the `CLIENTS` registry across all scopes.
 
-## v3.122.0 — 2026-07-31 · `PENDING`
+## v3.122.0 — 2026-07-31 · `20a957a`
 - **Outbound calls now count as manual contact (Speed to Lead + Contact rate).** A
   placed outbound **call / voicemail** is treated as human outreach even when the
   dialer didn't attribute a GoHighLevel user — so phone-first teams get credited for
@@ -3634,14 +3663,14 @@ different powers and were being granted together.
   DM) still require a human user as before. Copy updated to "first manual message or
   call." Applies to both the sampled view and the full-range scan.
 
-## v3.121.1 — 2026-07-31 · `PENDING`
+## v3.121.1 — 2026-07-31 · `6667ee5`
 - **Contact rate now follows the full scan.** Previously the Contact rate card stayed
   on the 60-lead sample even after "Scan the whole date range." The whole-range scan
   now computes the contact-rate breakdown (and Lead outcomes) across every lead it
   processes, and the card updates live with it — the label switches to "of N leads
   (full scan)". Both the scan and the initial sample share the same computation.
 
-## v3.121.0 — 2026-07-31 · `PENDING`
+## v3.121.0 — 2026-07-31 · `e8d7783`
 - **Timing tab — Contact rate section (manual messages + appointments booked).** New
   card on the Timing tab: **total contact rate** (% of sampled leads we made human
   contact with — a manual message *or* an appointment booked), broken out into
@@ -3652,7 +3681,7 @@ different powers and were being granted together.
   appointments per lead and separates the "messaged" signal from the appointment
   fallback. Same sample basis as Speed to Lead (full scan makes it exact).
 
-## v3.120.0 — 2026-07-31 · `PENDING`
+## v3.120.0 — 2026-07-31 · `f6273e0`
 - **Timing tab — Open / Won / Lost lead outcomes with drill-downs.** The Timing
   (Speed to Lead) tab now shows a **Lead outcomes** row for the whole cohort of leads
   created in the range: **Open** (count + pipeline value), **Won** (count + revenue)
@@ -3662,7 +3691,7 @@ different powers and were being granted together.
   Backend `scope=speed` now returns the per-outcome deal lists (lost reasons resolved
   from GoHighLevel), computed across the full cohort independent of the speed sample.
 
-## v3.119.0 — 2026-07-31 · `PENDING`
+## v3.119.0 — 2026-07-31 · `51046ec`
 - **Organic Social — paid vs organic followers, IG/FB/Blended breakout, KPIs moved to
   Settings.**
   - **Paid vs organic new followers.** Backend probes Facebook's paid/non-paid
@@ -3680,7 +3709,7 @@ different powers and were being granted together.
   - Per-platform total-follower reconstruction so the Instagram and Facebook views each
     show their own audience size over time.
 
-## v3.118.0 — 2026-07-31 · `PENDING`
+## v3.118.0 — 2026-07-31 · `afbb8ec`
 - **Organic Social trend — total followers each month + organic-only stats.** The
   KPIs & Trends view now shows the **total follower count at each month-end** (and
   where it started), reconstructed from today's count back through the monthly net
@@ -3691,7 +3720,7 @@ different powers and were being granted together.
   with an "Organic only" badge and clearer labels. The trend window is now a true
   rolling window ending on the current month.
 
-## v3.117.0 — 2026-07-31 · `PENDING`
+## v3.117.0 — 2026-07-31 · `f3b3e2e`
 - **Organic Social — Monthly KPIs & rolling 6-month trend.** New **KPIs & Trends**
   tab in Organic Social. Set **monthly targets** per client (net new followers,
   reach, views, impressions, engagement, posts, engagement rate) — saved per client
@@ -3703,14 +3732,14 @@ different powers and were being granted together.
   totals; net-follower gain comes from daily follow/unfollow deltas so it's
   historically accurate even though absolute follower count is current-only.
 
-## v3.116.1 — 2026-07-31 · `PENDING`
+## v3.116.1 — 2026-07-31 · `999c73f`
 - **Keep the dashboard out of search engines.** Added a `robots.txt` that disallows
   all crawlers, a `noindex, nofollow` robots meta tag (plus a Googlebot-specific one)
   in the page head, and an `X-Robots-Tag: noindex, nofollow` response header on every
   route via Netlify — three layers so Google (and other engines) never index or rank
   this private client reporting tool.
 
-## v3.116.0 — 2026-07-31 · `PENDING`
+## v3.116.0 — 2026-07-31 · `c96f921`
 - **Monthly Report sizing fixes.** Removed the forced tall slide height and stopped
   short slides stretching to the tallest one, so each page sits at its natural size
   again — no more out-of-proportion pages or extra scrolling. Creative cards are now
@@ -3718,7 +3747,7 @@ different powers and were being granted together.
   6 per slide); the full 9:16 view still opens on ▶ Play. **Removed the results tiles
   from the cover page** — it's now just the client, industry and month.
 
-## v3.115.0 — 2026-07-31 · `PENDING`
+## v3.115.0 — 2026-07-31 · `80d701f`
 - **Creative performance — CRM key events, bigger cards, 9:16 playback.** The Meta
   creative slide is now a grid of large vertical cards. Each shows the Meta metrics
   (spend, impressions, CTR, frequency, results, cost/result) **and** the Caalano360
@@ -3744,7 +3773,7 @@ different powers and were being granted together.
   removing a connector drops it from the list), with **Pool Haus pinned first**, then
   alphabetical.
 
-## v3.114.0 — 2026-07-31 · `PENDING`
+## v3.114.0 — 2026-07-31 · `99afc07`
 - **Monthly Report — page-by-page slide view (PowerPoint / Canva style).** The deck
   now opens in **Slides** mode: one section per page, with **‹ ›  arrows, a clickable
   chip strip** to jump to any section (Cover, Meta, Ad sets, Creative, Google,
@@ -3753,7 +3782,7 @@ different powers and were being granted together.
   to the old continuous view any time. Print and PDF export are unchanged — both
   still lay out every section, one per page, regardless of which view you're in.
 
-## v3.113.0 — 2026-07-31 · `PENDING`
+## v3.113.0 — 2026-07-31 · `d6194f9`
 - **Add competitors from a dropdown, not manual typing.** The Competitors tab now
   adds a competitor by picking from a **dropdown of the connected public Instagram
   accounts** — the competitor name and handle are taken straight from the account's
@@ -3762,7 +3791,7 @@ different powers and were being granted together.
   `scope=socialaccounts` now also returns each account's **profile display name** and
   **handle** (falling back gracefully for connectors that don't expose them).
 
-## v3.112.0 — 2026-07-31 · `PENDING`
+## v3.112.0 — 2026-07-31 · `715227d`
 - **"You vs competitors" benchmark strip.** The Competitors tab now opens with a
   side-by-side table comparing the client's own Instagram against every mapped
   competitor on **followers, posts, engagement, avg engagement per post and
@@ -3772,7 +3801,7 @@ different powers and were being granted together.
   inflate it against public competitor data. Pulls the client's own IG via
   `scope=social` and collects each competitor's numbers as their cards load.
 
-## v3.111.0 — 2026-07-31 · `PENDING`
+## v3.111.0 — 2026-07-31 · `1e61bd2`
 - **Full competitor Instagram dashboard — every public insight + post thumbnails.**
   Each mapped competitor now renders a performance-style card mirroring the client
   Organic Social tab: a 6-tile KPI row (**followers, posts, engagement, estimated
@@ -3787,7 +3816,7 @@ different powers and were being granted together.
   rather than shown as zero, since Instagram only exposes those to the account owner.
   Competitor cards now stack full-width.
 
-## v3.110.0 — 2026-07-31 · `PENDING`
+## v3.110.0 — 2026-07-31 · `07f7b00`
 - **Fix competitor Instagram cards showing all zeros.** The `instagram_public`
   connector uses different field names to the owned `instagram` one, so the metric
   pull was silently returning nothing. Backend `scope=competitor` now reads the
@@ -3797,7 +3826,7 @@ different powers and were being granted together.
   Format mix now labels by surface (REELS / FEED / STORY). Verified live against
   `jjpoolsbrisbane` (9,408 followers, 130 posts).
 
-## v3.109.0 — 2026-07-29 · `PENDING`
+## v3.109.0 — 2026-07-29 · `1592a65`
 - **Competitor Instagram insights (public).** Once a competitor is mapped to a
   Windsor public IG account, its card now pulls a live summary from public data —
   **followers, posts, engagement (likes+comments), estimated engagement rate, format
@@ -3806,7 +3835,7 @@ different powers and were being granted together.
   simpler field sets). Facebook deferred; IG-only for now. Engagement rate is
   estimated (avg likes+comments per post ÷ followers) since competitor reach is private.
 
-## v3.108.0 — 2026-07-29 · `PENDING`
+## v3.108.0 — 2026-07-29 · `5f19dcf`
 - **Competitors → map to Windsor public accounts.** The Competitors tab now lists
   every public Instagram / Facebook account your Windsor key can access (backend
   `scope=socialaccounts`, auto-detecting the public connector slug) and lets you
@@ -3815,7 +3844,7 @@ different powers and were being granted together.
   `scope=windsorprobe&connector=<slug>` to inspect any connector's accounts/fields.
   Live competitor metrics render off these mappings next.
 
-## v3.107.0 — 2026-07-29 · `PENDING`
+## v3.107.0 — 2026-07-29 · `fc122fd`
 - **Fix "Caalano360 columns hidden: attribution request failed."** The GHL-backed
   attribution build is heavy and can transiently time out / cold-start / rate-limit;
   it now **auto-retries twice with backoff** before showing an error, which clears
@@ -3823,7 +3852,7 @@ different powers and were being granted together.
   now shows the **real backend reason** (e.g. timeout, GHL 429) instead of a generic
   "network / HTTP error", so any persistent cause is diagnosable.
 
-## v3.106.0 — 2026-07-29 · `PENDING`
+## v3.106.0 — 2026-07-29 · `ae7f206`
 - **Organic Social → Competitors tab (assignment + structure).** A Performance /
   Competitors tab toggle. In Competitors you assign a client's competitors by public
   Instagram / Facebook handle (stored server-side, per client), with profile links
@@ -3832,14 +3861,14 @@ different powers and were being granted together.
   follower split / "% of new followers from ads" wire up once Windsor's public
   connector + Meta ad fields are verified against live data (connector was offline).
 
-## v3.105.0 — 2026-07-29 · `PENDING`
+## v3.105.0 — 2026-07-29 · `a6aecfb`
 - **Inbound social DMs on the Organic Social dashboard.** Counts conversations
   started via Instagram / Facebook Messenger from the client's GoHighLevel inbox
   (channel = IG/FB, started in the period): tiles for total / IG / FB plus a
   per-day stacked bar. Backend `scope=socialdm` (with a `?probe=1` sample to verify
   the GHL channel fields against live data). Shows only when DMs are found.
 
-## v3.104.0 — 2026-07-29 · `PENDING`
+## v3.104.0 — 2026-07-29 · `ac78ce3`
 - **Organic Social — big expansion.**
   - **Blended "Overall" section** on top (when a client has both IG + FB): total audience
     (IG followers + FB likes), net new audience, total reach, engagement, blended
@@ -3855,7 +3884,7 @@ different powers and were being granted together.
   - **PDF export** — Print and Download PDF buttons (portrait, multi-page) so the
     dashboard can be shared with the client.
 
-## v3.103.0 — 2026-07-29 · `PENDING`
+## v3.103.0 — 2026-07-29 · `ec68349`
 - **New "Organic Social Media" tab.** A full organic social dashboard per client
   (dropdown), for the selected date range, covering **Instagram** and **Facebook
   Page** organic:
@@ -3870,17 +3899,17 @@ different powers and were being granted together.
   - Live for the five clients with a connected organic profile (Pool Haus, Nexia,
     SWIFT, Healan, Simchat).
 
-## v3.102.0 — 2026-07-29 · `PENDING`
+## v3.102.0 — 2026-07-29 · `8986b33`
 - **Account summary now shows Deals Won on both bases as headline tiles** — "created"
   (this month's leads, created-on cohort) and "closed" (marked won this month), so
   the two are visible at a glance without reading the matrix.
 
-## v3.101.0 — 2026-07-29 · `PENDING`
+## v3.101.0 — 2026-07-29 · `44845c3`
 - **CAC (cost per paid won)** added to the revenue matrix — ad spend ÷ paid deals
   won, for both bases (status change vs created on), sitting under Paid ROAS so the
   two efficiency metrics read together.
 
-## v3.100.0 — 2026-07-29 · `PENDING`
+## v3.100.0 — 2026-07-29 · `37278a3`
 - **Multi-month reports.** The Monthly Report now has a From → To month picker — pick
   the same month for a single-month report, or a range (e.g. April → June) for a
   quarter. Everything (campaign/creative/Google/CRM, drills, lost reasons, revenue
@@ -3892,7 +3921,7 @@ different powers and were being granted together.
 - **All client pickers are now alphabetical** (sidebar switcher, Monthly Report, and
   the remaining client dropdowns). Performance leaderboards keep their ranked order.
 
-## v3.99.0 — 2026-07-29 · `PENDING`
+## v3.99.0 — 2026-07-29 · `9dab11c`
 - **Monthly Report fixes:** the Status-Change vs Created-On revenue matrix no longer
   runs off the card — it now uses a fixed layout with a hard width cap and wrapping
   headers, so both columns always fit.
@@ -3901,7 +3930,7 @@ different powers and were being granted together.
   the won drill-downs.
 - **Dates now display DD/MM/YYYY** throughout the drill-downs.
 
-## v3.98.0 — 2026-07-29 · `PENDING`
+## v3.98.0 — 2026-07-29 · `199b76d`
 - **Monthly Report — CRM section made consistent + interactive.** Resolves the
   mixed-basis nonsense (funnels/user rows that printed >100% conversions):
   - **The funnel is now one clean Created-On cohort** — this month's leads → each
@@ -3924,7 +3953,7 @@ different powers and were being granted together.
   - Backend: new `monthlydeals` scope + `monthlyDeals()` returning won (both bases)
     and lost deal lists with names/dates/source/reason and paid split.
 
-## v3.97.0 — 2026-07-29 · `PENDING`
+## v3.97.0 — 2026-07-29 · `f2350a7`
 - **Monthly Report — trend now matches the headline.** The 6-month trend was pulling
   Meta with a `date` dimension, which splits windowed conversions per day and
   under-counted results (so the June point read $137/result while the headline read
@@ -3936,7 +3965,7 @@ different powers and were being granted together.
   lives in Settings → Appearance**. The signed-in-user row is slimmed into a quiet,
   blended-in strip instead of a boxed card.
 
-## v3.96.0 — 2026-07-29 · `PENDING`
+## v3.96.0 — 2026-07-29 · `f84815d`
 - **Monthly Report fixes** from first review:
   - **Meta now counts optimised Results, not native leads.** The campaign slide's
     headline (and the 6-month trend) now sum each campaign's own objective result
@@ -3955,7 +3984,7 @@ different powers and were being granted together.
   - Note: the KPI/ROAS/revenue changes apply to existing snapshots on reload; hit
     **Refresh snapshot** to also rebuild the 6-month trend on the new results basis.
 
-## v3.95.0 — 2026-07-29 · `PENDING`
+## v3.95.0 — 2026-07-29 · `ae6e95f`
 - **New Monthly Report tab — a frozen, slide-based client report with PDF export.**
   Pick a client and a month; **Generate snapshot** freezes that month's numbers
   server-side (Netlify Blobs) so an exported/reopened report never shifts. Deck:
@@ -3975,7 +4004,7 @@ different powers and were being granted together.
   - Backend: new `monthlysnap` (save/read/list), `monthlywon` (won-by-date) and
     `monthlytrend` (6-month Meta spend/leads/CPL) scopes on the windsor function.
 
-## v3.94.0 — 2026-07-29 · `PENDING`
+## v3.94.0 — 2026-07-29 · `b0eddc4`
 - **Sidebar client switcher (GoHighLevel-style).** Added a dropdown pill at the top
   of the sidebar showing the active client (avatar + name + industry subline) with a
   chevron. Clicking it opens a searchable list of **every** client; picking one jumps
@@ -3984,7 +4013,7 @@ different powers and were being granted together.
   admins on all views (placeholder "Select a client" until one is open) and for
   viewers who have more than one report assigned.
 
-## v3.93.0 — 2026-07-28 · `PENDING`
+## v3.93.0 — 2026-07-28 · `eb9855c`
 - **Command centre decluttered — fewer, calmer tiles.** Cut ~24 tiles down to ~17
   and dropped a whole group. Each rate now rides as a small line under its number
   instead of being its own box: Booked shows "68% booking rate", Shown "5% show
@@ -3994,7 +4023,7 @@ different powers and were being granted together.
   block — the funnel (Opportunities → Booked → Shown → Won) on top, the money
   (Revenue, Open, Lost, Close rate) below. Every tile stays clickable to its drill.
 
-## v3.92.0 — 2026-07-28 · `PENDING`
+## v3.92.0 — 2026-07-28 · `2efe0fc`
 - **Fixed the command-centre opportunity count mismatch.** The scorecard tiles
   were reading the health engine's lead count (a narrower, deduped basis) while
   the drills and funnel counted every opportunity — so "Opportunities" showed 42
@@ -4010,7 +4039,7 @@ different powers and were being granted together.
   in the wider window), so people who booked but had no in-period opportunity are
   no longer all labelled "Lead".
 
-## v3.91.0 — 2026-07-28 · `PENDING`
+## v3.91.0 — 2026-07-28 · `427da30`
 - **The Caalano360 channel filter now re-pivots the whole drill layer.** Selecting
   All / Paid / Non-paid / Google / Meta now filters the **Revenue bottleneck
   funnel**, **Open pipeline by stage**, **Lost reasons**, **Key event reach** and
@@ -4021,7 +4050,7 @@ different powers and were being granted together.
   days now correctly shows only paid opportunities everywhere — and reads **0**
   where there are none, instead of falling back to account-wide numbers.
 
-## v3.90.0 — 2026-07-28 · `PENDING`
+## v3.90.0 — 2026-07-28 · `6503bfb`
 - **Lost reasons drill now shows each lead's source + opens to their notes.** In
   the Caalano360 Lost reasons view, clicking a reason lists the people lost with
   their **source trail** — opportunity source, channel, UTM source and first-touch
@@ -4029,14 +4058,14 @@ different powers and were being granted together.
   lead to expand their **Caalano Systems notes** inline. buildCcDrill now attaches
   the source fields to each lost person.
 
-## v3.89.0 — 2026-07-28 · `PENDING`
+## v3.89.0 — 2026-07-28 · `1239afe`
 - **Open-by-stage deals now show the assigned rep and open to their notes.** Each
   open deal in the bottleneck's Open pipeline by stage list gains an **Assigned**
   column (who owns it), and clicking a lead expands to that contact's **Caalano
   Systems notes** — the same notes drill used on the Users tab. buildCcDrill now
   loads the user list and tags each open deal with its owner + contact id.
 
-## v3.88.0 — 2026-07-28 · `PENDING`
+## v3.88.0 — 2026-07-28 · `6282c16`
 - **Revenue bottleneck reworked into a hybrid drill.** The bottleneck card now
   splits cleanly into two: the **key-event funnel** and a separate **Show rate by
   calendar** card. Below the funnel is a new **Open pipeline by stage** list —
@@ -4051,14 +4080,14 @@ different powers and were being granted together.
   selected key events as a percentage of all leads (e.g. Site Visit Booked = 28%
   of leads), with the raw count underneath.
 
-## v3.87.0 — 2026-07-28 · `PENDING`
+## v3.87.0 — 2026-07-28 · `84c6811`
 - **Command Centre — Booked tile now drills into bookings per calendar.** Clicking
   **Booked** in the Caalano360 command centre opens a per-calendar breakdown
   (booked · occurred · shown, with show rate per calendar), and clicking any
   calendar lists who booked in and whether they occurred / showed. Uses the same
   calendar drill already behind the booking-rate and show-rate tiles.
 
-## v3.86.0 — 2026-07-28 · `PENDING`
+## v3.86.0 — 2026-07-28 · `811de44`
 - **Command Centre channel filter now re-pivots every metric.** Previously only a
   few CRM tiles responded to All / Paid / Non-paid / Google / Meta. Now ad spend,
   cost per lead, cost per booked, cost per won, ROAS, booked, shown and all the
@@ -4067,13 +4096,13 @@ different powers and were being granted together.
   Meta spend ÷ Meta-attributed wons, etc.); non-paid shows no cost figures since
   there's no attributable spend.
 
-## v3.85.0 — 2026-07-28 · `PENDING`
+## v3.85.0 — 2026-07-28 · `b119962`
 - **Appointments — Resulted column on the "Booked ahead" table, clickable.** Each
   lead-time bucket now shows how many resulted, and clicking it drills into that
   bucket's appointments by status (Showed / No-show / Cancelled / Other) plus the
   reporting-gap groups — the same Resulted drill, scoped to the booked-ahead row.
 
-## v3.84.0 — 2026-07-28 · `PENDING`
+## v3.84.0 — 2026-07-28 · `384abe7`
 - **Command Centre — clickable drill-downs, accuracy fixes, channel filter, key-events funnel.**
   - Every metric tile is now clickable: Booking/Show rate → calendars → the people
     who booked; Revenue/Won → the won deals; Ad spend → platform split;
@@ -4094,7 +4123,7 @@ different powers and were being granted together.
   - Backend: new `scope=ccdrill` (buildCcDrill) assembles the drill dataset in one
     load; a standalone form-answers helper joins lost contacts to their submissions.
 
-## v3.83.0 — 2026-07-28 · `PENDING`
+## v3.83.0 — 2026-07-28 · `2c8d3b6`
 - **Appointments — status breakdown + reporting-gap detection.** New status row:
   Booked · Occurred · Resulted · Shown · Show rate, where "Resulted" means the
   appointment's status has actually moved out of "confirmed" into an outcome. An
@@ -4105,7 +4134,7 @@ different powers and were being granted together.
   normalised status, per-status tallies and a per-appointment people list to
   buildAppointmentInsights (additive — the client-update path is untouched).
 
-## v3.82.0 — 2026-07-28 · `PENDING`
+## v3.82.0 — 2026-07-28 · `7865cdd`
 - **Forms tab reworked around Key Events.** The top scorecards now span full width
   and show Forms · Leads · one tile per client Key Event · Revenue (instead of the
   generic Leads/Booked/Shown/Won). The Form performance table swaps its
@@ -4115,26 +4144,26 @@ different powers and were being granted together.
   palette. Clients with no key events configured fall back to the old Booked/Won
   view. (Backend: buildForms attaches a per-form people list, cap 120.)
 
-## v3.81.0 — 2026-07-28 · `PENDING`
+## v3.81.0 — 2026-07-28 · `7706d21`
 - **Command Centre — Lost reasons full width, no sideways scroll.** Moved the
   Lost reasons panel to its own full-width card (long reason names wrap) and added
   a Share column. Channel split is now its own card and hides in present mode.
 
-## v3.80.0 — 2026-07-28 · `PENDING`
+## v3.80.0 — 2026-07-28 · `2514bea`
 - **Present mode.** A sidebar toggle that hides agency-internal cost/spend/margin
   figures so the dashboard is safe to screen-share with a client. First pass hides
   the Command Centre's "Spend & efficiency" block; the mechanism (`.x-internal`
   elements shown only when present mode is off) is reusable to tag more internal
   figures across other views. Always starts off so it can't be left on by mistake.
 
-## v3.79.0 — 2026-07-28 · `PENDING`
+## v3.79.0 — 2026-07-28 · `4f8485d`
 - **Collapsible sidebar.** A « toggle collapses the left nav on desktop to give
   the main screen more room; a » button brings it back. The choice is remembered.
 - **Users drill-down fits the panel.** The expanded rep detail no longer inherits
   the wide leaderboard's scroll-width and run off-screen — it's pinned to the
   left and clamped to the visible area (and adapts when the sidebar is collapsed).
 
-## v3.78.0 — 2026-07-28 · `PENDING`
+## v3.78.0 — 2026-07-28 · `58a0fbb`
 - **Caalano360 pared back to a clean command centre.** Removed the business-health
   gauge + pillar breakdown (and with it the "Build trend history" 504), the
   Forecast panel, and the AI executive summary. The command-centre metrics are
@@ -4144,7 +4173,7 @@ different powers and were being granted together.
   pipeline to chase, no-wins-yet) instead of health pillars. "By pipeline" only
   shows when a client runs more than one pipeline.
 
-## v3.77.0 — 2026-07-28 · `PENDING`
+## v3.77.0 — 2026-07-28 · `c9a308e`
 - **Forms — answer drill-down + per-client Key Events funnel.** Click any form
   answer to expand the list of people who gave it: name, status (won/lost/open),
   the pipeline stage they're at, opportunity value, days in stage, booking detail
@@ -4157,7 +4186,7 @@ different powers and were being granted together.
   list, capped at 80; fetchAppointments additively carries per-contact calendar
   detail.)
 
-## v3.76.0 — 2026-07-23 · `PENDING`
+## v3.76.0 — 2026-07-23 · `4ab38f6`
 - **Caalano360 tab is now a CRM + spend command centre.** Replaced the old KPI
   strip with a full control centre that pivots the whole of Caalano Systems on
   the selected range: total ad spend, opportunities, cost per lead / booked /
@@ -4170,7 +4199,7 @@ different powers and were being granted together.
   funnel). No backend change — the lost value/reasons come from the existing
   Users feed, aggregated client-side.
 
-## v3.75.0 — 2026-07-23 · `PENDING`
+## v3.75.0 — 2026-07-23 · `6043312`
 - **Client Update now reads the whole client profile.** The generator pulls in
   every tab's data, not just spend + pipeline: Location (where leads and the
   booked/won ones come from), Appointments (booking lead time, self vs
@@ -4181,7 +4210,7 @@ different powers and were being granted together.
   the full picture, but instructed to surface only the one or two most valuable
   insights (often as a smart client question), keeping the email tight.
 
-## v3.74.0 — 2026-07-23 · `PENDING`
+## v3.74.0 — 2026-07-23 · `300b9d3`
 - **Client Update — rewritten to sound human and drive replies.** The generator
   prompt was overhauled: a "trusted operator" voice (lead with the story, every
   number gets a "so what", have a point of view), the AI now interprets and
@@ -4194,7 +4223,7 @@ different powers and were being granted together.
   movement 30+ days, from the Users data) so it can ask informed questions about
   where deals are stuck.
 
-## v3.73.0 — 2026-07-23 · `PENDING`
+## v3.73.0 — 2026-07-23 · `8d306a7`
 - **Meta Insights — Opportunity score tab (live from the Graph API).** Meta's own
   0–100 account health score per client, with its top recommendations ranked by
   expected point lift (e.g. "Maximise qualified leads · +4 · 24% lower cost per
@@ -4203,7 +4232,7 @@ different powers and were being granted together.
   var, read-only). Shows a clear setup banner until the token is configured.
   This is the first tab that pulls *from* Meta (the webhook pushes *to* us).
 
-## v3.72.0 — 2026-07-23 · `PENDING`
+## v3.72.0 — 2026-07-23 · `f50d4e9`
 - **Meta fatigue tab — show subscribed-but-quiet accounts.** Previously only
   accounts that had already sent a webhook event appeared, which made it look
   like the others weren't connected. Added an "Awaiting Meta's first event"
@@ -4211,25 +4240,25 @@ different powers and were being granted together.
   a card shows once Meta pushes an account's first event; everything else waits
   in the panel until then.
 
-## v3.71.1 — 2026-07-23 · `PENDING`
+## v3.71.1 — 2026-07-23 · `a83f32b`
 - **Webhook receiver panel is now collapsible** — it starts collapsed to a single
   status line (green dot + "events received" + count) and expands on click to
   show the recent-events table, so it stays out of the way.
 
-## v3.71.0 — 2026-07-23 · `PENDING`
+## v3.71.0 — 2026-07-23 · `916665c`
 - **Meta Insights — Ad recommendations tab.** New sub-tab that surfaces Meta's
   own `ad_recommendations` webhook events (already streaming in once the field is
   subscribed), grouped by client, newest first, with whatever detail the payload
   carried. Backend `scope=recommendations` reads them from the webhook store.
 
-## v3.70.0 — 2026-07-23 · `PENDING`
+## v3.70.0 — 2026-07-23 · `2a5dc81`
 - **Meta webhook — live connection status panel.** The "Creative fatigue · Meta"
   tab now shows a receiver-status card that lists every event Meta has sent
   (test or real), so you get instant confirmation the pipe works — even for test
   events whose placeholder account id doesn't map to a client. Backend
   `scope=webhookstatus` lists the stored events across all accounts.
 
-## v3.69.1 — 2026-07-23 · `PENDING`
+## v3.69.1 — 2026-07-23 · `c395428`
 - **Fix: Meta webhook was blocked by the site auth gate.** The `auth` edge
   function refuses any `/.netlify/functions/*` call without a login cookie, which
   also blocked Meta's server-side webhook verification (it has no cookie).
@@ -4237,7 +4266,7 @@ different powers and were being granted together.
   so Meta can reach it. The endpoint still secures itself with the
   `X-Hub-Signature-256` HMAC check, so it's safe to leave un-gated.
 
-## v3.69.0 — 2026-07-23 · `PENDING`
+## v3.69.0 — 2026-07-23 · `2a009ff`
 - **Meta creative-fatigue webhook receiver.** New `meta-webhook` Netlify
   function that accepts Meta's official `creative_fatigue` push events: it
   answers Meta's verification handshake, verifies each POST's `X-Hub-Signature-256`
@@ -4253,7 +4282,7 @@ different powers and were being granted together.
     with App Review to cover all client accounts; the proxy tab covers everyone
     in the meantime.
 
-## v3.68.0 — 2026-07-23 · `PENDING`
+## v3.68.0 — 2026-07-23 · `a041e27`
 - **Creative fatigue — smarter scoring (fewer false flags).** Fatigue now
   requires genuine wear — rising frequency and/or a falling CTR — before a
   creative is flagged Watch/Fatiguing. A below-average quality ranking no longer
@@ -4268,7 +4297,7 @@ different powers and were being granted together.
   User token + App Review) and will show Meta's verdict beside the proxy once
   connected.
 
-## v3.67.0 — 2026-07-23 · `PENDING`
+## v3.67.0 — 2026-07-23 · `1b71b57`
 - **Meta Insights hub.** New left-nav "Meta Insights" tab that gathers
   everything Meta-derived into one place, sub-tabbed like the client workspace.
   The standalone "Meta Creative Fatigue" tab moved in here (Cockpit fatigue
@@ -4286,7 +4315,7 @@ different powers and were being granted together.
   Moved the fatigue signal out of the creative name into a dedicated column with
   a filter (Fatiguing / Watch / OK / No signal) and sortable by severity.
 
-## v3.66.0 — 2026-07-23 · `PENDING`
+## v3.66.0 — 2026-07-23 · `8f35ef7`
 - **Meta Creative Fatigue.** A new left-nav tab that scans every active Meta
   client for tiring creatives, plus inline fatigue badges in the Creative
   Cockpit. The signal is computed live from Meta delivery — **frequency**
@@ -4306,7 +4335,7 @@ different powers and were being granted together.
     `creative_fatigue` webhook is push-only and needs a Meta App with App Review;
     this reproduces the same signals from data we already pull.
 
-## v3.65.0 — 2026-07-23 · `PENDING`
+## v3.65.0 — 2026-07-23 · `b95dcfe`
 - **Client context / notes** on the Client Update page. A free-text field where
   you record background about a client (their business, tone to use, what they
   care about, current focus, sensitivities, offers, relationship notes). It's fed
@@ -4315,7 +4344,7 @@ different powers and were being granted together.
   numbers. Saved per client to the shared settings blob (so it lives in Settings)
   but editable right here on the comms screen.
 
-## v3.64.0 — 2026-07-23 · `PENDING`
+## v3.64.0 — 2026-07-23 · `6d9bcaa`
 - **Client Update — call out the channel split when two channels run.** When a
   client runs both Meta and Google in the period, the supporting dashboard now
   splits the headline into **Meta leads / Meta cost-per-lead** and **Google
@@ -4325,13 +4354,13 @@ different powers and were being granted together.
   Summary now explicitly breaks out the Meta vs Google split too. Single-channel
   clients are unchanged (one combined leads/cost-per-lead view).
 
-## v3.63.1 — 2026-07-23 · `PENDING`
+## v3.63.1 — 2026-07-23 · `818062b`
 - **Fix: ad thumbnail preview was being clipped** by the table's scroll
   container. The hover preview now renders as a fixed overlay positioned from the
   thumbnail, so it sits over the top of everything (and flips below the thumbnail
   when there isn't room above).
 
-## v3.63.0 — 2026-07-23 · `PENDING`
+## v3.63.0 — 2026-07-23 · `1cf9223`
 - **Supporting dashboard — drill-down + thumbnails + booking attribution.**
   - **Click a campaign or ad set** to expand the ads inside it, each with a
     thumbnail; **hover a thumbnail** to see a larger preview. Top creatives now
@@ -4347,7 +4376,7 @@ different powers and were being granted together.
   granular, last). Segments now include **booked calls** where the figure is
   available.
 
-## v3.62.0 — 2026-07-23 · `PENDING`
+## v3.62.0 — 2026-07-23 · `c4ec54a`
 - **"The numbers behind this update" dashboard** on the Client Update page.
   Loads with the selected client + date range and shows every figure the update
   is built from, so you can see how it all connects:
@@ -4365,7 +4394,7 @@ different powers and were being granted together.
   - The page now loads all data once; Generate reuses it (faster, and the message
     and its evidence always match).
 
-## v3.61.2 — 2026-07-23 · `PENDING`
+## v3.61.2 — 2026-07-23 · `667985b`
 - **Fix: Client Update lead count + cost per lead now reconcile with Ads
   Manager.** The headline "leads" was using the CRM opportunity count (every
   source) but dividing it against Meta-only spend, so cost per lead came out low
@@ -4376,7 +4405,7 @@ different powers and were being granted together.
 - **Fix: email is now plain text for clean copy-paste** — no Markdown asterisks
   or hash headings; section titles are plain lines and lists use simple hyphens.
 
-## v3.61.1 — 2026-07-23 · `PENDING`
+## v3.61.1 — 2026-07-23 · `ab95ad1`
 - **Fix: Client Update sometimes returned the old saved copy instead of a new
   one.** The generator asked Claude for a JSON object, but the multi-line email
   body produced literal newlines that broke `JSON.parse`, so generation failed
@@ -4385,7 +4414,7 @@ different powers and were being granted together.
   budget so the two-version output can't truncate, and made a failed regenerate
   say so clearly instead of looking like the same response.
 
-## v3.61.0 — 2026-07-23 · `PENDING`
+## v3.61.0 — 2026-07-23 · `d8a83dd`
 - **Client Update — depth pass from feedback.** New `scope=updateextra` +
   `buildUpdateExtra` feed the generator much richer, honest context:
   - **Attendance honesty:** a low "attended" is now explained properly — how many
@@ -4409,7 +4438,7 @@ different powers and were being granted together.
   - Booked calls confirmed as **Caalano Systems bookings attributed by UTM** (not
     Meta's schedule metric). Still strictly grounded in computed data.
 
-## v3.60.0 — 2026-07-23 · `PENDING`
+## v3.60.0 — 2026-07-23 · `d831c98`
 - **Client Update — per-pipeline + ad-set segmentation.**
   - **Per-pipeline commentary:** for clients with more than one pipeline (e.g.
     Finr's Buyers Advocacy + Finance), the email now gives a dedicated section
@@ -4425,7 +4454,7 @@ different powers and were being granted together.
     month") rather than as raw dates, so it doesn't read as AI-generated.
   - Still strictly grounded: only computed figures are used, nothing invented.
 
-## v3.59.0 — 2026-07-23 · `PENDING`
+## v3.59.0 — 2026-07-23 · `70be54b`
 - **Client Update generator (new left-nav module).** Pick a client + date range,
   add their first name, and generate a client-ready account update in two
   formats side by side: a **casual WhatsApp** message and a **formal, structured
@@ -4441,7 +4470,7 @@ different powers and were being granted together.
     Digital. **Only uses computed data** — the AI is instructed never to invent,
     estimate or add any figure, claim or insight not in the payload. Staff only.
 
-## v3.58.0 — 2026-07-22 · `PENDING`
+## v3.58.0 — 2026-07-22 · `6e644a5`
 - **Creative Cockpit headline metric → cost per booked call** (replaces cost per
   qualified lead). "Booked" is now the concrete, per-pipeline definition used
   across the platform: a lead counts as booked if it has a calendar booking in
@@ -4451,7 +4480,7 @@ different powers and were being granted together.
   strategy all now rank on cost per booked call. (Qualified-lead was ambiguous
   across clients with no consistent stage; booked is unambiguous.)
 
-## v3.57.1 — 2026-07-22 · `PENDING`
+## v3.57.1 — 2026-07-22 · `f6daf20`
 - **Creative Cockpit polish + fixes:**
   - Client selector is now a **dropdown** at the top (matching Weekly Traffic
     Light) instead of a chip row.
@@ -4465,7 +4494,7 @@ different powers and were being granted together.
     separate `facebook_leads` (lead-level) connector — the Meta insights feed
     we use carries lead counts but no form identifier. Tracked as a follow-up.
 
-## v3.57.0 — 2026-07-22 · `PENDING`
+## v3.57.0 — 2026-07-22 · `9bb9cb7`
 - **Creative Cockpit auto-fill (Windsor fields confirmed).** Verified the Meta
   connector's creative fields and wired auto-detection: **CTA button**
   (`call_to_action_type`), **ad copy** (`body`), **headline** (`title`) and
@@ -4479,7 +4508,7 @@ different powers and were being granted together.
   video transcription still needs a Meta Graph API path (via `creative_id`) or
   Instagram media URL plus a speech-to-text provider — tracked as a follow-up.
 
-## v3.56.0 — 2026-07-22 · `PENDING`
+## v3.56.0 — 2026-07-22 · `084a321`
 - **Creative Cockpit — AI layer.** Two AI helpers (existing Anthropic
   integration, server-side key):
   - **Suggest tags** per creative: Claude reads the ad's copy / CTA / format and
@@ -4489,7 +4518,7 @@ different powers and were being granted together.
     — what's working by angle / persona / format, what to cut, and concrete new
     concepts to test. All figures are computed here; Claude only interprets them.
 
-## v3.55.0 — 2026-07-22 · `PENDING`
+## v3.55.0 — 2026-07-22 · `98a184e`
 - **Creative Cockpit (new left-nav hub).** Every Meta creative for a client in
   one grid, joined to the real lead funnel behind each ad (leads → qualified →
   booked → won, matched by `utm_content`), so creatives can be ranked by cost
@@ -4510,11 +4539,11 @@ different powers and were being granted together.
     `buildCreativePerf`) and a `scope=creativefields` probe to confirm which
     creative fields (CTA, copy, destination link, video URL) Windsor exposes.
 
-## v3.54.1 — 2026-07-22 · `PENDING`
+## v3.54.1 — 2026-07-22 · `a680a12`
 - **Location map colours retuned:** Leads = yellow, Booked = blue, Won = green,
   Lost = red (legend and markers updated to match).
 
-## v3.54.0 — 2026-07-22 · `PENDING`
+## v3.54.0 — 2026-07-22 · `6617497`
 - **Location map — new colour scheme with Lost.** Open leads are now **blue**
   (was red) and **lost** leads are **red**, alongside amber = booked and green =
   won. Added a **Lost** filter to the map's Show toggle and a Lost count to the
@@ -4523,7 +4552,7 @@ different powers and were being granted together.
   reached (won > booked > lost > open lead). Applies to both the Location tab
   and the per-form location map.
 
-## v3.53.0 — 2026-07-22 · `PENDING`
+## v3.53.0 — 2026-07-22 · `d7537b6`
 - **New Location tab.** A dedicated, full-height interactive map (same Leaflet /
   OpenStreetMap base as the Forms map, with suburb names and zoom/pan) showing
   where every lead is located, aggregated across all of the client's forms.
@@ -4535,7 +4564,7 @@ different powers and were being granted together.
   call. Shows a clear empty state when no form in the period captured a location
   field. Available to viewers via the per-tab allocation control.
 
-## v3.52.0 — 2026-07-22 · `PENDING`
+## v3.52.0 — 2026-07-22 · `3633548`
 - **Revenue bottleneck analysis** added to the Caalano 360 executive tab: the
   whole-account funnel (Leads → Qualified → Booked → Shown → Won) with the step
   conversion rate at each stage, flagging the single biggest drop-off as the
@@ -4545,20 +4574,20 @@ different powers and were being granted together.
   just the executive dashboard. The detailed paid/CRM breakdowns remain on the
   Meta Ads, Google Ads, Users and Cohorts tabs.
 
-## v3.51.2 — 2026-07-22 · `PENDING`
+## v3.51.2 — 2026-07-22 · `13d43e2`
 - **Executive KPI scorecard now spans the full width.** The seven headline tiles
   (ad spend, leads, qualified, cost/lead, booked, won, revenue) stretch evenly
   across the row instead of clustering on the left, stepping down to 4 then 2
   columns on narrower screens.
 
-## v3.51.1 — 2026-07-22 · `PENDING`
+## v3.51.1 — 2026-07-22 · `cd9c908`
 - **Open-deals drill table now fits the modal — no horizontal scroll.** The
   Users open-pipeline drill-down (and the executive Revenue-at-risk table) used
   to overflow sideways because long emails/phone numbers wouldn't wrap, clipping
   the Opportunity column. Switched those tables to a fixed layout with wrapping
   so every column is visible without scrolling, on desktop and mobile.
 
-## v3.51.0 — 2026-07-22 · `PENDING`
+## v3.51.0 — 2026-07-22 · `7e28f4d`
 - **Caalano 360 Executive Dashboard.** The Caalano 360 tab now leads with an
   executive layer; the previous blended breakdown moves into a collapsible
   "Full Caalano 360 breakdown" beneath it (nothing removed).
@@ -4589,7 +4618,7 @@ different powers and were being granted together.
     fixed trailing-30-day window; an on-demand `scope=healthbackfill` seeds
     weekly history per client. The header sparkline shows the trend as it fills.
 
-## v3.50.0 — 2026-07-22 · `PENDING`
+## v3.50.0 — 2026-07-22 · `b35f977`
 - **Mobile responsiveness pass across the whole app.** Audited every screen at
   phone widths and hardened the gaps:
   - Segmented filter toggles (All/Paid/Meta/… etc.) now **scroll** instead of
@@ -4604,7 +4633,7 @@ different powers and were being granted together.
     charts keep their own scroll containers). Verified the Agency Overview and
     login render cleanly with no sideways scroll at phone width.
 
-## v3.49.0 — 2026-07-21 · `PENDING`
+## v3.49.0 — 2026-07-21 · `19575fe`
 - **Meta results: fix lead-form counts, name the exact optimisation, and show
   all actions on hover.**
   - **Instant Form lead campaigns now count correctly** (were showing 0). Lead-
@@ -4619,7 +4648,7 @@ different powers and were being granted together.
     …) with counts — while the headline number stays the **primary** optimisation
     result. A small "+N" marks how many other actions it also drove.
 
-## v3.48.0 — 2026-07-21 · `PENDING`
+## v3.48.0 — 2026-07-21 · `8faacfa`
 - **Deal notes now render as clean text.** GHL note bodies are HTML; they're now
   converted to readable text (lists → bullets, block tags → line breaks, entities
   decoded) instead of showing raw `<p style=…>` markup.
@@ -4629,14 +4658,14 @@ different powers and were being granted together.
   with their leads/booked/won summed, both in the location list and as one map
   marker (no more overlapping dots for the same spot).
 
-## v3.47.0 — 2026-07-21 · `PENDING`
+## v3.47.0 — 2026-07-21 · `865b56e`
 - **Deal notes in the open-deals drill-down.** In the Users tab, click a stage →
   click any live deal to **expand its Caalano Systems notes** (fetched on demand
   from the contact), newest first with author + date. So when a deal is stuck at
   a stage, you can read the CRM context on *why* right there. Deals with no
   contact link aren't expandable; deals with no notes say so.
 
-## v3.46.0 — 2026-07-21 · `PENDING`
+## v3.46.0 — 2026-07-21 · `5cb0f22`
 - **Lead location map is now a real interactive map.** Replaced the hand-drawn
   Australia outline with a proper **OpenStreetMap** slippy map (Leaflet): pan and
   **zoom right down to street/suburb names**, like Google Maps. Each postcode /
@@ -4647,7 +4676,7 @@ different powers and were being granted together.
   Leaflet loads lazily (only when the map is opened), so it doesn't weigh down the
   rest of the app.
 
-## v3.45.0 — 2026-07-21 · `PENDING`
+## v3.45.0 — 2026-07-21 · `8000a1d`
 - **New Super Admin role (owner tier).** Above Admin, with exclusive powers:
   - **Manages Admins** — only a Super Admin can create, promote, demote or remove
     Admins (and other Super Admins). Admins can still manage Users & Viewers.
@@ -4662,13 +4691,13 @@ different powers and were being granted together.
   - **Your account is auto-promoted:** the founding admin (first account created)
     becomes Super Admin automatically on next load — nothing for you to do.
 
-## v3.44.1 — 2026-07-21 · `PENDING`
+## v3.44.1 — 2026-07-21 · `1f8e1d2`
 - **Users funnel: add total conversion % next to step %.** Each stage in the
   per-rep funnel now shows both **step** (conversion from the previous stage)
   and **total** (conversion from all leads), so you can read stage-to-stage
   drop-off and overall lead→stage rate at a glance.
 
-## v3.44.0 — 2026-07-21 · `PENDING`
+## v3.44.0 — 2026-07-21 · `f04f612`
 - **Users tab: complete open-pipeline view + per-stage deal drill-down.**
   - The per-rep expansion now has an **Open pipeline by stage** panel listing
     **every** stage that has live deals (not just key events), reconciling to the
@@ -4682,7 +4711,7 @@ different powers and were being granted together.
     the dedicated panel to avoid the earlier confusion where only key-event
     stages showed open counts.
 
-## v3.43.0 — 2026-07-21 · `PENDING`
+## v3.43.0 — 2026-07-21 · `ab8fc5b`
 - **Users tab: pipeline value, open deals per stage, and lost reasons per rep.**
   Expanding a rep now shows:
   - **Value cards** — Total pipeline · **Open (live)** · Won · **Lost** value,
@@ -4697,13 +4726,13 @@ different powers and were being granted together.
 - **Fixes leaderboard column alignment** — numeric headers and values now
   right-align together (the `mini-tbl` base rule was left-aligning the data).
 
-## v3.42.1 — 2026-07-21 · `PENDING`
+## v3.42.1 — 2026-07-21 · `d9957ab`
 - **Users key-event funnel now follows pipeline order.** The per-rep funnel (and
   the key-events matrix) sort stages by their real pipeline position instead of
   config order, so the cumulative funnel reads top-to-bottom and the step
   conversion % make sense (no more out-of-order stages / >100% steps).
 
-## v3.42.0 — 2026-07-21 · `PENDING`
+## v3.42.0 — 2026-07-21 · `814b036`
 - **Users tab: per-rep key-event funnel + channel filter.**
   - Expanding a rep now shows their funnel across **all of the account's
     configured key events** (Settings → Key events) — Leads → each key stage →
@@ -4717,7 +4746,7 @@ different powers and were being granted together.
     now correctly scoped to the selected channel.
 - Fixes the Users tab crash ("Invariant failed") from a chart axis mismatch.
 
-## v3.41.0 — 2026-07-21 · `PENDING`
+## v3.41.0 — 2026-07-21 · `ede8b38`
 - **Meta results now auto-detect each campaign's optimisation event.** The Meta
   tab reads every ad set's **optimisation goal + promoted object** (from Windsor)
   and reports its *own* result — so a **Schedule** campaign shows Schedule
@@ -4731,7 +4760,7 @@ different powers and were being granted together.
   → Meta conversions), then to Leads. (By-form / by-format / creative tables
   still show Leads for now — a follow-up.)
 
-## v3.40.0 — 2026-07-21 · `PENDING`
+## v3.40.0 — 2026-07-21 · `35a995b`
 - **Per-client Meta conversion selection (Settings → Meta conversions).** A new
   tab in each client's Settings that **loads the Meta conversion events that
   actually fired** for that ad account (last 90 days, incl. custom-pixel events
@@ -4742,7 +4771,7 @@ different powers and were being granted together.
   result instead of generic “Leads”. (Next: wiring the chosen events into the
   Meta tab’s headline result, columns and cost-per.)
 
-## v3.39.0 — 2026-07-21 · `PENDING`
+## v3.39.0 — 2026-07-21 · `15b9358`
 - **Team & access — edit users in a popup.** The team list is now a clean table
   (Name · Email · Role · Access · Status) with a single **Edit access** button
   per person and a **+ Invite person** button. Both open a **modal** with a role
@@ -4757,7 +4786,7 @@ different powers and were being granted together.
   **Windsor** — one that isn’t connected there yet (or has no spend history)
   won’t appear until Windsor has data for it.
 
-## v3.38.0 — 2026-07-21 · `PENDING`
+## v3.38.0 — 2026-07-21 · `91e33d5`
 - **Add a client with just one account + refresh available accounts.**
   - The Add-client explorer now makes clear you only need **one** linked account
     — a **Meta-only** (or Google-only, or CRM-only) client is fine. The client
@@ -4771,7 +4800,7 @@ different powers and were being granted together.
   role work): a User limited to specific accounts only sees those accounts in the
   agency overview, trends and coverage — filtered server-side.
 
-## v3.37.0 — 2026-07-21 · `PENDING`
+## v3.37.0 — 2026-07-21 · `629e084`
 - **Three-tier roles + client self-signup with admin approval.** The access
   model now has three roles, enforced both in the UI and on the server:
   - **Admin** — full control (all clients, all tabs, settings, users).
@@ -4794,14 +4823,14 @@ different powers and were being granted together.
     caller isn’t allocated (client accounts are fully isolated), and Settings
     writes are admin-only. The Basic-Auth break-glass path keeps full access.
 
-## v3.36.1 — 2026-07-21 · `PENDING`
+## v3.36.1 — 2026-07-21 · `e70b382`
 - **Team & access is now discoverable before you switch logins on.** Settings
   always shows the **Clients / Team & access** sub-tabs. Open **Team & access**
   and — until the login system is enabled — it explains exactly how to turn it
   on (add the `AUTH_SECRET` env var in Netlify), so the setup steps live in the
   app instead of only in chat.
 
-## v3.36.0 — 2026-07-20 · `PENDING`
+## v3.36.0 — 2026-07-20 · `794dd4e`
 - **Proper login screen + multi-user accounts (replaces the shared password).**
   A real email + password sign-in, individual accounts, and team invites — with
   a zero-lockout rollout.
@@ -4824,7 +4853,7 @@ different powers and were being granted together.
     remove it once everyone has their own login. The edge gate now also keeps
     the baked client data (`/data`) private to signed-in users.
 
-## v3.35.0 — 2026-07-20 · `PENDING`
+## v3.35.0 — 2026-07-20 · `96bba81`
 - **New Users tab (replaces the client's CRM sub-tab).** A full sales-rep
   performance interface for each account, grouping every opportunity by its
   **assigned user**:
@@ -4844,7 +4873,7 @@ different powers and were being granted together.
     efficiency measure (ad spend isn't caused by the rep), clearly labelled as
     such. Includes an optional **pipeline selector** to scope the whole view.
 
-## v3.34.0 — 2026-07-20 · `PENDING`
+## v3.34.0 — 2026-07-20 · `9c87439`
 - **Full Meta drill-down.** Every level is clickable and filters the levels below
   it *and* the Performance-by-form table: click a **campaign** or **ad set** to
   filter the tables below plus the forms they drove; ad sets are now clickable;
@@ -4854,17 +4883,17 @@ different powers and were being granted together.
   active filter with individual clears + "Clear all", and the Performance-by-form
   headers are now **sortable**.
 
-## v3.33.0 — 2026-07-20 · `PENDING`
+## v3.33.0 — 2026-07-20 · `a194d37`
 - **Synced horizontal scroll**: scrolling any table in the Meta / Google view
   scrolls them all to the same offset, so the Caalano360 green columns stay
   aligned across the campaigns / ad sets / creatives tables instead of each
   scrolling on its own.
 
-## v3.32.1 — 2026-07-20 · `PENDING`
+## v3.32.1 — 2026-07-20 · `53c137b`
 - Hardened the calendar/pipeline-stage key-event de-duplication (case/whitespace
   normalisation + name-match fallback) so double-ups can't slip through.
 
-## v3.32.0 — 2026-07-20 · `PENDING`
+## v3.32.0 — 2026-07-20 · `d75e296`
 - **No more double-ups between calendars and pipeline stages** in the Caalano360
   green columns and the Key Events funnel. When a calendar is linked to a
   pipeline stage (e.g. Pool Haus's Pool Specialist call), the two now show as a
@@ -4873,11 +4902,11 @@ different powers and were being granted together.
   in the number's marker + hover, and in the funnel bar's "+Np" / tooltip). The
   standalone duplicate stage row/column is dropped everywhere it appears.
 
-## v3.31.1 — 2026-07-20 · `PENDING`
+## v3.31.1 — 2026-07-20 · `266097a`
 - Appointments "Time to book" now shows the **median** (robust to outliers) as
   the headline with the **average** alongside it.
 
-## v3.31.0 — 2026-07-20 · `PENDING`
+## v3.31.0 — 2026-07-20 · `2fa2a8d`
 - **Lead map — smarter & more useful:**
   - **State disambiguation**: the client's dominant state is inferred from the
     unambiguous answers (postcodes + single-state suburbs), so same-named suburbs
@@ -4888,7 +4917,7 @@ different powers and were being granted together.
     dot red→green by its conversion rate while dot size stays lead volume — so
     you see where leads come from *and* where they convert.
 
-## v3.30.0 — 2026-07-20 · `PENDING`
+## v3.30.0 — 2026-07-20 · `a730a1b`
 - **Lead map — detailed + auto-zoom.** Swapped the rough outline for a detailed
   Australia map with state borders, and the map now **auto-zooms to fit the
   plotted leads** — a Sydney-only client (e.g. Pool Haus) sees Sydney at full
@@ -4897,11 +4926,11 @@ different powers and were being granted together.
   national view. A single location still shows ~2° of context so it isn't
   over-zoomed.
 
-## v3.29.1 — 2026-07-20 · `PENDING`
+## v3.29.1 — 2026-07-20 · `ebe041a`
 - Removed the Agency Overview "Still maturing" summary banner — the per-row badge
   next to each client name already covers it.
 
-## v3.29.0 — 2026-07-20 · `PENDING`
+## v3.29.0 — 2026-07-20 · `18869c5`
 - **Lead map** on the Forms location breakdown: postcode / suburb answers are now
   plotted on a map of Australia (dot size = lead volume), with a ranked list
   underneath and any unmatched answers listed. Self-contained — a bundled AU
@@ -4909,7 +4938,7 @@ different powers and were being granted together.
   loaded only when the section is opened, so it stays out of the main bundle. No
   external map tiles or dependencies.
 
-## v3.28.0 — 2026-07-20 · `PENDING`
+## v3.28.0 — 2026-07-20 · `810daf3`
 - **Speed to Lead — whole-dataset scan:** a "Scan the whole date range" button
   processes every lead in the range (not just a sample), chunked across polled
   requests with a live progress counter, so you can get the complete figure.
@@ -4921,14 +4950,14 @@ different powers and were being granted together.
 - **Forms location breakdown** is now **collapsed by default** behind a "📍 Where
   leads are located" toggle instead of sitting expanded at the top.
 
-## v3.27.0 — 2026-07-20 · `PENDING`
+## v3.27.0 — 2026-07-20 · `519101a`
 - **Appointments tab — more insights:** cancellation % and reschedule % (overall
   and by lead-time bucket, to see if far-out bookings cancel more), a
   **time-to-book** metric (lead in → booked), and a **"when the call is
   scheduled"** card with show rate by **day of week** and by **time of day**.
 - **Settings** clients are now sorted **alphabetically** by default.
 
-## v3.26.0 — 2026-07-20 · `PENDING`
+## v3.26.0 — 2026-07-20 · `724fbff`
 - **Appointments tab — big upgrade:**
   - **Pipeline selector** (per-pipeline booking analysis).
   - Channel filter now includes **Paid** and **Non-Paid** alongside All / Meta /
@@ -4946,7 +4975,7 @@ different powers and were being granted together.
   whose sales cycle is longer than the selected range (so their Won / Revenue /
   ROAS understate results), in addition to the per-row and client-header badges.
 
-## v3.25.0 — 2026-07-20 · `PENDING`
+## v3.25.0 — 2026-07-20 · `7699088`
 - **Speed to Lead → outcomes by response speed:** a new table on the Timing tab
   shows, for each response-time bucket (under 5 min … over 24 hrs), the leads'
   downstream **Book % / Show % / Win %** — so you can see whether replying faster
@@ -4957,7 +4986,7 @@ different powers and were being granted together.
   — a lead at 11pm answered at 9am is a fast response, not a 10-hour one. The
   Timing tab shows which hours are applied.
 
-## v3.24.0 — 2026-07-20 · `PENDING`
+## v3.24.0 — 2026-07-20 · `f11effc`
 - **New Appointments tab** (CRM-connected clients) — booking timing & outcomes:
   - **Booking lead time**: how far in advance calls are booked (same-day → 30+
     days), as a bar chart with **show-rate and win-rate lines overlaid**, plus a
@@ -4971,7 +5000,7 @@ different powers and were being granted together.
   - A "how self vs staff is decided" validation panel lists the booking sources
     seen, so the classification can be sanity-checked per client.
 
-## v3.23.0 — 2026-07-20 · `PENDING`
+## v3.23.0 — 2026-07-20 · `11e9c94`
 - **Settings → Forms tab redesigned** to match the rest of Settings: each form is
   a clean row with a reviewed tick, an inline pipeline dropdown and a notes
   pencil.
@@ -4985,7 +5014,7 @@ different powers and were being granted together.
 - **Removed** the contact self-booking **tag audit** from Settings (superseded by
   the appointments-API approach for booked-by-user vs booked-by-contact).
 
-## v3.22.0 — 2026-07-20 · `PENDING`
+## v3.22.0 — 2026-07-20 · `dbe6b97`
 - **Pipeline filter on Meta Ads & Google Ads.** A "Pipeline" dropdown (shown for
   multi-pipeline clients) re-scopes every Caalano360 green column, the key-event
   funnel and calendar bookings to a single pipeline — so a client whose key
@@ -4997,7 +5026,7 @@ different powers and were being granted together.
   (spend/impressions) stay fully visible — only the CRM outcomes scope — and all
   drill-downs (campaign → ad set → creative / keyword) keep working.
 
-## v3.21.0 — 2026-07-20 · `PENDING`
+## v3.21.0 — 2026-07-20 · `bb0dbba`
 - **Speed to Lead accuracy fix** (the Finr "everything under 5 min" problem):
   - Anchor the clock on when the **contact entered the CRM** (`dateAdded`), not
     when the opportunity was created — the opp is often made later by a workflow
@@ -5013,7 +5042,7 @@ different powers and were being granted together.
 - Forms table: form-name column left-aligned to match the Meta "Performance by
   form" table; reverted the broken lead-share pie to the centered donut.
 
-## v3.20.0 — 2026-07-20 · `PENDING`
+## v3.20.0 — 2026-07-20 · `1d9d82e`
 - **Speed to Lead** — new **Timing** tab on each client (CRM-connected). Measures
   the time from a lead coming in to the **first manual (human) message** sent to
   them, excluding automated workflow / campaign / bulk sends, so it reflects how
@@ -5027,7 +5056,7 @@ different powers and were being granted together.
   right) and packed the chart row from the left so the Forms reporting reads
   left-to-right like the Meta reporting.
 
-## v3.19.0 — 2026-07-20 · `PENDING`
+## v3.19.0 — 2026-07-20 · `5ae4cb9`
 - **Data maturity flag.** The CRM now calculates each client's average time to
   close a deal (lead-created → won) behind the scenes — never shown as a metric.
   Any date range shorter than that cycle **plus a 20% buffer** gets an amber

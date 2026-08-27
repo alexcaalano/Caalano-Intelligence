@@ -18,6 +18,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.391.0 - 2026-08-20 · `PENDING` - Front door: real brand marks in the Syncs with row
+
+Replaced the text chips with drawn brand marks: Meta Ads, Google Ads, Google
+Analytics, TikTok Ads and Caalano Systems.
+
+- Inline SVG, because the page must stay self-contained (its CSP allows no
+  external origin and no remote image). Each mark is a named constant, so
+  swapping in an official asset file later is a one-line replacement.
+- **TikTok is now listed.** It is a supported connector on the data layer and an
+  intended integration; the app does not pull from it yet.
+- Instagram dropped back off. It was my addition rather than a request, and six
+  chips wrapped the row onto a second line.
+
+Google Ads was redrawn once: the first attempt crossed its two bars into an X
+rather than the narrow lean the real mark makes.
+
+**These are hand-drawn approximations, not the official files.** They read
+correctly at 15px but they are not pixel-accurate, and both Meta and Google
+publish assets with usage rules. Dropping the official SVGs into the constants
+is the intended finish.
+
+---
+
 ## v3.390.0 - 2026-08-20 · `PENDING` - Front door: tighter opening, and what it syncs with
 
 - Cut the middle sentence from the opening paragraph. Three sentences became two

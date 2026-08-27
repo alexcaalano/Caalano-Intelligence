@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.385.0'
+const APP_VERSION = '3.385.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1857,12 +1857,27 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
   const setLensSafe = (l) => { setLens(l); setOpen(null) }
   const setBasisSafe = (b) => { setBasis(b); setOpen(null) }
   const immature = basis === 'created' && win < MATURE_WIN
-  // Closed basis needs the CRM app connected for its status-change dates. Say how
-  // many clients that leaves out rather than quietly showing a shorter list.
-  const noClosed = useMemo(() => {
-    if (!clients || basis !== 'closed') return 0
-    return rows.filter((r) => { const t = clients[r.id]; const w = t && (t.windows || []).find((x) => x.n === win); return w && w.crm && !w.crm.closed }).length
+  // Closed dates come from the CRM API, which we use for every client that has a
+  // location linked - there is no per-client opt-in. So a client missing them is
+  // one of exactly two things, and only one of them is a problem:
+  //   - no CRM location linked at all: nothing to report, nothing to fix, and
+  //     nothing worth telling anyone about here;
+  //   - a linked client whose read FAILED (timeout / rate limit / token), which
+  //     silently fell back to the Windsor feed and is worth surfacing.
+  // Counting the two together, as this note first did, made a working setup look
+  // broken and hid the reads that genuinely failed.
+  const gaps = useMemo(() => {
+    if (!clients || basis !== 'closed') return null
+    const failed = []
+    for (const r of rows) {
+      const t = clients[r.id]
+      if (!t || !t.hasCrm) continue
+      const w = (t.windows || []).find((x) => x.n === win)
+      if (w && w.crm && !w.crm.closed) failed.push({ name: r.name, err: t.crmErr })
+    }
+    return failed
   }, [clients, rows, win, basis])
+  const crmDown = tr.data && tr.data.crmConnected === false
   const head = (
     <div className="mov-head agy-mov-head">
       <b>📊 Biggest movers</b>
@@ -1882,10 +1897,16 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
           <span className="agy-chip">Created-in-period</span>
           Won, revenue, avg deal and win rate count against the window the <b>lead</b> was created in, so they need {MATURE_WIN} days up to mean anything. Switch to <b>Closed</b> to count deals on the day they were won instead.
         </div>
-      ) : noClosed > 0 && lens !== 'paid' ? (
+      ) : crmDown && lens !== 'paid' ? (
         <div className="agy-basis">
-          <span className="agy-chip warn">{noClosed} client{noClosed === 1 ? '' : 's'} excluded</span>
-          Closed dates come from the CRM app, so {noClosed === 1 ? 'a client' : 'clients'} without it {noClosed === 1 ? 'contributes' : 'contribute'} no deal-level movers here. Their leads and bookings still count. <b>Created</b> includes everyone.
+          <span className="agy-chip warn">CRM disconnected</span>
+          The Caalano Systems connection is down, so no client has close dates right now and this basis has nothing to show. Reconnect it in Settings; <b>Created</b> still works from the blended feed meanwhile.
+        </div>
+      ) : gaps && gaps.length && lens !== 'paid' ? (
+        <div className="agy-basis">
+          <span className="agy-chip warn">{gaps.length} CRM read{gaps.length === 1 ? '' : 's'} failed</span>
+          <b title={gaps.map((g) => `${g.name}${g.err ? ` - ${g.err}` : ''}`).join('\n')}>{gaps.map((g) => g.name).join(', ')}</b>
+          {' '}fell back to the blended feed, which carries no close date, so {gaps.length === 1 ? 'it contributes' : 'they contribute'} no deal-level movers here. Usually a timeout - hit Refresh. Their leads and bookings still count.
         </div>
       ) : null}
       {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved enough to report over the last {win} days{lens === 'all' ? '' : ` in ${lens === 'paid' ? 'paid' : 'CRM'}`}. Thin accounts are held back deliberately - a jump from 2 to 5 isn&rsquo;t a trend.</p>

@@ -1347,7 +1347,14 @@ async function buildTrends(key) {
           }
         }
         e.dc = dc
-      } catch { /* keep Windsor opportunity_source fallback */ }
+      } catch (err) {
+        // Keep the Windsor opportunity_source fallback, but record WHY the direct
+        // read failed. Swallowing it made a timed-out client indistinguishable
+        // from one that has no CRM linked, which is a very different problem and
+        // the only one of the two worth acting on.
+        const e = ensure(id)
+        e.dcErr = String((err && err.message) || err).slice(0, 140)
+      }
     }))
   }
   const WINDOWS = [3, 7, 14, 21, 28]
@@ -1521,9 +1528,9 @@ async function buildTrends(key) {
         }
       }
     }
-    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, windows, daily, pipelines: pipelinesOut, stagePos }
+    out[id] = { hasMeta: !!c.meta, hasGoogle: !!c.google, hasCrm: !!c.ghl, utmBooked: E.ghlBooked, crmErr: E.dcErr || null, windows, daily, pipelines: pipelinesOut, stagePos }
   }
-  return { clients: out, metaOk, googleOk }
+  return { clients: out, metaOk, googleOk, crmConnected: ghlOK }
 }
 
 // ISO week number for a YYYY-MM-DD date.

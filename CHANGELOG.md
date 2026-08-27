@@ -17,6 +17,35 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.385.1 - 2026-08-20 · `PENDING` - Movers: say the real reason a client has no close dates
+
+The "N clients excluded" note added in v3.385.0 was wrong, and it hid a real
+failure behind a made-up one.
+
+**There is no per-client CRM app.** `isConnected()` is a single agency-wide
+OAuth check, and every client with a location linked gets a direct API read.
+So a client missing close dates is one of exactly two things:
+
+- **No CRM location linked at all** - nothing to report and nothing to fix. The
+  old note counted these as "excluded", which made a perfectly normal setup
+  look broken.
+- **A linked client whose read failed** - a timeout, a rate limit, an expired
+  token. It falls back to the blended Windsor feed, which carries no
+  status-change date. This is the one worth knowing about, and it was being
+  hidden in the same count.
+
+**Changes**
+- The direct-read failure is no longer swallowed. `crmTrends` errors are caught
+  per client and surfaced as `crmErr`, so a timed-out client is no longer
+  indistinguishable from one that has no CRM.
+- The trends feed reports `crmConnected`, so a dropped agency connection reads
+  as one problem for everyone rather than fifteen separate ones.
+- The panel now names the affected clients, shows the underlying error on
+  hover, and says what to do ("usually a timeout - hit Refresh"). Clients with
+  no CRM linked are not mentioned at all.
+
+---
+
 ## v3.385.0 - 2026-08-20 · `PENDING` - Movers: closed-in-period basis
 
 The second half of the movers work. A **Closed / Created** toggle on the panel,

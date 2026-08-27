@@ -17,6 +17,36 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.384.1 - 2026-08-20 · `PENDING` - Movers: compact cards, and a floor bug the live data exposed
+
+**Layout** - the panel now uses the same compact auto-fill card grid as the
+Daily Performance movers rather than full-width rows. A dozen small insights
+read faster and the panel is about half the height. The one card that's open
+spans the full width so the funnel inside it still has room, which also stops
+it stretching every sibling in its row.
+
+**A floor bug, visible in the live CRM lens**
+- Nexia and Pool Haus were reporting `Win rate 3.3% -> 0.0%` and
+  `deals won -100%` as the two biggest movers on the board. Neither had
+  collapsed: on a created-date basis the most recent window's cohort simply
+  hasn't closed yet.
+- Win rate, booking rate, deals won and deals lost were flooring only on the
+  *prior* window (and win rate only on leads, never on wins at all), so a
+  current window of zero always passed and always scored near the top.
+- All four now need real volume in **both** windows. A fall from 20 wins to 3
+  still reports; a fall to 0 is unreadable on this basis and is held back
+  rather than guessed at.
+
+**Also**
+- Cohort-dependent movers carry a small `cohort` chip so it's visible at a
+  glance which ones are counted against the lead's creation window.
+- This is the strongest argument yet for the closed-in-period basis, which is
+  the next piece of work: on created basis, recent windows are biased downward
+  for everything downstream of the lead, and no floor fixes that - it only
+  stops the worst of it being reported as news.
+
+---
+
 ## v3.384.0 - 2026-08-20 · `PENDING` - Biggest movers on the agency overview
 
 A second movers panel, on the Overview between Paid performance and Account

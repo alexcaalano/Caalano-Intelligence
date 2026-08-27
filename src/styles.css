@@ -2904,11 +2904,18 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
    `.cap` carries no base size of its own, so without this it renders at the
    panel's body size and shouts. */
 .agy-mov-head .cap { flex: 1 0 100%; font-size: 11.5px; line-height: 1.4; }
-/* One column, not the Trends panel's auto-fill grid: these rows carry a metric
-   name, both values and a why-line, and the expanded funnel needs the width. */
-.agy-mov-list { grid-template-columns: 1fr; }
-.agy-scope { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: var(--chip-bg, rgba(120,140,170,.14)); color: var(--muted); vertical-align: 1px; }
-.agy-basis { font-size: 11.5px; line-height: 1.55; color: var(--muted); background: rgba(120,140,170,.07); border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; margin-bottom: 10px; }
+/* Same compact auto-fill grid as the Daily Performance movers - a dozen small
+   insights read faster than a dozen full-width rows, and fit the screen. The one
+   card that's open spans the full width so the funnel inside it has room, which
+   also stops it stretching the height of every sibling in its row. */
+.agy-mov-list .mov-item2.open { grid-column: 1 / -1; }
+.agy-mov-list .mov-exp { padding: 8px 10px; gap: 7px; }
+.agy-mov-list .mov-txt { font-size: 12px; }
+.agy-mov-list .mov-why { font-size: 11px; }
+.agy-mov-list .mov-open { padding: 0 8px; }
+.agy-scope { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 5px; background: var(--chip-bg, rgba(120,140,170,.14)); color: var(--muted); vertical-align: 1px; }
+.agy-chip.tiny { display: inline-block; font-size: 9px; padding: 0 4px; margin-left: 5px; vertical-align: 1px; letter-spacing: .03em; }
+.agy-basis { font-size: 11px; line-height: 1.45; color: var(--muted); background: rgba(120,140,170,.07); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
 .agy-basis .agy-chip { margin-right: 7px; vertical-align: 1px; }
 .agy-basis b { color: var(--text); }
 .agy-chip { flex: 0 0 auto; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 6px; background: rgba(79,124,255,.15); color: #4f7cff; }

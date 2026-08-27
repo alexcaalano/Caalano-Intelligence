@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.384.0'
+const APP_VERSION = '3.384.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1668,7 +1668,7 @@ function subjectMovers(s, win, fmt) {
     // slots to report one fact. Keep the count then, and only surface the rate when
     // leads genuinely moved, which is when volume and quality have come apart.
     const leadsFlat = leadsPct != null && Math.abs(leadsPct) <= 8
-    if (!leadsFlat && leadsP >= 20 && leads >= 20 && bookedP >= 3) {
+    if (!leadsFlat && leadsP >= 20 && leads >= 20 && bookedP >= 5 && booked >= 5) {
       add({ lens: 'crm', id: 'bookRate', metric: 'Booking rate', scope: 'CRM', cur: safeDiv(booked, leads) * 100, prev: safeDiv(bookedP, leadsP) * 100, vol: leads, volPrev: leadsP, good: 'up', fmt: fmt.pct, minPct: 10,
         why: ratioWhy('bookings', pctChg(booked, bookedP), 'leads', leadsPct) })
     }
@@ -1679,11 +1679,16 @@ function subjectMovers(s, win, fmt) {
         why: ratioWhy('leads', leadsPct, `${k.label.toLowerCase()} rate`, pctChg(safeDiv(c, leads), safeDiv(p, leadsP))) })
     }
     if (mature) {
-      if (wonP >= 3) {
+      // Both windows need real volume. On a created-date basis a current window of
+      // zero is indistinguishable from a cohort that simply hasn't closed yet, so
+      // "deals won -100%" would be reported for almost every client, almost always
+      // wrongly. A fall from 20 to 3 still reports; a fall to 0 is unreadable on
+      // this basis and is held back rather than guessed at.
+      if (wonP >= 3 && won >= 3) {
         add({ lens: 'crm', id: 'won', metric: 'Deals won', scope: 'CRM', cur: won, prev: wonP, vol: won, volPrev: wonP, good: 'up', fmt: int, minPct: 15, mature: true,
           why: ratioWhy('leads', leadsPct, 'win rate', pctChg(safeDiv(won, leads), safeDiv(wonP, leadsP))) })
       }
-      if (lostP >= 3) {
+      if (lostP >= 3 && lost >= 3) {
         add({ lens: 'crm', id: 'lost', metric: 'Deals lost', scope: 'CRM', cur: lost, prev: lostP, vol: lost, volPrev: lostP, good: 'down', fmt: int, minPct: 15, mature: true,
           why: `against ${int(won)} won (was ${int(wonP)}) from ${int(leads)} leads` })
       }
@@ -1695,7 +1700,11 @@ function subjectMovers(s, win, fmt) {
             why: ratioWhy('revenue', pctChg(rev, revP), 'deals won', pctChg(won, wonP)) })
         }
       }
-      if (!leadsFlat && leadsP >= 20 && leads >= 20) {
+      // Both windows need real wins behind them. Flooring on leads alone let a
+      // window whose cohort simply hadn't closed yet read as "win rate 3.3% -> 0.0%,
+      // deals won -100%" - which is maturity, not a collapse, and it outranked
+      // everything real on the panel.
+      if (!leadsFlat && leadsP >= 20 && leads >= 20 && wonP >= 3 && won >= 3) {
         add({ lens: 'crm', id: 'winRate', metric: 'Win rate', scope: 'CRM', cur: safeDiv(won, leads) * 100, prev: safeDiv(wonP, leadsP) * 100, vol: leads, volPrev: leadsP, good: 'up', fmt: fmt.pct, minPct: 10, mature: true,
           why: ratioWhy('deals won', pctChg(won, wonP), 'leads', leadsPct) })
       }
@@ -1839,8 +1848,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
       {immature && lens !== 'paid' ? (
         <div className="agy-basis">
           <span className="agy-chip">Created-in-period</span>
-          Deals won and revenue count against the window the <b>lead</b> was created in, so over {win} days almost nothing has had time to close.
-          Won, revenue, avg deal size and win rate appear from {MATURE_WIN} days up.
+          Won, revenue, avg deal and win rate count against the window the <b>lead</b> was created in, so they need {MATURE_WIN} days up to mean anything.
         </div>
       ) : null}
       {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved enough to report over the last {win} days{lens === 'all' ? '' : ` in ${lens === 'paid' ? 'paid' : 'CRM'}`}. Thin accounts are held back deliberately - a jump from 2 to 5 isn&rsquo;t a trend.</p>
@@ -1853,6 +1861,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
                   <span className={`mov-badge ${dir}`}>{m.pct > 0 ? '▲' : '▼'} {Math.abs(m.pct).toFixed(0)}%</span>
                   <span className="mov-txt">
                     <b>{m.subject.name}</b> <span className="agy-scope">{m.scope}</span> · {m.metric} {m.fmt(m.prev)} → {m.fmt(m.cur)}
+                    {m.mature ? <span className="agy-chip tiny" title="Counted against the window the lead was created in, not when the deal closed - the most recent window is still maturing, so this reads low.">cohort</span> : null}
                     <span className="mov-why">{m.why} · {open === i ? '▾' : '▸'} funnel</span>
                   </span>
                 </button>

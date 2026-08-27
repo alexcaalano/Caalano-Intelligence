@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.384.1'
+const APP_VERSION = '3.385.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1552,6 +1552,13 @@ function MoversPanel({ list, clients, currency, onPick }) {
 const AGY_MOVER_WINS = [3, 7, 14, 21, 28]
 const MATURE_WIN = 14
 const AGY_LENSES = [['all', 'All'], ['paid', 'Paid'], ['crm', 'CRM']]
+// Which day a deal counts on. Closed is the default because it is the only one a
+// rolling window can read as throughput: on a created basis the newest window's
+// cohort has not finished closing, so every recent window reads low for
+// everything downstream of the lead, and no amount of flooring fixes that.
+// Created still earns its place - it is the honest basis for conversion rate,
+// because it compares wins against the very leads they came from.
+const AGY_BASES = [['closed', 'Closed'], ['created', 'Created']]
 // Ad spend is split Meta / Google; CRM outcomes are split by the lead's source.
 // "Paid" means Meta + Google together, and deliberately excludes non-paid leads -
 // dividing ad spend by organic bookings would flatter every cost-per figure.
@@ -1582,10 +1589,23 @@ function ratioWhy(numLabel, numPct, denLabel, denPct) {
 // Build every candidate mover for one subject (a client, or one pipeline of a
 // multi-pipeline client) in one window. Each candidate declares the volume
 // behind it so the ranking can compare a cost move against a count move.
-function subjectMovers(s, win, fmt) {
+function subjectMovers(s, win, fmt, basis) {
   const w = s.w, crm = w.crm, out = []
   const money = fmt.money, int = fmt.int
-  const mature = win >= MATURE_WIN
+  // Closed basis counts a deal on the day it was won or lost; created basis counts
+  // it against the window its lead arrived in. Closed is only available where the
+  // CRM app is connected - the Windsor fallback carries no status-change date - so
+  // a client without it contributes no deal-level movers on this basis rather than
+  // silently falling back to the other one and mislabelling itself.
+  const closedOn = basis === 'closed' && !!(crm && crm.closed)
+  const cohortOff = crm && (basis === 'closed' ? !crm.closed : win < MATURE_WIN)
+  const mature = !cohortOff
+  const WON = crm ? (closedOn ? crm.wonClosed : crm.won) : null
+  const WONP = crm ? (closedOn ? crm.wonClosedPrev : crm.wonPrev) : null
+  const LOST = crm ? (closedOn ? crm.lostClosed : crm.lost) : null
+  const LOSTP = crm ? (closedOn ? crm.lostClosedPrev : crm.lostPrev) : null
+  const REV = crm ? (closedOn ? crm.revenueClosed : crm.revenue) : null
+  const REVP = crm ? (closedOn ? crm.revenueClosedPrev : crm.revenuePrev) : null
   const add = (o) => {
     const pct = pctChg(o.cur, o.prev)
     if (pct == null || !isFinite(pct)) return
@@ -1628,13 +1648,13 @@ function subjectMovers(s, win, fmt) {
       add({ lens: 'paid', id: `cpb:${ch}`, metric: 'Cost per booking', scope, cur: safeDiv(d.spend, d.booked), prev: safeDiv(d.spendPrev, d.bookedPrev), vol: d.booked, volPrev: d.bookedPrev, good: 'down', fmt: money, minPct: 10,
         why: ratioWhy('spend', spendPct, 'bookings', pctChg(d.booked, d.bookedPrev)) })
     }
-    const won = chanN(crm.won, ch), wonP = chanN(crm.wonPrev, ch)
-    if (mature && won >= 3 && wonP >= 3 && d.spendPrev >= 200) {
-      add({ lens: 'paid', id: `cpw:${ch}`, metric: 'Cost per won', scope, cur: safeDiv(d.spend, won), prev: safeDiv(d.spendPrev, wonP), vol: won, volPrev: wonP, good: 'down', fmt: money, minPct: 10, mature: true,
+    const won = chanN(WON, ch), wonP = chanN(WONP, ch)
+    if (!cohortOff && won >= 3 && wonP >= 3 && d.spendPrev >= 200) {
+      add({ lens: 'paid', id: `cpw:${ch}`, metric: 'Cost per won', scope, cur: safeDiv(d.spend, won), prev: safeDiv(d.spendPrev, wonP), vol: won, volPrev: wonP, good: 'down', fmt: money, minPct: 10, mature: !closedOn,
         why: ratioWhy('spend', spendPct, 'deals won', pctChg(won, wonP)) })
-      const rev = chanN(crm.revenue, ch), revP = chanN(crm.revenuePrev, ch)
+      const rev = chanN(REV, ch), revP = chanN(REVP, ch)
       if (d.spendPrev >= 300 && (rev > 0 || revP > 0)) {
-        add({ lens: 'paid', id: `roas:${ch}`, metric: 'ROAS', scope, cur: safeDiv(rev, d.spend), prev: safeDiv(revP, d.spendPrev), vol: won, volPrev: wonP, good: 'up', fmt: fmt.mult, minPct: 10, mature: true,
+        add({ lens: 'paid', id: `roas:${ch}`, metric: 'ROAS', scope, cur: safeDiv(rev, d.spend), prev: safeDiv(revP, d.spendPrev), vol: won, volPrev: wonP, good: 'up', fmt: fmt.mult, minPct: 10, mature: !closedOn,
           why: ratioWhy('revenue', pctChg(rev, revP), 'spend', spendPct) })
       }
     }
@@ -1652,9 +1672,9 @@ function subjectMovers(s, win, fmt) {
     const leads = chanN(crm.leads, 'all'), leadsP = chanN(crm.leadsPrev, 'all')
     const leadsPct = pctChg(leads, leadsP)
     const booked = (w.blended || {}).booked || 0, bookedP = (w.blended || {}).bookedPrev || 0
-    const won = chanN(crm.won, 'all'), wonP = chanN(crm.wonPrev, 'all')
-    const lost = chanN(crm.lost, 'all'), lostP = chanN(crm.lostPrev, 'all')
-    const rev = chanN(crm.revenue, 'all'), revP = chanN(crm.revenuePrev, 'all')
+    const won = chanN(WON, 'all'), wonP = chanN(WONP, 'all')
+    const lost = chanN(LOST, 'all'), lostP = chanN(LOSTP, 'all')
+    const rev = chanN(REV, 'all'), revP = chanN(REVP, 'all')
     if (leadsP >= 10) {
       add({ lens: 'crm', id: 'leads', metric: 'Leads', scope: 'CRM', cur: leads, prev: leadsP, vol: leads, volPrev: leadsP, good: 'up', fmt: int, minPct: 10,
         why: `Meta ${int(chanN(crm.leadsPrev, 'meta'))}→${int(chanN(crm.leads, 'meta'))} · Google ${int(chanN(crm.leadsPrev, 'google'))}→${int(chanN(crm.leads, 'google'))} · other ${int(chanN(crm.leadsPrev, 'other'))}→${int(chanN(crm.leads, 'other'))}` })
@@ -1678,33 +1698,32 @@ function subjectMovers(s, win, fmt) {
       add({ lens: 'crm', id: `ke:${k.label}`, metric: k.label, scope: 'CRM', cur: c, prev: p, vol: c, volPrev: p, good: 'up', fmt: int, minPct: 10,
         why: ratioWhy('leads', leadsPct, `${k.label.toLowerCase()} rate`, pctChg(safeDiv(c, leads), safeDiv(p, leadsP))) })
     }
-    if (mature) {
-      // Both windows need real volume. On a created-date basis a current window of
-      // zero is indistinguishable from a cohort that simply hasn't closed yet, so
-      // "deals won -100%" would be reported for almost every client, almost always
-      // wrongly. A fall from 20 to 3 still reports; a fall to 0 is unreadable on
-      // this basis and is held back rather than guessed at.
+    if (!cohortOff) {
+      // Both windows need real volume either way. On a created basis a current
+      // window of zero is indistinguishable from a cohort that simply hasn't
+      // closed yet, so "deals won -100%" would be reported for almost every
+      // client, almost always wrongly. A fall from 20 to 3 still reports.
+      const chip = !closedOn
+      const wonWhy = closedOn
+        ? `${int(lost)} lost in the same window (was ${int(lostP)})`
+        : ratioWhy('leads', leadsPct, 'win rate', pctChg(safeDiv(won, leads), safeDiv(wonP, leadsP)))
       if (wonP >= 3 && won >= 3) {
-        add({ lens: 'crm', id: 'won', metric: 'Deals won', scope: 'CRM', cur: won, prev: wonP, vol: won, volPrev: wonP, good: 'up', fmt: int, minPct: 15, mature: true,
-          why: ratioWhy('leads', leadsPct, 'win rate', pctChg(safeDiv(won, leads), safeDiv(wonP, leadsP))) })
+        add({ lens: 'crm', id: 'won', metric: 'Deals won', scope: 'CRM', cur: won, prev: wonP, vol: won, volPrev: wonP, good: 'up', fmt: int, minPct: 15, mature: chip, why: wonWhy })
       }
       if (lostP >= 3 && lost >= 3) {
-        add({ lens: 'crm', id: 'lost', metric: 'Deals lost', scope: 'CRM', cur: lost, prev: lostP, vol: lost, volPrev: lostP, good: 'down', fmt: int, minPct: 15, mature: true,
-          why: `against ${int(won)} won (was ${int(wonP)}) from ${int(leads)} leads` })
+        add({ lens: 'crm', id: 'lost', metric: 'Deals lost', scope: 'CRM', cur: lost, prev: lostP, vol: lost, volPrev: lostP, good: 'down', fmt: int, minPct: 15, mature: chip,
+          why: `against ${int(won)} won (was ${int(wonP)})` })
       }
-      if (wonP >= 3 && won >= 3) {
-        if (revP > 0) {
-          add({ lens: 'crm', id: 'revenue', metric: 'Revenue', scope: 'CRM', cur: rev, prev: revP, vol: won, volPrev: wonP, good: 'up', fmt: money, minPct: 15, mature: true,
-            why: `${int(won)} deals at ${money(safeDiv(rev, won))} avg (was ${int(wonP)} at ${money(safeDiv(revP, wonP))})` })
-          add({ lens: 'crm', id: 'avgDeal', metric: 'Avg deal size', scope: 'CRM', cur: safeDiv(rev, won), prev: safeDiv(revP, wonP), vol: won, volPrev: wonP, good: 'up', fmt: money, minPct: 10, mature: true,
-            why: ratioWhy('revenue', pctChg(rev, revP), 'deals won', pctChg(won, wonP)) })
-        }
+      if (wonP >= 3 && won >= 3 && revP > 0) {
+        add({ lens: 'crm', id: 'revenue', metric: 'Revenue', scope: 'CRM', cur: rev, prev: revP, vol: won, volPrev: wonP, good: 'up', fmt: money, minPct: 15, mature: chip,
+          why: `${int(won)} deals at ${money(safeDiv(rev, won))} avg (was ${int(wonP)} at ${money(safeDiv(revP, wonP))})` })
+        add({ lens: 'crm', id: 'avgDeal', metric: 'Avg deal size', scope: 'CRM', cur: safeDiv(rev, won), prev: safeDiv(revP, wonP), vol: won, volPrev: wonP, good: 'up', fmt: money, minPct: 10, mature: chip,
+          why: ratioWhy('revenue', pctChg(rev, revP), 'deals won', pctChg(won, wonP)) })
       }
-      // Both windows need real wins behind them. Flooring on leads alone let a
-      // window whose cohort simply hadn't closed yet read as "win rate 3.3% -> 0.0%,
-      // deals won -100%" - which is maturity, not a collapse, and it outranked
-      // everything real on the panel.
-      if (!leadsFlat && leadsP >= 20 && leads >= 20 && wonP >= 3 && won >= 3) {
+      // Win rate is a CREATED-basis measure only. Wins closed this week against
+      // leads created this week are two different cohorts, and the ratio of them
+      // means nothing - it is throughput over intake, not a conversion rate.
+      if (!closedOn && !leadsFlat && leadsP >= 20 && leads >= 20 && wonP >= 3 && won >= 3) {
         add({ lens: 'crm', id: 'winRate', metric: 'Win rate', scope: 'CRM', cur: safeDiv(won, leads) * 100, prev: safeDiv(wonP, leadsP) * 100, vol: leads, volPrev: leadsP, good: 'up', fmt: fmt.pct, minPct: 10, mature: true,
           why: ratioWhy('deals won', pctChg(won, wonP), 'leads', leadsPct) })
       }
@@ -1767,13 +1786,17 @@ function moverSubjects(rows, clients, win) {
 // Funnel behind a mover: the same window's leads -> configured key events -> won,
 // current vs prior, for the channel the mover is about. Costs nothing extra - it
 // is the data the mover was computed from, shown a level down.
-function MoverFunnel({ m, fmt }) {
+function MoverFunnel({ m, fmt, basis }) {
   const s = m.subject, crm = s.w.crm
   if (!crm) return <div className="mov-drill"><span className="cap">No CRM connected for this client, so there's no funnel behind this move.</span></div>
   const ch = m.id.includes(':') && /^(cpr|res|spend|cpb|cpw|roas|cpk):/.test(m.id) ? m.id.split(':')[1] : 'all'
   const steps = [{ label: 'Leads', cur: chanN(crm.leads, ch), prev: chanN(crm.leadsPrev, ch) }]
   for (const k of s.keRows) steps.push({ label: k.label, cur: k.byChan[ch], prev: k.byChanPrev[ch] })
-  steps.push({ label: 'Won', cur: chanN(crm.won, ch), prev: chanN(crm.wonPrev, ch) })
+  // On a closed basis the Won row counts deals closed in the window, which are
+  // mostly not the leads above it - so it is labelled as its own thing and the
+  // "% of leads" column is withheld rather than inviting a false conversion read.
+  const closedOn = basis === 'closed' && crm.closed
+  steps.push({ label: closedOn ? 'Won (closed in window)' : 'Won', cur: chanN(closedOn ? crm.wonClosed : crm.won, ch), prev: chanN(closedOn ? crm.wonClosedPrev : crm.wonPrev, ch), noRate: closedOn })
   const chLabel = ch === 'all' ? 'all lead sources' : (PAID_CHANS.find(([k]) => k === ch) || [, ch])[1]
   return (
     <div className="mov-drill">
@@ -1781,7 +1804,7 @@ function MoverFunnel({ m, fmt }) {
         {!s.utm ? <span className="agy-chip warn" title="This client's CRM app isn't connected, so the channel split falls back to matching the lead-source text rather than real UTMs.">source-matched split</span> : null}</div>
       <div className="agy-fn">{steps.map((st, i) => {
         const pct = pctChg(st.cur, st.prev)
-        const rate = i > 0 && steps[0].cur ? (st.cur / steps[0].cur) * 100 : null
+        const rate = i > 0 && steps[0].cur && !st.noRate ? (st.cur / steps[0].cur) * 100 : null
         return (
           <div className="agy-fn-step" key={i}>
             <span className="agy-fn-lab">{st.label}</span>
@@ -1799,6 +1822,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
   const tr = useTrends(nonce)
   const [win, setWin] = useState(7)
   const [lens, setLens] = useState('all')
+  const [basis, setBasis] = useState('closed')
   const [open, setOpen] = useState(null)
   const fmt = useMemo(() => ({
     money: (v) => (v == null ? '–' : fmtCurrency(v, currency)),
@@ -1816,7 +1840,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
   const movers = useMemo(() => {
     if (!clients) return []
     const all = []
-    for (const s of moverSubjects(rows, clients, win)) all.push(...subjectMovers(s, win, fmt))
+    for (const s of moverSubjects(rows, clients, win)) all.push(...subjectMovers(s, win, fmt, basis))
     // Cap each client at its three biggest moves. This is meant to be a read across
     // the whole book - without a cap, one account having a bad fortnight takes every
     // slot and hides the other fourteen clients entirely.
@@ -1828,16 +1852,24 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
       if (keep.length >= 10) break
     }
     return keep
-  }, [clients, rows, win, lens, fmt, setTick])
+  }, [clients, rows, win, lens, basis, fmt, setTick])
   const setWinSafe = (n) => { setWin(n); setOpen(null) }
   const setLensSafe = (l) => { setLens(l); setOpen(null) }
-  const immature = win < MATURE_WIN
+  const setBasisSafe = (b) => { setBasis(b); setOpen(null) }
+  const immature = basis === 'created' && win < MATURE_WIN
+  // Closed basis needs the CRM app connected for its status-change dates. Say how
+  // many clients that leaves out rather than quietly showing a shorter list.
+  const noClosed = useMemo(() => {
+    if (!clients || basis !== 'closed') return 0
+    return rows.filter((r) => { const t = clients[r.id]; const w = t && (t.windows || []).find((x) => x.n === win); return w && w.crm && !w.crm.closed }).length
+  }, [clients, rows, win, basis])
   const head = (
     <div className="mov-head agy-mov-head">
       <b>📊 Biggest movers</b>
       <div className="chan-toggle sm">{AGY_MOVER_WINS.map((n) => <button key={n} className={win === n ? 'on' : ''} onClick={() => setWinSafe(n)}>{n}d</button>)}</div>
       <div className="chan-toggle sm">{AGY_LENSES.map(([k, l]) => <button key={k} className={lens === k ? 'on' : ''} onClick={() => setLensSafe(k)}>{l}</button>)}</div>
-      <span className="cap">last {win} days vs the prior {win} · ranked by how much moved, not just the percentage · click one for the funnel behind it</span>
+      <div className="chan-toggle sm" title="Closed: a deal counts on the day it was won. Created: it counts against the window its lead arrived in.">{AGY_BASES.map(([k, l]) => <button key={k} className={basis === k ? 'on' : ''} onClick={() => setBasisSafe(k)}>{l}</button>)}</div>
+      <span className="cap">last {win} days vs the prior {win} · deals counted on the day they {basis === 'closed' ? 'closed' : 'came in as a lead'} · ranked by how much moved, not just the percentage · click one for the funnel behind it</span>
     </div>
   )
   if (tr.status === 'loading') return <div className="card mov-panel">{head}<Spinner label="Loading movers…" /></div>
@@ -1848,7 +1880,12 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
       {immature && lens !== 'paid' ? (
         <div className="agy-basis">
           <span className="agy-chip">Created-in-period</span>
-          Won, revenue, avg deal and win rate count against the window the <b>lead</b> was created in, so they need {MATURE_WIN} days up to mean anything.
+          Won, revenue, avg deal and win rate count against the window the <b>lead</b> was created in, so they need {MATURE_WIN} days up to mean anything. Switch to <b>Closed</b> to count deals on the day they were won instead.
+        </div>
+      ) : noClosed > 0 && lens !== 'paid' ? (
+        <div className="agy-basis">
+          <span className="agy-chip warn">{noClosed} client{noClosed === 1 ? '' : 's'} excluded</span>
+          Closed dates come from the CRM app, so {noClosed === 1 ? 'a client' : 'clients'} without it {noClosed === 1 ? 'contributes' : 'contribute'} no deal-level movers here. Their leads and bookings still count. <b>Created</b> includes everyone.
         </div>
       ) : null}
       {movers.length === 0 ? <p className="cap" style={{ margin: 0 }}>Nothing moved enough to report over the last {win} days{lens === 'all' ? '' : ` in ${lens === 'paid' ? 'paid' : 'CRM'}`}. Thin accounts are held back deliberately - a jump from 2 to 5 isn&rsquo;t a trend.</p>
@@ -1868,7 +1905,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
                 <button className="mov-open" onClick={() => onPick(m.subject.c)} title="Open this client">→</button>
               </div>
               {open === i ? <>
-                <MoverFunnel m={m} fmt={fmt} />
+                <MoverFunnel m={m} fmt={fmt} basis={basis} />
                 {/^(cpr|spend|res):(meta|google)$/.test(m.id) ? <MoverDrill clientId={m.subject.clientId} channel={m.id.split(':')[1]} days={m.win} money={fmt.money} /> : null}
               </> : null}
             </div>

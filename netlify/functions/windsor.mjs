@@ -1198,6 +1198,12 @@ async function buildTrends(key) {
   const today = tzToday()
   const dstr = (d) => d.toISOString().slice(0, 10)
   const start = new Date(today); start.setUTCDate(start.getUTCDate() - 55)
+  // A deal won last week may have been created ten months ago, so the closed-date
+  // pass has to look much further back than the created-date one. The per-location
+  // opportunity snapshot already reaches 430 days and is warmed in the background,
+  // so this window is served from that cache - it widens a filter, not a fetch.
+  const CLOSED_BACK = 400
+  const closedStart = new Date(today); closedStart.setUTCDate(closedStart.getUTCDate() - CLOSED_BACK)
   // Saved campaign→pipeline links, so per-pipeline spend can be split by the actual
   // Settings mapping (Phase 2) rather than a blunt lead-share allocation.
   const savedCampmap = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }).then((s) => (s && s.campmap) || {}).catch(() => ({}))
@@ -1304,21 +1310,35 @@ async function buildTrends(key) {
     const ghlClients = Object.entries(CLIENTS).filter(([, c]) => c.ghl)
     await Promise.all(ghlClients.map(async ([id, c]) => {
       try {
-        const rows = await crmTrends(c.ghl, dstr(start), dstr(today))
+        const rows = await crmTrends(c.ghl, dstr(closedStart), dstr(today))
         const e = ensure(id); e.ghlBooked = true
         const bun = () => ({ all: mk(), meta: mk(), google: mk(), other: mk() })
-        const dc = { ok: true, leads: bun(), won: bun(), lost: bun(), rev: bun(), reach: { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }, pipe: new Map() }
-        const dEnsurePipe = (pid) => { let p = dc.pipe.get(pid); if (!p) { p = { leads: bun(), won: bun(), lost: bun(), rev: bun() }; dc.pipe.set(pid, p) } return p }
+        // `wonCl` / `lostCl` / `revCl` are the same measures counted on the day the
+        // deal closed rather than the day its lead arrived.
+        const dc = { ok: true, closed: true, leads: bun(), won: bun(), lost: bun(), rev: bun(), wonCl: bun(), lostCl: bun(), revCl: bun(), reach: { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }, pipe: new Map() }
+        const dEnsurePipe = (pid) => { let p = dc.pipe.get(pid); if (!p) { p = { leads: bun(), won: bun(), lost: bun(), rev: bun(), wonCl: bun(), lostCl: bun(), revCl: bun() }; dc.pipe.set(pid, p) } return p }
         for (const r of rows) {
-          const di = dayIndex.get(r.date); if (di == null) continue
+          // Two independent indexes now: `di` is where the LEAD lands (created
+          // basis) and `wi` is where the CLOSE lands. A deal created 300 days ago
+          // and won yesterday has no `di` in this 56-day window but does have a
+          // `wi`, and that row is exactly the one created-basis reporting misses.
+          const di = dayIndex.get(r.date)
+          const wi = r.statusDate ? dayIndex.get(r.statusDate) : null
+          if (di == null && wi == null) continue
           const ch = r.channel === 'meta' ? 'meta' : r.channel === 'google' ? 'google' : 'other'
+          const val = num(r.value)
+          const pp = dEnsurePipe(r.pipelineId)
+          if (wi != null) {
+            if (r.won) { dc.wonCl.all[wi]++; dc.wonCl[ch][wi]++; dc.revCl.all[wi] += val; dc.revCl[ch][wi] += val; pp.wonCl.all[wi]++; pp.wonCl[ch][wi]++; pp.revCl.all[wi] += val; pp.revCl[ch][wi] += val }
+            if (r.lost) { dc.lostCl.all[wi]++; dc.lostCl[ch][wi]++; pp.lostCl.all[wi]++; pp.lostCl[ch][wi]++ }
+          }
+          if (di == null) continue
           // Booked-calls split (was bookedTrends).
           if (r.booked) { e.bAll[di]++; if (ch === 'meta') e.bMeta[di]++; else if (ch === 'google') e.bGoogle[di]++ }
           dc.leads.all[di]++; dc.leads[ch][di]++
-          const val = num(r.value)
           if (r.won) { dc.won.all[di]++; dc.won[ch][di]++; dc.rev.all[di] += val; dc.rev[ch][di] += val }
           if (r.lost) { dc.lost.all[di]++; dc.lost[ch][di]++ }
-          const pp = dEnsurePipe(r.pipelineId); pp.leads.all[di]++; pp.leads[ch][di]++
+          pp.leads.all[di]++; pp.leads[ch][di]++
           if (r.won) { pp.won.all[di]++; pp.won[ch][di]++; pp.rev.all[di] += val; pp.rev[ch][di] += val }
           if (r.lost) { pp.lost.all[di]++; pp.lost[ch][di]++ }
           for (const nm of r.reached) {
@@ -1358,11 +1378,19 @@ async function buildTrends(key) {
     const bunWin = (B, a, b) => ({ all: Math.round(sumR(B.all, a, b)), meta: Math.round(sumR(B.meta, a, b)), google: Math.round(sumR(B.google, a, b)), other: Math.round(sumR(B.other, a, b)) })
     const crmWin = (n, S, filterPid) => {
       const L = S.L, W = S.W, X = S.X || ZBUN, R = S.R || ZBUN, RM = S.RM
+      // Closed-basis counterparts, present only where the CRM app is connected -
+      // the Windsor fallback carries no reliable status-change date, so there is
+      // nothing honest to build them from and `closed` stays false.
+      const WC = S.WC, XC = S.XC, RC = S.RC
       return {
         leads: bunWin(L, 0, n), leadsPrev: bunWin(L, n, 2 * n),
         won: bunWin(W, 0, n), wonPrev: bunWin(W, n, 2 * n),
         lost: bunWin(X, 0, n), lostPrev: bunWin(X, n, 2 * n),
         revenue: bunWin(R, 0, n), revenuePrev: bunWin(R, n, 2 * n),
+        closed: !!WC,
+        wonClosed: WC ? bunWin(WC, 0, n) : null, wonClosedPrev: WC ? bunWin(WC, n, 2 * n) : null,
+        lostClosed: XC ? bunWin(XC, 0, n) : null, lostClosedPrev: XC ? bunWin(XC, n, 2 * n) : null,
+        revenueClosed: RC ? bunWin(RC, 0, n) : null, revenueClosedPrev: RC ? bunWin(RC, n, 2 * n) : null,
         reach: { all: reachWinFrom(RM.all, n, filterPid), meta: reachWinFrom(RM.meta, n, filterPid), google: reachWinFrom(RM.google, n, filterPid), other: reachWinFrom(RM.other, n, filterPid) },
         reachPrev: { all: reachWinRange(RM.all, n, 2 * n, filterPid), meta: reachWinRange(RM.meta, n, 2 * n, filterPid), google: reachWinRange(RM.google, n, 2 * n, filterPid), other: reachWinRange(RM.other, n, 2 * n, filterPid) },
         utm: !!(E.dc && E.dc.ok),
@@ -1375,12 +1403,14 @@ async function buildTrends(key) {
     const acctW = dcOK ? E.dc.won : { all: E.wonAll, meta: E.wonCh.meta, google: E.wonCh.google, other: E.wonCh.other }
     const acctX = dcOK ? E.dc.lost : { all: E.lostAll, meta: E.lostCh.meta, google: E.lostCh.google, other: E.lostCh.other }
     const acctR = dcOK ? E.dc.rev : { all: E.revAll, meta: E.revCh.meta, google: E.revCh.google, other: E.revCh.other }
-    const acctSrc = { L: acctL, W: acctW, X: acctX, R: acctR, RM: acctReach }
+    const acctSrc = { L: acctL, W: acctW, X: acctX, R: acctR, RM: acctReach,
+      WC: dcOK ? E.dc.wonCl : null, XC: dcOK ? E.dc.lostCl : null, RC: dcOK ? E.dc.revCl : null }
     // Per-pipeline CRM source bundle (direct API when connected, else Windsor).
     const pipeCrmSrc = (p) => {
       const d = dcOK ? E.dc.pipe.get(p.id) : null
       return dcOK
-        ? { L: (d || { leads: ZBUN }).leads, W: (d || { won: ZBUN }).won, X: (d || { lost: ZBUN }).lost, R: (d || { rev: ZBUN }).rev, RM: E.dc.reach }
+        ? { L: (d || { leads: ZBUN }).leads, W: (d || { won: ZBUN }).won, X: (d || { lost: ZBUN }).lost, R: (d || { rev: ZBUN }).rev, RM: E.dc.reach,
+            WC: (d || { wonCl: ZBUN }).wonCl, XC: (d || { lostCl: ZBUN }).lostCl, RC: (d || { revCl: ZBUN }).revCl }
         : { L: { all: p.leads, meta: p.leadsCh.meta, google: p.leadsCh.google, other: p.leadsCh.other }, W: { all: p.won, meta: p.wonCh.meta, google: p.wonCh.google, other: p.wonCh.other }, X: { all: p.lost, meta: p.lostCh.meta, google: p.lostCh.google, other: p.lostCh.other }, R: { all: p.rev, meta: p.revCh.meta, google: p.revCh.google, other: p.revCh.other }, RM: wsReach }
     }
     // stage name → funnel position (bare + pipeline-scoped) so the frontend can order

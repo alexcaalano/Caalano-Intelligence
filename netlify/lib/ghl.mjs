@@ -2379,7 +2379,13 @@ export async function crmTrends(locationId, from, to) {
     if (pi && pi.stages) for (const s of pi.stages) { if (isWon || (pos >= 0 && s.pos <= pos)) reached.push(s.name) }
     // `value` and `lost` ride along for the movers panel: revenue and average
     // deal size per rolling window, and lost as a mover in its own right.
-    out.push({ date, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked, lost: st === 'lost', value: num(o.monetaryValue) })
+    //
+    // `statusDate` is when the deal was actually won or lost, as against `date`
+    // which is when its lead was created. Counting a win on the day it closed is
+    // the only way a rolling window reads as throughput rather than as the
+    // maturity of a cohort that has not finished closing yet.
+    const statusDate = (isWon || st === 'lost') ? (String(o.lastStatusChangeAt || '').slice(0, 10) || null) : null
+    out.push({ date, statusDate, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked, lost: st === 'lost', value: num(o.monetaryValue) })
   }
   return out
 }

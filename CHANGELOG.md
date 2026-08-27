@@ -17,6 +17,46 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.385.0 - 2026-08-20 · `PENDING` - Movers: closed-in-period basis
+
+The second half of the movers work. A **Closed / Created** toggle on the panel,
+defaulting to Closed.
+
+**Why it matters**
+- On a created basis a deal counts against the window its *lead* arrived in. The
+  newest window's cohort has not finished closing, so every recent window reads
+  low for everything downstream of the lead. That is what put
+  `Win rate 3.3% -> 0.0%` at the top of the live board in v3.384.0.
+- On a closed basis a deal counts on the day it was actually won or lost. A
+  rolling window then reads as throughput, and won / revenue / avg deal size /
+  cost per won / ROAS work at **3 days**, not 14.
+
+**What it cost: nothing extra**
+- A deal won last week may have been created ten months ago, so the closed pass
+  has to look far further back than 56 days. The per-location opportunity
+  snapshot already reaches **430 days** and is warmed in the background, so
+  widening the CRM window to 400 days widens a filter over cached memory rather
+  than adding a fetch.
+- `crmTrends` now carries `statusDate` (the won/lost date). The trends builder
+  indexes each opportunity twice - once where its lead lands, once where its
+  close lands - so a deal created 300 days ago and won yesterday is counted,
+  which is exactly the deal created-basis reporting misses.
+
+**Two deliberate limits, stated in the UI**
+- **Win rate stays created-only.** Wins closed this week against leads created
+  this week are two different cohorts; the ratio is throughput over intake, not
+  a conversion rate. It disappears the moment you switch to Closed.
+- **Closed needs the CRM app connected** for its status-change dates. The
+  Windsor fallback has no reliable won-date, so those clients contribute no
+  deal-level movers on this basis - and the panel says how many that is rather
+  than quietly showing a shorter list. Their leads and bookings still count, and
+  Created includes everyone.
+- The funnel drill relabels its last row **"Won (closed in window)"** on this
+  basis and withholds the "% of leads" figure, which would invite a false
+  conversion read.
+
+---
+
 ## v3.384.1 - 2026-08-20 · `PENDING` - Movers: compact cards, and a floor bug the live data exposed
 
 **Layout** - the panel now uses the same compact auto-fill card grid as the

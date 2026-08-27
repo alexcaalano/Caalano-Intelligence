@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.383.0'
+const APP_VERSION = '3.383.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5881,6 +5881,13 @@ function GeoSettings({ clientId }) {
   }
   const b = biz.data || {}
   const bizLine = [b.address, b.city, b.state, b.postalCode].filter(Boolean).join(', ')
+  // Three different reasons the line above can be blank, and they need three
+  // different answers - only one of them is something to fix in the CRM.
+  const bizWhy = b.ghl === false
+    ? 'This client has no Caalano Systems location linked, so there is no business address to read. Type a suburb or postcode above instead.'
+    : biz.status === 'err'
+      ? `Could not read the business profile from the CRM${b.error ? ` - ${b.error}` : ''}. Type a suburb or postcode above instead.`
+      : 'No business address is set in the CRM (Settings \u2192 Business Profile). Type a suburb or postcode above instead.'
   // The origin has to resolve to a postcode or suburb we hold coordinates for.
   const originText = g.origin === 'business' ? (b.postalCode || b.city || '') : g.place
   return (
@@ -5929,7 +5936,7 @@ function GeoSettings({ clientId }) {
           <div className="geo-biz">
             {biz.status === 'loading' ? <span className="cap">Reading the business address…</span>
               : bizLine ? <><b>CRM business address:</b> {bizLine}</>
-                : <span className="geo-warn">No business address is set in the CRM (Settings → Business Profile). Type a suburb or postcode above instead.</span>}
+                : <span className="geo-warn">{bizWhy}</span>}
           </div>
           {g.origin === 'business' && !b.postalCode && b.city ? (
             <div className="geo-biz"><span className="geo-warn">No postcode on the business record - the suburb will be used, which is less precise.</span></div>

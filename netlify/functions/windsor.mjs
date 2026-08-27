@@ -2724,8 +2724,11 @@ export default async (req) => {
     if (!cc || !cc.ghl) return json({ scope: 'bizloc', client, ghl: false })
     try {
       const prof = await locationProfile(cc.ghl)
+      // A read that failed is not the same as an address that was never filled
+      // in, and only one of those is worth sending someone to the CRM over.
+      if (prof.err) return json({ scope: 'bizloc', client, ghl: true, error: prof.err })
       return json({
-        scope: 'bizloc', client,
+        scope: 'bizloc', client, ghl: true,
         name: prof.name, address: prof.address, city: prof.city,
         state: prof.state, postalCode: prof.postalCode, country: prof.country,
       }, 200, true)

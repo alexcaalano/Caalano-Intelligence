@@ -17,6 +17,33 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.383.1 - 2026-08-20 · `PENDING` - Catchment: read the CRM business address properly
+
+Catchment reported "No business address is set in the CRM" for a client whose
+Business Profile plainly had one filled in.
+
+**The cause**
+- Settings -> Business Profile writes the address to the location record on
+  some accounts and to the nested `business` object on others, depending on
+  how the account was provisioned. We only ever read the top level.
+- Every address field now takes whichever of the two is populated, checked one
+  field at a time, so a partially-filled record still yields what it has.
+- Same merge applied to name, website, logo and timezone, which had the same
+  blind spot.
+
+**The message was wrong too**
+- A failed read was swallowed and shown as "no address is set", which sends you
+  into the CRM to fix something that was never broken. The three cases now read
+  differently: no CRM location linked, the read failed (with the reason), or
+  the address genuinely isn't set.
+
+**Also**
+- The business profile is cached for 10 minutes rather than for the life of the
+  container, so correcting the address in the CRM shows up without a redeploy.
+  A failed read is cached for 1 minute so a bad location isn't hammered.
+
+---
+
 ## v3.383.0 - 2026-08-20 · `PENDING` - Catchment: service areas
 
 The other half of catchment, for a business that works **across areas** rather

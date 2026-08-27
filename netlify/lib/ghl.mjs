@@ -178,28 +178,47 @@ export async function locationTimezone(locationId) {
 // logo as the client avatar (favicon fallback derived on the frontend from the
 // website). Cached per location - these change rarely.
 const locProfileCache = new Map()
+const LOC_PROFILE_TTL_MS = 10 * 60 * 1000   // so a CRM edit shows up without a redeploy
+const LOC_PROFILE_ERR_TTL_MS = 60 * 1000    // don't hammer a failing location
 export async function locationProfile(locationId) {
-  if (locProfileCache.has(locationId)) return locProfileCache.get(locationId)
-  let out = { name: null, website: null, logoUrl: null, tz: null, address: null, city: null, state: null, postalCode: null, country: null }
+  const hit = locProfileCache.get(locationId)
+  if (hit && Date.now() < hit.exp) return hit.val
+  let out = { name: null, website: null, logoUrl: null, tz: null, address: null, city: null, state: null, postalCode: null, country: null, err: null }
   try {
     const locTok = await locationTokenOrDemo(locationId)
     const j = await ghlGet(locTok, `/locations/${locationId}`, {})
     const L = (j && j.location) || j || {}
+    const B = L.business || {}
     const str = (v) => { const t = String(v == null ? '' : v).trim(); return t || null }
+    // Settings -> Business Profile writes the address to the location record on
+    // some accounts and to the nested `business` object on others, depending on
+    // how the account was provisioned. Reading only the top level is why an
+    // address that is plainly filled in could come back empty, so take
+    // whichever of the two is populated, field by field.
+    const pick = (...vals) => { for (const v of vals) { const t = str(v); if (t) return t } return null }
     out = {
-      name: L.name || L.businessName || L.business?.name || null,
-      website: L.website || L.business?.website || null,
-      logoUrl: L.logoUrl || L.logo || L.business?.logoUrl || null,
+      name: pick(L.name, L.businessName, B.name),
+      website: pick(L.website, B.website),
+      logoUrl: pick(L.logoUrl, L.logo, B.logoUrl),
       // Timezone and the Business Settings address ride along on the same
       // response. This call was already being made twice - once here for the
       // logo and once for the timezone - so folding them together removes a
       // request as well as giving catchment reporting an origin for free.
-      tz: str(L.timezone),
-      address: str(L.address), city: str(L.city), state: str(L.state),
-      postalCode: str(L.postalCode || L.postal_code || L.postcode), country: str(L.country),
+      tz: pick(L.timezone, B.timezone),
+      address: pick(L.address, B.address),
+      city: pick(L.city, B.city),
+      state: pick(L.state, B.state),
+      postalCode: pick(L.postalCode, L.postal_code, L.postcode, B.postalCode, B.postal_code),
+      country: pick(L.country, B.country),
+      err: null,
     }
-  } catch { /* leave nulls - frontend falls back to initials */ }
-  locProfileCache.set(locationId, out)
+  } catch (e) {
+    // Kept rather than swallowed: catchment used to report a failed read as
+    // "no address is set", which sends you to the CRM to fix something that
+    // was never wrong.
+    out.err = String((e && e.message) || e).slice(0, 200)
+  }
+  locProfileCache.set(locationId, { val: out, exp: Date.now() + (out.err ? LOC_PROFILE_ERR_TTL_MS : LOC_PROFILE_TTL_MS) })
   return out
 }
 

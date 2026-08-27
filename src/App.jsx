@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.385.1'
+const APP_VERSION = '3.386.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -690,10 +690,18 @@ function computeRows(snapClients, live) {
 function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, wonBasis = 'closed', onPick }) {
   const rowById = Object.fromEntries(rows.map((r) => [r.id, r]))
   const nameOf = (id) => rowById[id]?.name || id
-  const AlertCol = ({ title, color, list }) => (
+  // `checked` is false when the daily-spend read failed. A failed read produces
+  // an empty list, which is indistinguishable from "nothing is paused" - so
+  // without this the panel gives an all-clear it has no data behind.
+  const AlertCol = ({ title, color, list, checked = true }) => (
     <div className="card alert-col">
-      <div className="alert-head"><span className="chan" style={{ background: color }}>{title}</span>{list.length ? <span className="al-count bad">{list.length} paused</span> : <span className="al-count ok">all active</span>}</div>
-      {list.length ? list.map((a) => (
+      <div className="alert-head"><span className="chan" style={{ background: color }}>{title}</span>{!checked ? <span className="al-count warn">not checked</span> : list.length ? <span className="al-count bad">{list.length} paused</span> : <span className="al-count ok">all active</span>}</div>
+      {!checked ? (
+        <div className="alert-row">
+          <span className="al-dot warn" /><span className="al-name">Couldn&rsquo;t check {title}</span>
+          <span className="al-meta">the daily spend read failed - hit Refresh</span>
+        </div>
+      ) : list.length ? list.map((a) => (
         <div className="alert-row" key={a.id} onClick={() => rowById[a.id] && onPick(rowById[a.id].c)}>
           <span className="al-dot" /><span className="al-name">{nameOf(a.id)}</span>
           <span className="al-meta">$0 yesterday · was ~{fmtCurrency(a.avgDaily, currency)}/day</span>
@@ -742,8 +750,8 @@ function Overview({ rows, currency, periodLabel, live, alerts, range, nonce, won
         <div className="section-title">Account health <span className="sub">· $0 spend yesterday with an active prior week - likely paused / failed payment</span></div>
         <div className="grid alerts-2">
           {/* Only surface alerts for active clients - inactive ones are hidden everywhere. */}
-          <AlertCol title="Meta" color="#4f7cff" list={(alerts.meta || []).filter((a) => rowById[a.id])} />
-          <AlertCol title="Google" color="#12b886" list={(alerts.google || []).filter((a) => rowById[a.id])} />
+          <AlertCol title="Meta" color="#4f7cff" list={(alerts.meta || []).filter((a) => rowById[a.id])} checked={alerts.metaChecked !== false} />
+          <AlertCol title="Google" color="#12b886" list={(alerts.google || []).filter((a) => rowById[a.id])} checked={alerts.googleChecked !== false} />
         </div>
       </>}
       <div className="section-title">Client leaderboard <span className="sub">· results, funnel &amp; revenue per client vs the previous period · click a row to open the client</span></div>
@@ -1118,7 +1126,7 @@ function useTrends(nonce = 0) {
         .then((j) => {
           if (!alive) return
           if (!j || !j.clients) throw new Error('shape')
-          const partial = j.metaOk === false || j.googleOk === false
+          const partial = j.metaOk === false || j.googleOk === false || j.crmOk === false
           if (partial && n < MAX) { setState({ status: 'loading', data: null, partial: true, retry: n + 1, of: MAX }); setTimeout(() => { if (alive) run(n + 1) }, 1500 * (n + 1)); return }
           setState({ status: 'ok', data: j, partial, retry: n, of: MAX })
         })
@@ -12987,8 +12995,11 @@ function AnomalyClientCard({ client, currency, range, nonce, onSummary }) {
       <div className="fat-card-h">
         <div className="fat-card-nm">{client.name}</div>
         {st.status === 'loading' ? <span className="cap">Checking…</span>
-          : sum ? <div className="fat-counts">{sum.high ? <span className="fat-c fat-high">{sum.high} 🔴</span> : null}{sum.med ? <span className="fat-c fat-med">{sum.med} 🟠</span> : null}{sum.good ? <span className="fat-c fat-low">{sum.good} 🟢</span> : null}{!sum.high && !sum.med && !sum.good ? <span className="fat-c fat-low">all steady</span> : null}</div>
-            : <span className="cap">No data</span>}
+          /* A failed check returns a zeroed summary, which rendered a green
+             "all steady" directly above the "Couldn't load." message below. */
+          : st.status === 'err' || (d && d.error) ? <span className="al-count warn">not checked</span>
+            : sum ? <div className="fat-counts">{sum.high ? <span className="fat-c fat-high">{sum.high} 🔴</span> : null}{sum.med ? <span className="fat-c fat-med">{sum.med} 🟠</span> : null}{sum.good ? <span className="fat-c fat-low">{sum.good} 🟢</span> : null}{!sum.high && !sum.med && !sum.good ? <span className="fat-c fat-low">all steady</span> : null}</div>
+              : <span className="cap">No data</span>}
       </div>
       {st.status === 'loading' ? <Spinner label="" />
         : st.status === 'err' || d.meta === false ? <div className="cap">{d && d.meta === false ? 'No Meta account mapped.' : 'Couldn’t load.'}</div>

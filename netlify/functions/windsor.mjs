@@ -1138,12 +1138,18 @@ async function buildOverview(from, to, preset, key, wonBasis = 'created') {
     await Promise.all(Array.from({ length: Math.min(6, list.length) }, worker))
     return out
   }
+  let dailyMetaOk = true, dailyGoogleOk = true
   const [[fb, gg, fbD, ggD, pFb, pGg], crmByClient] = await Promise.all([
     Promise.all([
       windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key),
       windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
-      windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
-      windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => []),
+      // These two drive the paused-account alerts. If one fails we get no rows,
+      // every account looks like it spent nothing over the whole baseline week,
+      // the `base > 1` guard then suppresses every alert - and the UI reports a
+      // confident "all accounts active". Track the failure so it can say
+      // "couldn't check" instead of giving an all-clear it has no basis for.
+      windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => { dailyMetaOk = false; return [] }),
+      windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => { dailyGoogleOk = false; return [] }),
       pr.from ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
       pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
     ]),
@@ -1186,7 +1192,7 @@ async function buildOverview(from, to, preset, key, wonBasis = 'created') {
     for (const [id, c] of Object.entries(CLIENTS)) { if (!c[hasKey]) continue; const e = per[id] || { yest: 0, base: 0 }; if (e.base > 1 && e.yest < 0.01) out.push({ id, avgDaily: Math.round(e.base / 7) }) }
     return out.sort((a, b) => b.avgDaily - a.avgDaily)
   }
-  const alerts = { checkedDate: yStr, meta: flag(perMeta, 'meta'), google: flag(perGoogle, 'google') }
+  const alerts = { checkedDate: yStr, meta: flag(perMeta, 'meta'), google: flag(perGoogle, 'google'), metaChecked: dailyMetaOk, googleChecked: dailyGoogleOk }
   return { clients, alerts }
 }
 
@@ -3360,7 +3366,7 @@ export default async (req) => {
     // Don't cache a partial pull (Meta or Google timed out) - otherwise the blank
     // result is served for 10 min and the user has to hammer Refresh. Skipping the
     // cache lets the client's auto-retry get a fresh, complete pull.
-    try { const tr = await buildTrends(key); if (filtered) tr.clients = pickAllowed(tr.clients); const complete = tr.metaOk !== false && tr.googleOk !== false; return json({ scope: 'trends', ...tr }, 200, !filtered && complete) }
+    try { const tr = await buildTrends(key); if (filtered) tr.clients = pickAllowed(tr.clients); const complete = tr.metaOk !== false && tr.googleOk !== false && tr.crmOk !== false; return json({ scope: 'trends', ...tr }, 200, !filtered && complete) }
     catch (e) { return json({ error: String(e.message || e) }, 502) }
   }
 

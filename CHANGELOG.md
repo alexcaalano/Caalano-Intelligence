@@ -17,6 +17,49 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.386.0 - 2026-08-20 · `PENDING` - Three more places a failed read reported itself as good news
+
+A sweep of the ~350 caught failures across the backend, looking for the shape
+behind the v3.385.1 bug: **a fetch fails, the empty result flows into a
+user-facing number or an all-clear, and nothing anywhere says the read didn't
+happen.** Most caught failures are fine - a lost-reason lookup or a user list
+degrades a label, not a figure. Three did not.
+
+**1. Account health gave an all-clear it had no data for** *(worst of the three)*
+- The paused-account alerts fire on "$0 yesterday with an active prior week".
+  If the daily-spend read failed it returned no rows, every account looked like
+  it spent nothing all week, the `base > 1` guard suppressed every alert - and
+  the panel reported **"all active · every Meta account spent yesterday"**.
+- A failed read is now tracked per channel and the column says **"not checked -
+  the daily spend read failed"** instead of giving an all-clear. A genuinely
+  clean week still reads "all active".
+
+**2. A failed CRM read was cached as real zeros** *(most damaging)*
+- The trends builder tracked `metaOk` / `googleOk` - skipping the cache and
+  auto-retrying on a partial pull - but had no equivalent for the CRM leg. A
+  transient CRM failure zeroed every client that relies on the blended feed and
+  then got **written to the 10-minute cache** and served to everyone as real.
+- Now reports `crmOk`, which joins the cache gate and the frontend's retry.
+  Scoped so it only counts as incomplete when a client actually relied on the
+  fallback - a client whose direct API read succeeded never touches it, and a
+  healthy result is still cached.
+
+**3. Anomalies showed "all steady" above "Couldn't load."**
+- A failed check returns a zeroed summary, which rendered a green "all steady"
+  chip directly above the error message. It now reads "not checked".
+
+**Checked and found already correct** - worth recording so the pattern is clear:
+per-client CRM failures in the agency feed already drop the `crm` key entirely,
+so the leaderboard shows "-" and a "N clients couldn't load CRM data" banner
+with the reason per row. That is the model the three fixes above now follow.
+
+**Noted, not changed:** `buildCalPerf`'s opportunity read degrades into the
+existing "Unattributed" bucket on failure - honest, but it makes attribution
+look worse than it is. Would need a flag on that response to distinguish
+"genuinely unattributed" from "we couldn't check".
+
+---
+
 ## v3.385.1 - 2026-08-20 · `PENDING` - Movers: say the real reason a client has no close dates
 
 The "N clients excluded" note added in v3.385.0 was wrong, and it hid a real

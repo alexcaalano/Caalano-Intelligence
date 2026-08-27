@@ -9,7 +9,8 @@ git commit that produced it, so any version can be redeployed or reverted to.
   `git checkout claude/reporting-dashboard-multi-platform-ov1wlv`
   then `git revert --no-edit <bad-commit>..HEAD` (safe, keeps history)
   or `git reset --hard v3.5.0 && git push --force-with-lease` (hard rollback).
-- Every release below is also a git tag, so `git checkout <tag>` works directly.
+- Every release below carries the exact commit that produced it, so
+  `git checkout <hash>` always works. Most also have a matching `vX.Y.Z` git tag.
 - The live build's exact commit + time is always shown bottom-left in the app
   ("Last deployed …"), and the current version is shown next to it.
 

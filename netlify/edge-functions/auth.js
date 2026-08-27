@@ -232,10 +232,12 @@ body{margin:0;background:var(--ink);color:var(--text);
 .pitch h1 em{font-style:normal;background:linear-gradient(96deg,#9fb0ff,#c9a6ff);
   -webkit-background-clip:text;background-clip:text;color:transparent}
 .pitch p{margin:0;font-size:14.5px;line-height:1.65;color:#98a1bb;max-width:44ch}
-.pts{list-style:none;margin:30px 0 0;padding:0;display:grid;gap:13px;max-width:46ch}
-.pts li{display:flex;gap:11px;align-items:flex-start;font-size:13.5px;color:#b6bdd2}
-.pts svg{flex:0 0 auto;margin-top:2px}
-.pts b{color:#e8ebf5;font-weight:600}
+.pts{list-style:none;margin:30px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:20px 30px}
+.pts li{display:flex;gap:9px;align-items:flex-start}
+.pts svg{flex:0 0 auto;margin-top:3px}
+.pts b{display:block;color:#eef1f8;font-size:13px;font-weight:650;letter-spacing:-.005em;margin-bottom:3px}
+.pts span{display:block;font-size:12.5px;line-height:1.5;color:#98a1bb}
+@media(max-width:1240px){.pts{grid-template-columns:1fr;max-width:46ch}}
 .foot{font-size:11.5px;color:#6d7590;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .foot a{color:#8b93ad}
 .lock{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
@@ -282,13 +284,16 @@ button.link:hover{color:var(--brand)}
       <div><b>Caalano<i>360</i></b><span>Client Reporting</span></div>
     </div>
     <div class="pitch">
-      <h1>Every channel, <em>one honest number</em>.</h1>
-      <p>Ad spend, enquiries and revenue from your CRM, joined up and reconciled &mdash;
-         so the cost of a booking is the real one, not the platform&rsquo;s version of it.</p>
+      <h1>From lead to <em>closed deal</em>.</h1>
+      <p>Built for service businesses where work is won over weeks, not minutes. Your ad spend and your
+         CRM in one place, so you can see what turns into revenue and what winning it actually costs.</p>
       <ul class="pts">
-        <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="#6b7bf7" stroke-width="1.2" opacity=".55"/><path d="M5 8.2l2 2 4-4.4" stroke="#9fb0ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Paid and pipeline together.</b> Meta and Google spend matched to the leads, bookings and deals they actually produced.</span></li>
-        <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="#6b7bf7" stroke-width="1.2" opacity=".55"/><path d="M5 8.2l2 2 4-4.4" stroke="#9fb0ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Your funnel, not a template.</b> The stages your business runs, with the cost of reaching each one.</span></li>
-        <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="#6b7bf7" stroke-width="1.2" opacity=".55"/><path d="M5 8.2l2 2 4-4.4" stroke="#9fb0ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>Built to be checked.</b> Every figure opens up to the records behind it.</span></li>
+        <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Know which ad brought the client</b><span>Performance down to the campaign, ad set, creative or keyword, scored on deals won rather than forms filled in.</span></div></li>
+        <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Cost per the thing you care about</b><span>Cost per meeting booked, per call attended, per quote sent, per new client. You set the steps your business runs on.</span></div></li>
+        <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>See where deals stall</b><span>Speed to lead and sales cycle length by rep, so slow follow up stops being invisible and starts being fixable.</span></div></li>
+        <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Catch revenue before it slips</b><span>Aged opportunities and deals going quiet, flagged while there is still time to do something about them.</span></div></li>
+        <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Spend where the good clients are</b><span>Location and deal value read together, so budget follows the areas that pay rather than the ones that just enquire.</span></div></li>
+        <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Learn what a good lead sounds like</b><span>Qualification answers matched against what actually closed, so you can go and find more of the same.</span></div></li>
       </ul>
     </div>
     <div class="foot">
@@ -361,7 +366,7 @@ function requestAccess(){
     fields:[['name','Your name','text','name'],['email','Email','email','username'],
             ['password','Choose a password','password','new-password'],['note','Anything we should know? (optional)','text','',true]],
     submit:function(b){ return post('signup', b) },
-    done:function(){ app.innerHTML = '<h2>Request sent</h2><p class="ok">Thanks — we\\u2019ll be in touch once your access is set up.</p>' },
+    done:function(){ app.innerHTML = '<h2>Request sent</h2><p class="ok">Thanks. We\\u2019ll be in touch once your access is set up.</p>' },
     alt:'← Back to sign in', onAlt:signIn })
 }
 function acceptInvite(token, info){

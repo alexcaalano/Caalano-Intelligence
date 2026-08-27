@@ -18,6 +18,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.389.1 - 2026-08-20 · `PENDING` - Front door: sell the product, not the feature list
+
+Rewrote the front door copy around what the product does for the business rather
+than what it contains.
+
+- Headline is now **"From lead to closed deal"**, positioned squarely at service
+  businesses where work is won over weeks rather than in a single session.
+- Six benefits in two columns, each led by the outcome and backed by the
+  mechanism: which ad brought the *client* (not the lead), cost per the step you
+  actually care about, where deals stall, revenue about to slip, where the good
+  clients come from, and what a good lead answers at capture.
+- No em dashes anywhere on the page.
+
+Layout: two columns above 1240px, one below, hidden on mobile where the form is
+the only thing that matters. Verified at 1440px and 400px with no horizontal
+overflow; all 44 gate and flow assertions still green.
+
+---
+
 ## v3.389.0 - 2026-08-20 · `PENDING` - A front door, not a login box
 
 The edge page from v3.388.0 is now the product's front door: a two-panel layout

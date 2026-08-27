@@ -238,8 +238,15 @@ body{margin:0;background:var(--ink);color:var(--text);
 .pts b{display:block;color:#eef1f8;font-size:13px;font-weight:650;letter-spacing:-.005em;margin-bottom:3px}
 .pts span{display:block;font-size:12.5px;line-height:1.5;color:#98a1bb}
 @media(max-width:1240px){.pts{grid-template-columns:1fr;max-width:46ch}}
-.foot{font-size:11.5px;color:#6d7590;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.foot a{color:#8b93ad}
+.foot{display:flex;justify-content:space-between;align-items:flex-end;gap:22px;flex-wrap:wrap}
+.foot-l{font-size:11.5px;color:#6d7590;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* Named in plain text rather than as redrawn brand marks. An approximated Google
+   or Meta logo is a distorted trademark, which is a worse thing to put on a page
+   than the product's name spelled correctly. */
+.syncs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+.syncs-lab{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#6d7590;margin-right:3px}
+.chip{font-size:10.5px;color:#aab2c8;padding:3.5px 9px;border-radius:6px;line-height:1.2;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09)}
 .lock{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;
   background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#8b93ad;font-size:11px}
 
@@ -269,6 +276,8 @@ button.link:hover{color:var(--brand)}
 
 @media(max-width:900px){
   .wrap{grid-template-columns:1fr}
+  .foot{justify-content:flex-start}
+  .syncs{justify-content:flex-start;margin-left:0}
   .tell{padding:34px 26px 30px}
   .pitch{margin:30px 0}
   .pitch h1{font-size:27px;max-width:none}
@@ -285,9 +294,9 @@ button.link:hover{color:var(--brand)}
     </div>
     <div class="pitch">
       <h1>From lead to <em>closed deal</em>.</h1>
-      <p>Ad platforms can tell you what a lead cost. They cannot tell you which leads became clients,
-         because that happens in your CRM weeks later. Caalano360 joins the two, so you can back what
-         brings in revenue and stop paying for what only brings in forms.</p>
+      <p>Ad platforms can tell you what a lead cost. They cannot tell you which leads became clients.
+         Caalano360 joins the two, so you can back what brings in revenue and stop paying for what only
+         brings in forms.</p>
       <ul class="pts">
         <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Know which ad brought the client</b><span>Performance down to the campaign, ad set, creative or keyword, scored on deals won rather than forms filled in.</span></div></li>
         <li><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 8.4l3 3 5.8-6.4" stroke="#9fb0ff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Cost per the thing you care about</b><span>Cost per meeting booked, per call attended, per quote sent, per new client. You set the steps your business runs on.</span></div></li>
@@ -298,8 +307,11 @@ button.link:hover{color:var(--brand)}
       </ul>
     </div>
     <div class="foot">
+      <div class="foot-l">
       <span class="lock"><svg width="10" height="11" viewBox="0 0 12 13" fill="none" aria-hidden="true"><rect x="1.6" y="5.4" width="8.8" height="6.6" rx="1.8" stroke="#8b93ad" stroke-width="1.1"/><path d="M3.9 5.2V3.7a2.1 2.1 0 014.2 0v1.5" stroke="#8b93ad" stroke-width="1.1" stroke-linecap="round"/></svg> Private &middot; invitation only</span>
       <span>&copy; Caalano Digital</span>
+      </div>
+      <div class="syncs"><span class="syncs-lab">Syncs with</span><span class="chip">Meta Ads</span><span class="chip">Google Ads</span><span class="chip">Google Analytics</span><span class="chip">Instagram</span><span class="chip">Caalano Systems</span></div>
     </div>
   </section>
   <section class="desk">

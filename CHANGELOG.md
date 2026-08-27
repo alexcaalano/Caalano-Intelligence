@@ -18,6 +18,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.390.0 - 2026-08-20 · `PENDING` - Front door: tighter opening, and what it syncs with
+
+- Cut the middle sentence from the opening paragraph. Three sentences became two
+  and it lost nothing.
+- Added a **Syncs with** row at the bottom right of the panel: Meta Ads, Google
+  Ads, Google Analytics, Instagram, Caalano Systems.
+
+**Checked against the code before listing anything.** The connectors actually
+fetched are `facebook`, `google_ads`, the GA4 slugs, `facebook_organic` /
+`instagram`, and `gohighlevel`. **TikTok was requested but is not listed**: there
+is no TikTok fetch anywhere in the app, only string patterns that classify a
+channel *name* containing "tiktok". On a page whose whole argument is that the
+numbers are honest, an integration claim that isn't true is a bad first
+impression. One line to add the moment it is wired up.
+
+**Named in text, not redrawn as logos.** An approximated Google or Meta mark is a
+distorted trademark, and both brands publish assets with usage rules that a
+from-memory redraw would breach. Dropping in the official SVGs later is a
+straight swap.
+
+---
+
 ## v3.389.2 - 2026-08-20 · `PENDING` - Front door: lead with the actual proposition
 
 The opening line described the market rather than the value: "built for service

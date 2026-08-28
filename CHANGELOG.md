@@ -18,6 +18,51 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.402.0 - 2026-08-20 · `PENDING` - Lost Reasons becomes one filterable table
+
+The tab could show one cut at a time: lost reasons by campaign, or by stage, or
+by source. That answers "Paid Social lost 46" and "22 were lost at the 15 Minute
+Call stage" but it cannot answer how many were both, because two totals cannot be
+intersected. The question you actually want to ask is almost always a combination.
+
+**One table, filters that stack.** Every dimension - reason, channel, source,
+pipeline, stage lost at, campaign, creative, keyword - is now a filter, and any
+number of them apply at once. Two more pickers choose what the table itself does:
+which dimension runs down the side as rows, and which runs across the top as
+columns. Hold Paid Social and the 15 Minute Call stage, put campaign down the side
+and reason across the top, and the table tells you which campaign is producing
+which kind of loss at that exact point in the funnel.
+
+**Every filter's options are counted live** against the other filters, so a value
+with nothing behind it is visibly zero before you pick it. Active filters are
+restated as chips you can click to remove, because a row of dropdowns does not
+make it obvious at a glance what is currently excluded.
+
+**No refetch.** The backend now sends one row per lost deal rather than six
+pre-computed rollups, dictionary encoded - the same campaign name repeats across
+hundreds of rows, so the names are sent once and the rows carry indexes. Every
+filter, group and cross-tab is then computed in the browser, so changing a filter
+is instant and never hits the network. The channel filter, which used to re-pivot
+the whole payload server-side, is now just another column.
+
+Expanding a row lists the leads behind it as a table, with their form answers,
+and joins back to the answer records by contact - the per-reason answer cap went
+from 60 to 150 so a filtered group is far less likely to show blanks.
+
+**A bug the tests caught.** Stack enough filters and a selected value can end up
+with no rows at all - at which point it dropped out of its own dropdown, leaving
+the control blank while the filter was still applied and nothing left to click to
+undo it. A selected value now stays in its own list, showing zero. Found by an
+invariant test over synthetic data (109 assertions: group counts sum to the
+filtered total, columns plus Other reconcile on every row, each picker's counts
+match the rows passing the other filters, rows and columns never collapse onto
+the same dimension).
+
+The eleven-column pivot was measured at every viewport from 1920px down; it fits
+without sideways scroll on any desktop width.
+
+---
+
 ## v3.401.0 - 2026-08-20 · `PENDING` - The lost-lead drill is a table
 
 Opening a lost reason gave you a stack of cards, one per lead, each a paragraph

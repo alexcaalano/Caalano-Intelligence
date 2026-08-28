@@ -3808,6 +3808,16 @@ export async function buildCcDrill(locationId, from, to, channel) {
   // on an existing loop - no extra request, no extra opportunity pass.
   const LOST_DIMS = ['pipeline', 'stage', 'campaign', 'creative', 'keyword', 'source']
   const lostDim = {}; for (const d of LOST_DIMS) lostDim[d] = new Map()
+  // One fact row per lost deal, so the UI can cross-filter (Paid Social AND a
+  // given stage) instead of being stuck on one cut at a time - six independent
+  // rollups cannot be intersected from their totals. Strings are dictionary
+  // encoded: the same campaign name repeats across hundreds of rows.
+  const LOST_FACT_KEYS = ['reason', 'pipeline', 'stage', 'campaign', 'creative', 'keyword', 'source', 'channel']
+  const LOST_FACT_CAP = 4000
+  const factDict = {}; const factIdx = {}
+  for (const k of LOST_FACT_KEYS) { factDict[k] = []; factIdx[k] = new Map() }
+  const fIdx = (k, v) => { const val = v || 'Not tagged'; const m = factIdx[k]; let i = m.get(val); if (i === undefined) { i = factDict[k].length; factDict[k].push(val); m.set(val, i) } return i }
+  const factRows = []
   // Missing values get a named bucket rather than being dropped, so every
   // dimension still adds up to the same lost total the scorecard shows.
   const bumpLostDim = (d, key, reason, value) => {
@@ -3873,7 +3883,15 @@ export async function buildCcDrill(locationId, from, to, channel) {
       bumpLostDim('keyword', u.term || null, rn, val)
       bumpLostDim('source', label || null, rn, val)
       const cid = contactIdOf(o)
-      if (lr.people.length < 60) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), oppSource: o.source || null, channelSource: label, utmSource: u.source || null, utmContent: u.content || null, formAnswers: (cid && formAns.get(cid)) || [] })
+      if (factRows.length < LOST_FACT_CAP) {
+        factRows.push([
+          fIdx('reason', rn), fIdx('pipeline', pipeName[o.pipelineId] || null), fIdx('stage', stg ? stg.name : null),
+          fIdx('campaign', u.campaign || null), fIdx('creative', u.content || null), fIdx('keyword', u.term || null),
+          fIdx('source', label || null), fIdx('channel', ch || null),
+          Math.round(val), cid || null, name,
+        ])
+      }
+      if (lr.people.length < 150) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), oppSource: o.source || null, channelSource: label, utmSource: u.source || null, utmContent: u.content || null, formAnswers: (cid && formAns.get(cid)) || [] })
     } else {
       openCount++; openValueTotal += val
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
@@ -3920,6 +3938,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
     open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },
     openByStage: [...openByStage.values()].map((g) => ({ key: g.key, stage: g.stage, stageId: g.stageId, pipeline: g.pipeline, pipelineId: g.pipelineId, pos: g.pos, count: g.count, value: Math.round(g.value), deals: g.deals.sort((a, b) => b.value - a.value) })).sort((a, b) => a.pos - b.pos),
     lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),
+    lostFacts: { keys: LOST_FACT_KEYS, dict: factDict, rows: factRows, total: lostCount, capped: lostCount > factRows.length },
     lostBy: Object.fromEntries(LOST_DIMS.map((d) => [d, [...lostDim[d].values()]
       .map((e) => ({ key: e.key, count: e.count, value: Math.round(e.value),
         reasons: [...e.r.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count).slice(0, 20) }))

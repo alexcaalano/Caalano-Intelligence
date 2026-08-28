@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.401.0'
+const APP_VERSION = '3.402.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4678,98 +4678,177 @@ function LocationSummary({ clientId, range, nonce, onNav }) {
 // losses are "could not contact" is a lead-quality or speed-to-lead problem.
 // They call for opposite fixes, and the total on its own cannot tell them apart.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Lost Reasons - one table over every lost deal, filtered and pivoted freely.
+//
+// Six separate rollups can tell you that Paid Social lost 46 deals and that 22
+// were lost at the 15 Minute Call stage. They cannot tell you how many were
+// both, because you cannot intersect two totals. So the backend sends one row
+// per lost deal and every cut is computed here: stack any filters you like, then
+// group and break down by whatever two dimensions answer the question.
+//
+// The cut that usually matters is where a reason clusters. A campaign losing on
+// price is priced or targeted wrong; one losing on "could not contact" has a
+// lead-quality or speed-to-lead problem. Opposite fixes, and the headline number
+// cannot tell them apart.
+// ---------------------------------------------------------------------------
 const LR_DIMS = [
+  ['reason', 'Reason', 'Why the deal was marked lost, from the lost-reason list in Caalano Systems.'],
+  ['channel', 'Channel', 'Meta, Google or other, resolved from the lead’s first-touch UTMs.'],
+  ['source', 'Source', 'Where the lead came from, resolved the same way as everywhere else in the app.'],
   ['pipeline', 'Pipeline', 'Which side of the business the deal belonged to.'],
   ['stage', 'Stage lost at', 'The stage the deal was sitting in when it was marked lost - where in the funnel it died.'],
-  ['campaign', 'Campaign', 'The utm_campaign the lead arrived with. Leads with no campaign - organic, direct, referral, or an untagged ad - group under "Not tagged".'],
-  ['creative', 'Creative / ad', 'The utm_content the lead arrived with, which is the ad or creative for tagged paid traffic.'],
+  ['campaign', 'Campaign', 'The utm_campaign the lead arrived with. Leads with no campaign - organic, direct, referral or an untagged ad - group under “Not tagged”.'],
+  ['creative', 'Creative / ad', 'The utm_content the lead arrived with, which is the ad or creative on tagged paid traffic.'],
   ['keyword', 'Keyword', 'The utm_term the lead arrived with - the search keyword on tagged Google traffic.'],
-  ['source', 'Source', 'Where the lead came from, resolved the same way as everywhere else in the app.'],
 ]
-const LR_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google'], ['other', 'Other']]
+const LR_LABEL = Object.fromEntries(LR_DIMS.map((d) => [d[0], d[1]]))
+const LR_TIP = Object.fromEntries(LR_DIMS.map((d) => [d[0], d[2]]))
+const LR_COLS_MAX = 6
+
+// Decode the dictionary-encoded fact rows into plain objects once per payload.
+function lrFacts(cc) {
+  const f = cc && cc.lostFacts
+  if (!f || !f.rows) return []
+  const keys = f.keys || []
+  return f.rows.map((r) => {
+    const o = {}
+    keys.forEach((k, i) => { o[k] = (f.dict[k] || [])[r[i]] })
+    o.value = r[keys.length] || 0
+    o.contactId = r[keys.length + 1] || null
+    o.name = r[keys.length + 2] || '-'
+    return o
+  })
+}
 
 function LostReasonsView({ clientId, range, nonce, currency }) {
-  const [chan, setChan] = useState('all')
-  const [dim, setDim] = useState('campaign')
-  const [openKey, setOpenKey] = useState(null)
-  const [drill, setDrill] = useState(null)
-  const st = useCcDrill(clientId, range, nonce, chan)
+  // Filters are applied here, not on the server, so stacking or clearing one is
+  // instant and never refetches. The payload is every lost deal in the period.
+  const [filters, setFilters] = useState({})
+  const [groupBy, setGroupBy] = useState('reason')
+  const [colBy, setColBy] = useState('source')
+  const [open, setOpen] = useState(null)
+  const st = useCcDrill(clientId, range, nonce, 'all')
   const money = (v) => fmtCurrency(v, currency)
   const cc = st.data || null
-  const rows = (cc && cc.lostBy && cc.lostBy[dim]) || []
-  const lostTot = (cc && cc.totals && cc.totals.lost) || 0
-  const lostVal = ((cc && cc.lostByReason) || []).reduce((a, r) => a + (r.value || 0), 0)
-  // Columns = the reasons that actually matter across this cut. Anything past the
-  // top six folds into "Other" so the table stays readable at any width.
-  const topReasons = useMemo(() => {
+  const facts = useMemo(() => lrFacts(cc), [cc])
+  const setF = (dim, val) => { setOpen(null); setFilters((f) => { const n = { ...f }; if (!val) delete n[dim]; else n[dim] = val; return n }) }
+  const active = Object.entries(filters)
+  // A row passes when it matches every filter EXCEPT the one being counted -
+  // that is what keeps each picker's counts live without letting a filter hide
+  // its own alternatives.
+  const passes = (r, skip) => active.every(([d, v]) => d === skip || r[d] === v)
+  const rows = useMemo(() => facts.filter((r) => passes(r, null)), [facts, filters])
+  const optionsFor = (dim) => {
     const m = new Map()
-    for (const r of rows) for (const x of (r.reasons || [])) m.set(x.reason, (m.get(x.reason) || 0) + x.count)
-    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k]) => k)
-  }, [rows])
-  const shownSum = rows.reduce((a, r) => a + r.count, 0)
-  const dimDef = LR_DIMS.find((d) => d[0] === dim) || LR_DIMS[0]
-  const cellOf = (r, reason) => (r.reasons || []).find((x) => x.reason === reason)
-  const otherOf = (r) => r.count - (r.reasons || []).filter((x) => topReasons.includes(x.reason)).reduce((a, x) => a + x.count, 0)
-  const anyOther = rows.some((r) => otherOf(r) > 0)
+    for (const r of facts) if (passes(r, dim)) m.set(r[dim], (m.get(r[dim]) || 0) + 1)
+    // Stack enough filters and a selected value can end up with no rows at all.
+    // Keep it in its own list at zero rather than letting the control fall blank:
+    // the filter would still be applied but no longer visible in the thing
+    // applying it, and there would be nothing left to click to undo it.
+    if (filters[dim] && !m.has(filters[dim])) m.set(filters[dim], 0)
+    return [...m.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+  }
+  // Group down the side, break down across the top. Picking the same dimension
+  // for both would make a diagonal, so the columns fall back to Reason.
+  const colDim = colBy === groupBy ? (groupBy === 'reason' ? 'source' : 'reason') : colBy
+  const groups = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) {
+      let g = m.get(r[groupBy]); if (!g) { g = { key: r[groupBy], count: 0, value: 0, cols: new Map(), rows: [] }; m.set(r[groupBy], g) }
+      g.count++; g.value += r.value; g.rows.push(r)
+      g.cols.set(r[colDim], (g.cols.get(r[colDim]) || 0) + 1)
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count)
+  }, [rows, groupBy, colDim])
+  const colKeys = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) m.set(r[colDim], (m.get(r[colDim]) || 0) + 1)
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, LR_COLS_MAX).map(([k]) => k)
+  }, [rows, colDim])
+  const otherOf = (g) => g.count - colKeys.reduce((a, k) => a + (g.cols.get(k) || 0), 0)
+  const anyOther = groups.some((g) => otherOf(g) > 0)
+  const totVal = rows.reduce((a, r) => a + r.value, 0)
+  const allTot = (cc && cc.lostFacts && cc.lostFacts.total) || facts.length
+  // People records carry the form answers and the full source trail; the fact
+  // rows carry everyone. Join on contact id so a filtered group lists every
+  // lead, with answers wherever they were captured.
+  const byContact = useMemo(() => {
+    const m = new Map()
+    for (const r of ((cc && cc.lostByReason) || [])) for (const p of (r.people || [])) if (p.contactId) m.set(p.contactId, p)
+    return m
+  }, [cc])
+  const peopleOf = (g) => g.rows.map((r) => byContact.get(r.contactId) || { contactId: r.contactId, name: r.name, stage: r.stage, pipeline: r.pipeline, value: r.value, channelSource: r.source, utmContent: r.creative, formAnswers: [] })
   return (
     <>
       <div className="card">
-        <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-          <span>Lost reasons {lostTot ? <span className="sub">· {fmtNumber(lostTot)} lost{lostVal ? `, ${money(lostVal)}` : ''} · {rangeLabel(range)}</span> : null}</span>
-          <div className="kp-filters" style={{ padding: 0 }}>
-            {LR_CHANS.map(([k, lbl]) => <button key={k} className={`kp-filter${chan === k ? ' on' : ''}`} onClick={() => { setChan(k); setOpenKey(null) }}>{lbl}</button>)}
-          </div>
-        </div>
-        <div className="lrv-dims">
-          {LR_DIMS.map(([k, lbl, tip]) => <button key={k} className={`lrv-dim${dim === k ? ' on' : ''}`} title={tip} onClick={() => { setDim(k); setOpenKey(null) }}>{lbl}</button>)}
-        </div>
-        {st.status === 'loading' && !cc ? <Spinner label="Loading lost reasons…" />
+        <div className="exec-panel-h">Lost reasons <span className="sub">· {fmtNumber(rows.length)}{rows.length !== allTot ? ` of ${fmtNumber(allTot)}` : ''} lost{totVal ? `, ${money(totVal)}` : ''} · {rangeLabel(range)}</span></div>
+        {st.status === 'loading' && !cc ? <Spinner label="Loading lost deals…" />
           : st.status === 'err' ? <div className="cap">Couldn’t load the CRM breakdown - try again.</div>
-            : !lostTot ? <div className="cap">No lost opportunities recorded in this period. ✅</div>
-              : !rows.length ? <div className="cap">No lost deals carried a {dimDef[1].toLowerCase()} in this period.</div>
-                : <>
-                  <table className="mini-tbl users-tbl appt-tbl u-lrv">
-                    <thead><tr>
-                      <th className="lft">{dimDef[1]}</th>
-                      <th>Lost</th><th>Value</th>
-                      {topReasons.map((r) => <th key={r}>{r}</th>)}
-                      {anyOther ? <th>Other</th> : null}
-                    </tr></thead>
-                    <tbody>{rows.map((r) => {
-                      const isOpen = openKey === r.key
-                      const oth = otherOf(r)
-                      return (
-                        <React.Fragment key={r.key}>
-                          <tr className="lrv-row" style={{ cursor: 'pointer' }} onClick={() => setOpenKey(isOpen ? null : r.key)} title="Click for this row’s full reason list">
-                            <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {r.key}</td>
-                            <td><b>{fmtNumber(r.count)}</b></td>
-                            <td>{r.value ? money(r.value) : '-'}</td>
-                            {topReasons.map((rn) => { const c = cellOf(r, rn); return <td key={rn} className={c ? 'lrv-n' : 'lrv-z'}>{c ? fmtNumber(c.count) : '-'}</td> })}
-                            {anyOther ? <td className={oth ? 'lrv-n' : 'lrv-z'}>{oth ? fmtNumber(oth) : '-'}</td> : null}
-                          </tr>
-                          {isOpen ? <tr className="lrv-detail"><td colSpan={3 + topReasons.length + (anyOther ? 1 : 0)}>
-                            <div className="lrv-det-h">{r.key} · every reason</div>
-                            <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
-                              <tbody>{(r.reasons || []).map((x, i) => {
-                                const full = (cc.lostByReason || []).find((y) => y.reason === x.reason)
-                                // The people list is only narrowable on the pipeline cut, because
-                                // that is the only dimension carried on each lost person record.
-                                const people = !full ? null : dim === 'pipeline' ? (full.people || []).filter((pp) => pp.pipeline === r.key) : (full.people || [])
-                                const can = !!(people && people.length)
-                                return <tr key={i} className={can ? 'lr-click' : ''} style={can ? { cursor: 'pointer' } : undefined}
-                                  onClick={can ? (ev) => { ev.stopPropagation(); setDrill({ kind: 'lost', title: `Lost · ${x.reason}${dim === 'pipeline' ? ` · ${r.key}` : ''}`, preselect: { ...full, count: x.count, value: x.value, people } }) } : undefined}>
-                                  <td className="lft">{x.reason}</td><td>{fmtNumber(x.count)}</td><td>{x.value ? money(x.value) : '-'}</td><td>{pctOf(x.count, r.count)}</td></tr>
-                              })}</tbody></table>
-                          </td></tr> : null}
-                        </React.Fragment>
-                      )
-                    })}</tbody>
-                  </table>
-                  {shownSum < lostTot ? <div className="cap" style={{ marginTop: 8 }}>Showing the top {fmtNumber(rows.length)} by lost deals · {fmtNumber(lostTot - shownSum)} lost {lostTot - shownSum === 1 ? 'deal sits' : 'deals sit'} in values beyond them.</div> : null}
-                  <Caveat>{dimDef[2]} Each deal carries one lost reason, so every cut here adds up to the same {fmtNumber(lostTot)} lost. Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. Reasons come from the lost-reason list in Caalano Systems, so the size of the “Unspecified” row is a fair read on how consistently the team is setting one.</Caveat>
-                </>}
+            : !facts.length ? <div className="cap">No lost opportunities recorded in this period. ✅</div>
+              : <>
+                <div className="lrv-bar">
+                  {LR_DIMS.map(([k, lbl]) => {
+                    const opts = optionsFor(k)
+                    return (
+                      <label key={k} className={`lrv-f${filters[k] ? ' on' : ''}`} title={LR_TIP[k]}>
+                        <span className="lrv-f-lab">{lbl}</span>
+                        <select value={filters[k] || ''} onChange={(e) => setF(k, e.target.value)}>
+                          <option value="">All ({fmtNumber(opts.reduce((a, o) => a + o[1], 0))})</option>
+                          {opts.map(([v, n]) => <option key={v} value={v}>{v} ({fmtNumber(n)})</option>)}
+                        </select>
+                      </label>
+                    )
+                  })}
+                </div>
+                {active.length ? <div className="lrv-chips">
+                  {active.map(([d, v]) => <button key={d} className="lrv-chip" onClick={() => setF(d, '')} title={`Remove the ${LR_LABEL[d]} filter`}>{LR_LABEL[d]}: <b>{v}</b> ✕</button>)}
+                  <button className="lrv-chip lrv-clear" onClick={() => { setFilters({}); setOpen(null) }}>Clear all</button>
+                </div> : null}
+                <div className="lrv-pivot">
+                  <label className="lrv-f"><span className="lrv-f-lab">Rows</span>
+                    <select value={groupBy} onChange={(e) => { setGroupBy(e.target.value); setOpen(null) }}>
+                      {LR_DIMS.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+                    </select></label>
+                  <label className="lrv-f"><span className="lrv-f-lab">Columns</span>
+                    <select value={colDim} onChange={(e) => setColBy(e.target.value)}>
+                      {LR_DIMS.filter(([k]) => k !== groupBy).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+                    </select></label>
+                </div>
+                {!rows.length ? <div className="cap">No lost deals match these filters. <button className="link-btn" onClick={() => setFilters({})}>Clear them</button></div>
+                  : <>
+                    <table className="mini-tbl users-tbl appt-tbl u-lrv">
+                      <thead><tr>
+                        <th className="lft">{LR_LABEL[groupBy]}</th>
+                        <th>Lost</th><th>Value</th><th>Share</th>
+                        {colKeys.map((k) => <th key={k} title={`${LR_LABEL[colDim]}: ${k}`}>{k}</th>)}
+                        {anyOther ? <th>Other</th> : null}
+                      </tr></thead>
+                      <tbody>{groups.map((g) => {
+                        const isOpen = open === g.key
+                        const oth = otherOf(g)
+                        return (
+                          <React.Fragment key={g.key}>
+                            <tr className="lrv-row" style={{ cursor: 'pointer' }} onClick={() => setOpen(isOpen ? null : g.key)} title="Click for the leads behind this row">
+                              <td className="lft" title={g.key}><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {g.key}</td>
+                              <td><b>{fmtNumber(g.count)}</b></td>
+                              <td>{g.value ? money(g.value) : '-'}</td>
+                              <td>{pctOf(g.count, rows.length)}</td>
+                              {colKeys.map((k) => { const n = g.cols.get(k) || 0; return <td key={k} className={n ? 'lrv-n' : 'lrv-z'}>{n ? fmtNumber(n) : '-'}</td> })}
+                              {anyOther ? <td className={oth ? 'lrv-n' : 'lrv-z'}>{oth ? fmtNumber(oth) : '-'}</td> : null}
+                            </tr>
+                            {isOpen ? <tr className="lrv-detail"><td colSpan={4 + colKeys.length + (anyOther ? 1 : 0)}>
+                              <div className="lrv-det-h">{LR_LABEL[groupBy]}: {g.key} · {fmtNumber(g.count)} {g.count === 1 ? 'lead' : 'leads'}{active.length ? ` · with ${active.map(([d, v]) => `${LR_LABEL[d].toLowerCase()} ${v}`).join(', ')}` : ''}</div>
+                              <LostPeopleTable people={peopleOf(g)} clientId={clientId} money={money} />
+                            </td></tr> : null}
+                          </React.Fragment>
+                        )
+                      })}</tbody>
+                    </table>
+                    <Caveat>{LR_TIP[groupBy]} Every filter above stacks, so you can hold one dimension and pivot the rest - Paid Social lost at a given stage, broken down by reason, for example. Each deal carries exactly one value per dimension and a missing value groups under “Not tagged”, so the rows always add up to the {fmtNumber(rows.length)} shown. Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. The size of the “Unspecified” reason is a fair read on how consistently the team is setting one at all.{cc.lostFacts && cc.lostFacts.capped ? ` Showing the first ${fmtNumber(facts.length)} of ${fmtNumber(allTot)} lost deals in this period.` : ''}</Caveat>
+                  </>}
+              </>}
       </div>
-      {drill ? <CcDrillModal drill={drill} cc={cc} money={money} clientId={clientId} onClose={() => setDrill(null)} /> : null}
     </>
   )
 }

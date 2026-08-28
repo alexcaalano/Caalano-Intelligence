@@ -3685,15 +3685,32 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 @media (max-width: 1200px) { .users-tbl { font-size: 11.5px; } }
 
 /* Lost Reasons tab: dimension picker + the reason x dimension matrix. */
-.lrv-dims { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 10px; }
-.lrv-dim { font-size: 11.5px; font-weight: 700; padding: 5px 11px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--border-2); background: var(--panel-2); color: var(--muted); transition: all .12s; }
-.lrv-dim:hover { color: var(--text); border-color: var(--brand); }
-.lrv-dim.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+/* Filter bar: one picker per dimension, all of them stackable. Wraps rather
+   than scrolling, so every filter stays reachable at any width. */
+.lrv-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
+.lrv-pivot { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+.lrv-f { display: inline-flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lrv-f-lab { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); padding-left: 2px; }
+.lrv-f select { max-width: 210px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2);
+  border-radius: 8px; padding: 5px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.lrv-f.on select { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+.lrv-pivot .lrv-f select { border-color: var(--border-2); }
+/* Active filters restated as removable chips - a stack of dropdowns does not
+   make it obvious at a glance what is currently excluded. */
+.lrv-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.lrv-chip { font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand); }
+.lrv-chip b { font-weight: 800; }
+.lrv-chip:hover { background: color-mix(in srgb, var(--brand) 20%, transparent); }
+.lrv-chip.lrv-clear { border-color: var(--border-2); background: var(--panel-2); color: var(--muted); }
+.lrv-chip.lrv-clear:hover { color: var(--text); }
 /* Fixed layout so a long campaign name ellipses instead of widening the table:
    the first column absorbs whatever the reason columns do not need. */
 .u-lrv { table-layout: fixed; width: 100%; min-width: 0; }
-.u-lrv th:first-child, .u-lrv td:first-child { width: 26%; }
+.u-lrv th:first-child, .u-lrv td:first-child { width: 24%; }
+.u-lrv th:nth-child(2), .u-lrv td:nth-child(2) { width: 7%; }
+.u-lrv th:nth-child(3), .u-lrv td:nth-child(3) { width: 10%; }
+.u-lrv th:nth-child(4), .u-lrv td:nth-child(4) { width: 7%; }
 .u-lrv td.lft { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .u-lrv td.lrv-z { color: var(--faint); }
 .u-lrv td.lrv-n { font-weight: 700; }

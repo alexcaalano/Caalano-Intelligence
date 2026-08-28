@@ -18,6 +18,45 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.398.0 - 2026-08-20 · `PENDING` - Tables fit the screen instead of scrolling sideways
+
+A sweep across every table in the app rather than another one-off fix. Four
+causes, in order of how much damage each was doing:
+
+1. **A global `table { min-width: 700px }`.** Every table in the app was
+   forbidden from being narrower than 700px, including tables sitting in a 400px
+   column whose content fitted comfortably. That is horizontal scroll invented
+   out of nothing: a table can never need to be wider than its own content, so
+   the floor could only ever hurt. Removed. This cannot make anything wider - a
+   table whose content genuinely exceeds 700px was never affected by it.
+2. **Header labels held their full single-line width.** "Speed to lead",
+   "Calls / booked", "Rev / talk-hr", "Time to close" - each one set its column's
+   width from the label, not the figures underneath. Headers now wrap onto a
+   second line; data cells still never wrap, so no number breaks in half. This is
+   the same treatment the rep leaderboard got last release, now applied to every
+   table family.
+3. **Long free-text cells could not wrap and so pushed.** Names, emails and
+   campaign names are now allowed to wrap. Note that allowing a wrap is not
+   forcing one - where there is room the text still sits on a single line, and
+   the leaderboard keeps its ellipsis.
+4. **Per-table width floors.** A handful of tables carry their own min-width so a
+   nine-column table stays legible on a phone. Right on a phone, wrong on a
+   desktop, where it forces a drag through space the window already has. Above
+   the mobile breakpoint the floor is lifted; below it nothing changed.
+
+Below 1360px, cell padding tightens from 10px to 6px a side before anything
+resorts to scrolling - on an eleven-column table that is most of a column.
+
+**Measured, not eyeballed.** Eleven of the widest tables in the app were rendered
+against the real stylesheet at nine viewport widths and their wrappers measured
+for overflow. Every one fits at 1280px and above, where the app is actually used.
+The one exception below that is Terms acceptance at 1100px, an admin-only screen
+that is 11px over with eight columns of free text. On phones, tables with nine or
+more numeric columns still scroll, deliberately: the alternative is columns too
+narrow to read.
+
+---
+
 ## v3.397.0 - 2026-08-20 · `PENDING` - Why deals are lost, on the Caalano360 tab
 
 The lost-reason breakdown only existed inside the monthly report, so answering

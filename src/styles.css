@@ -197,7 +197,7 @@ body {
 
 /* Table */
 .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel); box-shadow: var(--shadow); }
-table { width: 100%; border-collapse: collapse; min-width: 700px; }
+table { width: 100%; border-collapse: collapse; min-width: 0; }
 th, td { text-align: right; padding: 13px 15px; font-size: 13px; white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
 th:first-child, td:first-child { text-align: left; }
@@ -468,7 +468,9 @@ tbody tr:hover { background: var(--panel-2); }
 .appt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .appt-head h3 { font-size: 16px; }
 .appt-tbl th.lft, .appt-tbl td.lft { text-align: left; }
-.appt-tbl td, .appt-tbl th { white-space: nowrap; }
+.appt-tbl td { white-space: nowrap; }
+.appt-tbl th { white-space: normal; line-height: 1.2; vertical-align: bottom; hyphens: none; }
+.appt-tbl th.nw { white-space: nowrap; }
 .appt-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .appt-f { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 .appt-f select { text-transform: none; letter-spacing: 0; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12.5px; font-weight: 600; cursor: pointer; max-width: 240px; }
@@ -2342,9 +2344,10 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 /* Tables */
 .mr-tablewrap { overflow-x: auto; }
 .mr-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.mr-table th { text-align: left; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); padding: 7px 10px; border-bottom: 1px solid var(--border-2); white-space: nowrap; }
+.mr-table th { text-align: left; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); padding: 7px 10px; border-bottom: 1px solid var(--border-2); white-space: normal; line-height: 1.2; vertical-align: bottom; }
 .mr-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.mr-table th.r, .mr-table td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mr-table th.r { text-align: right; white-space: normal; }
+.mr-table td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mr-table tr:last-child td { border-bottom: 0; }
 /* No-horizontal-scroll variants: let header labels + text cells wrap so wide
    tables (user performance, forms) fit the slide instead of side-scrolling.
@@ -3623,3 +3626,43 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .lr-bar { display: inline-block; width: 46px; height: 6px; border-radius: 3px; margin-right: 7px;
   background: rgba(120,140,170,.16); vertical-align: middle; overflow: hidden; }
 .lr-bar > span { display: block; height: 100%; background: var(--neg, #e0566c); opacity: .75; }
+
+/* ---------------------------------------------------------------------------
+   Fit, don't scroll.
+
+   Several tables carry an explicit min-width so a 7-to-9 column table stays
+   readable on a phone rather than crushing every column to nothing. That floor
+   is right on a small screen and wrong on a desktop, where it forces a sideways
+   drag through space the window already has. Above the mobile breakpoint the
+   floor is lifted and the table sizes to its container; below it, the floor and
+   its scroll stay exactly as they were.
+   --------------------------------------------------------------------------- */
+@media (min-width: 901px) {
+  .cc-tbl, .camp-roas, .tag-audit-tbl, .mr-o360 { min-width: 0; }
+  .kp-tbl td.kp-stage { min-width: 0; }
+  .kp-tbl td.kp-appt { min-width: 0; }
+}
+/* Header labels wrap, figures never do. Applied to the remaining table families
+   the same way as .appt-tbl and .mr-table, so a long label like "Time to close"
+   costs two short lines instead of a column wide enough to hold it. */
+.mini-tbl thead th, .users-tbl thead th, .o360-tbl thead th, .logs-tbl thead th {
+  white-space: normal; line-height: 1.2; vertical-align: bottom;
+}
+.mini-tbl thead th.nw, .users-tbl thead th.nw { white-space: nowrap; }
+/* Long free-text cells (names, emails, campaign names) are the other way a table
+   outgrows its container: they cannot wrap, so they push. Let them ellipsis
+   instead - the full value is in the row's detail view or its title attribute. */
+.users-tbl td.lft, .mini-tbl td.lft { overflow: hidden; text-overflow: ellipsis; }
+/* On a narrow screen the long free-text columns (names, emails, campaign names)
+   are what push a table past the edge, and there is no width left to give them.
+   Let them wrap onto a second line there - two lines of email beats dragging the
+   table sideways to read one. Figures still never wrap. */
+.appt-tbl td.lft, .users-tbl td.lft, .mini-tbl td.lft {
+  white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+}
+/* Below the wide breakpoint, buy width back from cell padding before giving up
+   and scrolling. Eight pixels a column is most of a column on an 11-wide table. */
+@media (max-width: 1360px) {
+  .mini-tbl th, .mini-tbl td, .appt-tbl th, .appt-tbl td { padding-left: 6px; padding-right: 6px; }
+}
+@media (max-width: 1200px) { .users-tbl { font-size: 11.5px; } }

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.398.0'
+const APP_VERSION = '3.399.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4592,18 +4592,56 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
 function LocationSummary({ clientId, range, nonce, onNav }) {
   const st = useForms(clientId, range, nonce)
   const db = useAuDb()
+  const [pipe, setPipe] = useState('all')
+  // Pipeline options come from the forms feed's own per-pipeline rollup, so the
+  // list only ever offers pipelines that actually produced a located lead.
+  const pipes = useMemo(() => {
+    const m = new Map()
+    for (const f of ((st.data && st.data.forms) || [])) {
+      for (const p of (f.byPipeline || [])) {
+        const e = m.get(p.id) || { id: p.id, name: p.name || 'Pipeline', leads: 0 }
+        e.leads += p.leads || 0; m.set(p.id, e)
+      }
+    }
+    return [...m.values()].sort((a, b) => b.leads - a.leads)
+  }, [st.data])
   const locs = useMemo(() => {
     const forms = (st.data && st.data.forms) || []
-    const all = forms.flatMap((f) => f.locations || [])
+    let all = forms.flatMap((f) => f.locations || [])
     if (!all.length) return []
+    // Scoping to one pipeline uses the per-location byPipe counts the backend
+    // already keeps, rather than re-deriving anything: leads / booked / won /
+    // lost are exactly the four the map colours and sizes by. A place with no
+    // leads in the chosen pipeline drops out instead of plotting as a zero dot.
+    if (pipe !== 'all') {
+      all = all.map((l) => {
+        const b = (l.byPipe && l.byPipe[pipe]) || null
+        if (!b || !b.leads) return null
+        return { ...l, leads: b.leads, booked: b.booked || 0, won: b.won || 0, lost: b.lost || 0, shown: 0, revenue: 0,
+          people: (l.people || []).filter((pp) => pp.pipelineId === pipe) }
+      }).filter(Boolean)
+      if (!all.length) return []
+    }
     return mergeLocations(groupAnswers(all), db)
-  }, [st.data, db])
-  if (st.status === 'loading' || !locs.length) return null
+  }, [st.data, db, pipe])
+  // The card only exists at all when leads carried a location; a pipeline filter
+  // that empties the map says so, but a client with no location data anywhere
+  // still shows nothing, exactly as before.
+  const hasAny = ((st.data && st.data.forms) || []).some((f) => (f.locations || []).length)
+  if (st.status === 'loading' || !hasAny) return null
   const tot = locs.reduce((a, l) => ({ leads: a.leads + (l.leads || 0), booked: a.booked + (l.booked || 0), won: a.won + (l.won || 0) }), { leads: 0, booked: 0, won: 0 })
   const max = Math.max(1, ...locs.map((l) => l.leads))
+  const multi = pipes.length > 1
   return (
     <div className="card">
-      <div className="exec-panel-h">Lead locations <span className="sub">· {fmtNumber(locs.length)} places · {fmtNumber(tot.leads)} leads mapped · {fmtNumber(tot.won)} won</span></div>
+      <div className="exec-panel-h" style={multi ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } : undefined}>
+        <span>Lead locations <span className="sub">· {fmtNumber(locs.length)} places · {fmtNumber(tot.leads)} leads mapped · {fmtNumber(tot.won)} won{pipe !== 'all' ? ` · ${(pipes.find((p) => p.id === pipe) || {}).name || 'pipeline'}` : ''}</span></span>
+        {multi ? <select className="kef-pipe-sel" value={pipe} onChange={(e) => setPipe(e.target.value)} title="Map only the leads in one pipeline">
+          <option value="all">All pipelines</option>
+          {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select> : null}
+      </div>
+      {!locs.length ? <div className="cap">No located leads in this pipeline for the selected range.</div> : <>
       <LeadMap locs={locs} clientId={clientId} />
       <div className="fm-loc-list" style={{ marginTop: 8 }}>
         {locs.slice(0, 8).map((l) => (
@@ -4613,7 +4651,7 @@ function LocationSummary({ clientId, range, nonce, onNav }) {
             <span className="fm-loc-n">{l.leads}{l.won ? ` · ${l.won}w` : ''}</span>
           </div>
         ))}
-      </div>
+      </div></>}
       {onNav ? <div className="exec-nav"><button className="link-btn" onClick={() => onNav('location')}>Open the Location tab →</button></div> : null}
     </div>
   )
@@ -4923,13 +4961,13 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
         </select> : null}
       </div>
       {bnShown
-        ? bnShown.map((g) => (
+        ? <div className={`bn-pipes${bnShown.length > 1 ? ' bn-pipes-2' : ''}`}>{bnShown.map((g) => (
           <div className="bn-pipe-grp" key={g.id}>
             <div className="bn-pipe-lab">{g.name} <span className="sub">· {fmtNumber(g.rows[0].v)} leads{g.worst ? ` · biggest drop: ${g.rows[g.rows.indexOf(g.worst) - 1].label} → ${g.worst.label} (${Math.round(g.worst.conv * 100)}%)` : ''}</span></div>
             {funnelBlock(g)}
             {openPanel(openStages.filter((s) => s.pipelineId === g.id), false)}
           </div>
-        ))
+        ))}</div>
         : <>{funnelBlock(single)}{openPanel(openStages, multiPipe)}</>}
       <Caveat>Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost - the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</Caveat>
     </div>

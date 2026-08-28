@@ -2511,6 +2511,23 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .alias-x:hover { color: var(--neg); }
 @media (max-width: 640px) { .alias-row { flex-wrap: wrap; } .alias-old, .alias-cur, .alias-sel { flex: 1 1 100%; } .alias-arrow { display: none; } }
 .bn-pipe-grp + .bn-pipe-grp { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+/* Two pipelines stacked meant scrolling past a whole funnel and its open-stage
+   list to reach the second one, when the two are only worth reading against each
+   other. Above 1280px they sit side by side, divided by a rule instead of by a
+   screenful of distance. Below that they stack exactly as before - half of a
+   narrow window is not enough for a funnel with four numeric columns. */
+@media (min-width: 1280px) {
+  .bn-pipes-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .bn-pipes-2 > .bn-pipe-grp { min-width: 0; }
+  .bn-pipes-2 > .bn-pipe-grp + .bn-pipe-grp { margin-top: 0; padding-top: 0; border-top: 0; }
+  .bn-pipes-2 > .bn-pipe-grp:nth-child(odd) { padding-right: 24px; }
+  .bn-pipes-2 > .bn-pipe-grp:nth-child(even) { padding-left: 24px; border-left: 1px solid var(--border); }
+  /* A third or fourth pipeline starts a new row, which needs its rule back. */
+  .bn-pipes-2 > .bn-pipe-grp:nth-child(n+3) { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+  /* Half the width means the fixed columns have to give some back to the bar. */
+  .bn-pipes-2 .bn-row { grid-template-columns: 76px 1fr 44px 40px 38px 42px; gap: 7px; }
+  .bn-pipes-2 .bn-row.bn-row-paid, .bn-pipes-2 .bn-paid .bn-row.bn-head.bn-row-paid { grid-template-columns: 74px 1fr 42px 40px 36px 50px 40px; gap: 6px; }
+}
 .bn-pipe-lab { font-size: 13px; font-weight: 800; margin-bottom: 8px; }
 .bn-pipe-lab .sub { font-weight: 500; }
 

@@ -18,6 +18,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.399.0 - 2026-08-20 · `PENDING` - Two pipelines side by side, and a pipeline filter on the map
+
+**Revenue bottleneck.** A client with two pipelines got one funnel above the
+other, each followed by its own open-by-stage list, so comparing them meant
+scrolling past a screenful of one to reach the other - when the only reason to
+show both is to read them against each other. Above 1280px they now sit side by
+side, divided by a rule. Below that they stack exactly as before: half of a
+narrow window is not enough for a funnel with four numeric columns. A third or
+fourth pipeline wraps onto a second row.
+
+**Lead locations.** A pipeline picker on the map, for the same reason - a
+multi-pipeline client was looking at one map of two different businesses. No new
+backend call: the forms feed already keeps per-location counts split by pipeline
+(`byPipe`), and those four figures - leads, booked, won, lost - are exactly what
+the map sizes and colours dots by. Choosing a pipeline re-derives the map from
+those counts and filters the people behind each dot too, so clicking a dot lists
+that pipeline's leads and nobody else's. Places with no leads in the chosen
+pipeline drop off the map rather than plotting as an empty dot, and if the filter
+empties the map entirely it says so instead of showing an empty frame. The picker
+only appears when a client has more than one pipeline.
+
+---
+
 ## v3.398.0 - 2026-08-20 · `PENDING` - Tables fit the screen instead of scrolling sideways
 
 A sweep across every table in the app rather than another one-off fix. Four

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.415.2'
+const APP_VERSION = '3.416.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9426,7 +9426,7 @@ function EnqWinRate({ g, money }) {
   return (
     <div className="enq-win">
       <div className="enq-win-head">
-        <span className="enq-win-t">Win rate by when the lead arrived <span className="sub">· {fmtNumber(all.won)} won of {fmtNumber(all.decided)} decided · account rate {Math.round(base * 100)}%</span></span>
+        <span className="enq-win-t">Won and lost by when the lead <b>arrived</b> <span className="sub">· {fmtNumber(all.won)} won of {fmtNumber(all.decided)} decided · account rate {Math.round(base * 100)}%</span></span>
         <div className="chan-toggle sm">
           <button className={kind === 'hour' ? 'on' : ''} onClick={() => setKind('hour')} title="Every hour on its own row, so the small hours can be read separately">Hour by hour</button>
           <button className={kind === 'band' ? 'on' : ''} onClick={() => setKind('band')}>Time of day</button>
@@ -9621,8 +9621,8 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
               <button className={view === 'leads' ? 'on' : ''} onClick={() => setView('leads')}>Leads arrive</button>
               <button className={view === 'made' ? 'on' : ''} onClick={() => setView('made')}>Booking made</button>
               <button className={view === 'slot' ? 'on' : ''} onClick={() => setView('slot')}>Appointment slot</button>
-              {d.wonCount ? <button className={view === 'won' ? 'on' : ''} onClick={() => setView('won')}>Deals won</button> : null}
-              {d.lostCount ? <button className={view === 'lost' ? 'on' : ''} onClick={() => setView('lost')}>Deals lost</button> : null}
+              {d.wonCount ? <button className={view === 'won' ? 'on' : ''} onClick={() => setView('won')} title="When deals were MARKED won - the closing clock, not the arrival clock. For whether arrival time predicts winning, use Leads arrive → Win rate.">Marked won</button> : null}
+              {d.lostCount ? <button className={view === 'lost' ? 'on' : ''} onClick={() => setView('lost')} title="When deals were MARKED lost - the closing clock, not the arrival clock. For whether arrival time predicts losing, use Leads arrive → Win rate.">Marked lost</button> : null}
               {keyStages.length ? <button className={view === 'stage' ? 'on' : ''} onClick={() => { setView('stage'); if (!keyStage) setKeyStage(keyStages[0].stage) }}>Key event</button> : null}
             </div>
             {pipes.length > 1 && isLeads ? <label className="lrv-f"><span className="lrv-f-lab">Pipeline</span>
@@ -9646,7 +9646,7 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
             {isLeads ? <div className="chan-toggle sm">
               <button className={mode === 'volume' ? 'on' : ''} onClick={() => setMode('volume')}>Volume</button>
               <button className={mode === 'rate' ? 'on' : ''} onClick={() => setMode('rate')}>Booking rate</button>
-              <button className={mode === 'win' ? 'on' : ''} onClick={() => setMode('win')} title="Group leads by the hour they arrived and score them on what became of them">Win rate</button>
+              <button className={mode === 'win' ? 'on' : ''} onClick={() => setMode('win')} title="Group leads by the hour they ARRIVED and score them on what became of them - won or lost. This is the arrival clock, not the closing clock.">Won / lost by arrival</button>
             </div> : null}
             <span className="cap">
               {rateMode

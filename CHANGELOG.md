@@ -18,6 +18,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.416.0 - 2026-08-20 · `PENDING` - Say which clock each view is on
+
+Two things on the same toggle row were using opposite clocks and both were called
+"won" and "lost", which is a trap rather than a feature:
+
+- **Won / lost by arrival** (Leads arrive → the third mode) groups leads by the
+  hour they **came in** and scores them on what became of them. This is the
+  cohort view - the one that answers whether a 2am lead is worth less than a 2pm
+  one, and the one worth acting on, because arrival time is something media buying
+  controls.
+- **Marked won / Marked lost** (their own tabs) group deals by the hour they were
+  **marked**. That is the closing clock, and it mostly describes when your team
+  works.
+
+Both are useful and they answer opposite questions, so the clock is now in the
+name. The tabs read "Marked won" and "Marked lost" rather than "Deals won" and
+"Deals lost", the mode reads "Won / lost by arrival" rather than "Win rate", the
+heading above the table says arrived in bold, and each control's tooltip names its
+clock and points at the other one.
+
+No calculation changed. The arrival view was already anchored to the lead's
+creation time and the marked views to the status-change time; only the labels were
+ambiguous about which was which.
+
+---
+
 ## v3.415.2 - 2026-08-20 · `PENDING` - Fix: "Cannot read properties of undefined (reading 'map')"
 
 The dead-zone fix in v3.415.1 was correct and revealed a second fault behind it -

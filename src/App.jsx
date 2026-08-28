@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.395.0'
+const APP_VERSION = '3.396.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8544,9 +8544,12 @@ const ENQ_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google'], ['oth
 const enqHourLabel = (h) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`)
 function EnquiryTimesSection({ clientId, range, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
+  const [view, setView] = useState('leads')
   const [chan, setChan] = useState('all')
+  const [who, setWho] = useState('self')
   const [mode, setMode] = useState('volume')
   const [open, setOpen] = useState(true)
+  useSettingsSync()
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     dedupeFetch(`/.netlify/functions/windsor?scope=enqtimes&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
@@ -8556,19 +8559,36 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
     return () => { alive = false }
   }, [clientId, rangeQuery(range), nonce])
   const d = st.data
-  const g = d && d.grid && d.grid[chan]
+  const hrs = loadHours(clientId)
+  // The grid for whichever question is being asked. Leads splits by channel;
+  // the two appointment grids split by who did the booking instead, because
+  // "did they book themselves" is the interesting axis there.
+  const g = !d ? null
+    : view === 'leads' ? (d.grid && d.grid[chan])
+      : view === 'made' ? (d.made && d.made[who])
+        : (d.slot && d.slot[who])
+  const isLeads = view === 'leads'
   const stats = useMemo(() => {
     if (!g) return null
-    let peak = null, total = 0, booked = 0
+    const MIN = 5
+    let peak = null, total = 0, booked = 0, inHours = 0, outHours = 0, weekend = 0
     const byHour = Array.from({ length: 24 }, () => 0)
     const byDay = Array.from({ length: 7 }, () => 0)
     for (let dy = 0; dy < 7; dy++) for (let h = 0; h < 24; h++) {
-      const c = g[dy][h]; total += c.leads; booked += c.booked
-      byHour[h] += c.leads; byDay[dy] += c.leads
-      if (!peak || c.leads > peak.leads) peak = { ...c, day: dy, hour: h }
+      const c = g[dy][h]; const n = c.leads
+      total += n; booked += c.booked; byHour[h] += n; byDay[dy] += n
+      if (!peak || n > peak.leads) peak = { ...c, day: dy, hour: h }
+      // Business hours come from this client's Settings. `days` uses the JS
+      // convention (0 = Sunday) while the grid starts on Monday, hence the shift.
+      if (hrs) {
+        const jsDay = (dy + 1) % 7
+        const isWorkDay = hrs.days.includes(jsDay)
+        const inWindow = h * 60 >= hrs.startMin && h * 60 < hrs.endMin
+        if (!isWorkDay) weekend += n
+        else if (inWindow) inHours += n
+        else outHours += n
+      }
     }
-    // Rate cells need a floor or a single lead at 3am reads as a 100% booking hour.
-    const MIN = 5
     let bestRate = null
     for (let dy = 0; dy < 7; dy++) for (let h = 0; h < 24; h++) {
       const c = g[dy][h]; if (c.leads < MIN) continue
@@ -8576,15 +8596,17 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
       if (!bestRate || r > bestRate.rate) bestRate = { rate: r, day: dy, hour: h, ...c }
     }
     const maxLeads = Math.max(1, ...g.flat().map((c) => c.leads))
-    const topHour = byHour.indexOf(Math.max(...byHour))
-    const topDay = byDay.indexOf(Math.max(...byDay))
-    return { peak, total, booked, byHour, byDay, maxLeads, topHour, topDay, bestRate, MIN }
-  }, [g])
-  if (st.status === 'loading') return <div className="card"><Spinner label="Reading when enquiries arrive…" /></div>
+    return { peak, total, booked, byHour, byDay, maxLeads, bestRate, MIN,
+      topHour: byHour.indexOf(Math.max(...byHour)), topDay: byDay.indexOf(Math.max(...byDay)),
+      inHours, outHours, weekend }
+  }, [g, hrs])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Reading when enquiries and bookings land…" /></div>
   if (st.status === 'err' || !d || d.connected === false || d.ghl === false || !g) return null
   if (!stats || !stats.total) return null
+  const noun = isLeads ? 'enquiries' : view === 'made' ? 'bookings' : 'appointments'
+  const rateMode = mode === 'rate' && isLeads
   const cellCls = (c) => {
-    if (mode === 'volume') {
+    if (!rateMode) {
       if (!c.leads) return 'enq-c0'
       const q = c.leads / stats.maxLeads
       return q > .75 ? 'enq-c4' : q > .5 ? 'enq-c3' : q > .25 ? 'enq-c2' : 'enq-c1'
@@ -8595,55 +8617,90 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   }
   const cellTitle = (c, dy, h) => {
     const when = `${ENQ_DAYS[dy]} ${enqHourLabel(h)}`
-    if (!c.leads) return `${when} · no enquiries`
-    return `${when} · ${c.leads} enquir${c.leads === 1 ? 'y' : 'ies'} · ${c.booked} booked (${Math.round((c.booked / c.leads) * 100)}%)`
+    if (!c.leads) return `${when} · none`
+    return isLeads
+      ? `${when} · ${c.leads} enquir${c.leads === 1 ? 'y' : 'ies'} · ${c.booked} booked (${Math.round((c.booked / c.leads) * 100)}%)`
+      : `${when} · ${c.leads} ${noun}`
   }
+  const pctOf = (n) => (stats.total ? Math.round((n / stats.total) * 100) : 0)
+  const hoursLabel = hrs ? `${ENQ_DAYS.filter((_, i) => hrs.days.includes((i + 1) % 7)).join(' ')} ${enqHourLabel(Math.floor(hrs.startMin / 60))}\u2013${enqHourLabel(Math.floor(hrs.endMin / 60))}` : null
   return (
     <div className="stagetime" style={{ marginBottom: 18 }}>
       <div className="lvl-title collapse-t" style={{ marginTop: 0 }} onClick={() => setOpen(!open)} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}>
         <span className={`collapse-x${open ? ' on' : ''}`}>▸</span>
-        When enquiries arrive <span className="sub">· {fmtNumber(stats.total)} leads by local day and hour{d.tz ? ` · ${d.tz}` : ''}{d.capped ? ' · sampled to 5,000' : ''}</span>
+        When enquiries and bookings land <span className="sub">· {fmtNumber(d.counted)} leads · {fmtNumber(d.apptTotal)} appointments booked, {fmtNumber(d.apptSelf)} of them self-booked{d.tz ? ` · ${d.tz}` : ''}</span>
       </div>
       {open ? (
         <div className="card">
           <div className="enq-head">
-            <div className="chan-toggle sm">{ENQ_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
             <div className="chan-toggle sm">
+              <button className={view === 'leads' ? 'on' : ''} onClick={() => setView('leads')}>Leads arrive</button>
+              <button className={view === 'made' ? 'on' : ''} onClick={() => setView('made')}>Booking made</button>
+              <button className={view === 'slot' ? 'on' : ''} onClick={() => setView('slot')}>Appointment slot</button>
+            </div>
+            {isLeads
+              ? <div className="chan-toggle sm">{ENQ_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
+              : <div className="chan-toggle sm">
+                <button className={who === 'self' ? 'on' : ''} onClick={() => setWho('self')}>Self-booked</button>
+                <button className={who === 'staff' ? 'on' : ''} onClick={() => setWho('staff')}>Booked by staff</button>
+              </div>}
+            {isLeads ? <div className="chan-toggle sm">
               <button className={mode === 'volume' ? 'on' : ''} onClick={() => setMode('volume')}>Volume</button>
               <button className={mode === 'rate' ? 'on' : ''} onClick={() => setMode('rate')}>Booking rate</button>
-            </div>
+            </div> : null}
             <span className="cap">
-              {mode === 'volume'
-                ? <>Busiest: <b>{ENQ_DAYS[stats.peak.day]} {enqHourLabel(stats.peak.hour)}</b> ({stats.peak.leads} leads) · most enquiries land on <b>{ENQ_DAYS[stats.topDay]}</b> around <b>{enqHourLabel(stats.topHour)}</b></>
-                : stats.bestRate
+              {rateMode
+                ? (stats.bestRate
                   ? <>Best converting: <b>{ENQ_DAYS[stats.bestRate.day]} {enqHourLabel(stats.bestRate.hour)}</b> ({Math.round(stats.bestRate.rate * 100)}% of {stats.bestRate.leads}) · overall {Math.round((stats.booked / stats.total) * 100)}%</>
-                  : <>Not enough volume in any single hour to compare booking rates yet.</>}
+                  : <>Not enough volume in any single hour to compare booking rates yet.</>)
+                : <>Busiest: <b>{ENQ_DAYS[stats.peak.day]} {enqHourLabel(stats.peak.hour)}</b> ({stats.peak.leads}) · best day <b>{ENQ_DAYS[stats.topDay]}</b> · busiest hour <b>{enqHourLabel(stats.topHour)}</b></>}
             </span>
           </div>
+          {hrs ? (
+            <div className="enq-hours">
+              <span className="enq-hlab">Business hours <b>{hoursLabel}</b></span>
+              <span className="enq-hb in"><b>{fmtNumber(stats.inHours)}</b> inside ({pctOf(stats.inHours)}%)</span>
+              <span className="enq-hb out"><b>{fmtNumber(stats.outHours)}</b> after hours ({pctOf(stats.outHours)}%)</span>
+              <span className="enq-hb wk"><b>{fmtNumber(stats.weekend)}</b> non-working days ({pctOf(stats.weekend)}%)</span>
+              <span className="cap">of {fmtNumber(stats.total)} {noun}</span>
+            </div>
+          ) : (
+            <div className="enq-hours"><span className="cap">Business hours are switched off for this client, so there is no inside/outside split. Set them in Settings → this client.</span></div>
+          )}
           <div className="enq-wrap">
             <table className="enq-grid">
               <thead><tr><th /> {Array.from({ length: 24 }, (_, h) => <th key={h}>{h % 3 === 0 ? enqHourLabel(h) : ''}</th>)}</tr></thead>
-              <tbody>{ENQ_DAYS.map((dn, dy) => (
-                <tr key={dn}>
-                  <th>{dn}</th>
-                  {Array.from({ length: 24 }, (_, h) => {
-                    const c = g[dy][h]
-                    return <td key={h}><span className={`enq-cell ${cellCls(c)}`} title={cellTitle(c, dy, h)}>{mode === 'volume' ? (c.leads || '') : (c.leads >= stats.MIN ? Math.round((c.booked / c.leads) * 100) : '')}</span></td>
-                  })}
-                </tr>
-              ))}</tbody>
+              <tbody>{ENQ_DAYS.map((dn, dy) => {
+                const work = hrs ? hrs.days.includes((dy + 1) % 7) : true
+                return (
+                  <tr key={dn} className={work ? '' : 'enq-offday'}>
+                    <th>{dn}</th>
+                    {Array.from({ length: 24 }, (_, h) => {
+                      const c = g[dy][h]
+                      const edge = hrs && work && (h * 60 === hrs.startMin || h * 60 === hrs.endMin)
+                      return <td key={h} className={edge ? 'enq-edge' : ''}><span className={`enq-cell ${cellCls(c)}`} title={cellTitle(c, dy, h)}>{rateMode ? (c.leads >= stats.MIN ? Math.round((c.booked / c.leads) * 100) : '') : (c.leads || '')}</span></td>
+                    })}
+                  </tr>
+                )
+              })}</tbody>
             </table>
           </div>
           <Caveat>
-            Counted in <b>{d.tz || 'the business timezone'}</b> from when the lead record was created, which is when the form
-            was submitted or the call came in. {mode === 'rate' ? <>Cells with fewer than {stats.MIN} enquiries are left blank rather than shown as a rate, because one lead at 3am is not a 100&#37; booking hour.</> : <>Switch to <b>Booking rate</b> to see whether the busiest hours are also the ones that convert.</>}
+            Counted in <b>{d.tz || 'the business timezone'}</b>.
+            {' '}<b>Leads arrive</b> is when the lead record was created. <b>Booking made</b> is when the appointment was
+            booked; <b>Appointment slot</b> is the time it was booked <i>for</i>. Those last two are different questions and
+            usually have different answers.
+            {' '}Self-booked means the appointment was created without a staff user attached, so it came through a booking
+            link rather than someone on your team.
+            {d.calErr ? ` ${d.calErr} calendar${d.calErr === 1 ? '' : 's'} could not be read, so appointment counts may be low.` : ''}
           </Caveat>
         </div>
       ) : null}
     </div>
   )
 }
+
 // Time in stage - for every OPEN deal, how long it's been sitting in its current
 // pipeline stage (measured straight from stage moves). Aggregated per stage /
 // pipeline; the client's configured key-event stages are flagged. Shows where

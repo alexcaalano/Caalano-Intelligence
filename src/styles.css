@@ -3546,3 +3546,22 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .annot-row input { margin-top: 2px; flex: 0 0 auto; }
 .annot-row b { display: block; font-size: 13px; margin-bottom: 3px; }
 .annot-row small { display: block; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+
+/* Business-hours summary + the grid's working-hours framing */
+.enq-hours { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: rgba(120,140,170,.06); font-size: 12px; }
+.enq-hlab { color: var(--muted); font-size: 11.5px; }
+.enq-hlab b { color: var(--text); font-weight: 600; }
+.enq-hb { display: inline-flex; align-items: baseline; gap: 5px; font-size: 11.5px; color: var(--muted); }
+.enq-hb b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.enq-hb.in b { color: var(--pos, #0f9e6e); }
+.enq-hb.out b { color: #b8790f; }
+.enq-hb.wk b { color: var(--muted); }
+:root:not([data-theme="light"]) .enq-hb.out b { color: #e0a94a; }
+/* Non-working days are dimmed rather than hidden: a spike on a Sunday is
+   exactly the thing worth seeing, it just should not read as normal trading. */
+.enq-offday th { opacity: .5; }
+.enq-offday .enq-cell { opacity: .62; }
+.enq-grid td.enq-edge { position: relative; }
+.enq-grid td.enq-edge:before { content: ""; position: absolute; left: -2px; top: 0; bottom: 0;
+  border-left: 1px dashed rgba(120,140,170,.5); }

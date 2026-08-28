@@ -3311,38 +3311,75 @@ async function openOpportunities(locTok, locationId, cap = 3000, sinceMs = null)
 export async function buildEnquiryTimes(locationId, from, to) {
   const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
-  const [opps, idx] = await Promise.all([
+  const [opps, idx, calendars] = await Promise.all([
     allOpportunities(locTok, locationId, from, to, 5000),
     pipelineStageIndex(locTok, locationId),
+    ghlGet(locTok, '/calendars/', { locationId }).then((j) => j.calendars || j.calendar || []).catch(() => []),
   ])
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
+  const inWin = (ms) => isFinite(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
+  // Weekday x hour in the location's wall clock. Monday is 0 so the grid reads
+  // Mon..Sun rather than starting on Sunday.
+  const cellOf = (ms) => { const l = new Date(ms + tzOffsetMs(tz, ms)); return { d: (l.getUTCDay() + 6) % 7, h: l.getUTCHours() } }
+  const blank = () => { const g = []; for (let d = 0; d < 7; d++) { const r = []; for (let h = 0; h < 24; h++) r.push({ leads: 0, booked: 0 }); g.push(r) } return g }
   const CH = ['all', 'meta', 'google', 'other']
-  const grid = {}
-  for (const c of CH) {
-    grid[c] = []
-    for (let d = 0; d < 7; d++) { const row = []; for (let h = 0; h < 24; h++) row.push({ leads: 0, booked: 0 }); grid[c].push(row) }
-  }
+  const leads = {}; for (const c of CH) leads[c] = blank()
+
   let counted = 0, undated = 0
   for (const o of opps) {
     const ms = Date.parse(o.createdAt)
     if (!isFinite(ms)) { undated++; continue }
-    if (fromMs != null && ms < fromMs) continue
-    if (toMs != null && ms > toMs) continue
-    // Shift into the location's wall clock, then read the day and hour off it.
-    const local = new Date(ms + tzOffsetMs(tz, ms))
-    const day = (local.getUTCDay() + 6) % 7      // 0 = Monday, so the week reads Mon..Sun
-    const hour = local.getUTCHours()
+    if (!inWin(ms)) continue
+    const { d, h } = cellOf(ms)
     const c = channelOf(utmOf(o))
     const ch = c === 'meta' ? 'meta' : c === 'google' ? 'google' : 'other'
     const st = String(o.status || '').toLowerCase()
     const pi = idx.get(o.pipelineId)
     const stg = pi ? pi.byId[o.pipelineStageId] : null
     const booked = st === 'won' || !!(pi && pi.bookPos != null && stg && stg.pos >= pi.bookPos)
-    for (const k of ['all', ch]) { const cell = grid[k][day][hour]; cell.leads++; if (booked) cell.booked++ }
+    for (const k of ['all', ch]) { const cell = leads[k][d][h]; cell.leads++; if (booked) cell.booked++ }
     counted++
   }
-  return { connected: true, tz, counted, undated, capped: opps.length >= 5000, grid }
+
+  // Appointments carry two quite different clocks and conflating them is the
+  // usual mistake: `dateAdded` is when the booking was MADE, `startTime` is the
+  // slot it was made FOR. "When do people book" and "what slots do they choose"
+  // are separate questions with separate answers, so both grids are kept.
+  //
+  // Self vs staff: an event created by a user id was booked by your team, one
+  // without was booked by the person themselves through a booking link.
+  const made = { self: blank(), staff: blank() }
+  const slot = { self: blank(), staff: blank() }
+  let apptTotal = 0, apptSelf = 0, calErr = 0
+  const startMs = fromMs != null ? fromMs : Date.now() - 90 * 86400000
+  const endMs = toMs != null ? toMs : Date.now()
+  await Promise.all((calendars || []).map(async (cal) => {
+    const calId = cal.id || cal._id || cal.calendarId
+    if (!calId) return
+    try {
+      // Widen only enough to catch a booking made in-period for a slot after it,
+      // and a slot in-period booked before it. Each clock is filtered on its own.
+      const j = await ghlGet(locTok, '/calendars/events', { locationId, calendarId: calId, startTime: startMs - 120 * 86400000, endTime: endMs + 180 * 86400000 })
+      for (const ev of (j.events || [])) {
+        const st = String(ev.appointmentStatus || ev.appoinmentStatus || ev.status || '').toLowerCase()
+        if (APPT_INVALID_RE.test(st) || APPT_CANCEL_RE.test(st)) continue
+        const who = apptBookedBy(ev) === 'self' ? 'self' : 'staff'
+        const addedMs = Date.parse(ev.dateAdded), startTimeMs = Date.parse(ev.startTime)
+        if (inWin(addedMs)) {
+          const { d, h } = cellOf(addedMs); made[who][d][h].leads++
+          apptTotal++; if (who === 'self') apptSelf++
+        }
+        if (inWin(startTimeMs)) { const { d, h } = cellOf(startTimeMs); slot[who][d][h].leads++ }
+      }
+    } catch { calErr++ }
+  }))
+
+  return {
+    connected: true, tz, counted, undated, capped: opps.length >= 5000,
+    apptTotal, apptSelf, calendars: (calendars || []).length, calErr,
+    grid: leads, made, slot,
+  }
 }
 export async function buildStageTiming(locationId, days = 90) {
   const locTok = await locationTokenOrDemo(locationId)

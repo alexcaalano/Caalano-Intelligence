@@ -18,6 +18,47 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.396.0 - 2026-08-20 · `PENDING` - Leads vs bookings vs slots, self-booked, and business hours
+
+"When enquiries arrive" now separates **three clocks that were being conflated**,
+and answers the three questions asked of it.
+
+**Three views, because they are three different questions**
+- **Leads arrive** - when the lead record was created. Split by channel.
+- **Booking made** - when the appointment was booked.
+- **Appointment slot** - the time it was booked *for*.
+
+The last two are routinely mistaken for each other. Someone booking at 9pm for a
+Tuesday 10am slot appears in a different cell of each grid, and only one of those
+is a staffing signal.
+
+**Self-booked vs booked by staff** on both appointment views. An appointment
+created without a staff user attached came through a booking link; one with a
+user attached was booked by your team. The header carries the totals: leads,
+appointments booked, and how many of those were self-booked.
+
+**Business hours, from that client's own Settings**
+- A strip above the grid: how many landed **inside hours**, **after hours**, and
+  on **non-working days**, with percentages.
+- The grid itself frames them: non-working rows are dimmed rather than hidden,
+  because a Sunday spike is exactly what you want to see, and dashed rules mark
+  the open and close hours.
+- Computed on the client from the hours setting, so it follows a change
+  immediately and costs no extra request.
+
+**The three questions**
+1. *Best day for leads* - stated in the header line, alongside the busiest hour.
+2. *What time slots do self-booked appointments land in* - Appointment slot view,
+   Self-booked filter.
+3. *Inside vs outside hours vs weekends* - the strip, on whichever view is open.
+
+Verified: 15 assertions on the hours split, including the day-index shift (the
+grid starts Monday, the hours setting uses Sunday-first), the 9am and 5pm
+boundaries, that every cell falls in exactly one bucket, seven-day businesses,
+and hours switched off.
+
+---
+
 ## v3.395.0 - 2026-08-20 · `PENDING` - Movers: report the lost REASON, and colour the scope chips
 
 **Lost reasons instead of lost status.** "Deals lost 15 → 34" is a fact you can

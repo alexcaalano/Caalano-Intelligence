@@ -3818,6 +3818,11 @@ export async function buildCcDrill(locationId, from, to, channel) {
   for (const k of LOST_FACT_KEYS) { factDict[k] = []; factIdx[k] = new Map() }
   const fIdx = (k, v) => { const val = v || 'Not tagged'; const m = factIdx[k]; let i = m.get(val); if (i === undefined) { i = factDict[k].length; factDict[k].push(val); m.set(val, i) } return i }
   const factRows = []
+  // Stage ordering, per pipeline, so the UI can offer "lost at this stage" and
+  // "lost at this stage or later" as two readings of the same data. A stage name
+  // alone cannot answer the second question - it needs to know what came after
+  // it, and the same name can sit at different positions in different pipelines.
+  const stageOrder = {}
   // Missing values get a named bucket rather than being dropped, so every
   // dimension still adds up to the same lost total the scorecard shows.
   const bumpLostDim = (d, key, reason, value) => {
@@ -3890,8 +3895,13 @@ export async function buildCcDrill(locationId, from, to, channel) {
           fIdx('campaign', u.campaign || null), fIdx('adset', u.medium || null),
           fIdx('creative', u.content || null), fIdx('keyword', u.term || null),
           fIdx('source', label || null), fIdx('channel', ch || null),
-          Math.round(val), cid || null, name,
+          Math.round(val), cid || null, name, stg ? stg.pos : -1,
         ])
+        if (stg && pi) {
+          const pn = pipeName[o.pipelineId] || 'Not tagged'
+          const so = stageOrder[pn] || (stageOrder[pn] = {})
+          for (const x of (pi.stages || [])) if (so[x.name] === undefined) so[x.name] = x.pos
+        }
       }
       if (lr.people.length < 150) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), oppSource: o.source || null, channelSource: label, utmSource: u.source || null, utmContent: u.content || null, formAnswers: (cid && formAns.get(cid)) || [] })
     } else {
@@ -3940,7 +3950,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
     open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },
     openByStage: [...openByStage.values()].map((g) => ({ key: g.key, stage: g.stage, stageId: g.stageId, pipeline: g.pipeline, pipelineId: g.pipelineId, pos: g.pos, count: g.count, value: Math.round(g.value), deals: g.deals.sort((a, b) => b.value - a.value) })).sort((a, b) => a.pos - b.pos),
     lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),
-    lostFacts: { keys: LOST_FACT_KEYS, dict: factDict, rows: factRows, total: lostCount, capped: lostCount > factRows.length },
+    lostFacts: { keys: LOST_FACT_KEYS, dict: factDict, rows: factRows, stageOrder, total: lostCount, capped: lostCount > factRows.length },
     lostBy: Object.fromEntries(LOST_DIMS.map((d) => [d, [...lostDim[d].values()]
       .map((e) => ({ key: e.key, count: e.count, value: Math.round(e.value),
         reasons: [...e.r.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count).slice(0, 20) }))

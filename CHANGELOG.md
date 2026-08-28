@@ -18,6 +18,36 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.404.0 - 2026-08-20 · `PENDING` - Stage in isolation or cumulative, and a tidier pivot
+
+**Two readings of the stage cut.** "Lost at this stage" is where each deal
+actually died: the rows are exclusive and add up to the total. "Lost at this
+stage or later" counts every deal that got at least that far before dying, which
+is the shape of the funnel rather than a partition of it - the rows overlap and
+deliberately do not add up, and the note under the table says so rather than
+leaving you to wonder why the column exceeds the header figure.
+
+Position is read inside each deal's own pipeline. Two pipelines can carry the
+same stage name at different points - "15 Minute Call" third in one and first in
+another - so treating a shared name as a shared position would quietly mix them.
+A pipeline that has no such stage at all is left out of that row rather than
+folded in. Covered by a test built on exactly that case; a position-blind
+implementation gives 3 where the correct answer is 5.
+
+**Header collisions fixed.** The column headers carry live data - campaign and ad
+set names - not fixed labels, and long ones ran into each other because nothing
+clipped them. They now clamp to three lines with an ellipsis and the full value on
+hover, in normal case rather than uppercase: shouting a machine-generated campaign
+name makes it both wider and harder to read. Verified at four desktop widths: no
+overlap and no sideways scroll.
+
+**Controls moved into their own panel**, with the filters on top, the active-filter
+chips beneath them, and the two pivot pickers below a rule. Choosing what the table
+does is a different act from narrowing what goes into it, and nine dropdowns loose
+above a table read as part of the table.
+
+---
+
 ## v3.403.0 - 2026-08-20 · `PENDING` - Real campaign names, an ad set cut, and a baseline that survives filtering
 
 **Platform ids become names.** The campaign column was showing rows like

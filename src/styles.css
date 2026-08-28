@@ -3685,19 +3685,26 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 @media (max-width: 1200px) { .users-tbl { font-size: 11.5px; } }
 
 /* Lost Reasons tab: dimension picker + the reason x dimension matrix. */
-/* Filter bar: one picker per dimension, all of them stackable. Wraps rather
-   than scrolling, so every filter stays reachable at any width. */
-.lrv-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 8px; }
-.lrv-pivot { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+/* Controls sit in their own panel so the eye separates "what am I looking at"
+   from the numbers themselves - nine dropdowns loose above a table read as part
+   of the table. Filters on top, then the active-filter chips, then the two
+   pivot pickers below a rule, because choosing what the table does is a
+   different act from narrowing what goes into it. */
+.lrv-controls { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 12px 4px; margin: 2px 0 14px; }
+.lrv-bar { display: flex; gap: 8px 10px; flex-wrap: wrap; margin: 0 0 8px; }
+.lrv-pivot { display: flex; gap: 8px 10px; flex-wrap: wrap; margin: 0 0 10px; padding-top: 9px; border-top: 1px solid var(--border); }
 .lrv-f { display: inline-flex; flex-direction: column; gap: 2px; min-width: 0; }
 .lrv-f-lab { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); padding-left: 2px; }
-.lrv-f select { max-width: 210px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border-2);
+.lrv-f select { max-width: 190px; background: var(--panel); color: var(--text); border: 1px solid var(--border-2);
   border-radius: 8px; padding: 5px 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.lrv-f select:hover { border-color: var(--brand); }
+.lrv-pivot .lrv-f select { font-weight: 700; }
 .lrv-f.on select { border-color: var(--brand); color: var(--brand); font-weight: 700; }
 .lrv-pivot .lrv-f select { border-color: var(--border-2); }
 /* Active filters restated as removable chips - a stack of dropdowns does not
    make it obvious at a glance what is currently excluded. */
-.lrv-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.lrv-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 9px; }
 .lrv-chip { font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px; cursor: pointer;
   border: 1px solid var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand); }
 .lrv-chip b { font-weight: 800; }
@@ -3714,6 +3721,16 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .u-lrv td.lft { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .u-lrv td.lrv-z { color: var(--faint); }
 .u-lrv td.lrv-n { font-weight: 700; }
+/* Column headers carry live data - campaign names, ad set names - not fixed
+   labels, so they can be long, and without a clip they ran into each other.
+   Three lines at most, ellipsed, in normal case: SHOUTING a machine-generated
+   campaign name makes it both wider and harder to read. Full value on hover. */
+.u-lrv th { overflow: hidden; }
+.u-lrv th.lrv-ch { text-transform: none; letter-spacing: 0; font-size: 10px; padding-bottom: 2px; }
+.u-lrv th.lrv-ch > span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; }
+.u-lrv thead th { vertical-align: bottom; }
+.u-lrv tbody td { height: 30px; }
 .lrv-row:hover > td { background: color-mix(in srgb, var(--brand) 6%, transparent); }
 .lrv-detail > td { background: var(--panel-2); padding: 10px 12px 12px; }
 .lrv-det-h { font-size: 11.5px; font-weight: 800; color: var(--muted); margin-bottom: 2px; }

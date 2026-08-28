@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.403.0'
+const APP_VERSION = '3.404.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4718,6 +4718,7 @@ function lrFacts(cc) {
     o.value = r[keys.length] || 0
     o.contactId = r[keys.length + 1] || null
     o.name = r[keys.length + 2] || '-'
+    o.stagePos = r[keys.length + 3]
     return o
   })
 }
@@ -4728,6 +4729,12 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   const [filters, setFilters] = useState({})
   const [groupBy, setGroupBy] = useState('reason')
   const [colBy, setColBy] = useState('source')
+  // Two readings of the stage cut. "At this stage" is where each deal actually
+  // died, and the rows are exclusive - they add to the total. "This stage or
+  // later" counts every deal that got at least this far before dying, which is
+  // the shape of the funnel rather than a partition of it, so the rows overlap
+  // and deliberately do not add up.
+  const [stageMode, setStageMode] = useState('at')
   const [open, setOpen] = useState(null)
   const st = useCcDrill(clientId, range, nonce, 'all')
   const money = (v) => fmtCurrency(v, currency)
@@ -4753,15 +4760,33 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   // Group down the side, break down across the top. Picking the same dimension
   // for both would make a diagonal, so the columns fall back to Reason.
   const colDim = colBy === groupBy ? (groupBy === 'reason' ? 'source' : 'reason') : colBy
+  const stageOrder = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
+  const cumulative = groupBy === 'stage' && stageMode === 'beyond'
+  // A deal counts towards a stage row when it reached that stage or went past it,
+  // judged inside its own pipeline: the same stage name can sit at a different
+  // position in a different pipeline, so a shared name is not a shared position.
+  const posIn = (pipeline, stage) => { const so = stageOrder[pipeline]; return so && so[stage] !== undefined ? so[stage] : null }
   const groups = useMemo(() => {
     const m = new Map()
-    for (const r of rows) {
-      let g = m.get(r[groupBy]); if (!g) { g = { key: r[groupBy], count: 0, value: 0, cols: new Map(), rows: [] }; m.set(r[groupBy], g) }
+    const add = (key, r) => {
+      let g = m.get(key); if (!g) { g = { key, count: 0, value: 0, cols: new Map(), rows: [] }; m.set(key, g) }
       g.count++; g.value += r.value; g.rows.push(r)
       g.cols.set(r[colDim], (g.cols.get(r[colDim]) || 0) + 1)
     }
+    if (cumulative) {
+      const names = new Set()
+      for (const r of rows) for (const n of Object.keys(stageOrder[r.pipeline] || {})) names.add(n)
+      for (const r of rows) for (const n of names) {
+        const p = posIn(r.pipeline, n)
+        if (p != null && r.stagePos >= p) add(n, r)
+      }
+      // Deepest stage first: the funnel reads from the far end back, and that is
+      // also the order in which the counts grow.
+      return [...m.values()].sort((a, b) => a.count - b.count || String(a.key).localeCompare(String(b.key)))
+    }
+    for (const r of rows) add(r[groupBy], r)
     return [...m.values()].sort((a, b) => b.count - a.count)
-  }, [rows, groupBy, colDim])
+  }, [rows, groupBy, colDim, cumulative, cc])
   const colKeys = useMemo(() => {
     const m = new Map()
     for (const r of rows) m.set(r[colDim], (m.get(r[colDim]) || 0) + 1)
@@ -4776,9 +4801,15 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   // baseline survives whatever the filters do.
   const baseline = useMemo(() => {
     const m = new Map()
+    if (cumulative) {
+      const names = new Set()
+      for (const r of facts) for (const n of Object.keys(stageOrder[r.pipeline] || {})) names.add(n)
+      for (const r of facts) for (const n of names) { const p = posIn(r.pipeline, n); if (p != null && r.stagePos >= p) m.set(n, (m.get(n) || 0) + 1) }
+      return m
+    }
     for (const r of facts) m.set(r[groupBy], (m.get(r[groupBy]) || 0) + 1)
     return m
-  }, [facts, groupBy])
+  }, [facts, groupBy, cumulative, cc])
   const liftOf = (g) => {
     if (!active.length || !rows.length || !facts.length) return null
     const here = (g.count / rows.length) * 100
@@ -4803,6 +4834,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
           : st.status === 'err' ? <div className="cap">Couldn’t load the CRM breakdown - try again.</div>
             : !facts.length ? <div className="cap">No lost opportunities recorded in this period. ✅</div>
               : <>
+                <div className="lrv-controls">
                 <div className="lrv-bar">
                   {LR_DIMS.map(([k, lbl]) => {
                     const opts = optionsFor(k)
@@ -4826,20 +4858,27 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                     <select value={groupBy} onChange={(e) => { setGroupBy(e.target.value); setOpen(null) }}>
                       {LR_DIMS.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
                     </select></label>
+                  {groupBy === 'stage' ? <label className="lrv-f" title="At this stage counts where each deal actually died and the rows add up to the total. This stage or later counts everyone who got at least this far, so the rows overlap and do not add up.">
+                    <span className="lrv-f-lab">Stage reading</span>
+                    <select value={stageMode} onChange={(e) => { setStageMode(e.target.value); setOpen(null) }}>
+                      <option value="at">Lost at this stage</option>
+                      <option value="beyond">Lost at this stage or later</option>
+                    </select></label> : null}
                   <label className="lrv-f"><span className="lrv-f-lab">Columns</span>
                     <select value={colDim} onChange={(e) => setColBy(e.target.value)}>
                       {LR_DIMS.filter(([k]) => k !== groupBy).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
                     </select></label>
                 </div>
+                </div>
                 {!rows.length ? <div className="cap">No lost deals match these filters. <button className="link-btn" onClick={() => setFilters({})}>Clear them</button></div>
                   : <>
                     <table className="mini-tbl users-tbl appt-tbl u-lrv">
                       <thead><tr>
-                        <th className="lft">{LR_LABEL[groupBy]}</th>
+                        <th className="lft">{LR_LABEL[groupBy]}{cumulative ? ' or later' : ''}</th>
                         <th>Lost</th><th>Value</th><th>Share</th>
                         {active.length ? <th title="This row’s share of the filtered deals minus its share of every lost deal. Positive means these filters concentrate it.">vs all</th> : null}
-                        {colKeys.map((k) => <th key={k} title={`${LR_LABEL[colDim]}: ${k}`}>{k}</th>)}
-                        {anyOther ? <th>Other</th> : null}
+                        {colKeys.map((k) => <th key={k} className="lrv-ch" title={`${LR_LABEL[colDim]}: ${k}`}><span>{k}</span></th>)}
+                        {anyOther ? <th className="lrv-ch"><span>Other</span></th> : null}
                       </tr></thead>
                       <tbody>{groups.map((g) => {
                         const isOpen = open === g.key
@@ -4863,7 +4902,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                         )
                       })}</tbody>
                     </table>
-                    <Caveat>{LR_TIP[groupBy]} Every filter above stacks, so you can hold one dimension and pivot the rest - Paid Social lost at a given stage, broken down by reason, for example. Each deal carries exactly one value per dimension and a missing value groups under “Not tagged”, so the rows always add up to the {fmtNumber(rows.length)} shown. Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. The size of the “Unspecified” reason is a fair read on how consistently the team is setting one at all.{cc.lostFacts && cc.lostFacts.capped ? ` Showing the first ${fmtNumber(facts.length)} of ${fmtNumber(allTot)} lost deals in this period.` : ''}</Caveat>
+                    <Caveat>{LR_TIP[groupBy]} Every filter above stacks, so you can hold one dimension and pivot the rest - Paid Social lost at a given stage, broken down by reason, for example. {cumulative ? `Each row counts every deal that reached that stage or went past it before being lost, judged inside its own pipeline - so a deal appears in every row it got through and the rows deliberately do not add up to ${fmtNumber(rows.length)}. Switch the stage reading back to "lost at this stage" for an exclusive split that does.` : `Each deal carries exactly one value per dimension and a missing value groups under “Not tagged”, so the rows always add up to the ${fmtNumber(rows.length)} shown.`} Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. The size of the “Unspecified” reason is a fair read on how consistently the team is setting one at all.{cc.lostFacts && cc.lostFacts.capped ? ` Showing the first ${fmtNumber(facts.length)} of ${fmtNumber(allTot)} lost deals in this period.` : ''}</Caveat>
                   </>}
               </>}
       </div>

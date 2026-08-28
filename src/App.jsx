@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.396.1'
+const APP_VERSION = '3.397.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4513,6 +4513,51 @@ function TeamPerformance({ clientId, range, nonce, money }) {
 
 // Compact speed-to-lead summary for Caalano360 (scope=speed). Renders only when
 // there are measured leads; links out to the full Timing tab.
+// Why deals were lost, on the Caalano360 tab. The monthly report had this and
+// the live view did not, so the question "what is killing our deals" meant
+// waiting for a report or opening the Users tab and reading it per rep.
+//
+// No new endpoint: `useCrmAgg` already rolls the scope=users feed into totals
+// plus a reason breakdown, and that scope is already permitted on this tab. It
+// follows the selected range like everything else here, rather than a month.
+function LostReasonsPanel({ clientId, range, nonce, money, onNav }) {
+  const ca = useCrmAgg(clientId, range, nonce)
+  const [all, setAll] = useState(false)
+  if (!ca || !ca.lost) return null
+  const reasons = ca.lostReasons || []
+  const shown = all ? reasons : reasons.slice(0, 6)
+  const decided = (ca.won || 0) + (ca.lost || 0)
+  const winRate = decided ? (ca.won / decided) * 100 : null
+  const pct = (n) => (ca.lost ? Math.round((n / ca.lost) * 100) : 0)
+  return (
+    <div className="card">
+      <div className="exec-panel-h"><span>Why deals were lost <span className="sub">· closed-lost in this range</span></span></div>
+      <div className="lr-tiles">
+        <div className="lr-tile"><span className="lr-lab">Deals lost</span><b>{fmtNumber(ca.lost)}</b><span className="lr-sub">{money(ca.lostValue || 0)} of value</span></div>
+        <div className="lr-tile"><span className="lr-lab">Deals won</span><b className="pos">{fmtNumber(ca.won || 0)}</b><span className="lr-sub">{money(ca.revenue || 0)} banked</span></div>
+        <div className="lr-tile"><span className="lr-lab">Win rate</span><b>{winRate == null ? '-' : `${winRate.toFixed(1)}%`}</b><span className="lr-sub">won ÷ decided ({fmtNumber(decided)})</span></div>
+        <div className="lr-tile"><span className="lr-lab">Still open</span><b>{fmtNumber(ca.open || 0)}</b><span className="lr-sub">{money(ca.openValue || 0)} in play</span></div>
+      </div>
+      {reasons.length ? (
+        <>
+          <div className="table-wrap" style={{ marginTop: 12 }}><table className="mini-tbl users-tbl u-lb-lr">
+            <thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>% of lost</th></tr></thead>
+            <tbody>{shown.map((r) => (
+              <tr key={r.reason}>
+                <td className="lft">{r.reason}</td>
+                <td>{fmtNumber(r.count)}</td>
+                <td>{r.value ? money(r.value) : '-'}</td>
+                <td><span className="lr-bar"><span style={{ width: `${pct(r.count)}%` }} /></span>{pct(r.count)}%</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+          {reasons.length > 6 ? <button className="btn-ghost sm" style={{ marginTop: 8 }} onClick={() => setAll(!all)}>{all ? 'Show top 6' : `Show all ${reasons.length} reasons`}</button> : null}
+        </>
+      ) : <p className="cap" style={{ margin: '10px 0 0' }}>No lost reason is recorded on these deals. Setting one in Caalano Systems when a deal is marked lost is what turns this into something you can act on.</p>}
+      <Caveat>Counts deals marked <b>lost</b> whose lead was created in this range, so it moves with the date picker. Win rate is won ÷ (won + lost) and ignores deals still open, which is why it reads higher than a win rate measured against every lead.</Caveat>
+    </div>
+  )
+}
 function TimingSummary({ clientId, range, nonce, onNav }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   useEffect(() => {
@@ -5526,6 +5571,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       <TeamPerformance clientId={clientId} range={range} nonce={nonce} money={money} />
 
       {/* Revenue at risk - account-wide biggest open deals still to chase */}
+      <LostReasonsPanel clientId={clientId} range={range} nonce={nonce} money={money} onNav={onNav} />
+
       <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
 
       {/* Lead locations - map preview (only shows if leads carried a location) */}

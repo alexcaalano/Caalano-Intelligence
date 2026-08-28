@@ -18,6 +18,37 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.397.0 - 2026-08-20 · `PENDING` - Why deals are lost, on the Caalano360 tab
+
+The lost-reason breakdown only existed inside the monthly report, so answering
+"why are we losing work" meant leaving the overview. It now sits on the
+Caalano360 tab, directly above Revenue at Risk.
+
+**Four tiles across the top**
+- Deals lost, with the value attached to them.
+- Deals won, with the revenue.
+- Win rate - won divided by won plus lost, so it measures decided deals only
+  and ignores everything still sitting open.
+- Still open, with the value in play.
+
+**The reason table** lists every recorded lost reason with the deal count, the
+value written off, and each reason's share of all losses as a bar. Six show by
+default; the rest sit behind a "show all" toggle. Where no reason was set on the
+deal, the row is named as such rather than dropped, so the counts still add up
+to the tile above.
+
+No new backend call. The overall tab already pulls `scope=users`, which already
+carries `lostReasons` per rep, and the existing aggregation already sums them
+across the team - the data was arriving and being thrown away. Client viewers
+who can see the overall tab can see this, on the same permission that already
+governed the rep leaderboard next to it.
+
+Deals are counted by the period they were created in, which is why the win rate
+here can differ from a closed-in-period view: a deal that came in last quarter
+and was lost this week is scored against the quarter it arrived.
+
+---
+
 ## v3.396.1 - 2026-08-20 · `PENDING` - Rep leaderboard fits without scrolling
 
 Fourteen columns that could not be seen without dragging sideways. Three things

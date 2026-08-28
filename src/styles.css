@@ -3604,3 +3604,22 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
    is not needed because the numbers are short. */
 .u-lb td, .u-lb th { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1280px) { .u-lb { font-size: 11px; } .u-lb td.lft { max-width: none; } }
+
+/* Why deals were lost (Caalano360 tab) */
+.lr-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+.lr-tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel-2); }
+.lr-lab { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+.lr-tile b { display: block; font-size: 21px; line-height: 1.2; margin: 3px 0 1px; font-variant-numeric: tabular-nums; }
+.lr-tile b.pos { color: var(--pos, #0f9e6e); }
+.lr-sub { display: block; font-size: 11px; color: var(--muted); }
+.u-lb-lr { table-layout: fixed; width: 100%; min-width: 0; }
+.u-lb-lr th:nth-child(1), .u-lb-lr td:nth-child(1) { width: 46%; }
+.u-lb-lr th:nth-child(2), .u-lb-lr td:nth-child(2) { width: 14%; }
+.u-lb-lr th:nth-child(3), .u-lb-lr td:nth-child(3) { width: 18%; }
+.u-lb-lr th:nth-child(4), .u-lb-lr td:nth-child(4) { width: 22%; }
+.u-lb-lr td, .u-lb-lr th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The bar sits behind the percentage rather than in its own column, so the
+   shape of the distribution reads without spending width on it. */
+.lr-bar { display: inline-block; width: 46px; height: 6px; border-radius: 3px; margin-right: 7px;
+  background: rgba(120,140,170,.16); vertical-align: middle; overflow: hidden; }
+.lr-bar > span { display: block; height: 100%; background: var(--neg, #e0566c); opacity: .75; }

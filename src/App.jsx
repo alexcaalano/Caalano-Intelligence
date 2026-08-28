@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.415.0'
+const APP_VERSION = '3.415.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9778,10 +9778,13 @@ function TimingView({ clientId, range, nonce, currency }) {
   const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
   const scanRef = React.useRef({ alive: false })
   const autoScanRef = React.useRef(null)
-  const scanKey = `${clientId}|${rangeQuery(range)}|${hq}`
   useSettingsSync()
   const hrs = loadHours(clientId)
   const hq = hoursQuery(hrs)
+  // Must come after `hq`: this is evaluated during render, not deferred like an
+  // effect body, so reading it above its declaration is a dead-zone error that
+  // takes the whole view down.
+  const scanKey = `${clientId}|${rangeQuery(range)}|${hq}`
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000)

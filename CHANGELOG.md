@@ -18,6 +18,37 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.415.1 - 2026-08-20 · `PENDING` - Fix: "Cannot access '$' before initialization"
+
+A one-line ordering mistake in v3.415.0 took a whole view down behind the error
+boundary. Setting up the automatic Speed to Lead scan, its cache key was written
+above the value it reads:
+
+    const scanKey = `${clientId}|${rangeQuery(range)}|${hq}`
+    const hq = hoursQuery(hrs)
+
+That is legal JavaScript and compiles without a word, because it is only wrong
+when it runs. Unlike an effect or a hook callback - which execute after the
+component body has finished, by which point every binding exists - this line is
+evaluated during render, so it reads `hq` while it is still in the dead zone and
+throws. Moved below its dependency.
+
+**And a guard, because the build had nothing to say about it.** This is the second
+failure of the same shape: legal code, clean build, view dead at runtime. The
+first was a component defined inside another function, which produced
+`scripts/check-toplevel.mjs`. This one produces `scripts/check-tdz.mjs`, which
+walks each component body and reports any immediately-evaluated initialiser that
+reads a `const` or `let` declared further down. Function bodies and hook callbacks
+are skipped, since they genuinely run later; strings, comments, property accesses
+and object keys are stripped first, or `c.prev` would be reported as a reference
+to a local `prev`.
+
+Verified the way a checker has to be: the real bug was put back, the checker
+failed on it and the build still passed - then the fix was restored and the
+checker went quiet. Both checks now run on `npm run build` and `npm run check`.
+
+---
+
 ## v3.415.0 - 2026-08-20 · `PENDING` - Speed to Lead scans the whole cohort by default, and a pipeline selector
 
 **Speed to Lead no longer defaults to a sample.** It read the sixty most recent

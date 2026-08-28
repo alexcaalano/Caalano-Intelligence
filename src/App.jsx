@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.392.0'
+const APP_VERSION = '3.393.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4167,7 +4167,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
-      rows.push({ label: k.label, count: n, kind: 'won', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, ref: k.ref, count: n, kind: 'won', pipeline: k.pipeline || null })
     } else {
       const has = rmap && (rmap.m.has(k.ref) || (k.pipeline && rmap.m.has(k.pipeline + '::' + k.ref)))
       if (!has) continue
@@ -4178,7 +4178,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       // is at least the won total. (Reach is cumulative + monotonic, and wonTotal is
       // constant across stages, so this can't invert the funnel.)
       const reach = stageReachOf(rmap, k.pipeline, k.ref)
-      rows.push({ label: k.label, count: Math.max(reach, wonTotal || 0), kind: 'stage', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, ref: k.ref, count: Math.max(reach, wonTotal || 0), kind: 'stage', pipeline: k.pipeline || null })
     }
   }
   return rows
@@ -4247,7 +4247,7 @@ function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose
   const isCal = event.kind === 'calendar'
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
-    const stageName = event.kind === 'calendar' ? (event.stage || event.label) : event.label
+    const stageName = event.kind === 'calendar' ? (event.stage || event.ref || event.label) : (event.ref || event.label)
     const q = new URLSearchParams({ scope: 'keypeople', client: clientId, channel: channel || 'all', from: range.from, to: range.to, kind: event.kind })
     if (stageName && (event.kind === 'stage' || event.kind === 'calendar')) q.set('stage', String(stageName).replace(/^📅 /, ''))
     if (event.pipeline) q.set('pipeline', event.pipeline)
@@ -4285,6 +4285,7 @@ function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose
         <div className="m-body">
           {st.status === 'loading' ? <Spinner label="Loading people…" />
             : st.status === 'err' ? <div className="cap">Couldn’t load the list - try again.</div>
+              : d.stageMissed ? <div className="cap">No pipeline stage is named <b>{d.stage}</b> any more, so there is nothing to list. It was probably renamed in the CRM - repoint it in Settings &rarr; this client &rarr; Key events (or Qualified lead).</div>
               : !people.length ? <div className="cap">No people found for this event in the selected range.</div>
                 : !shown.length ? <div className="cap">No {filter} deals in this group.</div>
                   : <table className="mini-tbl users-tbl kp-tbl">

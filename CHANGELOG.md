@@ -18,6 +18,35 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.393.0 - 2026-08-20 · `PENDING` - Key event drill: send the stage name, not the label
+
+Clicking the **Qualified** tile opened an empty modal: "0 Meta-attributed people
+&middot; No people found for this event in the selected range", while the tile
+above it read 2.
+
+**The cause.** The drill sent the event's *display label* as the stage to look
+up, and `buildKeyPeople` matches a pipeline stage **by name**. For most key
+events the label and the stage name are the same string, so it worked by
+coincidence. Qualified is synthesised with a fixed label of "Qualified" and its
+stage taken from Settings &rarr; Qualified lead, so it never matched.
+
+**It was wider than Qualified.** Any key event given a custom label was broken
+the same way. Rename "Strategy Session Booked" to "Discovery Call" in the label
+field and its drill went empty too.
+
+- `keyEventRows` now carries `ref` (the real stage name) onto the row it builds,
+  which it had been dropping.
+- The drill sends `ref` and falls back to the label, so nothing that worked
+  before changes.
+- Calendar events still prefer their linked stage, as they did.
+
+**And it failed silently.** An unresolvable stage name produced an empty list,
+which looks exactly like a stage nobody reached. `buildKeyPeople` now reports
+`stageMissed`, and the modal says the stage no longer exists and where to
+repoint it, rather than implying nobody qualified.
+
+---
+
 ## v3.392.0 - 2026-08-20 · `PENDING` - Front door: new headline, a slogan, and the marks unboxed
 
 - **Headline** is now *"The cheapest lead is rarely the best client."* It states

@@ -3857,13 +3857,18 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   const srcOf = (o) => { const u = utmOf(o); const c = channelOf(u); return c === 'meta' ? 'Meta' : c === 'google' ? 'Google' : (u.source ? String(u.source).slice(0, 30) : 'Direct') }
   const nowMs = Date.now()
   // Resolve the target stage position (for stage / calendar-linked events).
-  let targetPos = null, targetPid = pipeline || null
+  let targetPos = null, targetPid = pipeline || null, stageMissed = false
   if (kind !== 'won' && stage) {
     for (const [pid, pi] of idx) {
       if (pipeline && pid !== pipeline) continue
       const s = pi.stages.find((x) => nz(x.name) === nz(stage))
       if (s) { targetPos = s.pos; targetPid = pid; break }
     }
+    // A name that matches no stage is not the same as a stage nobody reached, and
+    // the two used to look identical: both returned an empty list. It happens when
+    // a stage is renamed in the CRM, or when the caller sends a display label
+    // instead of the stage name. Report it so the UI can say which it is.
+    if (targetPos == null) stageMissed = true
   }
   // Contacts who booked one of the linked calendars in-period.
   const bookedCids = new Set()
@@ -3911,7 +3916,7 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   }
   const rank = { won: 0, open: 1, lost: 2, abandoned: 3 }
   people.sort((a, b) => ((rank[a.status] ?? 9) - (rank[b.status] ?? 9)) || (b.value - a.value))
-  return { connected: true, count: people.length, people: people.slice(0, 400) }
+  return { connected: true, count: people.length, people: people.slice(0, 400), stageMissed, stage: stage || null }
 }
 
 // Per-creative CRM performance for the Creative Cockpit: group every

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.409.0'
+const APP_VERSION = '3.410.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4698,6 +4698,7 @@ const LR_DIMS = [
   ['source', 'Source', 'Where the lead came from, resolved the same way as everywhere else in the app.'],
   ['pipeline', 'Pipeline', 'Which side of the business the deal belonged to.'],
   ['stage', 'Stage lost at', 'The stage the deal was sitting in when it was marked lost - where in the funnel it died.'],
+  ['keyevent', 'Key event reached', 'The furthest of this client’s configured key events the deal got to before it was lost. Deals that never reached one group under “Before first key event”, which is where lead quality shows up rather than sales execution.'],
   ['campaign', 'Campaign', 'The utm_campaign the lead arrived with, resolved from a platform id to the real campaign name where the UTM carried an id. Leads with no campaign - organic, direct, referral or an untagged ad - group under “Not tagged”.'],
   ['adset', 'Ad set / ad group', 'The utm_medium the lead arrived with, resolved to the ad set or ad group name where it carried an id. Accounts that use utm_medium conventionally will see values like “cpc” here instead.'],
   ['creative', 'Creative / ad', 'The utm_content the lead arrived with, which is the ad or creative on tagged paid traffic.'],
@@ -4723,6 +4724,171 @@ function lrFacts(cc) {
   })
 }
 
+// --- Lost Reasons: the visual layer -----------------------------------------
+//
+// Colour here is doing one job - identity - so it follows the categorical rules:
+// a fixed hue order, never cycled, and assigned to a reason by its rank in the
+// UNFILTERED data. That last part matters: if the map were built from whatever
+// survives the current filter, changing a filter would repaint the reasons that
+// stayed, and "the blue one" would mean something different one click later.
+//
+// Seven hues, then everything rarer folds into one neutral. An eighth hue would
+// be a generated colour rather than a chosen one, and generated hues are where
+// categorical palettes stop being distinguishable.
+//
+// Both sets are validated for the lightness band, chroma floor, colour-blind
+// separation between adjacent pairs, the normal-vision floor and contrast
+// against their own surface - the dark set is its own steps, not a flip of the
+// light one. Several light hues sit under 3:1 against the surface, which is why
+// every chart below carries visible labels and a table view rather than relying
+// on the fill alone to be read.
+const LR_HUES = {
+  light: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'],
+  dark: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9'],
+}
+const LR_OTHER_HUE = { light: '#78776f', dark: '#9a998f' }
+const LR_MAX_HUES = 7
+
+function useThemeMode() {
+  const read = () => (typeof document === 'undefined' ? 'light'
+    : document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
+  const [mode, setMode] = useState(read)
+  useEffect(() => {
+    const el = document.documentElement
+    const ob = new MutationObserver(() => setMode(read()))
+    ob.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => ob.disconnect()
+  }, [])
+  return mode
+}
+
+// reason -> colour, ranked over every lost deal in the period (not the filtered
+// subset), so the mapping is stable for the whole visit.
+function lrColorMap(facts, mode) {
+  const hues = LR_HUES[mode] || LR_HUES.light
+  const other = LR_OTHER_HUE[mode] || LR_OTHER_HUE.light
+  const n = new Map()
+  for (const f of facts) n.set(f.reason, (n.get(f.reason) || 0) + 1)
+  const ranked = [...n.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).map(([k]) => k)
+  const map = new Map()
+  ranked.slice(0, LR_MAX_HUES).forEach((r, i) => map.set(r, hues[i]))
+  return { of: (reason) => map.get(reason) || other, top: ranked.slice(0, LR_MAX_HUES), other }
+}
+
+// Magnitude, one series, so: plain bars, no legend (the title names it), values
+// direct-labelled rather than read off an axis.
+function LrReasonMix({ rows, total, colorOf, money }) {
+  if (!rows.length) return null
+  const max = Math.max(1, ...rows.map((r) => r.count))
+  return (
+    <div className="lrv-chart">
+      <div className="lrv-chart-h">Why deals are lost <span className="sub">· {fmtNumber(total)} in total</span></div>
+      <div className="lrv-mix">
+        {rows.map((r) => (
+          <div className="lrv-mix-row" key={r.key} title={`${r.key}: ${fmtNumber(r.count)} lost${r.value ? ` · ${money(r.value)}` : ''} · ${pctOf(r.count, total)} of all losses`}>
+            <span className="lrv-mix-lab">{r.key}</span>
+            <span className="lrv-mix-track"><span className="lrv-mix-fill" style={{ width: `${Math.max(1.5, (r.count / max) * 100)}%`, background: colorOf(r.key) }} /></span>
+            <span className="lrv-mix-n">{fmtNumber(r.count)}</span>
+            <span className="lrv-mix-p">{pctOf(r.count, total)}</span>
+            <span className="lrv-mix-v">{r.value ? money(r.value) : '-'}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Composition, not magnitude: the question is whether the reason MIX differs
+// between channels or campaigns, and a raw stacked bar answers "which is
+// biggest" instead. So each row is normalised to 100% and the absolute total is
+// printed at the end, where it informs without distorting the comparison.
+function LrComposition({ title, groups, colorOf, onPick, picked }) {
+  if (!groups.length) return null
+  return (
+    <div className="lrv-chart">
+      <div className="lrv-chart-h">{title}</div>
+      <div className="lrv-comp">
+        {groups.map((g) => (
+          <div className={`lrv-comp-row${picked === g.key ? ' on' : ''}`} key={g.key} onClick={onPick ? () => onPick(g.key) : undefined}
+            role={onPick ? 'button' : undefined} tabIndex={onPick ? 0 : undefined}
+            onKeyDown={onPick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(g.key) } } : undefined}
+            title={onPick ? `Filter everything below to ${g.key}` : g.key}>
+            <span className="lrv-comp-lab" title={g.key}>{g.key}</span>
+            <span className="lrv-comp-bar">
+              {g.parts.map((p) => (
+                <span key={p.reason} className="lrv-comp-seg" style={{ width: `${(p.count / g.count) * 100}%`, background: colorOf(p.reason) }}
+                  title={`${g.key} · ${p.reason}: ${fmtNumber(p.count)} of ${fmtNumber(g.count)} (${pctOf(p.count, g.count)})`} />
+              ))}
+            </span>
+            <span className="lrv-comp-n">{fmtNumber(g.count)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// A legend that is always present for two or more series, so identity never
+// rests on colour alone.
+function LrLegend({ reasons, colors }) {
+  if (reasons.length < 2) return null
+  const named = reasons.filter((r) => colors.top.includes(r))
+  const rest = reasons.filter((r) => !colors.top.includes(r))
+  return <div className="lrv-legend">
+    {named.map((r) => <span className="lrv-leg" key={r}><i style={{ background: colors.of(r) }} />{r}</span>)}
+    {rest.length ? <span className="lrv-leg" title={rest.join(' · ')}><i style={{ background: colors.other }} />{rest.length === 1 ? rest[0] : `Other (${rest.length} reasons)`}</span> : null}
+  </div>
+}
+
+// Where a reason concentrates, rather than where it is merely common. "Budget is
+// 25% of losses" is background; "Budget is 25% of everything but 41% of Google"
+// is a thing to act on. Only differences big enough to survive a small sample are
+// reported - a reason that is 3 of 4 deals somewhere is noise, not a signal.
+const LR_SIG_MIN_GROUP = 8      // a row this small cannot support a claim
+const LR_SIG_MIN_PP = 8         // percentage points over the baseline
+function lrSignals(facts, dims, colorOf) {
+  if (facts.length < 20) return []
+  const base = new Map()
+  for (const f of facts) base.set(f.reason, (base.get(f.reason) || 0) + 1)
+  const out = []
+  for (const [dim, label] of dims) {
+    const groups = new Map()
+    for (const f of facts) {
+      let g = groups.get(f[dim]); if (!g) { g = { key: f[dim], n: 0, by: new Map() }; groups.set(f[dim], g) }
+      g.n++; g.by.set(f.reason, (g.by.get(f.reason) || 0) + 1)
+    }
+    if (groups.size < 2) continue   // nothing to compare against
+    for (const g of groups.values()) {
+      if (g.n < LR_SIG_MIN_GROUP || g.key === 'Not tagged') continue
+      for (const [reason, n] of g.by) {
+        const here = (n / g.n) * 100
+        const all = ((base.get(reason) || 0) / facts.length) * 100
+        const lift = Math.round(here - all)
+        if (lift >= LR_SIG_MIN_PP && n >= 3) out.push({ dim, label, group: g.key, reason, lift, n, of: g.n, here: Math.round(here), all: Math.round(all) })
+      }
+    }
+  }
+  return out.sort((a, b) => b.lift - a.lift || b.n - a.n).slice(0, 6)
+}
+
+function LrSignals({ signals, colorOf, onPick }) {
+  if (!signals.length) return null
+  return (
+    <div className="lrv-chart lrv-sig-card">
+      <div className="lrv-chart-h">Worth a look <span className="sub">· where a reason concentrates, not just where it is common</span></div>
+      <div className="lrv-sigs">
+        {signals.map((s, i) => (
+          <button className="lrv-sig" key={i} onClick={() => onPick(s.dim, s.group)} title={`Filter to ${s.label}: ${s.group}`}>
+            <i style={{ background: colorOf(s.reason) }} />
+            <span className="lrv-sig-t"><b>{s.group}</b> loses <b>{s.reason}</b> at {s.here}%, against {s.all}% across all deals</span>
+            <span className="lrv-sig-n">+{s.lift}pp · {fmtNumber(s.n)}/{fmtNumber(s.of)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function LostReasonsView({ clientId, range, nonce, currency }) {
   // Filters are applied here, not on the server, so stacking or clearing one is
   // instant and never refetches. The payload is every lost deal in the period.
@@ -4738,11 +4904,39 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   // The same two readings, applied to the stage FILTER rather than to the rows:
   // narrow to the deals that died at a stage, or to everyone who reached it.
   const [stageFilter, setStageFilter] = useState('at')
+  const [visA, setVisA] = useState('channel')
+  const [visB, setVisB] = useState('keyevent')
   const [open, setOpen] = useState(null)
   const st = useCcDrill(clientId, range, nonce, 'all')
   const money = (v) => fmtCurrency(v, currency)
   const cc = st.data || null
-  const facts = useMemo(() => lrFacts(cc), [cc])
+  const mode = useThemeMode()
+  const rawFacts = useMemo(() => lrFacts(cc), [cc])
+  // Key event is derived here rather than in the payload, because key events are
+  // a per-client SETTING and the backend has no business knowing them. A deal
+  // reached a key event if its stage sits at or past that event's stage, judged
+  // inside its own pipeline; the furthest one it reached is the useful answer.
+  const facts = useMemo(() => {
+    const so = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
+    const evs = (loadKeyEvents(clientId) || [])
+      .map((k) => (typeof k === 'string' ? { stage: k } : k))
+      .filter((k) => k && k.stage)
+      .map((k) => ({ name: String(k.label || k.stage), stage: String(k.stage).trim().toLowerCase() }))
+    if (!evs.length) return rawFacts.map((f) => ({ ...f, keyevent: 'No key events configured' }))
+    return rawFacts.map((f) => {
+      const order = so[f.pipeline] || {}
+      let best = null, bestPos = -1
+      for (const e of evs) {
+        // Stage names are matched case-insensitively against this pipeline's list.
+        const hit = Object.keys(order).find((n) => n.trim().toLowerCase() === e.stage)
+        if (hit === undefined) continue
+        const pos = order[hit]
+        if (pos <= f.stagePos && pos > bestPos) { bestPos = pos; best = e.name }
+      }
+      return { ...f, keyevent: best || 'Before first key event' }
+    })
+  }, [rawFacts, cc, clientId, nonce])
+  const colors = useMemo(() => lrColorMap(facts, mode), [facts, mode])
   const setF = (dim, val) => { setOpen(null); setFilters((f) => { const n = { ...f }; if (!val) delete n[dim]; else n[dim] = val; return n }) }
   const active = Object.entries(filters)
   const stageOrder = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
@@ -4892,6 +5086,46 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                     </select></label>
                 </div>
                 </div>
+                {(() => {
+                  if (!rows.length) return null
+                  // The charts read the SAME filtered set as the table below, so a
+                  // filter set from a chart is visibly reflected in the charts too.
+                  const mixMap = new Map()
+                  for (const r of rows) { const e = mixMap.get(r.reason) || { key: r.reason, count: 0, value: 0 }; e.count++; e.value += r.value; mixMap.set(r.reason, e) }
+                  const mix = [...mixMap.values()].sort((a, b) => b.count - a.count)
+                  const compOf = (dim) => {
+                    const m = new Map()
+                    for (const r of rows) {
+                      let g = m.get(r[dim]); if (!g) { g = { key: r[dim], count: 0, by: new Map() }; m.set(r[dim], g) }
+                      g.count++; g.by.set(r.reason, (g.by.get(r.reason) || 0) + 1)
+                    }
+                    return [...m.values()].sort((a, b) => b.count - a.count).slice(0, 8).map((g) => ({
+                      ...g,
+                      // Segments follow the overall reason order, not each row's own
+                      // order, so the same colour sits in the same place down the chart.
+                      parts: mix.map((x) => ({ reason: x.key, count: g.by.get(x.key) || 0 })).filter((x) => x.count),
+                    }))
+                  }
+                  const sigs = lrSignals(rows, LR_DIMS.filter(([k]) => ['channel', 'source', 'pipeline', 'keyevent', 'campaign'].includes(k)), colors.of)
+                  const pick = (dim, val) => { setOpen(null); setFilters((f) => ({ ...f, [dim]: val })) }
+                  return <div className="lrv-vis">
+                    <LrReasonMix rows={mix} total={rows.length} colorOf={colors.of} money={money} />
+                    <LrLegend reasons={mix.map((m) => m.key)} colors={colors} />
+                    <div className="lrv-vis-2">
+                      {[[visA, setVisA], [visB, setVisB]].map(([dim, set], i) => (
+                        <div key={i}>
+                          <label className="lrv-f lrv-vis-sel"><span className="lrv-f-lab">Break down by</span>
+                            <select value={dim} onChange={(e) => set(e.target.value)}>
+                              {LR_DIMS.filter(([k]) => k !== 'reason').map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+                            </select></label>
+                          <LrComposition title={`Lost reasons by ${(LR_LABEL[dim] || '').toLowerCase()}`} groups={compOf(dim)} colorOf={colors.of} picked={filters[dim]} onPick={(v) => pick(dim, v)} />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="cap lrv-comp-foot">Each bar is that row’s reason mix, so rows of very different size stay comparable - the figure on the right is the actual number of lost deals, out of {fmtNumber(rows.length)}. Click a row to filter everything below to it. Only the eight largest rows are charted; the table has the rest.</div>
+                    <LrSignals signals={sigs} colorOf={colors.of} onPick={pick} />
+                  </div>
+                })()}
                 {!rows.length ? <div className="cap">No lost deals match these filters. <button className="link-btn" onClick={() => setFilters({})}>Clear them</button></div>
                   : <>
                     <table className="mini-tbl users-tbl appt-tbl u-lrv">

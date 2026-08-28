@@ -18,6 +18,63 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.410.0 - 2026-08-20 · `PENDING` - Lost Reasons gets a visual layer, with the pivot underneath
+
+The pivot answers any question you can phrase. It does not tell you which
+question to ask. Above it now sits a read-at-a-glance layer, and the table stays
+exactly as it was for working a specific question.
+
+**Why deals are lost** - the reason mix, ranked, with count, share and value on
+every row. One series, so no legend and no axis to read against: the numbers are
+printed beside the bars.
+
+**Two composition charts, side by side, each with its own dimension picker** -
+channel and key event by default, switchable to pipeline, campaign, ad set,
+creative, keyword, source or stage. Each row is normalised to 100%, because the
+question is whether the reason MIX differs between rows, and a raw stacked bar
+answers "which row is biggest" instead - Meta will always dwarf Google on volume
+and tell you nothing. The absolute count sits at the end of each row, where it
+informs without distorting the comparison. Clicking a row filters everything
+below it, charts and table together.
+
+**Key event reached** is a new dimension, in the charts and the pivot both: the
+furthest of the client's configured key events a deal got to before dying, judged
+inside its own pipeline. Deals that never reached one group under "Before first
+key event" - which is where lead quality shows up, as against sales execution. It
+is derived in the browser from the client's own key-event settings, so the
+backend never needs to know what a key event is and every client gets their own.
+
+**Worth a look** - where a reason concentrates rather than where it is merely
+common. "Budget is 25% of losses" is background; "Budget is 25% of everything but
+41% of Google" is a thing to do something about. A row must have at least eight
+deals, the reason at least three, and the gap at least eight percentage points -
+a reason that is three of four deals somewhere is noise, and reporting it as a
+finding is worse than saying nothing.
+
+**On the colour.** The app's existing chart palette fails validation - its amber
+sits outside the lightness band and three of its eight are under 3:1 on the
+surface - so this section uses a validated set rather than inheriting that, and
+rather than repainting the whole app in a release about lost reasons. Seven hues
+in fixed order, everything rarer folded into one neutral; an eighth hue would be
+generated rather than chosen, and that is where categorical palettes stop being
+distinguishable. Dark mode is its own steps, validated against the dark surface,
+not a flip of the light ones.
+
+A reason's colour is assigned by its rank across **every** lost deal in the
+period, not the filtered subset - so filtering never repaints the reasons that
+survive, and "the blue one" means the same thing after a click as before it. That
+property is tested, along with the fold-to-neutral and the signal floors: fifteen
+assertions.
+
+Several light-mode hues sit under 3:1 against the panel, so every figure is
+printed beside its bar and the same numbers exist in the table below. Colour is
+never the only way to read this. Stacked segments are separated by a 2px gap in
+the surface colour rather than a border, which would add width and stop each row
+summing to 100%. Rendered and measured at three widths in both themes: no page
+overflow, no clipped labels, and stacked rows summing to within 0.1px.
+
+---
+
 ## v3.409.0 - 2026-08-20 · `PENDING` - Time in stage says which figures are measured and which are guesses
 
 Time in stage needs the moment a deal entered its current stage. Where the CRM

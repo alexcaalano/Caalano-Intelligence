@@ -3760,3 +3760,63 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .u-lrv td.lrv-dn { color: var(--pos, #12b886); font-weight: 700; }
 /* Marks deals whose time-in-stage is an upper bound, not a measurement. */
 .st-est { font-size: 10.5px; font-weight: 700; color: var(--warn, #f5a524); cursor: help; }
+
+/* ---------------------------------------------------------------------------
+   Lost Reasons: the visual layer above the pivot.
+
+   Marks are thin, data-ends are rounded and anchored to the baseline, and every
+   fill is separated from its neighbour by a 2px gap in the SURFACE colour rather
+   than a border - a border adds width and shifts the geometry, a surface gap
+   does not. Several of the light-mode hues sit under 3:1 against the panel, so
+   every figure is printed beside its bar and the same numbers exist in the table
+   below: colour is never the only way to read this.
+   --------------------------------------------------------------------------- */
+.lrv-vis { margin: 0 0 16px; }
+.lrv-chart { margin: 0 0 14px; }
+.lrv-chart-h { font-size: 12.5px; font-weight: 800; margin-bottom: 8px; }
+.lrv-chart-h .sub { font-weight: 500; color: var(--muted); }
+
+/* Reason mix: one series, so no legend - the heading names it. */
+.lrv-mix { display: flex; flex-direction: column; gap: 5px; }
+.lrv-mix-row { display: grid; grid-template-columns: minmax(0, 210px) 1fr 46px 44px 78px; align-items: center; gap: 10px; }
+.lrv-mix-lab { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrv-mix-track { height: 14px; background: color-mix(in srgb, var(--border) 60%, transparent); border-radius: 4px; overflow: hidden; }
+.lrv-mix-fill { display: block; height: 100%; border-radius: 0 4px 4px 0; transition: width .25s; }
+.lrv-mix-n { font-size: 12.5px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.lrv-mix-p, .lrv-mix-v { font-size: 11.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Composition: each row normalised, so rows of very different size compare. */
+.lrv-vis-2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 1180px) { .lrv-vis-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; } }
+.lrv-vis-sel { margin-bottom: 8px; }
+.lrv-comp { display: flex; flex-direction: column; gap: 5px; }
+.lrv-comp-row { display: grid; grid-template-columns: minmax(0, 130px) 1fr 42px; align-items: center; gap: 9px; border-radius: 6px; padding: 2px 3px; }
+.lrv-comp-row[role="button"] { cursor: pointer; }
+.lrv-comp-row[role="button"]:hover { background: color-mix(in srgb, var(--brand) 8%, transparent); }
+.lrv-comp-row.on { background: color-mix(in srgb, var(--brand) 14%, transparent); }
+.lrv-comp-lab { font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrv-comp-bar { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--border) 60%, transparent); }
+/* The 2px separator is the panel colour showing through, not a border: a border
+   would add width to every segment and the row would no longer sum to 100%. */
+.lrv-comp-seg { height: 100%; box-shadow: 2px 0 0 var(--panel); }
+.lrv-comp-seg:last-child { box-shadow: none; }
+.lrv-comp-n { font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.lrv-comp-foot { margin: 8px 0 18px; font-size: 10.5px; line-height: 1.5; }
+
+/* Legend: always present from two series up, so identity is never colour alone. */
+.lrv-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 14px; }
+.lrv-leg { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.lrv-leg i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+/* Signals. */
+.lrv-sigs { display: flex; flex-direction: column; gap: 4px; }
+.lrv-sig { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 9px; width: 100%; text-align: left;
+  border: 1px solid var(--border); background: var(--panel-2); border-radius: 8px; padding: 7px 10px; cursor: pointer; font: inherit; }
+.lrv-sig:hover { border-color: var(--brand); }
+.lrv-sig i { width: 10px; height: 10px; border-radius: 3px; }
+.lrv-sig-t { font-size: 12px; color: var(--text); }
+.lrv-sig-n { font-size: 11px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 720px) {
+  .lrv-mix-row { grid-template-columns: minmax(0, 120px) 1fr 38px 38px; }
+  .lrv-mix-v { display: none; }
+}

@@ -3565,3 +3565,42 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .enq-grid td.enq-edge { position: relative; }
 .enq-grid td.enq-edge:before { content: ""; position: absolute; left: -2px; top: 0; bottom: 0;
   border-left: 1px dashed rgba(120,140,170,.5); }
+
+/* Rep leaderboard: fourteen columns, and it was overflowing into a horizontal
+   scroll. `.appt-tbl` sets white-space:nowrap on every cell, which forces each
+   header to its full single-line width - "Cost / Won" and "Avg close" were among
+   the widest columns in the table purely because of their labels.
+   Headers wrap to two lines here and the padding tightens; the DATA cells keep
+   nowrap so no figure ever breaks mid-number. */
+.u-lb th { white-space: normal; line-height: 1.2; vertical-align: bottom; hyphens: none; }
+.u-lb th, .u-lb td { padding-left: 4px; padding-right: 4px; }
+.u-lb td { white-space: nowrap; }
+.u-lb th:first-child, .u-lb td:first-child { padding-left: 8px; }
+.u-lb th:last-child, .u-lb td:last-child { padding-right: 8px; }
+/* The rep name is the one column allowed to give ground before the numbers do. */
+.u-lb td.lft { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+/* Fixed layout is what actually guarantees no horizontal scroll: columns share
+   the available width instead of each demanding its content width, so the table
+   can never be wider than its container whatever the numbers say. Widths are
+   proportioned to what each column holds - Revenue and the cost columns get
+   room, Won and Win% need little - and the rep name absorbs the slack. */
+.u-lb { table-layout: fixed; width: 100%; min-width: 0; }
+.u-lb th:nth-child(1),  .u-lb td:nth-child(1)  { width: 5%; }
+.u-lb th:nth-child(2),  .u-lb td:nth-child(2)  { width: 15%; }
+.u-lb th:nth-child(3),  .u-lb td:nth-child(3)  { width: 6%; }
+.u-lb th:nth-child(4),  .u-lb td:nth-child(4)  { width: 6.5%; }
+.u-lb th:nth-child(5),  .u-lb td:nth-child(5)  { width: 6%; }
+.u-lb th:nth-child(6),  .u-lb td:nth-child(6)  { width: 6%; }
+.u-lb th:nth-child(7),  .u-lb td:nth-child(7)  { width: 6%; }
+.u-lb th:nth-child(8),  .u-lb td:nth-child(8)  { width: 5%; }
+.u-lb th:nth-child(9),  .u-lb td:nth-child(9)  { width: 5.5%; }
+.u-lb th:nth-child(10), .u-lb td:nth-child(10) { width: 9%; }
+.u-lb th:nth-child(11), .u-lb td:nth-child(11) { width: 8%; }
+.u-lb th:nth-child(12), .u-lb td:nth-child(12) { width: 6.5%; }
+.u-lb th:nth-child(13), .u-lb td:nth-child(13) { width: 8%; }
+.u-lb th:nth-child(14), .u-lb td:nth-child(14) { width: 7.5%; }
+/* With fixed layout a figure could in principle be clipped on a very narrow
+   screen, so every cell ellipses rather than spilling, and the title attribute
+   is not needed because the numbers are short. */
+.u-lb td, .u-lb th { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1280px) { .u-lb { font-size: 11px; } .u-lb td.lft { max-width: none; } }

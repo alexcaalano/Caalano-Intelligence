@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.396.0'
+const APP_VERSION = '3.396.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9357,7 +9357,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
 
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
-        <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl">
+        <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl u-lb">
           <thead><tr><th className="u-rank-h" title="Rank by wins; arrow shows movement vs the previous equal-length period">#</th><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
           <tbody>{leaderboardRows.map((u) => {
             const isOpen = open === u.id

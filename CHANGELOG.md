@@ -18,6 +18,33 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.396.1 - 2026-08-20 · `PENDING` - Rep leaderboard fits without scrolling
+
+Fourteen columns that could not be seen without dragging sideways. Three things
+were making it wide, and the third was the real one:
+
+1. **`.appt-tbl` sets `white-space: nowrap` on every cell**, so each header held
+   its full single-line width. "Cost / Won" and "Avg close" were among the widest
+   columns in the table purely because of their labels. Headers now wrap to two
+   lines; data cells keep nowrap so no figure breaks mid-number. That alone took
+   14% off.
+2. **Padding** tightened from 6px to 4px either side.
+3. **A global `table { min-width: 700px }`** floor. Any table narrower than its
+   content still refused to go below 700px, which no amount of column tuning can
+   beat. The codebase already had the override pattern for it (`.cl-kv`,
+   `.cl-fit`), and the leaderboard now uses it too.
+
+With `table-layout: fixed` and column widths summing to exactly 100%, the table
+is now the width of its container by construction, so it cannot scroll at any
+screen size. Widths are proportioned to content - Revenue and the cost columns
+get room, Won and Win% need little, the rep name absorbs the slack and ellipses
+before any number does.
+
+Verified at container widths from 520px to 1540px: no horizontal scroll at any
+of them, all fourteen columns readable.
+
+---
+
 ## v3.396.0 - 2026-08-20 · `PENDING` - Leads vs bookings vs slots, self-booked, and business hours
 
 "When enquiries arrive" now separates **three clocks that were being conflated**,

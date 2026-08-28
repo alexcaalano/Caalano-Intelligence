@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.410.0'
+const APP_VERSION = '3.411.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -912,7 +912,7 @@ function MaturityBadge({ clientId, crmAvg, range, sample, size }) {
 // absolutely-positioned popup got cut off on the bottom rows / edge columns).
 // Positions itself against the trigger's viewport rect, flipping above when the
 // trigger sits low in the viewport.
-function HoverPop({ children, className = '', render }) {
+function HoverPop({ children, className = '', render, style }) {
   const ref = React.useRef(null)
   const [pos, setPos] = useState(null)
   const show = () => {
@@ -925,7 +925,7 @@ function HoverPop({ children, className = '', render }) {
     })
   }
   return (
-    <span className={`hp-anchor ${className}`} ref={ref} onMouseEnter={show} onMouseMove={pos ? undefined : show} onMouseLeave={() => setPos(null)}>
+    <span className={`hp-anchor ${className}`} style={style} ref={ref} onMouseEnter={show} onMouseMove={pos ? undefined : show} onMouseLeave={() => setPos(null)}>
       {children}
       {pos && (
         <span className="hp-fixed" style={{ left: pos.x, [pos.below ? 'top' : 'bottom']: pos.y }}>
@@ -4749,6 +4749,19 @@ const LR_HUES = {
 const LR_OTHER_HUE = { light: '#78776f', dark: '#9a998f' }
 const LR_MAX_HUES = 7
 
+function LrPop({ children, title, rows, className = '', style }) {
+  return (
+    <HoverPop className={`lrv-pop ${className}`} style={style} render={() => (
+      <span className="hp-body">
+        <span className="hp-t">{title}</span>
+        {rows.filter(Boolean).map(([l, v], i) => (
+          <span className="hp-r" key={i}><span className="hp-lbl primary">{l}</span><span className="hp-val">{v}</span></span>
+        ))}
+      </span>
+    )}>{children}</HoverPop>
+  )
+}
+
 function useThemeMode() {
   const read = () => (typeof document === 'undefined' ? 'light'
     : document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
@@ -4785,9 +4798,13 @@ function LrReasonMix({ rows, total, colorOf, money }) {
       <div className="lrv-chart-h">Why deals are lost <span className="sub">· {fmtNumber(total)} in total</span></div>
       <div className="lrv-mix">
         {rows.map((r) => (
-          <div className="lrv-mix-row" key={r.key} title={`${r.key}: ${fmtNumber(r.count)} lost${r.value ? ` · ${money(r.value)}` : ''} · ${pctOf(r.count, total)} of all losses`}>
+          <div className="lrv-mix-row" key={r.key}>
             <span className="lrv-mix-lab">{r.key}</span>
-            <span className="lrv-mix-track"><span className="lrv-mix-fill" style={{ width: `${Math.max(1.5, (r.count / max) * 100)}%`, background: colorOf(r.key) }} /></span>
+            <LrPop title={r.key} rows={[
+              ['Deals lost', fmtNumber(r.count)],
+              ['Share of all losses', pctOf(r.count, total)],
+              ['Value', r.value ? money(r.value) : '-'],
+            ]}><span className="lrv-mix-track"><span className="lrv-mix-fill" style={{ width: `${Math.max(1.5, (r.count / max) * 100)}%`, background: colorOf(r.key) }} /></span></LrPop>
             <span className="lrv-mix-n">{fmtNumber(r.count)}</span>
             <span className="lrv-mix-p">{pctOf(r.count, total)}</span>
             <span className="lrv-mix-v">{r.value ? money(r.value) : '-'}</span>
@@ -4813,11 +4830,16 @@ function LrComposition({ title, groups, colorOf, onPick, picked }) {
             role={onPick ? 'button' : undefined} tabIndex={onPick ? 0 : undefined}
             onKeyDown={onPick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(g.key) } } : undefined}
             title={onPick ? `Filter everything below to ${g.key}` : g.key}>
-            <span className="lrv-comp-lab" title={g.key}>{g.key}</span>
+            <span className="lrv-comp-lab" title={g.label || g.key}>{g.label || g.key}</span>
             <span className="lrv-comp-bar">
               {g.parts.map((p) => (
-                <span key={p.reason} className="lrv-comp-seg" style={{ width: `${(p.count / g.count) * 100}%`, background: colorOf(p.reason) }}
-                  title={`${g.key} · ${p.reason}: ${fmtNumber(p.count)} of ${fmtNumber(g.count)} (${pctOf(p.count, g.count)})`} />
+                <LrPop key={p.reason} className="lrv-seg-pop" title={`${g.label || g.key} · ${p.reason}`} rows={[
+                  ['Deals lost', fmtNumber(p.count)],
+                  [`Share of ${g.label || g.key}`, pctOf(p.count, g.count)],
+                  ['All lost here', fmtNumber(g.count)],
+                ]} style={{ width: `${(p.count / g.count) * 100}%` }}>
+                  <span className="lrv-comp-seg" style={{ background: colorOf(p.reason) }} />
+                </LrPop>
               ))}
             </span>
             <span className="lrv-comp-n">{fmtNumber(g.count)}</span>
@@ -4937,6 +4959,74 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
     })
   }, [rawFacts, cc, clientId, nonce])
   const colors = useMemo(() => lrColorMap(facts, mode), [facts, mode])
+  // Funnel position for the two ordered dimensions, so every list of stages or
+  // key events reads in funnel order rather than by how many deals died in each.
+  // A stage name can sit at different depths in different pipelines, so its rank
+  // is the shallowest position it holds anywhere - and when a pipeline filter is
+  // on, that pipeline's own position, which is the only one being looked at.
+  const ranks = useMemo(() => {
+    const so = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
+    const pipes = filters.pipeline && so[filters.pipeline] ? [filters.pipeline] : Object.keys(so)
+    // Two pipelines are two different funnels; there is no single sequence across
+    // them, and merging their positions produces nonsense - a stage that is first
+    // in one and third in another would outrank the genuine first stage of the
+    // other. So stages are grouped by pipeline and ordered within it, with
+    // pipelines ordered by how many deals they lost. A stage that exists in
+    // several is placed under the one that actually contributed most of its
+    // losses, so it appears once, where it carries its weight.
+    const lostPerPipe = new Map()
+    for (const f of facts) lostPerPipe.set(f.pipeline, (lostPerPipe.get(f.pipeline) || 0) + 1)
+    const pipeRank = new Map(pipes
+      .slice()
+      .sort((a, b) => (lostPerPipe.get(b) || 0) - (lostPerPipe.get(a) || 0) || String(a).localeCompare(String(b)))
+      .map((pn, i) => [pn, i]))
+    // Which pipeline "owns" each stage name = the one that lost the most deals
+    // in it. Only counts a pairing the pipeline actually defines.
+    const seen = new Map()   // "stage\u0000pipeline" -> deals lost there
+    for (const f of facts) {
+      if (!so[f.pipeline] || so[f.pipeline][f.stage] === undefined) continue
+      const k = `${f.stage}\u0000${f.pipeline}`
+      seen.set(k, (seen.get(k) || 0) + 1)
+    }
+    const home = new Map()   // stage name -> owning pipeline
+    for (const [k, n] of seen) {
+      const [name, pn] = k.split('\u0000')
+      if (!pipeRank.has(pn)) continue
+      const cur = home.get(name)
+      if (!cur || n > cur.n) home.set(name, { pn, n })
+    }
+    // 1000 positions per pipeline is far more than any real funnel has, so the
+    // pipeline index always dominates the position within it.
+    const stage = new Map()
+    for (const pn of pipes) for (const [name, pos] of Object.entries(so[pn] || {})) {
+      const owner = (home.get(name) || {}).pn || pn
+      if (stage.has(name) && owner !== pn) continue
+      const ownerPos = (so[owner] || {})[name]
+      stage.set(name, (pipeRank.get(owner) ?? 0) * 1000 + (ownerPos === undefined ? pos : ownerPos))
+    }
+    const key = new Map([['Before first key event', -1]])
+    for (const f of facts) {
+      if (key.has(f.keyevent)) continue
+      // A key event's rank is the rank of the stage it is pinned to.
+      const r = stage.get(f.stage)
+      if (r !== undefined) { const cur = key.get(f.keyevent); if (cur === undefined || r < cur) key.set(f.keyevent, r) }
+    }
+    return { stage, key }
+  }, [cc, facts, filters.pipeline])
+  // Ordered dimensions sort by position; everything else keeps volume order,
+  // which is the useful reading when there is no inherent sequence. An unplaceable
+  // value sorts last rather than pretending to a position it does not have.
+  const rankOf = (dim, v) => {
+    const m = dim === 'stage' ? ranks.stage : dim === 'keyevent' ? ranks.key : null
+    if (!m) return null
+    const r = m.get(v)
+    return r === undefined ? Number.MAX_SAFE_INTEGER : r
+  }
+  const orderedDim = (dim) => dim === 'stage' || dim === 'keyevent'
+  const cmpFor = (dim) => (a, b) => {
+    if (orderedDim(dim)) { const d = rankOf(dim, a.key) - rankOf(dim, b.key); if (d) return d }
+    return b.count - a.count || String(a.key).localeCompare(String(b.key))
+  }
   const setF = (dim, val) => { setOpen(null); setFilters((f) => { const n = { ...f }; if (!val) delete n[dim]; else n[dim] = val; return n }) }
   const active = Object.entries(filters)
   const stageOrder = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
@@ -4964,7 +5054,9 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
     // the filter would still be applied but no longer visible in the thing
     // applying it, and there would be nothing left to click to undo it.
     if (filters[dim] && !m.has(filters[dim])) m.set(filters[dim], 0)
-    return [...m.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+    const rows = [...m.entries()].map(([key, count]) => ({ key, count }))
+    rows.sort(cmpFor(dim))
+    return rows.map((r) => [r.key, r.count])
   }
   // Group down the side, break down across the top. Picking the same dimension
   // for both would make a diagonal, so the columns fall back to Reason.
@@ -4984,18 +5076,20 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
         const p = posIn(r.pipeline, n)
         if (p != null && r.stagePos >= p) add(n, r)
       }
-      // Deepest stage first: the funnel reads from the far end back, and that is
-      // also the order in which the counts grow.
-      return [...m.values()].sort((a, b) => a.count - b.count || String(a.key).localeCompare(String(b.key)))
+      // Funnel order, so "or later" reads down the funnel rather than by volume.
+      return [...m.values()].sort(cmpFor('stage'))
     }
     for (const r of rows) add(r[groupBy], r)
-    return [...m.values()].sort((a, b) => b.count - a.count)
-  }, [rows, groupBy, colDim, cumulative, cc])
+    return [...m.values()].sort(cmpFor(groupBy))
+  }, [rows, groupBy, colDim, cumulative, cc, ranks, filters.pipeline])
   const colKeys = useMemo(() => {
     const m = new Map()
     for (const r of rows) m.set(r[colDim], (m.get(r[colDim]) || 0) + 1)
-    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, LR_COLS_MAX).map(([k]) => k)
-  }, [rows, colDim])
+    // Take the biggest few, then put them back in funnel order if the dimension
+    // has one: which columns to show is a volume question, where they sit is not.
+    const top = [...m.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, LR_COLS_MAX)
+    return top.sort(cmpFor(colDim)).map((x) => x.key)
+  }, [rows, colDim, ranks, filters.pipeline])
   const otherOf = (g) => g.count - colKeys.reduce((a, k) => a + (g.cols.get(k) || 0), 0)
   const anyOther = groups.some((g) => otherOf(g) > 0)
   const totVal = rows.reduce((a, r) => a + r.value, 0)
@@ -5096,10 +5190,10 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                   const compOf = (dim) => {
                     const m = new Map()
                     for (const r of rows) {
-                      let g = m.get(r[dim]); if (!g) { g = { key: r[dim], count: 0, by: new Map() }; m.set(r[dim], g) }
+                      let g = m.get(r[dim]); if (!g) { g = { key: r[dim], label: dim === 'channel' ? chLabel(r[dim]) : r[dim], count: 0, by: new Map() }; m.set(r[dim], g) }
                       g.count++; g.by.set(r.reason, (g.by.get(r.reason) || 0) + 1)
                     }
-                    return [...m.values()].sort((a, b) => b.count - a.count).slice(0, 8).map((g) => ({
+                    return [...m.values()].sort(cmpFor(dim)).slice(0, 8).map((g) => ({
                       ...g,
                       // Segments follow the overall reason order, not each row's own
                       // order, so the same colour sits in the same place down the chart.

@@ -18,6 +18,41 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.411.0 - 2026-08-20 · `PENDING` - Funnel order for funnel dimensions, and proper hover cards
+
+**Stage and key event now read in funnel order, everywhere** - the filter list,
+the charts and the pivot's rows and columns. Ordering a funnel by how many deals
+died in each step puts the end above the start whenever more died late, which is
+exactly backwards for the one dimension that has an inherent sequence. Reasons,
+campaigns and the rest keep volume order, which is the useful reading when there
+is no sequence to follow.
+
+The hard part is that **two pipelines are two different funnels**, and there is no
+single sequence across them. The first attempt took each stage's shallowest
+position anywhere, and the test caught what that does: a stage sitting first in
+the smaller pipeline outranked the dominant pipeline's genuine first stage, so the
+list opened in the middle of the funnel. Stages are now grouped by pipeline and
+ordered within it, pipelines ordered by how many deals they lost, and a stage name
+that exists in several is placed under the one that actually contributed most of
+its losses - so it appears once, where it carries its weight. With a pipeline
+filter on, that pipeline's own sequence applies and nothing else does.
+
+Which columns to show is still a volume question - the six biggest - but where
+they sit is not, so they are put back in funnel order afterwards.
+
+**The charts use the app's hover card instead of the browser's tooltip.** The
+native one is unstyled, slow to appear and can only carry a single line, so a
+stacked segment could say "meta · Follow up sent: 28 of 74 (38%)" and nothing
+else. Each mark now shows the same card the key-event scorecards use: a title and
+labelled rows - deals lost, share of that row, and the row's total. The anchor
+carries the segment's own width, so the hit target is the segment rather than the
+whole bar.
+
+Channel values are labelled the way the rest of the app labels them, so a
+client-facing chart reads "Meta" rather than "meta".
+
+---
+
 ## v3.410.0 - 2026-08-20 · `PENDING` - Lost Reasons gets a visual layer, with the pivot underneath
 
 The pivot answers any question you can phrase. It does not tell you which

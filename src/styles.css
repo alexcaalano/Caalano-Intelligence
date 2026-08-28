@@ -3820,3 +3820,13 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
   .lrv-mix-row { grid-template-columns: minmax(0, 120px) 1fr 38px 38px; }
   .lrv-mix-v { display: none; }
 }
+/* The chart marks use the app's hover card rather than the browser's own
+   tooltip, so a breakdown can be shown and it matches every other popup. The
+   anchor has to behave as the mark itself: the mix bar's anchor IS the track,
+   and a stacked segment's anchor carries that segment's width. */
+.lrv-pop { display: block; min-width: 0; }
+.lrv-mix-row .lrv-pop { height: 14px; }
+.lrv-mix-row .lrv-pop .lrv-mix-track { display: block; }
+.lrv-comp-bar > .lrv-seg-pop { display: block; height: 100%; min-width: 0; box-shadow: 2px 0 0 var(--panel); }
+.lrv-comp-bar > .lrv-seg-pop:last-child { box-shadow: none; }
+.lrv-comp-bar > .lrv-seg-pop > .lrv-comp-seg { display: block; width: 100%; height: 100%; box-shadow: none; }

@@ -18,24 +18,51 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 // retried - they're already slow, so we fail fast rather than burn another full
 // timeout. Non-retryable 4xx responses are returned as-is for the caller's
 // r.ok check. Shared by the GHL helpers here and by windsor.mjs.
+// --- request budget ------------------------------------------------------
+// A synchronous Netlify function is killed at ~26s. A single fetch here was
+// allowed 9s and up to three attempts, so one upstream call could spend 27s plus
+// backoff - a retry budget larger than the invocation it runs inside. Past the
+// second attempt the retry cannot help: there is no time left to return anything,
+// so it only converts a slow request into a dead one. That is the shape of the
+// health / speed entries sitting at 23-26s in the reliability log.
+//
+// The budget is set once per invocation and every fetch below reads it, so the
+// attempts fit the function rather than each being timed in isolation.
+//
+// Deliberately fail-safe. A warm Lambda keeps module state between invocations,
+// so a budget left over from a previous request would otherwise expire every
+// call instantly - which would be far worse than the problem. So an expired or
+// unset budget never produces a zero timeout: it floors at BUDGET_MIN_MS and
+// only suppresses RETRIES. Worst case the fix stops helping; it cannot start
+// failing requests on its own.
+const BUDGET_MIN_MS = 2500      // no attempt is ever given less than this
+const BUDGET_RETRY_MS = 3500    // below this much left, do not start another try
+let _budgetEnd = 0
+export function startRequestBudget(ms) { _budgetEnd = ms ? Date.now() + ms : 0 }
+const budgetLeft = () => (_budgetEnd ? _budgetEnd - Date.now() : Infinity)
+const budgetedTimeout = (want) => Math.max(BUDGET_MIN_MS, Math.min(want, budgetLeft()))
+const budgetAllowsRetry = () => budgetLeft() > BUDGET_RETRY_MS
+
 export async function resilientFetch(url, opts = {}, { timeoutMs = 9000, retries = 2, label = 'fetch' } = {}) {
   let lastErr
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    const timer = setTimeout(() => ctrl.abort(), budgetedTimeout(timeoutMs))
     try {
       const r = await fetch(url, { ...opts, signal: ctrl.signal })
       clearTimeout(timer)
-      if ((r.status === 429 || r.status >= 500) && attempt < retries) {
+      // Retrying without the time to use the result is worse than returning the
+      // failure now: the caller can still say "couldn't load" inside the budget.
+      if ((r.status === 429 || r.status >= 500) && attempt < retries && budgetAllowsRetry()) {
         const ra = Number(r.headers.get('retry-after'))
-        await sleep(Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 5000) : 400 * (attempt + 1))
+        await sleep(Math.min(Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 5000) : 400 * (attempt + 1), Math.max(0, budgetLeft() - BUDGET_MIN_MS)))
         continue
       }
       return r
     } catch (e) {
       clearTimeout(timer)
       lastErr = e
-      if (e.name !== 'AbortError' && attempt < retries) { await sleep(400 * (attempt + 1)); continue }
+      if (e.name !== 'AbortError' && attempt < retries && budgetAllowsRetry()) { await sleep(400 * (attempt + 1)); continue }
       throw e
     }
   }
@@ -100,9 +127,11 @@ async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries =
   try {
     let lastErr
     for (let attempt = 0; attempt < maxTries; attempt++) {
+      // Waiting out a cooldown we have no time left to use is just a slower
+      // failure, so the wait is clamped to the budget like everything else.
       const wait = (await ghlCooldownUntil(loc)) - Date.now()
-      if (wait > 0) await sleep(Math.min(wait, 6000))
-      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+      if (wait > 0) await sleep(Math.min(wait, 6000, Math.max(0, budgetLeft() - BUDGET_MIN_MS)))
+      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), budgetedTimeout(timeoutMs))
       try {
         const r = await fetch(url, { ...opts, signal: ctrl.signal })
         clearTimeout(timer)
@@ -112,14 +141,14 @@ async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries =
           // Publish it, so the five other invocations working this same location
           // wait too instead of walking into the wall we just found.
           await publishGhlCooldown(loc, Date.now() + Math.min(backoff, GHL_COOL_MAX_MS))
-          if (attempt < maxTries - 1) { await sleep(backoff); continue }
+          if (attempt < maxTries - 1 && budgetAllowsRetry()) { await sleep(Math.min(backoff, Math.max(0, budgetLeft() - BUDGET_MIN_MS))); continue }
           return r
         }
-        if (r.status >= 500 && attempt < maxTries - 1) { await sleep(400 * (attempt + 1)); continue }
+        if (r.status >= 500 && attempt < maxTries - 1 && budgetAllowsRetry()) { await sleep(400 * (attempt + 1)); continue }
         return r
       } catch (e) {
         clearTimeout(timer); lastErr = e
-        if (e.name !== 'AbortError' && attempt < maxTries - 1) { await sleep(400 * (attempt + 1)); continue }
+        if (e.name !== 'AbortError' && attempt < maxTries - 1 && budgetAllowsRetry()) { await sleep(400 * (attempt + 1)); continue }
         throw e
       }
     }

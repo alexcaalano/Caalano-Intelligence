@@ -18,6 +18,46 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.407.0 - 2026-08-20 · `PENDING` - A retry budget that fits the function it runs inside
+
+A synchronous Netlify function is killed at about 26 seconds. A single upstream
+fetch was allowed 9 seconds and up to three attempts, so one slow dependency
+could spend 27 seconds plus backoff - a retry budget larger than the invocation
+containing it. The CRM path was worse still, adding cooldown waits of up to 6
+seconds per attempt on top.
+
+Past the second attempt the retry cannot help. There is no time left to return
+anything with, so it only converts a slow request into a dead one. That is the
+shape of the `speed` and `health` entries sitting at 23-26 seconds in the
+reliability log, right against the ceiling.
+
+Every upstream fetch in an invocation now shares one deadline, set once at the top
+of the request at 22 seconds - leaving room to assemble and return whatever did
+arrive. An attempt's timeout is clamped to what remains rather than being timed in
+isolation, a new attempt is not started with under 3.5 seconds left, and backoff
+and cooldown waits are clamped the same way: waiting out a cooldown there is no
+time left to use is just a slower failure. Worst-case upstream spend goes from
+27s+ to 22s, and the caller gets a real "couldn't load" inside the budget instead
+of the whole function being killed.
+
+**Deliberately fail-safe, because the obvious version of this is dangerous.** A
+warm Lambda keeps module state between invocations, so a budget left over from a
+previous request would otherwise expire every call instantly - far worse than the
+problem being fixed. An expired or unset budget therefore never produces a zero
+timeout: it floors at 2.5 seconds and only suppresses retries. Worst case the fix
+stops helping; it cannot start failing requests on its own. The budget is also set
+on every request rather than once, so a stale one is never inherited.
+
+The scheduled warmer gets ten minutes instead of 22 seconds: it is a background
+function whose entire job is the deep page an interactive request cannot afford.
+
+Tested against the real helpers: a full budget passes the requested timeout
+through untouched, a nearly-spent one clamps to what remains, an expired one still
+yields a usable timeout and never zero, and an unset one behaves exactly as the
+code did before this change.
+
+---
+
 ## v3.406.1 - 2026-08-20 · `PENDING` - Client viewers can see the whole Timing tab
 
 The Timing tab renders three sections and a client viewer could only load one of

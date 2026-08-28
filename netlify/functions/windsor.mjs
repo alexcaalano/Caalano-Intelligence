@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -690,6 +690,9 @@ export async function runClinicSnapshots(dates) {
 // the opp pulls off the user path and out of concurrent bursts. Sequential on
 // purpose - one gentle pull at a time, never a fan-out - and resilient per client.
 export async function runOppWarm() {
+  // The warmer is a background function with a far longer ceiling, and its whole
+  // job is the deep page an interactive request cannot afford. Give it room.
+  startRequestBudget(600000)
   try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
   const results = []
   for (const [id, cc] of Object.entries(CLIENTS)) {
@@ -2740,6 +2743,12 @@ async function diagLog(entry) {
 
 export default async (req) => {
   const _t0 = Date.now()
+  // Every upstream fetch in this invocation shares one deadline, so a single slow
+  // dependency cannot spend the whole function on retries and leave nothing to
+  // respond with. 22s against a ~26s ceiling leaves room to assemble and return
+  // whatever did arrive. Set on EVERY request: module state survives in a warm
+  // Lambda, and a budget left over from the previous one must never be inherited.
+  startRequestBudget(22000)
   const url = new URL(req.url)
   const client = url.searchParams.get('client')
   const scope = url.searchParams.get('scope')

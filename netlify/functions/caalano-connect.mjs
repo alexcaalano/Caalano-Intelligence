@@ -4,7 +4,7 @@
 //               agency (company) token and store it in Netlify Blobs.
 // Scopes requested are read-only. The redirect URI is derived from this
 // function's own URL, so it works on any domain without hard-coding.
-import { exchangeCode, isConnected, loadTokens } from '../lib/ghl.mjs'
+import { exchangeCode, isConnected, loadTokens, startRequestBudget } from '../lib/ghl.mjs'
 import { currentUser, isAdminish, signSession, verifySession } from '../lib/auth.mjs'
 
 // Exactly the read scopes the dashboard uses. locations.readonly is the one
@@ -59,6 +59,10 @@ const stateSecret = () => process.env.AUTH_SECRET || process.env.SITE_PASSWORD |
 const STATE_KIND = 'ghl-oauth'
 
 export default async (req) => {
+  // This function shares the CRM fetch helpers, which read a per-invocation
+  // budget. Set one here too: an unset budget is safe (it floors rather than
+  // fails) but it would silently give the OAuth exchange the minimum timeout.
+  startRequestBudget(22000)
   const url = new URL(req.url)
   const redirectUri = `${url.origin}/.netlify/functions/caalano-connect`
   const clientId = process.env.GHL_CLIENT_ID

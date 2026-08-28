@@ -2361,10 +2361,20 @@ export async function bookedTrends(locationId, from, to) {
 // connected. Returns one record per opp so the caller can bucket into 56-day windows.
 export async function crmTrends(locationId, from, to) {
   const locTok = await locationTokenOrDemo(locationId)
-  const [opps, idx] = await Promise.all([
+  // Lost reasons come back as ids on the opportunity; the names live on a
+  // separate endpoint. Carrying the name through means the movers panel can say
+  // "Price 3 -> 18" rather than "Deals lost 9 -> 34", which is the difference
+  // between a number and something you can act on.
+  const [opps, idx, reasons] = await Promise.all([
     allOpportunities(locTok, locationId, from, to),
     pipelineStageIndex(locTok, locationId),
+    ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
   ])
+  const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
+  const lostReasonOf = (o) => {
+    const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null
+    return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified'
+  }
   const out = []
   for (const o of opps) {
     const date = String(o.createdAt || '').slice(0, 10)
@@ -2385,7 +2395,8 @@ export async function crmTrends(locationId, from, to) {
     // the only way a rolling window reads as throughput rather than as the
     // maturity of a cohort that has not finished closing yet.
     const statusDate = (isWon || st === 'lost') ? (String(o.lastStatusChangeAt || '').slice(0, 10) || null) : null
-    out.push({ date, statusDate, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked, lost: st === 'lost', value: num(o.monetaryValue) })
+    const isLost = st === 'lost'
+    out.push({ date, statusDate, channel: channelOf(utmOf(o)), pipelineId: o.pipelineId || 'none', reached, won: isWon, booked, lost: isLost, lostReason: isLost ? lostReasonOf(o) : null, value: num(o.monetaryValue) })
   }
   return out
 }

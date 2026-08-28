@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.394.2'
+const APP_VERSION = '3.395.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1614,6 +1614,8 @@ function subjectMovers(s, win, fmt, basis) {
   const LOSTP = crm ? (closedOn ? crm.lostClosedPrev : crm.lostPrev) : null
   const REV = crm ? (closedOn ? crm.revenueClosed : crm.revenue) : null
   const REVP = crm ? (closedOn ? crm.revenueClosedPrev : crm.revenuePrev) : null
+  const RSN = crm ? (closedOn ? crm.reasonsClosed : crm.reasons) : null
+  const RSNP = crm ? (closedOn ? crm.reasonsClosedPrev : crm.reasonsPrev) : null
   const add = (o) => {
     const pct = pctChg(o.cur, o.prev)
     if (pct == null || !isFinite(pct)) return
@@ -1719,8 +1721,25 @@ function subjectMovers(s, win, fmt, basis) {
         add({ lens: 'crm', id: 'won', metric: 'Deals won', scope: 'CRM', cur: won, prev: wonP, vol: won, volPrev: wonP, good: 'up', fmt: int, minPct: 15, mature: chip, why: wonWhy })
       }
       if (lostP >= 3 && lost >= 3) {
-        add({ lens: 'crm', id: 'lost', metric: 'Deals lost', scope: 'CRM', cur: lost, prev: lostP, vol: lost, volPrev: lostP, good: 'down', fmt: int, minPct: 15, mature: chip,
-          why: `against ${int(won)} won (was ${int(wonP)})` })
+        // "Deals lost went up" is a fact you can do nothing with; which reason
+        // went up is one you can act on. So when a single reason accounts for
+        // most of the move it becomes the mover and the total drops into the
+        // why-line. When the rise is spread across reasons, the total is the
+        // honest story and the biggest contributor is named beside it.
+        const rTot = lost - lostP
+        let top = null
+        for (const nm of new Set([...Object.keys(RSN || {}), ...Object.keys(RSNP || {})])) {
+          const c = (RSN && RSN[nm]) || 0, p = (RSNP && RSNP[nm]) || 0
+          if (!top || Math.abs(c - p) > Math.abs(top.cur - top.prev)) top = { name: nm, cur: c, prev: p }
+        }
+        const dominant = top && rTot !== 0 && (top.cur - top.prev) / rTot >= 0.5 && top.prev >= 3 && top.cur >= 3
+        if (dominant) {
+          add({ lens: 'crm', id: `lostr:${top.name}`, metric: `Lost \u2013 ${top.name}`, scope: 'CRM', cur: top.cur, prev: top.prev, vol: top.cur, volPrev: top.prev, good: 'down', fmt: int, minPct: 15, mature: chip,
+            why: `${int(Math.abs(top.cur - top.prev))} of the ${int(Math.abs(rTot))} extra losses \u00b7 ${int(lost)} lost in total (was ${int(lostP)})` })
+        } else {
+          add({ lens: 'crm', id: 'lost', metric: 'Deals lost', scope: 'CRM', cur: lost, prev: lostP, vol: lost, volPrev: lostP, good: 'down', fmt: int, minPct: 15, mature: chip,
+            why: top && top.cur ? `spread across reasons \u00b7 biggest is ${top.name} (${int(top.prev)} \u2192 ${int(top.cur)}) \u00b7 against ${int(won)} won` : `against ${int(won)} won (was ${int(wonP)})` })
+        }
       }
       if (wonP >= 3 && won >= 3 && revP > 0) {
         add({ lens: 'crm', id: 'revenue', metric: 'Revenue', scope: 'CRM', cur: rev, prev: revP, vol: won, volPrev: wonP, good: 'up', fmt: money, minPct: 15, mature: chip,
@@ -1926,7 +1945,7 @@ function AgencyMovers({ rows, currency, nonce, onPick }) {
                 <button className="mov-exp" onClick={() => setOpen(open === i ? null : i)} title="Show the funnel behind this move">
                   <span className={`mov-badge ${dir}`}>{m.pct > 0 ? '▲' : '▼'} {Math.abs(m.pct).toFixed(0)}%</span>
                   <span className="mov-txt">
-                    <b>{m.subject.name}</b> <span className="agy-scope">{m.scope}</span> · {m.metric} {m.fmt(m.prev)} → {m.fmt(m.cur)}
+                    <b>{m.subject.name}</b> <span className={`agy-scope sc-${String(m.scope).toLowerCase()}`}>{m.scope}</span> · {m.metric} {m.fmt(m.prev)} → {m.fmt(m.cur)}
                     {m.mature ? <span className="agy-chip tiny" title="Counted against the window the lead was created in, not when the deal closed - the most recent window is still maturing, so this reads low.">cohort</span> : null}
                     <span className="mov-why">{m.why} · {open === i ? '▾' : '▸'} funnel</span>
                   </span>

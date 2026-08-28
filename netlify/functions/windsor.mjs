@@ -1321,7 +1321,11 @@ async function buildTrends(key) {
         const bun = () => ({ all: mk(), meta: mk(), google: mk(), other: mk() })
         // `wonCl` / `lostCl` / `revCl` are the same measures counted on the day the
         // deal closed rather than the day its lead arrived.
-        const dc = { ok: true, closed: true, leads: bun(), won: bun(), lost: bun(), rev: bun(), wonCl: bun(), lostCl: bun(), revCl: bun(), reach: { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }, pipe: new Map() }
+        // `reason` / `reasonCl` are per-lost-reason daily arrays, keyed by the
+        // reason name. A location has a handful of reasons, so this is a few
+        // small arrays rather than a dimension explosion.
+        const dc = { ok: true, closed: true, leads: bun(), won: bun(), lost: bun(), rev: bun(), wonCl: bun(), lostCl: bun(), revCl: bun(), reason: new Map(), reasonCl: new Map(), reach: { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }, pipe: new Map() }
+        const dReason = (m, name) => { let a = m.get(name); if (!a) { a = mk(); m.set(name, a) } return a }
         const dEnsurePipe = (pid) => { let p = dc.pipe.get(pid); if (!p) { p = { leads: bun(), won: bun(), lost: bun(), rev: bun(), wonCl: bun(), lostCl: bun(), revCl: bun() }; dc.pipe.set(pid, p) } return p }
         for (const r of rows) {
           // Two independent indexes now: `di` is where the LEAD lands (created
@@ -1336,14 +1340,14 @@ async function buildTrends(key) {
           const pp = dEnsurePipe(r.pipelineId)
           if (wi != null) {
             if (r.won) { dc.wonCl.all[wi]++; dc.wonCl[ch][wi]++; dc.revCl.all[wi] += val; dc.revCl[ch][wi] += val; pp.wonCl.all[wi]++; pp.wonCl[ch][wi]++; pp.revCl.all[wi] += val; pp.revCl[ch][wi] += val }
-            if (r.lost) { dc.lostCl.all[wi]++; dc.lostCl[ch][wi]++; pp.lostCl.all[wi]++; pp.lostCl[ch][wi]++ }
+            if (r.lost) { dc.lostCl.all[wi]++; dc.lostCl[ch][wi]++; pp.lostCl.all[wi]++; pp.lostCl[ch][wi]++; dReason(dc.reasonCl, r.lostReason || 'Unspecified')[wi]++ }
           }
           if (di == null) continue
           // Booked-calls split (was bookedTrends).
           if (r.booked) { e.bAll[di]++; if (ch === 'meta') e.bMeta[di]++; else if (ch === 'google') e.bGoogle[di]++ }
           dc.leads.all[di]++; dc.leads[ch][di]++
           if (r.won) { dc.won.all[di]++; dc.won[ch][di]++; dc.rev.all[di] += val; dc.rev[ch][di] += val }
-          if (r.lost) { dc.lost.all[di]++; dc.lost[ch][di]++ }
+          if (r.lost) { dc.lost.all[di]++; dc.lost[ch][di]++; dReason(dc.reason, r.lostReason || 'Unspecified')[di]++ }
           pp.leads.all[di]++; pp.leads[ch][di]++
           if (r.won) { pp.won.all[di]++; pp.won[ch][di]++; pp.rev.all[di] += val; pp.rev[ch][di] += val }
           if (r.lost) { pp.lost.all[di]++; pp.lost[ch][di]++ }
@@ -1404,6 +1408,12 @@ async function buildTrends(key) {
         wonClosed: WC ? bunWin(WC, 0, n) : null, wonClosedPrev: WC ? bunWin(WC, n, 2 * n) : null,
         lostClosed: XC ? bunWin(XC, 0, n) : null, lostClosedPrev: XC ? bunWin(XC, n, 2 * n) : null,
         revenueClosed: RC ? bunWin(RC, 0, n) : null, revenueClosedPrev: RC ? bunWin(RC, n, 2 * n) : null,
+        // Lost reasons for the window and the one before it, on whichever basis
+        // the caller reads: a name -> count map, small enough to send whole.
+        reasons: S.RS ? reachWinRange(S.RS, 0, n, null) : null,
+        reasonsPrev: S.RS ? reachWinRange(S.RS, n, 2 * n, null) : null,
+        reasonsClosed: S.RSC ? reachWinRange(S.RSC, 0, n, null) : null,
+        reasonsClosedPrev: S.RSC ? reachWinRange(S.RSC, n, 2 * n, null) : null,
         reach: { all: reachWinFrom(RM.all, n, filterPid), meta: reachWinFrom(RM.meta, n, filterPid), google: reachWinFrom(RM.google, n, filterPid), other: reachWinFrom(RM.other, n, filterPid) },
         reachPrev: { all: reachWinRange(RM.all, n, 2 * n, filterPid), meta: reachWinRange(RM.meta, n, 2 * n, filterPid), google: reachWinRange(RM.google, n, 2 * n, filterPid), other: reachWinRange(RM.other, n, 2 * n, filterPid) },
         utm: !!(E.dc && E.dc.ok),
@@ -1417,7 +1427,8 @@ async function buildTrends(key) {
     const acctX = dcOK ? E.dc.lost : { all: E.lostAll, meta: E.lostCh.meta, google: E.lostCh.google, other: E.lostCh.other }
     const acctR = dcOK ? E.dc.rev : { all: E.revAll, meta: E.revCh.meta, google: E.revCh.google, other: E.revCh.other }
     const acctSrc = { L: acctL, W: acctW, X: acctX, R: acctR, RM: acctReach,
-      WC: dcOK ? E.dc.wonCl : null, XC: dcOK ? E.dc.lostCl : null, RC: dcOK ? E.dc.revCl : null }
+      WC: dcOK ? E.dc.wonCl : null, XC: dcOK ? E.dc.lostCl : null, RC: dcOK ? E.dc.revCl : null,
+      RS: dcOK ? E.dc.reason : null, RSC: dcOK ? E.dc.reasonCl : null }
     // Per-pipeline CRM source bundle (direct API when connected, else Windsor).
     const pipeCrmSrc = (p) => {
       const d = dcOK ? E.dc.pipe.get(p.id) : null

@@ -2915,7 +2915,17 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .agy-mov-list .mov-txt { font-size: 12px; }
 .agy-mov-list .mov-why { font-size: 11px; }
 .agy-mov-list .mov-open { padding: 0 8px; }
-.agy-scope { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 5px; background: var(--chip-bg, rgba(120,140,170,.14)); color: var(--muted); vertical-align: 1px; }
+/* Scope chips carry the app's channel colours so a Meta row reads as Meta at a
+   glance, the same blue and green used on the leaderboard and the health alerts.
+   Tinted rather than solid: a wall of saturated chips would out-shout the numbers
+   they sit beside. */
+.agy-scope { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 5px; background: rgba(120,140,170,.14); color: var(--muted); vertical-align: 1px; }
+.agy-scope.sc-meta { background: rgba(79,124,255,.16); color: #4f7cff; }
+.agy-scope.sc-google { background: rgba(18,184,134,.16); color: #0f9e6e; }
+.agy-scope.sc-paid { background: rgba(109,94,252,.16); color: #6d5efc; }
+.agy-scope.sc-crm { background: rgba(240,173,78,.18); color: #b8790f; }
+:root:not([data-theme="light"]) .agy-scope.sc-google { color: #2fd39c; }
+:root:not([data-theme="light"]) .agy-scope.sc-crm { color: #e0a94a; }
 .agy-chip.tiny { display: inline-block; font-size: 9px; padding: 0 4px; margin-left: 5px; vertical-align: 1px; letter-spacing: .03em; }
 .agy-basis { font-size: 11px; line-height: 1.45; color: var(--muted); background: rgba(120,140,170,.07); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; }
 .agy-basis .agy-chip { margin-right: 7px; vertical-align: 1px; }

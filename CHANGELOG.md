@@ -18,6 +18,34 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.395.0 - 2026-08-20 · `PENDING` - Movers: report the lost REASON, and colour the scope chips
+
+**Lost reasons instead of lost status.** "Deals lost 15 → 34" is a fact you can
+do nothing with. Which reason went up is one you can act on.
+
+- When a single reason accounts for **half or more** of the rise, it becomes the
+  mover: *Lost – Price 4 → 22*, with *"18 of the 19 extra losses · 34 lost in
+  total (was 15)"* underneath. The bare status mover is suppressed so the same
+  fact is not reported twice.
+- When the rise is **spread** across reasons, the total is the honest story and
+  the biggest contributor is named beside it: *"spread across reasons · biggest
+  is Price (4 → 9)"*.
+- A reason has to clear the same floors as anything else, so a jump from 0 to 2
+  cannot hijack the headline.
+- Reasons are carried on both bases, so this works under Closed and Created.
+  Where reason data is unavailable it falls back to the total, as before.
+
+`crmTrends` now resolves lost-reason ids to names, and the trends builder keeps a
+small per-reason daily array. A location has a handful of reasons, so this is a
+few short arrays rather than a new dimension.
+
+**Coloured scope chips.** Meta, Google, Paid and CRM now carry the app's own
+channel colours - the same blue and green used on the leaderboard and the health
+alerts - so a row's source reads at a glance. Tinted rather than solid: a wall of
+saturated chips would out-shout the numbers beside them. Light and dark checked.
+
+---
+
 ## v3.394.2 - 2026-08-20 · `PENDING` - Fix: EnquiryTimesSection is not defined
 
 The Timing tab threw **"EnquiryTimesSection is not defined"**. The component from

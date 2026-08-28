@@ -3494,7 +3494,10 @@ async function openOpportunities(locTok, locationId, cap = 3000, sinceMs = null)
       if (String(o.status || '').toLowerCase() !== 'open') continue
       // Rolling window: keep only deals created within `sinceMs`.
       if (sinceMs != null) { const c = Date.parse(o.createdAt); if (isFinite(c) && c < sinceMs) continue }
-      out.push({ pipelineId: o.pipelineId, stageId: o.pipelineStageId, at: o.lastStageChangeAt || o.createdAt, created: o.createdAt })
+      // `at` falls back to createdAt when the CRM has no lastStageChangeAt, and
+      // that fallback is not always sound - see buildStageTiming. Carry whether
+      // the timestamp was measured or assumed so the caller can say which.
+      out.push({ pipelineId: o.pipelineId, stageId: o.pipelineStageId, at: o.lastStageChangeAt || o.createdAt, created: o.createdAt, dated: !!o.lastStageChangeAt })
     }
     // order=added_desc, so once a page's oldest deal predates the window, every
     // later page does too - stop early (also bounds the load).
@@ -3612,28 +3615,59 @@ export async function buildStageTiming(locationId, days = 90) {
     pipeName[p.id] = p.name
     ;(p.stages || []).forEach((s, i) => stageMeta.set(s.id, { pipelineId: p.id, name: s.name, pos: (s.position ?? i) }))
   }
+  // How long a deal has sat in its CURRENT stage needs the moment it entered that
+  // stage. Where the CRM has no lastStageChangeAt we fall back to createdAt, and
+  // that fallback is sound in one case and wrong in another:
+  //
+  //   - a deal still sitting in the FIRST stage has never moved, so the day it was
+  //     created IS the day it entered that stage. Correct.
+  //   - a deal in a LATER stage demonstrably moved, and we do not know when. Using
+  //     createdAt then reports time-since-the-lead-arrived as time-in-this-stage,
+  //     which always overstates and never understates - a deal that spent three
+  //     months elsewhere and landed here yesterday reads as ninety days, not one.
+  //
+  // Both were previously indistinguishable from a measured figure. They are now
+  // counted separately so the UI can say the number is an upper bound rather than
+  // presenting an inflated guess as a measurement.
   const byStage = new Map()
+  let exact = 0, assumed = 0, inflated = 0
   for (const o of opps) {
     const t = Date.parse(o.at); if (!isFinite(t)) continue
     const age = Math.max(0, (now - t) / DAY)
+    const meta = stageMeta.get(o.stageId)
+    const firstStage = !meta || meta.pos === 0
+    const kind = o.dated ? 'exact' : (firstStage ? 'assumed' : 'inflated')
+    if (kind === 'exact') exact++; else if (kind === 'assumed') assumed++; else inflated++
     if (!byStage.has(o.stageId)) byStage.set(o.stageId, [])
-    byStage.get(o.stageId).push(age)
+    byStage.get(o.stageId).push({ age, kind })
   }
   const median = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
   const pctile = (a, p) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))] }
   const pipes = new Map()
-  for (const [stageId, ages] of byStage) {
+  for (const [stageId, rows] of byStage) {
     const m = stageMeta.get(stageId); const pid = m ? m.pipelineId : 'unknown'
     if (!pipes.has(pid)) pipes.set(pid, { id: pid, name: pipeName[pid] || 'Pipeline', stages: [] })
+    const ages = rows.map((r) => r.age)
     pipes.get(pid).stages.push({
       id: stageId, name: m ? m.name : 'Unknown stage', pos: m ? m.pos : 999, count: ages.length,
       avgDays: ages.reduce((s, x) => s + x, 0) / ages.length, medianDays: median(ages), p90Days: pctile(ages, 0.9), oldestDays: Math.max(...ages),
+      // Deals in this stage whose figure is an upper bound, not a measurement.
+      inflated: rows.filter((r) => r.kind === 'inflated').length,
     })
   }
   const pipelinesOut = [...pipes.values()]
     .map((p) => ({ ...p, stages: p.stages.sort((a, b) => a.pos - b.pos), openCount: p.stages.reduce((s, x) => s + x.count, 0) }))
     .sort((a, b) => b.openCount - a.openCount)
-  return { connected: true, totalOpen: opps.length, windowDays: days, capped: opps.length >= 3000, pipelines: pipelinesOut }
+  return {
+    connected: true, totalOpen: opps.length, windowDays: days, capped: opps.length >= 3000,
+    // exact    = the CRM recorded when the deal entered its current stage
+    // assumed  = no such timestamp, but the deal is in the first stage and has
+    //            therefore never moved, so its creation date is the right answer
+    // inflated = no such timestamp and the deal is past the first stage, so the
+    //            figure is time-since-the-lead-arrived and overstates the wait
+    dating: { exact, assumed, inflated },
+    pipelines: pipelinesOut,
+  }
 }
 // Per-user call activity from GoHighLevel's dialer: outbound volume, talk
 // minutes, connect rate, and inbound handled. Uses the bulk message export

@@ -3758,3 +3758,5 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 /* Over/under-representation against the unfiltered distribution. */
 .u-lrv td.lrv-up { color: var(--neg, #e0566c); font-weight: 700; }
 .u-lrv td.lrv-dn { color: var(--pos, #12b886); font-weight: 700; }
+/* Marks deals whose time-in-stage is an upper bound, not a measurement. */
+.st-est { font-size: 10.5px; font-weight: 700; color: var(--warn, #f5a524); cursor: help; }

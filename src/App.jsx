@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.408.0'
+const APP_VERSION = '3.409.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9177,7 +9177,8 @@ function StageTimingSection({ clientId, nonce }) {
               <tbody>{p.stages.map((s) => { const key = keyNames.has(String(s.name).trim().toLowerCase()); return (
                 <tr key={s.id} className={key ? 'row-sel' : ''}>
                   <td>{s.name}{key ? <span className="q-badge q-above" style={{ marginLeft: 6 }}>key</span> : null}</td>
-                  <td>{fmtNumber(s.count)}</td><td>{fmtDays(s.avgDays)}</td><td>{fmtDays(s.medianDays)}</td><td>{fmtDays(s.oldestDays)}</td>
+                  <td>{fmtNumber(s.count)}{s.inflated ? <span className="st-est" title={`${s.inflated} of these ${s.count} deals have no recorded stage-change date, so their wait is measured from when the lead arrived. The figures for this stage are an upper bound.`}> ~{fmtNumber(s.inflated)}</span> : null}</td>
+                  <td>{fmtDays(s.avgDays)}</td><td>{fmtDays(s.medianDays)}</td><td>{fmtDays(s.oldestDays)}</td>
                   <td><span className="st-bar"><span style={{ width: `${(s.avgDays / maxAvg) * 100}%`, background: s.avgDays > 30 ? '#f0435b' : s.avgDays > 14 ? '#f5a524' : '#12b886' }} /></span></td>
                 </tr>
               ) })}</tbody></table></div>
@@ -9185,7 +9186,19 @@ function StageTimingSection({ clientId, nonce }) {
         )
       })}
       </> : null}
-      {open ? <p className="cap">This is the age of deals <b>currently</b> in each stage{d.windowDays ? <>, for deals created in the <b>last {d.windowDays} days</b></> : ''} - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (Caalano Systems doesn't keep that history).</p> : null}
+      {open ? <p className="cap">This is the age of deals <b>currently</b> in each stage{d.windowDays ? <>, for deals created in the <b>last {d.windowDays} days</b></> : ''} - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (Caalano Systems doesn't keep that history).{(() => {
+        // Deals with no recorded stage-change date fall back to their creation
+        // date. For a deal still in the first stage that IS the right answer, so
+        // it is not worth mentioning. Past the first stage the deal demonstrably
+        // moved and we do not know when, so the figure is time-since-the-lead-
+        // arrived and can only overstate the wait. That is worth mentioning,
+        // because the alternative is presenting an inflated guess as a measurement.
+        const dt = d.dating
+        if (!dt || !dt.inflated) return null
+        const tot = (dt.exact || 0) + (dt.assumed || 0) + (dt.inflated || 0)
+        const pct = tot ? Math.round((dt.inflated / tot) * 100) : 0
+        return <> <b>{fmtNumber(dt.inflated)} of {fmtNumber(tot)} deals ({pct}%) have no stage-change date recorded</b>, so their wait is measured from when the lead arrived instead. For those the figures are an <b>upper bound</b> - a deal that spent months in earlier stages and moved here yesterday still reads as months. Stages carrying any are marked <span className="st-est">~n</span>.{pct >= 40 ? ' At this proportion, treat the whole table as indicative rather than measured.' : ''}</>
+      })()}</p> : null}
     </div>
   )
 }

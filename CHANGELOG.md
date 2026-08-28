@@ -18,6 +18,41 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.409.0 - 2026-08-20 · `PENDING` - Time in stage says which figures are measured and which are guesses
+
+Time in stage needs the moment a deal entered its current stage. Where the CRM
+has no `lastStageChangeAt` the code fell back to the creation date, silently, and
+that fallback is right in one case and wrong in another:
+
+- A deal still sitting in the **first** stage has never moved, so the day it was
+  created *is* the day it entered that stage. Correct, and not worth mentioning.
+- A deal in a **later** stage demonstrably moved, and we do not know when. Using
+  the creation date then reports time-since-the-lead-arrived as time-in-this-
+  stage. A deal that spent three months in earlier stages and landed here
+  yesterday reads as ninety days, not one.
+
+The error only ever runs one way: the fallback overstates and never understates.
+So a stage full of undated deals looks like a bottleneck whether or not it is one,
+which is precisely the conclusion this table exists to support.
+
+All three cases were indistinguishable from a measured figure. They are now
+counted separately. Where any deal in a stage is an upper bound the stage's count
+carries a `~n` marker naming how many, and the note beneath the table gives the
+total and the share: *"41 of 210 deals (20%) have no stage-change date recorded,
+so their wait is measured from when the lead arrived instead."* Past 40% it says
+outright to treat the table as indicative rather than measured. A client whose CRM
+records stage moves properly sees none of this.
+
+Timing was the reason to do it now: v3.406.1 opened this section to client
+viewers, so an inflated figure had just stopped being an internal-only problem.
+
+Tested on the cases that separate a sound fallback from an inflated one, including
+that the buckets partition (every deal counted exactly once), that an unresolvable
+stage is treated as first rather than accused of inflating, and that the fallback
+can only overstate.
+
+---
+
 ## v3.408.0 - 2026-08-20 · `PENDING` - Stop refetching what has not changed
 
 Two sources of repeated CRM work, both on the path the reliability log complains

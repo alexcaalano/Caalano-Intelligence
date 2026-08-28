@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.415.1'
+const APP_VERSION = '3.415.2'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9770,6 +9770,25 @@ function StageTimingSection({ clientId, nonce }) {
     </div>
   )
 }
+// Which of the four things Speed to Lead can show: the sampled payload, a scan
+// payload, a message, or a spinner.
+//
+// `st` is the sampled fetch, `scan` is the whole-range scan. A scan result is
+// adopted ONLY when it carries a real payload - a not-connected or errored scan
+// response must never replace a working sampled view. And nothing renders the
+// body until there is something to draw, because the body maps over arrays the
+// payload may not have.
+function speedViewState(st, scan) {
+  const scanning = !!(scan && scan.status === 'running')
+  const usable = !!(scan && scan.data && Array.isArray(scan.data.buckets))
+  const d = (usable ? scan.data : null) || (st && st.data) || {}
+  const hasPayload = Array.isArray(d.buckets)
+  if (!hasPayload && ((st && st.status === 'loading') || scanning)) return { view: 'loading', d, scanning }
+  if (!hasPayload && ((st && st.status === 'err') || d.connected === false)) return { view: 'error', d, scanning }
+  if (!hasPayload) return { view: 'empty', d, scanning }
+  if (!d.sampled && !scanning) return { view: 'empty', d, scanning }
+  return { view: 'ready', d, scanning }
+}
 function TimingView({ clientId, range, nonce, currency }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [scan, setScan] = useState(null) // { status, processed, total, data }
@@ -9830,10 +9849,21 @@ function TimingView({ clientId, range, nonce, currency }) {
   }
   const stopScan = () => { scanRef.current.alive = false; setScan(null) }
   const scanning = scan && scan.status === 'running'
-  const d = (scan && scan.data) || st.data || {}
-  if (st.status === 'loading' && !scan) return <div className="card"><Spinner label="Measuring speed to lead… (sampling recent leads' conversations)" /></div>
-  if (!scan && (st.status === 'err' || d.connected === false)) return <div className="card empty-deep"><div className="big">⏱️</div><b>Couldn't measure speed to lead.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p></div>
-  if (!d.sampled && !scanning) return <div className="card empty-deep"><div className="big">⏱️</div><b>No leads with conversations in this range.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Speed to Lead samples recent leads and reads their conversation history. Widen the date range to include leads that were messaged.</p></div>
+  // Every guard below used to be written as `!scan`, on the assumption that a scan
+  // only existed once someone clicked for it. Starting the scan automatically
+  // broke that assumption: `scan` is now truthy from the first render, which
+  // disabled the loading, error and empty guards all at once - and the render fell
+  // through to `d.buckets.map` while the sampled fetch was still in flight and `d`
+  // was still `{}`.
+  //
+  // So the guards now key off whether there is a payload to draw, which is the
+  // thing they were always actually asking. A scan result is only adopted once it
+  // carries one: a not-connected or errored scan response must not replace a
+  // perfectly good sampled view with a crash.
+  const { view: svView, d } = speedViewState(st, scan)
+  if (svView === 'loading') return <div className="card"><Spinner label="Measuring speed to lead…" /></div>
+  if (svView === 'error') return <div className="card empty-deep"><div className="big">⏱️</div><b>Couldn’t measure speed to lead.</b><p style={{ maxWidth: 520 }}>The CRM didn’t answer in time. Try Refresh, or a smaller date range.</p></div>
+  if (svView === 'empty') return <div className="card empty-deep"><div className="big">⏱️</div><b>No leads with conversations in this range.</b><p style={{ maxWidth: 520 }}>Speed to lead needs leads that were messaged or called.</p></div>
   const maxB = Math.max(1, ...d.buckets.map((b) => b.count))
   const fastCount = d.buckets.filter((b) => /5 min|5-15|15-60/.test(b.label)).reduce((a, b) => a + b.count, 0)
   return (

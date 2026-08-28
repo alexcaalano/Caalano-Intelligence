@@ -18,6 +18,38 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.415.2 - 2026-08-20 · `PENDING` - Fix: "Cannot read properties of undefined (reading 'map')"
+
+The dead-zone fix in v3.415.1 was correct and revealed a second fault behind it -
+the first error was thrown early enough to hide the second.
+
+Speed to Lead guarded its loading, error and empty states with `!scan`, on the
+assumption that a scan only existed once someone pressed the button. Making the
+scan automatic in v3.415.0 broke that assumption in one move: `scan` is now truthy
+from the first render, which switched off **all three guards at once**, and the
+body ran against an empty object while the sampled fetch was still in flight -
+`d.buckets.map` on undefined.
+
+The guards now key off whether there is a payload to draw, which is what they were
+always actually asking. A scan result is adopted only when it carries one, so a
+not-connected or errored scan response falls back to the sampled view instead of
+replacing a working screen with a crash.
+
+**The chain is now a function with a test.** It has failed at runtime twice while
+compiling cleanly, so `speedViewState(st, scan)` was pulled out of the component
+and tested against the payload shapes the two fetches actually return: a scan
+running while the sample loads (the exact crash), scan responses of `{ghl:false}`,
+`{connected:false}`, `{status:'err'}`, `{}` and `null`, a complete scan replacing
+the sample, and the genuine loading, error and empty states. Plus the invariant
+that matters more than any single case: across every combination, the one state
+that renders the body always carries the arrays the body maps over.
+
+The static checker added in v3.415.1 could not have caught this one - it is a
+runtime shape problem, not a declaration-order problem. Different fault, different
+guard.
+
+---
+
 ## v3.415.1 - 2026-08-20 · `PENDING` - Fix: "Cannot access '$' before initialization"
 
 A one-line ordering mistake in v3.415.0 took a whole view down behind the error

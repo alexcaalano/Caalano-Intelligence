@@ -3288,6 +3288,51 @@ async function openOpportunities(locTok, locationId, cap = 3000, sinceMs = null)
 // deals CURRENTLY in each stage (right-censored) - it shows where deals are piling
 // up, not the completed duration of deals that already moved on (GHL doesn't keep
 // that history).
+// When enquiries actually arrive: leads bucketed by the local weekday and hour
+// they were created, split by acquisition channel. Answers "when should someone
+// be at the phone", which is only meaningful in the BUSINESS's timezone - an
+// enquiry at 8pm Sydney is 10am UTC, so counting in UTC would smear the evening
+// peak across the middle of the working day.
+//
+// `booked` rides along per cell so the same grid can be read two ways: where the
+// volume is, and where that volume actually turns into a booking. They are often
+// not the same hour, which is the useful part.
+export async function buildEnquiryTimes(locationId, from, to) {
+  const locTok = await locationTokenOrDemo(locationId)
+  const tz = await locationTimezone(locationId)
+  const [opps, idx] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to, 5000),
+    pipelineStageIndex(locTok, locationId),
+  ])
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  const CH = ['all', 'meta', 'google', 'other']
+  const grid = {}
+  for (const c of CH) {
+    grid[c] = []
+    for (let d = 0; d < 7; d++) { const row = []; for (let h = 0; h < 24; h++) row.push({ leads: 0, booked: 0 }); grid[c].push(row) }
+  }
+  let counted = 0, undated = 0
+  for (const o of opps) {
+    const ms = Date.parse(o.createdAt)
+    if (!isFinite(ms)) { undated++; continue }
+    if (fromMs != null && ms < fromMs) continue
+    if (toMs != null && ms > toMs) continue
+    // Shift into the location's wall clock, then read the day and hour off it.
+    const local = new Date(ms + tzOffsetMs(tz, ms))
+    const day = (local.getUTCDay() + 6) % 7      // 0 = Monday, so the week reads Mon..Sun
+    const hour = local.getUTCHours()
+    const c = channelOf(utmOf(o))
+    const ch = c === 'meta' ? 'meta' : c === 'google' ? 'google' : 'other'
+    const st = String(o.status || '').toLowerCase()
+    const pi = idx.get(o.pipelineId)
+    const stg = pi ? pi.byId[o.pipelineStageId] : null
+    const booked = st === 'won' || !!(pi && pi.bookPos != null && stg && stg.pos >= pi.bookPos)
+    for (const k of ['all', ch]) { const cell = grid[k][day][hour]; cell.leads++; if (booked) cell.booked++ }
+    counted++
+  }
+  return { connected: true, tz, counted, undated, capped: opps.length >= 5000, grid }
+}
 export async function buildStageTiming(locationId, days = 90) {
   const locTok = await locationTokenOrDemo(locationId)
   const now = Date.now(), DAY = 86400000

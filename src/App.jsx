@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.393.0'
+const APP_VERSION = '3.394.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3490,6 +3490,7 @@ function UtmSection({ attr, currency, paid }) {
 const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
+const ANNOT_KEY = 'caalano_annot'   // global: show the methodology prose or not
 const GEO_KEY = 'caalano_geo'             // { clientId: { mode, origin, place, radiusKm, byPipeline } }
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -3542,7 +3543,7 @@ const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendly
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -3572,8 +3573,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(GEO_KEY, SETTINGS.geo)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -8510,6 +8511,119 @@ function TimingDrill({ drill, money, onClose }) {
       </div>
     </div>
   )
+// When enquiries actually arrive: a weekday x hour grid of lead creation times,
+// in the BUSINESS's timezone, split by channel. The point is staffing and
+// follow-up cover - "nobody is at the phone at 8pm and that is when a third of
+// Meta leads come in" is the sort of thing this makes obvious.
+//
+// Two readings of the same grid. Volume says where the enquiries are; booking
+// rate says where they turn into something. They are frequently different hours,
+// and the gap between them is the finding.
+const ENQ_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const ENQ_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google'], ['other', 'Non-paid']]
+const enqHourLabel = (h) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`)
+function EnquiryTimesSection({ clientId, range, nonce }) {
+  const [st, setSt] = useState({ status: 'loading', data: null })
+  const [chan, setChan] = useState('all')
+  const [mode, setMode] = useState('volume')
+  const [open, setOpen] = useState(true)
+  useEffect(() => {
+    let alive = true; setSt({ status: 'loading', data: null })
+    dedupeFetch(`/.netlify/functions/windsor?scope=enqtimes&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
+      .then((j) => { if (alive) setSt({ status: j && j.error ? 'err' : 'ok', data: j }) })
+      .catch(() => { if (alive) setSt({ status: 'err', data: null }) })
+    return () => { alive = false }
+  }, [clientId, rangeQuery(range), nonce])
+  const d = st.data
+  const g = d && d.grid && d.grid[chan]
+  const stats = useMemo(() => {
+    if (!g) return null
+    let peak = null, total = 0, booked = 0
+    const byHour = Array.from({ length: 24 }, () => 0)
+    const byDay = Array.from({ length: 7 }, () => 0)
+    for (let dy = 0; dy < 7; dy++) for (let h = 0; h < 24; h++) {
+      const c = g[dy][h]; total += c.leads; booked += c.booked
+      byHour[h] += c.leads; byDay[dy] += c.leads
+      if (!peak || c.leads > peak.leads) peak = { ...c, day: dy, hour: h }
+    }
+    // Rate cells need a floor or a single lead at 3am reads as a 100% booking hour.
+    const MIN = 5
+    let bestRate = null
+    for (let dy = 0; dy < 7; dy++) for (let h = 0; h < 24; h++) {
+      const c = g[dy][h]; if (c.leads < MIN) continue
+      const r = c.booked / c.leads
+      if (!bestRate || r > bestRate.rate) bestRate = { rate: r, day: dy, hour: h, ...c }
+    }
+    const maxLeads = Math.max(1, ...g.flat().map((c) => c.leads))
+    const topHour = byHour.indexOf(Math.max(...byHour))
+    const topDay = byDay.indexOf(Math.max(...byDay))
+    return { peak, total, booked, byHour, byDay, maxLeads, topHour, topDay, bestRate, MIN }
+  }, [g])
+  if (st.status === 'loading') return <div className="card"><Spinner label="Reading when enquiries arrive…" /></div>
+  if (st.status === 'err' || !d || d.connected === false || d.ghl === false || !g) return null
+  if (!stats || !stats.total) return null
+  const cellCls = (c) => {
+    if (mode === 'volume') {
+      if (!c.leads) return 'enq-c0'
+      const q = c.leads / stats.maxLeads
+      return q > .75 ? 'enq-c4' : q > .5 ? 'enq-c3' : q > .25 ? 'enq-c2' : 'enq-c1'
+    }
+    if (c.leads < stats.MIN) return 'enq-cthin'
+    const r = c.booked / c.leads
+    return r > .5 ? 'enq-r4' : r > .35 ? 'enq-r3' : r > .2 ? 'enq-r2' : r > .08 ? 'enq-r1' : 'enq-r0'
+  }
+  const cellTitle = (c, dy, h) => {
+    const when = `${ENQ_DAYS[dy]} ${enqHourLabel(h)}`
+    if (!c.leads) return `${when} · no enquiries`
+    return `${when} · ${c.leads} enquir${c.leads === 1 ? 'y' : 'ies'} · ${c.booked} booked (${Math.round((c.booked / c.leads) * 100)}%)`
+  }
+  return (
+    <div className="stagetime" style={{ marginBottom: 18 }}>
+      <div className="lvl-title collapse-t" style={{ marginTop: 0 }} onClick={() => setOpen(!open)} role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}>
+        <span className={`collapse-x${open ? ' on' : ''}`}>▸</span>
+        When enquiries arrive <span className="sub">· {fmtNumber(stats.total)} leads by local day and hour{d.tz ? ` · ${d.tz}` : ''}{d.capped ? ' · sampled to 5,000' : ''}</span>
+      </div>
+      {open ? (
+        <div className="card">
+          <div className="enq-head">
+            <div className="chan-toggle sm">{ENQ_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
+            <div className="chan-toggle sm">
+              <button className={mode === 'volume' ? 'on' : ''} onClick={() => setMode('volume')}>Volume</button>
+              <button className={mode === 'rate' ? 'on' : ''} onClick={() => setMode('rate')}>Booking rate</button>
+            </div>
+            <span className="cap">
+              {mode === 'volume'
+                ? <>Busiest: <b>{ENQ_DAYS[stats.peak.day]} {enqHourLabel(stats.peak.hour)}</b> ({stats.peak.leads} leads) · most enquiries land on <b>{ENQ_DAYS[stats.topDay]}</b> around <b>{enqHourLabel(stats.topHour)}</b></>
+                : stats.bestRate
+                  ? <>Best converting: <b>{ENQ_DAYS[stats.bestRate.day]} {enqHourLabel(stats.bestRate.hour)}</b> ({Math.round(stats.bestRate.rate * 100)}% of {stats.bestRate.leads}) · overall {Math.round((stats.booked / stats.total) * 100)}%</>
+                  : <>Not enough volume in any single hour to compare booking rates yet.</>}
+            </span>
+          </div>
+          <div className="enq-wrap">
+            <table className="enq-grid">
+              <thead><tr><th /> {Array.from({ length: 24 }, (_, h) => <th key={h}>{h % 3 === 0 ? enqHourLabel(h) : ''}</th>)}</tr></thead>
+              <tbody>{ENQ_DAYS.map((dn, dy) => (
+                <tr key={dn}>
+                  <th>{dn}</th>
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const c = g[dy][h]
+                    return <td key={h}><span className={`enq-cell ${cellCls(c)}`} title={cellTitle(c, dy, h)}>{mode === 'volume' ? (c.leads || '') : (c.leads >= stats.MIN ? Math.round((c.booked / c.leads) * 100) : '')}</span></td>
+                  })}
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <Caveat>
+            Counted in <b>{d.tz || 'the business timezone'}</b> from when the lead record was created, which is when the form
+            was submitted or the call came in. {mode === 'rate' ? <>Cells with fewer than {stats.MIN} enquiries are left blank rather than shown as a rate, because one lead at 3am is not a 100&#37; booking hour.</> : <>Switch to <b>Booking rate</b> to see whether the busiest hours are also the ones that convert.</>}
+          </Caveat>
+        </div>
+      ) : null}
+    </div>
+  )
+}
 }
 // Time in stage - for every OPEN deal, how long it's been sitting in its current
 // pipeline stage (measured straight from stage moves). Aggregated per stage /
@@ -8517,6 +8631,9 @@ function TimingDrill({ drill, money, onClose }) {
 // deals are piling up. Self-contained: hides itself if unavailable.
 function StageTimingSection({ clientId, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
+  // Collapsed by default: it is a diagnostic you go looking for, and expanded it
+  // pushes everything else in the tab below the fold.
+  const [open, setOpen] = useState(false)
   useSettingsSync()
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
@@ -8535,7 +8652,12 @@ function StageTimingSection({ clientId, nonce }) {
   const fmtDays = (n) => (n == null ? '-' : n >= 1 ? `${n < 10 ? n.toFixed(1) : Math.round(n)}d` : `${Math.round(n * 24)}h`)
   return (
     <div className="stagetime" style={{ marginBottom: 18 }}>
-      <div className="lvl-title" style={{ marginTop: 0 }}>Time in stage <span className="sub">· {fmtNumber(d.totalOpen)} open deals{d.windowDays ? ` created in the last ${d.windowDays} days` : ''} · how long they've been sitting in their current stage{d.capped ? ' · sampled to 3,000' : ''}</span></div>
+      <div className="lvl-title collapse-t" style={{ marginTop: 0 }} onClick={() => setOpen(!open)} role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}>
+        <span className={`collapse-x${open ? ' on' : ''}`}>▸</span>
+        Time in stage <span className="sub">· {fmtNumber(d.totalOpen)} open deals{d.windowDays ? ` created in the last ${d.windowDays} days` : ''} · how long they've been sitting in their current stage{d.capped ? ' · sampled to 3,000' : ''}</span>
+      </div>
+      {open ? <>
       {pipes.map((p) => {
         const maxAvg = Math.max(1, ...p.stages.map((s) => s.avgDays))
         return (
@@ -8552,7 +8674,8 @@ function StageTimingSection({ clientId, nonce }) {
           </div>
         )
       })}
-      <p className="cap">This is the age of deals <b>currently</b> in each stage{d.windowDays ? <>, for deals created in the <b>last {d.windowDays} days</b></> : ''} - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (Caalano Systems doesn't keep that history).</p>
+      </> : null}
+      {open ? <p className="cap">This is the age of deals <b>currently</b> in each stage{d.windowDays ? <>, for deals created in the <b>last {d.windowDays} days</b></> : ''} - where they're piling up - measured straight from pipeline-stage moves. It's not the completed time a deal spent in a stage it already left (Caalano Systems doesn't keep that history).</p> : null}
     </div>
   )
 }
@@ -9498,7 +9621,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
-        {curTab === 'timing' && <><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
+        {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} /><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
@@ -10940,6 +11063,7 @@ function SettingsPage({ config, enabled, setEnabled, restricted = {}, setRestric
             <button className={theme === 'light' ? 'on' : ''} onClick={() => setTheme && setTheme('light')}>☀ Light</button>
             <button className={theme === 'dark' ? 'on' : ''} onClick={() => setTheme && setTheme('dark')}>☾ Dark</button>
           </div>
+          {isSuper ? <AnnotationToggle /> : null}
         </div>
       )}
       {isAdmin && section === 'fatigue' && <FatigueSettings />}
@@ -11376,13 +11500,47 @@ function authApi(action, opts = {}) {
 }
 /* Methodology prose - the "how this number is calculated" paragraphs under each
    card. It is the thinking behind the reporting rather than the reporting
-   itself, so it is shown to staff and withheld from client Viewers. Removed
-   from the tree, not hidden with CSS, so it isn't sitting in the DOM. */
+   itself, so it is withheld from client Viewers entirely, and off by default for
+   everyone else: it is reference material, and 77 of these paragraphs make the
+   product read like documentation rather than a dashboard. A Super Admin turns
+   them on globally in Settings -> Appearance when the reasoning is what's
+   wanted. Removed from the tree, not hidden with CSS, so nothing sits in the
+   DOM either way. */
 const ViewerCtx = React.createContext(false)
+function loadAnnot() { const a = SETTINGS.annotations; return !!(a && a.on) }
+function saveAnnot(on) {
+  SETTINGS.annotations = { on: !!on }
+  writeLS(ANNOT_KEY, SETTINGS.annotations); saveSettingsRemote({ annotations: { on: !!on } }); bumpSettings()
+}
 function Caveat({ extra, children, ...rest }) {
   const isViewer = React.useContext(ViewerCtx)
-  if (isViewer) return null
+  useSettingsSync()
+  if (isViewer || !loadAnnot()) return null
   return <p className={`caveat${extra ? ' ' + extra : ''}`} {...rest}>{children}</p>
+}
+// Super-Admin-only switch for the methodology prose. Global rather than
+// per-person: the question "does this product explain itself or stay out of the
+// way" has one answer for the whole team, and a per-user version would mean
+// screenshots that differ depending on who took them.
+function AnnotationToggle() {
+  useSettingsSync()
+  const on = loadAnnot()
+  return (
+    <div className="annot-set">
+      <div className="set-sec-t" style={{ marginTop: 18 }}>Metric explanations <span className="cap">· Super Admin · applies to everyone</span></div>
+      <label className="annot-row">
+        <input type="checkbox" checked={on} onChange={(e) => saveAnnot(e.target.checked)} />
+        <span>
+          <b>Show the &ldquo;how this is calculated&rdquo; notes</b>
+          <small>
+            The paragraphs under each card explaining what a number counts and what it does not.
+            Useful while you are learning a screen, noise once you know it. Off by default.
+            Client Viewers never see them either way.
+          </small>
+        </span>
+      </label>
+    </div>
+  )
 }
 function AuthShell({ children }) {
   return (

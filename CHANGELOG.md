@@ -18,6 +18,33 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.394.0 - 2026-08-20 · `PENDING` - When enquiries arrive; collapsible sections; metric notes off by default
+
+**When enquiries arrive** (Timing tab, above Time in stage). A weekday x hour
+grid of lead creation times, split **All / Meta / Google / Non-paid**.
+
+- Counted in the **business's own timezone**, which is the whole point: an
+  enquiry at 8pm Sydney is 10am UTC, so counting in UTC smears the evening peak
+  across the middle of the working day. Handles DST and half-hour zones.
+- Two readings of the same grid. **Volume** shows where the enquiries are;
+  **Booking rate** shows where they turn into something. They are often
+  different hours, and that gap is the finding: an evening spike that books at a
+  third of the daytime rate is a staffing answer, not a budget one.
+- Rate cells below 5 enquiries are left blank rather than shown as a percentage,
+  because one lead at 3am is not a 100% booking hour.
+
+**Collapsible sections.** Time in stage is now collapsed by default; it is a
+diagnostic you go looking for, and expanded it pushed the rest of the tab below
+the fold. When enquiries arrive is collapsible too.
+
+**Metric explanations are now off by default.** The 77 methodology paragraphs
+that explain what each number counts are reference material, and having all of
+them on made the product read like documentation rather than a dashboard. A
+Super Admin turns them on globally in **Settings -> Appearance**. Client Viewers
+never see them either way, as before.
+
+---
+
 ## v3.393.0 - 2026-08-20 · `PENDING` - Key event drill: send the stage name, not the label
 
 Clicking the **Qualified** tile opened an empty modal: "0 Meta-attributed people

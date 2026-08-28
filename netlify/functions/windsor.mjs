@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -2555,7 +2555,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -3641,6 +3641,14 @@ export default async (req) => {
   // Time in stage - for every OPEN deal, how long it's been sitting in its current
   // stage (now − lastStageChangeAt), aggregated per stage/pipeline. No date window
   // (it's live pipeline state). Cached like other CRM scopes.
+  // When enquiries arrive, by local weekday and hour, split by channel.
+  if (url.searchParams.get('scope') === 'enqtimes') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'enqtimes', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'enqtimes', client, connected: false })
+    try { return json({ scope: 'enqtimes', client, ...(await buildEnquiryTimes(cc.ghl, from, to)) }, 200, true) }
+    catch (e) { return json({ scope: 'enqtimes', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
   if (url.searchParams.get('scope') === 'stagetiming') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'stagetiming', client, ghl: false })

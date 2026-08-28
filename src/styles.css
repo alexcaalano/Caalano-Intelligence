@@ -3497,3 +3497,42 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .terms-declaration li:last-child { margin-bottom: 0; }
 .terms-btns { display: inline-flex; gap: 8px; align-items: center; }
 .terms-actions .cap { max-width: 480px; }
+
+/* --- Collapsible section headers (Time in stage, When enquiries arrive) --- */
+.collapse-t { cursor: pointer; user-select: none; display: flex; align-items: baseline; gap: 7px; }
+.collapse-t:hover { color: var(--brand); }
+.collapse-x { display: inline-block; font-size: 10px; color: var(--muted); transition: transform .14s ease; }
+.collapse-x.on { transform: rotate(90deg); }
+
+/* --- When enquiries arrive: weekday x hour grid --- */
+.enq-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.enq-head .cap { flex: 1 1 260px; font-size: 11.5px; line-height: 1.45; }
+.enq-wrap { overflow-x: auto; }
+.enq-grid { border-collapse: separate; border-spacing: 2px; font-size: 10px; }
+.enq-grid th { font-weight: 600; color: var(--faint); font-size: 9.5px; text-align: center; padding: 0; white-space: nowrap; }
+.enq-grid tbody th { text-align: right; padding-right: 7px; color: var(--muted); font-size: 10.5px; }
+.enq-grid td { padding: 0; }
+.enq-cell { display: block; width: 100%; min-width: 26px; height: 24px; line-height: 24px; text-align: center;
+  border-radius: 4px; font-variant-numeric: tabular-nums; color: var(--text); cursor: default; }
+/* Volume ramp */
+.enq-c0 { background: rgba(120,140,170,.08); }
+.enq-c1 { background: rgba(91,111,245,.20); }
+.enq-c2 { background: rgba(91,111,245,.40); }
+.enq-c3 { background: rgba(91,111,245,.64); color: #fff; }
+.enq-c4 { background: rgba(91,111,245,.88); color: #fff; font-weight: 700; }
+/* Booking-rate ramp: red through green, with a neutral tone for thin cells */
+.enq-cthin { background: rgba(120,140,170,.08); }
+.enq-r0 { background: rgba(224,86,108,.30); }
+.enq-r1 { background: rgba(240,173,78,.32); }
+.enq-r2 { background: rgba(240,200,90,.34); }
+.enq-r3 { background: rgba(18,184,134,.34); }
+.enq-r4 { background: rgba(18,184,134,.62); color: #fff; font-weight: 700; }
+@media (max-width: 700px) { .enq-cell { min-width: 22px; height: 21px; line-height: 21px; font-size: 9px; } }
+
+/* Metric-explanations toggle (Settings -> Appearance, Super Admin only) */
+.annot-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.annot-row:hover { border-color: var(--brand); }
+.annot-row input { margin-top: 2px; flex: 0 0 auto; }
+.annot-row b { display: block; font-size: 13px; margin-bottom: 3px; }
+.annot-row small { display: block; font-size: 11.5px; line-height: 1.5; color: var(--muted); }

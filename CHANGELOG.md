@@ -18,6 +18,38 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.414.0 - 2026-08-20 · `PENDING` - Hour by hour, and the counts show even when the rate cannot
+
+Two corrections to the win-rate view shipped an hour ago, both from the same
+misjudgement: it was built to defend a rate, when the question was also about
+seeing the raw counts.
+
+**Hour by hour.** The previous view pooled midnight to 6am into one Overnight
+band, which answers "do overnight leads convert worse" but not "is 1am
+specifically bad" - the actual question. There are now three granularities: every
+hour on its own row, the seven time-of-day bands, and day of week. Hourly rows
+stay in clock order rather than being ranked by rate, because sorting twenty-four
+hours by win rate scatters the night across the table and destroys the very
+comparison the view exists for.
+
+**Thin buckets show their counts instead of vanishing.** Anything under twelve
+decided deals was dropped from the table entirely - so at exactly the odd hours
+you would want to inspect, there was nothing at all. Every bucket that saw a lead
+is now listed. Below the floor it shows leads, won, lost and open, and declines
+only the rate and the verdict: "three leads at 2am, one won" is a fact worth
+seeing, while "33% win rate at 2am" is not a fact.
+
+**Won, Lost and Open are separate columns**, rather than a single Decided figure.
+The question was how many are marked won and how many lost, and a combined
+denominator answered a different one.
+
+Tested on the hourly rollup: an hour aggregates across every day, an hour with no
+leads is present at zero rather than missing, every lead lands in exactly one
+hour, a still-open lead counts as open rather than as a loss, and the floor
+correctly separates the hours that can carry a rate from the ones that cannot.
+
+---
+
 ## v3.413.0 - 2026-08-20 · `PENDING` - Does the hour a lead arrives predict whether it converts?
 
 A **Win rate** mode on the leads grid, beside Volume and Booking rate. Leads are

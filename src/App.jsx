@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.413.0'
+const APP_VERSION = '3.414.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9370,6 +9370,12 @@ function winBuckets(g, kind) {
   }
   if (kind === 'day') {
     for (let d = 0; d < 7; d++) push(ENQ_DAYS[d], g[d])
+  } else if (kind === 'hour') {
+    // One row per hour. The counts at 1am and 2am are the point of this view, so
+    // they get their own rows even though a single hour rarely has the volume to
+    // support a rate - the table shows the counts and declines the rate, rather
+    // than hiding the hour because it cannot be ranked.
+    for (let h = 0; h < 24; h++) { const cells = []; for (let d = 0; d < 7; d++) cells.push(g[d][h]); push(enqHourLabel(h), cells) }
   } else {
     for (const [label, a, b] of WIN_BANDS) {
       const cells = []
@@ -9388,6 +9394,10 @@ function EnqWinRate({ g, money }) {
     return { leads, won, lost, decided: won + lost, open: leads - won - lost }
   }, [g])
   const rows = useMemo(() => winBuckets(g, kind), [g, kind])
+  // Hourly rows stay in clock order; the others are ranked by rate. Sorting 24
+  // hours by win rate would scatter the night across the table and make the very
+  // comparison this view exists for impossible to see.
+  const clockOrder = kind === 'hour'
   if (!all.decided) {
     return <div className="cap enq-win-none">No lead in this period has been marked won or lost yet, so there is nothing to correlate arrival time against. This view fills in as deals resolve.</div>
   }
@@ -9403,41 +9413,55 @@ function EnqWinRate({ g, money }) {
     if (w.hi < base) return { kind: 'dn', text: 'worse than the account' }
     return { kind: 'flat', text: 'no clear difference' }
   }
-  const sorted = ranked.slice().sort((a, b) => (b.won / b.decided) - (a.won / a.decided))
+  // Every bucket that saw a lead is listed. A bucket below the floor shows its
+  // counts and no rate: "three leads at 2am, one won" is a fact worth seeing,
+  // while "33% win rate at 2am" is not a fact at all.
+  const shown = rows.filter((r) => r.leads > 0)
+  const sorted = clockOrder ? shown : shown.slice().sort((a, b) => {
+    const ar = a.decided >= WIN_MIN_BUCKET ? a.won / a.decided : -1
+    const br = b.decided >= WIN_MIN_BUCKET ? b.won / b.decided : -1
+    return br - ar || b.decided - a.decided
+  })
   const anyCall = sorted.some((r) => { const v = verdict(r); return v && v.kind !== 'flat' })
   return (
     <div className="enq-win">
       <div className="enq-win-head">
         <span className="enq-win-t">Win rate by when the lead arrived <span className="sub">· {fmtNumber(all.won)} won of {fmtNumber(all.decided)} decided · account rate {Math.round(base * 100)}%</span></span>
         <div className="chan-toggle sm">
+          <button className={kind === 'hour' ? 'on' : ''} onClick={() => setKind('hour')} title="Every hour on its own row, so the small hours can be read separately">Hour by hour</button>
           <button className={kind === 'band' ? 'on' : ''} onClick={() => setKind('band')}>Time of day</button>
           <button className={kind === 'day' ? 'on' : ''} onClick={() => setKind('day')}>Day of week</button>
         </div>
       </div>
-      {!sorted.length ? <div className="cap">No {kind === 'day' ? 'day' : 'time band'} has {WIN_MIN_BUCKET} decided deals yet - too thin to rank without inventing a pattern. The counts are still in the grid above.</div> : <>
+      {!sorted.length ? <div className="cap">No lead in this period has arrived yet.</div> : <>
         <table className="mini-tbl users-tbl appt-tbl u-win">
           <thead><tr>
             <th className="lft">{kind === 'day' ? 'Arrived on' : 'Arrived'}</th>
-            <th>Leads</th><th>Decided</th><th>Won</th><th>Win rate</th>
+            <th>Leads</th><th>Won</th><th>Lost</th><th>Open</th><th>Win rate</th>
             <th className="lft" title="How wide the true rate could plausibly be, given how few deals it is measured on and how many buckets are being compared">Plausible range</th><th className="lft">vs account</th>
           </tr></thead>
           <tbody>{sorted.map((r) => {
-            const w = wilson(r.won, r.decided, z); const v = verdict(r)
+            const thinRow = r.decided < WIN_MIN_BUCKET
+            const w = thinRow ? null : wilson(r.won, r.decided, z)
+            const v = thinRow ? null : verdict(r)
             return (
-              <tr key={r.label}>
+              <tr key={r.label} className={thinRow ? 'win-thin' : ''}>
                 <td className="lft">{r.label}</td>
                 <td>{fmtNumber(r.leads)}</td>
-                <td>{fmtNumber(r.decided)}</td>
                 <td>{fmtNumber(r.won)}</td>
-                <td><b>{Math.round(w.p * 100)}%</b></td>
+                <td>{fmtNumber(r.lost)}</td>
+                <td>{r.open ? fmtNumber(r.open) : '-'}</td>
+                <td>{w ? <b>{Math.round(w.p * 100)}%</b> : <span className="lrv-z">-</span>}</td>
                 <td className="lft">
-                  <span className="win-ci" title={`Between ${Math.round(w.lo * 100)}% and ${Math.round(w.hi * 100)}%, at the confidence needed to test ${ranked.length} buckets at once. The account rate is ${Math.round(base * 100)}%.`}>
-                    <span className="win-ci-base" style={{ left: `${base * 100}%` }} />
-                    <span className="win-ci-bar" style={{ left: `${w.lo * 100}%`, width: `${Math.max(1, (w.hi - w.lo) * 100)}%` }} />
-                  </span>
-                  <span className="win-ci-n">{Math.round(w.lo * 100)}–{Math.round(w.hi * 100)}%</span>
+                  {w ? <>
+                    <span className="win-ci" title={`Between ${Math.round(w.lo * 100)}% and ${Math.round(w.hi * 100)}%, at the confidence needed to test ${ranked.length} buckets at once. The account rate is ${Math.round(base * 100)}%.`}>
+                      <span className="win-ci-base" style={{ left: `${base * 100}%` }} />
+                      <span className="win-ci-bar" style={{ left: `${w.lo * 100}%`, width: `${Math.max(1, (w.hi - w.lo) * 100)}%` }} />
+                    </span>
+                    <span className="win-ci-n">{Math.round(w.lo * 100)}–{Math.round(w.hi * 100)}%</span>
+                  </> : <span className="cap">{r.decided ? `only ${r.decided} decided` : 'none decided yet'}</span>}
                 </td>
-                <td className={`lft win-v win-${v.kind}`}>{v.text}</td>
+                <td className={`lft win-v win-${v ? v.kind : 'none'}`}>{v ? v.text : 'too few to call'}</td>
               </tr>
             )
           })}</tbody>
@@ -9445,7 +9469,7 @@ function EnqWinRate({ g, money }) {
         <Caveat>
           Leads are grouped by the hour they <b>arrived</b>, and scored on what became of them - so this asks whether arrival time predicts conversion, which is something media buying can act on, rather than when your team happens to close deals.
           {' '}The denominator is <b>decided</b> deals, won plus lost. {all.open ? <>{fmtNumber(all.open)} of {fmtNumber(all.leads)} leads are still open and are excluded: counting them as failures would penalise whichever hours happen to hold the most recent leads.</> : null}
-          {' '}The bar is a Wilson interval and the tick is the account rate. It is drawn wider than a plain 95% because {ranked.length} buckets are being tested at once, and testing enough of them at 95% each guarantees one will eventually look remarkable by luck alone. A row is only called better or worse when its whole interval clears that tick{anyCall ? '' : ', and on this data none of them do - the differences you can see are inside the noise'}. Rows under {WIN_MIN_BUCKET} decided deals are not ranked at all{thin.length ? `, which is ${thin.length} of them here` : ''}, because a win rate on a handful of deals is not a small signal, it is a coin toss that always looks like a finding.
+          {' '}The bar is a Wilson interval and the tick is the account rate. It is drawn wider than a plain 95% because {ranked.length} buckets are being tested at once, and testing enough of them at 95% each guarantees one will eventually look remarkable by luck alone. A row is only called better or worse when its whole interval clears that tick{anyCall ? '' : ', and on this data none of them do - the differences you can see are inside the noise'}. Rows under {WIN_MIN_BUCKET} decided deals still show their counts - three leads at 2am with one won is worth seeing - but no rate, because a win rate on a handful of deals is not a weak signal, it is a coin toss that always looks like a finding.{thin.length ? ` ${thin.length} row${thin.length === 1 ? '' : 's'} here fall${thin.length === 1 ? 's' : ''} below that line.` : ''}
         </Caveat>
       </>}
     </div>

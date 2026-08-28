@@ -3856,3 +3856,10 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .win-up { color: var(--pos, #12b886); }
 .win-dn { color: var(--neg, #e0566c); }
 .win-flat { color: var(--muted); font-weight: 500; }
+/* A bucket with too few decided deals to rate: its counts still matter, so the
+   row stays and only the rate is withheld. */
+.u-win tr.win-thin td { color: var(--muted); }
+.u-win tr.win-thin td:first-child { color: var(--text); }
+.win-none { color: var(--faint); font-weight: 500; font-style: italic; }
+.u-win th:nth-child(5), .u-win td:nth-child(5) { width: 7%; }
+.u-win th:nth-child(7), .u-win td:nth-child(7) { width: 15%; }

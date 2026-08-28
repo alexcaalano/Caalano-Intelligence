@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.394.0'
+const APP_VERSION = '3.394.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -11500,42 +11500,43 @@ function authApi(action, opts = {}) {
 }
 /* Methodology prose - the "how this number is calculated" paragraphs under each
    card. It is the thinking behind the reporting rather than the reporting
-   itself, so it is withheld from client Viewers entirely, and off by default for
-   everyone else: it is reference material, and 77 of these paragraphs make the
-   product read like documentation rather than a dashboard. A Super Admin turns
-   them on globally in Settings -> Appearance when the reasoning is what's
-   wanted. Removed from the tree, not hidden with CSS, so nothing sits in the
-   DOM either way. */
+   itself, so it is Super Admin only: nobody else sees it at all, and a Super
+   Admin sees it only while the switch in Settings -> Appearance is on. Off by
+   default, because 77 of these paragraphs make the product read like
+   documentation rather than a dashboard.
+
+   Removed from the tree rather than hidden with CSS, so for everyone else the
+   text is not in the DOM to be found. */
 const ViewerCtx = React.createContext(false)
+const SuperCtx = React.createContext(false)
 function loadAnnot() { const a = SETTINGS.annotations; return !!(a && a.on) }
 function saveAnnot(on) {
   SETTINGS.annotations = { on: !!on }
   writeLS(ANNOT_KEY, SETTINGS.annotations); saveSettingsRemote({ annotations: { on: !!on } }); bumpSettings()
 }
 function Caveat({ extra, children, ...rest }) {
-  const isViewer = React.useContext(ViewerCtx)
+  const isSuper = React.useContext(SuperCtx)
   useSettingsSync()
-  if (isViewer || !loadAnnot()) return null
+  if (!isSuper || !loadAnnot()) return null
   return <p className={`caveat${extra ? ' ' + extra : ''}`} {...rest}>{children}</p>
 }
-// Super-Admin-only switch for the methodology prose. Global rather than
-// per-person: the question "does this product explain itself or stay out of the
-// way" has one answer for the whole team, and a per-user version would mean
-// screenshots that differ depending on who took them.
+// Super-Admin-only switch for the methodology prose. The value is stored
+// globally, but the prose only ever renders for a Super Admin, so in practice
+// this is a switch on your own view - nobody else's screen changes when it moves.
 function AnnotationToggle() {
   useSettingsSync()
   const on = loadAnnot()
   return (
     <div className="annot-set">
-      <div className="set-sec-t" style={{ marginTop: 18 }}>Metric explanations <span className="cap">· Super Admin · applies to everyone</span></div>
+      <div className="set-sec-t" style={{ marginTop: 18 }}>Metric explanations <span className="cap">· Super Admin only</span></div>
       <label className="annot-row">
         <input type="checkbox" checked={on} onChange={(e) => saveAnnot(e.target.checked)} />
         <span>
           <b>Show the &ldquo;how this is calculated&rdquo; notes</b>
           <small>
             The paragraphs under each card explaining what a number counts and what it does not.
-            Useful while you are learning a screen, noise once you know it. Off by default.
-            Client Viewers never see them either way.
+            Only you see them, and only while this is on. Admins, staff and client Viewers never see
+            them at all, so turning this on will not change what anybody else&rsquo;s screen looks like.
           </small>
         </span>
       </label>
@@ -17281,7 +17282,11 @@ export default function App() {
   }
   return (
     <ViewerCtx.Provider value={!!(auth.enabled && auth.user && auth.user.role === 'viewer')}>
-      <Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator />
+      {/* Legacy single-password mode has no identity, so it counts as owner - the
+          same rule `isSuper` uses everywhere else. */}
+      <SuperCtx.Provider value={!auth.enabled || !!(auth.user && auth.user.role === 'superadmin')}>
+        <Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator />
+      </SuperCtx.Provider>
     </ViewerCtx.Provider>
   )
 }

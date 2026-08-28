@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.394.1 - 2026-08-20 · `PENDING` - Metric explanations: Super Admin only, full stop
+
+v3.394.0 hid the methodology prose from client Viewers and put the rest behind a
+global switch, so an Admin could still see it. That was not the intent.
+
+- The prose now renders for a **Super Admin only**, and only while the switch in
+  Settings &rarr; Appearance is on. Admins, staff and Viewers never see it at
+  all, whatever the switch says.
+- A new `SuperCtx` carries the role down to `Caveat`, which previously only knew
+  whether the reader was a Viewer.
+- Still removed from the tree rather than hidden with CSS, so for everyone else
+  the text is not in the DOM to be found.
+- The toggle's own copy says so, so it is clear that turning it on changes
+  nothing on anyone else's screen.
+
+Legacy single-password mode counts as owner, matching the `isSuper` rule used
+everywhere else in the app.
+
+---
+
 ## v3.394.0 - 2026-08-20 · `PENDING` - When enquiries arrive; collapsible sections; metric notes off by default
 
 **When enquiries arrive** (Timing tab, above Time in stage). A weekday x hour

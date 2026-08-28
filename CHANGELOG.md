@@ -18,6 +18,39 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.415.0 - 2026-08-20 · `PENDING` - Speed to Lead scans the whole cohort by default, and a pipeline selector
+
+**Speed to Lead no longer defaults to a sample.** It read the sixty most recent
+leads of a hundred and eighty and asked you to press a button for the rest, which
+is a number nobody wants to reason about and a button nobody should have to find.
+
+The sample was never the right answer - it exists because reading every lead's
+conversations cannot fit inside one request. The chunked whole-range scan already
+existed behind that button; it now starts on its own, and the sample is only what
+fills the screen while it runs.
+
+What makes that affordable is that a completed scan is stored per client and date
+range, so the second visit returns it immediately at no cost. The frontend used to
+send `reset=1` on every scan, which threw away a finished scan and paid for it
+again - the automatic poll does not reset, and only the explicit **Re-scan**
+button does. A completed scan of a range that includes today is rebuilt after six
+hours, since that range keeps changing; a range wholly in the past cannot change
+and is kept.
+
+**A pipeline selector on the arrival grid.** A client running two pipelines is
+running two businesses through one CRM, and "do late-night leads convert" can have
+opposite answers in each - pooling them describes neither. The selector appears
+only when a client has more than one, and covers the volume, booking-rate and
+win-rate views.
+
+The per-pipeline grid is not split by channel as well: that cross-product is
+pipelines × channels × 168 cells for a question nobody has asked yet. So choosing
+a pipeline hides the channel chips and says "all channels · this pipeline", rather
+than leaving Meta lit above data it is not filtering - which would be a plain
+lie rather than a limitation.
+
+---
+
 ## v3.414.0 - 2026-08-20 · `PENDING` - Hour by hour, and the counts show even when the rate cannot
 
 Two corrections to the win-rate view shipped an hour ago, both from the same

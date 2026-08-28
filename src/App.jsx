@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.414.0'
+const APP_VERSION = '3.415.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9489,6 +9489,7 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [view, setView] = useState('leads')
   const [keyStage, setKeyStage] = useState(null)
+  const [pipe, setPipe] = useState('all')
   const [chan, setChan] = useState('all')
   const [who, setWho] = useState('self')
   const [mode, setMode] = useState('volume')
@@ -9509,12 +9510,18 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   // "did they book themselves" is the interesting axis there.
   const g = !d ? null
     : view === 'leads' ? (d.grid && d.grid[chan])
+      : (pipe !== 'all' && d.byPipe && d.byPipe[pipe]) ? d.byPipe[pipe]
       : view === 'made' ? (d.made && d.made[who])
         : view === 'slot' ? (d.slot && d.slot[who])
           : flatGrid(view === 'won' ? (d && d.won) : view === 'lost' ? (d && d.lost) : ((d && d.byStage && d.byStage[keyStage]) || null))
   const isLeads = view === 'leads'
   // Which stage-based key events this client has that actually have deals sitting
   // in them. A key event pinned to a stage nobody is in has no clock to report.
+  const pipes = useMemo(() => {
+    const bp = (d && d.byPipe) || {}
+    return Object.entries(bp).map(([name, g]) => ({ name, leads: g.flat().reduce((a, c) => a + c.leads, 0) }))
+      .filter((p) => p.leads > 0).sort((a, b) => b.leads - a.leads)
+  }, [d])
   const keyStages = useMemo(() => {
     const have = (d && d.byStage) || {}
     const seen = new Set(); const out = []
@@ -9618,11 +9625,18 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
               {d.lostCount ? <button className={view === 'lost' ? 'on' : ''} onClick={() => setView('lost')}>Deals lost</button> : null}
               {keyStages.length ? <button className={view === 'stage' ? 'on' : ''} onClick={() => { setView('stage'); if (!keyStage) setKeyStage(keyStages[0].stage) }}>Key event</button> : null}
             </div>
+            {pipes.length > 1 && isLeads ? <label className="lrv-f"><span className="lrv-f-lab">Pipeline</span>
+              <select value={pipe} onChange={(e) => setPipe(e.target.value)} title="Two pipelines are two businesses sharing a CRM; their answers to this can differ">
+                <option value="all">All pipelines</option>
+                {pipes.map((p) => <option key={p.name} value={p.name}>{p.name} ({fmtNumber(p.leads)})</option>)}
+              </select></label> : null}
             {view === 'stage' && keyStages.length > 1 ? <label className="lrv-f"><span className="lrv-f-lab">Key event</span>
               <select value={keyStage || keyStages[0].stage} onChange={(e) => setKeyStage(e.target.value)}>
                 {keyStages.map((k) => <option key={k.stage} value={k.stage}>{k.label}</option>)}
               </select></label> : null}
-            {isLeads
+            {isLeads && pipe !== 'all'
+              ? <span className="cap">All channels · this pipeline</span>
+              : isLeads
               ? <div className="chan-toggle sm">{ENQ_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
               : (view === 'won' || view === 'lost' || view === 'stage') ? null
               : <div className="chan-toggle sm">
@@ -9763,6 +9777,8 @@ function TimingView({ clientId, range, nonce, currency }) {
   const [drill, setDrill] = useState(null) // { kind:'open'|'won'|'lost', title, deals }
   const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
   const scanRef = React.useRef({ alive: false })
+  const autoScanRef = React.useRef(null)
+  const scanKey = `${clientId}|${rangeQuery(range)}|${hq}`
   useSettingsSync()
   const hrs = loadHours(clientId)
   const hq = hoursQuery(hrs)
@@ -9776,18 +9792,38 @@ function TimingView({ clientId, range, nonce, currency }) {
       .finally(() => clearTimeout(timer))
     return () => { alive = false; ctl.abort() }
   }, [clientId, rangeQuery(range), hq, nonce])
-  // Reset any running scan when the client / range / hours change.
-  useEffect(() => { scanRef.current.alive = false; setScan(null); return () => { scanRef.current.alive = false } }, [clientId, rangeQuery(range), hq])
-  const runScan = () => {
+  // The whole cohort is the default, not a button.
+  //
+  // The sampled build exists because reading every lead's conversations cannot
+  // fit one request, not because a sample is the right answer - sixty of a
+  // hundred and eighty leads is a number nobody wants to reason about. So the
+  // full scan starts on its own and the sample is only what fills the screen
+  // while it runs.
+  //
+  // It is affordable because a completed scan is stored server-side per client
+  // and range: the second visit returns it immediately at no cost. The first
+  // poll therefore does NOT reset - a reset would throw away a finished scan and
+  // pay for it again. Only the explicit re-scan button resets.
+  useEffect(() => {
+    scanRef.current.alive = false; setScan(null)
+    return () => { scanRef.current.alive = false }
+  }, [clientId, rangeQuery(range), hq])
+  useEffect(() => {
+    if (autoScanRef.current === scanKey) return
+    autoScanRef.current = scanKey
+    const t = setTimeout(() => runScan(false), 400)   // let the sampled view paint first
+    return () => clearTimeout(t)
+  }, [scanKey])
+  const runScan = (reset = true) => {
     scanRef.current.alive = true; setScan({ status: 'running', processed: 0, total: 0, data: null })
-    const poll = (reset) => {
+    const poll = (doReset) => {
       if (!scanRef.current.alive) return
-      fetch(`/.netlify/functions/windsor?scope=speedscan&client=${clientId}&${rangeQuery(range)}${hq}${reset ? '&reset=1' : ''}`)
+      fetch(`/.netlify/functions/windsor?scope=speedscan&client=${clientId}&${rangeQuery(range)}${hq}${doReset ? '&reset=1' : ''}`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
         .then((j) => { if (!scanRef.current.alive) return; setScan({ status: j.status, processed: j.processed, total: j.total, data: j }); if (j.status === 'running') setTimeout(() => poll(false), 1200) })
         .catch(() => { if (scanRef.current.alive) setScan((s) => ({ ...(s || {}), status: 'err' })) })
     }
-    poll(true)
+    poll(reset)
   }
   const stopScan = () => { scanRef.current.alive = false; setScan(null) }
   const scanning = scan && scan.status === 'running'
@@ -9803,7 +9839,8 @@ function TimingView({ clientId, range, nonce, currency }) {
         <h3 style={{ margin: '0 0 4px' }}>Speed to Lead</h3>
         <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message or call</b> made to them. Automated workflow / campaign / bulk sends are excluded, so this reflects how fast a person actually reaches out (an outbound call counts even if the dialer didn't attribute a user). {d.full ? <>Covers the <b>whole date range</b> - {fmtNumber(d.totalLeads)} leads.</> : <>Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</>}</p>
         <div className="tm-scan">
-          {!scan && <button className="set-relink" onClick={runScan}>⟳ Scan the whole date range (not just a sample)</button>}
+          {!scan || scan.status === 'err' ? <button className="set-relink" onClick={() => runScan(true)}>⟳ Scan the whole date range</button>
+            : scan.status === 'done' ? <button className="set-relink" onClick={() => runScan(true)} title="Read every lead's conversations again from scratch">⟳ Re-scan</button> : null}
           {scan && <>
             <span className={scan.status === 'done' ? 'tm-scan-done' : ''}>{scan.status === 'done' ? `✓ Full scan complete · ${fmtNumber(scan.total)} leads` : scan.status === 'err' ? '⚠ Scan failed - try again' : `Scanning conversations… ${fmtNumber(scan.processed)} / ${fmtNumber(scan.total)} leads`}</span>
             {scanning && <span className="ov-spin" />}

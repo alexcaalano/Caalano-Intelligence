@@ -3579,17 +3579,28 @@ export default async (req) => {
     const key = `${client}|${from || ''}|${to || ''}`
     try {
       let state = reset ? null : await store.get(key, { type: 'json' }).catch(() => null)
+      // A finished scan is reusable, which is what makes scanning the whole cohort
+      // affordable as the default: the second visit costs nothing. But a range
+      // that includes today keeps changing, so a completed scan of it goes stale
+      // within the day - past that it is rebuilt rather than served as fact. A
+      // range wholly in the past cannot change and is kept indefinitely.
+      const DONE_TTL_MS = 6 * 3600000
+      if (state && state.status === 'done') {
+        const endsToday = !to || to >= new Date().toISOString().slice(0, 10)
+        const age = Date.now() - (state.at || 0)
+        if (endsToday && age > DONE_TTL_MS) state = null
+      }
       if (!state) {
         const { tz, leads, outcome } = await speedLeadList(cc.ghl, from, to)
         state = { tz, leads, outcome, idx: 0, total: leads.length, status: leads.length ? 'running' : 'done', agg: { manualRaw: [], onlyAuto: 0, noOutbound: 0, srcCounts: {}, contact: { messaged: [], userBooked: [], selfBooked: [], booked: [], contacted: [], none: [] }, contactBase: 0 } }
       }
       if (state.status !== 'done') {
         state.idx = await speedScanChunk(cc.ghl, state.leads, state.idx, 18000, state.agg)
-        if (state.idx >= state.total) state.status = 'done'
+        if (state.idx >= state.total) { state.status = 'done'; state.at = Date.now() }
         await store.setJSON(key, state)
       }
       const out = finalizeSpeed(state.agg, state.total, state.idx, hours, state.tz, state.outcome)
-      return json({ scope: 'speedscan', client, period: { from, to, preset }, status: state.status, processed: state.idx, total: state.total, ...out }, 200)
+      return json({ scope: 'speedscan', client, period: { from, to, preset }, status: state.status, processed: state.idx, total: state.total, scannedAt: state.at || null, ...out }, 200)
     } catch (e) { return json({ scope: 'speedscan', client, status: 'err', error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 

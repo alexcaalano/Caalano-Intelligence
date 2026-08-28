@@ -3547,6 +3547,12 @@ export async function buildEnquiryTimes(locationId, from, to) {
   const blank = () => { const g = []; for (let d = 0; d < 7; d++) { const r = []; for (let h = 0; h < 24; h++) r.push({ leads: 0, booked: 0, won: 0, lost: 0 }); g.push(r) } return g }
   const CH = ['all', 'meta', 'google', 'other']
   const leads = {}; for (const c of CH) leads[c] = blank()
+  // The same arrival grid, split by pipeline. A client running two pipelines is
+  // running two businesses through one CRM, and "do late-night leads convert" can
+  // have opposite answers in each - pooling them describes neither. One grid per
+  // pipeline is 168 cells of four small integers, which is a rounding error on
+  // this payload.
+  const byPipe = {}
 
   // Outcome + stage-entry clocks. These are DIFFERENT questions from "when did
   // the lead arrive", and each is anchored to its own timestamp:
@@ -3584,6 +3590,9 @@ export async function buildEnquiryTimes(locationId, from, to) {
     // of when the team works.
     const cWon = st === 'won', cLost = st === 'lost' || st === 'abandoned'
     for (const k of ['all', ch]) { const cell = leads[k][d][h]; cell.leads++; if (booked) cell.booked++; if (cWon) cell.won++; else if (cLost) cell.lost++ }
+    const pn = (pi && pi.name) || 'Not tagged'
+    const pg = byPipe[pn] || (byPipe[pn] = blank())
+    const pc = pg[d][h]; pc.leads++; if (booked) pc.booked++; if (cWon) pc.won++; else if (cLost) pc.lost++
     counted++
   }
 
@@ -3649,7 +3658,7 @@ export async function buildEnquiryTimes(locationId, from, to) {
   return {
     connected: true, tz, counted, undated, capped: opps.length >= 5000,
     apptTotal, apptSelf, calendars: (calendars || []).length, calErr,
-    grid: leads, made, slot,
+    grid: leads, made, slot, byPipe,
     // day * 24 + hour, so the frontend can pivot any of these the same way.
     won, lost, wonCount, lostCount,
     byStage, stageDated, stageUndated,

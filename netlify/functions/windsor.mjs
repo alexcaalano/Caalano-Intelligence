@@ -868,6 +868,11 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
   // totals / daily payload returns quickly. The creatives + day-drill + deltas arrive
   // in the follow-up full build. Everything downstream already tolerates ads = [].
   const core = !!opts.core
+  // A failed ad read now yields no rows instead of rejecting the whole
+  // Promise.all and taking its successful siblings down with it - but an empty
+  // result must never be presented as a measured zero, so the failure is
+  // recorded and returned for the caller to surface.
+  let adReadOk = true
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
   // The client's configured CUSTOM conversion fields (Settings → Meta conversions) are
@@ -899,11 +904,11 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
       ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt).catch(() => [])
       : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt)),
     windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
+    windsorFetch('facebook', accFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
     (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []),
     core ? Promise.resolve([]) : windsorFetch('facebook', adDayFields, from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('facebook', campFields, from, to, preset, key).then(filt),
-    windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt),
+    windsorFetch('facebook', campFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
+    windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
     (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []),
   ])
   // Resolve custom-conversion primaries to their real names (Custom Conversion
@@ -959,6 +964,9 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
   // Fast-paint marker: the frontend shows a "loading creatives" note while this is
   // set, then swaps in the full payload (with creatives + day-drill + deltas).
   if (core) roll.coreOnly = true
+  // False = at least one current-period ad read failed, so these figures are
+  // incomplete rather than genuinely low. The caller must say so.
+  roll.adReadOk = adReadOk
   return roll
 }
 
@@ -1042,11 +1050,16 @@ async function readFatigueConfig() {
 // and flags material moves (CPL, CTR, frequency, spend/leads) plus delivery
 // stalls and high-spend zero-lead ads. Pure Windsor data - no Meta App needed.
 async function buildAnomalies(accountId, from, to, preset, key) {
+  // A failed ad read now yields no rows instead of rejecting the whole
+  // Promise.all and taking its successful siblings down with it - but an empty
+  // result must never be presented as a measured zero, so the failure is
+  // recorded and returned for the caller to surface.
+  let adReadOk = true
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
   const [curRows, prevRows, adRows] = await Promise.all([
-    windsorFetch('facebook', accFields, from, to, preset, key).then(filt),
+    windsorFetch('facebook', accFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
     pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
     windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
   ])
@@ -1092,7 +1105,7 @@ async function buildAnomalies(accountId, from, to, preset, key) {
   const order = { high: 0, med: 1, good: 2 }
   alerts.sort((a, b) => (order[a.severity] - order[b.severity]))
   const sev = { high: alerts.filter((a) => a.severity === 'high').length, med: alerts.filter((a) => a.severity === 'med').length, good: alerts.filter((a) => a.severity === 'good').length }
-  return { metrics: { cur: c, prev: p }, alerts, zeroLeadAds, summary: sev, period: { from, to }, prevPeriod: pr }
+  return { metrics: { cur: c, prev: p }, alerts, zeroLeadAds, summary: sev, adReadOk, period: { from, to }, prevPeriod: pr }
 }
 
 const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
@@ -2009,9 +2022,16 @@ async function buildBlend(c, from, to, preset, key) {
   // (not Windsor), so the blend reconciles with the CRM tab and works the moment a
   // client is linked (Windsor lags on newly-connected accounts). Meta / Google
   // still come from Windsor. All fired in parallel so wall-clock ≈ the slowest one.
+  // The prior-period reads below were already made resilient; the current-period
+  // ones were not, so a single Windsor timeout rejected the whole Promise.all and
+  // took the CRM half of the dashboard - which had succeeded - down with it. Now
+  // a failed ad read yields no rows AND sets a flag, so the paid figures can say
+  // "couldn't load" instead of quietly reading as zero spend, which is the worse
+  // outcome of the two: a wrong number is more dangerous than a missing one.
+  let metaOk = true, googleOk = true
   const [fb, gg, oppsRaw, pipes, userRows, pFb, pGg, pOppsRaw] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)) : Promise.resolve([]),
-    c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.google)) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)).catch(() => { metaOk = false; return [] }) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.google)).catch(() => { googleOk = false; return [] }) : Promise.resolve([]),
     c.ghl ? ghlOpportunityRows(c.ghl, from, to).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlPipelineRows(c.ghl).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlUserRows(c.ghl).catch(() => []) : Promise.resolve([]),
@@ -2089,6 +2109,9 @@ async function buildBlend(c, from, to, preset, key) {
   }
   return {
     hasCrm: !!c.ghl, hasMeta: !!c.meta, hasGoogle: !!c.google,
+    // False = the ad read failed, so every paid figure below is missing rather
+    // than genuinely zero. Callers must not present these as measured.
+    metaOk, googleOk,
     paid: {
       adSpend: Math.round(metaSpend + googleSpend), metaSpend: Math.round(metaSpend), googleSpend: Math.round(googleSpend),
       metaLeads: Math.round(metaLeads), googleConv: Math.round(googleConv), adConversions: Math.round(metaLeads + googleConv),
@@ -2682,10 +2705,38 @@ async function diagLog(entry) {
     const now = Date.now()
     const dayKey = diagDayKey(now)
     const store = diagStore()
-    const cur = (await store.get(dayKey, { type: 'json' }).catch(() => null)) || []
-    cur.push({ t: now, ...entry })
-    const trimmed = cur.length > DIAG_DAY_CAP ? cur.slice(cur.length - DIAG_DAY_CAP) : cur
-    await store.setJSON(dayKey, trimmed)
+    // Read-modify-write on a shared blob loses entries when two invocations
+    // overlap - which is exactly what happens during a fan-out, and a fan-out is
+    // when things fail. The log went quietest precisely when it should have been
+    // loudest: a simulated agency-wide burst of 40 writers kept 2 of them.
+    //
+    // A conditional write (onlyIfMatch on the etag we just read) turns a
+    // collision into a retry instead of a silent overwrite. Backoff has to be
+    // exponential with jitter, not flat - flat backoff just re-collides, and a
+    // flat four attempts still lost two thirds of an 80-writer burst where this
+    // keeps all of them.
+    //
+    // If it still cannot land, the entry is DROPPED. The obvious fallback - one
+    // last unconditional write - would clobber everyone else's entries to save
+    // this one, which is the bug this is fixing. Losing one line beats losing
+    // thirty.
+    //
+    // diagLog is awaited before the response, so the retries are also bounded by
+    // wall-clock: this only ever runs on a request that already failed or was
+    // slow, and must not make it meaningfully slower.
+    const deadline = Date.now() + 800
+    let wrote = false
+    for (let attempt = 0; attempt < 8 && !wrote && Date.now() < deadline; attempt++) {
+      const got = await store.getWithMetadata(dayKey, { type: 'json' }).catch(() => null)
+      const cur = (got && got.data) || []
+      cur.push({ t: now, ...entry })
+      const trimmed = cur.length > DIAG_DAY_CAP ? cur.slice(cur.length - DIAG_DAY_CAP) : cur
+      try {
+        const res = await store.setJSON(dayKey, trimmed, got && got.etag ? { onlyIfMatch: got.etag } : { onlyIfNew: true })
+        wrote = !res || res.modified !== false
+      } catch { wrote = false }
+      if (!wrote) await new Promise((r) => setTimeout(r, Math.min(20 * 2 ** attempt, 200) + Math.floor(Math.random() * 30)))
+    }
     // Maintain a small index of which days have logs, so the viewer can page back.
     const idx = (await store.get('diag:index', { type: 'json' }).catch(() => null)) || []
     const day = dayKey.slice(5)

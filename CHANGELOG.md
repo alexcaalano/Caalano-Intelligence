@@ -18,6 +18,63 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.405.0 - 2026-08-20 · `PENDING` - Three reliability fixes traced from the failure log, and a stage-match filter
+
+Read against the 14-day reliability export (400 entries, 25-28 Aug): 367 slow,
+24 errors, 8 browser-side 502s.
+
+**18 of the 24 errors were one bug.** Every "This operation was aborted" landed
+between 7.7s and 9.1s - the 9s upstream fetch timeout. Inside three separate
+`Promise.all` blocks, the *prior-period* ad reads had been made resilient with
+`.catch(() => [])` and the *current-period* ones sitting beside them had not. One
+Windsor blip on the current period therefore rejected the whole block and took
+its successful siblings down with it, including the CRM half of the payload that
+had already returned. That is the shape of all nine `health` failures, three
+`creatives` and six `anomalies`.
+
+Now guarded - but an empty ad read must never be presented as a measured zero, so
+each build carries a flag (`metaOk` / `googleOk` / `adReadOk`) saying the figures
+are missing rather than low. This extends the pattern the agency alerts already
+used, where a failed baseline read is tracked precisely so the UI cannot give a
+confident all-clear it has no basis for.
+
+**The reliability log was losing the failures it exists to record.** `diagLog`
+read the day's blob, pushed an entry and wrote it back, with no conditional
+write. Two overlapping invocations clobber each other - and overlapping
+invocations are exactly what a fan-out is, which is exactly when things fail. The
+log went quietest when it should have been loudest: simulated, an agency-wide
+burst of 40 writers kept 2 of them.
+
+Writes are now conditional on the etag just read, with exponential backoff and
+jitter. Flat backoff is not enough - it just re-collides - and neither is a small
+retry count: four flat attempts still lost two thirds of an 80-writer burst.
+Eight attempts with proper backoff keep all 40 and 78 of 80, bounded to 800ms
+because `diagLog` is awaited before the response. If an entry still cannot land it
+is dropped rather than force-written, because the obvious fallback - one last
+unconditional write - would clobber everyone else's entries to save this one,
+which is the bug being fixed.
+
+A first attempt at that fix called `sleep()`, which is defined in `ghl.mjs` and
+never exported. `diagLog` wraps everything in a catch so diagnostics can never
+break a request, so the ReferenceError would have been swallowed and logging
+would have silently stopped altogether.
+
+**Stage match.** The Stage lost at filter now has a companion dropdown: *at this
+stage*, meaning the deals that were marked lost sitting in it, or *this stage or
+later*, meaning every deal that reached it whatever stage it went on to die at.
+Position is read inside each deal's own pipeline, so a stage name shared between
+two pipelines at different depths is not treated as one position. The active
+filter chip says which reading is in force, since the same stage name otherwise
+describes two different populations.
+
+Not fixed, and still occurring: the GoHighLevel 429s (5 in this window, mostly on
+the largest client). The request governor caps concurrency and shares a cooldown
+in module scope, which is per Lambda instance - opening a client dashboard fires
+six scopes as six separate invocations, each independently entitled to its own
+five concurrent CRM calls. That needs a shared cooldown, not a per-instance one.
+
+---
+
 ## v3.404.0 - 2026-08-20 · `PENDING` - Stage in isolation or cumulative, and a tidier pivot
 
 **Two readings of the stage cut.** "Lost at this stage" is where each deal

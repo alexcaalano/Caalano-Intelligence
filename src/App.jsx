@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.404.0'
+const APP_VERSION = '3.405.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4735,6 +4735,9 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   // the shape of the funnel rather than a partition of it, so the rows overlap
   // and deliberately do not add up.
   const [stageMode, setStageMode] = useState('at')
+  // The same two readings, applied to the stage FILTER rather than to the rows:
+  // narrow to the deals that died at a stage, or to everyone who reached it.
+  const [stageFilter, setStageFilter] = useState('at')
   const [open, setOpen] = useState(null)
   const st = useCcDrill(clientId, range, nonce, 'all')
   const money = (v) => fmtCurrency(v, currency)
@@ -4742,11 +4745,23 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   const facts = useMemo(() => lrFacts(cc), [cc])
   const setF = (dim, val) => { setOpen(null); setFilters((f) => { const n = { ...f }; if (!val) delete n[dim]; else n[dim] = val; return n }) }
   const active = Object.entries(filters)
+  const stageOrder = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
+  // Stage position is read inside the deal's OWN pipeline: two pipelines can hold
+  // the same stage name at different depths, so a shared name is not a shared
+  // position. A pipeline without that stage is excluded rather than folded in.
+  const posIn = (pipeline, stage) => { const so = stageOrder[pipeline]; return so && so[stage] !== undefined ? so[stage] : null }
   // A row passes when it matches every filter EXCEPT the one being counted -
   // that is what keeps each picker's counts live without letting a filter hide
   // its own alternatives.
-  const passes = (r, skip) => active.every(([d, v]) => d === skip || r[d] === v)
-  const rows = useMemo(() => facts.filter((r) => passes(r, null)), [facts, filters])
+  // Filtering to a stage has two useful meanings. "At this stage" is the deals
+  // that died exactly there. "This stage or later" is everyone who got at least
+  // that far - the population that cleared the stage, whatever killed them after.
+  const matchDim = (r, d, v) => {
+    if (d === 'stage' && stageFilter === 'beyond') { const p = posIn(r.pipeline, v); return p != null && r.stagePos >= p }
+    return r[d] === v
+  }
+  const passes = (r, skip) => active.every(([d, v]) => d === skip || matchDim(r, d, v))
+  const rows = useMemo(() => facts.filter((r) => passes(r, null)), [facts, filters, stageFilter, cc])
   const optionsFor = (dim) => {
     const m = new Map()
     for (const r of facts) if (passes(r, dim)) m.set(r[dim], (m.get(r[dim]) || 0) + 1)
@@ -4760,12 +4775,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   // Group down the side, break down across the top. Picking the same dimension
   // for both would make a diagonal, so the columns fall back to Reason.
   const colDim = colBy === groupBy ? (groupBy === 'reason' ? 'source' : 'reason') : colBy
-  const stageOrder = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
   const cumulative = groupBy === 'stage' && stageMode === 'beyond'
-  // A deal counts towards a stage row when it reached that stage or went past it,
-  // judged inside its own pipeline: the same stage name can sit at a different
-  // position in a different pipeline, so a shared name is not a shared position.
-  const posIn = (pipeline, stage) => { const so = stageOrder[pipeline]; return so && so[stage] !== undefined ? so[stage] : null }
   const groups = useMemo(() => {
     const m = new Map()
     const add = (key, r) => {
@@ -4839,18 +4849,30 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                   {LR_DIMS.map(([k, lbl]) => {
                     const opts = optionsFor(k)
                     return (
-                      <label key={k} className={`lrv-f${filters[k] ? ' on' : ''}`} title={LR_TIP[k]}>
-                        <span className="lrv-f-lab">{lbl}</span>
-                        <select value={filters[k] || ''} onChange={(e) => setF(k, e.target.value)}>
-                          <option value="">All ({fmtNumber(opts.reduce((a, o) => a + o[1], 0))})</option>
-                          {opts.map(([v, n]) => <option key={v} value={v}>{v} ({fmtNumber(n)})</option>)}
-                        </select>
-                      </label>
+                      <React.Fragment key={k}>
+                        <label className={`lrv-f${filters[k] ? ' on' : ''}`} title={LR_TIP[k]}>
+                          <span className="lrv-f-lab">{lbl}</span>
+                          <select value={filters[k] || ''} onChange={(e) => setF(k, e.target.value)}>
+                            <option value="">All ({fmtNumber(opts.reduce((a, o) => a + o[1], 0))})</option>
+                            {opts.map(([v, n]) => <option key={v} value={v}>{v} ({fmtNumber(n)})</option>)}
+                          </select>
+                        </label>
+                        {/* Stage is the one dimension with a direction to it, so it gets
+                            a second control: pick a stage, then say whether you mean the
+                            deals that died there or everyone who reached it. */}
+                        {k === 'stage' ? <label className={`lrv-f${stageFilter === 'beyond' ? ' on' : ''}`} title="At this stage counts only the deals that were marked lost sitting in it. This stage or later counts every deal that reached it, whatever stage it went on to die at.">
+                          <span className="lrv-f-lab">Stage match</span>
+                          <select value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setOpen(null) }}>
+                            <option value="at">At this stage</option>
+                            <option value="beyond">This stage or later</option>
+                          </select>
+                        </label> : null}
+                      </React.Fragment>
                     )
                   })}
                 </div>
                 {active.length ? <div className="lrv-chips">
-                  {active.map(([d, v]) => <button key={d} className="lrv-chip" onClick={() => setF(d, '')} title={`Remove the ${LR_LABEL[d]} filter`}>{LR_LABEL[d]}: <b>{v}</b> ✕</button>)}
+                  {active.map(([d, v]) => <button key={d} className="lrv-chip" onClick={() => setF(d, '')} title={`Remove the ${LR_LABEL[d]} filter`}>{LR_LABEL[d]}: <b>{v}</b>{d === 'stage' && stageFilter === 'beyond' ? ' or later' : ''} ✕</button>)}
                   <button className="lrv-chip lrv-clear" onClick={() => { setFilters({}); setOpen(null) }}>Clear all</button>
                 </div> : null}
                 <div className="lrv-pivot">

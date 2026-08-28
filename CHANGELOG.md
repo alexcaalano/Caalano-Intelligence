@@ -18,6 +18,49 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.408.0 - 2026-08-20 · `PENDING` - Stop refetching what has not changed
+
+Two sources of repeated CRM work, both on the path the reliability log complains
+loudest about. `ovrow` alone is 134 of the 367 slow entries, and it fires one
+invocation per client per period - forty for an agency overview - each doing this
+work from scratch.
+
+**Calendar configuration was refetched on every appointment build.** The calendar
+list and the service catalog are configuration, not data: they change when
+someone adds a calendar, which is rare. They were being pulled fresh on every
+call, and `fetchAppointments` has eleven callers, several of which run in the same
+invocation. Two near-static reads, dozens of times per page load, against exactly
+the rate limit the 429s come from.
+
+Now cached the same way pipelines already are - memory for ten minutes, Blobs for
+an hour, then the wire. A cold read costs two CRM calls; every later call in the
+same invocation costs none, and a fresh invocation reads Blobs rather than the
+CRM.
+
+A failed calendar read is never cached. Storing it would mean every booking count
+downstream quietly reading zero for the next hour, which is the failure mode this
+codebase keeps having to fix. Instead it returns null and an error for the caller
+to surface, and where a good copy already exists it is served rather than blanking
+the bookings - the same last-good behaviour pipelines have.
+
+**Identical appointment builds now share one pass.** Those eleven callers all ask
+for the same location and window and each paid for its own walk over every
+calendar's events. Concurrent callers now share a single build, and a
+just-completed one is reused for fifteen seconds so sequential callers in the same
+invocation do not repeat it either. Measured: eleven concurrent callers go from
+eleven builds to one.
+
+The window is deliberately shorter than any result-cache TTL already in play, so
+it cannot introduce staleness the system does not already tolerate. Different
+locations and different date ranges never share - that would not be a speed win
+but a correctness bug, with the previous period showing the current one's
+bookings. Sharing is only safe because no caller mutates what it gets back; the
+two places that look like they do are building their own maps. A failed read is
+not cached, a thrown build does not wedge the key, and the memory map is bounded
+so a long-lived warm Lambda cannot grow without limit.
+
+---
+
 ## v3.407.0 - 2026-08-20 · `PENDING` - A retry budget that fits the function it runs inside
 
 A synchronous Netlify function is killed at about 26 seconds. A single upstream

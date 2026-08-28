@@ -724,7 +724,74 @@ const APPT_CANCEL_RE = /cancel/i
 const APPT_SHOWN_RE = /^(showed|shown|attended|arrived|complete|completed|fulfilled|checked.?in)$/i
 const APPT_NOSHOW_RE = /no.?show|did.?not.?attend|didn.?t.?attend|\bdna\b/i
 function apptShown(status) { const s = String(status || '').trim(); return APPT_SHOWN_RE.test(s) && !APPT_NOSHOW_RE.test(s) }
+// The calendar list and the service catalog are configuration, not data: they
+// change when someone adds a calendar, which is rare, and they were being
+// refetched on every single appointment build. fetchAppointments has eleven
+// callers, several of which run in the same invocation, and the agency overview
+// alone fires forty invocations - so these two near-static reads were costing
+// dozens of CRM calls per page load, against the same rate limit the 429s come
+// from. Cached exactly like pipelines: memory, then Blobs, then the wire, with a
+// last-good fallback so a transient failure does not blank the calendars.
+const CAL_MEM_MS = 600000      // 10 min in-memory
+const CAL_BLOB_MS = 3600000    // 1h cross-invocation
+const _calMem = new Map()      // locationId -> { at, calendars, services }
+const _calStore = () => getStore({ name: 'caalano-pipecache', consistency: 'strong' })
+async function fetchCalendarConfig(locTok, locationId) {
+  const now = Date.now()
+  const mem = _calMem.get(locationId)
+  if (mem && now - mem.at < CAL_MEM_MS) return mem
+  let cached = null
+  try { const hit = await _calStore().get(`cal:${locationId}`, { type: 'json' }); if (hit && Array.isArray(hit.calendars)) cached = hit } catch { /* blobs unavailable */ }
+  if (cached && now - cached.at < CAL_BLOB_MS) { _calMem.set(locationId, cached); return cached }
+  let calendars = null, services = []
+  try { const j = await ghlGet(locTok, '/calendars/', { locationId }); calendars = j.calendars || j.calendar || [] }
+  catch (e) {
+    // A failed calendar read is the one case that must NOT be cached as empty:
+    // every downstream booking count would silently read zero. Serve the last
+    // good copy if there is one, and report the failure if there is not.
+    if (cached) { _calMem.set(locationId, cached); return cached }
+    return { at: now, calendars: null, services: [], error: String(e.message || e).slice(0, 120) }
+  }
+  try { const j = await ghlGet(locTok, '/calendars/services/catalog', { locationId }); services = j.services || j.catalog || [] } catch { services = (cached && cached.services) || [] }
+  const rec = { at: now, calendars, services }
+  _calMem.set(locationId, rec)
+  try { await _calStore().setJSON(`cal:${locationId}`, rec) } catch { /* ignore */ }
+  return rec
+}
+// Eleven callers, several of which run inside one Promise.all, all asking for the
+// same (location, from, to) and each paying for its own pass over every calendar's
+// events. Identical concurrent requests now share one build, and a just-completed
+// one is reused for a few seconds so sequential callers in the same invocation do
+// not repeat it either.
+//
+// The window is deliberately shorter than any result-cache TTL already in play, so
+// this cannot introduce staleness the system does not already tolerate. Sharing is
+// only safe because no caller mutates what it gets back - checked, and the two
+// places that look like they do are building their own maps, not touching this one.
+const APPT_MEM_MS = 15000
+const _apptMem = new Map()      // key -> { at, value }
+const _apptInflight = new Map() // key -> Promise
 async function fetchAppointments(locTok, locationId, from, to) {
+  const key = `${locationId}|${from || ''}|${to || ''}`
+  const hit = _apptMem.get(key)
+  if (hit && Date.now() - hit.at < APPT_MEM_MS) return hit.value
+  const flying = _apptInflight.get(key)
+  if (flying) return flying
+  const p = _fetchAppointments(locTok, locationId, from, to)
+    .then((v) => {
+      // Never cache a failed calendar read: the next caller must get a chance at
+      // a real answer rather than inheriting "no bookings" for fifteen seconds.
+      if (v && v.connected !== false) {
+        _apptMem.set(key, { at: Date.now(), value: v })
+        if (_apptMem.size > 12) { const oldest = [..._apptMem.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, 6); for (const [k] of oldest) _apptMem.delete(k) }
+      }
+      return v
+    })
+    .finally(() => { _apptInflight.delete(key) })
+  _apptInflight.set(key, p)
+  return p
+}
+async function _fetchAppointments(locTok, locationId, from, to) {
   const byContact = new Map()
   const nameByContact = new Map() // contactId -> display name from the calendar event
   // Same flags, but kept per (calendar × contact) so a client with several
@@ -733,19 +800,16 @@ async function fetchAppointments(locTok, locationId, from, to) {
   // (cancel-and-rebook or a moved startTime) still nets to a single booking,
   // while a genuinely different calendar counts as its own booking.
   const perCalendar = new Map() // calId -> { name, byContact: Map<cid, flags> }
-  let calendars = []
-  try {
-    const j = await ghlGet(locTok, '/calendars/', { locationId })
-    calendars = j.calendars || j.calendar || []
-  } catch (e) { return { byContact, perCalendar, connected: false, error: String(e.message || e).slice(0, 120) } }
+  const cfg = await fetchCalendarConfig(locTok, locationId)
+  if (!cfg.calendars) return { byContact, perCalendar, connected: false, error: cfg.error || 'calendars unavailable' }
+  const calendars = cfg.calendars
   // Service Calendars come in two shapes. Some are ordinary calendars carrying
   // calendarType "service" - those are already in `calendars` above and their
   // bookings come back from /calendars/events like any other. Locations on the
   // newer Services catalog instead keep a service menu whose bookings live on
   // their own feed, so those are fetched separately below and bucketed under
   // the SERVICE's id. Either way a key event linked to that id resolves.
-  const services = await ghlGet(locTok, '/calendars/services/catalog', { locationId })
-    .then((j) => j.services || j.catalog || []).catch(() => [])
+  const services = cfg.services || []
   const DAY = 86400000
   const tz = await locationTimezone(locationId)
   const fromMs = from ? zonedStartMs(from, tz) : null

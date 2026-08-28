@@ -18,6 +18,78 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.406.0 - 2026-08-20 · `PENDING` - The 429s: a shared cooldown, a build election, and a correction
+
+### Correction to v3.405.0
+
+The reliability-log fix shipped in v3.405.0 did nothing. It was written around
+conditional writes - `setJSON(key, value, { onlyIfMatch })` - and the Blobs client
+this app is on (8.2.0) has no such thing: `setJSON` takes `{ metadata }`, ignores
+anything else, always writes, and returns `void`. The retry loop therefore read
+`undefined` as success, wrote unconditionally on the first attempt, and behaved
+exactly like the code it replaced.
+
+It passed its test because the test's mock implemented conditional writes. The
+mock was more capable than the library. Both are rewritten below against a mock
+that mirrors 8.2.0 exactly - `setJSON(key, data)` writes and returns nothing.
+
+### The reliability log, properly this time
+
+There is no compare-and-swap available, so contention cannot be arbitrated. It can
+be removed. **Each entry is now its own blob**, keyed by timestamp: nothing is
+read before writing, nothing is merged, and two writers cannot collide because
+they are not writing to the same place. Measured against the 8.2.0-accurate mock:
+one shared blob keeps 2 of 40 concurrent writers, one blob per entry keeps 40 of
+40, and 80 of 80.
+
+Sharding across twelve keys was tried first and rejected: it only reached 15 of
+40, because each shard is still read-modify-write.
+
+The viewer lists a day's keys, takes the newest by the timestamp in the key, and
+fetches those in batches - more work on a page a superadmin opens occasionally,
+none on the hot path. The old single-blob key is still read, so days logged before
+this change stay visible.
+
+Expect the next export to show MORE failures than the last one. That is the
+instrument being fixed, not the app getting worse.
+
+### The 429s
+
+Five in the last window, mostly on the largest client, and the log shows the
+shape: three scopes for one location erroring within ten seconds of each other.
+Two causes, both fixed.
+
+**The cooldown was per Lambda instance.** On a 429 the governor set a module-level
+cooldown so "every other GHL call waits too" - but a client dashboard opens six
+scopes as six separate invocations, each with its own fresh module and its own
+cooldown of zero. The one that hit the wall backed off precisely the calls that
+were not the problem. The cooldown now lives in Blobs, keyed by location, read
+through a short in-memory TTL so a burst costs about one extra read per second per
+instance. The module-level value is kept as the local fast path and still wins
+when it is later.
+
+**And the burst that earns the 429 is self-inflicted.** On a cold snapshot all six
+invocations page the same location's opportunities at the same moment. Build
+coalescing existed but was also per-instance. Now the first arrival claims the
+right to page and the others wait for its copy.
+
+With no compare-and-swap there is no true lock, so it is a leader election over
+last-write-wins: every racer writes its own random id, waits for the writes to
+settle, and reads back - exactly one finds its own id and leads. Across 40 trials
+at 2, 6 and 12 racers it elected exactly one leader every time and never zero. A
+missed election just means two invocations page instead of one, which is the old
+behaviour for two of six rather than for all six; it cannot deadlock, because an
+unreleased lock expires after 20 seconds and the next arrival takes over. Time
+spent waiting is deducted from the paging budget rather than added to it, so
+waiting politely cannot itself cause the timeout.
+
+Simulated as the log describes it - six invocations, one location, cold cache,
+against a CRM that rejects past a burst budget - the before case makes 90 CRM
+calls, eats 72 rejections and fails three of the six scopes outright, which is
+what the log shows. After: 6 calls, no rejections, one build and five waits.
+
+---
+
 ## v3.405.0 - 2026-08-20 · `PENDING` - Three reliability fixes traced from the failure log, and a stage-match filter
 
 Read against the 14-day reliability export (400 entries, 25-28 Aug): 367 slow,

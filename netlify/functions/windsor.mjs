@@ -2708,35 +2708,21 @@ async function diagLog(entry) {
     // Read-modify-write on a shared blob loses entries when two invocations
     // overlap - which is exactly what happens during a fan-out, and a fan-out is
     // when things fail. The log went quietest precisely when it should have been
-    // loudest: a simulated agency-wide burst of 40 writers kept 2 of them.
+    // loudest: simulated, an agency-wide burst of 40 writers kept 2 of them.
     //
-    // A conditional write (onlyIfMatch on the etag we just read) turns a
-    // collision into a retry instead of a silent overwrite. Backoff has to be
-    // exponential with jitter, not flat - flat backoff just re-collides, and a
-    // flat four attempts still lost two thirds of an 80-writer burst where this
-    // keeps all of them.
+    // The obvious fix - a conditional write - is not available: the Blobs client
+    // here (8.x) has no compare-and-swap, setJSON always writes and returns
+    // nothing. Sharding the key helps but still lost most of a 40-writer burst,
+    // because each shard is still read-modify-write.
     //
-    // If it still cannot land, the entry is DROPPED. The obvious fallback - one
-    // last unconditional write - would clobber everyone else's entries to save
-    // this one, which is the bug this is fixing. Losing one line beats losing
-    // thirty.
-    //
-    // diagLog is awaited before the response, so the retries are also bounded by
-    // wall-clock: this only ever runs on a request that already failed or was
-    // slow, and must not make it meaningfully slower.
-    const deadline = Date.now() + 800
-    let wrote = false
-    for (let attempt = 0; attempt < 8 && !wrote && Date.now() < deadline; attempt++) {
-      const got = await store.getWithMetadata(dayKey, { type: 'json' }).catch(() => null)
-      const cur = (got && got.data) || []
-      cur.push({ t: now, ...entry })
-      const trimmed = cur.length > DIAG_DAY_CAP ? cur.slice(cur.length - DIAG_DAY_CAP) : cur
-      try {
-        const res = await store.setJSON(dayKey, trimmed, got && got.etag ? { onlyIfMatch: got.etag } : { onlyIfNew: true })
-        wrote = !res || res.modified !== false
-      } catch { wrote = false }
-      if (!wrote) await new Promise((r) => setTimeout(r, Math.min(20 * 2 ** attempt, 200) + Math.floor(Math.random() * 30)))
-    }
+    // So there is no shared object to contend over: each entry is its own blob,
+    // under a key that sorts by time. Nothing is read, nothing is merged, nothing
+    // can be clobbered - concurrent writers cannot collide because they are not
+    // writing to the same place. The reader lists the day's keys and puts them
+    // back in order, which costs more on a page a superadmin opens occasionally
+    // and nothing at all on the hot path this runs in.
+    const seq = `${String(now).padStart(14, '0')}-${Math.random().toString(36).slice(2, 8)}`
+    await store.setJSON(`${dayKey}:${seq}`, { t: now, ...entry })
     // Maintain a small index of which days have logs, so the viewer can page back.
     const idx = (await store.get('diag:index', { type: 'json' }).catch(() => null)) || []
     const day = dayKey.slice(5)
@@ -2930,8 +2916,24 @@ export default async (req) => {
       const store = diagStore()
       const idx = (await store.get('diag:index', { type: 'json' }).catch(() => null)) || []
       const days = idx.slice(0, Math.max(1, Math.min(14, Number(url.searchParams.get('days')) || 3)))
+      // Each entry is its own blob (see diagLog: there is no compare-and-swap to
+      // build a shared list safely). List the day's keys, take the newest by the
+      // timestamp baked into the key, and fetch only those - so an old, busy day
+      // costs the same as a quiet one. The pre-existing single-blob key is still
+      // read, so days logged before this change stay visible.
       let entries = []
-      for (const day of days) { const rows = await store.get(`diag:${day}`, { type: 'json' }).catch(() => null); if (Array.isArray(rows)) entries = entries.concat(rows) }
+      for (const day of days) {
+        const legacy = await store.get(`diag:${day}`, { type: 'json' }).catch(() => null)
+        if (Array.isArray(legacy)) entries = entries.concat(legacy)
+        let keys = []
+        try { const res = await store.list({ prefix: `diag:${day}:` }); keys = (res.blobs || []).map((b) => b.key) } catch { /* listing unavailable - legacy rows still show */ }
+        keys.sort().reverse()
+        const want = keys.slice(0, DIAG_DAY_CAP)
+        for (let i = 0; i < want.length; i += 25) {
+          const batch = await Promise.all(want.slice(i, i + 25).map((k) => store.get(k, { type: 'json' }).catch(() => null)))
+          for (const e of batch) if (e && e.t) entries.push(e)
+        }
+      }
       entries.sort((a, b) => b.t - a.t)
       const summary = {}
       for (const e of entries) { const k = `${e.sev}|${e.scope}`; summary[k] = (summary[k] || 0) + 1 }

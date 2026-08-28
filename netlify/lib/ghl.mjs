@@ -53,19 +53,54 @@ export async function resilientFetch(url, opts = {}, { timeoutMs = 9000, retries
 //      queued GHL call waits too, instead of all retrying into the same wall.
 // (Cross-invocation request VOLUME is cut separately by caching the opportunity
 // snapshot so scopes stop re-fetching the same list - see allOpportunities.)
+//   3. shares the cooldown ACROSS invocations, not just within one.
+//
+// (2) alone was never enough. Module scope is per Lambda instance, and the fan-out
+// that causes the 429s is six scopes arriving as six separate invocations - each
+// with its own fresh module, its own five concurrent slots and its own cooldown of
+// zero. One of them hitting a 429 backed off precisely the calls that were not the
+// problem, while the other five carried on into the same wall. The cooldown now
+// lives in Blobs, keyed by location, so a 429 anywhere backs off everywhere.
+//
+// It is read through a short in-memory TTL rather than on every call: during a
+// burst that is roughly one extra Blobs read per second per instance, which is
+// nothing against the cost of a 429 storm. The module-level value is still
+// honoured and always wins if it is later - it is the cheap local fast path.
 const GHL_MAX_CONCURRENT = 5
+const GHL_COOL_TTL_MS = 1200       // how long an instance trusts its local copy
+const GHL_COOL_MAX_MS = 15000      // never publish a cooldown longer than this
 let _ghlActive = 0; const _ghlWaiters = []; let _ghlCooldownUntil = 0
+const _ghlCoolMem = new Map()      // locationId -> { until, readAt }
+const _ghlCoolKey = (loc) => `ghl:cool:${loc}`
+async function ghlCooldownUntil(loc) {
+  if (!loc) return _ghlCooldownUntil
+  const now = Date.now()
+  const m = _ghlCoolMem.get(loc)
+  if (m && now - m.readAt < GHL_COOL_TTL_MS) return Math.max(m.until, _ghlCooldownUntil)
+  let until = 0
+  try { const hit = await _oppStore().get(_ghlCoolKey(loc), { type: 'json' }); if (hit && hit.until) until = hit.until } catch { /* a cooldown we cannot read is not a reason to fail */ }
+  _ghlCoolMem.set(loc, { until, readAt: now })
+  return Math.max(until, _ghlCooldownUntil)
+}
+async function publishGhlCooldown(loc, until) {
+  _ghlCooldownUntil = Math.max(_ghlCooldownUntil, until)
+  if (!loc) return
+  _ghlCoolMem.set(loc, { until, readAt: Date.now() })
+  // Last write wins deliberately: these are all "back off until roughly now+N"
+  // and a slightly shorter one losing to a slightly longer one is harmless.
+  try { await _oppStore().setJSON(_ghlCoolKey(loc), { until }) } catch { /* best effort */ }
+}
 function _ghlSlot() { return new Promise((res) => { const go = () => { if (_ghlActive < GHL_MAX_CONCURRENT) { _ghlActive++; res() } else _ghlWaiters.push(go) }; go() }) }
 function _ghlDone() { _ghlActive = Math.max(0, _ghlActive - 1); const w = _ghlWaiters.shift(); if (w) w() }
 // Governed GHL fetch: concurrency-slotted, honours Retry-After, and shares a
 // cooldown across calls so a 429 backs the whole location off rather than
 // triggering a thundering-herd retry. Used by ghlGet / ghlPost.
-async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries = 3 } = {}) {
+async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries = 3, loc = null } = {}) {
   await _ghlSlot()
   try {
     let lastErr
     for (let attempt = 0; attempt < maxTries; attempt++) {
-      const wait = _ghlCooldownUntil - Date.now()
+      const wait = (await ghlCooldownUntil(loc)) - Date.now()
       if (wait > 0) await sleep(Math.min(wait, 6000))
       const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), timeoutMs)
       try {
@@ -74,7 +109,9 @@ async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries =
         if (r.status === 429) {
           const ra = Number(r.headers.get('retry-after'))
           const backoff = (Number.isFinite(ra) && ra > 0) ? Math.min(ra * 1000, 6000) : Math.min(500 * 2 ** attempt, 4000) + Math.floor(Math.random() * 300)
-          _ghlCooldownUntil = Date.now() + backoff // make every other GHL call wait too
+          // Publish it, so the five other invocations working this same location
+          // wait too instead of walking into the wall we just found.
+          await publishGhlCooldown(loc, Date.now() + Math.min(backoff, GHL_COOL_MAX_MS))
           if (attempt < maxTries - 1) { await sleep(backoff); continue }
           return r
         }
@@ -137,14 +174,14 @@ async function ghlGet(locTok, path, query) {
   if (isDemoToken(locTok)) return demoGhl(path, query || {})
   const url = new URL(API + path)
   for (const [k, v] of Object.entries(query || {})) if (v != null) url.searchParams.set(k, v)
-  const r = await ghlFetch(url, { headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json' } }, { label: `ghl GET ${path}` })
+  const r = await ghlFetch(url, { headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json' } }, { label: `ghl GET ${path}`, loc: (query && (query.locationId || query.location_id)) || null })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl GET ${path} ${r.status}: ${txt.slice(0, 200)}`)
   return JSON.parse(txt)
 }
 async function ghlPost(locTok, path, bodyObj) {
   if (isDemoToken(locTok)) return demoGhl(path, {}, bodyObj || {})
-  const r = await ghlFetch(API + path, { method: 'POST', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) }, { label: `ghl POST ${path}` })
+  const r = await ghlFetch(API + path, { method: 'POST', headers: { Authorization: `Bearer ${locTok}`, Version: VER, Accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(bodyObj) }, { label: `ghl POST ${path}`, loc: (bodyObj && (bodyObj.locationId || bodyObj.location_id)) || null })
   const txt = await r.text()
   if (!r.ok) throw new Error(`ghl POST ${path} ${r.status}: ${txt.slice(0, 200)}`)
   return JSON.parse(txt)
@@ -322,6 +359,62 @@ const OPP_SNAP_CAP = 4000          // max opps held (bounds Blobs payload)
 const _oppSnapMem = new Map()      // locationId -> snapshot
 const _oppSnapInflight = new Map() // locationId -> Promise (coalesce concurrent builds)
 const _oppStore = () => getStore({ name: 'caalano-oppcache', consistency: 'strong' })
+// Cross-invocation single-flight for a cold snapshot build.
+//
+// _oppSnapInflight below coalesces concurrent builds within ONE invocation, which
+// is not where the problem is: opening a client dashboard fires six scopes as six
+// separate invocations, and on a cold cache all six page /opportunities/search for
+// the same location at the same moment. That is the burst that earns the 429 - and
+// then the 429 is what the six of them retry into.
+//
+// So the first one to arrive claims a lock and does the paging; the others wait
+// briefly for its copy instead of making five more identical ones. A lock older
+// than SNAP_LOCK_MS is assumed abandoned (its invocation timed out or died) and
+// can be stolen, conditionally on the etag so only one thief wins.
+const SNAP_LOCK_MS = 20000   // a lock older than this is treated as abandoned
+const SNAP_WAIT_MS = 2600    // how long to wait for the holder's snapshot
+const SNAP_POLL_MS = 300
+const SNAP_SETTLE_MS = 180   // how long to let racing claims settle before reading back
+const _snapLockKey = (loc) => `ghl:snaplock:${loc}`
+// Claim the right to page this location - a leader election, not a mutex.
+//
+// The Blobs client we are on (8.x) has no conditional write: setJSON always
+// writes and returns nothing, so there is no compare-and-swap to build a real
+// lock out of. What there IS, is last-write-wins. So every racer writes its own
+// random id, waits for the writes to settle, then reads back: exactly one of
+// them finds its own id still there, and that one is the leader. The rest wait
+// for its snapshot.
+//
+// This is probabilistic, and that is fine for what it is protecting. A missed
+// election means two invocations page instead of one - the old behaviour for two
+// of the six, rather than for all six. It is never wrong, only occasionally less
+// effective, and it cannot deadlock: an unreleased lock expires after
+// SNAP_LOCK_MS and the next arrival takes over.
+async function _claimSnapLock(loc) {
+  const now = Date.now()
+  const id = `${now.toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  try {
+    const held = await _oppStore().get(_snapLockKey(loc), { type: 'json' }).catch(() => null)
+    if (held && held.at && (now - held.at) < SNAP_LOCK_MS) return false   // someone is already paging
+    await _oppStore().setJSON(_snapLockKey(loc), { at: now, id })
+    await sleep(SNAP_SETTLE_MS)
+    const back = await _oppStore().get(_snapLockKey(loc), { type: 'json' }).catch(() => null)
+    return !!(back && back.id === id)
+  } catch {
+    // If the lock cannot be arbitrated at all, build. A duplicate page is a cost;
+    // returning no data because we could not read a lock is a failure.
+    return true
+  }
+}
+async function _releaseSnapLock(loc) { try { await _oppStore().delete(_snapLockKey(loc)) } catch { /* it expires on its own */ } }
+// Re-read the shared snapshot, returning it only if it is fresh enough to use.
+async function _readSnap(loc) {
+  try {
+    const hit = await _oppStore().get(loc, { type: 'json' })
+    if (hit && Array.isArray(hit.opps) && (Date.now() - hit.at) < OPP_SNAP_BLOB_MS) { const snap = _snapWrap(hit); _oppSnapMem.set(loc, snap); return snap }
+  } catch { /* fall through */ }
+  return null
+}
 function _snapWrap(hit) {
   // Precompute the oldest createdAt so callers can tell if their window is fully
   // covered (a truncated snapshot only covers windows newer than its oldest opp).
@@ -337,17 +430,41 @@ async function oppSnapshot(locTok, locationId, opts = {}) {
     if (mem && now - mem.at < OPP_SNAP_MEM_MS) return mem
     if (_oppSnapInflight.has(locationId)) return _oppSnapInflight.get(locationId)
   }
+  // `held` lives outside the build so the finally below can release it whether the
+  // build returned or threw. A lock leaked by a failed build would make every other
+  // invocation wait its full timeout before building anyway - slower than having no
+  // lock at all, which is the opposite of the point.
+  let held = false
   const build = (async () => {
+    let waited = 0
     // Cross-invocation cache first (skipped on a forced warm so the copy is rewritten).
-    if (!force) { try { const hit = await _oppStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.opps) && (now - hit.at) < OPP_SNAP_BLOB_MS) { const snap = _snapWrap(hit); _oppSnapMem.set(locationId, snap); return snap } } catch { /* fall through */ } }
+    if (!force) {
+      const hit = await _readSnap(locationId)
+      if (hit) return hit
+      // Cold. Claim the right to page it, or wait for whoever already has.
+      held = await _claimSnapLock(locationId)
+      if (!held) {
+        const t0 = Date.now(); const until = t0 + SNAP_WAIT_MS
+        while (Date.now() < until) {
+          await sleep(SNAP_POLL_MS)
+          const got = await _readSnap(locationId)
+          if (got) return got
+        }
+        waited = Date.now() - t0
+        // The holder is taking longer than we can wait. Build rather than return
+        // nothing - but out of what is left of the request budget, not a fresh one.
+      }
+    }
     const to = new Date(now).toISOString().slice(0, 10)
     const from = new Date(now - OPP_SNAP_DAYS * 86400000).toISOString().slice(0, 10)
     // The scheduled warmer runs as a background function (long budget), so it can
     // page to the FULL snapshot depth; an interactive cold build must fit the ~10s
     // request budget, so it stays capped tight. A shallow snapshot is what makes a
     // high-volume client's blend / health fall back to slow live paging → timeout.
-    const opps = await _pageOpportunities(locTok, locationId, from, to, OPP_SNAP_CAP, { deadlineMs: force ? 25000 : 7000 })
-    const raw = { at: now, opps }
+    // Time spent waiting for another invocation comes out of the paging budget,
+    // not on top of it - otherwise waiting politely is what causes the timeout.
+    const opps = await _pageOpportunities(locTok, locationId, from, to, OPP_SNAP_CAP, { deadlineMs: force ? 25000 : Math.max(2500, 7000 - waited) })
+    const raw = { at: Date.now(), opps }
     const snap = _snapWrap(raw)
     // Bound warm-lambda memory: keep only the most recent handful of locations.
     if (_oppSnapMem.size > 16) { const oldest = [..._oppSnapMem.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, 8); for (const [k] of oldest) _oppSnapMem.delete(k) }
@@ -356,7 +473,12 @@ async function oppSnapshot(locTok, locationId, opts = {}) {
     return snap
   })()
   _oppSnapInflight.set(locationId, build)
-  try { return await build } finally { _oppSnapInflight.delete(locationId) }
+  try { return await build } finally {
+    _oppSnapInflight.delete(locationId)
+    // Release only what we actually claimed: releasing a lock we never held would
+    // hand the location to a fresh stampede while its real holder is still paging.
+    if (held) await _releaseSnapLock(locationId)
+  }
 }
 // Warm the shared opportunity snapshot for one location. Used by the scheduled
 // warmer so interactive scopes (users / ccdrill / speed / appts / forms / health)

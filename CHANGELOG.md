@@ -18,6 +18,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.401.0 - 2026-08-20 · `PENDING` - The lost-lead drill is a table
+
+Opening a lost reason gave you a stack of cards, one per lead, each a paragraph
+of labelled fields. That reads fine for one person and badly for thirty-three:
+you cannot scan down a column, so noticing that most of them answered the same
+way meant reading every card. Spotting that pattern is the entire reason for
+opening the list.
+
+It is a table now. Lead, stage when lost, source, value, and then the form
+answers as columns.
+
+**The answer columns are chosen, not fixed.** Form questions differ by client and
+by form, so there is no column set that works for everyone. The three questions
+that most of these particular leads answered become columns; a question only two
+of thirty answered would be a mostly empty column, so it goes in the row detail
+instead. Nothing is dropped - clicking a row still opens every answer, the full
+source trail (opportunity source, channel, UTM source, UTM content) and that
+contact's notes from Caalano Systems, loaded on demand as before.
+
+The drill widens to 1180px for this view, since the answer columns are the point
+of it, and the table holds its shape all the way down to a phone: fixed column
+widths, long answers ellipsed with the full text on hover and in the row detail.
+Measured from 1920px to 600px with no sideways scroll at any width.
+
+---
+
 ## v3.400.0 - 2026-08-20 · `PENDING` - A Lost Reasons tab: why work does not close, cut six ways
 
 Knowing 165 deals were lost and that 46 of them were "could not contact" is only

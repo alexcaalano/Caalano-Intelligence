@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.400.0'
+const APP_VERSION = '3.401.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5180,33 +5180,88 @@ const chLabel = (ch) => ch === 'meta' ? 'Meta' : ch === 'google' ? 'Google' : ch
 // One lost opportunity - shows the lead's source trail (opportunity source, UTM
 // source, first-touch content) + any form answers, and expands on click to that
 // contact's Caalano Systems notes.
-function LostPersonRow({ p, clientId, money }) {
-  const [open, setOpen] = useState(false)
+// Notes for one contact, loaded on demand when their row is expanded.
+function LostNotes({ clientId, contactId }) {
   const [notes, setNotes] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const load = () => {
-    setLoading(true)
-    const q = new URLSearchParams({ scope: 'oppnotes', client: clientId })
-    if (p.contactId) q.set('contact', p.contactId)
-    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false))
-  }
-  const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && p.contactId) load() }
-  const hasSrc = p.oppSource || p.utmSource || p.utmContent || p.channelSource
+  useEffect(() => {
+    if (!contactId) { setNotes([]); return }
+    let alive = true
+    const q = new URLSearchParams({ scope: 'oppnotes', client: clientId, contact: contactId })
+    fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json())
+      .then((j) => { if (alive) setNotes((j && j.notes) || []) }).catch(() => { if (alive) setNotes([]) })
+    return () => { alive = false }
+  }, [clientId, contactId])
+  if (notes === null) return <Spinner label="Loading notes…" />
+  if (!notes.length) return <div className="cap" style={{ padding: '4px 0 2px' }}>No notes on this contact in Caalano Systems.</div>
+  return <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}>
+    <div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div>
+    <div className="u-note-body">{n.body}</div>
+  </div>)}</div>
+}
+
+// The people behind one lost reason, as a table.
+//
+// As stacked cards each lead was a paragraph of labelled fields, which reads
+// fine for one person and terribly for thirty-three: you cannot scan down a
+// column, so noticing that most of them said the same thing means reading every
+// card. The whole point of opening this list is to spot the pattern.
+//
+// Form questions vary by client and by form, so the columns cannot be fixed in
+// advance. The three questions most of these leads actually answered become
+// columns; a question only a couple of them answered would be an empty column
+// and is better placed in the row detail, which still carries every answer.
+function LostPeopleTable({ people, clientId, money }) {
+  const [open, setOpen] = useState(null)
+  const cols = useMemo(() => {
+    const m = new Map()
+    for (const p of people) for (const a of (p.formAnswers || [])) if (a && a.q) m.set(a.q, (m.get(a.q) || 0) + 1)
+    const floor = Math.max(2, Math.ceil(people.length * 0.25))
+    return [...m.entries()].filter(([, n]) => n >= floor).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([q]) => q)
+  }, [people])
+  const ansOf = (p, q) => { const a = (p.formAnswers || []).find((x) => x.q === q); return a ? a.a : null }
+  const srcOf = (p) => p.channelSource || p.oppSource || p.utmSource || null
+  const anyVal = people.some((p) => p.value)
+  const span = 3 + (anyVal ? 1 : 0) + cols.length
   return (
-    <div className={`cc-drill-row${p.contactId ? ' cc-click' : ''}`} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
-      <b>{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</b> <span className="cc-drill-ans">{p.stage || 'no stage'}{p.pipeline ? ` · ${p.pipeline}` : ''}{p.value ? ` · ${money(p.value)}` : ''}
-        {hasSrc ? <div className="cc-src-line">
-          {p.oppSource ? <span><b>Opp source:</b> {p.oppSource}</span> : null}
-          {p.channelSource ? <span><b>Channel:</b> {p.channelSource}</span> : null}
-          {p.utmSource ? <span><b>UTM source:</b> {p.utmSource}</span> : null}
-          {p.utmContent ? <span><b>UTM content:</b> {p.utmContent}</span> : null}
-        </div> : null}
-        {(p.formAnswers || []).length ? <div style={{ marginTop: 3 }}>{p.formAnswers.map((a, j) => <div key={j}><b>{a.q}:</b> {a.a}</div>)}</div> : <div style={{ marginTop: 3, opacity: .7 }}>No form answers captured.</div>}
-        {open ? <div className="lost-notes">{loading ? <Spinner label="Loading notes…" /> : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div> : <div className="cap" style={{ padding: '4px 0 2px' }}>No notes on this contact in Caalano Systems.</div>}</div> : null}
-      </span>
-    </div>
+    <table className={`mini-tbl users-tbl appt-tbl u-lostppl${anyVal ? ' has-val' : ''} c${cols.length}`}>
+      <thead><tr>
+        <th className="lft">Lead</th>
+        <th className="lft">Stage when lost</th>
+        <th className="lft">Source</th>
+        {anyVal ? <th>Value</th> : null}
+        {cols.map((q) => <th key={q} className="lft">{q}</th>)}
+      </tr></thead>
+      <tbody>{people.map((p, i) => {
+        const isOpen = open === i
+        const rest = (p.formAnswers || []).filter((a) => !cols.includes(a.q))
+        return (
+          <React.Fragment key={i}>
+            <tr className="lostppl-row" style={{ cursor: 'pointer' }} onClick={() => setOpen(isOpen ? null : i)} title="Click for this lead’s full answers, source trail and notes">
+              <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {p.name}</td>
+              <td className="lft" title={`${p.stage || 'no stage'}${p.pipeline ? ` · ${p.pipeline}` : ''}`}>{p.stage || <span className="lrv-z">no stage</span>}</td>
+              <td className="lft" title={[p.oppSource, p.utmSource, p.utmContent].filter(Boolean).join(' · ')}>{srcOf(p) || <span className="lrv-z">-</span>}</td>
+              {anyVal ? <td>{p.value ? money(p.value) : '-'}</td> : null}
+              {cols.map((q) => { const a = ansOf(p, q); return <td key={q} className="lft" title={a || ''}>{a || <span className="lrv-z">-</span>}</td> })}
+            </tr>
+            {isOpen ? <tr className="lostppl-det"><td colSpan={span}>
+              <div className="lostppl-trail">
+                {p.pipeline ? <span><b>Pipeline:</b> {p.pipeline}</span> : null}
+                {p.oppSource ? <span><b>Opp source:</b> {p.oppSource}</span> : null}
+                {p.channelSource ? <span><b>Channel:</b> {p.channelSource}</span> : null}
+                {p.utmSource ? <span><b>UTM source:</b> {p.utmSource}</span> : null}
+                {p.utmContent ? <span><b>UTM content:</b> {p.utmContent}</span> : null}
+              </div>
+              {rest.length ? <div className="lostppl-ans">{rest.map((a, j) => <div key={j}><b>{a.q}:</b> {a.a}</div>)}</div>
+                : !(p.formAnswers || []).length ? <div className="cap" style={{ margin: '4px 0' }}>No form answers captured for this lead.</div> : null}
+              <LostNotes clientId={clientId} contactId={p.contactId} />
+            </td></tr> : null}
+          </React.Fragment>
+        )
+      })}</tbody>
+    </table>
   )
 }
+
 // A coloured "where it came from" pill. Meta/Google keep their brand colours;
 // every other source (Direct, CRM UI, Organic, Referral…) gets its own stable
 // colour from a hash of its label so each reads as visually distinct, not grey.
@@ -5328,7 +5383,7 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
       const r = sub
       title = `Lost - ${r.reason}`
       subhead = `${fmtNumber(r.count)} lost · ${money(r.value || 0)} · click a lead for their notes`
-      body = (r.people || []).length ? (r.people || []).map((p, i) => <LostPersonRow key={i} p={p} clientId={clientId} money={money} />)
+      body = (r.people || []).length ? <LostPeopleTable people={r.people} clientId={clientId} money={money} />
         : <div className="cap">No people recorded for this reason.</div>
     } else {
       const reasons = d.lostByReason || []
@@ -5340,7 +5395,7 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   }
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 780 }}>
+      <div className={`modal${drill.kind === 'lost' && sub ? ' cc-drill-wide' : ''}`} onClick={(e) => e.stopPropagation()} style={drill.kind === 'lost' && sub ? undefined : { maxWidth: 780 }}>
         <div className="m-head"><div><h3 style={{ margin: 0 }}>{title}</h3>{subhead ? <span className="cap">{subhead}</span> : null}</div><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
           {sub ? <button className="cc-back" onClick={() => setSub(null)}>← Back</button> : null}

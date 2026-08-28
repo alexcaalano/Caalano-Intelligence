@@ -18,6 +18,45 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.400.0 - 2026-08-20 · `PENDING` - A Lost Reasons tab: why work does not close, cut six ways
+
+Knowing 165 deals were lost and that 46 of them were "could not contact" is only
+half an answer. The half that changes what you do is *where* those 46 came from.
+A campaign whose losses are price is priced or targeted wrong; a campaign whose
+losses are "could not contact" has a lead-quality or speed-to-lead problem. They
+need opposite fixes, and the total on its own cannot tell them apart.
+
+**New tab, six cuts.** Lost reasons by Pipeline, Stage lost at, Campaign,
+Creative / ad, Keyword, and Source. Each is a matrix: the dimension down the
+side, the six most common reasons across the top, everything rarer folded into
+Other. Click any row for its full reason list; from there, click a reason for the
+people behind it and what they typed on the form. A channel filter across the top
+re-pivots the whole thing to Meta, Google or the rest.
+
+**No new request.** The ccdrill scope was already resolving each deal's pipeline,
+stage, campaign, creative, keyword and source while it counted lost reasons, and
+throwing all six away. It now keeps the cut alongside the total. Same fetch, same
+opportunity pass.
+
+**The numbers reconcile.** Every deal carries exactly one lost reason, and a deal
+missing a value for a dimension lands in a named "Not tagged" bucket rather than
+being quietly dropped - so each of the six cuts adds up to the same lost total on
+the scorecard. Where a dimension has more distinct values than the table shows,
+the remainder is stated rather than left as an unexplained gap.
+
+**Lost reasons on Caalano360 split by pipeline.** A two-pipeline client is really
+two businesses sharing a CRM, and their reasons rarely look alike, so averaging
+them describes neither. The picker appears only when there is more than one, and
+scoping also narrows the people behind each reason - clicking "Budget" in one
+pipeline no longer opens everyone ever lost on budget.
+
+Deals are counted by the period they were created in, so a deal that arrived last
+quarter and was lost this week is scored against the quarter it arrived. Reasons
+come from the lost-reason list in Caalano Systems, which makes the size of the
+"Unspecified" row a fair read on how consistently the team is setting one.
+
+---
+
 ## v3.399.0 - 2026-08-20 · `PENDING` - Two pipelines side by side, and a pipeline filter on the map
 
 **Revenue bottleneck.** A client with two pipelines got one funnel above the

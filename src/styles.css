@@ -3683,3 +3683,21 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
   .mini-tbl th, .mini-tbl td, .appt-tbl th, .appt-tbl td { padding-left: 6px; padding-right: 6px; }
 }
 @media (max-width: 1200px) { .users-tbl { font-size: 11.5px; } }
+
+/* Lost Reasons tab: dimension picker + the reason x dimension matrix. */
+.lrv-dims { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 10px; }
+.lrv-dim { font-size: 11.5px; font-weight: 700; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-2); background: var(--panel-2); color: var(--muted); transition: all .12s; }
+.lrv-dim:hover { color: var(--text); border-color: var(--brand); }
+.lrv-dim.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+/* Fixed layout so a long campaign name ellipses instead of widening the table:
+   the first column absorbs whatever the reason columns do not need. */
+.u-lrv { table-layout: fixed; width: 100%; min-width: 0; }
+.u-lrv th:first-child, .u-lrv td:first-child { width: 26%; }
+.u-lrv td.lft { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-lrv td.lrv-z { color: var(--faint); }
+.u-lrv td.lrv-n { font-weight: 700; }
+.lrv-row:hover > td { background: color-mix(in srgb, var(--brand) 6%, transparent); }
+.lrv-detail > td { background: var(--panel-2); padding: 10px 12px 12px; }
+.lrv-det-h { font-size: 11.5px; font-weight: 800; color: var(--muted); margin-bottom: 2px; }
+.lrv-detail .mini-tbl { margin-top: 4px; }

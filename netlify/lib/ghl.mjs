@@ -3803,6 +3803,20 @@ export async function buildCcDrill(locationId, from, to, channel) {
   const wonDeals = [], openDeals = []
   const openByStage = new Map() // pipelineId::stageId -> open deals currently sitting there
   const lostByReason = new Map()
+  // Lost reasons cut by the dimensions the deal already carries. Every value
+  // below is resolved a few lines down for other purposes, so this is bookkeeping
+  // on an existing loop - no extra request, no extra opportunity pass.
+  const LOST_DIMS = ['pipeline', 'stage', 'campaign', 'creative', 'keyword', 'source']
+  const lostDim = {}; for (const d of LOST_DIMS) lostDim[d] = new Map()
+  // Missing values get a named bucket rather than being dropped, so every
+  // dimension still adds up to the same lost total the scorecard shows.
+  const bumpLostDim = (d, key, reason, value) => {
+    const m = lostDim[d]; const k = key || 'Not tagged'
+    let e = m.get(k); if (!e) { e = { key: k, count: 0, value: 0, r: new Map() }; m.set(k, e) }
+    e.count++; e.value += value
+    const rr = e.r.get(reason) || { reason, count: 0, value: 0 }
+    rr.count++; rr.value += value; e.r.set(reason, rr)
+  }
   const closeByChannel = new Map()
   let revenueTotal = 0, openValueTotal = 0, openCount = 0, wonCount = 0, lostCount = 0, leadCount = 0
   let paidWon = 0, metaWon = 0, googleWon = 0
@@ -3852,6 +3866,12 @@ export async function buildCcDrill(locationId, from, to, channel) {
       const rn = lostReasonOf(o)
       let lr = lostByReason.get(rn); if (!lr) { lr = { reason: rn, count: 0, value: 0, people: [] }; lostByReason.set(rn, lr) }
       lr.count++; lr.value += val
+      bumpLostDim('pipeline', pipeName[o.pipelineId] || null, rn, val)
+      bumpLostDim('stage', stg ? stg.name : null, rn, val)
+      bumpLostDim('campaign', u.campaign || null, rn, val)
+      bumpLostDim('creative', u.content || null, rn, val)
+      bumpLostDim('keyword', u.term || null, rn, val)
+      bumpLostDim('source', label || null, rn, val)
       const cid = contactIdOf(o)
       if (lr.people.length < 60) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), oppSource: o.source || null, channelSource: label, utmSource: u.source || null, utmContent: u.content || null, formAnswers: (cid && formAns.get(cid)) || [] })
     } else {
@@ -3900,6 +3920,10 @@ export async function buildCcDrill(locationId, from, to, channel) {
     open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },
     openByStage: [...openByStage.values()].map((g) => ({ key: g.key, stage: g.stage, stageId: g.stageId, pipeline: g.pipeline, pipelineId: g.pipelineId, pos: g.pos, count: g.count, value: Math.round(g.value), deals: g.deals.sort((a, b) => b.value - a.value) })).sort((a, b) => a.pos - b.pos),
     lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),
+    lostBy: Object.fromEntries(LOST_DIMS.map((d) => [d, [...lostDim[d].values()]
+      .map((e) => ({ key: e.key, count: e.count, value: Math.round(e.value),
+        reasons: [...e.r.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count).slice(0, 20) }))
+      .sort((a, b) => b.count - a.count).slice(0, 60)])),
     bookingByCalendar,
     closeByChannel: closeArr,
     pipelinesFunnel,

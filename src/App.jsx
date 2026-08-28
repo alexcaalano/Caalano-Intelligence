@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.399.0'
+const APP_VERSION = '3.400.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4657,6 +4657,161 @@ function LocationSummary({ clientId, range, nonce, onNav }) {
   )
 }
 
+// Lost reasons on the overall tab. A multi-pipeline client is really two
+// businesses sharing a CRM, and their reasons rarely look alike - one loses on
+// price, the other on response time - so averaging them together describes
+// neither. The pipeline picker only appears when there is more than one.
+//
+// Nothing here costs a request: the ccdrill scope already resolves every deal's
+// pipeline, stage and campaign while it is counting lost reasons, and now keeps
+// the cut alongside the total.
+// ---------------------------------------------------------------------------
+// Lost Reasons - the whole picture of why work does not close, cut by the thing
+// that brought the lead in and by where it died.
+//
+// One reason per deal, so every cut adds up to the same lost total; a deal with
+// no campaign lands in "Not tagged" rather than vanishing, which is what keeps
+// the columns reconcilable against the headline number.
+//
+// The cut that matters most is usually campaign against reason: a campaign whose
+// losses are "price" is priced wrong or targeted wrong, and a campaign whose
+// losses are "could not contact" is a lead-quality or speed-to-lead problem.
+// They call for opposite fixes, and the total on its own cannot tell them apart.
+// ---------------------------------------------------------------------------
+const LR_DIMS = [
+  ['pipeline', 'Pipeline', 'Which side of the business the deal belonged to.'],
+  ['stage', 'Stage lost at', 'The stage the deal was sitting in when it was marked lost - where in the funnel it died.'],
+  ['campaign', 'Campaign', 'The utm_campaign the lead arrived with. Leads with no campaign - organic, direct, referral, or an untagged ad - group under "Not tagged".'],
+  ['creative', 'Creative / ad', 'The utm_content the lead arrived with, which is the ad or creative for tagged paid traffic.'],
+  ['keyword', 'Keyword', 'The utm_term the lead arrived with - the search keyword on tagged Google traffic.'],
+  ['source', 'Source', 'Where the lead came from, resolved the same way as everywhere else in the app.'],
+]
+const LR_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google'], ['other', 'Other']]
+
+function LostReasonsView({ clientId, range, nonce, currency }) {
+  const [chan, setChan] = useState('all')
+  const [dim, setDim] = useState('campaign')
+  const [openKey, setOpenKey] = useState(null)
+  const [drill, setDrill] = useState(null)
+  const st = useCcDrill(clientId, range, nonce, chan)
+  const money = (v) => fmtCurrency(v, currency)
+  const cc = st.data || null
+  const rows = (cc && cc.lostBy && cc.lostBy[dim]) || []
+  const lostTot = (cc && cc.totals && cc.totals.lost) || 0
+  const lostVal = ((cc && cc.lostByReason) || []).reduce((a, r) => a + (r.value || 0), 0)
+  // Columns = the reasons that actually matter across this cut. Anything past the
+  // top six folds into "Other" so the table stays readable at any width.
+  const topReasons = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) for (const x of (r.reasons || [])) m.set(x.reason, (m.get(x.reason) || 0) + x.count)
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k]) => k)
+  }, [rows])
+  const shownSum = rows.reduce((a, r) => a + r.count, 0)
+  const dimDef = LR_DIMS.find((d) => d[0] === dim) || LR_DIMS[0]
+  const cellOf = (r, reason) => (r.reasons || []).find((x) => x.reason === reason)
+  const otherOf = (r) => r.count - (r.reasons || []).filter((x) => topReasons.includes(x.reason)).reduce((a, x) => a + x.count, 0)
+  const anyOther = rows.some((r) => otherOf(r) > 0)
+  return (
+    <>
+      <div className="card">
+        <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <span>Lost reasons {lostTot ? <span className="sub">· {fmtNumber(lostTot)} lost{lostVal ? `, ${money(lostVal)}` : ''} · {rangeLabel(range)}</span> : null}</span>
+          <div className="kp-filters" style={{ padding: 0 }}>
+            {LR_CHANS.map(([k, lbl]) => <button key={k} className={`kp-filter${chan === k ? ' on' : ''}`} onClick={() => { setChan(k); setOpenKey(null) }}>{lbl}</button>)}
+          </div>
+        </div>
+        <div className="lrv-dims">
+          {LR_DIMS.map(([k, lbl, tip]) => <button key={k} className={`lrv-dim${dim === k ? ' on' : ''}`} title={tip} onClick={() => { setDim(k); setOpenKey(null) }}>{lbl}</button>)}
+        </div>
+        {st.status === 'loading' && !cc ? <Spinner label="Loading lost reasons…" />
+          : st.status === 'err' ? <div className="cap">Couldn’t load the CRM breakdown - try again.</div>
+            : !lostTot ? <div className="cap">No lost opportunities recorded in this period. ✅</div>
+              : !rows.length ? <div className="cap">No lost deals carried a {dimDef[1].toLowerCase()} in this period.</div>
+                : <>
+                  <table className="mini-tbl users-tbl appt-tbl u-lrv">
+                    <thead><tr>
+                      <th className="lft">{dimDef[1]}</th>
+                      <th>Lost</th><th>Value</th>
+                      {topReasons.map((r) => <th key={r}>{r}</th>)}
+                      {anyOther ? <th>Other</th> : null}
+                    </tr></thead>
+                    <tbody>{rows.map((r) => {
+                      const isOpen = openKey === r.key
+                      const oth = otherOf(r)
+                      return (
+                        <React.Fragment key={r.key}>
+                          <tr className="lrv-row" style={{ cursor: 'pointer' }} onClick={() => setOpenKey(isOpen ? null : r.key)} title="Click for this row’s full reason list">
+                            <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {r.key}</td>
+                            <td><b>{fmtNumber(r.count)}</b></td>
+                            <td>{r.value ? money(r.value) : '-'}</td>
+                            {topReasons.map((rn) => { const c = cellOf(r, rn); return <td key={rn} className={c ? 'lrv-n' : 'lrv-z'}>{c ? fmtNumber(c.count) : '-'}</td> })}
+                            {anyOther ? <td className={oth ? 'lrv-n' : 'lrv-z'}>{oth ? fmtNumber(oth) : '-'}</td> : null}
+                          </tr>
+                          {isOpen ? <tr className="lrv-detail"><td colSpan={3 + topReasons.length + (anyOther ? 1 : 0)}>
+                            <div className="lrv-det-h">{r.key} · every reason</div>
+                            <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
+                              <tbody>{(r.reasons || []).map((x, i) => {
+                                const full = (cc.lostByReason || []).find((y) => y.reason === x.reason)
+                                // The people list is only narrowable on the pipeline cut, because
+                                // that is the only dimension carried on each lost person record.
+                                const people = !full ? null : dim === 'pipeline' ? (full.people || []).filter((pp) => pp.pipeline === r.key) : (full.people || [])
+                                const can = !!(people && people.length)
+                                return <tr key={i} className={can ? 'lr-click' : ''} style={can ? { cursor: 'pointer' } : undefined}
+                                  onClick={can ? (ev) => { ev.stopPropagation(); setDrill({ kind: 'lost', title: `Lost · ${x.reason}${dim === 'pipeline' ? ` · ${r.key}` : ''}`, preselect: { ...full, count: x.count, value: x.value, people } }) } : undefined}>
+                                  <td className="lft">{x.reason}</td><td>{fmtNumber(x.count)}</td><td>{x.value ? money(x.value) : '-'}</td><td>{pctOf(x.count, r.count)}</td></tr>
+                              })}</tbody></table>
+                          </td></tr> : null}
+                        </React.Fragment>
+                      )
+                    })}</tbody>
+                  </table>
+                  {shownSum < lostTot ? <div className="cap" style={{ marginTop: 8 }}>Showing the top {fmtNumber(rows.length)} by lost deals · {fmtNumber(lostTot - shownSum)} lost {lostTot - shownSum === 1 ? 'deal sits' : 'deals sit'} in values beyond them.</div> : null}
+                  <Caveat>{dimDef[2]} Each deal carries one lost reason, so every cut here adds up to the same {fmtNumber(lostTot)} lost. Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. Reasons come from the lost-reason list in Caalano Systems, so the size of the “Unspecified” row is a fair read on how consistently the team is setting one.</Caveat>
+                </>}
+      </div>
+      {drill ? <CcDrillModal drill={drill} cc={cc} money={money} clientId={clientId} onClose={() => setDrill(null)} /> : null}
+    </>
+  )
+}
+
+function LostReasonsCard({ cc, crmAgg, money, setDrill }) {
+  const [pipe, setPipe] = useState('all')
+  // Prefer the ccdrill breakdown (it counts unassigned opps too, so this panel's
+  // total matches the Lost scorecard); fall back to the per-rep aggregation.
+  const useCc = !!(cc && cc.lostByReason)
+  const pipes = (cc && cc.lostBy && cc.lostBy.pipeline) || []
+  const multi = useCc && pipes.length > 1
+  const sel = multi && pipes.some((p) => p.key === pipe) ? pipe : 'all'
+  const scoped = sel === 'all' ? null : pipes.find((p) => p.key === sel)
+  const lostRows = scoped ? scoped.reasons : (useCc ? cc.lostByReason : ((crmAgg && crmAgg.lostReasons) || null))
+  const lostTot = scoped ? scoped.count
+    : useCc ? ((cc.totals ? cc.totals.lost : 0) || lostRows.reduce((s, r) => s + (r.count || 0), 0))
+      : (crmAgg ? crmAgg.lost : 0)
+  const lostVal = scoped ? scoped.value : useCc ? (lostRows || []).reduce((s, r) => s + (r.value || 0), 0) : (crmAgg ? crmAgg.lostValue : 0)
+  return (
+    <div className="card">
+      <div className="exec-panel-h" style={multi ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' } : undefined}>
+        <span>Lost reasons {lostTot ? <span className="sub">· {fmtNumber(lostTot)} lost{lostVal ? `, ${money(lostVal)}` : ''}{cc ? ' · click a reason for who + what they typed' : ''}</span> : null}</span>
+        {multi ? <select className="kef-pipe-sel" value={sel} onChange={(e) => setPipe(e.target.value)} title="Show one pipeline's lost reasons on their own">
+          <option value="all">All pipelines</option>
+          {pipes.map((p) => <option key={p.key} value={p.key}>{p.key} ({p.count})</option>)}
+        </select> : null}
+      </div>
+      {!lostRows ? <Spinner label="" />
+        : !lostRows.length ? <div className="cap">No lost opportunities recorded this period. ✅</div>
+          : <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
+            <tbody>{lostRows.slice(0, 12).map((r, i) => {
+              // The drill lists the people behind a reason. Scoped to a pipeline,
+              // the people list is narrowed to match - otherwise clicking "Budget"
+              // in one pipeline would open everybody who was ever lost on budget.
+              const full = cc && (cc.lostByReason || []).find((x) => x.reason === r.reason)
+              const ccReason = !full ? null : scoped ? { ...full, count: r.count, value: r.value, people: (full.people || []).filter((pp) => pp.pipeline === scoped.key) } : full
+              return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: scoped ? `Lost opportunities · ${scoped.key}` : 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '-'}</td><td>{pctOf(r.count, lostTot)}</td></tr>
+            })}</tbody></table>}
+    </div>
+  )
+}
+
 function AtRiskPanel({ clientId, range, nonce, money }) {
   const [st, setSt] = useState({ status: 'loading', deals: [] })
   useEffect(() => {
@@ -5566,26 +5721,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
 
       {/* Lost reasons - full width so the table never needs to scroll sideways.
           Rows are clickable → the per-reason people + their form answers. */}
-      <div className="card">
-        {(() => {
-          // Prefer the ccdrill lost breakdown (counts unassigned opps too) so this
-          // panel's total matches the Lost scorecard; fall back to crmAgg per-rep.
-          const useCc = !!(cc && cc.lostByReason)
-          const lostRows = useCc ? cc.lostByReason : ((crmAgg && crmAgg.lostReasons) || null)
-          const lostTot = useCc ? ((cc.totals ? cc.totals.lost : 0) || lostRows.reduce((s, r) => s + (r.count || 0), 0)) : (crmAgg ? crmAgg.lost : 0)
-          const lostVal = useCc ? lostRows.reduce((s, r) => s + (r.value || 0), 0) : (crmAgg ? crmAgg.lostValue : 0)
-          return <>
-            <div className="exec-panel-h">Lost reasons {lostTot ? <span className="sub">· {fmtNumber(lostTot)} lost{lostVal ? `, ${money(lostVal)}` : ''}{cc ? ' · click a reason for who + what they typed' : ''}</span> : null}</div>
-            {!lostRows ? <Spinner label="" />
-              : !lostRows.length ? <div className="cap">No lost opportunities recorded this period. ✅</div>
-                : <table className="mini-tbl users-tbl lr-tbl"><thead><tr><th className="lft">Reason</th><th>Deals</th><th>Value</th><th>Share</th></tr></thead>
-                  <tbody>{lostRows.slice(0, 12).map((r, i) => {
-                    const ccReason = cc && (cc.lostByReason || []).find((x) => x.reason === r.reason)
-                    return <tr key={i} className={ccReason ? 'lr-click' : ''} style={ccReason ? { cursor: 'pointer' } : undefined} onClick={ccReason ? () => setDrill({ kind: 'lost', title: 'Lost opportunities', preselect: ccReason }) : undefined}><td className="lft">{r.reason}</td><td>{fmtNumber(r.count)}</td><td>{r.value ? money(r.value) : '-'}</td><td>{pctOf(r.count, lostTot)}</td></tr>
-                  })}</tbody></table>}
-          </>
-        })()}
-      </div>
+      <LostReasonsCard cc={cc} crmAgg={crmAgg} money={money} setDrill={setDrill} />
 
       {/* Per-pipeline breakdown - fallback table when the richer per-channel
           Pipeline performance card isn't available (e.g. viewer without ccdrill). */}
@@ -9725,7 +9861,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
-  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' })
+  if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
@@ -9783,6 +9919,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} /><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
+        {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
@@ -11901,7 +12038,7 @@ function offeredTabsFor(c) {
   if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
-  if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' })
+  if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
   return out
 }
 function AccessPreview({ draft, clients, email, onClose }) {

@@ -2477,7 +2477,7 @@ const VIEWER_REQ_TABS = {
   'channel:meta': ['meta'],
   'channel:google': ['google'],
   'scope:health': ['overall'],
-  'scope:ccdrill': ['overall'],
+  'scope:ccdrill': ['overall', 'lostreasons'],
   'scope:users': ['overall', 'users'],
   'scope:forms': ['meta', 'forms', 'location'],
   // The business address, for the catchment pin on the lead map.

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.402.0'
+const APP_VERSION = '3.403.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4698,7 +4698,8 @@ const LR_DIMS = [
   ['source', 'Source', 'Where the lead came from, resolved the same way as everywhere else in the app.'],
   ['pipeline', 'Pipeline', 'Which side of the business the deal belonged to.'],
   ['stage', 'Stage lost at', 'The stage the deal was sitting in when it was marked lost - where in the funnel it died.'],
-  ['campaign', 'Campaign', 'The utm_campaign the lead arrived with. Leads with no campaign - organic, direct, referral or an untagged ad - group under “Not tagged”.'],
+  ['campaign', 'Campaign', 'The utm_campaign the lead arrived with, resolved from a platform id to the real campaign name where the UTM carried an id. Leads with no campaign - organic, direct, referral or an untagged ad - group under “Not tagged”.'],
+  ['adset', 'Ad set / ad group', 'The utm_medium the lead arrived with, resolved to the ad set or ad group name where it carried an id. Accounts that use utm_medium conventionally will see values like “cpc” here instead.'],
   ['creative', 'Creative / ad', 'The utm_content the lead arrived with, which is the ad or creative on tagged paid traffic.'],
   ['keyword', 'Keyword', 'The utm_term the lead arrived with - the search keyword on tagged Google traffic.'],
 ]
@@ -4769,6 +4770,21 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   const otherOf = (g) => g.count - colKeys.reduce((a, k) => a + (g.cols.get(k) || 0), 0)
   const anyOther = groups.some((g) => otherOf(g) > 0)
   const totVal = rows.reduce((a, r) => a + r.value, 0)
+  // A share inside a filter means little on its own: "Budget is 28% of Paid
+  // Social losses" is only interesting against Budget's share of every loss.
+  // The unfiltered distribution is kept for exactly that comparison, so the
+  // baseline survives whatever the filters do.
+  const baseline = useMemo(() => {
+    const m = new Map()
+    for (const r of facts) m.set(r[groupBy], (m.get(r[groupBy]) || 0) + 1)
+    return m
+  }, [facts, groupBy])
+  const liftOf = (g) => {
+    if (!active.length || !rows.length || !facts.length) return null
+    const here = (g.count / rows.length) * 100
+    const all = ((baseline.get(g.key) || 0) / facts.length) * 100
+    return Math.round(here - all)
+  }
   const allTot = (cc && cc.lostFacts && cc.lostFacts.total) || facts.length
   // People records carry the form answers and the full source trail; the fact
   // rows carry everyone. Join on contact id so a filtered group lists every
@@ -4821,6 +4837,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                       <thead><tr>
                         <th className="lft">{LR_LABEL[groupBy]}</th>
                         <th>Lost</th><th>Value</th><th>Share</th>
+                        {active.length ? <th title="This row’s share of the filtered deals minus its share of every lost deal. Positive means these filters concentrate it.">vs all</th> : null}
                         {colKeys.map((k) => <th key={k} title={`${LR_LABEL[colDim]}: ${k}`}>{k}</th>)}
                         {anyOther ? <th>Other</th> : null}
                       </tr></thead>
@@ -4834,10 +4851,11 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                               <td><b>{fmtNumber(g.count)}</b></td>
                               <td>{g.value ? money(g.value) : '-'}</td>
                               <td>{pctOf(g.count, rows.length)}</td>
+                              {active.length ? (() => { const l = liftOf(g); return <td className={l == null ? 'lrv-z' : l > 0 ? 'lrv-up' : l < 0 ? 'lrv-dn' : 'lrv-z'} title={`${fmtNumber(baseline.get(g.key) || 0)} of ${fmtNumber(facts.length)} unfiltered`}>{l == null ? '-' : l > 0 ? `+${l}pp` : l < 0 ? `${l}pp` : '0'}</td> })() : null}
                               {colKeys.map((k) => { const n = g.cols.get(k) || 0; return <td key={k} className={n ? 'lrv-n' : 'lrv-z'}>{n ? fmtNumber(n) : '-'}</td> })}
                               {anyOther ? <td className={oth ? 'lrv-n' : 'lrv-z'}>{oth ? fmtNumber(oth) : '-'}</td> : null}
                             </tr>
-                            {isOpen ? <tr className="lrv-detail"><td colSpan={4 + colKeys.length + (anyOther ? 1 : 0)}>
+                            {isOpen ? <tr className="lrv-detail"><td colSpan={4 + (active.length ? 1 : 0) + colKeys.length + (anyOther ? 1 : 0)}>
                               <div className="lrv-det-h">{LR_LABEL[groupBy]}: {g.key} · {fmtNumber(g.count)} {g.count === 1 ? 'lead' : 'leads'}{active.length ? ` · with ${active.map(([d, v]) => `${LR_LABEL[d].toLowerCase()} ${v}`).join(', ')}` : ''}</div>
                               <LostPeopleTable people={peopleOf(g)} clientId={clientId} money={money} />
                             </td></tr> : null}

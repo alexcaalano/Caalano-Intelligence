@@ -3806,13 +3806,13 @@ export async function buildCcDrill(locationId, from, to, channel) {
   // Lost reasons cut by the dimensions the deal already carries. Every value
   // below is resolved a few lines down for other purposes, so this is bookkeeping
   // on an existing loop - no extra request, no extra opportunity pass.
-  const LOST_DIMS = ['pipeline', 'stage', 'campaign', 'creative', 'keyword', 'source']
+  const LOST_DIMS = ['pipeline', 'stage', 'campaign', 'adset', 'creative', 'keyword', 'source']
   const lostDim = {}; for (const d of LOST_DIMS) lostDim[d] = new Map()
   // One fact row per lost deal, so the UI can cross-filter (Paid Social AND a
   // given stage) instead of being stuck on one cut at a time - six independent
   // rollups cannot be intersected from their totals. Strings are dictionary
   // encoded: the same campaign name repeats across hundreds of rows.
-  const LOST_FACT_KEYS = ['reason', 'pipeline', 'stage', 'campaign', 'creative', 'keyword', 'source', 'channel']
+  const LOST_FACT_KEYS = ['reason', 'pipeline', 'stage', 'campaign', 'adset', 'creative', 'keyword', 'source', 'channel']
   const LOST_FACT_CAP = 4000
   const factDict = {}; const factIdx = {}
   for (const k of LOST_FACT_KEYS) { factDict[k] = []; factIdx[k] = new Map() }
@@ -3879,6 +3879,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
       bumpLostDim('pipeline', pipeName[o.pipelineId] || null, rn, val)
       bumpLostDim('stage', stg ? stg.name : null, rn, val)
       bumpLostDim('campaign', u.campaign || null, rn, val)
+      bumpLostDim('adset', u.medium || null, rn, val)
       bumpLostDim('creative', u.content || null, rn, val)
       bumpLostDim('keyword', u.term || null, rn, val)
       bumpLostDim('source', label || null, rn, val)
@@ -3886,7 +3887,8 @@ export async function buildCcDrill(locationId, from, to, channel) {
       if (factRows.length < LOST_FACT_CAP) {
         factRows.push([
           fIdx('reason', rn), fIdx('pipeline', pipeName[o.pipelineId] || null), fIdx('stage', stg ? stg.name : null),
-          fIdx('campaign', u.campaign || null), fIdx('creative', u.content || null), fIdx('keyword', u.term || null),
+          fIdx('campaign', u.campaign || null), fIdx('adset', u.medium || null),
+          fIdx('creative', u.content || null), fIdx('keyword', u.term || null),
           fIdx('source', label || null), fIdx('channel', ch || null),
           Math.round(val), cid || null, name,
         ])

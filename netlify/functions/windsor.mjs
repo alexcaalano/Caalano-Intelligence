@@ -791,6 +791,62 @@ async function fetchAdIdNameMaps(cc, from, to, preset, key) {
   for (const r of fbIds) { put(campaign, r.campaign_id, r.campaign); put(medium, r.adset_id, r.adset_name); put(content, r.ad_id, r.ad_name) }
   return { campaign, medium, content }
 }
+// Rewrite the Lost Reasons dimensions from numeric platform ids to real names.
+// A CRM UTM very often carries an id rather than a name (utm_campaign is the
+// worst offender), which is why the table showed rows like "120213683170520253"
+// next to properly named ones. Same maps the Forms scope already uses.
+//
+// Resolving can collapse two dictionary entries onto one name - an id and the
+// name itself both appearing, or two ad ids sharing an ad group - so the
+// dictionary is rebuilt with duplicates merged and the fact rows re-indexed,
+// rather than left with two identical-looking rows that each hold half the
+// deals. Best-effort throughout: anything that does not resolve stays as it was.
+const LOST_ID_DIMS = { campaign: ['campaign'], adset: ['medium', 'campaign'], creative: ['content', 'medium'], keyword: ['medium', 'content'] }
+function resolveLostAttribution(drill, maps) {
+  if (!maps || !drill) return
+  const nameOf = (dim, v) => {
+    const raw = String(v ?? '').trim()
+    // Only ever rewrite a bare numeric id. A real campaign name must never be
+    // replaced by an accidental key collision with some other platform's id.
+    if (!/^\d{6,}$/.test(raw)) return v
+    for (const m of (LOST_ID_DIMS[dim] || [])) { const hit = maps[m] && maps[m][raw]; if (hit) return hit }
+    return v
+  }
+  const f = drill.lostFacts
+  if (f && f.rows && f.dict) {
+    for (const dim of Object.keys(LOST_ID_DIMS)) {
+      const col = (f.keys || []).indexOf(dim)
+      const old = f.dict[dim]
+      if (col < 0 || !Array.isArray(old)) continue
+      const next = [], seen = new Map(), remap = new Array(old.length)
+      old.forEach((v, i) => {
+        const nm = nameOf(dim, v)
+        let at = seen.get(nm); if (at === undefined) { at = next.length; next.push(nm); seen.set(nm, at) }
+        remap[i] = at
+      })
+      if (next.length === old.length && next.every((v, i) => v === old[i])) continue
+      f.dict[dim] = next
+      for (const r of f.rows) r[col] = remap[r[col]]
+    }
+  }
+  // The pre-computed rollups are still served for the Caalano360 panel, so they
+  // get the same treatment - including merging any rows that collapse together.
+  for (const dim of Object.keys(LOST_ID_DIMS)) {
+    const rows = drill.lostBy && drill.lostBy[dim]
+    if (!Array.isArray(rows)) continue
+    const byKey = new Map()
+    for (const r of rows) {
+      const key = nameOf(dim, r.key)
+      let e = byKey.get(key)
+      if (!e) { e = { key, count: 0, value: 0, _r: new Map() }; byKey.set(key, e) }
+      e.count += r.count; e.value += r.value
+      for (const x of (r.reasons || [])) { const rr = e._r.get(x.reason) || { reason: x.reason, count: 0, value: 0 }; rr.count += x.count; rr.value += x.value; e._r.set(x.reason, rr) }
+    }
+    drill.lostBy[dim] = [...byKey.values()]
+      .map(({ _r, ...e }) => ({ ...e, reasons: [..._r.values()].sort((a, b) => b.count - a.count) }))
+      .sort((a, b) => b.count - a.count)
+  }
+}
 // Rewrite each Forms person's campaign / ad set / creative from a numeric id to its
 // name using the maps above. Idempotent + best-effort (an unresolved value stays as
 // it was), and dedupes by object identity since form-people and answer-people share
@@ -3581,10 +3637,15 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ scope: 'ccdrill', client, connected: false })
     const channel = url.searchParams.get('channel') || 'all'
     try {
-      const [drill, health] = await Promise.all([
+      // The id→name maps hit Windsor, not GoHighLevel, and run alongside the two
+      // builds, so resolving the Lost Reasons dimensions costs no extra latency
+      // and nothing against the CRM rate limit.
+      const [drill, health, idMaps] = await Promise.all([
         buildCcDrill(cc.ghl, from, to, channel),
         buildHealth(cc, from, to, preset, key).catch(() => null),
+        (cc.meta || cc.google) ? fetchAdIdNameMaps(cc, from, to, preset, key).catch(() => null) : Promise.resolve(null),
       ])
+      if (idMaps) resolveLostAttribution(drill, idMaps)
       const chn = (health && health.channels) || {}
       const metaSpend = num(chn.metaSpend), googleSpend = num(chn.googleSpend)
       const metaLeads = num(chn.metaLeads), googleLeads = num(chn.googleConv)

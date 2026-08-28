@@ -3738,3 +3738,6 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .lostppl-trail b { color: var(--text); font-weight: 700; }
 .lostppl-ans { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
 .lostppl-ans b { color: var(--text); font-weight: 700; }
+/* Over/under-representation against the unfiltered distribution. */
+.u-lrv td.lrv-up { color: var(--neg, #e0566c); font-weight: 700; }
+.u-lrv td.lrv-dn { color: var(--pos, #12b886); font-weight: 700; }

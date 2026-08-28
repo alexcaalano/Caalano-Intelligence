@@ -18,6 +18,43 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.403.0 - 2026-08-20 · `PENDING` - Real campaign names, an ad set cut, and a baseline that survives filtering
+
+**Platform ids become names.** The campaign column was showing rows like
+`120213683170520253` and `22314183244` alongside properly named ones, because a
+CRM UTM very often carries a platform id rather than a name - `utm_campaign` is
+the worst offender. Those are now resolved through the Meta and Google id-to-name
+maps the Forms scope already used. The lookup runs alongside the two existing
+builds and hits Windsor rather than GoHighLevel, so it costs no extra latency and
+nothing against the CRM rate limit; anything that does not resolve is left as it
+was.
+
+Resolving can collapse two entries onto one name - an id and its own name both
+appearing in the list, or two ad ids sharing an ad group - so the dictionary is
+rebuilt with duplicates merged and every deal re-pointed at the merged entry.
+Without that you would get two identical-looking rows each holding half the
+deals, which is worse than the ids were. Only a bare run of digits is ever
+rewritten, so a real campaign name can never be replaced by an id collision.
+
+**Ad set / ad group** joins the dimensions, read from `utm_medium` and resolved
+the same way. Accounts that use `utm_medium` conventionally will see values like
+"cpc" here instead, which the column tooltip says.
+
+**A baseline that filters cannot move.** "Budget is 28% of Paid Social losses" is
+not worth much on its own - it matters against Budget's share of every loss. With
+any filter active, a **vs all** column appears showing the difference in
+percentage points between a row's share of the filtered set and its share of all
+lost deals. Positive means these filters concentrate it, which is the thing you
+were looking for when you applied them.
+
+Verified against a payload shaped exactly like the real one, covering the cases
+that bite: an id whose name is already in the list, two ad ids sharing one ad
+group, an id with no mapping, a non-numeric value that must be left alone, and
+that resolving twice changes nothing. Value, contact and name columns survive the
+re-indexing, and the merged rollups still total every lost deal.
+
+---
+
 ## v3.402.0 - 2026-08-20 · `PENDING` - Lost Reasons becomes one filterable table
 
 The tab could show one cut at a time: lost reasons by campaign, or by stage, or

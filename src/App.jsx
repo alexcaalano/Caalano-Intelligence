@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.394.1'
+const APP_VERSION = '3.394.2'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8511,6 +8511,7 @@ function TimingDrill({ drill, money, onClose }) {
       </div>
     </div>
   )
+}
 // When enquiries actually arrive: a weekday x hour grid of lead creation times,
 // in the BUSINESS's timezone, split by channel. The point is staffing and
 // follow-up cover - "nobody is at the phone at 8pm and that is when a third of
@@ -8623,7 +8624,6 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
       ) : null}
     </div>
   )
-}
 }
 // Time in stage - for every OPEN deal, how long it's been sitting in its current
 // pipeline stage (measured straight from stage moves). Aggregated per stage /

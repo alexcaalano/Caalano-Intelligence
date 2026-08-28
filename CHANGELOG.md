@@ -18,6 +18,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.394.2 - 2026-08-20 · `PENDING` - Fix: EnquiryTimesSection is not defined
+
+The Timing tab threw **"EnquiryTimesSection is not defined"**. The component from
+v3.394.0 was declared a few lines above where it was meant to go, but on the
+wrong side of a closing brace: **inside another component's body**, after that
+component's `return`.
+
+That is legal JavaScript. A declaration after a `return` is unreachable but
+valid, and the name is scoped to the enclosing function, so nothing complains at
+build time. It fails only at runtime, only on the screen that renders it.
+
+**Added a guard, because this shipped.** `scripts/check-toplevel.mjs` strips JSX
+with esbuild and compares the function declarations the source puts at column 0
+against the ones the parser puts at top level. Anything in the first list and not
+the second is nested. It runs as part of `npm run build`, so a build now fails
+rather than producing a bundle that breaks one screen.
+
+Verified both ways: it passes the clean file (422 top-level declarations) and
+fails a deliberately-nested copy, naming the file and line.
+
+---
+
 ## v3.394.1 - 2026-08-20 · `PENDING` - Metric explanations: Super Admin only, full stop
 
 v3.394.0 hid the methodology prose from client Viewers and put the rest behind a

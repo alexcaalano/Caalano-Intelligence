@@ -18,6 +18,50 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.413.0 - 2026-08-20 · `PENDING` - Does the hour a lead arrives predict whether it converts?
+
+A **Win rate** mode on the leads grid, beside Volume and Booking rate. Leads are
+grouped by the hour they were captured and scored on what became of them, so this
+asks whether arrival time predicts conversion - something media buying can act on
+- rather than when the team happens to close deals, which is what the won/lost
+views added in v3.412.0 show.
+
+**The denominator is decided deals**, won plus lost. A deal still open has not
+converted and has not failed to, and counting it as a failure would penalise
+whichever hours happen to hold the most recent leads. The open count is stated so
+you can see how much is still in flight.
+
+**The honest part is the refusal to find a pattern.** The grid has 168 cells; a
+client with two hundred leads averages barely one per cell, and a win rate on one
+deal is 0% or 100%, which always looks like a finding. So the grid shows no rate
+below six decided deals in a cell, and the actual reading happens underneath on
+the margins - by time of day in seven bands, or by day of week - where the counts
+can support a number.
+
+Even there, "evenings convert at 37% against an account rate of 27%" is worth
+nothing without knowing whether that gap survives the sample. Every row carries a
+Wilson interval, drawn against a tick at the account rate, and a row is called
+better or worse only when its whole interval clears that tick. On realistic data
+most rows come back **no clear difference**, which is usually the true answer and
+is the entire reason to build this rather than a bar chart that always crowns a
+winner.
+
+The interval is deliberately wider than a plain 95%. Testing seven buckets at 95%
+each gives roughly a one-in-three chance that one looks remarkable by luck alone,
+so the threshold is widened for the number of comparisons being made - with seven
+bands that is about 2.7 sigma rather than 1.96. Buckets under twelve decided deals
+are not ranked at all: a lopsided four-of-five would clear the interval on its own
+and the floor, not the interval, is what stops it being shown.
+
+Tested on the statistics rather than the layout: that one win from one deal is not
+100%, that zero from five is not 0%, that intervals stay inside [0,1] where the
+textbook approximation goes negative, that a bigger sample narrows the interval,
+that the comparison correction only ever tightens the bar, that a dramatic small
+bucket never reaches a verdict, and that every bucket reconciles - leads equals
+won plus lost plus open.
+
+---
+
 ## v3.412.0 - 2026-08-20 · `PENDING` - When deals are won, lost, and reach a key event
 
 Three more views on the time-of-day grid, beside Leads arrive / Booking made /

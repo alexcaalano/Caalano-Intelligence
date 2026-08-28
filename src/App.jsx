@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.412.0'
+const APP_VERSION = '3.413.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9304,6 +9304,154 @@ function TimingDrill({ drill, money, onClose }) {
 const ENQ_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const ENQ_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google'], ['other', 'Non-paid']]
 const enqHourLabel = (h) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`)
+// --- Does the hour a lead arrives predict whether it converts? --------------
+//
+// The heat grid has 168 cells. A client with two hundred leads therefore averages
+// barely one lead per cell, and a win rate computed on one lead is not a small
+// sample - it is 0% or 100%, which will always look like a finding. So the grid
+// keeps a floor below which it shows nothing, and the actual reading happens on
+// the margins, where the counts are large enough to mean something.
+//
+// Even there, "Tuesday converts at 31% and Thursday at 19%" is worth nothing
+// without knowing whether that gap survives the sample. Each row carries a Wilson
+// 95% interval, and a row is only called better or worse than the account when
+// its interval clears the account rate entirely. Everything else is reported as
+// no clear difference, which is usually the honest answer and is the whole reason
+// to build this rather than a bar chart that always finds a winner.
+const WIN_MIN_CELL = 6        // leads in a grid cell before a rate is shown at all
+const WIN_MIN_BUCKET = 12     // decided deals in a bucket before it is ranked
+
+// Every bucket is tested against the account rate, and testing seven of them at
+// 95% each gives roughly a one-in-three chance that at least one comes back
+// "better" purely by luck. A tool whose entire purpose is to not cry wolf cannot
+// afford that, so the confidence is widened for the number of comparisons being
+// made (Bonferroni: alpha / m). With seven bands that moves the threshold from
+// 1.96 to about 2.69 sigma, and borderline rows correctly fall back to "no clear
+// difference".
+function invNorm(p) {
+  // Acklam's rational approximation - plenty for choosing a threshold.
+  const a = [-39.6968302866538, 220.946098424521, -275.928510446969, 138.357751867269, -30.6647980661472, 2.50662827745924]
+  const b = [-54.4760987982241, 161.585836858041, -155.698979859887, 66.8013118877197, -13.2806815528857]
+  const c = [-0.00778489400243029, -0.322396458041136, -2.40075827716184, -2.54973253934373, 4.37466414146497, 2.93816398269878]
+  const d = [0.00778469570904146, 0.32246712907004, 2.445134137143, 3.75440866190742]
+  const pl = 0.02425
+  if (p < pl) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1) }
+  if (p > 1 - pl) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1) }
+  const q = p - 0.5, r = q * q
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1)
+}
+const zFor = (comparisons) => invNorm(1 - (0.05 / Math.max(1, comparisons)) / 2)
+
+// Wilson score interval - behaves sensibly at small n and at rates near 0 or 1,
+// where the textbook normal approximation produces intervals below zero.
+function wilson(k, n, z = 1.96) {
+  if (!n) return null
+  const p = k / n
+  const d = 1 + (z * z) / n
+  const centre = p + (z * z) / (2 * n)
+  const spread = z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))
+  return { p, lo: Math.max(0, (centre - spread) / d), hi: Math.min(1, (centre + spread) / d) }
+}
+
+const WIN_BANDS = [
+  ['Overnight', 0, 6], ['Early morning', 6, 9], ['Morning', 9, 12],
+  ['Early afternoon', 12, 15], ['Late afternoon', 15, 18], ['Evening', 18, 21], ['Late evening', 21, 24],
+]
+
+// Roll the grid up along one margin. `decided` is the denominator: a deal still
+// open has not converted OR failed to, and counting it as a failure would punish
+// whichever hours happen to have the most recent leads.
+function winBuckets(g, kind) {
+  const out = []
+  const push = (label, cells) => {
+    let leads = 0, won = 0, lost = 0
+    for (const c of cells) { leads += c.leads; won += c.won || 0; lost += c.lost || 0 }
+    out.push({ label, leads, won, lost, decided: won + lost, open: leads - won - lost })
+  }
+  if (kind === 'day') {
+    for (let d = 0; d < 7; d++) push(ENQ_DAYS[d], g[d])
+  } else {
+    for (const [label, a, b] of WIN_BANDS) {
+      const cells = []
+      for (let d = 0; d < 7; d++) for (let h = a; h < b; h++) cells.push(g[d][h])
+      push(`${label} · ${enqHourLabel(a)}–${enqHourLabel(b === 24 ? 0 : b)}`, cells)
+    }
+  }
+  return out
+}
+
+function EnqWinRate({ g, money }) {
+  const [kind, setKind] = useState('band')
+  const all = useMemo(() => {
+    let leads = 0, won = 0, lost = 0
+    for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) { const c = g[d][h]; leads += c.leads; won += c.won || 0; lost += c.lost || 0 }
+    return { leads, won, lost, decided: won + lost, open: leads - won - lost }
+  }, [g])
+  const rows = useMemo(() => winBuckets(g, kind), [g, kind])
+  if (!all.decided) {
+    return <div className="cap enq-win-none">No lead in this period has been marked won or lost yet, so there is nothing to correlate arrival time against. This view fills in as deals resolve.</div>
+  }
+  const base = all.won / all.decided
+  const ranked = rows.filter((r) => r.decided >= WIN_MIN_BUCKET)
+  const thin = rows.filter((r) => r.decided > 0 && r.decided < WIN_MIN_BUCKET)
+  // One threshold for the whole table, set by how many rows are being tested.
+  const z = zFor(ranked.length)
+  const verdict = (r) => {
+    const w = wilson(r.won, r.decided, z)
+    if (!w) return null
+    if (w.lo > base) return { kind: 'up', text: 'better than the account' }
+    if (w.hi < base) return { kind: 'dn', text: 'worse than the account' }
+    return { kind: 'flat', text: 'no clear difference' }
+  }
+  const sorted = ranked.slice().sort((a, b) => (b.won / b.decided) - (a.won / a.decided))
+  const anyCall = sorted.some((r) => { const v = verdict(r); return v && v.kind !== 'flat' })
+  return (
+    <div className="enq-win">
+      <div className="enq-win-head">
+        <span className="enq-win-t">Win rate by when the lead arrived <span className="sub">· {fmtNumber(all.won)} won of {fmtNumber(all.decided)} decided · account rate {Math.round(base * 100)}%</span></span>
+        <div className="chan-toggle sm">
+          <button className={kind === 'band' ? 'on' : ''} onClick={() => setKind('band')}>Time of day</button>
+          <button className={kind === 'day' ? 'on' : ''} onClick={() => setKind('day')}>Day of week</button>
+        </div>
+      </div>
+      {!sorted.length ? <div className="cap">No {kind === 'day' ? 'day' : 'time band'} has {WIN_MIN_BUCKET} decided deals yet - too thin to rank without inventing a pattern. The counts are still in the grid above.</div> : <>
+        <table className="mini-tbl users-tbl appt-tbl u-win">
+          <thead><tr>
+            <th className="lft">{kind === 'day' ? 'Arrived on' : 'Arrived'}</th>
+            <th>Leads</th><th>Decided</th><th>Won</th><th>Win rate</th>
+            <th className="lft" title="How wide the true rate could plausibly be, given how few deals it is measured on and how many buckets are being compared">Plausible range</th><th className="lft">vs account</th>
+          </tr></thead>
+          <tbody>{sorted.map((r) => {
+            const w = wilson(r.won, r.decided, z); const v = verdict(r)
+            return (
+              <tr key={r.label}>
+                <td className="lft">{r.label}</td>
+                <td>{fmtNumber(r.leads)}</td>
+                <td>{fmtNumber(r.decided)}</td>
+                <td>{fmtNumber(r.won)}</td>
+                <td><b>{Math.round(w.p * 100)}%</b></td>
+                <td className="lft">
+                  <span className="win-ci" title={`Between ${Math.round(w.lo * 100)}% and ${Math.round(w.hi * 100)}%, at the confidence needed to test ${ranked.length} buckets at once. The account rate is ${Math.round(base * 100)}%.`}>
+                    <span className="win-ci-base" style={{ left: `${base * 100}%` }} />
+                    <span className="win-ci-bar" style={{ left: `${w.lo * 100}%`, width: `${Math.max(1, (w.hi - w.lo) * 100)}%` }} />
+                  </span>
+                  <span className="win-ci-n">{Math.round(w.lo * 100)}–{Math.round(w.hi * 100)}%</span>
+                </td>
+                <td className={`lft win-v win-${v.kind}`}>{v.text}</td>
+              </tr>
+            )
+          })}</tbody>
+        </table>
+        <Caveat>
+          Leads are grouped by the hour they <b>arrived</b>, and scored on what became of them - so this asks whether arrival time predicts conversion, which is something media buying can act on, rather than when your team happens to close deals.
+          {' '}The denominator is <b>decided</b> deals, won plus lost. {all.open ? <>{fmtNumber(all.open)} of {fmtNumber(all.leads)} leads are still open and are excluded: counting them as failures would penalise whichever hours happen to hold the most recent leads.</> : null}
+          {' '}The bar is a Wilson interval and the tick is the account rate. It is drawn wider than a plain 95% because {ranked.length} buckets are being tested at once, and testing enough of them at 95% each guarantees one will eventually look remarkable by luck alone. A row is only called better or worse when its whole interval clears that tick{anyCall ? '' : ', and on this data none of them do - the differences you can see are inside the noise'}. Rows under {WIN_MIN_BUCKET} decided deals are not ranked at all{thin.length ? `, which is ${thin.length} of them here` : ''}, because a win rate on a handful of deals is not a small signal, it is a coin toss that always looks like a finding.
+        </Caveat>
+      </>}
+    </div>
+  )
+}
+
 // The outcome and stage grids arrive as flat 168-slot arrays (day * 24 + hour).
 // Reshaped to the same [7][24] of { leads, booked } the lead grid uses, so every
 // statistic, heat scale and cell below works on all views without a special case.
@@ -9394,7 +9542,15 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   const noun = isLeads ? 'enquiries' : view === 'made' ? 'bookings' : view === 'slot' ? 'appointments'
     : view === 'won' ? 'deals won' : view === 'lost' ? 'deals lost' : 'entries into this stage'
   const rateMode = mode === 'rate' && isLeads
+  const winMode = mode === 'win' && isLeads
   const cellCls = (c) => {
+    if (winMode) {
+      const dec = (c.won || 0) + (c.lost || 0)
+      if (!c.leads) return 'enq-c0'
+      if (dec < WIN_MIN_CELL) return 'enq-cthin'
+      const r = c.won / dec
+      return r > .5 ? 'enq-r4' : r > .35 ? 'enq-r3' : r > .2 ? 'enq-r2' : r > .08 ? 'enq-r1' : 'enq-r0'
+    }
     if (!rateMode) {
       if (!c.leads) return 'enq-c0'
       const q = c.leads / stats.maxLeads
@@ -9407,6 +9563,13 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   const cellTitle = (c, dy, h) => {
     const when = `${ENQ_DAYS[dy]} ${enqHourLabel(h)}`
     if (!c.leads) return `${when} · none`
+    if (winMode) {
+      const dec = (c.won || 0) + (c.lost || 0)
+      const open = c.leads - dec
+      return dec < WIN_MIN_CELL
+        ? `${when} · ${c.leads} lead${c.leads === 1 ? '' : 's'}, only ${dec} decided - too few to put a win rate on`
+        : `${when} · ${c.won} won of ${dec} decided (${Math.round((c.won / dec) * 100)}%)${open ? ` · ${open} still open` : ''}`
+    }
     return isLeads
       ? `${when} · ${c.leads} enquir${c.leads === 1 ? 'y' : 'ies'} · ${c.booked} booked (${Math.round((c.booked / c.leads) * 100)}%)`
       : `${when} · ${c.leads} ${noun}`
@@ -9445,6 +9608,7 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
             {isLeads ? <div className="chan-toggle sm">
               <button className={mode === 'volume' ? 'on' : ''} onClick={() => setMode('volume')}>Volume</button>
               <button className={mode === 'rate' ? 'on' : ''} onClick={() => setMode('rate')}>Booking rate</button>
+              <button className={mode === 'win' ? 'on' : ''} onClick={() => setMode('win')} title="Group leads by the hour they arrived and score them on what became of them">Win rate</button>
             </div> : null}
             <span className="cap">
               {rateMode
@@ -9465,6 +9629,7 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
           ) : (
             <div className="enq-hours"><span className="cap">Business hours are switched off for this client, so there is no inside/outside split. Set them in Settings → this client.</span></div>
           )}
+          {winMode ? <EnqWinRate g={g} /> : null}
           <div className="enq-wrap">
             <table className="enq-grid">
               <thead><tr><th /> {Array.from({ length: 24 }, (_, h) => <th key={h}>{h % 3 === 0 ? enqHourLabel(h) : ''}</th>)}</tr></thead>
@@ -9476,7 +9641,7 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
                     {Array.from({ length: 24 }, (_, h) => {
                       const c = g[dy][h]
                       const edge = hrs && work && (h * 60 === hrs.startMin || h * 60 === hrs.endMin)
-                      return <td key={h} className={edge ? 'enq-edge' : ''}><span className={`enq-cell ${cellCls(c)}`} title={cellTitle(c, dy, h)}>{rateMode ? (c.leads >= stats.MIN ? Math.round((c.booked / c.leads) * 100) : '') : (c.leads || '')}</span></td>
+                      return <td key={h} className={edge ? 'enq-edge' : ''}><span className={`enq-cell ${cellCls(c)}`} title={cellTitle(c, dy, h)}>{winMode ? (((c.won || 0) + (c.lost || 0)) >= WIN_MIN_CELL ? Math.round((c.won / ((c.won || 0) + (c.lost || 0))) * 100) : '') : rateMode ? (c.leads >= stats.MIN ? Math.round((c.booked / c.leads) * 100) : '') : (c.leads || '')}</span></td>
                     })}
                   </tr>
                 )

@@ -3540,7 +3540,11 @@ export async function buildEnquiryTimes(locationId, from, to) {
   // Weekday x hour in the location's wall clock. Monday is 0 so the grid reads
   // Mon..Sun rather than starting on Sunday.
   const cellOf = (ms) => { const l = new Date(ms + tzOffsetMs(tz, ms)); return { d: (l.getUTCDay() + 6) % 7, h: l.getUTCHours() } }
-  const blank = () => { const g = []; for (let d = 0; d < 7; d++) { const r = []; for (let h = 0; h < 24; h++) r.push({ leads: 0, booked: 0 }); g.push(r) } return g }
+  // Cells carry the lead's eventual OUTCOME as well as its arrival, so the grid
+  // can answer "does the hour a lead arrives predict whether it converts" - a
+  // different question from "when do deals close", and the more useful one: the
+  // arrival hour is something media buying can actually act on.
+  const blank = () => { const g = []; for (let d = 0; d < 7; d++) { const r = []; for (let h = 0; h < 24; h++) r.push({ leads: 0, booked: 0, won: 0, lost: 0 }); g.push(r) } return g }
   const CH = ['all', 'meta', 'google', 'other']
   const leads = {}; for (const c of CH) leads[c] = blank()
 
@@ -3575,7 +3579,11 @@ export async function buildEnquiryTimes(locationId, from, to) {
     const pi = idx.get(o.pipelineId)
     const stg = pi ? pi.byId[o.pipelineStageId] : null
     const booked = st === 'won' || !!(pi && pi.bookPos != null && stg && stg.pos >= pi.bookPos)
-    for (const k of ['all', ch]) { const cell = leads[k][d][h]; cell.leads++; if (booked) cell.booked++ }
+    // The outcome is attributed to the hour the lead ARRIVED, not the hour it was
+    // decided - that is what makes this a cohort view rather than a restatement
+    // of when the team works.
+    const cWon = st === 'won', cLost = st === 'lost' || st === 'abandoned'
+    for (const k of ['all', ch]) { const cell = leads[k][d][h]; cell.leads++; if (booked) cell.booked++; if (cWon) cell.won++; else if (cLost) cell.lost++ }
     counted++
   }
 

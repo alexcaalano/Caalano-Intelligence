@@ -3830,3 +3830,29 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .lrv-comp-bar > .lrv-seg-pop { display: block; height: 100%; min-width: 0; box-shadow: 2px 0 0 var(--panel); }
 .lrv-comp-bar > .lrv-seg-pop:last-child { box-shadow: none; }
 .lrv-comp-bar > .lrv-seg-pop > .lrv-comp-seg { display: block; width: 100%; height: 100%; box-shadow: none; }
+
+/* Win rate by arrival hour. The confidence bar is the point of the table: the
+   tick is the account rate, the bar is where this bucket's true rate plausibly
+   sits, and a bar that straddles the tick means the difference is not real. */
+.enq-win { margin: 4px 0 16px; }
+.enq-win-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.enq-win-t { font-size: 12.5px; font-weight: 800; }
+.enq-win-t .sub { font-weight: 500; color: var(--muted); }
+.enq-win-none { padding: 6px 0 2px; }
+.u-win { table-layout: fixed; width: 100%; min-width: 0; }
+.u-win th:first-child, .u-win td:first-child { width: 21%; }
+.u-win th:nth-child(2), .u-win td:nth-child(2),
+.u-win th:nth-child(3), .u-win td:nth-child(3),
+.u-win th:nth-child(4), .u-win td:nth-child(4) { width: 8%; }
+.u-win th:nth-child(5), .u-win td:nth-child(5) { width: 9%; }
+.u-win th:nth-child(6), .u-win td:nth-child(6) { width: 26%; }
+.win-ci { position: relative; display: inline-block; width: calc(100% - 52px); height: 9px; vertical-align: middle;
+  background: color-mix(in srgb, var(--border) 55%, transparent); border-radius: 3px; overflow: hidden; }
+.win-ci-bar { position: absolute; top: 0; height: 100%; background: var(--brand); border-radius: 3px; opacity: .8; }
+/* The account rate, drawn over the bar so an overlap is obvious at a glance. */
+.win-ci-base { position: absolute; top: -2px; width: 2px; height: 13px; background: var(--text); opacity: .65; z-index: 1; }
+.win-ci-n { display: inline-block; width: 48px; margin-left: 4px; font-size: 10.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.win-v { font-size: 11.5px; font-weight: 700; }
+.win-up { color: var(--pos, #12b886); }
+.win-dn { color: var(--neg, #e0566c); }
+.win-flat { color: var(--muted); font-weight: 500; }

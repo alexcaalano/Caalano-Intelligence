@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.411.0'
+const APP_VERSION = '3.412.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9304,9 +9304,19 @@ function TimingDrill({ drill, money, onClose }) {
 const ENQ_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const ENQ_CHANS = [['all', 'All'], ['meta', 'Meta'], ['google', 'Google'], ['other', 'Non-paid']]
 const enqHourLabel = (h) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`)
+// The outcome and stage grids arrive as flat 168-slot arrays (day * 24 + hour).
+// Reshaped to the same [7][24] of { leads, booked } the lead grid uses, so every
+// statistic, heat scale and cell below works on all views without a special case.
+function flatGrid(flat) {
+  if (!flat || !flat.length) return null
+  const g = []
+  for (let d = 0; d < 7; d++) { const row = []; for (let h = 0; h < 24; h++) row.push({ leads: flat[d * 24 + h] || 0, booked: 0 }); g.push(row) }
+  return g
+}
 function EnquiryTimesSection({ clientId, range, nonce }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [view, setView] = useState('leads')
+  const [keyStage, setKeyStage] = useState(null)
   const [chan, setChan] = useState('all')
   const [who, setWho] = useState('self')
   const [mode, setMode] = useState('volume')
@@ -9328,8 +9338,24 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   const g = !d ? null
     : view === 'leads' ? (d.grid && d.grid[chan])
       : view === 'made' ? (d.made && d.made[who])
-        : (d.slot && d.slot[who])
+        : view === 'slot' ? (d.slot && d.slot[who])
+          : flatGrid(view === 'won' ? (d && d.won) : view === 'lost' ? (d && d.lost) : ((d && d.byStage && d.byStage[keyStage]) || null))
   const isLeads = view === 'leads'
+  // Which stage-based key events this client has that actually have deals sitting
+  // in them. A key event pinned to a stage nobody is in has no clock to report.
+  const keyStages = useMemo(() => {
+    const have = (d && d.byStage) || {}
+    const seen = new Set(); const out = []
+    for (const k of (loadKeyEvents(clientId) || [])) {
+      const e = typeof k === 'string' ? { stage: k } : k
+      if (!e || !e.stage || e.cal) continue
+      const name = String(e.stage).trim()
+      const hit = Object.keys(have).find((n) => n.trim().toLowerCase() === name.toLowerCase())
+      if (!hit || seen.has(hit)) continue
+      seen.add(hit); out.push({ stage: hit, label: String(e.label || e.stage) })
+    }
+    return out
+  }, [d, clientId, nonce])
   const stats = useMemo(() => {
     if (!g) return null
     const MIN = 5
@@ -9365,7 +9391,8 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   if (st.status === 'loading') return <div className="card"><Spinner label="Reading when enquiries and bookings land…" /></div>
   if (st.status === 'err' || !d || d.connected === false || d.ghl === false || !g) return null
   if (!stats || !stats.total) return null
-  const noun = isLeads ? 'enquiries' : view === 'made' ? 'bookings' : 'appointments'
+  const noun = isLeads ? 'enquiries' : view === 'made' ? 'bookings' : view === 'slot' ? 'appointments'
+    : view === 'won' ? 'deals won' : view === 'lost' ? 'deals lost' : 'entries into this stage'
   const rateMode = mode === 'rate' && isLeads
   const cellCls = (c) => {
     if (!rateMode) {
@@ -9400,9 +9427,17 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
               <button className={view === 'leads' ? 'on' : ''} onClick={() => setView('leads')}>Leads arrive</button>
               <button className={view === 'made' ? 'on' : ''} onClick={() => setView('made')}>Booking made</button>
               <button className={view === 'slot' ? 'on' : ''} onClick={() => setView('slot')}>Appointment slot</button>
+              {d.wonCount ? <button className={view === 'won' ? 'on' : ''} onClick={() => setView('won')}>Deals won</button> : null}
+              {d.lostCount ? <button className={view === 'lost' ? 'on' : ''} onClick={() => setView('lost')}>Deals lost</button> : null}
+              {keyStages.length ? <button className={view === 'stage' ? 'on' : ''} onClick={() => { setView('stage'); if (!keyStage) setKeyStage(keyStages[0].stage) }}>Key event</button> : null}
             </div>
+            {view === 'stage' && keyStages.length > 1 ? <label className="lrv-f"><span className="lrv-f-lab">Key event</span>
+              <select value={keyStage || keyStages[0].stage} onChange={(e) => setKeyStage(e.target.value)}>
+                {keyStages.map((k) => <option key={k.stage} value={k.stage}>{k.label}</option>)}
+              </select></label> : null}
             {isLeads
               ? <div className="chan-toggle sm">{ENQ_CHANS.map(([k, l]) => <button key={k} className={chan === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div>
+              : (view === 'won' || view === 'lost' || view === 'stage') ? null
               : <div className="chan-toggle sm">
                 <button className={who === 'self' ? 'on' : ''} onClick={() => setWho('self')}>Self-booked</button>
                 <button className={who === 'staff' ? 'on' : ''} onClick={() => setWho('staff')}>Booked by staff</button>
@@ -9450,6 +9485,8 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
           </div>
           <Caveat>
             Counted in <b>{d.tz || 'the business timezone'}</b>.
+            {view === 'won' || view === 'lost' ? <>{' '}<b>Deals {view}</b> is anchored to when the deal was <i>marked</i> {view}, not when the lead arrived - so a deal that came in months ago and was {view} this week sits in this week. That also means this view answers “when does the team close deals”, which is largely a picture of when they work, and only tells you about the customer where they are the one deciding.</> : null}
+            {view === 'stage' ? <>{' '}<b>Key event</b> shows when deals entered the stage they are sitting in <b>now</b>. Caalano Systems keeps only the most recent stage move, so a deal that passed through this stage and moved on leaves no record of when it did - this is the deals currently here, not everyone who ever reached it.{d.stageUndated ? <> {fmtNumber(d.stageUndated)} deal{d.stageUndated === 1 ? ' has' : 's have'} no stage-change date at all and {d.stageUndated === 1 ? 'is' : 'are'} left out rather than dated from when the lead arrived, which is a different clock.</> : null}</> : null}
             {' '}<b>Leads arrive</b> is when the lead record was created. <b>Booking made</b> is when the appointment was
             booked; <b>Appointment slot</b> is the time it was booked <i>for</i>. Those last two are different questions and
             usually have different answers.

@@ -3544,6 +3544,25 @@ export async function buildEnquiryTimes(locationId, from, to) {
   const CH = ['all', 'meta', 'google', 'other']
   const leads = {}; for (const c of CH) leads[c] = blank()
 
+  // Outcome + stage-entry clocks. These are DIFFERENT questions from "when did
+  // the lead arrive", and each is anchored to its own timestamp:
+  //
+  //   won / lost   - lastStatusChangeAt, the moment the deal was marked. Filtered
+  //                  on that clock, not on when the lead came in, so the view
+  //                  answers "when do deals close" rather than "when did the deals
+  //                  that closed originally arrive".
+  //   byStage      - lastStageChangeAt, the moment the deal entered the stage it
+  //                  is in NOW. That is the only stage transition GoHighLevel
+  //                  keeps, so this can only ever describe a deal's CURRENT
+  //                  stage - a deal that passed through a stage and moved on
+  //                  leaves no record of when it did. Reported, not hidden.
+  //
+  // Flat 168-slot arrays (day * 24 + hour) rather than nested objects: one per
+  // stage would otherwise be a large payload for what is a single count per cell.
+  const flat = () => new Array(168).fill(0)
+  const won = flat(), lost = flat()
+  const byStage = {}
+  let wonCount = 0, lostCount = 0, stageDated = 0, stageUndated = 0
   let counted = 0, undated = 0
   for (const o of opps) {
     const ms = Date.parse(o.createdAt)
@@ -3558,6 +3577,32 @@ export async function buildEnquiryTimes(locationId, from, to) {
     const booked = st === 'won' || !!(pi && pi.bookPos != null && stg && stg.pos >= pi.bookPos)
     for (const k of ['all', ch]) { const cell = leads[k][d][h]; cell.leads++; if (booked) cell.booked++ }
     counted++
+  }
+
+  // Second pass on its own clocks. Kept separate from the lead loop above because
+  // the window filter differs: a deal created before the period can still be won
+  // inside it, and that is exactly the deal this view is about.
+  for (const o of opps) {
+    const isWon = String(o.status || '').toLowerCase() === 'won'
+    const st = String(o.status || '').toLowerCase()
+    const isLost = st === 'lost' || st === 'abandoned'
+    if (isWon || isLost) {
+      const ms = Date.parse(o.lastStatusChangeAt)
+      if (inWin(ms)) { const { d, h } = cellOf(ms); const i = d * 24 + h; if (isWon) { won[i]++; wonCount++ } else { lost[i]++; lostCount++ } }
+    }
+    const pi = idx.get(o.pipelineId)
+    const stg = pi ? pi.byId[o.pipelineStageId] : null
+    if (!stg) continue
+    const sms = Date.parse(o.lastStageChangeAt)
+    // No stage-change date means we do not know when it entered - and createdAt
+    // would be the day the LEAD arrived, which is a different clock entirely.
+    // Counted as unknown rather than quietly attributed to the wrong hour.
+    if (!isFinite(sms)) { stageUndated++; continue }
+    if (!inWin(sms)) continue
+    const { d, h } = cellOf(sms)
+    const g = byStage[stg.name] || (byStage[stg.name] = flat())
+    g[d * 24 + h]++
+    stageDated++
   }
 
   // Appointments carry two quite different clocks and conflating them is the
@@ -3597,6 +3642,9 @@ export async function buildEnquiryTimes(locationId, from, to) {
     connected: true, tz, counted, undated, capped: opps.length >= 5000,
     apptTotal, apptSelf, calendars: (calendars || []).length, calErr,
     grid: leads, made, slot,
+    // day * 24 + hour, so the frontend can pivot any of these the same way.
+    won, lost, wonCount, lostCount,
+    byStage, stageDated, stageUndated,
   }
 }
 export async function buildStageTiming(locationId, days = 90) {

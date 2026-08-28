@@ -18,6 +18,47 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.412.0 - 2026-08-20 · `PENDING` - When deals are won, lost, and reach a key event
+
+Three more views on the time-of-day grid, beside Leads arrive / Booking made /
+Appointment slot.
+
+**Deals won** and **Deals lost**, by the hour the deal was *marked*, not the hour
+the lead arrived. Filtered on that clock too, so a deal that came in months ago
+and closed this week counts in this week - which is the whole point of the view.
+Worth reading with one eye open: this is largely a picture of when your team
+works, and only tells you something about the customer where the customer is the
+one deciding. The note under the grid says so.
+
+**Key event** shows when deals entered the stage they are sitting in now, with a
+picker when a client has several stage-based key events. The honest limit is
+stated on the grid rather than left for someone to discover: Caalano Systems keeps
+only the most recent stage move, so a deal that passed through a stage and moved
+on leaves no record of when it did. This is the deals currently there, not
+everyone who ever reached it. Deals with no stage-change date at all are left out
+and counted, rather than dated from when the lead arrived - a different clock, and
+using it would put the deal in the wrong hour rather than in no hour.
+
+The backend sends these as flat 168-slot arrays (day × 24 + hour), one per stage,
+which is a fraction of the payload a nested object per stage would be. The
+frontend reshapes them into the same structure the lead grid uses, so the
+business-hours split, the heat scale, the peak-hour and best-day figures and every
+cell all work across the new views with no special case.
+
+Which key events appear is read from the client's own settings and filtered to the
+stages that actually have deals in them - a key event pinned to a stage nobody is
+in has no clock to report. The backend still knows nothing about key events.
+
+The channel and self/staff toggles are hidden on the new views, where they would
+be meaningless: a won deal has no self-booked distinction.
+
+Tested on the reshape, where a day/hour indexing error would silently rotate the
+entire heatmap and look perfectly plausible - Monday 9am, Friday 5pm and the last
+slot of Sunday all land where they should, no count is lost, and the weekday
+mapping used for the business-hours split holds.
+
+---
+
 ## v3.411.0 - 2026-08-20 · `PENDING` - Funnel order for funnel dimensions, and proper hover cards
 
 **Stage and key event now read in funnel order, everywhere** - the filter list,

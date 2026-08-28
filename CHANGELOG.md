@@ -18,6 +18,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.406.1 - 2026-08-20 · `PENDING` - Client viewers can see the whole Timing tab
+
+The Timing tab renders three sections and a client viewer could only load one of
+them. Scope permissions deny by default, and the two sections built after that
+map was written - **When enquiries arrive** and **Time in stage** - were never
+registered in it. A viewer granted the Timing tab therefore got Speed to lead
+working beside two panels that always returned 403.
+
+Both are now mapped to the Timing tab, which is the permission check rather than
+a bypass of it: `viewerAllowed` requires the viewer to hold that tab, so these
+reach a client only if Timing is ticked for them in Settings - exactly the rule
+Speed to lead already followed. A viewer without the tab still gets nothing.
+
+Verified against the shipped map and predicate rather than a restatement of them:
+a viewer with Timing reaches all three sections, a viewer without reaches none,
+a viewer with no tabs recorded treats the two new scopes identically to Speed to
+lead, deny-by-default still refuses unmapped and staff-only scopes, and a
+Timing-only viewer still cannot reach the CRM drill.
+
+---
+
 ## v3.406.0 - 2026-08-20 · `PENDING` - The 429s: a shared cooldown, a build election, and a correction
 
 ### Correction to v3.405.0

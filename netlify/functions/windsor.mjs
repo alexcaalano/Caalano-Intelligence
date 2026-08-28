@@ -2565,6 +2565,14 @@ const VIEWER_REQ_TABS = {
   'scope:appts': ['appts'],
   'scope:speed': ['timing'],
   'scope:speedscan': ['timing'],
+  // The other two sections on the Timing tab. Both were added after this map and
+  // never registered in it, and the map denies by default - so a viewer granted
+  // the Timing tab got Speed to lead working beside two panels that always 403'd.
+  // Mapping them to 'timing' is the permission check, not a bypass of it: a
+  // viewer reaches these only if the Timing tab is ticked for them in Settings,
+  // exactly like Speed to lead above.
+  'scope:enqtimes': ['timing'],
+  'scope:stagetiming': ['timing'],
   // Contact-notes drill - reachable from several tabs' drill-downs; allow for any.
   'scope:oppnotes': VIEWER_TABS_ALL,
   // Key-event people drill - reachable from the Meta/Google/Caalano360 funnels.

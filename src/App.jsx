@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.416.0'
+const APP_VERSION = '3.417.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9386,8 +9386,155 @@ function winBuckets(g, kind) {
   return out
 }
 
+// --- Testing a window of hours against the rest of the day ------------------
+//
+// The fixed bands answer "which part of the day is worst" only if the answer
+// happens to fall on a band boundary. A hypothesis like "midday to 3am converts
+// worse" does not - it spans a boundary and wraps past midnight - so the window
+// is chosen rather than picked from a list, and compared against every hour
+// outside it.
+//
+// Comparing two groups is a different test from comparing one group to the
+// account average: the account average already contains the group, which drags
+// the comparison towards no difference. This is a two-proportion test between
+// the window and its complement, which is the question actually being asked.
+const normCdf = (z) => {
+  // Abramowitz & Stegun 7.1.26 - accurate to ~1e-7, far beyond what a p-value
+  // shown to two decimals needs.
+  const t = 1 / (1 + 0.2316419 * Math.abs(z))
+  const d = 0.3989422804014327 * Math.exp(-z * z / 2)
+  const p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
+  return z > 0 ? 1 - p : p
+}
+// Two-proportion z-test. Returns the gap in percentage points and how surprising
+// it would be if the two groups genuinely converted at the same rate.
+function twoProp(won1, n1, won2, n2) {
+  if (!n1 || !n2) return null
+  const p1 = won1 / n1, p2 = won2 / n2
+  const pool = (won1 + won2) / (n1 + n2)
+  const se = Math.sqrt(pool * (1 - pool) * (1 / n1 + 1 / n2))
+  if (!se) return { p1, p2, diff: 0, z: 0, p: 1 }
+  const z = (p1 - p2) / se
+  return { p1, p2, diff: p1 - p2, z, p: 2 * (1 - normCdf(Math.abs(z))) }
+}
+// Hours from a to b, wrapping past midnight so 12 -> 3 means noon until 3am.
+const hoursInWindow = (a, b) => {
+  const out = []
+  for (let i = 0, h = a; i < 24; i++, h = (h + 1) % 24) { out.push(h); if (h === ((b - 1) + 24) % 24) break }
+  return out
+}
+const hourWrap = (a, b) => (b <= a ? 24 - a + b : b - a)
+
+function EnqWindowTest({ g, base, from, to, setFrom, setTo }) {
+  const inHours = useMemo(() => new Set(hoursInWindow(from, to)), [from, to])
+  const split = useMemo(() => {
+    const acc = { in: { leads: 0, won: 0, lost: 0 }, out: { leads: 0, won: 0, lost: 0 } }
+    for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
+      const c = g[d][h]; const k = inHours.has(h) ? acc.in : acc.out
+      k.leads += c.leads; k.won += c.won || 0; k.lost += c.lost || 0
+    }
+    return acc
+  }, [g, inHours])
+  const A = split.in, B = split.out
+  A.decided = A.won + A.lost; B.decided = B.won + B.lost
+  const t = twoProp(A.won, A.decided, B.won, B.decided)
+  const span = hourWrap(from, to)
+  const label = `${enqHourLabel(from)} – ${enqHourLabel(to)}`
+  const verdict = !t ? null
+    : (A.decided < WIN_MIN_BUCKET || B.decided < WIN_MIN_BUCKET) ? { k: 'flat', t: 'not enough decided deals on one side to compare' }
+      : t.p < 0.05 ? { k: t.diff < 0 ? 'dn' : 'up', t: `${t.diff < 0 ? 'worse' : 'better'} - unlikely to be chance (p ${t.p < 0.01 ? '< 0.01' : '= ' + t.p.toFixed(2)})` }
+        : { k: 'flat', t: `no clear difference (p = ${t.p.toFixed(2)})` }
+  return (
+    <div className="enq-wt">
+      <div className="enq-wt-head">
+        <span className="enq-wt-t">Test a window</span>
+        <label className="lrv-f"><span className="lrv-f-lab">From</span>
+          <select value={from} onChange={(e) => setFrom(+e.target.value)}>{Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{enqHourLabel(h)}</option>)}</select></label>
+        <label className="lrv-f"><span className="lrv-f-lab">Until</span>
+          <select value={to} onChange={(e) => setTo(+e.target.value)}>{Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{enqHourLabel(h)}</option>)}</select></label>
+        <span className="cap">{span} hour{span === 1 ? '' : 's'}{to <= from ? ' · crosses midnight' : ''}</span>
+      </div>
+      {!t ? <div className="cap">No decided deals on one side of this split.</div> : (
+        <div className="enq-wt-body">
+          <div className="enq-wt-cmp">
+            <div className={`enq-wt-side ${verdict.k === 'dn' ? 'is-dn' : verdict.k === 'up' ? 'is-up' : ''}`}>
+              <div className="enq-wt-lab">Leads arriving {label}</div>
+              <div className="enq-wt-big">{A.decided ? `${Math.round(t.p1 * 100)}%` : '-'}</div>
+              <div className="cap">{fmtNumber(A.won)} won of {fmtNumber(A.decided)} decided · {fmtNumber(A.leads)} leads</div>
+            </div>
+            <div className="enq-wt-vs">vs</div>
+            <div className="enq-wt-side">
+              <div className="enq-wt-lab">Every other hour</div>
+              <div className="enq-wt-big">{B.decided ? `${Math.round(t.p2 * 100)}%` : '-'}</div>
+              <div className="cap">{fmtNumber(B.won)} won of {fmtNumber(B.decided)} decided · {fmtNumber(B.leads)} leads</div>
+            </div>
+          </div>
+          <div className={`enq-wt-verdict win-${verdict.k}`}>
+            {A.decided && B.decided ? <b>{t.diff >= 0 ? '+' : ''}{Math.round(t.diff * 100)}pp</b> : null} {verdict.t}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// The shape of the day, plotted. A table of twenty-four rows makes you read the
+// numbers to see the pattern; the point of the chart is that you should not have
+// to. Two encodings, because rate alone is misleading here:
+//
+//   bar height = win rate for leads arriving in that hour
+//   bar width  = nothing; the volume sits underneath as its own row of bars
+//
+// A rate built on two decided deals is not comparable to one built on sixty, so
+// hours below the floor are drawn hollow rather than as a confident short or tall
+// bar - the most misleading thing this chart could do is render 0% from one lost
+// deal as a solid column.
+function EnqHourChart({ g, base, from, to }) {
+  const hours = useMemo(() => {
+    const out = []
+    for (let h = 0; h < 24; h++) {
+      let leads = 0, won = 0, lost = 0
+      for (let d = 0; d < 7; d++) { const c = g[d][h]; leads += c.leads; won += c.won || 0; lost += c.lost || 0 }
+      out.push({ h, leads, won, lost, decided: won + lost, rate: (won + lost) ? won / (won + lost) : null })
+    }
+    return out
+  }, [g])
+  const maxLeads = Math.max(1, ...hours.map((x) => x.leads))
+  const maxRate = Math.max(0.35, base * 1.6, ...hours.filter((x) => x.decided >= WIN_MIN_BUCKET).map((x) => x.rate || 0))
+  const inWin = from == null ? null : new Set(hoursInWindow(from, to))
+  return (
+    <div className="enq-hc">
+      <div className="enq-hc-t">Win rate by arrival hour <span className="sub">· bar height is the win rate, the row beneath is how many leads that hour brings · the line is the account rate ({Math.round(base * 100)}%)</span></div>
+      <div className="enq-hc-plot">
+        <span className="enq-hc-base" style={{ bottom: `${(base / maxRate) * 100}%` }} />
+        {hours.map((x) => {
+          const thin = x.decided < WIN_MIN_BUCKET
+          const hgt = x.rate == null ? 0 : Math.max(1.5, (x.rate / maxRate) * 100)
+          return (
+            <LrPop key={x.h} className="enq-hc-col" title={`${enqHourLabel(x.h)} – ${enqHourLabel((x.h + 1) % 24)}`} rows={[
+              ['Leads', fmtNumber(x.leads)],
+              ['Won', fmtNumber(x.won)],
+              ['Lost', fmtNumber(x.lost)],
+              ['Still open', fmtNumber(x.leads - x.decided)],
+              ['Win rate', thin ? `not shown - only ${x.decided} decided` : `${Math.round(x.rate * 100)}%`],
+            ]}>
+              <span className={`enq-hc-bar${thin ? ' is-thin' : ''}${inWin && inWin.has(x.h) ? ' is-sel' : ''}`} style={{ height: `${hgt}%` }} />
+            </LrPop>
+          )
+        })}
+      </div>
+      <div className="enq-hc-vol">
+        {hours.map((x) => <span key={x.h} className={`enq-hc-vbar${inWin && inWin.has(x.h) ? ' is-sel' : ''}`} style={{ height: `${Math.max(1, (x.leads / maxLeads) * 100)}%` }} />)}
+      </div>
+      <div className="enq-hc-ax">{hours.map((x) => <span key={x.h}>{x.h % 3 === 0 ? enqHourLabel(x.h) : ''}</span>)}</div>
+    </div>
+  )
+}
+
 function EnqWinRate({ g, money }) {
   const [kind, setKind] = useState('band')
+  const [winFrom, setWinFrom] = useState(21)
+  const [winTo, setWinTo] = useState(6)
   const all = useMemo(() => {
     let leads = 0, won = 0, lost = 0
     for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) { const c = g[d][h]; leads += c.leads; won += c.won || 0; lost += c.lost || 0 }
@@ -9433,6 +9580,8 @@ function EnqWinRate({ g, money }) {
           <button className={kind === 'day' ? 'on' : ''} onClick={() => setKind('day')}>Day of week</button>
         </div>
       </div>
+      <EnqHourChart g={g} base={base} from={winFrom} to={winTo} />
+      <EnqWindowTest g={g} base={base} from={winFrom} to={winTo} setFrom={setWinFrom} setTo={setWinTo} />
       {!sorted.length ? <div className="cap">No lead in this period has arrived yet.</div> : <>
         <table className="mini-tbl users-tbl appt-tbl u-win">
           <thead><tr>
@@ -9479,6 +9628,78 @@ function EnqWinRate({ g, money }) {
 // The outcome and stage grids arrive as flat 168-slot arrays (day * 24 + hour).
 // Reshaped to the same [7][24] of { leads, booked } the lead grid uses, so every
 // statistic, heat scale and cell below works on all views without a special case.
+// --- One measure, cut three ways -------------------------------------------
+//
+// The day-by-hour grid shows where a measure concentrates but makes a total hard
+// to read: the eye cannot add 24 cells across a row. The marginals do the adding.
+// Hour of day and Day of week are the two obvious cuts; the blocks sit between
+// them, because "evening" is how people actually reason about the day and a
+// single hour is often too thin to carry a number on its own.
+const ENQ_BLOCKS = [
+  ['Overnight', 0, 6], ['Early morning', 6, 9], ['Morning', 9, 12],
+  ['Early afternoon', 12, 15], ['Late afternoon', 15, 18], ['Evening', 18, 21], ['Late evening', 21, 24],
+]
+function enqMarginal(g, gran) {
+  const out = []
+  const add = (label, cells, sub) => {
+    let n = 0, booked = 0
+    for (const c of cells) { n += c.leads; booked += c.booked || 0 }
+    out.push({ label, sub, n, booked })
+  }
+  if (gran === 'day') for (let d = 0; d < 7; d++) add(ENQ_DAYS[d], g[d])
+  else if (gran === 'block') for (const [label, a, b] of ENQ_BLOCKS) {
+    const cells = []; for (let d = 0; d < 7; d++) for (let h = a; h < b; h++) cells.push(g[d][h])
+    add(label, cells, `${enqHourLabel(a)}–${enqHourLabel(b === 24 ? 0 : b)}`)
+  } else for (let h = 0; h < 24; h++) {
+    const cells = []; for (let d = 0; d < 7; d++) cells.push(g[d][h])
+    add(enqHourLabel(h), cells)
+  }
+  return out
+}
+function EnqMarginal({ g, gran, noun, hrs }) {
+  const rows = useMemo(() => enqMarginal(g, gran), [g, gran])
+  const total = rows.reduce((a, r) => a + r.n, 0)
+  const max = Math.max(1, ...rows.map((r) => r.n))
+  if (!total) return <div className="cap">Nothing in this range to break down.</div>
+  const top = rows.reduce((a, r) => (r.n > a.n ? r : a), rows[0])
+  // Outside working hours, flagged on the row rather than only in the summary
+  // strip - the whole point of the hourly cut is seeing which hours those are.
+  const offHour = (r) => {
+    if (!hrs || gran === 'day') return false
+    const h = gran === 'block' ? null : rows.indexOf(r)
+    if (h == null) return false
+    return !(h * 60 >= hrs.startMin && h * 60 < hrs.endMin)
+  }
+  return (
+    <div className="enq-mg">
+      <div className="enq-mg-t">{gran === 'day' ? 'By day of week' : gran === 'block' ? 'By part of the day' : 'By hour of day'}
+        <span className="sub"> · busiest {top.label.toLowerCase()} with {fmtNumber(top.n)} of {fmtNumber(total)} {noun}</span></div>
+      <div className="enq-mg-rows">
+        {rows.map((r) => (
+          <div className={`enq-mg-row${offHour(r) ? ' is-off' : ''}`} key={r.label}>
+            <span className="enq-mg-lab">{r.label}{r.sub ? <small> {r.sub}</small> : null}</span>
+            <LrPop title={r.label + (r.sub ? ` · ${r.sub}` : '')} rows={[
+              [noun.charAt(0).toUpperCase() + noun.slice(1), fmtNumber(r.n)],
+              ['Share of the period', pctOf(r.n, total)],
+              ...(r.booked ? [['Of those, booked', `${fmtNumber(r.booked)} (${pctOf(r.booked, r.n)})`]] : []),
+            ]}><span className="enq-mg-track"><span className="enq-mg-fill" style={{ width: `${Math.max(1, (r.n / max) * 100)}%` }} /></span></LrPop>
+            <span className="enq-mg-n">{fmtNumber(r.n)}</span>
+            <span className="enq-mg-p">{pctOf(r.n, total)}</span>
+          </div>
+        ))}
+      </div>
+      {hrs && gran !== 'day' ? <div className="cap enq-mg-foot">Shaded rows are outside this client’s working hours.</div> : null}
+    </div>
+  )
+}
+
+// Pull one measure out of the arrival grid as a grid in its own right. The cells
+// already carry won and lost for the leads that ARRIVED in them, so "when did the
+// leads we went on to win come in" needs no new data - only to be asked.
+function pickMeasure(g, key) {
+  if (!g) return null
+  return g.map((row) => row.map((c) => ({ leads: c[key] || 0, booked: 0, won: 0, lost: 0 })))
+}
 function flatGrid(flat) {
   if (!flat || !flat.length) return null
   const g = []
@@ -9490,6 +9711,7 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   const [view, setView] = useState('leads')
   const [keyStage, setKeyStage] = useState(null)
   const [pipe, setPipe] = useState('all')
+  const [gran, setGran] = useState('grid')
   const [chan, setChan] = useState('all')
   const [who, setWho] = useState('self')
   const [mode, setMode] = useState('volume')
@@ -9508,12 +9730,17 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   // The grid for whichever question is being asked. Leads splits by channel;
   // the two appointment grids split by who did the booking instead, because
   // "did they book themselves" is the interesting axis there.
+  const gLeads = !d ? null : (pipe !== 'all' && d.byPipe && d.byPipe[pipe]) ? d.byPipe[pipe] : (d.grid && d.grid[chan])
+  // The pipeline split only exists on the arrival grid, so it applies to the three
+  // arrival-based measures and not to the booking or status clocks - which is
+  // honest: filtering those by pipeline would silently show unfiltered data.
   const g = !d ? null
-    : view === 'leads' ? (d.grid && d.grid[chan])
-      : (pipe !== 'all' && d.byPipe && d.byPipe[pipe]) ? d.byPipe[pipe]
-      : view === 'made' ? (d.made && d.made[who])
-        : view === 'slot' ? (d.slot && d.slot[who])
-          : flatGrid(view === 'won' ? (d && d.won) : view === 'lost' ? (d && d.lost) : ((d && d.byStage && d.byStage[keyStage]) || null))
+    : view === 'leads' ? gLeads
+      : view === 'wonArr' ? pickMeasure(gLeads, 'won')
+        : view === 'lostArr' ? pickMeasure(gLeads, 'lost')
+          : view === 'made' ? (d.made && d.made[who])
+            : view === 'slot' ? (d.slot && d.slot[who])
+              : flatGrid(view === 'won' ? d.won : view === 'lost' ? d.lost : ((d.byStage && d.byStage[keyStage]) || null))
   const isLeads = view === 'leads'
   // Which stage-based key events this client has that actually have deals sitting
   // in them. A key event pinned to a stage nobody is in has no clock to report.
@@ -9571,7 +9798,8 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   if (st.status === 'err' || !d || d.connected === false || d.ghl === false || !g) return null
   if (!stats || !stats.total) return null
   const noun = isLeads ? 'enquiries' : view === 'made' ? 'bookings' : view === 'slot' ? 'appointments'
-    : view === 'won' ? 'deals won' : view === 'lost' ? 'deals lost' : 'entries into this stage'
+    : view === 'wonArr' ? 'leads later won' : view === 'lostArr' ? 'leads later lost'
+      : view === 'won' ? 'deals marked won' : view === 'lost' ? 'deals marked lost' : 'entries into this stage'
   const rateMode = mode === 'rate' && isLeads
   const winMode = mode === 'win' && isLeads
   const cellCls = (c) => {
@@ -9621,6 +9849,8 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
               <button className={view === 'leads' ? 'on' : ''} onClick={() => setView('leads')}>Leads arrive</button>
               <button className={view === 'made' ? 'on' : ''} onClick={() => setView('made')}>Booking made</button>
               <button className={view === 'slot' ? 'on' : ''} onClick={() => setView('slot')}>Appointment slot</button>
+              <button className={view === 'wonArr' ? 'on' : ''} onClick={() => setView('wonArr')} title="Leads that went on to be WON, placed at the hour they arrived - not the hour they were marked">Won · by arrival</button>
+              <button className={view === 'lostArr' ? 'on' : ''} onClick={() => setView('lostArr')} title="Leads that went on to be LOST, placed at the hour they arrived - not the hour they were marked">Lost · by arrival</button>
               {d.wonCount ? <button className={view === 'won' ? 'on' : ''} onClick={() => setView('won')} title="When deals were MARKED won - the closing clock, not the arrival clock. For whether arrival time predicts winning, use Leads arrive → Win rate.">Marked won</button> : null}
               {d.lostCount ? <button className={view === 'lost' ? 'on' : ''} onClick={() => setView('lost')} title="When deals were MARKED lost - the closing clock, not the arrival clock. For whether arrival time predicts losing, use Leads arrive → Win rate.">Marked lost</button> : null}
               {keyStages.length ? <button className={view === 'stage' ? 'on' : ''} onClick={() => { setView('stage'); if (!keyStage) setKeyStage(keyStages[0].stage) }}>Key event</button> : null}
@@ -9643,7 +9873,13 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
                 <button className={who === 'self' ? 'on' : ''} onClick={() => setWho('self')}>Self-booked</button>
                 <button className={who === 'staff' ? 'on' : ''} onClick={() => setWho('staff')}>Booked by staff</button>
               </div>}
-            {isLeads ? <div className="chan-toggle sm">
+            <div className="chan-toggle sm">
+              <button className={gran === 'grid' ? 'on' : ''} onClick={() => setGran('grid')} title="Day of week against hour of day">Grid</button>
+              <button className={gran === 'hour' ? 'on' : ''} onClick={() => setGran('hour')}>Hour of day</button>
+              <button className={gran === 'block' ? 'on' : ''} onClick={() => setGran('block')}>Part of day</button>
+              <button className={gran === 'day' ? 'on' : ''} onClick={() => setGran('day')}>Day of week</button>
+            </div>
+            {isLeads && gran === 'grid' ? <div className="chan-toggle sm">
               <button className={mode === 'volume' ? 'on' : ''} onClick={() => setMode('volume')}>Volume</button>
               <button className={mode === 'rate' ? 'on' : ''} onClick={() => setMode('rate')}>Booking rate</button>
               <button className={mode === 'win' ? 'on' : ''} onClick={() => setMode('win')} title="Group leads by the hour they ARRIVED and score them on what became of them - won or lost. This is the arrival clock, not the closing clock.">Won / lost by arrival</button>
@@ -9668,7 +9904,8 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
             <div className="enq-hours"><span className="cap">Business hours are switched off for this client, so there is no inside/outside split. Set them in Settings → this client.</span></div>
           )}
           {winMode ? <EnqWinRate g={g} /> : null}
-          <div className="enq-wrap">
+          {gran !== 'grid' && !winMode ? <EnqMarginal g={g} gran={gran} noun={noun} hrs={hrs} /> : null}
+          {gran === 'grid' || winMode ? <div className="enq-wrap">
             <table className="enq-grid">
               <thead><tr><th /> {Array.from({ length: 24 }, (_, h) => <th key={h}>{h % 3 === 0 ? enqHourLabel(h) : ''}</th>)}</tr></thead>
               <tbody>{ENQ_DAYS.map((dn, dy) => {
@@ -9685,7 +9922,7 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
                 )
               })}</tbody>
             </table>
-          </div>
+          </div> : null}
           <Caveat>
             Counted in <b>{d.tz || 'the business timezone'}</b>.
             {view === 'won' || view === 'lost' ? <>{' '}<b>Deals {view}</b> is anchored to when the deal was <i>marked</i> {view}, not when the lead arrived - so a deal that came in months ago and was {view} this week sits in this week. That also means this view answers “when does the team close deals”, which is largely a picture of when they work, and only tells you about the customer where they are the one deciding.</> : null}

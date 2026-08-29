@@ -18,6 +18,59 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.417.0 - 2026-08-20 · `PENDING` - The timing screen becomes measure × granularity
+
+Restructured around the two things being chosen, which were previously tangled
+together: **what is being counted**, and **how the day is cut**.
+
+**Eight measures.** Leads arrive · Booking made · Appointment slot · **Won by
+arrival** · **Lost by arrival** · Marked won · Marked lost · Key event. The two
+new ones are the point: leads that went on to be won or lost, placed at the hour
+they **came in** - not the hour someone got round to marking them. That data was
+already in the grid (each arrival cell carries the outcome of the leads in it) but
+was only reachable inside the win-rate table, never as a view of its own.
+
+The by-arrival and by-marked pairs sit side by side deliberately and are named for
+their clock, because they answer opposite questions: arrival is about the lead,
+marked is about when the team works.
+
+**Four granularities, applying to whichever measure is selected.** Grid (day ×
+hour), Hour of day, Part of day, Day of week. The grid shows where a measure
+concentrates but makes a total hard to read - the eye cannot add twenty-four cells
+across a row - so the marginals do the adding, with the count, the share, and the
+busiest bucket called out. Rows outside the client's working hours are shaded on
+the hourly cuts, where knowing which hours those are is the point.
+
+Parts of the day are the seven blocks that already existed - Overnight, Early
+morning, Morning, Early afternoon, Late afternoon, Evening, Late evening - and are
+tested to tile all twenty-four hours exactly once.
+
+**A window test and a plot for the arrival cohort.** Won / lost by arrival gets a
+24-bar chart: bar height is the win rate for leads arriving in that hour, the row
+beneath is how many leads that hour brings, and a dashed line marks the account
+rate. Hours below the confidence floor are drawn hollow, because a solid 0% column
+built on one lost deal is the most confident-looking lie the chart could tell.
+
+Under it, a window you choose: **from** and **until**, wrapping past midnight, so
+"noon to 3am" is one selection rather than a boundary problem. It compares that
+window against every other hour with a two-proportion test - the right test here,
+because comparing a group to the account average is comparing it to something that
+already contains it, which drags everything towards no difference. The selected
+hours are shaded in the chart above, so the verdict and the shape are read
+together.
+
+The pipeline filter applies to the three arrival-based measures and not to the
+booking or status clocks, where no pipeline split exists - filtering those would
+have shown unfiltered data under a filtered label.
+
+Tested: every marginal counts each lead exactly once across all three cuts, the
+blocks tile the day without gap or overlap, a lead won later stays at its arrival
+cell, the midnight wrap partitions the day for every window tried, and the
+two-proportion test refuses a thirty-point gap built on four deals while accepting
+the same gap on forty.
+
+---
+
 ## v3.416.0 - 2026-08-20 · `PENDING` - Say which clock each view is on
 
 Two things on the same toggle row were using opposite clocks and both were called

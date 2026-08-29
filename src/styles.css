@@ -3863,3 +3863,58 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .win-none { color: var(--faint); font-weight: 500; font-style: italic; }
 .u-win th:nth-child(5), .u-win td:nth-child(5) { width: 7%; }
 .u-win th:nth-child(7), .u-win td:nth-child(7) { width: 15%; }
+
+/* Win rate by arrival hour: the shape of the day, so the pattern is visible
+   without reading twenty-four rows of numbers. Rate on top, volume underneath -
+   a rate means nothing here without knowing how many leads it rests on. */
+.enq-hc { margin: 2px 0 16px; }
+.enq-hc-t { font-size: 12.5px; font-weight: 800; margin-bottom: 10px; }
+.enq-hc-t .sub { font-weight: 500; color: var(--muted); }
+.enq-hc-plot { position: relative; display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px;
+  align-items: end; height: 118px; padding-bottom: 1px; border-bottom: 1px solid var(--border-2); }
+.enq-hc-col { display: flex; align-items: flex-end; height: 100%; min-width: 0; }
+.enq-hc-bar { display: block; width: 100%; background: var(--brand); border-radius: 3px 3px 0 0; transition: height .25s; }
+/* Too few decided deals to trust: drawn hollow, because a solid 0% column built
+   on one lost deal is the most confident-looking lie this chart could tell. */
+.enq-hc-bar.is-thin { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--muted) 32%, transparent) 0 3px, transparent 3px 6px);
+  border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent); border-bottom: 0; }
+.enq-hc-bar.is-sel { background: var(--neg, #e0566c); }
+.enq-hc-bar.is-thin.is-sel { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--neg, #e0566c) 40%, transparent) 0 3px, transparent 3px 6px); }
+.enq-hc-base { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--text); opacity: .45; z-index: 1; pointer-events: none; }
+.enq-hc-vol { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; align-items: start; height: 26px; margin-top: 2px; }
+.enq-hc-vbar { display: block; width: 100%; background: color-mix(in srgb, var(--muted) 34%, transparent); border-radius: 0 0 3px 3px; }
+.enq-hc-vbar.is-sel { background: color-mix(in srgb, var(--neg, #e0566c) 42%, transparent); }
+.enq-hc-ax { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; margin-top: 4px; font-size: 9.5px; color: var(--faint); }
+.enq-hc-ax span { text-align: left; white-space: nowrap; }
+
+/* Window test: one window against every other hour. */
+.enq-wt { border: 1px solid var(--border); background: var(--panel-2); border-radius: var(--radius); padding: 11px 13px; margin: 0 0 16px; }
+.enq-wt-head { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.enq-wt-t { font-size: 12.5px; font-weight: 800; padding-bottom: 5px; }
+.enq-wt-cmp { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.enq-wt-side { flex: 1; min-width: 190px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.enq-wt-side.is-dn { border-color: var(--neg, #e0566c); }
+.enq-wt-side.is-up { border-color: var(--pos, #12b886); }
+.enq-wt-lab { font-size: 11px; font-weight: 700; color: var(--muted); }
+.enq-wt-big { font-size: 24px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.enq-wt-vs { font-size: 11px; font-weight: 700; color: var(--faint); text-transform: uppercase; }
+.enq-wt-verdict { margin-top: 9px; font-size: 12px; font-weight: 600; }
+.enq-wt-verdict b { font-size: 13px; }
+
+/* One measure rolled up along a single axis. The grid shows where something
+   concentrates; these show how much, which the eye cannot add across 24 cells. */
+.enq-mg { margin: 2px 0 14px; }
+.enq-mg-t { font-size: 12.5px; font-weight: 800; margin-bottom: 9px; }
+.enq-mg-t .sub { font-weight: 500; color: var(--muted); }
+.enq-mg-rows { display: flex; flex-direction: column; gap: 4px; }
+.enq-mg-row { display: grid; grid-template-columns: minmax(0, 190px) 1fr 52px 44px; align-items: center; gap: 10px;
+  padding: 2px 4px; border-radius: 6px; }
+.enq-mg-row.is-off { background: color-mix(in srgb, var(--muted) 9%, transparent); }
+.enq-mg-lab { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.enq-mg-lab small { color: var(--faint); font-weight: 500; }
+.enq-mg-track { display: block; height: 14px; background: color-mix(in srgb, var(--border) 60%, transparent); border-radius: 4px; overflow: hidden; }
+.enq-mg-fill { display: block; height: 100%; background: var(--brand); border-radius: 0 4px 4px 0; transition: width .25s; }
+.enq-mg-n { font-size: 12.5px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.enq-mg-p { font-size: 11.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.enq-mg-foot { margin-top: 7px; }
+@media (max-width: 720px) { .enq-mg-row { grid-template-columns: minmax(0, 120px) 1fr 44px 38px; } }

@@ -18,6 +18,37 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.420.0 - 2026-08-20 · `PENDING` - Pivot cells you can actually compare
+
+The channel columns in the Lost Reasons pivot were raw counts, and a raw count
+there answers almost nothing: 286 "could not contact" under Paid Social is large
+mainly because Paid Social is large. Reading down a column told you which channel
+is biggest; it did not tell you what is different about it.
+
+Cells now have three readings, picked from a new **Cells show** control:
+
+- **Deals** - the raw count, as before.
+- **% of column** - the share of *that column's own* losses, so a column of 700
+  and a column of 40 are read on the same scale. Each cell carries a light bar so
+  a column can be scanned without reading every number.
+- **vs all (pp)** - that share minus the same row's share of every loss in the
+  period, in percentage points. Positive (red) means the column loses deals to
+  that reason more often than the business does; negative (green) means less.
+
+The divisor is never hidden: every column heading now prints its own total, and a
+totals row closes the table. Columns holding fewer than 20 losses are dimmed,
+because a couple of points there is one deal moving.
+
+The comparison is honest by construction - weighted by column size, the cells
+across a row cancel back to that row's overall share, so a positive figure is
+real concentration rather than an artefact of the divisors. That invariant is
+asserted in the pivot test suite (347 assertions) alongside the reconciliation
+checks, and every cell's hover shows the count, both percentages and the
+difference together, so the number on screen is always traceable to the deals
+behind it.
+
+---
+
 ## v3.419.1 - 2026-08-20 · `PENDING` - The hovered reason leads its own tooltip
 
 Hovering a segment gave you `QUALIFIED · NOT RIGHT NOW` in small faint-grey

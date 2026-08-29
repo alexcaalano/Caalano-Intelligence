@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.419.1'
+const APP_VERSION = '3.420.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4763,6 +4763,45 @@ function LrPop({ children, title, rows, className = '', style, swatch, sub }) {
   )
 }
 
+// One pivot cell, in whichever of the three readings is selected. The raw count
+// is kept in the hover whatever the cell shows, because the percentages are only
+// trustworthy once you can see how many deals they were computed from.
+function LrCell({ g, n, colTot, colLabel, colDim, groupBy, mode, stat, total, swatch }) {
+  const s = stat(g, n, colTot)
+  const empty = !n && !colTot
+  // A zero stays a dash in every reading. "0%" and "-13pp" for a cell holding no
+  // deals at all is a figure where there is no measurement, and it crowds out the
+  // cells that do carry one.
+  const body = !n ? '-'
+    : mode === 'count' ? fmtNumber(n)
+      : mode === 'share' ? `${Math.round(s.colShare)}%`
+        : s.pp == null ? '-' : s.pp > 0 ? `+${s.pp}pp` : s.pp < 0 ? `${s.pp}pp` : '0'
+  const cls = !n ? 'lrv-z'
+    : mode === 'idx' ? (s.pp > 0 ? 'lrv-up' : s.pp < 0 ? 'lrv-dn' : 'lrv-z')
+      : 'lrv-n'
+  const inner = mode === 'share' && n
+    ? <span className="lrv-cbar"><i style={{ width: `${Math.max(0, Math.min(100, s.colShare))}%` }} /><b>{body}</b></span>
+    : body
+  if (empty) return <td className="lrv-z">-</td>
+  return (
+    <td className={`${cls}${s.thin ? ' lrv-thin' : ''}`}>
+      <LrPop
+        className="lrv-cpop"
+        sub={`${LR_LABEL[groupBy]} × ${LR_LABEL[colDim]}`}
+        swatch={swatch}
+        title={`${g.key} · ${colLabel}`}
+        rows={[
+          ['Lost here', fmtNumber(n)],
+          [`Share of ${colLabel}`, colTot ? `${Math.round(s.colShare)}% of ${fmtNumber(colTot)}` : '-'],
+          ['Share of every loss', total ? `${Math.round(s.allShare)}% of ${fmtNumber(total)}` : '-'],
+          [s.pp == null ? null : 'Difference', s.pp == null ? null : s.pp > 0 ? `+${s.pp}pp - over-represented here` : s.pp < 0 ? `${s.pp}pp - under-represented here` : 'in line with the business'],
+          s.thin ? ['Note', `Only ${fmtNumber(colTot)} lost deals in this column - the percentage moves a lot on one deal`] : null,
+        ].filter((r) => r && r[0])}
+      >{inner}</LrPop>
+    </td>
+  )
+}
+
 function useThemeMode() {
   const read = () => (typeof document === 'undefined' ? 'light'
     : document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
@@ -4927,6 +4966,11 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   // The same two readings, applied to the stage FILTER rather than to the rows:
   // narrow to the deals that died at a stage, or to everyone who reached it.
   const [stageFilter, setStageFilter] = useState('at')
+  // A raw count in a column cell answers almost nothing on its own: 286 losses
+  // under Paid Social is only large because Paid Social is large. The other two
+  // readings put it in proportion - what share of THAT column died of this, and
+  // whether that share runs above or below the same reason's share of every loss.
+  const [cellMode, setCellMode] = useState('count')
   const [visA, setVisA] = useState('channel')
   const [visB, setVisB] = useState('keyevent')
   const [open, setOpen] = useState(null)
@@ -5093,6 +5137,24 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   }, [rows, colDim, ranks, filters.pipeline])
   const otherOf = (g) => g.count - colKeys.reduce((a, k) => a + (g.cols.get(k) || 0), 0)
   const anyOther = groups.some((g) => otherOf(g) > 0)
+  // Each column's own total, counted over the filtered deals rather than summed
+  // down the column: in the cumulative stage reading the rows overlap, so adding
+  // the cells up would count the same deal once per stage it cleared.
+  const colTotals = useMemo(() => {
+    const m = new Map()
+    for (const r of rows) m.set(r[colDim], (m.get(r[colDim]) || 0) + 1)
+    return m
+  }, [rows, colDim])
+  const otherTot = rows.length - colKeys.reduce((a, k) => a + (colTotals.get(k) || 0), 0)
+  // Below this many deals a column percentage swings on one or two records, so
+  // the comparison is shown but visibly held at arm's length.
+  const LRV_THIN = 20
+  const cellStat = (g, n, colTot) => {
+    const colShare = colTot ? (n / colTot) * 100 : null
+    const allShare = rows.length ? (g.count / rows.length) * 100 : null
+    const pp = colShare == null || allShare == null ? null : Math.round(colShare - allShare)
+    return { n, colTot, colShare, allShare, pp, thin: colTot > 0 && colTot < LRV_THIN }
+  }
   const totVal = rows.reduce((a, r) => a + r.value, 0)
   // A share inside a filter means little on its own: "Budget is 28% of Paid
   // Social losses" is only interesting against Budget's share of every loss.
@@ -5179,6 +5241,13 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                     <select value={colDim} onChange={(e) => setColBy(e.target.value)}>
                       {LR_DIMS.filter(([k]) => k !== groupBy).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
                     </select></label>
+                  <label className="lrv-f" title="Deals is the raw count. % of column divides by that column's own losses, so columns of very different size compare. vs all subtracts the row's share of every loss from that, so it reads as over- or under-represented.">
+                    <span className="lrv-f-lab">Cells show</span>
+                    <select value={cellMode} onChange={(e) => setCellMode(e.target.value)}>
+                      <option value="count">Deals</option>
+                      <option value="share">% of column</option>
+                      <option value="idx">vs all (pp)</option>
+                    </select></label>
                 </div>
                 </div>
                 {(() => {
@@ -5228,8 +5297,8 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                         <th className="lft">{LR_LABEL[groupBy]}{cumulative ? ' or later' : ''}</th>
                         <th>Lost</th><th>Value</th><th>Share</th>
                         {active.length ? <th title="This row’s share of the filtered deals minus its share of every lost deal. Positive means these filters concentrate it.">vs all</th> : null}
-                        {colKeys.map((k) => <th key={k} className="lrv-ch" title={`${LR_LABEL[colDim]}: ${k}`}><span>{k}</span></th>)}
-                        {anyOther ? <th className="lrv-ch"><span>Other</span></th> : null}
+                        {colKeys.map((k) => <th key={k} className="lrv-ch" title={`${LR_LABEL[colDim]}: ${k} - ${fmtNumber(colTotals.get(k) || 0)} lost`}><span>{k}</span><em>{fmtNumber(colTotals.get(k) || 0)}</em></th>)}
+                        {anyOther ? <th className="lrv-ch" title={`Every other ${(LR_LABEL[colDim] || '').toLowerCase()} - ${fmtNumber(otherTot)} lost`}><span>Other</span><em>{fmtNumber(otherTot)}</em></th> : null}
                       </tr></thead>
                       <tbody>{groups.map((g) => {
                         const isOpen = open === g.key
@@ -5242,8 +5311,8 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                               <td>{g.value ? money(g.value) : '-'}</td>
                               <td>{pctOf(g.count, rows.length)}</td>
                               {active.length ? (() => { const l = liftOf(g); return <td className={l == null ? 'lrv-z' : l > 0 ? 'lrv-up' : l < 0 ? 'lrv-dn' : 'lrv-z'} title={`${fmtNumber(baseline.get(g.key) || 0)} of ${fmtNumber(facts.length)} unfiltered`}>{l == null ? '-' : l > 0 ? `+${l}pp` : l < 0 ? `${l}pp` : '0'}</td> })() : null}
-                              {colKeys.map((k) => { const n = g.cols.get(k) || 0; return <td key={k} className={n ? 'lrv-n' : 'lrv-z'}>{n ? fmtNumber(n) : '-'}</td> })}
-                              {anyOther ? <td className={oth ? 'lrv-n' : 'lrv-z'}>{oth ? fmtNumber(oth) : '-'}</td> : null}
+                              {colKeys.map((k) => <LrCell key={k} g={g} n={g.cols.get(k) || 0} colTot={colTotals.get(k) || 0} colLabel={k} colDim={colDim} groupBy={groupBy} mode={cellMode} stat={cellStat} total={rows.length} swatch={groupBy === 'reason' ? colors.of(g.key) : null} />)}
+                              {anyOther ? <LrCell g={g} n={oth} colTot={otherTot} colLabel={`Other ${(LR_LABEL[colDim] || '').toLowerCase()}`} colDim={colDim} groupBy={groupBy} mode={cellMode} stat={cellStat} total={rows.length} swatch={groupBy === 'reason' ? colors.of(g.key) : null} /> : null}
                             </tr>
                             {isOpen ? <tr className="lrv-detail"><td colSpan={4 + (active.length ? 1 : 0) + colKeys.length + (anyOther ? 1 : 0)}>
                               <div className="lrv-det-h">{LR_LABEL[groupBy]}: {g.key} · {fmtNumber(g.count)} {g.count === 1 ? 'lead' : 'leads'}{active.length ? ` · with ${active.map(([d, v]) => `${LR_LABEL[d].toLowerCase()} ${v}`).join(', ')}` : ''}</div>
@@ -5252,8 +5321,17 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                           </React.Fragment>
                         )
                       })}</tbody>
+                      <tfoot><tr className="lrv-tot">
+                        <td className="lft">All lost deals</td>
+                        <td><b>{fmtNumber(rows.length)}</b></td>
+                        <td>{totVal ? money(totVal) : '-'}</td>
+                        <td>100%</td>
+                        {active.length ? <td>-</td> : null}
+                        {colKeys.map((k) => <td key={k}>{fmtNumber(colTotals.get(k) || 0)}</td>)}
+                        {anyOther ? <td>{fmtNumber(otherTot)}</td> : null}
+                      </tr></tfoot>
                     </table>
-                    <Caveat>{LR_TIP[groupBy]} Every filter above stacks, so you can hold one dimension and pivot the rest - Paid Social lost at a given stage, broken down by reason, for example. {cumulative ? `Each row counts every deal that reached that stage or went past it before being lost, judged inside its own pipeline - so a deal appears in every row it got through and the rows deliberately do not add up to ${fmtNumber(rows.length)}. Switch the stage reading back to "lost at this stage" for an exclusive split that does.` : `Each deal carries exactly one value per dimension and a missing value groups under “Not tagged”, so the rows always add up to the ${fmtNumber(rows.length)} shown.`} Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. The size of the “Unspecified” reason is a fair read on how consistently the team is setting one at all.{cc.lostFacts && cc.lostFacts.capped ? ` Showing the first ${fmtNumber(facts.length)} of ${fmtNumber(allTot)} lost deals in this period.` : ''}</Caveat>
+                    <Caveat>{LR_TIP[groupBy]} {cellMode === 'count' ? 'Column cells are raw counts, which say as much about how big each column is as about the reason - switch “Cells show” to compare them fairly.' : cellMode === 'share' ? `Each cell is that ${(LR_LABEL[groupBy] || '').toLowerCase()}’s share of its OWN column’s losses, so a large column and a small one are read on the same scale - the divisor for each is printed under its heading.` : `Each cell is that ${(LR_LABEL[groupBy] || '').toLowerCase()}’s share of its own column minus its share of all ${fmtNumber(rows.length)} losses, in percentage points. Positive means that column loses deals to it more often than the business as a whole does. Weighted by column size the cells across a row cancel to zero by construction, so a positive figure is genuine concentration and not an artefact of the divisors. Columns under ${LRV_THIN} losses are dimmed: a point or two there is a single deal.`} Every filter above stacks, so you can hold one dimension and pivot the rest - Paid Social lost at a given stage, broken down by reason, for example. {cumulative ? `Each row counts every deal that reached that stage or went past it before being lost, judged inside its own pipeline - so a deal appears in every row it got through and the rows deliberately do not add up to ${fmtNumber(rows.length)}. Switch the stage reading back to "lost at this stage" for an exclusive split that does.` : `Each deal carries exactly one value per dimension and a missing value groups under “Not tagged”, so the rows always add up to the ${fmtNumber(rows.length)} shown.`} Deals are counted by the period they were created in, which is why this can differ from a closed-in-period view: a deal that arrived last quarter and was lost this week is scored against the quarter it arrived. The size of the “Unspecified” reason is a fair read on how consistently the team is setting one at all.{cc.lostFacts && cc.lostFacts.capped ? ` Showing the first ${fmtNumber(facts.length)} of ${fmtNumber(allTot)} lost deals in this period.` : ''}</Caveat>
                   </>}
               </>}
       </div>

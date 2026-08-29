@@ -3761,6 +3761,27 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 /* Over/under-representation against the unfiltered distribution. */
 .u-lrv td.lrv-up { color: var(--neg, #e0566c); font-weight: 700; }
 .u-lrv td.lrv-dn { color: var(--pos, #12b886); font-weight: 700; }
+/* Column totals under each header: the denominator every cell percentage is
+   computed against, kept in sight so a 40% built on five deals is visibly
+   built on five deals. */
+.u-lrv th.lrv-ch > em { display: block; font-style: normal; font-weight: 700; font-size: 10px;
+  color: var(--muted); margin-top: 2px; }
+/* A column whose own total is too small for a percentage to mean much. The
+   figure still shows - it is not wrong, just noisy - but it stops competing
+   with the columns that carry weight. */
+.u-lrv td.lrv-thin { opacity: 0.55; }
+/* Share-of-column cells carry their own bar, so the eye can run down a column
+   without reading every number. The bar sits behind the figure at low contrast;
+   the figure is what is being read. */
+.lrv-cbar { position: relative; display: block; width: 100%; }
+.lrv-cbar > i { position: absolute; right: 0; top: 50%; transform: translateY(-50%); height: 15px;
+  border-radius: 3px; background: color-mix(in srgb, var(--brand) 17%, transparent); }
+.lrv-cbar > b { position: relative; font-weight: 700; }
+.u-lrv .lrv-cpop { display: block; }
+/* The totals row is the table's denominator, not another row of data. */
+.u-lrv tfoot td { border-top: 2px solid var(--border-2); font-weight: 700; color: var(--muted);
+  font-size: 11.5px; padding-top: 7px; }
+.u-lrv tfoot td.lft { text-align: left; }
 /* Marks deals whose time-in-stage is an upper bound, not a measurement. */
 .st-est { font-size: 10.5px; font-weight: 700; color: var(--warn, #f5a524); cursor: help; }
 

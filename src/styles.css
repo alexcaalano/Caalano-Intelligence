@@ -3944,3 +3944,11 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .enq-mg-r.is-hi { color: var(--neg, #e0566c); }
 .enq-mg-r.is-lo { color: var(--pos, #12b886); }
 @media (max-width: 860px) { .enq-mg-row.has-base { grid-template-columns: minmax(0, 120px) 1fr 44px 38px 46px 44px; } }
+/* The hovered thing leads the card, in readable ink with its own swatch, so the
+   mark under the cursor and the label being read are visibly the same series.
+   The small grey line above carries the context the title used to bury. */
+.lrv-pop-t { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 800;
+  color: var(--text); line-height: 1.25; white-space: normal; max-width: 260px; }
+.lrv-pop-t i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.hp-body > .hp-t + .lrv-pop-t { margin-top: -2px; }
+.lrv-pop-t + .hp-r { margin-top: 3px; }

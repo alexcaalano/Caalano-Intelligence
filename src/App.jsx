@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.419.0'
+const APP_VERSION = '3.419.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4749,11 +4749,12 @@ const LR_HUES = {
 const LR_OTHER_HUE = { light: '#78776f', dark: '#9a998f' }
 const LR_MAX_HUES = 7
 
-function LrPop({ children, title, rows, className = '', style }) {
+function LrPop({ children, title, rows, className = '', style, swatch, sub }) {
   return (
     <HoverPop className={`lrv-pop ${className}`} style={style} render={() => (
       <span className="hp-body">
-        <span className="hp-t">{title}</span>
+        {sub ? <span className="hp-t">{sub}</span> : null}
+        <span className={`lrv-pop-t${swatch ? ' has-sw' : ''}`}>{swatch ? <i style={{ background: swatch }} /> : null}{title}</span>
         {rows.filter(Boolean).map(([l, v], i) => (
           <span className="hp-r" key={i}><span className="hp-lbl primary">{l}</span><span className="hp-val">{v}</span></span>
         ))}
@@ -4800,7 +4801,7 @@ function LrReasonMix({ rows, total, colorOf, money }) {
         {rows.map((r) => (
           <div className="lrv-mix-row" key={r.key}>
             <span className="lrv-mix-lab">{r.key}</span>
-            <LrPop title={r.key} rows={[
+            <LrPop title={r.key} swatch={colorOf(r.key)} rows={[
               ['Deals lost', fmtNumber(r.count)],
               ['Share of all losses', pctOf(r.count, total)],
               ['Value', r.value ? money(r.value) : '-'],
@@ -4833,7 +4834,7 @@ function LrComposition({ title, groups, colorOf, onPick, picked }) {
             <span className="lrv-comp-lab" title={g.label || g.key}>{g.label || g.key}</span>
             <span className="lrv-comp-bar">
               {g.parts.map((p) => (
-                <LrPop key={p.reason} className="lrv-seg-pop" title={`${g.label || g.key} · ${p.reason}`} rows={[
+                <LrPop key={p.reason} className="lrv-seg-pop" title={p.reason} sub={g.label || g.key} swatch={colorOf(p.reason)} rows={[
                   ['Deals lost', fmtNumber(p.count)],
                   [`Share of ${g.label || g.key}`, pctOf(p.count, g.count)],
                   ['All lost here', fmtNumber(g.count)],

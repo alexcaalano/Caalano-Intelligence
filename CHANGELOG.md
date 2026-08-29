@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.419.1 - 2026-08-20 · `PENDING` - The hovered reason leads its own tooltip
+
+Hovering a segment gave you `QUALIFIED · NOT RIGHT NOW` in small faint-grey
+uppercase - the reason, which is the thing under the cursor, buried in a caption
+alongside its group and set in the least readable style on the card.
+
+The reason is now the headline: full-strength ink at 13px, with the segment's own
+colour swatch beside it, so the mark being pointed at and the label being read are
+visibly the same series rather than something to match up by memory. The group it
+belongs to moves to a small line above, which is what that quiet style is for.
+
+Applies to the reason-mix bars and the composition segments alike. Measured in
+both themes: the title now sits at full text colour against the card, where it was
+previously the same faint grey used for captions.
+
+---
+
 ## v3.419.0 - 2026-08-20 · `PENDING` - A denominator for the arrival breakdowns
 
 "Overnight had 139 lost, 13% of all losses" reads like a finding and is not one.

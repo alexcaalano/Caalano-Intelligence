@@ -3932,3 +3932,15 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .u-pbh td.win-up { color: var(--pos, #12b886); font-weight: 700; }
 .u-pbh td.win-dn { color: var(--neg, #e0566c); font-weight: 700; }
 .u-pbh tr.win-thin td { color: var(--faint); }
+/* With a denominator, the marginal gains a leads column and a rate. Share-of-all
+   says where something happened; the rate says whether that is more than the
+   bucket's fair share. */
+.enq-mg-row.has-base { grid-template-columns: minmax(0, 175px) 1fr 50px 42px 52px 48px; }
+.enq-mg-row.enq-mg-head { font-size: 9.5px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--faint); padding-bottom: 2px; }
+.enq-mg-row.enq-mg-head .enq-mg-n, .enq-mg-row.enq-mg-head .enq-mg-p, .enq-mg-row.enq-mg-head .enq-mg-r { font-weight: 800; }
+.enq-mg-base { color: var(--muted); font-weight: 600 !important; }
+.enq-mg-r { font-size: 12.5px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.enq-mg-r.is-hi { color: var(--neg, #e0566c); }
+.enq-mg-r.is-lo { color: var(--pos, #12b886); }
+@media (max-width: 860px) { .enq-mg-row.has-base { grid-template-columns: minmax(0, 120px) 1fr 44px 38px 46px 44px; } }

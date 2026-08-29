@@ -18,6 +18,38 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.419.0 - 2026-08-20 · `PENDING` - A denominator for the arrival breakdowns
+
+"Overnight had 139 lost, 13% of all losses" reads like a finding and is not one.
+If overnight is also 13% of the leads, it is exactly average - the share tells you
+where something happened, never whether it happened more than its fair share. The
+number was missing its denominator.
+
+On **Won · by arrival** and **Lost · by arrival**, the breakdowns now carry two
+more columns: **Leads** - how many arrived in that bucket - and **% won / % lost**
+within it. So overnight being 13% of losses is read against overnight being some
+share of leads, and the two together say whether the hour is genuinely worse or
+merely busier.
+
+The account average is stated under the table and a bucket is highlighted only at
+more than 20% either side of it, and only with at least twenty leads behind it - a
+rate on a handful of leads is shown but never flagged.
+
+The rate is losses over **leads that arrived**, which is the question as asked.
+Leads still open sit in that denominator, so it reads as a floor rather than a
+final figure; hovering a row gives the same rate over decided deals alone, which
+is the stricter number.
+
+Only the arrival-derived measures get this. Bookings and appointment slots do not,
+because dividing bookings by the leads that arrived in the same hour is a ratio of
+two different populations rather than a rate.
+
+**Time in stage moved to the bottom of the Timing tab**, after Speed to Lead. It
+was already collapsed by default; it is a diagnostic you go looking for, not
+something to scroll past on the way to the timing work.
+
+---
+
 ## v3.418.1 - 2026-08-20 · `PENDING` - Fix: "paidOpen is not defined"
 
 The Paid performance block from v3.418.0 was inserted into `TimingView` instead of

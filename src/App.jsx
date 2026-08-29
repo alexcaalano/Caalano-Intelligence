@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.418.1'
+const APP_VERSION = '3.419.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9730,26 +9730,44 @@ const ENQ_BLOCKS = [
   ['Overnight', 0, 6], ['Early morning', 6, 9], ['Morning', 9, 12],
   ['Early afternoon', 12, 15], ['Late afternoon', 15, 18], ['Evening', 18, 21], ['Late evening', 21, 24],
 ]
-function enqMarginal(g, gran) {
+// `base` is the grid the measure is a subset of - all leads by arrival, when the
+// measure is the leads that were later won or lost. Without it a row can only say
+// "13% of all losses happened overnight", which sounds like a finding and is not:
+// if overnight is also 13% of leads, it is exactly average. The denominator is
+// what turns the share into a rate.
+function enqMarginal(g, gran, base) {
   const out = []
-  const add = (label, cells, sub) => {
+  const cellsOf = (grid, d, a, b) => { const o = []; for (let h = a; h < b; h++) o.push(grid[d][h]); return o }
+  const add = (label, cells, sub, baseCells) => {
     let n = 0, booked = 0
     for (const c of cells) { n += c.leads; booked += c.booked || 0 }
-    out.push({ label, sub, n, booked })
+    let baseN = null, baseDecided = null
+    if (baseCells) {
+      baseN = 0; baseDecided = 0
+      for (const c of baseCells) { baseN += c.leads; baseDecided += (c.won || 0) + (c.lost || 0) }
+    }
+    out.push({ label, sub, n, booked, baseN, baseDecided,
+      rate: baseN ? n / baseN : null, rateDecided: baseDecided ? n / baseDecided : null })
   }
-  if (gran === 'day') for (let d = 0; d < 7; d++) add(ENQ_DAYS[d], g[d])
+  if (gran === 'day') for (let d = 0; d < 7; d++) add(ENQ_DAYS[d], g[d], null, base ? base[d] : null)
   else if (gran === 'block') for (const [label, a, b] of ENQ_BLOCKS) {
-    const cells = []; for (let d = 0; d < 7; d++) for (let h = a; h < b; h++) cells.push(g[d][h])
-    add(label, cells, `${enqHourLabel(a)}–${enqHourLabel(b === 24 ? 0 : b)}`)
+    const cells = [], bcells = []
+    for (let d = 0; d < 7; d++) { cells.push(...cellsOf(g, d, a, b)); if (base) bcells.push(...cellsOf(base, d, a, b)) }
+    add(label, cells, `${enqHourLabel(a)}–${enqHourLabel(b === 24 ? 0 : b)}`, base ? bcells : null)
   } else for (let h = 0; h < 24; h++) {
-    const cells = []; for (let d = 0; d < 7; d++) cells.push(g[d][h])
-    add(enqHourLabel(h), cells)
+    const cells = [], bcells = []
+    for (let d = 0; d < 7; d++) { cells.push(g[d][h]); if (base) bcells.push(base[d][h]) }
+    add(enqHourLabel(h), cells, null, base ? bcells : null)
   }
   return out
 }
-function EnqMarginal({ g, gran, noun, hrs }) {
-  const rows = useMemo(() => enqMarginal(g, gran), [g, gran])
+function EnqMarginal({ g, gran, noun, hrs, base, rateLabel }) {
+  const rows = useMemo(() => enqMarginal(g, gran, base), [g, gran, base])
   const total = rows.reduce((a, r) => a + r.n, 0)
+  const baseTotal = rows.reduce((a, r) => a + (r.baseN || 0), 0)
+  // The account-wide rate, so a bucket can be read against it rather than against
+  // nothing. A bucket only gets called out when it has enough leads to support it.
+  const overall = baseTotal ? total / baseTotal : null
   const max = Math.max(1, ...rows.map((r) => r.n))
   if (!total) return <div className="cap">Nothing in this range to break down.</div>
   const top = rows.reduce((a, r) => (r.n > a.n ? r : a), rows[0])
@@ -9765,20 +9783,43 @@ function EnqMarginal({ g, gran, noun, hrs }) {
     <div className="enq-mg">
       <div className="enq-mg-t">{gran === 'day' ? 'By day of week' : gran === 'block' ? 'By part of the day' : 'By hour of day'}
         <span className="sub"> · busiest {top.label.toLowerCase()} with {fmtNumber(top.n)} of {fmtNumber(total)} {noun}</span></div>
-      <div className="enq-mg-rows">
-        {rows.map((r) => (
-          <div className={`enq-mg-row${offHour(r) ? ' is-off' : ''}`} key={r.label}>
+      {base ? <div className="enq-mg-row enq-mg-head">
+        <span className="enq-mg-lab" />
+        <span />
+        <span className="enq-mg-n">{noun.split(' ').pop()}</span>
+        <span className="enq-mg-p">of all</span>
+        <span className="enq-mg-n">Leads</span>
+        <span className="enq-mg-r">{rateLabel || 'Rate'}</span>
+      </div> : null}
+      <div className={`enq-mg-rows${base ? ' has-base' : ''}`}>
+        {rows.map((r) => {
+          // A rate on a handful of leads is not a small signal, so it is shown but
+          // never flagged as high or low.
+          const solid = (r.baseN || 0) >= 20
+          const off = overall != null && r.rate != null && solid
+            ? (r.rate > overall * 1.2 ? 'is-hi' : r.rate < overall * 0.8 ? 'is-lo' : '') : ''
+          return (
+          <div className={`enq-mg-row${offHour(r) ? ' is-off' : ''}${base ? ' has-base' : ''}`} key={r.label}>
             <span className="enq-mg-lab">{r.label}{r.sub ? <small> {r.sub}</small> : null}</span>
             <LrPop title={r.label + (r.sub ? ` · ${r.sub}` : '')} rows={[
               [noun.charAt(0).toUpperCase() + noun.slice(1), fmtNumber(r.n)],
               ['Share of the period', pctOf(r.n, total)],
+              ...(base ? [['Leads that arrived then', fmtNumber(r.baseN)]] : []),
+              ...(base && r.rate != null ? [[rateLabel || 'Rate', `${Math.round(r.rate * 100)}%`]] : []),
+              ...(base && r.rateDecided != null ? [['Of decided deals only', `${Math.round(r.rateDecided * 100)}% of ${fmtNumber(r.baseDecided)}`]] : []),
               ...(r.booked ? [['Of those, booked', `${fmtNumber(r.booked)} (${pctOf(r.booked, r.n)})`]] : []),
             ]}><span className="enq-mg-track"><span className="enq-mg-fill" style={{ width: `${Math.max(1, (r.n / max) * 100)}%` }} /></span></LrPop>
             <span className="enq-mg-n">{fmtNumber(r.n)}</span>
             <span className="enq-mg-p">{pctOf(r.n, total)}</span>
+            {base ? <span className="enq-mg-n enq-mg-base">{fmtNumber(r.baseN)}</span> : null}
+            {base ? <span className={`enq-mg-r ${off}`}>{r.rate == null ? '-' : `${Math.round(r.rate * 100)}%`}</span> : null}
           </div>
-        ))}
+          )
+        })}
       </div>
+      {base && overall != null ? <div className="cap enq-mg-foot">
+        <b>{rateLabel || 'Rate'}</b> is {noun} as a share of the leads that arrived in that bucket - so a row is only notable when it differs from the {Math.round(overall * 100)}% account average, which the share-of-all column cannot tell you on its own. Highlighted at more than 20% either side of that average, and only where the bucket has at least 20 leads. Leads still open sit in the denominator, so this reads as a floor; the hover gives the figure over decided deals alone.
+      </div> : null}
       {hrs && gran !== 'day' ? <div className="cap enq-mg-foot">Shaded rows are outside this client’s working hours.</div> : null}
     </div>
   )
@@ -9998,7 +10039,9 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
             <div className="enq-hours"><span className="cap">Business hours are switched off for this client, so there is no inside/outside split. Set them in Settings → this client.</span></div>
           )}
           {winMode ? <EnqWinRate g={g} /> : null}
-          {gran !== 'grid' && !winMode ? <EnqMarginal g={g} gran={gran} noun={noun} hrs={hrs} /> : null}
+          {gran !== 'grid' && !winMode ? <EnqMarginal g={g} gran={gran} noun={noun} hrs={hrs}
+            base={view === 'wonArr' || view === 'lostArr' ? gLeads : null}
+            rateLabel={view === 'wonArr' ? '% won' : view === 'lostArr' ? '% lost' : null} /> : null}
           {gran === 'grid' || winMode ? <div className="enq-wrap">
             <table className="enq-grid">
               {/* Every hour is labelled. Every third was tidier and meant counting
@@ -11122,7 +11165,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
-        {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} /><StageTimingSection clientId={client.id} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /></>}
+        {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /><StageTimingSection clientId={client.id} nonce={nonce} /></>}
         {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}

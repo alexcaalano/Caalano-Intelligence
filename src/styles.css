@@ -2577,6 +2577,41 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
   .optlog-fld { flex-direction: column; gap: 1px; }
   .optlog-k { min-width: 0; }
 }
+
+/* Change log: the platform change histories and the Optimisation Log sheet,
+   sharing one timeline. Everything below reuses the optlog marks above - the
+   point is that a platform change and a written note read as the same kind of
+   event, differing only in the badge that says where it came from. */
+.chg-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.chg-tabs button { border: none; border-bottom: 2px solid transparent; background: none; color: var(--muted);
+  font-size: 13px; font-weight: 700; padding: 8px 12px 9px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.chg-tabs button:hover { color: var(--text); }
+.chg-tabs button.on { color: var(--text); border-bottom-color: var(--accent, #6d5efc); }
+.chg-tabs button > em { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 1px 7px; }
+.chg-tabs button.on > em { color: var(--accent, #6d5efc); border-color: color-mix(in srgb, var(--accent, #6d5efc) 40%, transparent); }
+.chg-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.chg-count { margin-left: auto; }
+/* The platform feeds carry a time as well as a date - two changes on the same
+   afternoon are a different story from two changes a fortnight apart. */
+.chg-time { display: block; font-size: 10.5px; font-weight: 600; color: var(--faint); margin-top: 1px; }
+/* Where a row came from: read from the platform's own audit trail, or written
+   down by the team. Deliberately quieter than the platform badge - it qualifies
+   the row rather than naming it. */
+.chg-src { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 7px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); background: var(--panel); }
+.chg-src-log { color: #6d5efc; border-color: rgba(109,94,252,.32); background: rgba(109,94,252,.09); }
+.chg-val { font-variant-numeric: tabular-nums; }
+.optlog-embed .optlog-head { margin-bottom: 10px; align-items: center; }
+/* What was asked of Windsor and what came back, shown only on request - it is a
+   wiring diagnostic, not something a client needs in their face. */
+.chg-probe { text-align: left; max-width: 640px; margin: 10px auto 0; display: flex; flex-direction: column; gap: 6px; }
+.chg-probe-row { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; padding: 7px 10px;
+  border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; background: var(--panel-2); }
+.chg-probe-row.ok { border-left-color: #12b886; }
+.chg-probe-row.bad { border-left-color: var(--neg, #e0566c); }
+.chg-probe-row code { font-size: 10.5px; color: var(--muted); word-break: break-all; }
+.chg-probe-row span { color: var(--text); }
 .mr-bubble-lab { font-size: 13px; font-weight: 800; letter-spacing: -.01em; margin-bottom: 2px; }
 .mr-bubble-sub { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; line-height: 1.4; }
 .mr-cretbl-thumb { position: relative; width: 44px; height: 44px; }

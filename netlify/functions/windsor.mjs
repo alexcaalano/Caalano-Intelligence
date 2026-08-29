@@ -2575,6 +2575,9 @@ const VIEWER_REQ_TABS = {
   // viewer reaches these only if the Timing tab is ticked for them in Settings,
   // exactly like Speed to lead above.
   'scope:enqtimes': ['timing'],
+  // Ad-account change history, shown on the Change Log tab beside the
+  // Optimisation Log sheet - so it rides the same grant that tab already needs.
+  'scope:changehist': ['optlog'],
   'scope:stagetiming': ['timing'],
   // Contact-notes drill - reachable from several tabs' drill-downs; allow for any.
   'scope:oppnotes': VIEWER_TABS_ALL,
@@ -2755,6 +2758,133 @@ async function diagLog(entry) {
 // The bucket label Meta returns looks like "13:00:00 - 13:59:59"; Google returns
 // a bare hour. Both reduce to an integer 0-23, and anything that does not is
 // dropped rather than guessed at.
+// --- Platform change history ------------------------------------------------
+// Google Ads and Meta both keep an audit trail of what was changed, by whom and
+// when. Windsor exposes them as ordinary connector fields, but the exact field
+// names are not something to guess once and hope: they differ between the
+// Google Ads change_event resource and Meta's ad activity log, and Windsor
+// flattens each in its own way. So each channel carries an ordered list of
+// candidate field sets, the first that actually returns rows wins, and every
+// attempt that failed is reported back with what the API said - a wiring problem
+// shows up in the UI as the field set that was tried, not as an empty tab.
+const CHG_CANDIDATES = {
+  google_ads: [
+    ['account_id', 'change_date_time', 'change_resource_type', 'resource_change_operation', 'changed_fields', 'client_type', 'user_email', 'campaign', 'ad_group', 'old_resource', 'new_resource'],
+    ['account_id', 'change_date_time', 'change_resource_type', 'resource_change_operation', 'changed_fields', 'user_email', 'campaign', 'ad_group'],
+    ['account_id', 'change_event_change_date_time', 'change_event_change_resource_type', 'change_event_resource_change_operation', 'change_event_changed_fields', 'change_event_user_email', 'campaign'],
+    ['account_id', 'change_date_time', 'changed_fields', 'campaign'],
+    ['account_id', 'change_status_last_change_date_time', 'change_status_resource_type', 'campaign'],
+  ],
+  facebook: [
+    ['account_id', 'event_time', 'event_type', 'translated_event_type', 'actor_name', 'object_name', 'object_type', 'extra_data', 'application_name'],
+    ['account_id', 'event_time', 'event_type', 'actor_name', 'object_name', 'object_type', 'extra_data'],
+    ['account_id', 'event_time', 'translated_event_type', 'actor_name', 'object_name'],
+    ['account_id', 'date', 'event_type', 'actor_name', 'object_name', 'object_type'],
+    ['account_id', 'activity_event_time', 'activity_event_type', 'activity_actor_name', 'activity_object_name'],
+  ],
+}
+const CHG_CAP = 600
+// The timestamp can arrive under any of several names depending on which
+// candidate matched, and Google returns an ISO string where Meta returns either
+// ISO or epoch seconds. A row without a usable time is dropped rather than
+// stacked at the epoch, where it would sit above everything real.
+const CHG_TS_KEYS = ['change_date_time', 'change_event_change_date_time', 'change_status_last_change_date_time', 'event_time', 'activity_event_time', 'date', 'date_time']
+const chgTime = (r) => {
+  for (const k of CHG_TS_KEYS) {
+    const v = r[k]
+    if (v == null || v === '') continue
+    if (typeof v === 'number' || /^\d{9,13}$/.test(String(v))) {
+      const n = Number(v)
+      const ms = n > 1e12 ? n : n * 1000
+      if (Number.isFinite(ms) && ms > 946684800000) return ms   // after 2000-01-01
+      continue
+    }
+    const t = Date.parse(String(v).replace(' ', 'T'))
+    if (Number.isFinite(t)) return t
+  }
+  return null
+}
+const chgFirst = (r, keys) => { for (const k of keys) { const v = r[k]; if (v != null && v !== '' && v !== '(not set)') return String(v) } return null }
+// Google's changed_fields is a field mask ("campaign.status,campaign.name");
+// Meta's extra_data is a JSON blob holding the old and new values. Both are
+// reduced to the same two things: which settings moved, and from what to what.
+const chgFields = (v) => {
+  if (!v) return []
+  return String(v).split(/[,\s]+/).map((s) => s.trim().replace(/^[a-z_]+\./, '')).filter(Boolean).slice(0, 8)
+}
+const chgExtra = (v) => {
+  if (!v) return null
+  let o = v
+  if (typeof v === 'string') { try { o = JSON.parse(v) } catch { return String(v).slice(0, 160) } }
+  if (!o || typeof o !== 'object') return String(v).slice(0, 160)
+  const pick = (...ks) => { for (const k of ks) if (o[k] != null && o[k] !== '') return o[k]; return null }
+  const oldV = pick('old_value', 'oldValue', 'old', 'previous_value')
+  const newV = pick('new_value', 'newValue', 'new', 'value')
+  if (oldV == null && newV == null) return JSON.stringify(o).slice(0, 160)
+  return { from: oldV == null ? null : String(oldV).slice(0, 80), to: newV == null ? null : String(newV).slice(0, 80) }
+}
+// Meta event types are machine names (`update_ad_set_bid_strategy`); Google's
+// are enum names (`UPDATE`). Both become sentence case so the merged timeline
+// reads as one list rather than two conventions side by side.
+const chgAction = (s) => {
+  if (!s) return null
+  const t = String(s).replace(/_/g, ' ').trim().toLowerCase()
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : null
+}
+async function platformChanges(cc, from, to, preset, key) {
+  const out = { meta: null, google: null, probe: [], notes: [] }
+  const tryOne = async (connector, acct, label) => {
+    if (!acct) return { available: false, rows: [], reason: `No ${label} account linked to this client.` }
+    let lastErr = null
+    for (const fields of CHG_CANDIDATES[connector]) {
+      const tag = fields.slice(1).join(',')
+      try {
+        const raw = await windsorFetch(connector, fields, from, to, preset, key)
+        const mine = (raw || []).filter((r) => !r.account_id || acctEq(r.account_id, acct))
+        const rows = []
+        for (const r of mine) {
+          const ts = chgTime(r)
+          if (ts == null) continue
+          const extra = chgExtra(r.extra_data)
+          rows.push({
+            ts,
+            channel: connector === 'facebook' ? 'meta' : 'google',
+            actor: chgFirst(r, ['user_email', 'change_event_user_email', 'actor_name', 'activity_actor_name', 'application_name', 'client_type']),
+            action: chgAction(chgFirst(r, ['translated_event_type', 'event_type', 'activity_event_type', 'resource_change_operation', 'change_event_resource_change_operation'])),
+            entity: chgFirst(r, ['object_name', 'activity_object_name', 'ad_group', 'campaign', 'change_resource_type', 'change_event_change_resource_type']),
+            entityType: chgFirst(r, ['object_type', 'change_resource_type', 'change_event_change_resource_type', 'change_status_resource_type']),
+            campaign: chgFirst(r, ['campaign']),
+            adgroup: chgFirst(r, ['ad_group']),
+            fields: chgFields(r.changed_fields || r.change_event_changed_fields),
+            from: extra && typeof extra === 'object' ? extra.from : null,
+            to: extra && typeof extra === 'object' ? extra.to : null,
+            note: typeof extra === 'string' ? extra : null,
+          })
+        }
+        out.probe.push({ channel: label, fields: tag, ok: true, rows: rows.length, of: (raw || []).length })
+        // A field set that Windsor accepts but that yields no dated rows is not a
+        // working change feed - keep going rather than reporting an empty tab as
+        // if the account simply had no changes.
+        if (rows.length) {
+          rows.sort((a, b) => b.ts - a.ts)
+          return { available: true, rows: rows.slice(0, CHG_CAP), total: rows.length, fields: tag, capped: rows.length > CHG_CAP }
+        }
+      } catch (e) {
+        lastErr = String(e.message || e).slice(0, 140)
+        out.probe.push({ channel: label, fields: tag, ok: false, error: lastErr })
+      }
+    }
+    return { available: false, rows: [], reason: lastErr ? `Windsor rejected every ${label} change-history field set. Last response: ${lastErr}` : `${label} accepted the change-history fields but returned no dated rows for this period.` }
+  }
+  const [m, g] = await Promise.all([
+    tryOne('facebook', cc.meta, 'Meta').catch((e) => ({ available: false, rows: [], reason: String(e.message || e).slice(0, 140) })),
+    tryOne('google_ads', cc.google, 'Google').catch((e) => ({ available: false, rows: [], reason: String(e.message || e).slice(0, 140) })),
+  ])
+  out.meta = m; out.google = g
+  out.available = !!(m.available || g.available)
+  return out
+}
+
 const HOUR_FIELDS = {
   facebook: ['hourly_stats_aggregated_by_advertiser_time_zone', 'hourly_stats_aggregated_by_audience_time_zone'],
   google_ads: ['hour_of_day', 'hour'],
@@ -3860,6 +3990,15 @@ export default async (req) => {
       ])
       return json({ scope: 'enqtimes', client, ...enq, spendByHour: spend }, 200, true)
     } catch (e) { return json({ scope: 'enqtimes', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+  // Platform change history: what was changed in the ad accounts, by whom and
+  // when. Cheap to serve and slow-moving, so it caches like any other scope.
+  if (url.searchParams.get('scope') === 'changehist') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ scope: 'changehist', client, error: 'Unknown client' }, 404)
+    if (!cc.meta && !cc.google) return json({ scope: 'changehist', client, available: false, meta: null, google: null, reason: 'No Meta or Google ad account is linked to this client.' }, 200, true)
+    try { return json({ scope: 'changehist', client, from, to, ...(await platformChanges(cc, from, to, preset, key)) }, 200, true) }
+    catch (e) { return json({ scope: 'changehist', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
   if (url.searchParams.get('scope') === 'stagetiming') {
     const cc = CLIENTS[client]

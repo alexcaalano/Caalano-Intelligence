@@ -18,6 +18,46 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.421.0 - 2026-08-20 · `PENDING` - Change log: platform history beside the team's own notes
+
+The Optimisation Log tab held one source - the client's Google Sheet, which is
+the record of *why* something was changed. It said nothing about what was
+actually done in the ad accounts, including changes made by automated rules or
+by anyone outside the team.
+
+The tab is now **Change Log**, with four views:
+
+1. **All paid channels** - Meta, Google and the sheet merged into one timeline,
+   newest first. This is the point of the whole thing: a step change in
+   performance can be read against the change that preceded it, and a platform
+   change with no matching log entry is a change nobody wrote up.
+2. **Meta change history** - Meta's ad activity log, read live through Windsor.
+3. **Google change history** - Google Ads' change history, likewise.
+4. **Caalano Optimisation Log** - the existing sheet view, unchanged.
+
+Platform rows carry the actor, the entity, which settings moved and the before →
+after value where the platform reports one. Every view has search and a channel
+filter, and rows are badged **Platform** or **Logged** so the record of what was
+done never gets confused with the record of why.
+
+Windsor flattens Google's `change_event` resource and Meta's activity log under
+different field names, so each channel tries an ordered list of candidate field
+sets and takes the first that returns dated rows. When none does, the tab says
+so and - on request - shows exactly which field sets were tried and what the API
+said about each, so a wiring problem is diagnosable from the screen instead of
+looking identical to an account that simply had no changes.
+
+The date range at the top of the page scopes the history, and the response is
+cached for five minutes since change history moves slowly.
+
+Also fixed: the Change Log tab was offered by the client workspace but never by
+the viewer tab picker, so it could not be granted to a client at all. It is now
+in both lists, behind the same permission check as every other tab (the backend
+scope is mapped to the `optlog` grant, so a viewer reaches it only if that tab
+is ticked for them in Settings).
+
+---
+
 ## v3.420.0 - 2026-08-20 · `PENDING` - Pivot cells you can actually compare
 
 The channel columns in the Lost Reasons pivot were raw counts, and a raw count

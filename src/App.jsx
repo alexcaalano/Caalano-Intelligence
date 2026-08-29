@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import 'leaflet/dist/leaflet.css'
 import {
@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.420.0'
+const APP_VERSION = '3.421.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -11062,24 +11062,233 @@ function OptLogSettings({ clientId }) {
     </div>
   )
 }
-// Client tab: the Optimisation Log rendered live from the client's Google Sheet,
-// as a timeline (newest first) or a plain table. First sheet row = headers.
-function OptimisationLog({ clientId }) {
+// --- Change history ----------------------------------------------------------
+// What changed in the ad accounts, and what the team wrote down about it. Three
+// sources feed one tab: Meta's ad activity log, Google Ads' change history, and
+// the client's own Optimisation Log sheet. The first two are the record of what
+// was actually done in the platform; the sheet is the record of WHY. Read side
+// by side they answer the question neither answers alone - a performance step
+// change on a given day, and the change that preceded it.
+const chgHistUrl = (clientId, range, nonce) => clientId ? `/.netlify/functions/windsor?scope=changehist&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
+function useChangeHist(clientId, range, nonce = 0) {
+  return useSwrJson(chgHistUrl(clientId, range, nonce), { freshMs: 300000 })
+}
+// Sheet dates are DD/MM/YYYY in these logs, so 06/12 is 6 December, not 12 June.
+// Shared by the sheet view and the merged timeline so both agree on a row's date.
+const chgParseSheetDate = (v) => {
+  const s = String(v || '').trim(); if (!s) return null
+  const m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/)
+  if (m) { const d = m[1], mo = m[2]; const y = m[3].length === 2 ? '20' + m[3] : m[3]; const t = Date.parse(`${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00`); if (!isNaN(t)) return t }
+  const t = Date.parse(s); return isNaN(t) ? null : t
+}
+const CHG_PEOPLE = { u: 'Uma', uma: 'Uma', j: 'Jye', ja: 'Jye', jye: 'Jye', a: 'Alex', as: 'Alex', alex: 'Alex' }
+const chgAuthorOf = (note) => { const m = String(note || '').match(/^\s*([A-Za-z]{1,4})\s*[-–—]\s+/); return m ? (CHG_PEOPLE[m[1].toLowerCase()] || null) : null }
+const chgStripAuthor = (note) => (chgAuthorOf(note) ? String(note).replace(/^\s*[A-Za-z]{1,4}\s*[-–—]\s+/, '') : String(note || ''))
+const chgPlatKind = (v) => (/meta|face|insta/i.test(v) ? 'meta' : /google|goog|ppc|search|pmax|youtube/i.test(v) ? 'google' : 'other')
+// The Optimisation Log sheet, reduced to the same row shape the platform feeds
+// produce, so the merged timeline is one sorted list rather than three lists
+// stacked. Columns are matched by header name because these sheets are hand-made
+// and no two clients lay them out identically.
+function chgSheetRows(columns, rows) {
+  if (!columns || !rows) return []
+  const dateCol = columns.find((c) => /date|when|day|timestamp/i.test(c)) || columns[0]
+  const platCol = columns.find((c) => /platform|channel/i.test(c))
+  const typeCol = columns.find((c) => c !== dateCol && /optimi|type|action|change|task/i.test(c))
+  const campCol = columns.find((c) => /campaign|ad ?set|adset|audience/i.test(c))
+  const noteCol = columns.find((c) => /note|comment|detail|summary|desc/i.test(c))
+  const blank = (v) => { const s = String(v == null ? '' : v).trim(); return s === '' || /^[-–—]+$/.test(s) || /^n\/?a$/i.test(s) }
+  const out = []
+  for (const r of rows) {
+    const ts = chgParseSheetDate(r[dateCol])
+    if (ts == null) continue
+    const rawNote = noteCol ? r[noteCol] : ''
+    const plat = platCol ? String(r[platCol] || '').trim() : ''
+    out.push({
+      ts,
+      source: 'log',
+      channel: chgPlatKind(plat),
+      platformLabel: plat || null,
+      actor: chgAuthorOf(rawNote),
+      action: typeCol && !blank(r[typeCol]) ? String(r[typeCol]) : 'Optimisation',
+      entity: campCol && !blank(r[campCol]) ? String(r[campCol]) : null,
+      note: blank(rawNote) ? null : chgStripAuthor(rawNote),
+      fields: [],
+    })
+  }
+  return out
+}
+const CHG_CH_LABEL = { meta: 'Meta', google: 'Google', other: 'Other' }
+// One row of the merged timeline. Deliberately the same mark for every source -
+// the badge says where it came from, the shape does not, so a day's changes read
+// as one sequence of events rather than as three feeds fighting for the column.
+function ChgRow({ r }) {
+  const when = new Date(r.ts)
+  const kind = r.channel || 'other'
+  const detail = r.from != null || r.to != null
+    ? `${r.from == null ? '—' : r.from} → ${r.to == null ? '—' : r.to}`
+    : null
+  return (
+    <div className="optlog-item">
+      <div className="optlog-when">{when.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+        <span className="chg-time">{when.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</span></div>
+      <div className="optlog-line"><span className={`optlog-dot optlog-dot-${kind}`} /></div>
+      <div className={`optlog-body optlog-b-${kind}`}>
+        <div className="optlog-top">
+          <span className={`optlog-plat optlog-plat-${kind}`}>{r.platformLabel || CHG_CH_LABEL[kind] || kind}</span>
+          {r.action ? <span className="optlog-type">{r.action}</span> : null}
+          <span className={`chg-src chg-src-${r.source}`} title={r.source === 'log' ? 'Written by the team in the Optimisation Log' : 'Read from the ad platform’s own change history'}>{r.source === 'log' ? 'Logged' : 'Platform'}</span>
+          {r.actor ? <span className="optlog-author" title={`By ${r.actor}`}>{r.actor}</span> : null}
+        </div>
+        {r.entity ? <div className="optlog-camp"><span className="optlog-k">{r.entityType ? String(r.entityType).replace(/_/g, ' ').toLowerCase() : 'Campaign / ad set'}</span><span className="optlog-v">{r.entity}</span></div> : null}
+        {r.adgroup && r.adgroup !== r.entity ? <div className="optlog-fld"><span className="optlog-k">Ad group</span><span className="optlog-v">{r.adgroup}</span></div> : null}
+        {r.fields && r.fields.length ? <div className="optlog-fld"><span className="optlog-k">Settings changed</span><span className="optlog-v">{r.fields.join(', ').replace(/_/g, ' ')}</span></div> : null}
+        {detail ? <div className="optlog-fld"><span className="optlog-k">Value</span><span className="optlog-v chg-val">{detail}</span></div> : null}
+        {r.note ? <div className="optlog-note">{r.note}</div> : null}
+      </div>
+    </div>
+  )
+}
+// A feed's failure is shown as the thing that failed, not as an empty tab: the
+// field sets tried and what Windsor said about each. That is the difference
+// between "this client made no changes" and "we asked for the wrong field", and
+// they look identical from an empty list.
+function ChgUnavailable({ label, reason, probe }) {
+  const [show, setShow] = useState(false)
+  const mine = (probe || []).filter((p) => p.channel === label)
+  return (
+    <div className="card empty-deep">
+      <div className="big">🕰️</div>
+      <b>No {label} change history for this period.</b>
+      <p style={{ maxWidth: 560, margin: '8px auto 0' }}>{reason}</p>
+      {mine.length ? <>
+        <button className="link-btn" style={{ marginTop: 10 }} onClick={() => setShow((s) => !s)}>{show ? 'Hide' : 'Show'} what was requested</button>
+        {show ? <div className="chg-probe">{mine.map((p, i) => (
+          <div key={i} className={`chg-probe-row ${p.ok ? 'ok' : 'bad'}`}>
+            <code>{p.fields}</code>
+            <span>{p.ok ? `accepted · ${p.rows} dated of ${p.of} rows` : p.error}</span>
+          </div>
+        ))}</div> : null}
+      </> : null}
+    </div>
+  )
+}
+// A feed, filtered and listed. Search covers everything visible on a card, so a
+// campaign name typed in the box finds it whether it sits in the entity, the
+// note or the changed-settings list.
+function ChgFeed({ rows, empty, capped, total }) {
+  const [q, setQ] = useState('')
+  const [chan, setChan] = useState('all')
+  const chans = useMemo(() => [...new Set(rows.map((r) => r.channel))], [rows])
+  const list = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return rows.filter((r) => {
+      if (chan !== 'all' && r.channel !== chan) return false
+      if (!needle) return true
+      return [r.action, r.entity, r.adgroup, r.actor, r.note, r.platformLabel, (r.fields || []).join(' ')]
+        .some((v) => v && String(v).toLowerCase().includes(needle))
+    })
+  }, [rows, q, chan])
+  const days = useMemo(() => {
+    const m = new Map()
+    for (const r of list) { const k = new Date(r.ts).toDateString(); m.set(k, (m.get(k) || 0) + 1) }
+    return m.size
+  }, [list])
+  if (!rows.length) return empty
+  return (
+    <>
+      <div className="chg-bar">
+        <input className="optlog-search" placeholder="Search changes…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {chans.length > 1 ? <div className="optlog-toggle">
+          <button className={chan === 'all' ? 'on' : ''} onClick={() => setChan('all')}>All</button>
+          {chans.map((c) => <button key={c} className={chan === c ? 'on' : ''} onClick={() => setChan(c)}>{CHG_CH_LABEL[c] || c}</button>)}
+        </div> : null}
+        <span className="cap chg-count">{fmtNumber(list.length)} change{list.length === 1 ? '' : 's'} across {fmtNumber(days)} day{days === 1 ? '' : 's'}{capped ? ` · newest ${fmtNumber(rows.length)} of ${fmtNumber(total)}` : ''}</span>
+      </div>
+      {!list.length ? <div className="card"><p className="cap" style={{ margin: 0 }}>Nothing matches that search.</p></div>
+        : <div className="optlog-timeline">{list.map((r, i) => <ChgRow key={i} r={r} />)}</div>}
+    </>
+  )
+}
+// The Optimisation Log sheet fetch, lifted out of the sheet view so the merged
+// timeline can read the same rows without fetching them a second time.
+function useOptSheet(clientId) {
   useSettingsSync()
   const url = loadOptLog(clientId)
   const ref = parseSheetRef(url)
   const [st, setSt] = useState({ status: 'idle' })
-  const [view, setView] = useState('timeline')
-  const [q, setQ] = useState('')
-  const load = () => {
+  const load = useCallback(() => {
     if (!ref) { setSt({ status: 'noconf' }); return }
     setSt({ status: 'loading' })
     fetch(`/.netlify/functions/optlog?id=${encodeURIComponent(ref.id)}&gid=${encodeURIComponent(ref.gid)}`)
       .then((r) => r.json())
       .then((j) => setSt(j.ok ? { status: 'ok', columns: j.columns, rows: j.rows, fetchedAt: j.fetchedAt } : { status: 'err', error: j.error }))
       .catch((e) => setSt({ status: 'err', error: String(e.message || e) }))
+  }, [clientId, url])
+  useEffect(() => { load() }, [load])
+  return { st, load, url, ref }
+}
+const CHG_TABS = [
+  ['all', 'All paid channels'],
+  ['meta', 'Meta change history'],
+  ['google', 'Google change history'],
+  ['log', 'Caalano Optimisation Log'],
+]
+function ChangeLogTab({ clientId, range, nonce, hasMeta, hasGoogle }) {
+  const [sub, setSub] = useState('all')
+  // Refresh has to move the request URL, or the shared SWR cache answers from
+  // the copy it already holds and the button does nothing visible.
+  const [bump, setBump] = useState(0)
+  const sheet = useOptSheet(clientId)
+  const hist = useChangeHist(clientId, range, `${nonce || 0}b${bump}`)
+  const d = hist.data || null
+  const metaRows = (d && d.meta && d.meta.rows) || []
+  const googleRows = (d && d.google && d.google.rows) || []
+  const sheetRows = useMemo(() => (sheet.st.status === 'ok' ? chgSheetRows(sheet.st.columns, sheet.st.rows) : []), [sheet.st])
+  const merged = useMemo(() => [...metaRows, ...googleRows, ...sheetRows].sort((a, b) => b.ts - a.ts), [metaRows, googleRows, sheetRows])
+  const loading = hist.status === 'loading' || sheet.st.status === 'loading' || sheet.st.status === 'idle'
+  const tabs = CHG_TABS.filter(([k]) => k === 'all' || k === 'log' || (k === 'meta' ? hasMeta : hasGoogle))
+  const cur = tabs.some(([k]) => k === sub) ? sub : 'all'
+  const feed = (rows, ch) => {
+    const src = ch === 'meta' ? (d && d.meta) : ch === 'google' ? (d && d.google) : null
+    return <ChgFeed rows={rows} capped={!!(src && src.capped)} total={src ? src.total : rows.length}
+      empty={loading ? <div className="card"><Spinner label="Loading change history…" /></div>
+        : ch ? <ChgUnavailable label={ch === 'meta' ? 'Meta' : 'Google'} reason={(src && src.reason) || (d && d.reason) || (d && d.error) || 'Nothing came back for this period.'} probe={d && d.probe} />
+          : <div className="card empty-deep"><div className="big">🕰️</div><b>No changes recorded in this period.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>Nothing from Meta, Google or the Optimisation Log falls inside the selected date range. Widen the range at the top of the page to look further back.</p></div>} />
   }
-  useEffect(() => { load() }, [clientId, url])
+  return (
+    <div className="optlog chg">
+      <div className="optlog-head">
+        <div>
+          <h3 style={{ margin: 0 }}>Change log</h3>
+          <p className="cap" style={{ margin: '2px 0 0' }}>What changed in the ad accounts, and what the team wrote down about it - one timeline, so a step change in performance can be read against the change that preceded it.</p>
+        </div>
+        <div className="optlog-actions">
+          {sheet.url ? <a className="btn-ghost sm" href={sheet.url} target="_blank" rel="noreferrer">Open sheet ↗</a> : null}
+          <button className="btn-ghost sm" onClick={() => { sheet.load(); setBump((b) => b + 1) }}>↻ Refresh</button>
+        </div>
+      </div>
+      <div className="chg-tabs">{tabs.map(([k, lbl]) => {
+        const n = k === 'all' ? merged.length : k === 'meta' ? metaRows.length : k === 'google' ? googleRows.length : sheetRows.length
+        return <button key={k} className={cur === k ? 'on' : ''} onClick={() => setSub(k)}>{lbl}{n ? <em>{fmtNumber(n)}</em> : null}</button>
+      })}</div>
+      {cur === 'all' ? feed(merged, null)
+        : cur === 'meta' ? feed(metaRows, 'meta')
+          : cur === 'google' ? feed(googleRows, 'google')
+            : <OptimisationLog clientId={clientId} sheet={sheet} embedded />}
+      {cur === 'all' && merged.length ? <Caveat>Platform rows come from Meta's ad activity log and Google Ads' change history, read live through Windsor - they are the record of what was actually changed in the account, including changes made by automated rules and by anyone outside this team. "Logged" rows are the Optimisation Log sheet: the record of intent, which is where the reasoning lives. A platform row with no matching log entry is a change nobody wrote up; a log entry with no platform row usually means the work happened somewhere the platform does not audit, such as a creative brief or a landing page.{d && d.meta && !d.meta.available && hasMeta ? ' Meta change history is not coming through - see the Meta tab for what was requested.' : ''}{d && d.google && !d.google.available && hasGoogle ? ' Google change history is not coming through - see the Google tab for what was requested.' : ''}</Caveat> : null}
+    </div>
+  )
+}
+
+// Client tab: the Optimisation Log rendered live from the client's Google Sheet,
+// as a timeline (newest first) or a plain table. First sheet row = headers.
+function OptimisationLog({ clientId, sheet, embedded = false }) {
+  // The fetch lives in useOptSheet so the merged Change log timeline can read the
+  // same rows without pulling the sheet twice. Standalone use still works.
+  const own = useOptSheet(sheet ? null : clientId)
+  const { st, load, url, ref } = sheet || own
+  const [view, setView] = useState('timeline')
+  const [q, setQ] = useState('')
   if (!ref) return <div className="card empty-deep"><div className="big">🗒️</div><b>No Optimisation Log linked yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Add this client's Google Sheet in <b>Settings → this client → Optimisation Log</b>. It then shows here live as a timeline or table.</p></div>
   if (st.status === 'loading' || st.status === 'idle') return <div className="card"><Spinner label="Loading optimisation log…" /></div>
   if (st.status === 'err') return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't read the sheet.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>{st.error}</p><button className="set-relink" onClick={load} style={{ marginTop: 10 }}>↻ Retry</button></div>
@@ -11116,14 +11325,14 @@ function OptimisationLog({ clientId }) {
   const filtered = q ? rows.filter((r) => columns.some((c) => String(r[c] || '').toLowerCase().includes(q.toLowerCase()))) : rows
   const sorted = [...filtered].sort((a, b) => { const da = parseD(a[dateCol]), db = parseD(b[dateCol]); if (da == null && db == null) return 0; if (da == null) return 1; if (db == null) return -1; return db - da })
   return (
-    <div className="optlog">
+    <div className={embedded ? 'optlog optlog-embed' : 'optlog'}>
       <div className="optlog-head">
-        <div><h3 style={{ margin: 0 }}>Optimisation Log</h3><p className="cap" style={{ margin: '2px 0 0' }}>Live from Google Sheets · {rows.length} entr{rows.length === 1 ? 'y' : 'ies'}{st.fetchedAt ? ` · updated ${new Date(st.fetchedAt).toLocaleTimeString()}` : ''}</p></div>
+        <div>{embedded ? null : <h3 style={{ margin: 0 }}>Optimisation Log</h3>}<p className="cap" style={{ margin: embedded ? 0 : '2px 0 0' }}>Live from Google Sheets · {rows.length} entr{rows.length === 1 ? 'y' : 'ies'}{st.fetchedAt ? ` · updated ${new Date(st.fetchedAt).toLocaleTimeString()}` : ''}</p></div>
         <div className="optlog-actions">
           <input className="optlog-search" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="optlog-toggle"><button className={view === 'timeline' ? 'on' : ''} onClick={() => setView('timeline')}>Timeline</button><button className={view === 'table' ? 'on' : ''} onClick={() => setView('table')}>Table</button></div>
-          <a className="btn-ghost sm" href={url} target="_blank" rel="noreferrer">Open sheet ↗</a>
-          <button className="btn-ghost sm" onClick={load}>↻ Refresh</button>
+          {embedded ? null : <a className="btn-ghost sm" href={url} target="_blank" rel="noreferrer">Open sheet ↗</a>}
+          {embedded ? null : <button className="btn-ghost sm" onClick={load}>↻ Refresh</button>}
         </div>
       </div>
       {!sorted.length ? <div className="card"><p className="cap" style={{ margin: 0 }}>No entries match “{q}”.</p></div>
@@ -11188,7 +11397,11 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
   if (cfg.ga4 || client.ga4) allTabs.push({ id: 'analytics', label: 'Analytics' })
   if (cfg.ghl) allTabs.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
-  if (loadOptLog(client.id)) allTabs.push({ id: 'optlog', label: 'Optimisation Log' })
+  // Change log: the platform change histories plus the Optimisation Log sheet.
+  // Shows for any client with an ad account OR a linked sheet - either source is
+  // enough to have something to say. The tab id stays `optlog` so existing viewer
+  // grants and deep links keep pointing at it.
+  if (loadOptLog(client.id) || cfg.meta || client.meta || cfg.google || client.google) allTabs.push({ id: 'optlog', label: 'Change Log' })
   const tabs = allowedTabsFE(authUser, allTabs)
   const curTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0] ? tabs[0].id : 'overall')
   // Report the active tab up so the URL (?t=) tracks it, incl. any allowed-tab
@@ -11248,7 +11461,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
-        {curTab === 'optlog' && <OptimisationLog clientId={client.id} />}
+        {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}
       </div>
     </>
   )
@@ -13365,6 +13578,10 @@ function offeredTabsFor(c) {
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })
   if (c.ghl) out.push({ id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' }, { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' }, { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' })
+  // The Change Log was offered by the workspace but never by this list, so it
+  // could not be ticked for a viewer at all - a tab that existed for admins and
+  // was ungrantable to anyone else. Same condition as the workspace uses.
+  if (loadOptLog(c.id) || c.meta || c.google) out.push({ id: 'optlog', label: 'Change Log' })
   return out
 }
 function AccessPreview({ draft, clients, email, onClose }) {

@@ -3539,7 +3539,10 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .enq-head .cap { flex: 1 1 260px; font-size: 11.5px; line-height: 1.45; }
 .enq-wrap { overflow-x: auto; }
 .enq-grid { border-collapse: separate; border-spacing: 2px; font-size: 10px; }
-.enq-grid th { font-weight: 600; color: var(--faint); font-size: 9.5px; text-align: center; padding: 0; white-space: nowrap; }
+.enq-grid th { font-weight: 600; color: var(--faint); font-size: 9px; text-align: center; padding: 0 1px; white-space: nowrap; letter-spacing: -0.02em; }
+/* Midnight and noon carry the day's structure, so they read as anchors rather
+   than as two more labels in a row of twenty-four. */
+.enq-grid th.enq-h-anchor { color: var(--muted); font-weight: 800; }
 .enq-grid tbody th { text-align: right; padding-right: 7px; color: var(--muted); font-size: 10.5px; }
 .enq-grid td { padding: 0; }
 .enq-cell { display: block; width: 100%; min-width: 26px; height: 24px; line-height: 24px; text-align: center;

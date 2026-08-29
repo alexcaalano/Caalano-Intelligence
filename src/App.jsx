@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.417.0'
+const APP_VERSION = '3.417.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9907,7 +9907,11 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
           {gran !== 'grid' && !winMode ? <EnqMarginal g={g} gran={gran} noun={noun} hrs={hrs} /> : null}
           {gran === 'grid' || winMode ? <div className="enq-wrap">
             <table className="enq-grid">
-              <thead><tr><th /> {Array.from({ length: 24 }, (_, h) => <th key={h}>{h % 3 === 0 ? enqHourLabel(h) : ''}</th>)}</tr></thead>
+              {/* Every hour is labelled. Every third was tidier and meant counting
+                  columns to work out which hour a cell was - the one thing the
+                  grid exists to tell you. Midnight and noon are marked so the
+                  halves of the day are findable without reading each label. */}
+              <thead><tr><th /> {Array.from({ length: 24 }, (_, h) => <th key={h} className={h === 0 || h === 12 ? 'enq-h-anchor' : ''}>{enqHourLabel(h)}</th>)}</tr></thead>
               <tbody>{ENQ_DAYS.map((dn, dy) => {
                 const work = hrs ? hrs.days.includes((dy + 1) % 7) : true
                 return (

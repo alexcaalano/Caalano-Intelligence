@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.417.1 - 2026-08-20 · `PENDING` - Label every hour on the grid
+
+The hour axis was labelled every third column, which looked tidier and meant
+counting columns to work out which hour a cell was - the one thing the grid exists
+to tell you. All twenty-four are labelled now.
+
+Midnight and noon are weighted slightly heavier so the halves of the day are
+findable at a glance rather than being two more labels in a row of twenty-four.
+
+Measured rather than eyeballed, since twenty-four labels in that space is exactly
+where they would start colliding: at 1600px, 1360px and 1180px there are no
+overlapping labels, nothing clipped, and the grid still does not scroll sideways.
+
+---
+
 ## v3.417.0 - 2026-08-20 · `PENDING` - The timing screen becomes measure × granularity
 
 Restructured around the two things being chosen, which were previously tangled

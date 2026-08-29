@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -2558,7 +2558,7 @@ async function socialMonth(soc, from, to, key) {
 // endpoints) or `channel:<x>` (the bare channel fetches: blend/meta/google). The
 // value is the set of tabs that legitimately issue it - a viewer passes if they
 // hold at least one. Anything not listed here is admin/agency-only for viewers.
-const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'optlog']
+const VIEWER_TABS_ALL = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'location', 'appts', 'timing', 'calls', 'lostreasons', 'optlog']
 const VIEWER_REQ_TABS = {
   'channel:blend': ['overall'],
   'channel:meta': ['meta'],
@@ -2580,6 +2580,13 @@ const VIEWER_REQ_TABS = {
   // viewer reaches these only if the Timing tab is ticked for them in Settings,
   // exactly like Speed to lead above.
   'scope:enqtimes': ['timing'],
+  // Call cadence sits on the Call Reporting tab and rides that grant. usercalls
+  // is already reachable from there; the cohort half needs the same permission.
+  'scope:callcohort': ['calls'],
+  // Call Reporting's own payload, which was never registered here either - a
+  // viewer granted the tab got a page of 403s. Mapped to the tab that issues it,
+  // so it is still gated on that tab being ticked for them.
+  'scope:usercalls': ['calls'],
   // Ad-account change history, shown on the Change Log tab beside the
   // Optimisation Log sheet - so it rides the same grant that tab already needs.
   'scope:changehist': ['optlog'],
@@ -2664,7 +2671,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['users', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -4153,8 +4160,23 @@ export default async (req) => {
     // callsonly=1 skips the opportunities pull + speed-to-lead so a single-day
     // chunk returns fast; the frontend batches the wide range day-by-day and merges.
     const callsOnly = url.searchParams.get('callsonly') === '1'
-    try { return json({ scope: 'usercalls', client, period: { from, to, preset }, ...(await buildUserCalls(cc.ghl, from, to, callsOnly)) }, 200, true) }
+    // cadence=1 additionally returns every outbound attempt as [contactId, ms,
+    // connected] so the caller can rebuild each lead's own call sequence.
+    const wantCadence = url.searchParams.get('cadence') === '1'
+    try { return json({ scope: 'usercalls', client, period: { from, to, preset }, ...(await buildUserCalls(cc.ghl, from, to, callsOnly, wantCadence)) }, 200, true) }
     catch (e) { return json({ scope: 'usercalls', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+  }
+
+  // The lead cohort behind the call-cadence view: when each lead arrived, when a
+  // booking was actually made for them, and which pipeline they came in on. The
+  // calls themselves ride the day-chunked usercalls scope, which already caches
+  // per day - this is the small half of the join.
+  if (url.searchParams.get('scope') === 'callcohort') {
+    const cc = CLIENTS[client]
+    if (!cc || !cc.ghl) return json({ scope: 'callcohort', client, ghl: false })
+    if (!(await isConnected().catch(() => false))) return json({ scope: 'callcohort', client, connected: false })
+    try { return json({ scope: 'callcohort', client, period: { from, to, preset }, ...(await buildCallCohort(cc.ghl, from, to)) }, 200, true) }
+    catch (e) { return json({ scope: 'callcohort', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
 
   // Read-only probe of a client's forms / submissions / custom fields, to see

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.422.0'
+const APP_VERSION = '3.423.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10574,10 +10574,159 @@ function UserApptActivity({ clientId, range, nonce }) {
 // rate fields can't be summed, so each chunk ships raw counts/seconds and we
 // re-derive here. Speed-to-lead is omitted in batched mode (it needs the global
 // first-touch across the whole range, which independent day chunks can't see).
+const CAD_VIEWS = [
+  ['lead', 'Per unbooked lead', 'Of the leads who reached this day still unbooked and got called, the share that booked. This is the drop-off curve - it says when to stop.'],
+  ['call', 'Per call', 'Of the attempts made on this day, the share followed by a booking. This says what one more dial is worth.'],
+]
+// The curve. Bars are the effort (attempts per lead), the line is the return -
+// laid over each other because the whole question is where the two diverge.
+function CadChart({ rows, view, money }) {
+  const maxAtt = Math.max(0.001, ...rows.map((r) => r.attemptsPerLead || 0))
+  const rateOf = (r) => (view === 'lead' ? r.bookPerLead : r.bookPerCall)
+  const maxRate = Math.max(1, ...rows.map((r) => rateOf(r) || 0))
+  return (
+    <div className="cad-chart">
+      {rows.map((r) => {
+        const rate = rateOf(r)
+        const thin = r.leadsReached > 0 && r.leadsReached < 20
+        return (
+          <LrPop key={r.day} className="cad-col"
+            sub={`Day ${r.label} after the lead arrived`}
+            title={rate == null ? 'Nobody called on this day' : `${Math.round(rate)}% booked${thin ? ' · thin data' : ''}`}
+            rows={[
+              ['Leads that reached this day', fmtNumber(r.leadsReached)],
+              ['Still unbooked when it opened', fmtNumber(r.stillOpen)],
+              ['Of those, called', fmtNumber(r.openCalled)],
+              ['Attempts made', fmtNumber(r.attempts)],
+              ['Attempts per lead', r.attemptsPerLead == null ? '-' : r.attemptsPerLead.toFixed(2)],
+              ['Connect rate', r.connectRate == null ? '-' : `${Math.round(r.connectRate)}%`],
+              ['Booked after a call', fmtNumber(r.openBooked)],
+              [view === 'lead' ? 'Booked per unbooked lead called' : 'Booked per attempt',
+                rate == null ? '-' : `${Math.round(rate)}%`],
+              r.censored ? ['Too new to count', `${fmtNumber(r.censored)} leads have not had a day ${r.label} yet`] : null,
+              thin ? ['Note', 'Under 20 leads reached this day - the rate moves a lot on one booking'] : null,
+            ]}>
+            <span className="cad-plot">
+              <i className="cad-bar" style={{ height: `${((r.attemptsPerLead || 0) / maxAtt) * 100}%` }} />
+              {rate == null ? null : <i className="cad-dot" style={{ bottom: `${(rate / maxRate) * 100}%` }} />}
+            </span>
+            <span className={`cad-rate${thin ? ' thin' : ''}`}>{rate == null ? '-' : `${Math.round(rate)}%`}</span>
+            <span className="cad-day">{r.label}</span>
+          </LrPop>
+        )
+      })}
+    </div>
+  )
+}
+function CallCadenceSection({ clientId, range, nonce, cadence, cohort, loading, pipes }) {
+  const [view, setView] = useState('lead')
+  const [pipe, setPipe] = useState('all')
+  const [open, setOpen] = useState(true)
+  const obsEnd = useMemo(() => (range && range.to ? Date.parse(`${range.to}T23:59:59`) : Date.now()), [range])
+  const d = useMemo(() => {
+    if (!cohort || !cohort.leads) return null
+    return callCadence(cohort.leads, cadence || [], Math.min(obsEnd, Date.now()), { pipeline: pipe })
+  }, [cohort, cadence, obsEnd, pipe])
+  const rows = d ? d.rows : []
+  // How far the chasing is still worth it. Read off the per-lead curve, since
+  // that is the one that answers "when do we stop", and only from days with
+  // enough leads behind them to mean anything.
+  //
+  // The largest single drop is NOT the answer - that is almost always day 0 to
+  // day 1, which is expected and tells nobody anything they can act on. What is
+  // actionable is how far the day-0 return holds: the last day still returning at
+  // least half of what the first day did, and what it falls to after that.
+  const cliff = useMemo(() => {
+    const solid = rows.filter((r) => r.openCalled >= 10 && r.bookPerLead != null && r.day <= CAD_MAX_DAY)
+    if (solid.length < 3) return null
+    const base = solid[0]
+    if (!base || base.day !== 0 || !base.bookPerLead) return null
+    const floor = base.bookPerLead / 2
+    let last = base
+    for (const r of solid) { if (r.bookPerLead >= floor) last = r; else break }
+    const after = solid.find((r) => r.day > last.day) || null
+    return { base, last, after, floor }
+  }, [rows])
+  if (loading) return <div className="card"><Spinner label="Working out the call cadence…" /></div>
+  if (!d) return null
+  if (!d.leadsTotal) return <div className="card"><div className="exec-panel-h">Call cadence</div><div className="cap">No leads arrived in this period, so there is no cadence to measure.</div></div>
+  const cur = CAD_VIEWS.find(([k]) => k === view) || CAD_VIEWS[0]
+  return (
+    <div className="card u-cad">
+      <div className="exec-panel-h cad-h">
+        <button className="cad-toggle" onClick={() => setOpen((o) => !o)}>
+          <span className="u-chev">{open ? '▾' : '▸'}</span> Call cadence
+          <span className="sub"> · how many attempts a lead is worth, and when that stops being true</span>
+        </button>
+        {open ? <div className="cad-ctl">
+          {pipes && pipes.length > 1 ? <label className="lrv-f"><span className="lrv-f-lab">Pipeline</span>
+            <select value={pipe} onChange={(e) => setPipe(e.target.value)}>
+              <option value="all">All pipelines</option>
+              {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select></label> : null}
+          <div className="optlog-toggle">
+            {CAD_VIEWS.map(([k, lbl]) => <button key={k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{lbl}</button>)}
+          </div>
+        </div> : null}
+      </div>
+      {!open ? null : <>
+        <div className="cad-sum">
+          <span><b>{fmtNumber(d.leadsTotal)}</b> leads</span>
+          <span><b>{fmtNumber(d.leadsWithCall)}</b> ever called <i>({pctOf(d.leadsWithCall, d.leadsTotal)})</i></span>
+          <span><b>{fmtNumber(d.totalAttempts)}</b> attempts</span>
+          <span><b>{fmtNumber(d.leadsBooked)}</b> booked <i>({pctOf(d.leadsBooked, d.leadsTotal)})</i></span>
+        </div>
+        {cliff ? <div className="cad-cliff">Chasing pays through <b>day {cliff.last.label}</b>. Day 0 calls book {Math.round(cliff.base.bookPerLead)}% of the unbooked leads they reach{cliff.last.day > 0 ? `, and day ${cliff.last.label} still returns ${Math.round(cliff.last.bookPerLead)}%` : ''}.{cliff.after ? ` By day ${cliff.after.label} that has fallen to ${Math.round(cliff.after.bookPerLead)}% - under half the first day - across ${fmtNumber(cliff.after.openCalled)} leads still being called.` : ' It has not fallen below half the first day inside the week.'}</div> : null}
+        <CadChart rows={rows} view={view} />
+        <div className="cad-leg">
+          <span><i className="cad-leg-bar" /> attempts per lead</span>
+          <span><i className="cad-leg-dot" /> {cur[1].toLowerCase()}</span>
+        </div>
+        <div className="table-wrap"><table className="mini-tbl users-tbl appt-tbl u-cadtbl">
+          <thead><tr>
+            <th className="lft" title="Days since the lead arrived - day 0 is their first 24 hours">Day</th>
+            <th title="Leads whose day this actually finished inside the window. Leads too new to have had this day are excluded, not counted as never called.">Leads</th>
+            <th title="Outbound attempts made on this day">Attempts</th>
+            <th title="Attempts divided by the leads that reached this day">Per lead</th>
+            <th title="Share of leads that reached this day and got at least one call">Called</th>
+            <th title="Share of attempts that connected">Connect</th>
+            <th title="Leads still unbooked when this day opened and called on it">Open + called</th>
+            <th title="Of those, the ones who booked after a call that day">Booked</th>
+            <th title="Booked divided by open leads called - the drop-off curve">Per lead</th>
+            <th title="Attempts followed by a booking, divided by all attempts. One booking credits one call, never every dial that day.">Per call</th>
+          </tr></thead>
+          <tbody>{rows.map((r) => {
+            const thin = r.leadsReached > 0 && r.leadsReached < 20
+            return (
+              <tr key={r.day} className={thin ? 'cad-thin' : ''}>
+                <td className="lft"><b>Day {r.label}</b>{r.censored ? <span className="cad-cens" title={`${fmtNumber(r.censored)} leads arrived too recently to have had a day ${r.label} yet, so they are left out of this row rather than counted as never called`}>−{fmtNumber(r.censored)}</span> : null}</td>
+                <td>{fmtNumber(r.leadsReached)}</td>
+                <td>{r.attempts ? fmtNumber(r.attempts) : '-'}</td>
+                <td>{r.attemptsPerLead == null || !r.attempts ? '-' : r.attemptsPerLead.toFixed(2)}</td>
+                <td>{r.reachedPct == null ? '-' : `${Math.round(r.reachedPct)}%`}</td>
+                <td>{r.connectRate == null ? '-' : `${Math.round(r.connectRate)}%`}</td>
+                <td>{r.openCalled ? fmtNumber(r.openCalled) : '-'}</td>
+                <td>{r.openBooked ? fmtNumber(r.openBooked) : '-'}</td>
+                <td className={view === 'lead' ? 'cad-on' : ''}>{r.bookPerLead == null ? '-' : `${Math.round(r.bookPerLead)}%`}</td>
+                <td className={view === 'call' ? 'cad-on' : ''}>{r.bookPerCall == null ? '-' : `${Math.round(r.bookPerCall)}%`}</td>
+              </tr>
+            )
+          })}</tbody>
+        </table></div>
+        <Caveat>Every row is measured on the lead's own clock: day 0 is their first 24 hours, whenever they arrived, so a lead that came in at 11pm is not pushed into day 1 by the calendar rolling over. {cur[2]} Both readings count <b>attempts</b>, not connections, so the cost of chasing is visible - the connect column sits beside them, because a falling booking rate caused by people no longer answering is a different problem from answered calls no longer converting. A booking is credited to the last attempt that preceded it, so a lead called three times before booking credits one call, not three; otherwise the per-call rate would count the same booking once per dial. Leads too new to have finished a given day are left out of that row rather than counted as never called - the count is shown against the day, and without it every later day would sag toward zero purely because the window ended. Booking time is when the appointment was created, not the slot it was booked into, so a Tuesday call that books an appointment for next month converts on Tuesday. Rows under 20 leads are dimmed.{d.orphanCalls ? ` ${fmtNumber(d.orphanCalls)} outbound calls went to people with no opportunity created in this period - existing clients, suppliers, or leads from before the window - and are excluded.` : ''}{cohort && cohort.apptsError ? ' Bookings could not be read for this period, so the booking rates are unavailable.' : ''}{cohort && cohort.capped ? ' The lead cohort hit its size cap for this period; try a shorter range.' : ''}</Caveat>
+      </>}
+    </div>
+  )
+}
+
 function mergeCallChunks(parts) {
   const um = new Map(); const daily = []; const repDaily = new Map(); let partial = false
+  // Every outbound attempt across all day-chunks, as [contactId, ms, connected].
+  // Concatenating is enough: each chunk covers one day, so no attempt appears twice.
+  const cadence = []; let cadenceCapped = false
   for (const p of parts) {
     if (p.partial) partial = true
+    if (p.cadence) { for (const c of p.cadence) cadence.push(c); if (p.cadenceCapped) cadenceCapped = true }
     for (const u of (p.byUser || [])) {
       let e = um.get(u.userId)
       if (!e) { e = { userId: u.userId, name: u.name, outbound: 0, inbound: 0, oc: 0, ic: 0, os: 0, is: 0, longestSec: 0, contacts: 0 }; um.set(u.userId, e) }
@@ -10614,7 +10763,7 @@ function mergeCallChunks(parts) {
   daily.sort((a, b) => a.date.localeCompare(b.date))
   const dailyByRep = {}
   for (const [uid, m] of repDaily) dailyByRep[uid] = [...m.values()].sort((a, b) => a.date.localeCompare(b.date))
-  return { connected: true, totals, daily, byUser, dailyByRep, speedAvailable: false, partial, batched: true }
+  return { connected: true, totals, daily, byUser, dailyByRep, speedAvailable: false, partial, batched: true, cadence, cadenceCapped }
 }
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const dayTick = (v) => { const s = String(v); const dt = new Date(s + 'T00:00:00Z'); return isNaN(dt) ? s.slice(5) : `${s.slice(5)} ${DOW[dt.getUTCDay()]}` }
@@ -10622,6 +10771,17 @@ function CallReportView({ clientId, range, nonce }) {
   const [d, setD] = useState(null)
   const [prog, setProg] = useState({ done: 0, total: 0 })
   const [selRep, setSelRep] = useState('all')
+  // Call cadence joins each lead's arrival + booking time (one small request) to
+  // every outbound attempt (already being fetched, day by day, right below).
+  const [cohort, setCohort] = useState(undefined)
+  useEffect(() => {
+    let alive = true; setCohort(undefined)
+    const q = `scope=callcohort&client=${encodeURIComponent(clientId)}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}`
+    dedupeFetch(`/.netlify/functions/windsor?${q}`).then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (alive) setCohort(j && !j.error && j.leads ? j : null) })
+      .catch(() => { if (alive) setCohort(null) })
+    return () => { alive = false }
+  }, [clientId, range.from, range.to, nonce])
   useEffect(() => {
     let alive = true; setD(null)
     // Split the range into 1-day chunks - each is small enough to fully page
@@ -10640,7 +10800,7 @@ function CallReportView({ clientId, range, nonce }) {
       while (idx < days.length && alive) {
         const day = days[idx++]
         try {
-          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1${rq}`)
+          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1&cadence=1${rq}`)
           const j = r.ok ? await r.json() : null
           if (j) parts.push(j)
         } catch { /* skip a failed day */ }
@@ -10682,6 +10842,9 @@ function CallReportView({ clientId, range, nonce }) {
           {t.missedInbound ? <div className="tm-sc warn"><span className="tm-lab">Missed inbound</span><b>{fmtNumber(t.missedInbound)}</b><span className="tm-sub">unanswered / voicemail</span></div> : null}
         </div>
       </div>
+      <CallCadenceSection clientId={clientId} range={range} nonce={nonce}
+        cadence={d.cadence} cohort={cohort} loading={cohort === undefined}
+        pipes={(cohort && cohort.pipelines) || null} />
       {d.daily && d.daily.length > 1 && (() => {
         // Pick the chart series: all reps (the merged daily) or one rep's per-day
         // data, mapped onto every date in range so gaps read as 0 not blanks.

@@ -4012,3 +4012,45 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .lrv-pop-t i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .hp-body > .hp-t + .lrv-pop-t { margin-top: -2px; }
 .lrv-pop-t + .hp-r { margin-top: 3px; }
+
+
+/* ---------------------------------------------------------------------------
+   Call cadence. Bars are the effort spent on each day after a lead arrives, the
+   dots are what that day's calls returned - drawn over each other because the
+   whole question is where the two diverge. */
+.u-cad .cad-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.cad-toggle { border: none; background: none; padding: 0; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.cad-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cad-sum { display: flex; gap: 6px 22px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin: 2px 0 12px; }
+.cad-sum b { color: var(--text); font-weight: 800; font-size: 14px; }
+.cad-sum i { font-style: normal; }
+.cad-cliff { font-size: 12.5px; line-height: 1.5; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-left: 3px solid var(--accent, #6d5efc); border-radius: 10px;
+  padding: 9px 13px; margin: 0 0 14px; }
+.cad-chart { display: flex; align-items: flex-end; gap: 6px; height: 190px; margin: 0 0 6px; }
+.cad-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  height: 100%; justify-content: flex-end; cursor: help; }
+.cad-plot { position: relative; width: 100%; flex: 1; display: flex; align-items: flex-end; justify-content: center; }
+.cad-bar { display: block; width: 62%; min-height: 2px; border-radius: 4px 4px 0 0;
+  background: color-mix(in srgb, var(--accent, #6d5efc) 26%, transparent); }
+.cad-col:hover .cad-bar { background: color-mix(in srgb, var(--accent, #6d5efc) 42%, transparent); }
+.cad-dot { position: absolute; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; margin-bottom: -4.5px;
+  border-radius: 50%; background: var(--accent, #6d5efc); border: 2px solid var(--panel); }
+.cad-rate { font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.cad-rate.thin { color: var(--muted); font-weight: 700; }
+.cad-day { font-size: 10.5px; font-weight: 700; color: var(--muted); }
+.cad-leg { display: flex; gap: 16px; justify-content: center; font-size: 11px; color: var(--muted); margin: 0 0 14px; }
+.cad-leg i { display: inline-block; vertical-align: middle; margin-right: 5px; }
+.cad-leg-bar { width: 11px; height: 9px; border-radius: 2px; background: color-mix(in srgb, var(--accent, #6d5efc) 26%, transparent); }
+.cad-leg-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent, #6d5efc); }
+/* A day whose cohort is too small for its percentage to mean much. */
+.u-cadtbl tr.cad-thin td { opacity: 0.58; }
+/* The reading currently being charted, so the table and the chart agree. */
+.u-cadtbl td.cad-on { font-weight: 800; color: var(--text); }
+/* Leads too new to have finished this day - excluded from the row, shown against it. */
+.cad-cens { font-size: 10px; font-weight: 700; color: var(--muted); margin-left: 6px; cursor: help;
+  border: 1px solid var(--border); border-radius: 20px; padding: 0 6px; }
+@media (max-width: 720px) {
+  .cad-chart { height: 150px; gap: 3px; }
+  .cad-rate { font-size: 10.5px; }
+}

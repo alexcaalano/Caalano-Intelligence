@@ -18,6 +18,57 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.423.0 - 2026-08-20 · `PENDING` - Call cadence: how many attempts a lead is worth
+
+New section on Call Reporting. For each day after a lead arrives, it shows how
+many times they get called and what those calls are still returning - the
+question being how many attempts are worth making before the return disappears.
+
+Every row is measured on **the lead's own clock**: day 0 is their first 24 hours,
+whenever they arrived, so a lead that came in at 11pm is not pushed into day 1 by
+the calendar rolling over.
+
+Two readings, switchable:
+
+- **Per unbooked lead** - of the leads who reached that day still unbooked and got
+  called, the share that booked. This is the drop-off curve; it says when to stop.
+- **Per call** - of the attempts made that day, the share followed by a booking.
+  This says what one more dial is worth.
+
+Both count **attempts**, not connections, so the cost of chasing is visible. The
+connect rate sits beside them, because a falling booking rate caused by people no
+longer answering is a different problem from answered calls no longer converting.
+
+Three things the numbers would otherwise get wrong:
+
+- **A booking is credited to the last attempt that preceded it.** A lead called
+  three times before booking credits one call, not three - otherwise the per-call
+  rate counts the same booking once per dial and reads far higher than it is.
+- **Leads too new to have finished a day are excluded from that day**, and the
+  count is shown against it. Without that guard every later day sags toward zero
+  purely because the window ended.
+- **A lead booked on day 1 leaves the denominator from day 2 on.** They are no
+  longer an open opportunity, so counting them as "called and didn't book" would
+  understate every later day.
+
+Booking time is when the appointment was created, not the slot it was booked
+into: a Tuesday call that books an appointment for next month converted on
+Tuesday. Days under 20 leads are dimmed, and the headline reports how far the
+day-0 return holds rather than the largest single drop - which is almost always
+day 0 to day 1 and tells nobody anything they can act on.
+
+The calls ride the existing day-chunked call export, which already caches per
+day, so the only new request is the small one: each lead's arrival and booking
+time. 66 assertions cover the bucketing, the censoring, the attribution rule and
+the headline.
+
+Also fixed: `scope:usercalls` was never registered in the viewer permission map,
+so a viewer granted the Call Reporting tab got a page of 403s. Both it and the
+new cohort scope are now mapped to that tab, and `calls` and `lostreasons` were
+missing from the viewer tab list entirely.
+
+---
+
 ## v3.422.0 - 2026-08-20 · `PENDING` - Change log: real field names, and only completed entries
 
 Two fixes, one shipped blind and one shipped wrong.

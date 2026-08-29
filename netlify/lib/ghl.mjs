@@ -821,7 +821,12 @@ async function _fetchAppointments(locTok, locationId, from, to) {
     if (!contactId) return
     const s = String(status || '').toLowerCase()
     const invalid = APPT_INVALID_RE.test(s), cancelled = APPT_CANCEL_RE.test(s)
-    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, noShowByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false }
+    const e = map.get(contactId) || { bookedInPeriod: false, shownByStatus: false, noShowByStatus: false, hasCallInPeriod: false, _live: false, _cancelled: false, firstBookedMs: null }
+    // WHEN the booking was made, independent of the period test above. Call-cadence
+    // needs this against each lead's own clock rather than the calendar window, and
+    // it is the creation stamp, not the slot: a Tuesday call that books an
+    // appointment for next month converted on Tuesday.
+    if (!invalid && isFinite(addedMs) && (e.firstBookedMs == null || addedMs < e.firstBookedMs)) e.firstBookedMs = addedMs
     if (!invalid && inPeriod(addedMs)) {
       e.bookedInPeriod = true // cancelled still counts as a booking on its creation day
       if (cancelled) e._cancelled = true; else e._live = true
@@ -3664,6 +3669,76 @@ export async function buildEnquiryTimes(locationId, from, to) {
     byStage, stageDated, stageUndated,
   }
 }
+// Call-cadence cohort. The question this answers is "how many attempts is a lead
+// still worth, and on which day does that stop being true" - so the unit is the
+// LEAD, on its own clock, not the calendar.
+//
+// Three things per contact: when they became a lead (day 0), when a booking was
+// actually made (the appointment's creation time, not the slot it was booked
+// into - a call on Tuesday that books an appointment for next month converted on
+// Tuesday), and which pipeline they arrived in. The calls themselves come from
+// the day-chunked call export and are joined to this on the client, which keeps
+// the slow export on the path that already caches it per day.
+export async function buildCallCohort(locationId, from, to) {
+  const locTok = await locationTokenOrDemo(locationId)
+  const tz = await locationTimezone(locationId)
+  const DAY = 86400000
+  const fromMs = from ? zonedStartMs(from, tz) : null
+  const toMs = to ? zonedEndMs(to, tz) : null
+  // Bookings are read past the end of the range: a lead who arrives on the last
+  // day of the window can still be booked a week later, and cutting the booking
+  // search at the range edge would score that lead as never booked.
+  const bookTo = to ? new Date((toMs || Date.now()) + 21 * DAY).toISOString().slice(0, 10) : to
+  const [opps, appts, pipes] = await Promise.all([
+    allOpportunities(locTok, locationId, from, to, 3000).catch(() => null),
+    fetchAppointments(locTok, locationId, from, bookTo).catch(() => null),
+    fetchPipelines(locTok, locationId).catch(() => []),
+  ])
+  if (!Array.isArray(opps)) return { connected: true, leads: [], error: 'Could not read opportunities for this period.' }
+  // Lead-in is the EARLIEST opportunity for the contact: a lead who is later
+  // re-opened in a second pipeline is still one lead, and their day 0 is the day
+  // they first arrived.
+  const lead = new Map()
+  for (const o of opps) {
+    const cid = contactIdOf(o)
+    const t = Date.parse(o.createdAt)
+    if (!cid || !isFinite(t)) continue
+    const cur = lead.get(cid)
+    if (!cur || t < cur.ms) lead.set(cid, { ms: t, pipeline: o.pipelineId || null, name: o.contact && o.contact.name ? o.contact.name : (o.name || null) })
+  }
+  // Booking time = when the appointment record was created. fetchAppointments
+  // tracks that as part of its in-period test; here the raw creation stamp is what
+  // matters, so the earliest one per contact is kept.
+  const booked = new Map()
+  const perCal = (appts && appts.perCalendar) || new Map()
+  for (const [, cal] of perCal) {
+    for (const [cid, f] of (cal.byContact || new Map())) {
+      const ms = f && f.firstBookedMs
+      if (!cid || !isFinite(ms)) continue
+      const cur = booked.get(cid)
+      if (cur == null || ms < cur) booked.set(cid, ms)
+    }
+  }
+  const leads = []
+  for (const [cid, l] of lead) {
+    leads.push([cid, l.ms, booked.has(cid) ? booked.get(cid) : null, l.pipeline])
+  }
+  // Only the pipelines this cohort actually landed in - a selector listing
+  // pipelines with no leads in the period is a list of dead ends.
+  const used = new Set(leads.map((l) => l[3]).filter(Boolean))
+  const pipelines = (pipes || []).filter((p) => used.has(p.id || p._id))
+    .map((p) => ({ id: p.id || p._id, name: p.name || 'Pipeline' }))
+  return {
+    connected: true,
+    leads,
+    pipelines,
+    apptsAvailable: !!(appts && appts.connected !== false),
+    apptsError: appts && appts.connected === false ? (appts.error || 'appointments unavailable') : null,
+    bookWindowTo: bookTo,
+    capped: opps.length >= 3000,
+  }
+}
+
 export async function buildStageTiming(locationId, days = 90) {
   const locTok = await locationTokenOrDemo(locationId)
   const now = Date.now(), DAY = 86400000
@@ -3738,7 +3813,7 @@ export async function buildStageTiming(locationId, days = 90) {
 // minutes, connect rate, and inbound handled. Uses the bulk message export
 // (channel=Call) so it's a few paged requests for the whole location, not one
 // per contact. Keyed by userId (the frontend joins names from the users scope).
-export async function buildUserCalls(locationId, from, to, callsOnly = false) {
+export async function buildUserCalls(locationId, from, to, callsOnly = false, wantCadence = false) {
   const locTok = await locationTokenOrDemo(locationId)
   // The message-export endpoint validates startDate/endDate as ISO 8601 datetimes
   // (YYYY-MM-DDTHH:mm:ss.sssZ). A bare YYYY-MM-DD is accepted with HTTP 200 but
@@ -3766,6 +3841,12 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   const byUser = new Map()
   const allContacts = new Set()
   const dayMap = new Map() // YYYY-MM-DD -> { outbound, inbound, seconds }
+  // Call-cadence mode: every outbound attempt as [contactId, ms, connected], so
+  // the caller can join calls to each lead's own clock. Kept as tuples rather than
+  // objects because a busy month is tens of thousands of calls and this crosses
+  // the wire once per day-chunk.
+  const cadence = wantCadence ? [] : null
+  const CADENCE_CAP = 12000
   const ent = (uid) => { let e = byUser.get(uid); if (!e) { e = { userId: uid, outbound: 0, outboundConnected: 0, outboundSec: 0, inbound: 0, inboundConnected: 0, inboundSec: 0, longestSec: 0, contacts: new Set(), speed: [] }; byUser.set(uid, e) } return e }
   // The export payload is heavy (recording URLs + full metadata per call), so a
   // 1000-row page can exceed the function's ~10s budget and time out - which was
@@ -3803,6 +3884,10 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
       const dE = dayMap.get(day) || { outbound: 0, inbound: 0, seconds: 0 }
       if (m.direction === 'outbound') {
         e.outbound++; dE.outbound++; if (connected) { e.outboundConnected++; e.outboundSec += dur }
+        if (cadence && m.contactId && cadence.length < CADENCE_CAP) {
+          const cms = Date.parse(m.dateAdded)
+          if (isFinite(cms)) cadence.push([m.contactId, cms, connected ? 1 : 0])
+        }
         if (m.contactId) { const cms = Date.parse(m.dateAdded); if (isFinite(cms)) { const cur = firstOut.get(m.contactId); if (!cur || cms < cur.ms) firstOut.set(m.contactId, { ms: cms, uid }) } }
       } else { e.inbound++; dE.inbound++; if (connected) { e.inboundConnected++; e.inboundSec += dur } }
       dE.seconds += dur
@@ -3861,7 +3946,7 @@ export async function buildUserCalls(locationId, from, to, callsOnly = false) {
   }
   const daily = [...dayMap.entries()].filter(([d]) => d).sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, v]) => ({ date, outbound: v.outbound, inbound: v.inbound, minutes: Math.round(v.seconds / 60) }))
-  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable, partial, _diag: { pages, sawNull, reportedTotal, fetched: total, startIso, endIso, exportErr } }
+  return { connected: true, totalCalls: total, totals, daily, byUser: users, speedAvailable, partial, ...(cadence ? { cadence, cadenceCapped: cadence.length >= CADENCE_CAP } : {}), _diag: { pages, sawNull, reportedTotal, fetched: total, startIso, endIso, exportErr } }
 }
 // The channel / pipeline / won-basis filters on the Users tab only change WHICH
 // opportunities are counted - every expensive fetch (opps, appointments,

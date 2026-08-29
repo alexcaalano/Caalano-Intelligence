@@ -18,6 +18,48 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.422.0 - 2026-08-20 · `PENDING` - Change log: real field names, and only completed entries
+
+Two fixes, one shipped blind and one shipped wrong.
+
+**The platform feeds now work.** v3.421.0 guessed at Windsor's field names because
+the documentation was unreachable. The diagnostic panel it shipped with reported
+exactly why both failed, and the field catalogue settled it:
+
+- **Meta** uses `activity_*` fields, which live in their own Activities table and
+  **cannot be queried alongside `account_id`** - Windsor rejects the combination
+  outright. That single extra field was the whole failure. The account is now
+  applied as an API-level `accounts` parameter instead.
+- **Google** uses the `change_event_*` prefix. The unprefixed names were worse
+  than an error: Windsor *accepted* them and returned 9,139 rows with every
+  column null, which reads as "no changes" rather than "wrong field".
+
+Because the Meta Activities table carries no account column to re-check the
+scoping against, a tripwire runs on every response: account-level rows name the
+account they belong to, and a correctly scoped response can only ever name one.
+If two appear, nothing is shown at all rather than risk showing another client's
+activity. Google needs no such trust - its resource names embed the customer id,
+so every row is verified against the client's own account before it is shown.
+
+**Only completed entries are shown.** The Optimisation Log rows were rendering as
+"Meta · Optimisation" with nothing else on them - and worse, that "Optimisation"
+was invented by the code where the sheet's own type cell was empty, describing a
+change nobody had written down. A row now needs all four cells filled in: what
+was changed, which campaign, the write-up, and the initials. Anything short of
+that is counted and reported, never drawn.
+
+The same principle now applies to the platform feeds, which are mostly machine
+churn: billing charges, delivery notifications, review-status flips and Google's
+asset bookkeeping are filtered out, and one decision applied to many objects
+(pausing forty ads in a burst) collapses to a single line carrying a count
+rather than forty. Everything filtered is counted in the header, so the feed
+never quietly shrinks.
+
+71 assertions cover the two APIs' real response shapes - captured from live
+pulls, not imagined - the completeness rule, and the collapsing invariants.
+
+---
+
 ## v3.421.0 - 2026-08-20 · `PENDING` - Change log: platform history beside the team's own notes
 
 The Optimisation Log tab held one source - the client's Google Sheet, which is

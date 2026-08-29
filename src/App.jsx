@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.421.0'
+const APP_VERSION = '3.422.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -11090,32 +11090,45 @@ const chgPlatKind = (v) => (/meta|face|insta/i.test(v) ? 'meta' : /google|goog|p
 // stacked. Columns are matched by header name because these sheets are hand-made
 // and no two clients lay them out identically.
 function chgSheetRows(columns, rows) {
-  if (!columns || !rows) return []
+  if (!columns || !rows) return { rows: [], skipped: 0 }
   const dateCol = columns.find((c) => /date|when|day|timestamp/i.test(c)) || columns[0]
   const platCol = columns.find((c) => /platform|channel/i.test(c))
   const typeCol = columns.find((c) => c !== dateCol && /optimi|type|action|change|task/i.test(c))
   const campCol = columns.find((c) => /campaign|ad ?set|adset|audience/i.test(c))
   const noteCol = columns.find((c) => /note|comment|detail|summary|desc/i.test(c))
   const blank = (v) => { const s = String(v == null ? '' : v).trim(); return s === '' || /^[-–—]+$/.test(s) || /^n\/?a$/i.test(s) }
+  const cell = (col) => (r) => (col && !blank(r[col]) ? String(r[col]).trim() : null)
+  const typeOf = cell(typeCol), campOf = cell(campCol)
   const out = []
+  let skipped = 0
   for (const r of rows) {
     const ts = chgParseSheetDate(r[dateCol])
-    if (ts == null) continue
+    if (ts == null) { skipped++; continue }
     const rawNote = noteCol ? r[noteCol] : ''
     const plat = platCol ? String(r[platCol] || '').trim() : ''
+    const type = typeOf(r)
+    const camp = campOf(r)
+    const actor = chgAuthorOf(rawNote)
+    const note = blank(rawNote) ? null : chgStripAuthor(rawNote)
+    // A completed entry only. A sheet row carrying nothing but a date and a
+    // platform is a row somebody has not filled in yet, and rendering it as
+    // "Meta - Optimisation" invents a change that was never described. The bar is
+    // the shape of a properly logged entry: what was changed, where, written up,
+    // and initialled. Anything short of that is counted, not shown.
+    if (!type || !camp || !actor || !note) { skipped++; continue }
     out.push({
       ts,
       source: 'log',
       channel: chgPlatKind(plat),
       platformLabel: plat || null,
-      actor: chgAuthorOf(rawNote),
-      action: typeCol && !blank(r[typeCol]) ? String(r[typeCol]) : 'Optimisation',
-      entity: campCol && !blank(r[campCol]) ? String(r[campCol]) : null,
-      note: blank(rawNote) ? null : chgStripAuthor(rawNote),
+      actor,
+      action: type,
+      entity: camp,
+      note,
       fields: [],
     })
   }
-  return out
+  return { rows: out, skipped }
 }
 const CHG_CH_LABEL = { meta: 'Meta', google: 'Google', other: 'Other' }
 // One row of the merged timeline. Deliberately the same mark for every source -
@@ -11137,6 +11150,7 @@ function ChgRow({ r }) {
           <span className={`optlog-plat optlog-plat-${kind}`}>{r.platformLabel || CHG_CH_LABEL[kind] || kind}</span>
           {r.action ? <span className="optlog-type">{r.action}</span> : null}
           <span className={`chg-src chg-src-${r.source}`} title={r.source === 'log' ? 'Written by the team in the Optimisation Log' : 'Read from the ad platform’s own change history'}>{r.source === 'log' ? 'Logged' : 'Platform'}</span>
+          {r.repeats > 1 ? <span className="chg-rep" title={`The same change was made to ${r.repeats} objects in one go - shown once`}>×{r.repeats}</span> : null}
           {r.actor ? <span className="optlog-author" title={`By ${r.actor}`}>{r.actor}</span> : null}
         </div>
         {r.entity ? <div className="optlog-camp"><span className="optlog-k">{r.entityType ? String(r.entityType).replace(/_/g, ' ').toLowerCase() : 'Campaign / ad set'}</span><span className="optlog-v">{r.entity}</span></div> : null}
@@ -11175,7 +11189,7 @@ function ChgUnavailable({ label, reason, probe }) {
 // A feed, filtered and listed. Search covers everything visible on a card, so a
 // campaign name typed in the box finds it whether it sits in the entity, the
 // note or the changed-settings list.
-function ChgFeed({ rows, empty, capped, total }) {
+function ChgFeed({ rows, empty, capped, total, skipped = 0 }) {
   const [q, setQ] = useState('')
   const [chan, setChan] = useState('all')
   const chans = useMemo(() => [...new Set(rows.map((r) => r.channel))], [rows])
@@ -11202,7 +11216,7 @@ function ChgFeed({ rows, empty, capped, total }) {
           <button className={chan === 'all' ? 'on' : ''} onClick={() => setChan('all')}>All</button>
           {chans.map((c) => <button key={c} className={chan === c ? 'on' : ''} onClick={() => setChan(c)}>{CHG_CH_LABEL[c] || c}</button>)}
         </div> : null}
-        <span className="cap chg-count">{fmtNumber(list.length)} change{list.length === 1 ? '' : 's'} across {fmtNumber(days)} day{days === 1 ? '' : 's'}{capped ? ` · newest ${fmtNumber(rows.length)} of ${fmtNumber(total)}` : ''}</span>
+        <span className="cap chg-count">{fmtNumber(list.length)} change{list.length === 1 ? '' : 's'} across {fmtNumber(days)} day{days === 1 ? '' : 's'}{capped ? ` · newest ${fmtNumber(rows.length)} of ${fmtNumber(total)}` : ''}{skipped ? <> · <span title="Rows left out: platform bookkeeping, and Optimisation Log rows that are not filled in (they need a type, a campaign, a note and initials)">{fmtNumber(skipped)} not shown</span></> : null}</span>
       </div>
       {!list.length ? <div className="card"><p className="cap" style={{ margin: 0 }}>Nothing matches that search.</p></div>
         : <div className="optlog-timeline">{list.map((r, i) => <ChgRow key={i} r={r} />)}</div>}
@@ -11243,14 +11257,17 @@ function ChangeLogTab({ clientId, range, nonce, hasMeta, hasGoogle }) {
   const d = hist.data || null
   const metaRows = (d && d.meta && d.meta.rows) || []
   const googleRows = (d && d.google && d.google.rows) || []
-  const sheetRows = useMemo(() => (sheet.st.status === 'ok' ? chgSheetRows(sheet.st.columns, sheet.st.rows) : []), [sheet.st])
+  const sheet2 = useMemo(() => (sheet.st.status === 'ok' ? chgSheetRows(sheet.st.columns, sheet.st.rows) : { rows: [], skipped: 0 }), [sheet.st])
+  const sheetRows = sheet2.rows
   const merged = useMemo(() => [...metaRows, ...googleRows, ...sheetRows].sort((a, b) => b.ts - a.ts), [metaRows, googleRows, sheetRows])
   const loading = hist.status === 'loading' || sheet.st.status === 'loading' || sheet.st.status === 'idle'
   const tabs = CHG_TABS.filter(([k]) => k === 'all' || k === 'log' || (k === 'meta' ? hasMeta : hasGoogle))
   const cur = tabs.some(([k]) => k === sub) ? sub : 'all'
   const feed = (rows, ch) => {
     const src = ch === 'meta' ? (d && d.meta) : ch === 'google' ? (d && d.google) : null
-    return <ChgFeed rows={rows} capped={!!(src && src.capped)} total={src ? src.total : rows.length}
+    const skipped = ch ? ((src && src.skipped) || 0)
+      : ((d && d.meta && d.meta.skipped) || 0) + ((d && d.google && d.google.skipped) || 0) + sheet2.skipped
+    return <ChgFeed rows={rows} capped={!!(src && src.capped)} total={src ? src.total : rows.length} skipped={skipped}
       empty={loading ? <div className="card"><Spinner label="Loading change history…" /></div>
         : ch ? <ChgUnavailable label={ch === 'meta' ? 'Meta' : 'Google'} reason={(src && src.reason) || (d && d.reason) || (d && d.error) || 'Nothing came back for this period.'} probe={d && d.probe} />
           : <div className="card empty-deep"><div className="big">🕰️</div><b>No changes recorded in this period.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>Nothing from Meta, Google or the Optimisation Log falls inside the selected date range. Widen the range at the top of the page to look further back.</p></div>} />
@@ -11346,9 +11363,12 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
             const author = authorOf(rawNote)
             const note = blank(rawNote) ? '' : stripAuthor(rawNote)
             const extras = extraCols.filter((c) => !blank(r[c]))
-            // Needs a platform PLUS something else to plot - skip "just Meta/Google" rows.
-            const hasContent = !!type || !!camp || !!note || extras.length > 0
-            if (!hasContent) return null
+            // Only completed entries. A row with a date and a platform and nothing
+            // else is one nobody has filled in, and drawing it as "Meta -
+            // Optimisation" invents a change that was never described. Same bar as
+            // the merged Change log timeline: what changed, where, written up, and
+            // initialled. The table view above still shows the sheet verbatim.
+            if (!type || !camp || !note || !author) return null
             const kind = platKind(platform)
             const d = parseD(r[dateCol])
             return (

@@ -2602,6 +2602,10 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
   padding: 1px 7px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); background: var(--panel); }
 .chg-src-log { color: #6d5efc; border-color: rgba(109,94,252,.32); background: rgba(109,94,252,.09); }
 .chg-val { font-variant-numeric: tabular-nums; }
+/* One decision applied to many objects at once - pausing forty ads is one line
+   carrying a count, not forty lines. */
+.chg-rep { font-size: 10.5px; font-weight: 800; color: var(--muted); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 20px; padding: 1px 7px; cursor: help; }
 .optlog-embed .optlog-head { margin-bottom: 10px; align-items: center; }
 /* What was asked of Windsor and what came back, shown only on request - it is a
    wiring diagnostic, not something a client needs in their face. */

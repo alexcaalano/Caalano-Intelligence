@@ -18,6 +18,49 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.418.0 - 2026-08-20 · `PENDING` - Paid performance by time of day
+
+A new collapsible section under the timing grid, joining two feeds that had never
+met: **ad spend broken down by hour**, and **CRM leads placed at the hour they
+arrived**. Cost per lead and cost per won deal, by part of day or by hour, split
+All paid / Meta / Google.
+
+Cost per won deal costs a win against the hour its **lead** arrived, not the hour
+it closed - a deal that took three months to close is still attributed to the hour
+that bought it, which is the only way the number answers "was that hour worth
+buying".
+
+**Whether the cost columns can exist is not something to assume, so the code finds
+out.** Meta can break spend down by hour of day and Google Ads has an hour
+segment, but whether Windsor surfaces either for a given account is
+account-and-connector dependent. The build tries the plausible field names for
+each platform, keeps whichever actually returns hours, and reports what it found.
+
+When no hourly breakdown comes back, the cost columns are **left out** and the
+section says so, including which fields were tried. The alternative - dividing
+daily spend evenly across twenty-four hours - would produce a cost per lead this
+dashboard invented rather than one either platform reported, and it would be
+lowest exactly where spend is thinnest, which is precisely backwards.
+
+The lead and conversion columns are unaffected either way, and they carry most of
+the decision on their own: an hour whose leads rarely convert is worth less
+regardless of what it cost. So the section is useful before the join works and
+better after.
+
+Paid only, by definition - leads whose first touch carried a Meta or Google UTM.
+Organic, direct and referred are excluded because there is no spend to divide by.
+Rates are withheld below six decided deals in a row, and cost per lead is
+highlighted at more than 25% from the paid average as a flag to look, not a
+verdict.
+
+Tested on the blend: both channels' leads and spend sum correctly per block, the
+two channels partition the paid total exactly, an hour with no wins yields no
+cost-per-won rather than infinity, hourly and block cuts agree on both totals, the
+day-parts tile twenty-four hours exactly once, and with no spend available the
+lead columns are unchanged and no cost is conjured from nothing.
+
+---
+
 ## v3.417.1 - 2026-08-20 · `PENDING` - Label every hour on the grid
 
 The hour axis was labelled every third column, which looked tidier and meant

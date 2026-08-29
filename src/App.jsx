@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.417.1'
+const APP_VERSION = '3.418.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9628,6 +9628,97 @@ function EnqWinRate({ g, money }) {
 // The outcome and stage grids arrive as flat 168-slot arrays (day * 24 + hour).
 // Reshaped to the same [7][24] of { leads, booked } the lead grid uses, so every
 // statistic, heat scale and cell below works on all views without a special case.
+// --- Paid performance by hour of day ----------------------------------------
+//
+// Blends two feeds that have never met: ad spend broken down by hour, and CRM
+// leads placed at the hour they arrived. The point is cost per lead and cost per
+// won deal BY HOUR - if 2am leads cost the same and convert at half the rate,
+// that is a dayparting decision worth real money.
+//
+// Whether it can be computed depends entirely on the ad platform surfacing an
+// hourly breakdown for the account, which is not something to assume. When it is
+// missing the CRM half still stands on its own: which hours produce leads that go
+// on to convert is a dayparting signal even without knowing what each hour cost.
+// So the cost columns appear or they do not, and the section says which and why
+// rather than filling them with a number derived from an assumption.
+const PAID_BLOCKS = [
+  ['Overnight', 0, 6], ['Early morning', 6, 9], ['Morning', 9, 12],
+  ['Early afternoon', 12, 15], ['Late afternoon', 15, 18], ['Evening', 18, 21], ['Late evening', 21, 24],
+]
+function paidByHour(grids, spend, gran, chan) {
+  // grids: { meta, google } arrival grids, each [7][24] of { leads, won, lost }.
+  const rows = []
+  const bands = gran === 'hour' ? Array.from({ length: 24 }, (_, h) => [enqHourLabel(h), h, h + 1]) : PAID_BLOCKS
+  for (const [label, a, b] of bands) {
+    let leads = 0, won = 0, lost = 0, cost = 0
+    for (const ch of ['meta', 'google']) {
+      if (chan !== 'paid' && chan !== ch) continue
+      const g = grids[ch]
+      for (let h = a; h < b; h++) {
+        if (g) for (let d = 0; d < 7; d++) { const c = g[d][h]; leads += c.leads; won += c.won || 0; lost += c.lost || 0 }
+        cost += (spend && spend[ch] && spend[ch][h]) || 0
+      }
+    }
+    rows.push({ label, sub: gran === 'hour' ? null : `${enqHourLabel(a)}–${enqHourLabel(b === 24 ? 0 : b)}`,
+      leads, won, lost, decided: won + lost, cost,
+      cpl: leads ? cost / leads : null, cpa: won ? cost / won : null,
+      winRate: (won + lost) ? won / (won + lost) : null })
+  }
+  return rows
+}
+
+function PaidByHour({ d, chan, gran }) {
+  const sp = d && d.spendByHour
+  const grids = { meta: d && d.grid && d.grid.meta, google: d && d.grid && d.grid.google }
+  const hasSpend = !!(sp && sp.available)
+  const rows = useMemo(() => paidByHour(grids, hasSpend ? sp : null, gran, chan), [d, chan, gran, hasSpend])
+  const tot = rows.reduce((a, r) => ({ leads: a.leads + r.leads, won: a.won + r.won, decided: a.decided + r.decided, cost: a.cost + r.cost }), { leads: 0, won: 0, decided: 0, cost: 0 })
+  if (!tot.leads) return <div className="cap">No paid leads in this range, so there is nothing to cost.</div>
+  const money = (v) => (v == null || !isFinite(v) ? '-' : fmtCurrency(Math.round(v), 'AUD'))
+  const maxLeads = Math.max(1, ...rows.map((r) => r.leads))
+  const baseCpl = tot.leads && tot.cost ? tot.cost / tot.leads : null
+  return (
+    <div className="pbh">
+      {!hasSpend ? (
+        <div className="pbh-note cap">
+          <b>Cost per hour is not available for this account.</b> The ad platform did not return a spend breakdown by hour of day, so cost per lead and cost per won deal are left blank rather than filled in by splitting the daily spend evenly across the hours - which would be a number this dashboard invented, not one either platform reported.
+          {sp && sp.notes && sp.notes.length ? <span className="pbh-why"> Tried: {sp.notes.slice(0, 2).join(' · ')}</span> : null}
+          {' '}The lead and conversion columns below are unaffected, and on their own they still answer the dayparting question: an hour whose leads rarely convert is worth less regardless of what it cost.
+        </div>
+      ) : (
+        <div className="pbh-note cap">Spend by hour from <b>{[sp.metaField ? 'Meta' : null, sp.googleField ? 'Google' : null].filter(Boolean).join(' + ')}</b>, joined to leads at the hour they arrived.</div>
+      )}
+      <table className="mini-tbl users-tbl appt-tbl u-pbh">
+        <thead><tr>
+          <th className="lft">{gran === 'hour' ? 'Hour' : 'Part of day'}</th>
+          <th>Leads</th><th>Won</th><th>Win rate</th>
+          {hasSpend ? <><th>Spend</th><th>Cost / lead</th><th>Cost / won</th></> : null}
+          <th className="lft">Share of paid leads</th>
+        </tr></thead>
+        <tbody>{rows.map((r) => (
+          <tr key={r.label} className={r.leads ? '' : 'win-thin'}>
+            <td className="lft">{r.label}{r.sub ? <small> {r.sub}</small> : null}</td>
+            <td>{fmtNumber(r.leads)}</td>
+            <td>{fmtNumber(r.won)}</td>
+            <td>{r.decided >= WIN_MIN_CELL ? `${Math.round(r.winRate * 100)}%` : <span className="lrv-z" title={`Only ${r.decided} decided`}>-</span>}</td>
+            {hasSpend ? <>
+              <td>{r.cost ? money(r.cost) : '-'}</td>
+              <td className={baseCpl && r.cpl && r.cpl > baseCpl * 1.25 ? 'win-dn' : baseCpl && r.cpl && r.cpl < baseCpl * 0.75 ? 'win-up' : ''}>{r.leads ? money(r.cpl) : '-'}</td>
+              <td>{r.won ? money(r.cpa) : <span className="lrv-z">-</span>}</td>
+            </> : null}
+            <td className="lft"><span className="enq-mg-track"><span className="enq-mg-fill" style={{ width: `${Math.max(1, (r.leads / maxLeads) * 100)}%` }} /></span></td>
+          </tr>
+        ))}</tbody>
+      </table>
+      <Caveat>
+        Paid only - leads whose first touch carried a Meta or Google UTM. Everything organic, direct or referred is excluded, because there is no spend to divide by.
+        {' '}Leads sit at the hour they <b>arrived</b>{hasSpend ? ', and spend at the hour the platform reported it' : ''}. Cost per won deal uses deals won from leads that arrived in that hour, so a deal that took three months to close is still costed against the hour its lead came in - which is the only way the number answers "was that hour worth buying".
+        {' '}A rate is withheld below {WIN_MIN_CELL} decided deals in a row.{hasSpend ? ' Cost per lead is highlighted where it is more than 25% above or below the paid average, which is a flag to look, not a verdict.' : ''}
+      </Caveat>
+    </div>
+  )
+}
+
 // --- One measure, cut three ways -------------------------------------------
 //
 // The day-by-hour grid shows where a measure concentrates but makes a total hard
@@ -9712,6 +9803,9 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
   const [keyStage, setKeyStage] = useState(null)
   const [pipe, setPipe] = useState('all')
   const [gran, setGran] = useState('grid')
+  const [paidOpen, setPaidOpen] = useState(false)
+  const [paidChan, setPaidChan] = useState('paid')
+  const [paidGran, setPaidGran] = useState('block')
   const [chan, setChan] = useState('all')
   const [who, setWho] = useState('self')
   const [mode, setMode] = useState('volume')
@@ -10208,6 +10302,25 @@ function TimingView({ clientId, range, nonce, currency }) {
           <TimingDebug clientId={clientId} range={range} />
         </>}
       </div>
+      <div className="lvl-title collapse-t" style={{ marginTop: 14 }} onClick={() => setPaidOpen(!paidOpen)} role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPaidOpen(!paidOpen) } }}>
+        <span className={`collapse-x${paidOpen ? ' on' : ''}`}>▸</span>
+        Paid performance by time of day <span className="sub">· what each hour of advertising costs, against the leads it produced and what they became</span>
+      </div>
+      {paidOpen ? <div className="card">
+        <div className="enq-head">
+          <div className="chan-toggle sm">
+            <button className={paidChan === 'paid' ? 'on' : ''} onClick={() => setPaidChan('paid')}>All paid</button>
+            <button className={paidChan === 'meta' ? 'on' : ''} onClick={() => setPaidChan('meta')}>Meta</button>
+            <button className={paidChan === 'google' ? 'on' : ''} onClick={() => setPaidChan('google')}>Google</button>
+          </div>
+          <div className="chan-toggle sm">
+            <button className={paidGran === 'block' ? 'on' : ''} onClick={() => setPaidGran('block')}>Part of day</button>
+            <button className={paidGran === 'hour' ? 'on' : ''} onClick={() => setPaidGran('hour')}>Hour of day</button>
+          </div>
+        </div>
+        <PaidByHour d={d} chan={paidChan} gran={paidGran} />
+      </div> : null}
     </div>
   )
 }

@@ -2741,6 +2741,58 @@ async function diagLog(entry) {
   } catch { /* diagnostics must never break the request */ }
 }
 
+// --- Ad spend by hour of day ------------------------------------------------
+//
+// Meta's Insights API can break spend down by hour of day
+// (`hourly_stats_aggregated_by_advertiser_time_zone`), and Google Ads exposes an
+// hour segment. Whether WINDSOR surfaces either as a field is account- and
+// connector-dependent and not something worth asserting from the outside - so
+// this tries the plausible names and reports what actually worked. A field that
+// does not exist comes back as an error or as rows without it; both are treated
+// as "not available for this account" rather than as a failure, because the CRM
+// half of the view is useful on its own.
+//
+// The bucket label Meta returns looks like "13:00:00 - 13:59:59"; Google returns
+// a bare hour. Both reduce to an integer 0-23, and anything that does not is
+// dropped rather than guessed at.
+const HOUR_FIELDS = {
+  facebook: ['hourly_stats_aggregated_by_advertiser_time_zone', 'hourly_stats_aggregated_by_audience_time_zone'],
+  google_ads: ['hour_of_day', 'hour'],
+}
+const parseHourBucket = (v) => {
+  if (v == null) return null
+  const s = String(v).trim()
+  const m = /^(\d{1,2})/.exec(s)
+  if (!m) return null
+  const h = Number(m[1])
+  return Number.isInteger(h) && h >= 0 && h <= 23 ? h : null
+}
+async function hourlySpend(cc, from, to, preset, key) {
+  const out = { meta: new Array(24).fill(0), google: new Array(24).fill(0), metaField: null, googleField: null, notes: [] }
+  const tryOne = async (connector, acct, into, label) => {
+    if (!acct) return null
+    for (const f of HOUR_FIELDS[connector]) {
+      try {
+        const rows = await windsorFetch(connector, ['account_id', f, 'spend'], from, to, preset, key)
+        const mine = (rows || []).filter((r) => !r.account_id || acctEq(r.account_id, acct))
+        let placed = 0
+        for (const r of mine) { const h = parseHourBucket(r[f]); if (h == null) continue; into[h] += num(r.spend); placed++ }
+        // A field that exists but never resolves to an hour is not a usable
+        // breakdown - keep trying the next candidate rather than reporting zeros.
+        if (placed) return f
+      } catch (e) { out.notes.push(`${label} ${f}: ${String(e.message || e).slice(0, 80)}`) }
+    }
+    return null
+  }
+  const [mf, gf] = await Promise.all([
+    tryOne('facebook', cc.meta, out.meta, 'Meta').catch(() => null),
+    tryOne('google_ads', cc.google, out.google, 'Google').catch(() => null),
+  ])
+  out.metaField = mf; out.googleField = gf
+  out.available = !!(mf || gf)
+  return out
+}
+
 export default async (req) => {
   const _t0 = Date.now()
   // Every upstream fetch in this invocation shares one deadline, so a single slow
@@ -3799,8 +3851,15 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'enqtimes', client, ghl: false })
     if (!(await isConnected().catch(() => false))) return json({ scope: 'enqtimes', client, connected: false })
-    try { return json({ scope: 'enqtimes', client, ...(await buildEnquiryTimes(cc.ghl, from, to)) }, 200, true) }
-    catch (e) { return json({ scope: 'enqtimes', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
+    try {
+      // The CRM half and the ad half are independent, so they run together and a
+      // failure on the ad side costs the cost columns, not the whole view.
+      const [enq, spend] = await Promise.all([
+        buildEnquiryTimes(cc.ghl, from, to),
+        (cc.meta || cc.google) ? hourlySpend(cc, from, to, preset, key).catch((e) => ({ available: false, notes: [String(e.message || e).slice(0, 80)] })) : Promise.resolve({ available: false, notes: ['No Meta or Google account linked.'] }),
+      ])
+      return json({ scope: 'enqtimes', client, ...enq, spendByHour: spend }, 200, true)
+    } catch (e) { return json({ scope: 'enqtimes', client, error: String(e.message || e).slice(0, 200), connected: true }, 200) }
   }
   if (url.searchParams.get('scope') === 'stagetiming') {
     const cc = CLIENTS[client]

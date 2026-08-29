@@ -3921,3 +3921,14 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .enq-mg-p { font-size: 11.5px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .enq-mg-foot { margin-top: 7px; }
 @media (max-width: 720px) { .enq-mg-row { grid-template-columns: minmax(0, 120px) 1fr 44px 38px; } }
+
+/* Paid performance by time of day: spend joined to leads at their arrival hour. */
+.pbh-note { margin: 0 0 10px; line-height: 1.55; }
+.pbh-note .pbh-why { color: var(--faint); }
+.u-pbh { table-layout: fixed; width: 100%; min-width: 0; }
+.u-pbh th:first-child, .u-pbh td:first-child { width: 20%; }
+.u-pbh td:first-child small { color: var(--faint); font-weight: 500; }
+.u-pbh th:last-child, .u-pbh td:last-child { width: 18%; }
+.u-pbh td.win-up { color: var(--pos, #12b886); font-weight: 700; }
+.u-pbh td.win-dn { color: var(--neg, #e0566c); font-weight: 700; }
+.u-pbh tr.win-thin td { color: var(--faint); }

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.418.0'
+const APP_VERSION = '3.418.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10034,6 +10034,25 @@ function EnquiryTimesSection({ clientId, range, nonce }) {
           </Caveat>
         </div>
       ) : null}
+      <div className="lvl-title collapse-t" style={{ marginTop: 14 }} onClick={() => setPaidOpen(!paidOpen)} role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPaidOpen(!paidOpen) } }}>
+        <span className={`collapse-x${paidOpen ? ' on' : ''}`}>▸</span>
+        Paid performance by time of day <span className="sub">· what each hour of advertising costs, against the leads it produced and what they became</span>
+      </div>
+      {paidOpen ? <div className="card">
+        <div className="enq-head">
+          <div className="chan-toggle sm">
+            <button className={paidChan === 'paid' ? 'on' : ''} onClick={() => setPaidChan('paid')}>All paid</button>
+            <button className={paidChan === 'meta' ? 'on' : ''} onClick={() => setPaidChan('meta')}>Meta</button>
+            <button className={paidChan === 'google' ? 'on' : ''} onClick={() => setPaidChan('google')}>Google</button>
+          </div>
+          <div className="chan-toggle sm">
+            <button className={paidGran === 'block' ? 'on' : ''} onClick={() => setPaidGran('block')}>Part of day</button>
+            <button className={paidGran === 'hour' ? 'on' : ''} onClick={() => setPaidGran('hour')}>Hour of day</button>
+          </div>
+        </div>
+        <PaidByHour d={d} chan={paidChan} gran={paidGran} />
+      </div> : null}
     </div>
   )
 }
@@ -10302,25 +10321,6 @@ function TimingView({ clientId, range, nonce, currency }) {
           <TimingDebug clientId={clientId} range={range} />
         </>}
       </div>
-      <div className="lvl-title collapse-t" style={{ marginTop: 14 }} onClick={() => setPaidOpen(!paidOpen)} role="button" tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPaidOpen(!paidOpen) } }}>
-        <span className={`collapse-x${paidOpen ? ' on' : ''}`}>▸</span>
-        Paid performance by time of day <span className="sub">· what each hour of advertising costs, against the leads it produced and what they became</span>
-      </div>
-      {paidOpen ? <div className="card">
-        <div className="enq-head">
-          <div className="chan-toggle sm">
-            <button className={paidChan === 'paid' ? 'on' : ''} onClick={() => setPaidChan('paid')}>All paid</button>
-            <button className={paidChan === 'meta' ? 'on' : ''} onClick={() => setPaidChan('meta')}>Meta</button>
-            <button className={paidChan === 'google' ? 'on' : ''} onClick={() => setPaidChan('google')}>Google</button>
-          </div>
-          <div className="chan-toggle sm">
-            <button className={paidGran === 'block' ? 'on' : ''} onClick={() => setPaidGran('block')}>Part of day</button>
-            <button className={paidGran === 'hour' ? 'on' : ''} onClick={() => setPaidGran('hour')}>Hour of day</button>
-          </div>
-        </div>
-        <PaidByHour d={d} chan={paidChan} gran={paidGran} />
-      </div> : null}
     </div>
   )
 }

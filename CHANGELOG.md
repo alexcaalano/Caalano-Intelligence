@@ -18,6 +18,30 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.418.1 - 2026-08-20 · `PENDING` - Fix: "paidOpen is not defined"
+
+The Paid performance block from v3.418.0 was inserted into `TimingView` instead of
+`EnquiryTimesSection`. Its state lives in the latter, hence the error - but the
+worse half is that `d` means different things in the two components. In
+`EnquiryTimesSection` it is the enquiry-times payload the section needs; in
+`TimingView` it is the Speed to Lead payload. Had the identifier resolved, the
+section would have rendered against entirely the wrong data rather than failing
+loudly. Moved to the component that owns both its state and its data.
+
+**On the guard.** This is the third runtime break of this shape - code that
+compiles cleanly and dies on render - and unlike the previous two it was not a
+subtlety but a block landing in the wrong scope. I wrote a checker for it twice
+and threw both away: the first flagged hundreds of false positives from JSX text,
+the second misreported which function a line belonged to. Neither was trustworthy,
+and a check people learn to ignore is worse than no check.
+
+Doing it properly means real scope analysis over a parsed tree rather than a third
+regex approximation, which is its own piece of work and not something to bolt on
+while fixing a live break. The two checks that ARE sound - nested declarations and
+declaration order - still run on every build.
+
+---
+
 ## v3.418.0 - 2026-08-20 · `PENDING` - Paid performance by time of day
 
 A new collapsible section under the timing grid, joining two feeds that had never

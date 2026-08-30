@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.423.1 - 2026-08-20 · `PENDING` - Fix: Call Reporting crashed on the cadence maths
+
+`callCadence is not defined` - the Call Reporting tab failed to render at all.
+The cadence section was added in two pieces and only one of them landed: the UI
+components went into the bundle, the function they call did not.
+
+Neither existing checker catches this. `check-toplevel` verifies nesting and
+`check-tdz` verifies declaration order, but nothing verifies that a name being
+called exists at all. This is the third crash of exactly this shape, so the next
+release adds the check rather than the note.
+
+---
+
 ## v3.423.0 - 2026-08-20 · `PENDING` - Call cadence: how many attempts a lead is worth
 
 New section on Call Reporting. For each day after a lead arrives, it shows how

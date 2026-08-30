@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.423.0'
+const APP_VERSION = '3.423.1'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10574,6 +10574,120 @@ function UserApptActivity({ clientId, range, nonce }) {
 // rate fields can't be summed, so each chunk ships raw counts/seconds and we
 // re-derive here. Speed-to-lead is omitted in batched mode (it needs the global
 // first-touch across the whole range, which independent day chunks can't see).
+// --- Call cadence -----------------------------------------------------------
+// How many times a lead gets called on each day after they arrive, and what that
+// day's calls are still worth. The unit is the LEAD on its own clock - day 0 is
+// their first 24 hours, whenever that started - not the calendar, because the
+// question is "how many attempts is a lead still worth", not "what happened on
+// Tuesday".
+//
+// Two readings of "worth it", because they answer different questions:
+//   per unbooked lead  of the leads who reached this day still unbooked and got
+//                      called, what share booked. This is the drop-off curve -
+//                      it says when to stop.
+//   per call           of the attempts made on this day, what share were followed
+//                      by a booking. This says what a single dial is worth.
+// Both run off ATTEMPTS, not connections, so the cost of chasing is visible;
+// connect rate is carried alongside so a fall can be read as "they stopped
+// answering" rather than "answered calls stopped converting".
+const CAD_DAY = 86400000
+const CAD_MAX_DAY = 7          // day 0..7 individually, then one 8+ bucket
+const CAD_OVERFLOW = CAD_MAX_DAY + 1
+const cadBucket = (callMs, leadMs) => {
+  const d = Math.floor((callMs - leadMs) / CAD_DAY)
+  return d < 0 ? null : d > CAD_MAX_DAY ? CAD_OVERFLOW : d
+}
+// A call converts if the booking landed after it and before the next attempt to
+// that lead - so a lead called three times on day 2 who books after the third
+// credits ONE call, not three. Without this the per-call rate counts the same
+// booking once per dial and reads far higher than it is.
+function callCadence(leads, calls, obsEndMs, opts = {}) {
+  const pipe = opts.pipeline && opts.pipeline !== 'all' ? opts.pipeline : null
+  const lead = new Map()
+  for (const [cid, ms, booked, p] of (leads || [])) {
+    if (!cid || !Number.isFinite(ms)) continue
+    if (pipe && p !== pipe) continue
+    lead.set(cid, { ms, booked: Number.isFinite(booked) ? booked : null, calls: [] })
+  }
+  let orphanCalls = 0
+  for (const [cid, ms, conn] of (calls || [])) {
+    const l = lead.get(cid)
+    // A call to somebody who is not a lead in this window (an existing client, a
+    // supplier) has no day-0 to measure from and is counted, not guessed at.
+    if (!l) { orphanCalls++; continue }
+    if (!Number.isFinite(ms) || ms < l.ms) continue
+    l.calls.push([ms, conn ? 1 : 0])
+  }
+  const B = () => ({ leadsReached: 0, leadsCalled: 0, attempts: 0, connected: 0, stillOpen: 0, openCalled: 0, openBooked: 0, callsConverting: 0, censored: 0 })
+  const buckets = Array.from({ length: CAD_OVERFLOW + 1 }, B)
+  let leadsTotal = 0, leadsWithCall = 0, leadsBooked = 0
+  for (const l of lead.values()) {
+    leadsTotal++
+    l.calls.sort((a, b) => a[0] - b[0])
+    if (l.calls.length) leadsWithCall++
+    if (l.booked != null) leadsBooked++
+    // Group this lead's attempts by the day-since-arrival they fall in.
+    const byDay = new Map()
+    for (let i = 0; i < l.calls.length; i++) {
+      const b = cadBucket(l.calls[i][0], l.ms)
+      if (b == null) continue
+      let a = byDay.get(b); if (!a) { a = []; byDay.set(b, a) }
+      a.push(i)
+    }
+    for (let d = 0; d <= CAD_OVERFLOW; d++) {
+      const bk = buckets[d]
+      // Right-censoring. A lead who arrived yesterday has not HAD a day 5, and
+      // counting them in day 5's denominator would drag every later bucket toward
+      // zero for no reason other than the window ending. The overflow bucket needs
+      // the same guard, applied at its opening day.
+      const needMs = l.ms + (d === CAD_OVERFLOW ? CAD_OVERFLOW : d + 1) * CAD_DAY
+      if (needMs > obsEndMs) { bk.censored++; continue }
+      bk.leadsReached++
+      // Was this lead still unbooked when the day opened? A lead booked on day 1
+      // is not a day-3 opportunity and does not belong in day 3's denominator.
+      const dayStart = l.ms + d * CAD_DAY
+      const dayEnd = d === CAD_OVERFLOW ? obsEndMs : l.ms + (d + 1) * CAD_DAY
+      const open = l.booked == null || l.booked >= dayStart
+      if (open) bk.stillOpen++
+      const idxs = byDay.get(d)
+      if (!idxs || !idxs.length) continue
+      bk.leadsCalled++
+      bk.attempts += idxs.length
+      for (const i of idxs) bk.connected += l.calls[i][1]
+      if (!open) continue
+      bk.openCalled++
+      if (l.booked == null || l.booked > dayEnd) continue
+      // The booking landed inside this day. Credit the last attempt that preceded
+      // it, and only if the booking came after an attempt at all.
+      let credited = -1
+      for (const i of idxs) if (l.calls[i][0] <= l.booked) credited = i
+      if (credited < 0) continue
+      bk.openBooked++
+      bk.callsConverting++
+    }
+  }
+  const rows = buckets.map((b, d) => ({
+    day: d,
+    label: d === CAD_OVERFLOW ? `${CAD_OVERFLOW}+` : String(d),
+    ...b,
+    attemptsPerLead: b.leadsReached ? b.attempts / b.leadsReached : null,
+    attemptsPerCalledLead: b.leadsCalled ? b.attempts / b.leadsCalled : null,
+    reachedPct: b.leadsReached ? (b.leadsCalled / b.leadsReached) * 100 : null,
+    connectRate: b.attempts ? (b.connected / b.attempts) * 100 : null,
+    // The two readings the whole view exists for.
+    bookPerLead: b.openCalled ? (b.openBooked / b.openCalled) * 100 : null,
+    bookPerCall: b.attempts ? (b.callsConverting / b.attempts) * 100 : null,
+  }))
+  return {
+    rows,
+    leadsTotal,
+    leadsWithCall,
+    leadsBooked,
+    orphanCalls,
+    totalAttempts: rows.reduce((a, r) => a + r.attempts, 0),
+  }
+}
+
 const CAD_VIEWS = [
   ['lead', 'Per unbooked lead', 'Of the leads who reached this day still unbooked and got called, the share that booked. This is the drop-off curve - it says when to stop.'],
   ['call', 'Per call', 'Of the attempts made on this day, the share followed by a booking. This says what one more dial is worth.'],

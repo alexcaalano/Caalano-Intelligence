@@ -4054,3 +4054,9 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
   .cad-chart { height: 150px; gap: 3px; }
   .cad-rate { font-size: 10.5px; }
 }
+
+/* Call reporting paints each window as it lands, so the figures climb while the
+   rest arrives. This says so, rather than letting a half-loaded total read as
+   the final one. */
+.call-more { margin-left: 10px; font-size: 11px; font-weight: 700; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px; cursor: help; }

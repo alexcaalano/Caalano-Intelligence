@@ -18,6 +18,57 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.424.0 - 2026-08-20 · `PENDING` - Faster Call Reporting, and a checker for the crash that shipped
+
+**Call Reporting loads much sooner.** It fetched the range one day at a time -
+30 requests for a month, four at a time - and rendered nothing at all until the
+last one landed. Three changes:
+
+- **It paints as data arrives.** The first window now shows within about a
+  second instead of a blank spinner until everything is in. A badge says how many
+  days are still loading, so a half-loaded total is never mistaken for the final
+  one.
+- **Windows are five days, not one.** The one-day width was chosen to dodge a
+  timeout that turned out to be a missing location id, so the guess is no longer
+  load-bearing. A month is 6 requests instead of 30.
+- **Completed windows are kept for the session.** Past days cannot change, so
+  moving between Last 7 / Last 30 / a custom range reuses everything that
+  overlaps instead of re-fetching it. Windows touching today are never cached.
+
+The width is still not a guess we have to be right about: `buildUserCalls`
+already reports when it ran out of time, and a window that comes back incomplete
+is discarded (not merged, which would double-count), split into single days, and
+every window still queued is narrowed with it - so the discovery costs one round
+trip rather than one per window. That is then remembered for the session, so a
+high-volume client starts narrow next time.
+
+Modelled against realistic per-request latency: time to first data on screen
+7.7s → 2.0s, time to complete 7.7s → 4.0s, requests 30 → 6. The worst case - a
+client whose every window is too big - completes in 7.8s against the old 7.7s,
+but still paints at 1.0s rather than at the end. 132 assertions cover the
+windowing, including that windows tile a range exactly with no gap or overlap at
+every width and across month and year boundaries.
+
+**New build check: `scripts/check-undef.mjs`.** v3.423.1 shipped a crash where a
+function was referenced but never added to the bundle - the third of exactly that
+shape, after `paidOpen is not defined`. `check-toplevel` verifies nesting and
+`check-tdz` verifies declaration order; nothing verified that a name being called
+exists at all.
+
+Two earlier attempts at this were line-based and both were deleted, one drowning
+in false positives from prose inside JSX and one misattributing lines to the
+wrong function. This one is a real scope analyser: it parses the file with
+Babel's parser and resolves every reference against a proper scope chain -
+hoisting, destructuring, closures, shadowing, catch params, class bodies, and
+capitalised JSX tags as component references. Vite's `define` constants are read
+out of `vite.config.js` rather than hardcoded, so the two cannot drift apart.
+
+On the current 19,000-line file it reports zero false positives, and it catches
+all three historical bugs when they are reintroduced - each of which builds
+perfectly clean.
+
+---
+
 ## v3.423.1 - 2026-08-20 · `PENDING` - Fix: Call Reporting crashed on the cadence maths
 
 `callCadence is not defined` - the Call Reporting tab failed to render at all.

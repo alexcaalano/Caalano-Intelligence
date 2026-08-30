@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && vite build",
+    "build": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && node scripts/check-undef.mjs && vite build",
     "preview": "vite preview",
-    "check": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs"
+    "check": "node scripts/check-toplevel.mjs && node scripts/check-tdz.mjs && node scripts/check-undef.mjs"
   },
   "dependencies": {
     "@netlify/blobs": "^8.2.0",

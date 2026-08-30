@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.423.1'
+const APP_VERSION = '3.424.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10833,6 +10833,54 @@ function CallCadenceSection({ clientId, range, nonce, cadence, cohort, loading, 
   )
 }
 
+// Call reporting is fetched in windows rather than one request, because the
+// message export streams slowly and a wide range cannot finish inside a single
+// function call. It used to be ONE DAY per request - 30 requests for a month,
+// four at a time, with nothing on screen until the last one landed.
+//
+// The one-day width was a guess at a timeout that turned out to be a missing
+// location id, so the windows are wider now and the guess is no longer load-
+// bearing: buildUserCalls already reports `partial` when it runs out of time, so
+// a window that really is too big is split into its days and refetched. Wrong
+// guesses cost one extra round trip instead of thirty every time.
+const CALL_CHUNK_DAYS = 5
+// Past windows never change, so a completed one is kept for the session: moving
+// between Last 7 / Last 30 / a custom range reuses everything that overlaps
+// instead of re-fetching it. A window touching today is never cached, since more
+// calls can still be logged into it.
+const _callChunks = new Map()
+const CALL_CHUNK_MAX = 400
+// A client whose windows come back incomplete is a high-volume one, and it will
+// still be high-volume on the next load. Remembering that for the session means
+// the discovery cost is paid once rather than every time the tab is opened.
+const _callWidth = new Map()
+const callWidthFor = (clientId) => _callWidth.get(clientId) || CALL_CHUNK_DAYS
+const callWidthNarrow = (clientId) => _callWidth.set(clientId, 1)
+const callChunkKey = (clientId, from, to) => `${clientId}|${from}|${to}`
+function callChunkGet(clientId, from, to, nonce) {
+  if (nonce) return undefined                     // an explicit Refresh must re-read
+  return _callChunks.get(callChunkKey(clientId, from, to))
+}
+function callChunkSet(clientId, from, to, j) {
+  // Today's window is still being written to; anything that ends before today is
+  // finished and safe to keep.
+  if (to >= new Date().toISOString().slice(0, 10)) return
+  if (_callChunks.size >= CALL_CHUNK_MAX) { const k = _callChunks.keys().next().value; _callChunks.delete(k) }
+  _callChunks.set(callChunkKey(clientId, from, to), j)
+}
+const addDays = (d, n) => { const t = new Date(`${d}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10) }
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000)
+// [from,to] as windows of at most `width` days.
+function callWindows(from, to, width) {
+  const out = []
+  if (!from || !to || daysBetween(from, to) < 0) return out
+  for (let s = from; daysBetween(s, to) >= 0; s = addDays(s, width)) {
+    const e = daysBetween(s, to) < width ? to : addDays(s, width - 1)
+    out.push({ from: s, to: e, span: daysBetween(s, e) + 1 })
+  }
+  return out
+}
+
 function mergeCallChunks(parts) {
   const um = new Map(); const daily = []; const repDaily = new Map(); let partial = false
   // Every outbound attempt across all day-chunks, as [contactId, ms, connected].
@@ -10898,36 +10946,64 @@ function CallReportView({ clientId, range, nonce }) {
   }, [clientId, range.from, range.to, nonce])
   useEffect(() => {
     let alive = true; setD(null)
-    // Split the range into 1-day chunks - each is small enough to fully page
-    // inside one function call (the export streams slowly, so a wide window can't
-    // be fetched in a single request). Fetch them with low concurrency and merge;
-    // past days are immutable so each day's result caches on the server.
-    const days = []
-    for (let t = new Date(`${range.from}T00:00:00Z`); t <= new Date(`${range.to}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + 1)) days.push(t.toISOString().slice(0, 10))
-    if (!days.length) { setD({ error: true }); return () => { alive = false } }
-    setProg({ done: 0, total: days.length })
-    // Past days are immutable, so let the server cache them (fast repeat loads);
-    // a manual Refresh (nonce) busts. Only "today" can be up to the 10-min TTL stale.
+    const total = daysBetween(range.from, range.to) + 1
+    if (!(total > 0)) { setD({ error: true }); return () => { alive = false } }
+    setProg({ done: 0, total })
     const rq = nonce ? `&_r=${nonce}` : ''
-    const parts = []; let idx = 0, done = 0
-    const worker = async () => {
-      while (idx < days.length && alive) {
-        const day = days[idx++]
-        try {
-          const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${day}&to=${day}&callsonly=1&cadence=1${rq}`)
-          const j = r.ok ? await r.json() : null
-          if (j) parts.push(j)
-        } catch { /* skip a failed day */ }
-        done++; if (alive) setProg({ done, total: days.length })
+    const queue = callWindows(range.from, range.to, callWidthFor(clientId))
+    const parts = []
+    let covered = 0
+    // Render what has landed rather than holding a spinner until the last window
+    // returns. A month used to show nothing for the whole load; now the first
+    // window paints and the rest fills in behind it. `loading` keeps the "no calls
+    // in this period" empty state from flashing up before the data is all in.
+    const paint = (done) => {
+      if (!alive) return
+      const good = parts.filter((p) => p && p.totals)
+      if (good.length) setD({ ...mergeCallChunks(good), loading: !done })
+      else if (done) {
+        if (parts.length && parts.every((p) => p && p.ghl === false)) setD({ ghl: false })
+        else if (parts.length && parts.every((p) => p && p.connected === false)) setD({ connected: false })
+        else setD({ error: true })
       }
     }
-    Promise.all(Array.from({ length: Math.min(5, days.length) }, worker)).then(() => {
-      if (!alive) return
-      if (parts.length && parts.every((p) => p && p.ghl === false)) return setD({ ghl: false })
-      if (parts.length && parts.every((p) => p && p.connected === false)) return setD({ connected: false })
-      const good = parts.filter((p) => p && p.totals)
-      setD(good.length ? mergeCallChunks(good) : { error: true })
-    })
+    const worker = async () => {
+      while (alive) {
+        const w = queue.shift()
+        if (!w) return
+        let j = callChunkGet(clientId, w.from, w.to, nonce)
+        if (j === undefined) {
+          try {
+            const r = await dedupeFetch(`/.netlify/functions/windsor?scope=usercalls&client=${clientId}&from=${w.from}&to=${w.to}&callsonly=1&cadence=1${rq}`)
+            j = r.ok ? await r.json() : null
+            if (j && j.totals) callChunkSet(clientId, w.from, w.to, j)
+          } catch { j = null }
+        }
+        if (!alive) return
+        // The window really was too big to page inside one invocation. Its data is
+        // incomplete, so it is DISCARDED rather than merged - keeping it would
+        // double-count against the day-sized reads now queued in its place.
+        if (j && j.partial && w.span > 1) {
+          for (let k = 0; k < w.span; k++) { const day = addDays(w.from, k); queue.push({ from: day, to: day, span: 1 }) }
+          // One window too big means the rest are too. Narrow everything still
+          // waiting rather than discovering it one wasted round trip at a time,
+          // and remember it so the next load starts narrow.
+          callWidthNarrow(clientId)
+          for (let q = queue.length - 1; q >= 0; q--) {
+            const other = queue[q]
+            if (other.span <= 1) continue
+            queue.splice(q, 1)
+            for (let k = 0; k < other.span; k++) { const day = addDays(other.from, k); queue.push({ from: day, to: day, span: 1 }) }
+          }
+          continue
+        }
+        if (j) parts.push(j)
+        covered += w.span
+        setProg({ done: Math.min(covered, total), total })
+        paint(false)
+      }
+    }
+    Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker)).then(() => paint(true))
     return () => { alive = false }
   }, [clientId, range.from, range.to, nonce])
   if (!d) return <div className="card"><Spinner label={`Loading call reporting… ${prog.total ? `${prog.done}/${prog.total} days` : ''}`} /></div>
@@ -10935,6 +11011,7 @@ function CallReportView({ clientId, range, nonce }) {
   if (d.error) return <div className="card empty-deep"><div className="big">📞</div><b>Couldn't load call reporting.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{typeof d.error === 'string' ? d.error : 'Please try again shortly.'}</p></div>
   const t = d.totals || {}
   const rows = [...(d.byUser || [])].sort((a, b) => b.outbound - a.outbound)
+  if ((!rows.length || !(t.calls > 0)) && d.loading) return <div className="card"><Spinner label={`Loading call reporting… ${prog.total ? `${prog.done}/${prog.total} days` : ''}`} /></div>
   if (!rows.length || !(t.calls > 0)) return <div className="card empty-deep"><div className="big">📞</div><b>No dialer calls in this period.</b><p style={{ maxWidth: 520, margin: '8px auto 0' }}>No calls were logged in the Caalano Systems dialer for {rangeLabel(range)}. Try a wider date range.</p></div>
   const fmtMin = (m) => (m == null ? '-' : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`)
   const fmtSpeedHrs = (h) => (h == null ? '-' : h < 1 ? `${Math.round(h * 60)}m` : h < 48 ? `${h < 10 ? h.toFixed(1) : Math.round(h)}h` : `${Math.round(h / 24)}d`)
@@ -10944,7 +11021,7 @@ function CallReportView({ clientId, range, nonce }) {
   return (
     <>
       <div className="card">
-        <div className="exec-panel-h">Call activity <span className="sub">· Caalano Systems dialer · {rangeLabel(range)}{d.partial ? ' · high volume — showing the most recent calls in range' : ''}</span></div>
+        <div className="exec-panel-h">Call activity <span className="sub">· Caalano Systems dialer · {rangeLabel(range)}{d.partial ? ' · high volume — showing the most recent calls in range' : ''}</span>{d.loading ? <span className="call-more" title="Earlier days are still loading - the figures below are rising as they land">still loading {prog.done}/{prog.total} days…</span> : null}</div>
         <div className="timing-scards">
           <div className="tm-sc hero"><span className="tm-lab">Total calls</span><b>{fmtNumber(t.calls)}</b><span className="tm-sub">{fmtNumber(t.outbound)} out · {fmtNumber(t.inbound)} in</span></div>
           <div className="tm-sc"><span className="tm-lab">Time on the phone</span><b>{fmtMin(t.talkMinutes)}</b><span className="tm-sub">connected talk time</span></div>

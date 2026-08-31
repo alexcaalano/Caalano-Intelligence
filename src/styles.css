@@ -4060,3 +4060,14 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
    the final one. */
 .call-more { margin-left: 10px; font-size: 11px; font-weight: 700; color: var(--muted);
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px; cursor: help; }
+
+/* Lost Reasons scorecard. Seven tiles, so they need a tighter floor than the
+   default scorecard grid or the last row strands one tile on its own. */
+.u-lrsc .timing-scards { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+/* These tiles are hover anchors, but the anchor's dotted underline belongs on a
+   word inside a sentence, not under a card. */
+.u-lrsc .tm-sc.hp-anchor { display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid var(--border); cursor: help; }
+.u-lrsc .tm-sc.hp-anchor.hero { border-bottom-color: var(--brand); }
+/* A time built on very few deals. The figure still shows - it is not wrong, just
+   fragile - but it stops reading with the same authority as the rest. */
+.u-lrsc .tm-sc b.lr-thin { color: var(--muted); }

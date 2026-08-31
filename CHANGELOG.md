@@ -18,6 +18,43 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.425.0 - 2026-08-20 · `PENDING` - Scorecard above the Lost Reasons table
+
+Seven tiles now sit above the Lost Reasons breakdown, so the losses have
+something to be a share OF rather than arriving as a number on their own:
+
+**Total opportunities · Open · Won · Lost · Result rate · Time to won · Time to lost**
+
+Counts are the opportunities *created* in the period, whatever has happened to
+them since - the same cohort the table below breaks down, which is why the lost
+figure here matches it exactly.
+
+**Result rate** is won plus lost over the whole cohort. It measures how much of
+the period has been worked to a conclusion, not how well it went, and it is the
+number that decides how much the rest is worth: at 49% decided, the win and loss
+splits below are drawn from half the leads and the other half could still go
+either way.
+
+**Time to won and time to lost** are new, and they are the *median* days from the
+lead arriving to it being marked - not the average. A handful of deals that sat
+open for months pull an average far away from the typical case; in testing, two
+such deals in a set of ten multiplied the mean sixfold while moving the median by
+half a day. Each tile carries the middle-half spread, because a median of four
+days reads very differently at 3-5 days than at 1-40, and the hover adds the mean,
+the count, and how many deals had no usable pair of dates. Deals with a negative
+gap or one beyond a year are excluded rather than allowed to set the figure, and
+a tile built on fewer than eight deals is greyed rather than printed with the
+same authority as the rest.
+
+Comparing the two is the useful read: losses decided much faster than wins means
+disqualification is working, while losses that take *longer* than wins means
+effort is going into deals that were never going to close.
+
+19 assertions cover the median, the quartiles, the rounding and the empty cases,
+including the outlier behaviour that is the reason for using a median at all.
+
+---
+
 ## v3.424.0 - 2026-08-20 · `PENDING` - Faster Call Reporting, and a checker for the crash that shipped
 
 **Call Reporting loads much sooner.** It fetched the range one day at a time -

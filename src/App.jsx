@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.424.0'
+const APP_VERSION = '3.425.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4951,6 +4951,87 @@ function LrSignals({ signals, colorOf, onPick }) {
   )
 }
 
+// Days, at whatever precision the number deserves. Under a day, hours mean more
+// than "0.3 days"; past a fortnight the decimal is noise.
+const lrDays = (d) => {
+  if (d == null) return '-'
+  if (d < 1) { const h = Math.round(d * 24); return h <= 0 ? '<1h' : `${h}h` }
+  if (d < 14) return `${Math.round(d * 10) / 10}d`
+  return `${Math.round(d)}d`
+}
+// The scorecard above the Lost Reasons screen. Counts are for the whole period on
+// a created basis - deliberately NOT narrowed by the filters below, which are for
+// interrogating the lost deals rather than redefining the cohort.
+function LostScorecards({ cc, range, money }) {
+  const t = (cc && cc.totals) || null
+  if (!t) return null
+  const leads = t.leads || 0
+  const decided = (t.won || 0) + (t.lost || 0)
+  const tw = cc.timeToWon || null
+  const tl = cc.timeToLost || null
+  // A tile whose figure would be built on almost nothing says so rather than
+  // printing a confident number.
+  const thin = (x) => !!(x && x.n > 0 && x.n < 8)
+  const spread = (x) => (x && x.p25 != null && x.p75 != null ? `${lrDays(x.p25)}-${lrDays(x.p75)} for the middle half` : null)
+  const timeRows = (x, verb) => (!x || !x.n ? [['No dated deals', `Nothing was marked ${verb} with both a lead-in and a decision date`]] : [
+    ['Typical (median)', lrDays(x.median)],
+    ['Average', lrDays(x.mean)],
+    x.p25 != null ? ['Middle half', `${lrDays(x.p25)} - ${lrDays(x.p75)}`] : null,
+    ['Deals measured', fmtNumber(x.n)],
+    x.skipped ? ['Not measurable', `${fmtNumber(x.skipped)} had no usable pair of dates`] : null,
+    thin(x) ? ['Note', 'Under 8 deals - one slow decision moves this a lot'] : null,
+  ])
+  return (
+    <div className="card u-lrsc">
+      <div className="exec-panel-h">Opportunities <span className="sub">· {rangeLabel(range)} · counted by the period the lead arrived in, so this is the same cohort the table below breaks down</span></div>
+      <div className="timing-scards">
+        <LrPop className="tm-sc hero" sub="Every opportunity created in this period"
+          title={`${fmtNumber(leads)} opportunities`}
+          rows={[['Open', fmtNumber(t.open || 0)], ['Won', fmtNumber(t.won || 0)], ['Lost', fmtNumber(t.lost || 0)]]}>
+          <span className="tm-lab">Total opportunities</span><b>{fmtNumber(leads)}</b>
+          <span className="tm-sub">created in this period</span>
+        </LrPop>
+        <LrPop className="tm-sc" sub="Still live" title={`${fmtNumber(t.open || 0)} open`}
+          rows={[['Share of all opportunities', pctOf(t.open || 0, leads)], ['Note', 'Neither won nor lost yet, so still capable of going either way']]}>
+          <span className="tm-lab">Open</span><b>{fmtNumber(t.open || 0)}</b>
+          <span className="tm-sub">{pctOf(t.open || 0, leads)} of the cohort</span>
+        </LrPop>
+        <LrPop className="tm-sc" sub="Closed and won" title={`${fmtNumber(t.won || 0)} won`}
+          rows={[['Share of all opportunities', pctOf(t.won || 0, leads)], ['Share of decided deals', pctOf(t.won || 0, decided)]]}>
+          <span className="tm-lab">Won</span><b>{fmtNumber(t.won || 0)}</b>
+          <span className="tm-sub">{pctOf(t.won || 0, decided)} of decided</span>
+        </LrPop>
+        <LrPop className="tm-sc" sub="Closed and lost" title={`${fmtNumber(t.lost || 0)} lost`}
+          rows={[['Share of all opportunities', pctOf(t.lost || 0, leads)], ['Share of decided deals', pctOf(t.lost || 0, decided)]]}>
+          <span className="tm-lab">Lost</span><b>{fmtNumber(t.lost || 0)}</b>
+          <span className="tm-sub">{pctOf(t.lost || 0, decided)} of decided</span>
+        </LrPop>
+        <LrPop className="tm-sc" sub="Won or lost, as a share of everything created"
+          title={`${pctOf(decided, leads)} have an outcome`}
+          rows={[
+            ['Decided', `${fmtNumber(decided)} of ${fmtNumber(leads)}`],
+            ['Still open', fmtNumber(t.open || 0)],
+            ['Why it matters', 'A low rate means most of the cohort has not been worked to a conclusion, so the win and loss splits are drawn from a minority of it'],
+          ]}>
+          <span className="tm-lab">Result rate</span><b>{pctOf(decided, leads)}</b>
+          <span className="tm-sub">{fmtNumber(decided)} marked won or lost</span>
+        </LrPop>
+        <LrPop className="tm-sc" sub="Lead arrived → marked won" title={`${lrDays(tw && tw.median)} to win`}
+          rows={timeRows(tw, 'won')}>
+          <span className="tm-lab">Time to won</span><b className={thin(tw) ? 'lr-thin' : ''}>{lrDays(tw && tw.median)}</b>
+          <span className="tm-sub">{tw && tw.n ? (spread(tw) || `median of ${fmtNumber(tw.n)}`) : 'no dated wins'}</span>
+        </LrPop>
+        <LrPop className="tm-sc" sub="Lead arrived → marked lost" title={`${lrDays(tl && tl.median)} to lose`}
+          rows={timeRows(tl, 'lost')}>
+          <span className="tm-lab">Time to lost</span><b className={thin(tl) ? 'lr-thin' : ''}>{lrDays(tl && tl.median)}</b>
+          <span className="tm-sub">{tl && tl.n ? (spread(tl) || `median of ${fmtNumber(tl.n)}`) : 'no dated losses'}</span>
+        </LrPop>
+      </div>
+      <Caveat>Counts are the opportunities <b>created</b> in this period, whatever has happened to them since - the same cohort the lost-reason breakdown below works from, which is why the lost figure here matches it. Result rate is won plus lost over the whole cohort: it is a measure of how much of the period has been worked to a conclusion, not of how well it went, and a low one means the win and loss splits below are drawn from a minority of the leads. Time to won and time to lost are the <b>median</b> days from the lead arriving to it being marked, not the average - a handful of deals that sat for months pull an average away from the typical case. The middle half shows the spread, since a median of four days reads very differently at 3-5 days than at 1-40. Deals with no usable pair of dates, or a gap that is negative or beyond a year, are excluded rather than allowed to set the figure; the hover says how many. Comparing the two is the useful read: losses decided much faster than wins usually means disqualification is working, while losses that take longer than wins mean effort is being spent on deals that were never going to close.{(tw && tw.skipped) || (tl && tl.skipped) ? '' : ''}</Caveat>
+    </div>
+  )
+}
+
 function LostReasonsView({ clientId, range, nonce, currency }) {
   // Filters are applied here, not on the server, so stacking or clearing one is
   // instant and never refetches. The payload is every lost deal in the period.
@@ -5189,6 +5270,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   const peopleOf = (g) => g.rows.map((r) => byContact.get(r.contactId) || { contactId: r.contactId, name: r.name, stage: r.stage, pipeline: r.pipeline, value: r.value, channelSource: r.source, utmContent: r.creative, formAnswers: [] })
   return (
     <>
+      <LostScorecards cc={cc} range={range} money={money} />
       <div className="card">
         <div className="exec-panel-h">Lost reasons <span className="sub">· {fmtNumber(rows.length)}{rows.length !== allTot ? ` of ${fmtNumber(allTot)}` : ''} lost{totVal ? `, ${money(totVal)}` : ''} · {rangeLabel(range)}</span></div>
         {st.status === 'loading' && !cc ? <Spinner label="Loading lost deals…" />

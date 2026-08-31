@@ -4171,6 +4171,8 @@ export async function buildCcDrill(locationId, from, to, channel) {
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const nowMs = Date.now()
   const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '-'
+  const ttWon = [], ttLost = []   // days from lead-in to being marked, per deal
+  let ttWonSkip = 0, ttLostSkip = 0
   // Optional channel filter (first-touch UTM): all | paid | nonpaid | meta | google.
   // When set, the whole drill (funnel, open-by-stage, sources, revenue, lost,
   // close, and calendar bookings) reflects only opportunities on that channel.
@@ -4255,6 +4257,19 @@ export async function buildCcDrill(locationId, from, to, channel) {
     }
     const isWon = st === 'won', isLost = st === 'lost' || st === 'abandoned'
     leadCount++; if (isWon) wonCount++; if (isLost) lostCount++
+    // How long a decision took, from the lead arriving to being marked. Kept as
+    // the full list rather than a running mean so the MEDIAN can be reported: a
+    // couple of deals that sat open for a year drag an average badly, and the
+    // typical case is what anyone reading this wants. A negative gap (the status
+    // stamp predating creation) or one beyond a year is data noise, not a slow
+    // decision, so it is excluded rather than allowed to set the figure.
+    if (isWon || isLost) {
+      const cM = Date.parse(o.createdAt), sM = Date.parse(o.lastStatusChangeAt || '')
+      const days = (isFinite(cM) && isFinite(sM)) ? (sM - cM) / DAY : null
+      if (days != null && days >= 0 && days <= 365) (isWon ? ttWon : ttLost).push(days)
+      else if (isWon) ttWonSkip++
+      else ttLostSkip++
+    }
     if (o.pipelineId) {
       let pa = pipeAgg.get(o.pipelineId)
       if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, chan: { meta: { leads: 0, won: 0, revenue: 0 }, google: { leads: 0, won: 0, revenue: 0 }, other: { leads: 0, won: 0, revenue: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
@@ -4341,9 +4356,26 @@ export async function buildCcDrill(locationId, from, to, channel) {
     return { id: p.id, name: p.name, stages }
   }).filter((p) => p.stages.some((s) => s.count > 0))
   const pipeContribution = [...pipeAgg.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue), openValue: Math.round(p.openValue), chan: { meta: { ...p.chan.meta, revenue: Math.round(p.chan.meta.revenue) }, google: { ...p.chan.google, revenue: Math.round(p.chan.google.revenue) }, other: { ...p.chan.other, revenue: Math.round(p.chan.other.revenue) } } })).sort((a, b) => b.leads - a.leads)
+  // The MEDIAN, not the mean: a handful of deals that sat open for months drag an
+  // average away from the typical case, which is what anyone reading a tile wants.
+  // The quartiles come with it, because a median of 4 days means something quite
+  // different when the spread is 3-5 than when it is 1-40.
+  const sortNum = (a) => [...a].sort((x, y) => x - y)
+  const pct = (a, q) => (a.length ? sortNum(a)[Math.min(a.length - 1, Math.floor(a.length * q))] : null)
+  const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10)
+  const medOf = (a) => { if (!a.length) return null; const q = sortNum(a); const m = Math.floor(q.length / 2); return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2 }
+  const timeTo = (arr, skipped) => ({
+    median: r1(medOf(arr)), mean: arr.length ? r1(arr.reduce((a, b) => a + b, 0) / arr.length) : null,
+    n: arr.length, skipped,
+    p25: arr.length >= 8 ? r1(pct(arr, 0.25)) : null,
+    p75: arr.length >= 8 ? r1(pct(arr, 0.75)) : null,
+  })
   return {
     connected: true, tz, channel: chan || 'all',
     totals: { leads: leadCount, won: wonCount, lost: lostCount, open: openCount },
+    // Days from a lead arriving to the moment it was marked won or lost.
+    timeToWon: timeTo(ttWon, ttWonSkip),
+    timeToLost: timeTo(ttLost, ttLostSkip),
     oppsBySource: [...bySource.values()].map((s) => ({ ...s, value: Math.round(s.value) })).sort((a, b) => b.count - a.count),
     revenue: { total: Math.round(revenueTotal), count: wonCount, deals: wonDeals },
     open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },

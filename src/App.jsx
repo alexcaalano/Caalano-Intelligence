@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.440.0'
+const APP_VERSION = '3.441.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6349,7 +6349,15 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         <div className="exec-panel-h">Channel split <span className="sub">· spend → key events → wins &amp; efficiency, per paid channel</span></div>
         {(() => {
           const ch = h.channels || {}
+          // A channel whose ad read failed has NO spend figure, which is a
+          // different thing from having spent nothing - and the difference matters,
+          // because $0.00 next to 140 leads reads as free leads rather than as a
+          // missing number. Never render a failed read as a measured zero.
+          const ok = h.adsOk || {}
+          const mDead = ok.meta === false, gDead = ok.google === false
+          const dead = (k) => (k === 'meta' ? mDead : gDead)
           const hasCh = (ch.metaSpend || 0) > 0 || (ch.googleSpend || 0) > 0
+          if (!hasCh && (mDead || gDead)) return <div className="cap">Couldn’t load {mDead && gDead ? 'Meta or Google' : mDead ? 'Meta' : 'Google'} spend for this period - the ad read timed out. The CRM figures on this page are unaffected; try a shorter range or refresh.</div>
           if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
           const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
           const renderTable = (evLabels, rows) => (
@@ -6358,13 +6366,13 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               <tbody>{rows.map((r) => (
                 <tr key={r.key}>
                   <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
-                  <td>{money(r.spend)}</td>
+                  <td>{r.dead ? <span className="lrv-z" title="This channel's ad read didn't return, so there is no spend figure for the period - not a measured zero.">n/a</span> : money(r.spend)}</td>
                   <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
                   {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
                   <td>{fmtNumber(r.won)}</td>
                   <td>{money(r.revenue)}</td>
                   <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
-                  <td>{r.cac != null ? money(Math.round(r.cac)) : '-'}</td>
+                  <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
                   <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
                 </tr>
               ))}</tbody>
@@ -6391,7 +6399,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
                   const cch = (pc && pc.chan && pc.chan[key]) || { leads: 0, won: 0, revenue: 0 }
                   const spend = leadTot ? adSpendTot * ((cch.leads || 0) / leadTot) : 0
                   const won = cch.won || 0, revenue = cch.revenue || 0
-                  return { key, label, spend, leads: cch.leads || 0, ke, won, revenue, closeRate: null, cac: won ? spend / won : null, avgDeal: won ? revenue / won : null }
+                  return { key, label, spend, dead: dead(key), leads: cch.leads || 0, ke, won, revenue, closeRate: null, cac: won ? spend / won : null, avgDeal: won ? revenue / won : null }
                 }
                 const rows = [
                   mk('meta', 'Meta', pk.meta, ch.metaSpend || 0, totMeta),
@@ -6411,7 +6419,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           const rows = [
             { key: 'meta', label: 'Meta', spend: ch.metaSpend || 0, adLeads: ch.metaLeads || 0, ke: cke ? cke.meta : [] },
             { key: 'google', label: 'Google', spend: ch.googleSpend || 0, adLeads: ch.googleConv || 0, ke: cke ? cke.google : [] },
-          ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, leads: c.leads || 0, won, revenue, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
+          ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, dead: dead(r.key), leads: c.leads || 0, won, revenue, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
           return renderTable(evLabels, rows)
         })()}
       </div>

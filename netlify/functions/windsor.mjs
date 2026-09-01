@@ -2036,15 +2036,22 @@ async function buildBlend(c, from, to, preset, key) {
   // a failed ad read yields no rows AND sets a flag, so the paid figures can say
   // "couldn't load" instead of quietly reading as zero spend, which is the worse
   // outcome of the two: a wrong number is more dangerous than a missing one.
+  //
+  // Every ad read is scoped to THIS CLIENT'S account at the API (`accounts`), not
+  // pulled agency-wide and filtered here. The filter stays as a backstop, but it
+  // was doing the whole job, and an unscoped Meta pull spans every ad account on
+  // the agency key: measured at over 60 seconds against a 7.5s budget, so it
+  // timed out on every single request and Meta spend read as $0.00 while Google -
+  // a far smaller pull that happened to fit - came through fine.
   let metaOk = true, googleOk = true
   const [fb, gg, oppsRaw, pipes, userRows, pFb, pGg, pOppsRaw] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key).then(filt(c.meta)).catch(() => { metaOk = false; return [] }) : Promise.resolve([]),
-    c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key).then(filt(c.google)).catch(() => { googleOk = false; return [] }) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key, { accounts: c.meta }).then(filt(c.meta)).catch(() => { metaOk = false; return [] }) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key, { accounts: c.google }).then(filt(c.google)).catch(() => { googleOk = false; return [] }) : Promise.resolve([]),
     c.ghl ? ghlOpportunityRows(c.ghl, from, to).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlPipelineRows(c.ghl).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlUserRows(c.ghl).catch(() => []) : Promise.resolve([]),
-    pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
-    pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key, { accounts: c.meta }).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    pr.from && c.google ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key, { accounts: c.google }).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
     pr.from && c.ghl ? ghlOpportunityRows(c.ghl, pr.from, pr.to).catch(() => []) : Promise.resolve([]),
   ])
   // Opportunities now come straight from the GoHighLevel API, already filtered to
@@ -2265,6 +2272,12 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
 
   return {
     score: { composite, weights: w, marketing: marketing.score, sales: sales.score, ops: ops.score, revenue: revenue.score, pillars },
+    // Whether each ad read actually returned. buildBlend has always recorded this
+    // - "an empty result must never be presented as a measured zero" - but it
+    // stopped here, so a timed-out Meta pull reached the Channel split as a
+    // confident $0.00 rather than as a gap. Passed through so the UI can say which
+    // one it is.
+    adsOk: { meta: blend.metaOk !== false, google: blend.googleOk !== false },
     kpis, channels, pipelines, forecast, has,
   }
 }
@@ -3961,8 +3974,8 @@ export default async (req) => {
       const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, id))
       const [perf, fb, gg, wonClosed] = await Promise.all([
         buildUserPerformanceCombos(cc.ghl, from, to, {}),
-        cc.meta ? windsorFetch('facebook', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
-        cc.google ? windsorFetch('google_ads', ['account_id', 'spend'], from, to, preset, key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
+        cc.meta ? windsorFetch('facebook', ['account_id', 'spend'], from, to, preset, key, { accounts: cc.meta }).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+        cc.google ? windsorFetch('google_ads', ['account_id', 'spend'], from, to, preset, key, { accounts: cc.google }).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
         (from && to) ? wonInPeriod(cc.ghl, from, to).catch(() => null) : Promise.resolve(null),
       ])
       const metaSpend = Math.round(fb.reduce((s, r) => s + num(r.spend), 0))

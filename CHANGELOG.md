@@ -18,6 +18,31 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.441.0 - 2026-08-20 · `PENDING` - Fix Meta spend reading $0.00 on the Overview
+
+The Channel split, the paid scorecards and every cost-per figure derived from
+them showed **$0.00 of Meta spend** for clients who were plainly spending. Google
+was fine, which is what made it look like a Meta-specific data problem.
+
+It was a timeout. The Overview's blend pulled Meta agency-wide - every ad account
+on the Windsor key - and filtered down to the client in JavaScript afterwards.
+That unscoped pull was measured at **over 60 seconds** against the 7.5s budget the
+10s function limit allows, so it failed on every request. Google's equivalent pull
+is small enough to fit, so it came through and Meta did not. Both are now scoped
+to the client's own account at the API, which is what the filter was doing anyway;
+the filter stays as a backstop. The same fix is applied to the Users tab's spend.
+
+Second, and the reason it was silent: `buildBlend` has always recorded whether
+each ad read returned - its own comment says an empty result "must never be
+presented as a measured zero" - but the flag stopped there and never reached the
+UI. It does now. A channel whose read failed shows **n/a** and a note saying so,
+with its CAC blanked, instead of a confident $0.00 sitting next to 140 leads,
+which reads as free leads rather than as a missing number.
+
+Other per-client ad reads in the same file are still agency-wide. They have not
+been touched here - the Meta and Google tabs work today - but they carry the same
+risk and are worth the same sweep.
+
 ## v3.440.0 - 2026-08-20 · `81cdf33` - Paged tables on the Location tab
 
 Every long list on the Location tab now shows ten at a time with page controls

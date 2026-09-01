@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.443.0 - 2026-08-20 · `PENDING` - Finish the scoping sweep, and fix what it broke
+## v3.443.0 - 2026-08-20 · `5e63549` - Finish the scoping sweep, and fix what it broke
 
 Auditing the rest of the file for the same pull-everything-then-filter pattern
 turned up more of it, plus a regression v3.442.0 introduced.

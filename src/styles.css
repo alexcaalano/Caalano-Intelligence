@@ -4254,3 +4254,33 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
   padding: 1px 7px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); }
 .loc-ch-meta { color: #4f7cff; border-color: rgba(79,124,255,.4); background: rgba(79,124,255,.1); }
 .loc-ch-google { color: #12b886; border-color: rgba(18,184,134,.4); background: rgba(18,184,134,.1); }
+
+/* --- Pager ---------------------------------------------------------------- */
+/* Sits under a table rather than over it: the count reads left, the controls
+   right, and on a narrow screen the two stack instead of the page numbers
+   wrapping mid-strip. */
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.pager-n { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
+.pager-btns { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.pager-btns button {
+  min-width: 28px; height: 28px; padding: 0 7px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer;
+  /* Even digits, so "11" is not wider than "88" and the strip stops twitching as
+     you page. The strip is right-aligned for the same reason: what width it does
+     gain goes leftward, leaving the two arrows - the buttons anyone clicks twice
+     in a row - exactly where they were. */
+  font-variant-numeric: tabular-nums;
+}
+.pager-btns button:hover:not(:disabled) { color: var(--text); border-color: var(--faint); }
+.pager-btns button.on { background: var(--accent, #6d5efc); border-color: var(--accent, #6d5efc); color: #fff; }
+/* Disabled, not hidden: the arrows keep their place so the strip does not shift
+   sideways as you move between the first page and the rest. */
+.pager-btns button:disabled { opacity: .38; cursor: default; }
+.pager-gap { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 28px; color: var(--faint); font-size: 12px; }
+/* Narrow: the controls drop to their own line. Sharing a line with the count
+   would let "191-200 of 383 places" shove the whole strip sideways every time
+   the page changed - which is the one thing a pager must not do. */
+@media (max-width: 560px) {
+  .pager { justify-content: flex-start; gap: 6px; }
+  .pager-btns { margin-left: 0; flex: 0 0 100%; }
+}

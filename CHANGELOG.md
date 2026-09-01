@@ -18,6 +18,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.440.0 - 2026-08-20 · `PENDING` - Paged tables on the Location tab
+
+Every long list on the Location tab now shows ten at a time with page controls
+underneath, instead of running to hundreds of rows or stopping at a hard cap.
+
+- **Where the leads are** (districts, councils, states, remoteness) and **My
+  zones** - previously every row, which for a national client was a table you
+  scrolled past rather than read.
+- **Key events by location** - was capped at the top 20 with no way to see the
+  rest. The cap is gone; the bars stay scaled to the top place across the whole
+  ranking, so page four does not look as busy as page one.
+- **Every location** - was capped at 120 with a "+263 more" line you could not
+  open. Now all of it is reachable.
+- The **lead drill** that opens from a row or a map pin, which for a whole
+  council could hold hundreds of leads.
+
+Sorting still sorts the full list and then pages it, not the other way round, and
+changing the sort, the filter or the grouping returns you to page one - staying
+on page four of a brand new order is not what "sort by win rate" means. Page
+numbers show the first, the last and a window around where you are; the strip is
+anchored so the arrows stay under the cursor as you page through, and drops to
+its own line on a narrow screen.
+
 ## v3.439.0 - 2026-08-20 · `d17706f` - Location insights show for every client
 
 The Location tab's insights and area breakdown no longer wait on a Catchment

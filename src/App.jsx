@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.439.0'
+const APP_VERSION = '3.440.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6684,6 +6684,61 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
   return state
 }
 
+// --- Paging ------------------------------------------------------------------
+// A shared pager for the long lists. Ten rows is about what can be read without
+// scrolling past the thing you opened the table for; the rest is a page away
+// rather than a scroll away, and - unlike the hard "+380 more" caps this
+// replaces - actually reachable.
+//
+// The current page is stored against a SIGNATURE of what produced the rows: the
+// sort column, the filters, the grouping. Re-sorting and staying on page four
+// shows rows 31-40 of a brand new order, which is not what anyone means by "sort
+// by win rate", so any change to that signature returns to page one. The row
+// count alone will not do as a signature - sorting changes the order without
+// changing the count.
+const PAGE_SIZE = 10
+function usePager(total, resetKey, size = PAGE_SIZE) {
+  const [st, setSt] = useState({ key: resetKey, page: 1 })
+  const n = total || 0
+  const pages = Math.max(1, Math.ceil(n / size))
+  // Clamped on read rather than corrected in an effect: rows can vanish under a
+  // filter while you sit on the last page, and an effect would let one render
+  // through with an empty table before it caught up.
+  const page = Math.min(st.key === resetKey ? st.page : 1, pages)
+  const from = (page - 1) * size
+  return {
+    page, pages, size, total: n, from, to: Math.min(n, page * size),
+    setPage: (p) => setSt({ key: resetKey, page: Math.max(1, Math.min(pages, p)) }),
+    slice: (rows) => rows.slice(from, from + size),
+  }
+}
+// First, last, and a window around where you are - not a strip of forty buttons,
+// of which only those are ever clicked.
+function pageWindow(page, pages) {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
+  const want = new Set([1, pages, page - 1, page, page + 1])
+  if (page <= 4) for (const n of [2, 3, 4, 5]) want.add(n)
+  if (page >= pages - 3) for (const n of [pages - 1, pages - 2, pages - 3, pages - 4]) want.add(n)
+  const list = [...want].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b)
+  const out = []
+  list.forEach((n, i) => { if (i && n - list[i - 1] > 1) out.push(`gap${i}`); out.push(n) })
+  return out
+}
+function Pager({ pg, unit = 'rows' }) {
+  if (!pg || pg.pages <= 1) return null
+  return (
+    <div className="pager">
+      <span className="pager-n">{fmtNumber(pg.from + 1)}-{fmtNumber(pg.to)} of {fmtNumber(pg.total)} {unit}</span>
+      <div className="pager-btns">
+        <button type="button" disabled={pg.page === 1} onClick={() => pg.setPage(pg.page - 1)} title="Previous page">&lsaquo;</button>
+        {pageWindow(pg.page, pg.pages).map((n) => (typeof n === 'string'
+          ? <span className="pager-gap" key={n}>&hellip;</span>
+          : <button type="button" key={n} className={n === pg.page ? 'on' : ''} onClick={() => pg.setPage(n)} title={`Page ${n} of ${pg.pages}`}>{fmtNumber(n)}</button>))}
+        <button type="button" disabled={pg.page === pg.pages} onClick={() => pg.setPage(pg.page + 1)} title="Next page">&rsaquo;</button>
+      </div>
+    </div>
+  )
+}
 function Spinner({ label }) {
   return <div className="spin-wrap"><span className="spin" />{label && <span className="spin-lbl">{label}</span>}</div>
 }
@@ -9611,6 +9666,27 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
   // back rather than stranding on a tab that no longer exists.
   useEffect(() => { if (groupBy === 'zones' && !(zones && zones.rows.length)) setGroupBy('district') }, [groupBy, zones])
 
+  // Sorted here rather than inside the JSX, because a page has to be cut from the
+  // FULL ordering - sort downstream of the slice and "sort by win rate" would
+  // reorder ten rows instead of the table.
+  const areaVal = (r, k) => {
+    if (k === 'name') return r.name
+    if (k === 'share') return byArea && byArea.totalLeads ? r.leads / byArea.totalLeads : 0
+    if (k.startsWith('ker')) { const i = +k.slice(3); return r.leads ? keCount(r.people, kEvents[i]) / r.leads : null }
+    if (k.startsWith('ke')) { const i = +k.slice(2); return keCount(r.people, kEvents[i]) }
+    return r[k]
+  }
+  const zoneVal = (r, k) => {
+    if (k === 'name') return r.name
+    if (k.startsWith('ker')) { const i = +k.slice(3); return r.leads ? keCount(r.people, kEvents[i]) / r.leads : null }
+    if (k.startsWith('ke')) { const i = +k.slice(2); return keCount(r.people, kEvents[i]) }
+    return r[k]
+  }
+  const areaSorted = useMemo(() => (byArea ? sortRows(byArea.rows, areaVal) : []), [byArea, sort, kEvents, kev])
+  const zoneSorted = useMemo(() => (zones ? sortRows(zones.rows, zoneVal) : []), [zones, sort, kEvents, kev])
+  const areaPg = usePager(areaSorted.length, `${groupBy}|${sort.key}|${sort.dir}|${onlyMine}|${raCut}|${chanCut}|${areaSorted.length}`)
+  const zonePg = usePager(zoneSorted.length, `${sort.key}|${sort.dir}|${chanCut}|${zoneSorted.length}`)
+
   // (Re)draw markers whenever the points or filter change; fit to bounds.
   const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
   useEffect(() => {
@@ -9739,13 +9815,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                         {kEvents.length ? <tr className="lm-subhead">{kEvents.map((k, i) => keSubHeads(i))}</tr> : null}
                       </thead>
                       <tbody>
-                        {sortRows(byArea.rows, (r, k) => {
-                          if (k === 'name') return r.name
-                          if (k === 'share') return byArea.totalLeads ? r.leads / byArea.totalLeads : 0
-                          if (k.startsWith('ker')) { const i = +k.slice(3); const kk = kEvents[i]; return r.leads ? keCount(r.people, kk) / r.leads : null }
-                          if (k.startsWith('ke')) { const i = +k.slice(2); return keCount(r.people, kEvents[i]) }
-                          return r[k]
-                        }).map((r) => (
+                        {areaPg.slice(areaSorted).map((r) => (
                           <tr key={r.name} className={`${r.mine ? 'lm-mine' : ''}${r.people.length ? ' lm-click' : ''}`}
                             style={r.people.length ? { cursor: 'pointer' } : undefined}
                             title={r.people.length ? `Open the ${fmtNumber(r.people.length)} leads behind this row` : 'No lead detail loaded for this row'}
@@ -9771,6 +9841,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                         ) : null}
                       </tbody>
                     </table></div>
+                    <Pager pg={areaPg} unit={groupBy === 'district' ? 'districts' : groupBy === 'council' ? 'councils' : groupBy === 'state' ? 'states' : 'bands'} />
                     <Caveat>{kEvents.length ? `Key event columns count the leads that reached each of this client\u2019s configured key events. They are counted from the lead records behind each row, which are capped per place, so on a very busy postcode they can read lower than the lead count beside them. ` : ''}{groupBy === 'remoteness' ? 'These are the ABS Remoteness Areas - the official measure of how far a place sits from services, not a guess from population. Metro is "major cities", regional is "inner regional", rural is "outer regional" (the country-town and farmland band), and remote folds remote and very remote together. The exact ABS class is on each row\u2019s hover. ' : ''}{raCut !== 'all' ? `Cut to ${raCut.toLowerCase()} only: ${fmtNumber(byArea.cutOutLeads)} leads from elsewhere are excluded from every figure here. ` : ''}Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : groupBy === 'council' ? 'council' : groupBy === 'state' ? 'state' : 'remoteness band'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
                   </>
             ) : (
@@ -9788,12 +9859,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                 {kEvents.length ? <tr className="lm-subhead">{kEvents.map((k, i) => keSubHeads(i))}</tr> : null}
               </thead>
               <tbody>
-                {sortRows(zones.rows, (r, k) => {
-                  if (k === 'name') return r.name
-                  if (k.startsWith('ker')) { const i = +k.slice(3); return r.leads ? keCount(r.people, kEvents[i]) / r.leads : null }
-                  if (k.startsWith('ke')) { const i = +k.slice(2); return keCount(r.people, kEvents[i]) }
-                  return r[k]
-                }).map((r) => (
+                {zonePg.slice(zoneSorted).map((r) => (
                   <tr key={r.id} className={r.people && r.people.length ? 'lm-click' : ''}
                     style={r.people && r.people.length ? { cursor: 'pointer' } : undefined}
                     title={r.people && r.people.length ? `Open the ${fmtNumber(r.people.length)} leads in this zone` : 'No lead detail loaded for this zone'}
@@ -9818,6 +9884,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                 ) : null}
               </tbody>
             </table></div>
+            <Pager pg={zonePg} unit="zones" />
             {zones.overlap ? <p className="cap geo-warn" style={{ margin: '7px 0 0' }}>Zones overlap, so the totals above add to more than your lead count - a lead in two zones is counted in both.</p> : null}
             </>
             )}
@@ -9880,6 +9947,7 @@ function LocationLeadsModal({ loc, clientId, currency, onClose }) {
     })
     return out
   }, [people, q, sort])
+  const pg = usePager(shown.length, `${q}|${sort.key}|${sort.dir}|${people.length}`)
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal loc-modal" onClick={(e) => e.stopPropagation()}>
@@ -9900,8 +9968,9 @@ function LocationLeadsModal({ loc, clientId, currency, onClose }) {
                       </th>
                     ))}
                 </tr></thead>
-                <tbody>{shown.map((p, i) => <LocationLeadRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</tbody>
+                <tbody>{pg.slice(shown).map((p, i) => <LocationLeadRow key={p.contactId || `${pg.from}-${i}`} p={p} clientId={clientId} money={money} />)}</tbody>
               </table></div>}
+            <Pager pg={pg} unit="leads" />
           </> : <div className="cap">No lead detail for this location yet{loc.leads ? ' - press Refresh to load the latest' : ''}.</div>}
         </div>
       </div>
@@ -9991,6 +10060,29 @@ function LocationView({ clientId, range, nonce, currency }) {
     if (!proj.length) return []
     return mergeLocations(groupAnswers(proj), db)
   }, [st.data, db, pipe])
+  // Hoisted out of the JSX below: a pager is a hook, and a hook cannot live
+  // inside a block that only runs when there is something to render.
+  const rank = useMemo(() => {
+    const ke = formKeyEvents(clientId, pipe, pipes)
+    const events = ke.events || []
+    const opts = [
+      { key: 'leads', label: 'Leads' },
+      ...events.map((e, i) => ({ key: 'ke:' + i, label: (e.kind === 'calendar' ? '\uD83D\uDCC5 ' : '') + e.label })),
+      { key: 'booked', label: 'Booked' }, { key: 'won', label: 'Won' }, { key: 'lost', label: 'Lost' },
+    ]
+    const valOf = (l) => {
+      if (locMetric === 'leads') return l.leads || 0
+      if (locMetric === 'booked') return l.booked || 0
+      if (locMetric === 'won') return l.won || 0
+      if (locMetric === 'lost') return l.lost || 0
+      const i = +locMetric.slice(3); const k = events[i]; return k ? (l.people || []).reduce((n, p) => n + (ke.reached(p, k) ? 1 : 0), 0) : 0
+    }
+    // No top-20 cut any more: the tail is a page away instead of unreachable.
+    const rows = locs.map((l) => ({ l, v: valOf(l) })).filter((r) => r.v > 0).sort((a, b) => b.v - a.v)
+    return { opts, cur: opts.find((o) => o.key === locMetric) || opts[0], rows, max: Math.max(1, ...rows.map((r) => r.v)) }
+  }, [locs, locMetric, clientId, pipe, pipes])
+  const rankPg = usePager(rank.rows.length, `${locMetric}|${pipe}|${rank.rows.length}`)
+  const allPg = usePager(locs.length, `${pipe}|${locs.length}`)
   if (st.status === 'loading') return <div className="card"><Spinner label="Loading lead locations…" /></div>
   const d = st.data
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load location data.</b></div>
@@ -10022,49 +10114,33 @@ function LocationView({ clientId, range, nonce, currency }) {
       {/* Which locations fire the most of a chosen outcome / key event. The pipeline
           filter above scopes both the map and this ranking; the metric dropdown adds
           every configured key event on top of Leads / Booked / Won / Lost. */}
-      {(() => {
-        const ke = formKeyEvents(clientId, pipe, pipes)
-        const events = ke.events || []
-        const opts = [
-          { key: 'leads', label: 'Leads' },
-          ...events.map((e, i) => ({ key: 'ke:' + i, label: (e.kind === 'calendar' ? '📅 ' : '') + e.label })),
-          { key: 'booked', label: 'Booked' }, { key: 'won', label: 'Won' }, { key: 'lost', label: 'Lost' },
-        ]
-        const cur = opts.find((o) => o.key === locMetric) || opts[0]
-        const valOf = (l) => {
-          if (locMetric === 'leads') return l.leads || 0
-          if (locMetric === 'booked') return l.booked || 0
-          if (locMetric === 'won') return l.won || 0
-          if (locMetric === 'lost') return l.lost || 0
-          const i = +locMetric.slice(3); const k = events[i]; return k ? (l.people || []).reduce((n, p) => n + (ke.reached(p, k) ? 1 : 0), 0) : 0
-        }
-        const ranked = locs.map((l) => ({ l, v: valOf(l) })).filter((r) => r.v > 0).sort((a, b) => b.v - a.v).slice(0, 20)
-        const rmax = Math.max(1, ...ranked.map((r) => r.v))
-        const isKe = locMetric.startsWith('ke:')
-        return (
-          <div className="card" style={{ marginTop: 14 }}>
-            <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-              <span>Key events by location <span className="sub">· which suburbs / postcodes fire the most <b>{cur.label}</b>{pipe !== 'all' ? ' · this pipeline' : (pipes.length > 1 ? ' · all pipelines (filter above)' : '')} · click a place for its leads</span></span>
-              <select className="kef-pipe-sel" value={locMetric} onChange={(e) => setLocMetric(e.target.value)} title="Rank locations by this outcome or key event">
-                {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
-            </div>
-            {ranked.length
-              ? <div className="loc-rank">{ranked.map(({ l, v }) => (
-                <button className="loc-rank-row" key={l.value} onClick={() => setLocDrill(l)} title={`Open the ${l.value} leads`}>
-                  <span className="loc-rank-name">{l.value}</span>
-                  <span className="loc-rank-track"><span className="loc-rank-fill" style={{ width: `${Math.max(3, (v / rmax) * 100)}%` }} /></span>
-                  <span className="loc-rank-v">{fmtNumber(v)}<small> of {fmtNumber(l.leads)}</small></span>
-                </button>
-              ))}</div>
-              : <div className="cap">No {cur.label.toLowerCase()} recorded across these locations.</div>}
-            {isKe ? <Caveat style={{ marginTop: 8 }}>Key-event counts are over the leads we captured per location (people are sampled per location server-side), so treat them as directional where a suburb has a very large lead count.</Caveat> : null}
-          </div>
-        )
-      })()}
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+          <span>Key events by location <span className="sub">· which suburbs / postcodes fire the most <b>{rank.cur.label}</b>{pipe !== 'all' ? ' · this pipeline' : (pipes.length > 1 ? ' · all pipelines (filter above)' : '')} · click a place for its leads</span></span>
+          <select className="kef-pipe-sel" value={locMetric} onChange={(e) => setLocMetric(e.target.value)} title="Rank locations by this outcome or key event">
+            {rank.opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+        </div>
+        {rank.rows.length
+          ? <>
+            {/* The bars stay scaled to the top place across the WHOLE ranking, not
+                to the biggest on this page - rescaling per page would make page
+                four look as busy as page one. */}
+            <div className="loc-rank">{rankPg.slice(rank.rows).map(({ l, v }) => (
+              <button className="loc-rank-row" key={l.value} onClick={() => setLocDrill(l)} title={`Open the ${l.value} leads`}>
+                <span className="loc-rank-name">{l.value}</span>
+                <span className="loc-rank-track"><span className="loc-rank-fill" style={{ width: `${Math.max(3, (v / rank.max) * 100)}%` }} /></span>
+                <span className="loc-rank-v">{fmtNumber(v)}<small> of {fmtNumber(l.leads)}</small></span>
+              </button>
+            ))}</div>
+            <Pager pg={rankPg} unit="places" />
+          </>
+          : <div className="cap">No {rank.cur.label.toLowerCase()} recorded across these locations.</div>}
+        {locMetric.startsWith('ke:') ? <Caveat style={{ marginTop: 8 }}>Key-event counts are over the leads we captured per location (people are sampled per location server-side), so treat them as directional where a suburb has a very large lead count.</Caveat> : null}
+      </div>
       <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>Every location <span className="sub">· ranked by leads</span></div>
       <div className="fm-loc-list" style={{ marginTop: 8 }}>
-        {locs.slice(0, 120).map((l) => (
+        {allPg.slice(locs).map((l) => (
           <div className="fm-loc" key={l.value} title={l.merged ? `Combines: ${l.members.map((m) => `${m.value} (${m.leads})`).join(', ')}` : `${l.leads} leads · ${l.booked || 0} booked · ${l.won || 0} won · ${l.lost || 0} lost`}>
             <span className="fm-loc-nm">{l.value}{l.merged ? ` ⓘ${l.members.length}` : ''}</span>
             <span className="fm-loc-bar"><span style={{ width: `${(l.leads / max) * 100}%` }} /></span>
@@ -10072,7 +10148,7 @@ function LocationView({ clientId, range, nonce, currency }) {
           </div>
         ))}
       </div>
-      {locs.length > 120 && <div className="cap">+{locs.length - 120} more</div>}
+      <Pager pg={allPg} unit="places" />
       {locDrill && <LocationLeadsModal loc={locDrill} clientId={clientId} currency={currency} onClose={() => setLocDrill(null)} />}
     </>
   )

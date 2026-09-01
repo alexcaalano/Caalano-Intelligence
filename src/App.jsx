@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.430.0'
+const APP_VERSION = '3.431.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9039,6 +9039,14 @@ function mergeLocations(locs, db) {
 // red = lost. A location's marker takes its furthest milestone reached (won >
 // booked > lost > open lead).
 const LM_BLUE = '#3b82f6', LM_RED = '#f0435b', LM_AMBER = '#f5a524', LM_GREEN = '#17b26a'
+// Service-area shading. Not a categorical hue - the four outcome colours above
+// plus the violet business pin already fill the usable hue space, so a zone in a
+// sixth hue would be one more thing to tell apart from the dot sitting on it.
+// This slate sits further from every outcome colour than they sit from each other
+// (worst case ΔE 10.2 against Lost under protanopia, 21-38 everywhere else), and
+// reads as ground rather than as data.
+const LM_ZONE = { light: '#4a5568', dark: '#a9b5c3' }
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
 const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : p.lost ? 'lost' : 'lead')
 const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_BLUE : o === 'lost' ? LM_RED : LM_AMBER)
 // Interactive Leaflet map (OpenStreetMap tiles) - real base map with suburb
@@ -9086,6 +9094,8 @@ function zoneRings(shapes, places, sub2pc) {
 }
 
 function LeadMap({ locs, tall, clientId, currency }) {
+  // Dark mode needs its own step of the zone slate, not a dimmed light one.
+  const mode = useThemeMode()
   const [db, setDb] = useState(undefined)
   const [filter, setFilter] = useState('all') // all | lead | booked | won
   const [ready, setReady] = useState(false)
@@ -9202,7 +9212,13 @@ function LeadMap({ locs, tall, clientId, currency }) {
     if (!areasOn || !poa) return []
     return (geo.areas || []).filter((a) => (a.places || []).length).map((a, i) => {
       const { rings, missing } = zoneRings(poa, a.places, null)
-      return { id: a.id, name: a.name || `Zone ${i + 1}`, color: LR_HUES.light[i % LR_HUES.light.length], rings, missing, places: (a.places || []).length }
+      // The zone's own centre, for the label that names it on the map.
+      let n = 0, la = 0, ln = 0
+      for (const r of rings) for (const c of r) { la += c[0]; ln += c[1]; n++ }
+      return {
+        id: a.id, name: a.name || `Zone ${i + 1}`, rings, missing,
+        places: (a.places || []).length, at: n ? [la / n, ln / n] : null,
+      }
     })
   }, [areasOn, poa, geo.areas])
   const zoneMissing = zoneShapes.reduce((n, z) => n + z.missing, 0)
@@ -9244,10 +9260,27 @@ function LeadMap({ locs, tall, clientId, currency }) {
     // are the data and the shading is the context, and a dot hidden under a disc
     // would invert that.
     if (shade) {
+      // ONE colour for every zone, deliberately. Four outcome colours and the
+      // business pin already occupy blue, red, amber, green and violet, and a
+      // sixth hue in that space is a colour someone has to disambiguate against a
+      // dot sitting on top of it. Zones are context, not another category: they
+      // get a slate that is further from every outcome colour than those colours
+      // are from each other, and their identity comes from a label on the map
+      // rather than from a hue in a key. A neutral RAMP was tried and rejected -
+      // its adjacent steps land below the legibility floor, so grey cannot carry
+      // identity either.
+      const zc = LM_ZONE[mode] || LM_ZONE.light
       for (const z of zoneShapes) {
         for (const r of z.rings) {
           L.polygon(r, {
-            color: z.color, weight: 1.2, opacity: 0.9, fillColor: z.color, fillOpacity: 0.3, interactive: false,
+            color: zc, weight: 1.3, opacity: 0.85, fillColor: zc, fillOpacity: 0.22, interactive: false,
+          }).addTo(layer)
+        }
+        // Naming the zone where it sits beats making the reader match a swatch.
+        if (z.at && zoneShapes.length > 1) {
+          L.marker(z.at, {
+            interactive: false, keyboard: false,
+            icon: L.divIcon({ className: 'lm-zonelab', html: `<span>${escapeHtml(z.name)}</span>`, iconSize: null }),
           }).addTo(layer)
         }
       }
@@ -9273,7 +9306,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
       latlngs.push(catch_.origin)
     }
     if (latlngs.length) { try { map.fitBounds(latlngs, { padding: [34, 34], maxZoom: 13 }) } catch { /* single point */ } }
-  }, [pts, filter, maxLeads, ready, catch_, shade, zoneShapes])
+  }, [pts, filter, maxLeads, ready, catch_, shade, zoneShapes, mode])
 
   if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
   if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
@@ -9327,7 +9360,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
               {shade ? '◉' : '○'} Target areas
             </button>
             <div className="lm-zonekeys">{zoneShapes.map((z) => (
-              <span key={z.id} className={shade ? '' : 'off'} title={z.missing ? `${fmtNumber(z.missing)} of this zone's ${fmtNumber(z.places)} places have no mapped area (PO-box-only postcodes) and are not drawn` : undefined}><i style={{ background: z.color }} />{z.name} <b>{fmtNumber(z.places)}</b>{z.missing ? <em> −{fmtNumber(z.missing)}</em> : null}</span>
+              <span key={z.id} className={shade ? '' : 'off'} title={z.missing ? `${fmtNumber(z.missing)} of this zone's ${fmtNumber(z.places)} places have no mapped area (PO-box-only postcodes) and are not drawn` : undefined}><i style={{ background: LM_ZONE[mode] || LM_ZONE.light }} />{z.name} <b>{fmtNumber(z.places)}</b>{z.missing ? <em> −{fmtNumber(z.missing)}</em> : null}</span>
             ))}</div>
           </div>
         ) : null}

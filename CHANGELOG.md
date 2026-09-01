@@ -18,6 +18,44 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.431.0 - 2026-08-20 · `PENDING` - Zone shading stops competing with the lead dots
+
+The zone colours were drawn from the categorical palette, which meant a blue zone
+under blue "Booked" dots, an orange zone under amber "Leads", and a green zone
+under green "Won". Three direct collisions.
+
+Moving them to different hues would only have relocated the problem: the four
+outcome colours plus the violet business pin already occupy blue, red, amber,
+green and violet, and running the palette validator over those five shows the
+space is not just full but already strained - the business pin and "Booked" sit
+ΔE 9.2 apart in normal vision, under the 15 legibility floor. A sixth hue in
+there is one more thing to disambiguate from the dot sitting on top of it.
+
+So zones stop being a colour category at all. They are **context**, and the dots
+are the data:
+
+- **One slate for every zone** (`#4a5568` light, `#a9b5c3` dark), chosen by
+  measurement rather than taste. It sits further from every outcome colour than
+  those colours sit from each other - worst case ΔE 10.2 against "Lost" under
+  protanopia, 21-38 against everything else - and reads as ground rather than as
+  another series.
+- **Zones name themselves on the map.** With colour no longer carrying identity,
+  a label sits at each zone's centre, which beats matching a swatch to a key in
+  any case.
+
+A neutral ramp was tried first, so several zones could differ by lightness. The
+validator rejected it: adjacent steps land at ΔE 5.9-10.9, below the floor at
+which anyone can tell them apart. Grey cannot carry identity either - which is
+what settled the label approach rather than a shade per zone.
+
+Worth flagging separately: the outcome palette itself does not pass. "Won" and
+"Lost" are ΔE 3.0 apart under deuteranopia, and the business pin and "Booked"
+ΔE 9.2 in normal vision. That is pre-existing and untouched here, since those
+colours are used across the whole app, but it is a real accessibility gap and
+worth a pass of its own.
+
+---
+
 ## v3.430.0 - 2026-08-20 · `PENDING` - Real postcode boundaries, and pick an area instead of typing postcodes
 
 **The shading is now the actual postcode boundaries.** The faint discs are gone.

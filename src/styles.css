@@ -4160,3 +4160,15 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .geo-convert span { flex: 1; min-width: 180px; line-height: 1.45; }
 .geo-convert b { color: var(--text); }
 .geo-convert.done { border-left-color: #12b886; }
+
+/* Zone names drawn on the map itself. Identity by label rather than by hue: the
+   four outcome colours and the business pin already fill the usable hue space,
+   and a neutral ramp cannot carry identity either (its steps fall below the
+   legibility floor), so the name goes where the zone is. */
+.lm-zonelab { pointer-events: none; }
+.lm-zonelab span { display: inline-block; transform: translate(-50%, -50%); white-space: nowrap;
+  font-size: 11px; font-weight: 800; letter-spacing: .01em; color: #2b323d;
+  background: rgba(255,255,255,.82); border: 1px solid rgba(74,85,104,.35);
+  border-radius: 5px; padding: 1px 6px; }
+:root[data-theme="dark"] .lm-zonelab span,
+:root:not([data-theme="light"]) .lm-zonelab span { color: #e8edf3; background: rgba(20,24,31,.8); border-color: rgba(169,181,195,.4); }

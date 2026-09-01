@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.439.0 - 2026-08-20 · `PENDING` - Location insights show for every client
+## v3.439.0 - 2026-08-20 · `d17706f` - Location insights show for every client
 
 The Location tab's insights and area breakdown no longer wait on a Catchment
 setup. Both read the postcode each lead already gave us and look it up against

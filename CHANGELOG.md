@@ -18,6 +18,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.427.0 - 2026-08-20 · `PENDING` - Draw a service area on the map too
+
+The map picker added in v3.426.0 only appeared under **Radius from one
+location**, which is not where most of this work happens. **Service areas** now
+has a **Draw on map** button on every zone, beside the existing Fill by radius.
+
+It opens the same picker, but the circle does something different: instead of
+becoming the catchment, it **fills the zone with every postcode inside it**. That
+turns Fill by radius from a number typed blind into a shape you can see - and the
+save button names the count before you commit, so a circle that would drag in 400
+postcodes says so first.
+
+Once added they are a plain list of postcodes you can edit by hand, exactly as
+before. A lead is either in the zone or it is not, with none of the
+edge-of-circle guesswork a live radius carries - the map is only a way of
+choosing, not a rule that keeps applying.
+
+Drawing is additive: hand-added places survive it, a second wider circle keeps
+everything the first added, two separate circles union cleanly, and drawing the
+same circle twice changes nothing. A circle covering empty country leaves the
+zone exactly as it was rather than clearing it. 66 assertions cover that,
+including that the count on the button always matches what actually gets added
+and that every postcode added really is inside the circle.
+
+---
+
 ## v3.426.0 - 2026-08-20 · `PENDING` - Drop a pin on a map to set the catchment
 
 Catchment had two ways to say where people travel to: the CRM business address,

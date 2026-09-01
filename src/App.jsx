@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.426.0'
+const APP_VERSION = '3.427.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7209,7 +7209,7 @@ function placesWithin(db, lat, lng, km) {
 }
 const geoPinLabel = (p) => (p && p.label) || (p ? `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}` : '')
 
-function GeoPinPicker({ open, onClose, pin, radiusKm, onSave, db, bizCoord }) {
+function GeoPinPicker({ open, onClose, pin, radiusKm, onSave, db, bizCoord, title, saveLabel }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const objRef = useRef({})
@@ -7314,7 +7314,7 @@ function GeoPinPicker({ open, onClose, pin, radiusKm, onSave, db, bizCoord }) {
         <div className="mr-drill geo-pin-modal" onClick={(e) => e.stopPropagation()}>
           <div className="mr-drill-head">
             <div>
-              <h3 style={{ margin: 0 }}>Set the catchment on the map</h3>
+              <h3 style={{ margin: 0 }}>{title || 'Set the catchment on the map'}</h3>
               <p className="cap" style={{ margin: '2px 0 0' }}>Click to drop the pin, drag it to move, and drag the handle on the edge to size the radius.</p>
             </div>
             <button className="mr-drill-x" onClick={onClose}>✕</button>
@@ -7350,10 +7350,14 @@ function GeoPinPicker({ open, onClose, pin, radiusKm, onSave, db, bizCoord }) {
                 </>}
               </div>
               <div className="geo-pin-acts">
-                <button className="set-details-save" disabled={!pos} onClick={() => { onSave({ lat: pos[0], lng: pos[1], label: near ? near.name : null }, km); onClose() }}>Use this catchment</button>
+                <button className="set-details-save" disabled={!pos} onClick={() => { onSave({ lat: pos[0], lng: pos[1], label: near ? near.name : null }, km); onClose() }}>
+                  {saveLabel ? `${saveLabel}${cover ? ` (${fmtNumber(cover.postcodes)})` : ''}` : 'Use this catchment'}
+                </button>
                 <button className="btn-ghost sm" onClick={onClose}>Cancel</button>
               </div>
-              <p className="cap" style={{ marginTop: 10 }}>Distances to leads are still measured to <b>postcode centroids</b>, so the circle is exact but each lead's position is only as precise as its postcode. That is sound across hundreds of leads and rough for any single one.</p>
+              <p className="cap" style={{ marginTop: 10 }}>{saveLabel
+                ? <>The circle is only a way of choosing postcodes. Once added they are a plain list you can edit by hand, and a lead is either in the zone or it is not - none of the edge-of-circle guesswork a radius carries.</>
+                : <>Distances to leads are still measured to <b>postcode centroids</b>, so the circle is exact but each lead's position is only as precise as its postcode. That is sound across hundreds of leads and rough for any single one.</>}</p>
             </div>
           </div>
         </div>
@@ -7393,6 +7397,11 @@ function GeoSettings({ clientId }) {
   const [seed, setSeed] = useState({})
   const [suggest, setSuggest] = useState({})
   const [pinOpen, setPinOpen] = useState(false)
+  // Which zone's map is open, by index. Zones use the same picker as the radius
+  // mode, but the circle FILLS the zone with the postcodes inside it rather than
+  // becoming the catchment itself - so the "Fill by radius" helper stops being a
+  // number typed blind and becomes a shape you can see before committing to it.
+  const [areaMap, setAreaMap] = useState(null)
   // The place list backs both the zone editor and the map picker's search and
   // its "what does this circle cover" readout, so radius mode needs it too.
   useEffect(() => {
@@ -7545,6 +7554,25 @@ function GeoSettings({ clientId }) {
           <Caveat>Distance is measured between postcode centroids, so it is sound across a few hundred leads and unreliable for any single one - a city postcode is a couple of kilometres across and a rural one can be fifty. Leads with no location captured, and anything outside Australia, are counted separately rather than plotted wrong.</Caveat>
         </>
       ) : null}
+      {/* Zones share the radius picker. Saving here does not set a catchment - it
+          adds every postcode inside the circle to that zone, so the shape is
+          visible before it turns into a list of postcodes. */}
+      {areaMap != null && g.areas && g.areas[areaMap] ? (() => {
+        const a = g.areas[areaMap]
+        const centres = (a.places || []).map((pl) => (/^\d{3,4}$/.test(pl) ? geoDb && geoDb.pc[pl] : (() => { const sv = geoDb && geoDb.sub[normSub(pl)]; return sv ? (typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]]) : null })())).filter(Boolean)
+        return <GeoPinPicker open db={geoDb} pin={null} radiusKm={Number(seed[a.id]) || 10}
+          bizCoord={centres[0] || (geoDb && b.postalCode && geoDb.pc[b.postalCode]) || null}
+          title={`Draw ${a.name ? `“${a.name}”` : 'this zone'} on the map`}
+          saveLabel="Add these postcodes to the zone"
+          onClose={() => setAreaMap(null)}
+          onSave={(pin, km) => {
+            if (!geoDb) return
+            const found = new Set(a.places || [])
+            for (const [pc, c] of Object.entries(geoDb.pc)) if (kmBetween([pin.lat, pin.lng], c) <= km) found.add(pc)
+            saveAreas(g.areas.map((x, j) => (j === areaMap ? { ...x, places: [...found] } : x)))
+            setAreaMap(null)
+          }} />
+      })() : null}
       {g.mode === 'areas' ? (
         <>
           <Caveat>
@@ -7586,6 +7614,7 @@ function GeoSettings({ clientId }) {
                     <span className="geo-seed">
                       <input className="inp" style={{ width: 74 }} placeholder="km" value={seed[a.id] || ''} onChange={(e) => setSeed({ ...seed, [a.id]: e.target.value })} />
                       <button type="button" className="btn-ghost sm" title="Add every postcode within this many km of the places already in the zone" onClick={() => seedRadius(i)}>Fill by radius</button>
+                      <button type="button" className="btn-ghost sm" title="Draw the area on a map and add every postcode inside it" onClick={() => setAreaMap(i)}>Draw on map</button>
                     </span>
                   </div>
                   {suggest[a.id] && suggest[a.id].length ? (

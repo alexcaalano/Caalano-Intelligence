@@ -1326,15 +1326,27 @@ export async function buildForms(locationId, from, to) {
     // Per-pipeline split, so a multi-pipeline client can categorise a form.
     const pid = o && o.pipelineId
     if (pid) { let bp = e.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; e.byPipe.set(pid, bp) } bump(bp, booked, shown, won, rev) }
-    // Location breakdown: postcode + any location-style answer.
-    if (pc && /^[0-9A-Za-z\- ]{3,10}$/.test(pc)) bumpLoc(e.loc, pc, booked, won, lost, pid, locPerson, person.channel)
+    // Location breakdown: the postcode plus any location-style answer, each place
+    // counted ONCE for this contact. Bumping the postcode and then bumping it
+    // again from the answer loop (a "Postcode" question is itself location-style)
+    // counted the same lead twice in the same place: the lead tally doubled while
+    // the people list, which dedupes on contact id, did not - so a location read
+    // "4 leads" and could only ever show two of them.
+    const locHit = new Set()
+    const bumpOnce = (v) => {
+      const k = String(v || '').trim().toUpperCase()
+      if (!k || locHit.has(k)) return
+      locHit.add(k)
+      bumpLoc(e.loc, v, booked, won, lost, pid, locPerson, person.channel)
+    }
+    if (pc && /^[0-9A-Za-z\- ]{3,10}$/.test(pc)) bumpOnce(pc)
     // Answer-level segmentation: per question, per answer value.
     for (const [q, v] of Object.entries(answers)) {
       let qm = e.seg.get(q); if (!qm) { qm = new Map(); e.seg.set(q, qm) }
       let av = qm.get(v); if (!av) { av = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, people: [] }; qm.set(v, av) }
       bump(av, booked, shown, won, rev)
       if (av.people.length < 80) av.people.push(person)
-      if (LOC_RE.test(q)) bumpLoc(e.loc, v, booked, won, lost, pid, locPerson, person.channel)
+      if (LOC_RE.test(q)) bumpOnce(v)
     }
   }
   const forms = [...agg.values()].sort((a, b) => b.leads - a.leads).map((e) => {

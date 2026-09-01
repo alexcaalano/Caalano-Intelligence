@@ -18,6 +18,50 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.437.0 - 2026-08-20 · `PENDING` - Fix: every lead was counted twice in its own location
+
+**"4 leads · lead detail for 2" was not a cap - it was double counting.** A
+lead's postcode was added to its location, and then added AGAIN by the loop over
+location-shaped answers, because a form's own "Postcode" question is itself
+location-shaped. The lead tally doubled; the people list, which dedupes on
+contact id, did not. So a place reported four leads and could only ever show two
+of them, and every lead count on the Location tab - the table, the map dot sizes,
+the scorecards - was inflated for any client whose form asks where someone lives.
+
+Each place is now counted once per lead, matched case- and whitespace-insensitively
+so "PARRAMATTA" and "parramatta" are one place rather than two. A genuinely
+different second location still counts, so this is not over-correcting. On the
+exact shape that caused it, the old path produced 8 leads for 4 people; it now
+produces 4 and 4.
+
+**Location insights.** A panel under the scorecards calling out where a place
+behaves differently from everywhere else - "Inner West reaches Quote at 62%
+against 28% everywhere else". It tests remoteness, state, district, council and
+your own zones, across win rate, loss rate and every key event.
+
+The statistics are the point of it. Each line compares a place against
+**everywhere else** rather than the overall average, which contains the place and
+drags the comparison toward no difference - exactly hiding the small areas worth
+finding. A line only appears if the gap is at least 12 points, the group holds at
+least 8 leads with at least 20 to compare against, and it survives a
+two-proportion test **after correcting for how many comparisons were run** - test
+enough places and something always looks significant. Findings that are the same
+leads under two names (a council and a district covering the same postcodes) are
+shown once, and "wins up" is not repeated as "losses down".
+
+**The lead drill is a table.** One row per lead - name, postcode, **channel**,
+status, stage, time in stage, value - sortable on every column, expanding to the
+form answers and again to that contact's notes. The card layout wrapped raggedly
+once a row spanned a whole council.
+
+42 assertions on the insights, including that a council with 2 leads and a 100%
+win rate produces no card at all, and that pure noise across 30+ comparisons
+yields at most one finding rather than a page of them. 14 more on the counting
+fix, demonstrating the old double-count rather than only asserting the new
+behaviour.
+
+---
+
 ## v3.436.0 - 2026-08-20 · `PENDING` - Sortable location tables, reach rates, channel split
 
 **Every column sorts.** Click any header in either Location table - name, places,

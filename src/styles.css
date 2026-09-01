@@ -4217,3 +4217,34 @@ th.lm-sh > i { font-style: normal; font-size: 9px; margin-left: 3px; }
 /* The reach-rate column that follows each key event: same value, read as a rate. */
 th.lm-ker { max-width: 44px; }
 td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Location insights. One line per finding, read as a sentence rather than as a
+   row of numbers, with the evidence behind it on the right. */
+.loc-sig { margin-bottom: 12px; }
+.loc-sigs { display: flex; flex-direction: column; gap: 6px; }
+.loc-sig-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px;
+  background: var(--panel-2); border: 1px solid var(--border); border-left-width: 3px; font-size: 12.5px; }
+.loc-sig-row.good { border-left-color: var(--pos, #12b886); }
+.loc-sig-row.bad { border-left-color: var(--neg, #e0566c); }
+.loc-sig-dim { flex: 0 0 auto; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 20px; padding: 1px 7px; background: var(--panel); }
+.loc-sig-t { flex: 1; min-width: 0; line-height: 1.45; }
+.loc-sig-t b { font-weight: 800; }
+.loc-sig-n { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--muted);
+  font-variant-numeric: tabular-nums; cursor: help; }
+@media (max-width: 700px) {
+  .loc-sig-row { flex-wrap: wrap; gap: 5px 9px; }
+  .loc-sig-t { flex-basis: 100%; order: 3; }
+}
+
+/* The lead drill is a table now: one row per lead, everything on one line and
+   sortable, expanding to answers and then notes. */
+.u-locppl { table-layout: auto; width: 100%; }
+.u-locppl td.lft, .u-locppl th.lft { text-align: left; }
+.loc-lead-tr:hover > td { background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.loc-lead-det > td { background: var(--panel-2); padding: 4px 12px 12px; }
+.loc-lead-det .loc-lead-body { display: block; }
+.loc-ch { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  padding: 1px 7px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); }
+.loc-ch-meta { color: #4f7cff; border-color: rgba(79,124,255,.4); background: rgba(79,124,255,.1); }
+.loc-ch-google { color: #12b886; border-color: rgba(18,184,134,.4); background: rgba(18,184,134,.1); }

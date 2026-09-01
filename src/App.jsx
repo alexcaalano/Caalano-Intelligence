@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.436.0'
+const APP_VERSION = '3.437.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9153,6 +9153,178 @@ function zoneRings(shapes, places, sub2pc) {
   return { rings, missing }
 }
 
+// --- Location insights -------------------------------------------------------
+// What is actually different about where the leads come from. With 98 leads
+// spread across 81 postcodes, most areas hold one or two, and "this suburb
+// converts at 100%" off a single lead is the easiest wrong number in the whole
+// app to produce. So every claim here has to survive a test rather than a
+// threshold.
+//
+// Each candidate compares one group against EVERYTHING ELSE - not against the
+// overall average, which contains the group and drags the comparison toward no
+// difference, flattering big groups and hiding small ones.
+const LOC_SIG_MIN_N = 8         // leads in the group; below this nothing is knowable
+const LOC_SIG_MIN_REST = 20     // leads outside it to compare against
+const LOC_SIG_MIN_PP = 12       // percentage points - smaller is real but not worth a card
+const LOC_SIG_ALPHA = 0.05
+// Rates are computed over the leads we hold DETAIL for, not the raw lead count,
+// wherever the numerator comes from those records - the lead lists are capped per
+// place, so mixing an uncapped denominator with a capped numerator understates a
+// busy postcode and would invent a "low reach" finding out of nothing.
+function locSignals({ pts, areaIdx, zones, kEvents, reached, chanOf, chanPeople }) {
+  const dims = [
+    ['remoteness', 'Remoteness'],
+    ['stateName', 'State'],
+    ['district', 'District'],
+    ['council', 'Council'],
+  ]
+  // Every lead we can place, once, with the group it belongs to on each dimension.
+  const rows = []
+  for (const p of pts) {
+    const v = String(p.value).trim().toUpperCase()
+    const e = areaIdx ? areaIdx.get(v.length === 3 ? '0' + v : v) : null
+    const c = chanOf(p)
+    if (!c.leads) continue
+    const people = chanPeople(p.people)
+    rows.push({
+      place: p.value, e,
+      leads: c.leads || 0, won: c.won || 0, lost: c.lost || 0, booked: c.booked || 0,
+      people,
+    })
+  }
+  if (!rows.length) return { rows: [], tests: 0 }
+
+  // The metrics worth testing. Each says what its denominator is, because they
+  // differ: outcome rates run over every lead, key events over the detail records.
+  const metrics = [
+    { key: 'won', label: 'win rate', verb: 'convert', num: (g) => g.won, den: (g) => g.leads, good: true },
+    { key: 'lost', label: 'loss rate', verb: 'are lost', num: (g) => g.lost, den: (g) => g.leads, good: false },
+    ...kEvents.map((k, i) => ({
+      key: `ke${i}`, label: `${k.label} rate`, verb: `reach ${k.label}`, ke: k, good: true,
+      num: (g) => g.keHit[i], den: (g) => g.detail,
+    })),
+  ]
+  // Booked only earns a card when there are no key events to say it better.
+  if (!kEvents.length) metrics.push({ key: 'booked', label: 'booking rate', verb: 'book', num: (g) => g.booked, den: (g) => g.leads, good: true })
+
+  const blank = (key) => ({ key, leads: 0, won: 0, lost: 0, booked: 0, detail: 0, keHit: kEvents.map(() => 0), places: 0 })
+  const add = (g, r) => {
+    g.leads += r.leads; g.won += r.won; g.lost += r.lost; g.booked += r.booked
+    g.detail += r.people.length; g.places++
+    kEvents.forEach((k, i) => { for (const p of r.people) if (reached(p, k)) g.keHit[i]++ })
+  }
+
+  const buckets = []
+  for (const [dim, dimLabel] of dims) {
+    const m = new Map()
+    for (const r of rows) {
+      const name = r.e && r.e[dim]
+      if (!name) continue
+      let g = m.get(name); if (!g) { g = blank(name); m.set(name, g) }
+      add(g, r)
+    }
+    if (m.size < 2) continue      // one group is not a comparison
+    buckets.push({ dim, dimLabel, groups: [...m.values()] })
+  }
+  // The client's own zones, tested the same way.
+  if (zones && zones.length > 1) {
+    const m = new Map()
+    for (const z of zones) {
+      const set = new Set((z.places || []).map((x) => String(x).trim().toUpperCase()))
+      const g = blank(z.name)
+      for (const r of rows) if (set.has(String(r.place).trim().toUpperCase())) add(g, r)
+      if (g.leads) m.set(z.name, g)
+    }
+    if (m.size > 1) buckets.push({ dim: 'zone', dimLabel: 'Zone', groups: [...m.values()] })
+  }
+
+  // Count the tests first: testing many groups across many metrics will throw up
+  // a "significant" result by chance alone, so the threshold has to be divided by
+  // how many questions were asked.
+  let tests = 0
+  for (const b of buckets) for (const g of b.groups) for (const mt of metrics) {
+    const rest = b.groups.filter((x) => x !== g)
+    const dg = mt.den(g), dr = rest.reduce((a, x) => a + mt.den(x), 0)
+    if (dg >= LOC_SIG_MIN_N && dr >= LOC_SIG_MIN_REST) tests++
+  }
+  if (!tests) return { rows: [], tests: 0 }
+  const alpha = LOC_SIG_ALPHA / tests
+
+  const out = []
+  for (const b of buckets) {
+    for (const g of b.groups) {
+      const rest = b.groups.filter((x) => x !== g)
+      for (const mt of metrics) {
+        const dg = mt.den(g)
+        const dr = rest.reduce((a, x) => a + mt.den(x), 0)
+        if (dg < LOC_SIG_MIN_N || dr < LOC_SIG_MIN_REST) continue
+        const ng = mt.num(g)
+        const nr = rest.reduce((a, x) => a + mt.num(x), 0)
+        const t = twoProp(ng, dg, nr, dr)
+        if (!t) continue
+        const diffPp = t.diff * 100
+        if (Math.abs(diffPp) < LOC_SIG_MIN_PP) continue
+        if (t.p > alpha) continue
+        out.push({
+          dim: b.dim, dimLabel: b.dimLabel, group: g.key,
+          metric: mt.key, label: mt.label, verb: mt.verb,
+          here: t.p1 * 100, rest: t.p2 * 100, diff: diffPp,
+          n: ng, of: dg, restN: nr, restOf: dr, places: g.places,
+          up: diffPp > 0, good: mt.good ? diffPp > 0 : diffPp < 0,
+          p: t.p, z: Math.abs(t.z),
+        })
+      }
+    }
+  }
+  // Biggest real gap first.
+  out.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff) || b.of - a.of)
+  const seen = new Set()
+  const sameLeads = new Set()
+  const mirrored = new Set()
+  const keep = []
+  for (const x of out) {
+    const k = `${x.dim}|${x.group}|${x.metric}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    // A council and a district can be the exact same set of leads under two
+    // names. Reported twice it reads as two findings and is one, so the first
+    // (largest) wins and the duplicate is dropped.
+    const shape = `${x.metric}|${x.n}/${x.of}|${x.restN}/${x.restOf}`
+    if (sameLeads.has(shape)) continue
+    sameLeads.add(shape)
+    // "Wins up 50 points" and "losses down 50 points" for the same group are the
+    // same sentence twice. Keep whichever came first, which is the larger gap.
+    const mirror = `${x.dim}|${x.group}|${x.metric === 'won' ? 'lost' : x.metric === 'lost' ? 'won' : x.metric}`
+    if ((x.metric === 'won' || x.metric === 'lost') && mirrored.has(mirror)) continue
+    mirrored.add(k)
+    keep.push(x)
+  }
+  return { rows: keep.slice(0, 6), tests }
+}
+
+function LocSignals({ signals, tests }) {
+  if (!signals || !signals.length) return null
+  return (
+    <div className="card loc-sig">
+      <div className="exec-panel-h">Worth a look <span className="sub">· where a place behaves differently from everywhere else, not just where the volume is</span></div>
+      <div className="loc-sigs">
+        {signals.map((s, i) => (
+          <div className={`loc-sig-row${s.good ? ' good' : ' bad'}`} key={i}>
+            <span className="loc-sig-dim">{s.dimLabel}</span>
+            <span className="loc-sig-t">
+              <b>{s.group}</b> {s.verb} at <b>{Math.round(s.here)}%</b>, against {Math.round(s.rest)}% everywhere else
+            </span>
+            <span className="loc-sig-n" title={`${fmtNumber(s.n)} of ${fmtNumber(s.of)} here, ${fmtNumber(s.restN)} of ${fmtNumber(s.restOf)} elsewhere · p ≈ ${s.p < 0.001 ? '<0.001' : s.p.toFixed(3)}`}>
+              {s.up ? '+' : ''}{Math.round(s.diff)}pp · {fmtNumber(s.n)}/{fmtNumber(s.of)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <Caveat>Each line compares one place against <b>everywhere else</b> rather than against the overall average - the average contains the place, which drags the comparison toward no difference and hides exactly the small areas worth finding. A line only appears if the gap is at least {LOC_SIG_MIN_PP} points, the group holds at least {LOC_SIG_MIN_N} leads with at least {LOC_SIG_MIN_REST} to compare against, and it survives a two-proportion test after correcting for how many comparisons were run ({fmtNumber(tests)} this period) - test enough places and something always looks significant, so the threshold is divided by how many questions were asked. Key event rates are measured over the leads we hold detail for, since those records are capped per place; outcome rates use every lead. Nothing here is a claim about cause: a place can convert better because of who lives there, which campaign reached them, or which rep picked up the phone.</Caveat>
+    </div>
+  )
+}
+
 function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
   // The client's configured key events, evaluated per lead exactly as the Forms
   // and ranking views do - so "reached 15 Minute Call" means the same thing here
@@ -9288,6 +9460,11 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
     })
   }, [areasOn, poa, geo.areas])
   const zoneMissing = zoneShapes.reduce((n, z) => n + z.missing, 0)
+  // One regions load for the whole tab: the insights test remoteness, state,
+  // district and council together, so the index is needed whatever grouping is on
+  // screen rather than only when a non-zone grouping is picked.
+  const sigRegions = useRegions(true)
+  const sigIdx = useMemo(() => areaIndexOf(sigRegions), [sigRegions])
   // Three readings of the same leads. "My zones" answers whether the targeting is
   // working; district and council answer where the leads are actually coming
   // from, which is a different and often more useful question - and it needs no
@@ -9322,8 +9499,8 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
     })
     return out
   }
-  const regions = useRegions(groupBy !== 'zones')
-  const areaIdx = useMemo(() => areaIndexOf(regions), [regions])
+  const regions = sigRegions
+  const areaIdx = sigIdx
   // A location's counts under the current channel cut. Falls back to the whole
   // location when a client's data predates the per-channel tally, rather than
   // reporting zeros for everyone.
@@ -9333,6 +9510,12 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
     return c || (p.byChan ? { leads: 0, booked: 0, won: 0, lost: 0 } : p)
   }
   const chanPeople = (people) => (chanCut === 'all' ? people : (people || []).filter((x) => (x.channel || 'other') === chanCut))
+  const sig = useMemo(() => {
+    if (!sigIdx || !pts.length) return { rows: [], tests: 0 }
+    return locSignals({ pts, areaIdx: sigIdx, zones: (geo.areas || []).filter((a) => (a.places || []).length), kEvents, reached: kev.reached, chanOf, chanPeople })
+  }, [sigIdx, pts, geo.areas, kEvents, kev, chanCut])
+  const sigs = sig.rows
+  const sigTests = sig.tests
   const byArea = useMemo(() => {
     if (groupBy === 'zones' || !areaIdx) return null
     const key = groupBy === 'district' ? 'district'
@@ -9477,6 +9660,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
             anything. Only the "my zones" tab needs zones to exist. */}
         {(zones && zones.rows.length) || groupBy !== 'zones' || (geo.mode === 'areas') ? (
           <div className="lm-catch">
+            {sigs.length ? <LocSignals signals={sigs} tests={sigTests} /> : null}
             <div className="lm-grpbar">
               <span className="cap" style={{ fontWeight: 700 }}>Where the leads are</span>
               <div className="optlog-toggle">
@@ -9659,15 +9843,22 @@ function LocationLeadsModal({ loc, clientId, currency, onClose }) {
   const won = people.filter((p) => p.status === 'won').length
   const lost = people.filter((p) => p.status === 'lost').length
   const [q, setQ] = useState('')
-  // Longest in stage first: a drill opened from a whole council can hold hundreds,
-  // and the ones stuck the longest are the reason anyone opens it.
+  // Longest in stage first by default: a drill opened from a whole council can
+  // hold hundreds, and the ones stuck the longest are why anyone opens it.
+  const [sort, setSort] = useState({ key: 'ageDays', dir: -1 })
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    return people
-      .filter((p) => !needle || [p.name, p.stageName, p.pipelineName, p.place, p.status].some((v) => v && String(v).toLowerCase().includes(needle)))
-      .slice()
-      .sort((a, b) => (b.ageDays || 0) - (a.ageDays || 0))
-  }, [people, q])
+    const out = people.filter((p) => !needle || [p.name, p.stageName, p.pipelineName, p.place, p.status, chLabel(p.channel)]
+      .some((v) => v && String(v).toLowerCase().includes(needle))).slice()
+    const val = (p) => (sort.key === 'channel' ? chLabel(p.channel) || '' : p[sort.key])
+    out.sort((a, b) => {
+      const va = val(a), vb = val(b)
+      if (typeof va === 'string' || typeof vb === 'string') return String(va || '').localeCompare(String(vb || '')) * -sort.dir
+      const na = va == null ? -Infinity : va, nb = vb == null ? -Infinity : vb
+      return (na - nb) * sort.dir || 0
+    })
+    return out
+  }, [people, q, sort])
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal loc-modal" onClick={(e) => e.stopPropagation()}>
@@ -9677,9 +9868,19 @@ function LocationLeadsModal({ loc, clientId, currency, onClose }) {
         </div>
         <div className="m-body">
           {people.length ? <>
-            {people.length > 6 ? <input className="inp loc-find" placeholder={`Search ${fmtNumber(people.length)} leads by name, stage or postcode…`} value={q} onChange={(e) => setQ(e.target.value)} /> : null}
+            {people.length > 6 ? <input className="inp loc-find" placeholder={`Search ${fmtNumber(people.length)} leads by name, stage, channel or postcode…`} value={q} onChange={(e) => setQ(e.target.value)} /> : null}
             {!shown.length ? <div className="cap">Nothing matches “{q}”.</div>
-              : <div className="loc-people">{shown.map((p, i) => <LocationLeadRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</div>}
+              : <div className="table-wrap"><table className="mini-tbl users-tbl appt-tbl u-locppl">
+                <thead><tr>
+                  {[['name', 'Lead', ' lft'], ['place', 'Postcode'], ['channel', 'Channel'], ['status', 'Status'],
+                    ['stageName', 'Stage', ' lft'], ['ageDays', 'In stage'], ['value', 'Value']].map(([k, lbl, ex]) => (
+                      <th key={k} className={`lm-sh${sort.key === k ? ' on' : ''}${ex || ''}`} onClick={() => setSort((x) => (x.key === k ? { key: k, dir: -x.dir } : { key: k, dir: k === 'name' || k === 'stageName' || k === 'channel' || k === 'place' ? -1 : -1 }))} title={`Sort by ${lbl}`}>
+                        {lbl}<i>{sort.key === k ? (sort.dir < 0 ? '▾' : '▴') : ''}</i>
+                      </th>
+                    ))}
+                </tr></thead>
+                <tbody>{shown.map((p, i) => <LocationLeadRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</tbody>
+              </table></div>}
           </> : <div className="cap">No lead detail for this location yet{loc.leads ? ' - press Refresh to load the latest' : ''}.</div>}
         </div>
       </div>
@@ -9696,12 +9897,17 @@ function LocationLeadRow({ p, clientId, money }) {
   const load = () => { setLoading(true); const q = new URLSearchParams({ scope: 'oppnotes', client: clientId }); if (p.contactId) q.set('contact', p.contactId); fetch(`/.netlify/functions/windsor?${q.toString()}`).then((r) => r.json()).then((j) => setNotes((j && j.notes) || [])).catch(() => setNotes([])).finally(() => setLoading(false)) }
   const toggle = () => { const nx = !open; setOpen(nx); if (nx && notes === null && !loading && clientId && p.contactId) load() }
   return (
-    <div className={`loc-lead${open ? ' open' : ''}`}>
-      <button className="loc-lead-head" onClick={toggle} title="Show form answers + notes">
-        <span className="loc-lead-name">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name || 'Lead'}{p.place ? <span className="loc-lead-pc">{p.place}</span> : null}</span>
-        <span className="loc-lead-meta">{statusChip(p.status)}{p.stageName ? <span className="loc-lead-stage">{p.stageName}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</span> : null}{p.ageDays != null ? <span className={`loc-lead-age${p.ageDays > 30 ? ' u-stale' : ''}`}>{fmtNumber(p.ageDays)}d in stage</span> : null}<span className="loc-lead-val">{p.value ? money(p.value) : '-'}</span></span>
-      </button>
-      {open && <div className="loc-lead-body">
+    <React.Fragment>
+      <tr className="loc-lead-tr" onClick={toggle} title="Show form answers + notes" style={{ cursor: 'pointer' }}>
+        <td className="lft"><span className="u-chev">{open ? '▾' : '▸'}</span> {p.name || 'Lead'}</td>
+        <td>{p.place || '-'}</td>
+        <td>{p.channel ? <span className={`loc-ch loc-ch-${p.channel}`}>{chLabel(p.channel)}</span> : <span className="lrv-z">-</span>}</td>
+        <td>{statusChip(p.status)}</td>
+        <td className="lft">{p.stageName || '-'}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</td>
+        <td className={p.ageDays > 30 ? 'u-stale' : ''}>{p.ageDays != null ? `${fmtNumber(p.ageDays)}d` : '-'}</td>
+        <td>{p.value ? money(p.value) : '-'}</td>
+      </tr>
+      {open && <tr className="loc-lead-det"><td colSpan={7}><div className="loc-lead-body">
         {answers.length ? <div className="loc-answers">{answers.map(([q, a], j) => <div className="loc-answer" key={j}><span className="loc-answer-q">{q}</span><span className="loc-answer-a">{a}</span></div>)}</div>
           : <div className="cap">No form answers captured for this lead.</div>}
         <div className="loc-notes">
@@ -9709,8 +9915,8 @@ function LocationLeadRow({ p, clientId, money }) {
             : notes && notes.length ? <div className="u-notes">{notes.map((n, i) => <div className="u-note-item" key={i}><div className="u-note-meta">{n.author || 'Team'}{n.createdAt ? ` · ${new Date(n.createdAt).toLocaleDateString('en-AU')}` : ''}</div><div className="u-note-body">{n.body}</div></div>)}</div>
               : notes ? <div className="cap">No notes on this contact in Caalano Systems.</div> : null}
         </div>
-      </div>}
-    </div>
+      </div></td></tr>}
+    </React.Fragment>
   )
 }
 // Where the leads on a form are located (postcode / suburb answers), ranked +

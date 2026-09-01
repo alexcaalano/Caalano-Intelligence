@@ -179,7 +179,7 @@ async function fetchCustomConvCounts(cc, from, to, key, byCampaign = false, pres
   if (!cc || !cc.meta) return { total: new Map(), perCamp: new Map() }
   const flds = ['account_id', 'custom_conversion_action_name', 'custom_conversion_action_count']
   if (byCampaign) flds.splice(1, 0, 'campaign')
-  const rows = (await windsorFetch('facebook', flds, from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+  const rows = (await windsorFetch('facebook', flds, from, to, preset, key, { accounts: cc.meta })).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
   const total = new Map(); const perCamp = new Map()
   for (const r of rows) {
     const nm = String(r.custom_conversion_action_name || '').trim().toLowerCase(); if (!nm) continue
@@ -215,7 +215,7 @@ function ccLabel(fieldId, names) {
 async function fetchCustomConvNames(cc, from, to, key, preset = null) {
   if (!cc || !cc.meta) return new Map()
   try {
-    const rows = (await windsorFetch('facebook', ['account_id', 'custom_conversion_id', 'custom_conversion_name'], from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
+    const rows = (await windsorFetch('facebook', ['account_id', 'custom_conversion_id', 'custom_conversion_name'], from, to, preset, key, { accounts: cc.meta })).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
     const m = new Map()
     for (const r of rows) { const id = String(r.custom_conversion_id || '').trim(); const nm = String(r.custom_conversion_name || '').trim(); if (id && nm) m.set(id, nm) }
     return m
@@ -788,9 +788,9 @@ async function fetchAdIdNameMaps(cc, from, to, preset, key) {
   const filtG = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, cc.google))
   const filtM = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, cc.meta))
   const [ggIds, fbIds, ggAdIds] = await Promise.all([
-    cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
-    cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id', 'ad_name', 'ad_id'], from, to, preset, key).then(filtM).catch(() => []) : Promise.resolve([]),
-    cc.google ? windsorFetch('google_ads', ['account_id', 'ad_group_name', 'ad_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
+    cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], from, to, preset, key, { accounts: cc.google }).then(filtG).catch(() => []) : Promise.resolve([]),
+    cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id', 'ad_name', 'ad_id'], from, to, preset, key, { accounts: cc.meta }).then(filtM).catch(() => []) : Promise.resolve([]),
+    cc.google ? windsorFetch('google_ads', ['account_id', 'ad_group_name', 'ad_id'], from, to, preset, key, { accounts: cc.google }).then(filtG).catch(() => []) : Promise.resolve([]),
   ])
   const campaign = {}, medium = {}, content = {}
   const put = (m, id, nm) => { const i = String(id ?? '').trim(); if (i && nm && !m[i]) m[i] = nm }
@@ -909,15 +909,15 @@ async function buildMeta(accountId, from, to, preset, key, fallback, opts = {}) 
   const adCatch = windowDays(from, to, preset) > 90
   const [adRows, dayRows, accRows, prevRows, adDayRows, campRows, adsetRows, pCampRows] = await Promise.all([
     core ? Promise.resolve([]) : (adCatch
-      ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt).catch(() => [])
-      : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key).then(filt)),
-    windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('facebook', accFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
-    (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []),
-    core ? Promise.resolve([]) : windsorFetch('facebook', adDayFields, from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('facebook', campFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
-    windsorFetch('facebook', adsetFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
-    (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', campFields, pr.from, pr.to, null, key).then(filt).catch(() => []),
+      ? windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => [])
+      : windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'instagram_permalink_url', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, ...RESULT_FIELDS, 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt)),
+    windsorFetch('facebook', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    windsorFetch('facebook', accFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
+    (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', accFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []),
+    core ? Promise.resolve([]) : windsorFetch('facebook', adDayFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    windsorFetch('facebook', campFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
+    windsorFetch('facebook', adsetFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
+    (core || !pr.from) ? Promise.resolve([]) : windsorFetch('facebook', campFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
   // Resolve custom-conversion primaries to their real names (Custom Conversion
   // Definition table: id → name) so the Results label reads e.g. "B_Page_View"
@@ -1037,8 +1037,8 @@ function metaFatigue(ads, daily, cfg) {
 async function buildFatigue(accountId, from, to, preset, key, cfg) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const [adRows, dayRows] = await Promise.all([
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'impressions', 'clicks', 'spend', 'actions_video_view'], from, to, preset, key).then(filt),
-    windsorFetch('facebook', ['account_id', 'date', 'ad_name', 'impressions', 'clicks'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'quality_ranking', 'reach', 'impressions', 'clicks', 'spend', 'actions_video_view'], from, to, preset, key, { accounts: accountId }).then(filt),
+    windsorFetch('facebook', ['account_id', 'date', 'ad_name', 'impressions', 'clicks'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
   const ads = adRows.map((r) => ({ name: r.ad_name, campaign: r.campaign, adset: r.adset_name, thumb: r.thumbnail_url, type: num(r.actions_video_view) > 0 ? 'Video' : 'Image', quality: r.quality_ranking, reach: num(r.reach), impressions: num(r.impressions), clicks: num(r.clicks), spend: num(r.spend) }))
   return metaFatigue(ads, dayRows, cfg)
@@ -1067,9 +1067,9 @@ async function buildAnomalies(accountId, from, to, preset, key) {
   const pr = prevRange(from, to)
   const accFields = ['account_id', 'reach', 'spend', 'impressions', 'clicks', 'inline_link_clicks', ...FB_LEAD_FIELDS, 'actions_video_view']
   const [curRows, prevRows, adRows] = await Promise.all([
-    windsorFetch('facebook', accFields, from, to, preset, key).then(filt).catch(() => { adReadOk = false; return [] }),
-    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
-    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('facebook', accFields, from, to, preset, key, { accounts: accountId }).then(filt).catch(() => { adReadOk = false; return [] }),
+    pr.from ? windsorFetch('facebook', accFields, pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []) : Promise.resolve([]),
+    windsorFetch('facebook', ['account_id', 'campaign', 'adset_name', 'ad_name', 'thumbnail_url', 'reach', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
   const cur = metaTotals(curRows), prev = metaTotals(prevRows)
   const met = (t) => ({ spend: t.spend, leads: t.leads, impressions: t.impressions, clicks: t.clicks, reach: t.reach, cpl: t.leads ? t.spend / t.leads : null, ctr: t.impressions ? t.clicks / t.impressions : null, freq: t.reach ? t.impressions / t.reach : null })
@@ -1218,17 +1218,17 @@ async function buildOverview(from, to, preset, key, wonBasis = 'created') {
   let dailyMetaOk = true, dailyGoogleOk = true
   const [[fb, gg, fbD, ggD, pFb, pGg], crmByClient] = await Promise.all([
     Promise.all([
-      windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key),
-      windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),
+      windsorFetch('facebook', ['account_id', 'spend', 'impressions', 'clicks', ...FB_LEAD_FIELDS], from, to, preset, key),  // agency-wide: the portfolio row for EVERY client, so it cannot be scoped to one account
+      windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key),  // agency-wide: as above - one pull covering every client on the page
       // These two drive the paused-account alerts. If one fails we get no rows,
       // every account looks like it spent nothing over the whole baseline week,
       // the `base > 1` guard then suppresses every alert - and the UI reports a
       // confident "all accounts active". Track the failure so it can say
       // "couldn't check" instead of giving an all-clear it has no basis for.
-      windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => { dailyMetaOk = false; return [] }),
-      windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => { dailyGoogleOk = false; return [] }),
-      pr.from ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
-      pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),
+      windsorFetch('facebook', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => { dailyMetaOk = false; return [] }),  // agency-wide: paused-account alerts across every account
+      windsorFetch('google_ads', ['account_id', 'date', 'spend'], dstr(base0), dstr(yest), null, key).catch(() => { dailyGoogleOk = false; return [] }),  // agency-wide: paused-account alerts across every account
+      pr.from ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),  // agency-wide: previous period, every client
+      pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'conversions'], pr.from, pr.to, null, key).catch(() => []) : Promise.resolve([]),  // agency-wide: previous period, every client
     ]),
     ghlWonByClient(),
   ])
@@ -1306,10 +1306,10 @@ async function buildTrends(key) {
     // If an added custom field is unexpectedly rejected, fall back to the standard
     // fields so a single client can't blank out everyone's Meta trends. Only a
     // failure of BOTH shapes counts as a Meta failure (a real timeout).
-    windsorFetch('facebook', [...baseFbFields, ...primaryFields], dstr(start), dstr(today), null, key)
-      .catch(() => windsorFetch('facebook', baseFbFields, dstr(start), dstr(today), null, key))
+    windsorFetch('facebook', [...baseFbFields, ...primaryFields], dstr(start), dstr(today), null, key)  // agency-wide: trends cover every client at once
+      .catch(() => windsorFetch('facebook', baseFbFields, dstr(start), dstr(today), null, key))  // agency-wide: fallback for the line above, same agency-wide pull
       .catch(() => { metaOk = false; return [] }),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => { googleOk = false; return [] }),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => { googleOk = false; return [] }),  // agency-wide: trends cover every client at once
     windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at', 'opportunity_source', 'opportunity_monetary_value'], dstr(start), dstr(today), null, key).catch(() => []),
     windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
   ])
@@ -1347,7 +1347,7 @@ async function buildTrends(key) {
       const tset = new Set(fs.filter(isCustomConvField).map(ccActionName).filter(Boolean).map((t) => t.toLowerCase()))
       if (!tset.size) return
       let rows
-      try { rows = await windsorFetch('facebook', ['account_id', 'date', 'campaign', 'custom_conversion_action_name', 'custom_conversion_action_count'], dstr(start), dstr(today), null, key) } catch { return }
+      try { rows = await windsorFetch('facebook', ['account_id', 'date', 'campaign', 'custom_conversion_action_name', 'custom_conversion_action_count'], dstr(start), dstr(today), null, key, { accounts: cfg.meta }) } catch { return }
       for (const r of rows) {
         if (r.account_id && !acctEq(r.account_id, cfg.meta)) continue
         if (!tset.has(String(r.custom_conversion_action_name || '').trim().toLowerCase())) continue
@@ -1660,8 +1660,8 @@ async function buildCohortsView(c, weeks, key) {
   const weekIndexOf = (localDate) => { const i = wkIndex.get(mondayOf(localDate)); return i == null ? null : i }
   const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,id))
   const [fb, gg, crm] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
-    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key, { accounts: c.meta }).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key, { accounts: c.google }).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
     (c.ghl && await isConnected().catch(() => false)) ? ghlCohorts(c.ghl, start, end, weeks, weekIndexOf).catch(() => ({ connected: false, weeks: [] })) : Promise.resolve({ connected: false, weeks: [] }),
   ])
   const S = weekStarts.map(() => ({ metaSpend: 0, googleSpend: 0, metaLeads: 0, googleConv: 0 }))
@@ -1702,8 +1702,8 @@ async function buildWeekly(c, weeks, key, wonBasis = 'created') {
   const oppFrom = wonBasis === 'closed' ? new Date(new Date(start + 'T00:00:00Z').getTime() - 180 * 86400000).toISOString().slice(0, 10) : start
   // CRM (opportunities + pipelines) straight from the GoHighLevel API; Meta / Google from Windsor.
   const [fb, gg, opps, pipes] = await Promise.all([
-    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
-    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
+    c.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend', ...FB_LEAD_FIELDS], start, end, null, key, { accounts: c.meta }).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
+    c.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend', 'conversions'], start, end, null, key, { accounts: c.google }).then(filt(c.google)).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlOpportunityRows(c.ghl, oppFrom, end).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlPipelineRows(c.ghl).catch(() => []) : Promise.resolve([]),
   ])
@@ -1755,7 +1755,7 @@ async function fetchGeo(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   for (const dim of cands) {
     try {
-      const rows = filt(await windsorFetch('google_ads', ['account_id', dim, 'conversions', 'spend'], from, to, preset, key))
+      const rows = filt(await windsorFetch('google_ads', ['account_id', dim, 'conversions', 'spend'], from, to, preset, key, { accounts: accountId }))
       const m = new Map()
       for (const r of rows) {
         const raw = r[dim]
@@ -1774,27 +1774,27 @@ async function buildGoogle(accountId, from, to, preset, key) {
   const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, accountId))
   const pr = prevRange(from, to)
   const [cg, kw, st, dy, prev, agDay, stDay, ca, geo, lp, ads, adLabelRows] = await Promise.all([
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
-    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key).then(filt).catch(() => []) : Promise.resolve([]),
-    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_group', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'keyword_text', 'match_type', 'quality_score', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'search_term', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'date', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    pr.from ? windsorFetch('google_ads', ['account_id', 'spend', 'impressions', 'clicks', 'conversions'], pr.from, pr.to, null, key, { accounts: accountId }).then(filt).catch(() => []) : Promise.resolve([]),
+    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'date', 'campaign', 'ad_group_name', 'search_term', 'spend', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'conversion_action_name', 'conversion_action_category', 'conversions', 'all_conversions', 'conversions_value'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     fetchGeo(accountId, from, to, preset, key).catch(() => ({ dim: null, locations: [] })),
     // Landing Page Performance (Google's expanded landing-page report). Its own
     // query so a failure can't blank the campaigns/keywords; aggregated by URL.
-    windsorFetch('google_ads', ['account_id', 'expanded_landing_page_view_expanded_final_url', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'expanded_landing_page_view_expanded_final_url', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     // Ad-level (ad_id) rows - Google Search RSAs have no creative name, so the UI
     // labels them by ad ID (+ a friendly-name map from Settings) and scopes them
     // to the drilled-into campaign / ad group. Own query so a field mismatch can't
     // blank the rest of the Google view.
-    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'campaign', 'ad_group_name', 'ad_id', 'spend', 'impressions', 'clicks', 'conversions'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
     // Google Ads labels applied to each ad (if the connector exposes them) → used
     // as the ad's friendly name automatically. Own guarded query: if the `labels`
     // field isn't available the whole call 400s and we fall back to Settings names.
-    windsorFetch('google_ads', ['account_id', 'ad_id', 'labels'], from, to, preset, key).then(filt).catch(() => []),
+    windsorFetch('google_ads', ['account_id', 'ad_id', 'labels'], from, to, preset, key, { accounts: accountId }).then(filt).catch(() => []),
   ])
   const roll = rollupGoogle(cg, kw, st, dy, daysInRange(from, to, preset))
   roll.geo = geo
@@ -3633,7 +3633,7 @@ export default async (req) => {
         const monthList = [...buckets.keys()]
         const lastDay = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10) }
         const perMonth = await Promise.all(monthList.map((k) =>
-          windsorFetch('facebook', adsetFields, `${k}-01`, lastDay(k), null, key)
+          windsorFetch('facebook', adsetFields, `${k}-01`, lastDay(k), null, key, { accounts: cc.meta })
             .then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,cc.meta)))
             .catch(() => [])
         ))
@@ -3710,7 +3710,7 @@ export default async (req) => {
     if (c.meta) {
       for (const f of ['account_timezone_name', 'timezone_name', 'account_timezone']) {
         try {
-          const rows = await windsorFetch('facebook', ['account_id', f], null, null, 'last_7d', key)
+          const rows = await windsorFetch('facebook', ['account_id', f], null, null, 'last_7d', key, { accounts: c.meta })
           const v = rows && rows.length ? (rows[0][f] || null) : null
           if (v) { out.metaTz = v; break }
         } catch { /* unknown field / no data - try next */ }
@@ -4266,8 +4266,8 @@ export default async (req) => {
     }
     const [locs, metaMap, googleMap, ga4Map] = await Promise.all([
       (isConnected().then((ok) => (ok ? listLocations() : [])).catch((e) => ({ error: String(e.message || e).slice(0, 160) }))),
-      listAccts((f) => windsorFetch('facebook', f, dFrom, dTo, null, key), 'spend', (e) => { metaErr = e }),
-      listAccts((f) => windsorFetch('google_ads', f, dFrom, dTo, null, key), 'spend', (e) => { googleErr = e }),
+      listAccts((f) => windsorFetch('facebook', f, dFrom, dTo, null, key), 'spend', (e) => { metaErr = e }),  // agency-wide: account DISCOVERY - listing what exists is the whole point
+      listAccts((f) => windsorFetch('google_ads', f, dFrom, dTo, null, key), 'spend', (e) => { googleErr = e }),  // agency-wide: account DISCOVERY - listing what exists is the whole point
       // GA4 uses the auto-resolved connector slug (Windsor's GA4 slug varies).
       listAccts((f) => windsorGa4(f, dFrom, dTo, null, key), 'sessions', (e) => { ga4Err = e }),
     ])
@@ -4320,7 +4320,7 @@ export default async (req) => {
     try { const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' }); const mc = s && s.metaconv && s.metaconv[client]; if (mc) { const std = new Set(META_CONV_CANDIDATES.map(([id]) => id)); savedCustom = [mc.primary, ...(mc.secondary || [])].filter(Boolean).filter((f) => !std.has(f)) } } catch { /* ignore */ }
     const ids = [...new Set([...META_CONV_CANDIDATES.map(([id]) => id), ...savedCustom])]
     try {
-      const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...ids], f90, t0, null, key)).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
+      const rows = (await windsorFetch('facebook', ['account_id', 'spend', ...ids], f90, t0, null, key, { accounts: cc.meta })).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
       let spend = 0; const sums = {}
       for (const r of rows) { spend += num(r.spend); for (const id of ids) sums[id] = (sums[id] || 0) + num(r[id]) }
       const savedSet = new Set(savedCustom)
@@ -4355,7 +4355,7 @@ export default async (req) => {
       }
       if (found.length) {
         let spend = 0
-        try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], f90, t0, null, key)).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta)); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
+        try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], f90, t0, null, key, { accounts: cc.meta })).filter((r) => !r.account_id || acctEq(r.account_id, cc.meta)); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
         for (const a of found) a.costPer = a.count ? Math.round((spend / a.count) * 100) / 100 : null
       }
       return json({ scope: 'metaprobe', client, event: ev, window: { from: f90, to: t0 }, found }, 200, false)
@@ -4382,7 +4382,7 @@ export default async (req) => {
     // The human event name lives inside the pixel_rule ("event":{"eq":"B_page_view"}).
     const evFromRule = (rule) => { try { const s = typeof rule === 'string' ? rule : JSON.stringify(rule); const m = s.match(/"event"\s*:\s*\{\s*"eq"\s*:\s*"([^"]+)"/); return m ? m[1] : null } catch { return null } }
     try {
-      const adsets = (await windsorFetch('facebook', ['account_id', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'spend'], from, t0, null, key)).filter(acct)
+      const adsets = (await windsorFetch('facebook', ['account_id', 'adset_optimization_goal', 'adset_destination_type', 'adset_promoted_object', 'spend'], from, t0, null, key, { accounts: cc.meta })).filter(acct)
       let best = -1
       for (const a of adsets) {
         const sp = num(a.spend); if (sp > best && a.adset_optimization_goal) { best = sp; goal = a.adset_optimization_goal }
@@ -4409,7 +4409,7 @@ export default async (req) => {
     const convField = (id) => `conversions_offsite_conversion_custom_${id}`
     const auto = resolveMetaResult({ adset_optimization_goal: goal })
     let spend = 0
-    try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], from, t0, null, key)).filter(acct); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
+    try { const rows = (await windsorFetch('facebook', ['account_id', 'spend'], from, t0, null, key, { accounts: cc.meta })).filter(acct); for (const r of rows) spend += num(r.spend) } catch { /* ignore */ }
     // Real custom-conversion counts come from Windsor's Custom Conversions table
     // (the per-id insights columns are unknown fields → always 0). Keyed by both the
     // friendly name and the offsite_conversion_custom_<id> alias.
@@ -4431,7 +4431,7 @@ export default async (req) => {
     const stdCands = META_CONV_CANDIDATES.map(([id]) => id)
     for (let i = 0; i < stdCands.length; i += 8) {
       const batch = stdCands.slice(i, i + 8)
-      try { const rows = (await windsorFetch('facebook', ['account_id', ...batch], from, t0, null, key)).filter(acct); for (const r of rows) for (const f of batch) sums[f] = (sums[f] || 0) + num(r[f]) } catch { /* skip */ }
+      try { const rows = (await windsorFetch('facebook', ['account_id', ...batch], from, t0, null, key, { accounts: cc.meta })).filter(acct); for (const r of rows) for (const f of batch) sums[f] = (sums[f] || 0) + num(r[f]) } catch { /* skip */ }
     }
     // 2b. Experimental candidates (constructed custom field-name variants by name AND by
     //     numeric id, plus Meta's native `results`) - an unknown field errors the whole
@@ -4447,7 +4447,7 @@ export default async (req) => {
     // apart from "valid field but zero" - that's what tells us which field actually exists.
     const expStatus = {}
     for (const f of expCands) {
-      try { const rows = (await windsorFetch('facebook', ['account_id', f], from, t0, null, key)).filter(acct); let s = 0; for (const r of rows) s += num(r[f]); if (s > 0) sums[f] = s; expStatus[f] = s > 0 ? 'data' : 'zero' } catch { expStatus[f] = 'invalid' }
+      try { const rows = (await windsorFetch('facebook', ['account_id', f], from, t0, null, key, { accounts: cc.meta })).filter(acct); let s = 0; for (const r of rows) s += num(r[f]); if (s > 0) sums[f] = s; expStatus[f] = s > 0 ? 'data' : 'zero' } catch { expStatus[f] = 'invalid' }
     }
     const allCands = [...stdCands, ...expCands]
     const actions = allCands.map((id) => ({ id, label: META_CONV_LABEL[id] || (id === 'results' ? 'Results (Meta optimised)' : prettyField(id)), count: Math.round(sums[id] || 0), costPer: sums[id] ? Math.round((spend / sums[id]) * 100) / 100 : null }))
@@ -4501,7 +4501,7 @@ export default async (req) => {
         buildMeta(cc.meta, from, to, preset, key, fallback),
         (cc.ghl && (await isConnected().catch(() => false))) ? buildCreativePerf(cc.ghl, from, to).catch(() => ({ byContent: {} })) : Promise.resolve({ byContent: {} }),
         // Confirmed Windsor creative fields → auto-fill CTA / copy / destination.
-        windsorFetch('facebook', ['account_id', 'ad_name', 'call_to_action_type', 'body', 'title', 'link_url', 'website_destination_url', 'ad_preview_shareable_link', 'creative_id', 'object_type'], from, to, preset, key).then(filt2).catch(() => []),
+        windsorFetch('facebook', ['account_id', 'ad_name', 'call_to_action_type', 'body', 'title', 'link_url', 'website_destination_url', 'ad_preview_shareable_link', 'creative_id', 'object_type'], from, to, preset, key, { accounts: cc.meta }).then(filt2).catch(() => []),
       ])
       // First non-empty value per ad name (an ad can span rows/placements).
       const creBy = new Map()
@@ -4592,7 +4592,7 @@ export default async (req) => {
       // Best-effort join ad_id → name/thumbnail via Windsor (field may be absent).
       let nameById = {}
       try {
-        const rows = (await windsorFetch('facebook', ['account_id', 'ad_id', 'ad_name', 'thumbnail_url'], from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
+        const rows = (await windsorFetch('facebook', ['account_id', 'ad_id', 'ad_name', 'thumbnail_url'], from, to, preset, key, { accounts: cc.meta })).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
         for (const r of rows) if (r.ad_id) nameById[String(r.ad_id)] = { name: r.ad_name, thumb: r.thumbnail_url }
       } catch { /* names optional */ }
       const norml = (l) => /high/i.test(l) ? 'High' : /med/i.test(l) ? 'Medium' : /low/i.test(l) ? 'Low' : l
@@ -4720,7 +4720,7 @@ export default async (req) => {
     const out = {}
     for (const f of cand) {
       try {
-        const rows = (await windsorFetch('facebook', ['account_id', 'ad_name', f], from, to, preset, key)).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
+        const rows = (await windsorFetch('facebook', ['account_id', 'ad_name', f], from, to, preset, key, { accounts: cc.meta })).filter((r) => !r.account_id || acctEq(r.account_id,cc.meta))
         const populated = rows.filter((r) => r[f] !== null && r[f] !== undefined && r[f] !== '').length
         out[f] = { recognised: true, populated, sample: (rows.find((r) => r[f]) || {})[f] || null }
       } catch (e) { out[f] = { recognised: false, error: String(e.message || e).slice(0, 80) } }
@@ -4807,9 +4807,9 @@ export default async (req) => {
       // ad-set names. Also pull the entity IDs so a UTM that carries a raw
       // campaign/ad-set ID (instead of the name) still matches a live entity.
       const [fbCA, fbAds, gg] = await Promise.all([
-        cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id'], namesFrom, to, '', key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
-        cc.meta ? windsorFetch('facebook', ['account_id', 'ad_name', 'ad_id'], namesFrom, to, '', key).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
-        cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], namesFrom, to, '', key).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
+        cc.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id'], namesFrom, to, '', key, { accounts: cc.meta }).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+        cc.meta ? windsorFetch('facebook', ['account_id', 'ad_name', 'ad_id'], namesFrom, to, '', key, { accounts: cc.meta }).then(filt(cc.meta)).catch(() => []) : Promise.resolve([]),
+        cc.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], namesFrom, to, '', key, { accounts: cc.google }).then(filt(cc.google)).catch(() => []) : Promise.resolve([]),
       ])
       // Tag every name with the channel it came from so the linker can group
       // Meta vs Google. First channel to claim a name wins (rare cross-channel dupes).
@@ -4886,15 +4886,15 @@ export default async (req) => {
       const [attribution, ggIds, fbIds, ggAdIds] = await Promise.all([
         fn(c.ghl, from, to, pipeline ? { pipeline } : {}),
         // Google: campaign + ad-group (id ↔ name) so both levels' UTM IDs resolve.
-        c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
+        c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], from, to, preset, key, { accounts: c.google }).then(filtG).catch(() => []) : Promise.resolve([]),
         // Meta: campaign + ad-set (id ↔ name) + ad (id ↔ name).
-        c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id', 'ad_name', 'ad_id'], from, to, preset, key).then(filtM).catch(() => []) : Promise.resolve([]),
+        c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'campaign_id', 'adset_name', 'adset_id', 'ad_name', 'ad_id'], from, to, preset, key, { accounts: c.meta }).then(filtM).catch(() => []) : Promise.resolve([]),
         // Google ad_id → its ad group. Google has no ad-level table (RSAs have no
         // names), so if the CRM's utm_content carries the AD id rather than the
         // ad-group id, fold it to the ad group so the ad-group green columns still
         // populate. Own query so a field mismatch can't blank the campaign/ad-group
         // resolution above.
-        c.google ? windsorFetch('google_ads', ['account_id', 'ad_group_name', 'ad_id'], from, to, preset, key).then(filtG).catch(() => []) : Promise.resolve([]),
+        c.google ? windsorFetch('google_ads', ['account_id', 'ad_group_name', 'ad_id'], from, to, preset, key, { accounts: c.google }).then(filtG).catch(() => []) : Promise.resolve([]),
       ])
       // {id -> name} maps per level, so a CRM UTM carrying the numeric ID resolves
       // to the live entity name for the Caalano360 outcome columns. campaign =
@@ -4957,7 +4957,7 @@ export default async (req) => {
   if (url.searchParams.get('probe') === '1') {
     const cand = ['campaign', 'ad_group_name', 'keyword', 'criteria', 'keyword_text', 'search_keyword', 'search_term', 'search_query', 'query', 'search_keyword_match_type', 'keyword_match_type', 'match_type', 'quality_score', 'historical_quality_score', 'spend', 'clicks', 'conversions']
     try {
-      const rows = await windsorFetch('google_ads', ['account_id', ...cand], from, to, preset, key)
+      const rows = await windsorFetch('google_ads', ['account_id', ...cand], from, to, preset, key, { accounts: accountId })
       const mine = rows.filter((r) => !r.account_id || acctEq(r.account_id,accountId))
       const recognised = mine[0] ? Object.keys(mine[0]) : []
       const populated = {}

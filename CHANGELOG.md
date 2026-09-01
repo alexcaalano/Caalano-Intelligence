@@ -18,6 +18,34 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.442.0 - 2026-08-20 · `PENDING` - Scope every per-client ad read to its account
+
+Follow-on from v3.441.0, which fixed the Overview's Meta spend. The same pattern
+was everywhere: **53 more** Meta / Google reads pulled every ad account on the
+agency key and filtered down to one client in JavaScript afterwards. Each one was
+a timeout waiting to happen, and a timeout there reads as zero rather than as an
+error. All of them now scope at the API - the Meta tab (9 reads, fired in
+parallel), the Google tab (11), fatigue, anomalies, cohorts, weekly, geo, the
+id→name maps, the custom-conversion probes, the creative and diagnostic endpoints.
+
+Two latent correctness bugs fell out of it. The Meta timezone probe read
+`rows[0]` from an unfiltered agency-wide pull, so it could report **another
+client's** account timezone; and the creative-copy join matched on ad name across
+every account at once, so two clients with an identically named ad could get each
+other's copy. Both are scoped now, so neither can happen.
+
+Eleven reads stay agency-wide because that is the point of them - the portfolio
+row for every client, the trends pull, and account discovery. Each now says so on
+the line.
+
+Adds `scripts/check-windsor-scope.mjs` to `npm run check` and the build: a Meta or
+Google read must either scope to an account or carry an `// agency-wide:` note
+saying why it does not. Verified it catches an unscoped read, respects the
+markers, ignores other connectors, and judges two calls on one line separately.
+Also checked, with a real scope walk over the parsed file, that all 64 account
+expressions resolve to a binding in scope - a typo there would throw inside a
+`.catch(() => [])` and look exactly like the bug being fixed.
+
 ## v3.441.0 - 2026-08-20 · `76596c2` - Fix Meta spend reading $0.00 on the Overview
 
 The Channel split, the paid scorecards and every cost-per figure derived from

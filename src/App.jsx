@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.428.0'
+const APP_VERSION = '3.429.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8880,6 +8880,46 @@ const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : p.lost ? 'lost' 
 const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_BLUE : o === 'lost' ? LM_RED : LM_AMBER)
 // Interactive Leaflet map (OpenStreetMap tiles) - real base map with suburb
 // names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
+// Shading a service area, without any boundary data to shade with.
+//
+// We hold postcode CENTROIDS, not polygons - so a zone cannot be drawn as its
+// true outline. The two honest options are a disc per postcode, or a hull around
+// them all. A hull is prettier and wrong: it claims every gap between the
+// postcodes as covered, including suburbs deliberately left out. So it is discs -
+// each one corresponds to a postcode actually in the zone, and where they overlap
+// they read as a single area.
+//
+// A fixed disc size would be wrong at both ends: a metro postcode is a couple of
+// kilometres across and an outback one can be fifty. So each disc is sized by how
+// far away its nearest neighbouring postcode is - half that distance, which
+// approximates the ground the centroid stands for - then clamped, so a remote
+// postcode does not shade a quarter of the state and a dense one is still visible.
+const ZONE_DISC_MIN_KM = 1.5
+const ZONE_DISC_MAX_KM = 18
+function zoneDiscs(db, places) {
+  if (!db || !db.pc || !places || !places.length) return []
+  const all = Object.values(db.pc)
+  const out = []
+  const seen = new Set()
+  for (const pl of places) {
+    const v = String(pl).trim().toUpperCase()
+    if (seen.has(v)) continue
+    seen.add(v)
+    let c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
+    if (!c) { const sv = db.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]] }
+    if (!c) continue
+    let nn = Infinity
+    for (const o of all) {
+      if (o === c) continue
+      const d = kmBetween(c, o)
+      if (d > 0.01 && d < nn) nn = d
+    }
+    const km = Number.isFinite(nn) ? nn / 2 : ZONE_DISC_MIN_KM
+    out.push({ place: v, lat: c[0], lng: c[1], km: Math.max(ZONE_DISC_MIN_KM, Math.min(ZONE_DISC_MAX_KM, km)) })
+  }
+  return out
+}
+
 function LeadMap({ locs, tall, clientId, currency }) {
   const [db, setDb] = useState(undefined)
   const [filter, setFilter] = useState('all') // all | lead | booked | won
@@ -8986,6 +9026,20 @@ function LeadMap({ locs, tall, clientId, currency }) {
   // Which zone (or zones) each pocket of leads falls in. Membership is a set
   // lookup on the place itself, so there is no edge-of-circle guesswork - a lead
   // either is in the zone or isn't.
+  // Zone shading is on by default when zones exist - seeing the target area
+  // against where the leads actually landed is the whole reason for the tab.
+  const [shade, setShade] = useState(true)
+  // Discs are expensive to size (each one scans every postcode for its nearest
+  // neighbour), so this is memoised on the zone definitions rather than redone
+  // on every filter change or redraw.
+  const zoneShapes = useMemo(() => {
+    if (!areasOn || !db) return []
+    return (geo.areas || []).filter((a) => (a.places || []).length).map((a, i) => ({
+      id: a.id, name: a.name || `Zone ${i + 1}`,
+      color: LR_HUES.light[i % LR_HUES.light.length],
+      discs: zoneDiscs(db, a.places),
+    }))
+  }, [areasOn, db, geo.areas])
   const zones = useMemo(() => {
     if (!areasOn) return null
     const norm = (v) => String(v || '').trim().toUpperCase()
@@ -9020,6 +9074,18 @@ function LeadMap({ locs, tall, clientId, currency }) {
     const L = LRef.current, map = mapRef.current, layer = layerRef.current
     if (!L || !map || !layer) return
     layer.clearLayers()
+    // Zone shading goes down FIRST so every lead dot sits on top of it - the dots
+    // are the data and the shading is the context, and a dot hidden under a disc
+    // would invert that.
+    if (shade) {
+      for (const z of zoneShapes) {
+        for (const d of z.discs) {
+          L.circle([d.lat, d.lng], {
+            radius: d.km * 1000, color: z.color, weight: 0, fillColor: z.color, fillOpacity: 0.13, interactive: false,
+          }).addTo(layer)
+        }
+      }
+    }
     const shown = pts.filter((p) => filter === 'all' ? true : filter === 'lead' ? true : filter === 'booked' ? p.booked > 0 : filter === 'won' ? p.won > 0 : p.lost > 0)
     const latlngs = []
     for (const p of shown) {
@@ -9041,7 +9107,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
       latlngs.push(catch_.origin)
     }
     if (latlngs.length) { try { map.fitBounds(latlngs, { padding: [34, 34], maxZoom: 13 }) } catch { /* single point */ } }
-  }, [pts, filter, maxLeads, ready, catch_])
+  }, [pts, filter, maxLeads, ready, catch_, shade, zoneShapes])
 
   if (db === undefined) return <div className="cap" style={{ padding: 12 }}>Loading map…</div>
   if (!db) return <div className="cap" style={{ padding: 12 }}>Map data unavailable.</div>
@@ -9089,9 +9155,19 @@ function LeadMap({ locs, tall, clientId, currency }) {
           <div className="lead-map-tabs"><span className="lead-map-lab">Show</span>{FILTERS.map(([k, l]) => <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>)}</div>
           <div className="lm-legend2"><span><i style={{ background: LM_AMBER }} />Leads</span><span><i style={{ background: LM_BLUE }} />Booked</span><span><i style={{ background: LM_GREEN }} />Won</span><span><i style={{ background: LM_RED }} />Lost</span>{catch_ ? <span><i style={{ background: '#6d5efc' }} />The business</span> : null}</div>
         </div>
+        {zoneShapes.length ? (
+          <div className="lm-zonebar">
+            <button className={`lm-zonetog${shade ? ' on' : ''}`} onClick={() => setShade((v) => !v)} title="Shade the postcodes each zone covers, so the target area can be read against where the leads actually are">
+              {shade ? '◉' : '○'} Target areas
+            </button>
+            <div className="lm-zonekeys">{zoneShapes.map((z) => (
+              <span key={z.id} className={shade ? '' : 'off'}><i style={{ background: z.color }} />{z.name} <b>{fmtNumber(z.discs.length)}</b></span>
+            ))}</div>
+          </div>
+        ) : null}
         <div ref={elRef} className={`lead-map-leaflet${tall ? ' lead-map-tall' : ''}`} />
       </div>
-      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the leads{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
+      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the leads{zoneShapes.length && shade ? ' · shaded areas are the zones you have set. We hold postcode centroids, not boundaries, so each postcode is drawn as a disc sized by how far its nearest neighbour sits - close to the ground it covers, and deliberately not a real border' : ''}{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
       {sel && <LocationLeadsModal loc={sel} clientId={clientId} currency={currency} onClose={() => setSel(null)} />}
     </div>
   )

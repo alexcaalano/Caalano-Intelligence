@@ -18,6 +18,44 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.429.0 - 2026-08-20 · `PENDING` - Service areas shaded on the lead map
+
+The Location map showed where leads came from and, separately, a table saying how
+many fell in each zone. The one thing it did not show was the zone itself, so
+"are we getting leads where we are targeting" had to be reconstructed from a
+table and a memory of which postcodes are in which zone.
+
+Zones are now **shaded on the map**, one colour each, under the lead dots. A key
+above the map names each zone with its postcode count and a toggle to turn the
+shading off. Leads that landed outside every zone are now obvious at a glance
+rather than a number in a row labelled "Outside every zone".
+
+**On what the shading is, exactly.** We hold postcode *centroids*, not boundaries -
+there is no polygon to fill. The tempting fix is a hull drawn around the zone's
+postcodes, and it would be a lie: it claims every gap between them as covered,
+including suburbs deliberately left out. So each postcode is drawn as its own
+disc, and where they overlap they read as one area.
+
+A fixed disc size would be wrong at both ends - an inner-city postcode is a
+couple of kilometres across and an outback one can be fifty - so each disc is
+sized by how far its nearest neighbouring postcode sits, which approximates the
+ground that centroid actually stands for, then clamped so nothing disappears and
+nothing shades a quarter of the state. In testing, remote postcodes draw several
+times larger than inner-Sydney ones, which is the behaviour that makes the shape
+honest.
+
+The caption says all of this on the map, because a shaded area looks like a
+border and this one is not.
+
+22 assertions on the disc sizing, including that a disc is only ever drawn for a
+postcode genuinely in the zone and at its own centroid, that adjacent metro
+postcodes overlap into one area rather than reading as scattered dots, and that
+an unresolvable place is skipped rather than guessed at. A browser test confirms
+the lead dots render above the shading - the dots are the data, the shading is
+the context, and that order must not invert.
+
+---
+
 ## v3.428.0 - 2026-08-20 · `PENDING` - The map is the setting, in both catchment modes
 
 The map was behind a button and only in one mode. It is now **shown by default in

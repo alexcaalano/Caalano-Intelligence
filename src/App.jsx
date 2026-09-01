@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.438.0'
+const APP_VERSION = '3.439.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9469,7 +9469,11 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
   // working; district and council answer where the leads are actually coming
   // from, which is a different and often more useful question - and it needs no
   // zones defined at all.
-  const [groupBy, setGroupBy] = useState('zones')
+  // Districts by default, not zones. The area breakdown and the insights work off
+  // the postcode a lead gave, which every client has - Catchment is only needed to
+  // define ZONES, and defaulting to them meant a client who had never opened
+  // Catchment landed on an empty tab and saw none of it.
+  const [groupBy, setGroupBy] = useState('district')
   const [onlyMine, setOnlyMine] = useState(false)
   // Cut first, then group: filter to Regional and group by council, and you get
   // the regional councils rather than having to read past the metro ones.
@@ -9603,6 +9607,10 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
     }
   }, [areasOn, geo.areas, pts, chanCut])
 
+  // A client can remove their last zone while the tab is open; the view must fall
+  // back rather than stranding on a tab that no longer exists.
+  useEffect(() => { if (groupBy === 'zones' && !(zones && zones.rows.length)) setGroupBy('district') }, [groupBy, zones])
+
   // (Re)draw markers whenever the points or filter change; fit to bounds.
   const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
   useEffect(() => {
@@ -9671,13 +9679,13 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
         {/* The panel is worth showing with no zones at all: "by district" answers
             where the leads come from, which does not depend on having targeted
             anything. Only the "my zones" tab needs zones to exist. */}
-        {(zones && zones.rows.length) || groupBy !== 'zones' || (geo.mode === 'areas') ? (
+        {pts.length ? (
           <div className="lm-catch">
             {sigs.length ? <LocSignals signals={sigs} tests={sigTests} /> : null}
             <div className="lm-grpbar">
               <span className="cap" style={{ fontWeight: 700 }}>Where the leads are</span>
               <div className="optlog-toggle">
-                {[['zones', 'My zones', 'The zones you defined in Settings'],
+                {[...(zones && zones.rows.length ? [['zones', 'My zones', 'The zones you defined in Settings → Catchment']] : []),
                   ['remoteness', 'Metro / rural', 'Every lead by how far its postcode sits from a major city, on the ABS remoteness scale'],
                   ['state', 'State', 'Every lead by the state its postcode sits in'],
                   ['district', 'District', 'Every lead by the ABS district its postcode sits in, whether or not you target it'],

@@ -44,6 +44,21 @@ for (const [start, name] of starts) {
     }
   })
 
+  // A hook's DEPENDENCY ARRAY is not part of the callback - it is evaluated on
+  // every render, right where it is written. So `useEffect(() => ..., [zones])`
+  // above `const zones = ...` throws, even though the callback itself would have
+  // been fine. Worth its own pass because the statement is usually not an
+  // assignment at all, and the pass below only looks at initialisers.
+  body.forEach((l, off) => {
+    const m = /,\s*\[([^\]]*)\]\s*\)\s*;?\s*$/.exec(l)
+    if (!m) return
+    if (!/^ {2}(?:\}|use[A-Z])/.test(l)) return          // a hook call, or the line closing one
+    for (const ref of new Set(scrub(m[1]).match(/[A-Za-z_$][\w$]*/g) || [])) {
+      const at = declaredAt.get(ref)
+      if (at !== undefined && at > off) problems.push({ name, line: start + off + 1, ref, at: start + at + 1, text: l.trim().slice(0, 100) })
+    }
+  })
+
   body.forEach((l, off) => {
     const m = /^ {2}(?:const|let) (?:\[[^\]]+\]|[A-Za-z_$][\w$]*)\s*=\s*(.*)$/.exec(l)
     if (!m) return

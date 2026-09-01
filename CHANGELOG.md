@@ -18,6 +18,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.439.0 - 2026-08-20 · `PENDING` - Location insights show for every client
+
+The Location tab's insights and area breakdown no longer wait on a Catchment
+setup. Both read the postcode each lead already gave us and look it up against
+the ABS geography, so "which district converts best" is answerable for a client
+who has never opened Settings → Catchment. Previously the tab opened on **My
+zones**, which for those clients was an empty panel and hid everything below it.
+
+- The default grouping is now **District**. Remoteness, State and Council sit
+  beside it as before.
+- **My zones** is offered only when zones actually exist, and the view falls back
+  to District if the last one is deleted while the tab is open.
+- Catchment is unchanged and still does what it always did: it defines the zones,
+  draws them on the map, and adds the "only the areas I target" cut.
+
+Also extends `scripts/check-tdz.mjs` to read hook dependency arrays. A dep array
+is evaluated on every render, right where it is written, so `useEffect(..., [x])`
+placed above `const x = ...` throws - but the checker only inspected assignment
+initialisers and skipped hook statements wholesale, so it could not see it. It
+caught exactly that mistake in this change, and still reports nothing across the
+rest of the file.
+
 ## v3.438.0 - 2026-08-20 · `PENDING` - Key events get a grouped header
 
 Each key event on the Location tables is now one header spanning two columns -

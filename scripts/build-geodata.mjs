@@ -157,17 +157,26 @@ async function main() {
   const districts = build('sa3name')
   const councils = build('lgaregion')
   const regions = districts
+  // ABS Remoteness Areas: the official measure of how far a place sits from
+  // services, and the only defensible basis for calling somewhere metro, regional
+  // or remote. Stored as its numeric class so the app can present the coarse
+  // three-way split most people want while keeping the real five-level detail.
+  const RA = { 'Major Cities of Australia': 1, 'Inner Regional Australia': 2, 'Outer Regional Australia': 3, 'Remote Australia': 4, 'Very Remote Australia': 5 }
+  const ra = {}
+  for (const r of live) { const c = RA[r.RA_2021_NAME]; if (c && !ra[r.postcode]) ra[r.postcode] = c }
   const out = {
     states: Object.keys(STATE_NAME).map((k) => ({ code: k, name: STATE_NAME[k] })),
     districts,
     councils,
+    ra,
+    raLabels: { 1: 'Major cities', 2: 'Inner regional', 3: 'Outer regional', 4: 'Remote', 5: 'Very remote' },
     sub2pc,
     attribution: 'Boundaries and region names: Australian Bureau of Statistics, ASGS Edition 3 (CC BY 4.0).',
   }
   const regJson = JSON.stringify(out)
   fs.writeFileSync(path.join(OUT, 'auregions.json'), regJson)
   const groups = new Set(regions.map((r) => `${r.s}|${r.g}`))
-  console.log(`auregions.json   ${districts.length} districts + ${councils.length} councils across ${groups.size} state groups, ${Object.keys(sub2pc).length} suburb names, ${(regJson.length / 1048576).toFixed(2)}MB (${(zlib.gzipSync(Buffer.from(regJson)).length / 1024).toFixed(0)}KB gzipped)`)
+  console.log(`auregions.json   ${districts.length} districts + ${councils.length} councils + ${Object.keys(ra).length} remoteness across ${groups.size} state groups, ${Object.keys(sub2pc).length} suburb names, ${(regJson.length / 1048576).toFixed(2)}MB (${(zlib.gzipSync(Buffer.from(regJson)).length / 1024).toFixed(0)}KB gzipped)`)
 
   // How much of what we can shade, we actually have a shape for.
   const need = new Set(regions.flatMap((r) => r.p))

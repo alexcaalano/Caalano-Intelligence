@@ -18,6 +18,36 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.433.0 - 2026-08-20 · `PENDING` - Metro / regional / remote, state, and cut-then-drill
+
+The Location tab now groups leads five ways - **My zones · Metro / regional ·
+State · District · Council** - and all but the first need no zones configured at
+all.
+
+**Metro, regional and remote are the ABS Remoteness Areas**, not a guess from
+population. That is the official measure of how far a place sits from services,
+and it is already carried per postcode: 2,584 of them, every one single-valued.
+Metro is "major cities"; regional folds inner and outer regional together; remote
+folds remote and very remote. The exact ABS class stays on each row's hover, so a
+regional figure can still say whether it is inner or outer.
+
+**And you can cut before you group.** A "show everywhere / metro only / regional
+only / remote only" control applies to whichever grouping is on screen - so
+"regional only, by council" gives you the regional councils on their own instead
+of buried under the metro ones, which is the dissect-then-zoom-in reading. The
+caveat says how many leads the cut removed, and the share column is a share of
+what is on screen after it, not of everything.
+
+Sanity checks that hold in the data: Sydney and Melbourne CBD and Baulkham Hills
+are metro, Bathurst is regional, Broken Hill is remote.
+
+23 assertions on the banding and the cut, including that all three bands are
+populated with a realistic share of the country, that the three cuts partition
+the placeable leads exactly, that shares within a cut sum to 100%, and that a
+lead whose postcode cannot be placed is counted rather than dropped.
+
+---
+
 ## v3.432.0 - 2026-08-20 · `PENDING` - Leads per area, with or without zones
 
 Two changes, and the second is the more useful one.

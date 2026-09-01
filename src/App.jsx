@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.432.0'
+const APP_VERSION = '3.433.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7430,6 +7430,15 @@ function useRegions(want) {
 }
 // postcode -> { district, council }, inverted from the region lists once so the
 // Location tab can group leads by area without any zones being defined at all.
+// The ABS Remoteness Areas, collapsed to the three buckets people actually talk
+// in. The five-level detail is kept on the row so a "Regional" figure can still
+// say whether it is inner or outer regional.
+const RA_BUCKET = { 1: 'Metro', 2: 'Regional', 3: 'Regional', 4: 'Remote', 5: 'Remote' }
+const RA_ORDER = ['Metro', 'Regional', 'Remote']
+const STATE_FULL = {
+  NSW: 'New South Wales', VIC: 'Victoria', QLD: 'Queensland', SA: 'South Australia',
+  WA: 'Western Australia', TAS: 'Tasmania', NT: 'Northern Territory', ACT: 'Australian Capital Territory',
+}
 function areaIndexOf(regions) {
   if (!regions) return null
   const idx = new Map()
@@ -7439,8 +7448,15 @@ function areaIndexOf(regions) {
         let e = idx.get(p); if (!e) { e = {}; idx.set(p, e) }
         e[kind === 'districts' ? 'district' : 'council'] = r.n
         e.state = r.s
+        e.stateName = STATE_FULL[r.s] || r.s
       }
     }
+  }
+  for (const [p, c] of Object.entries(regions.ra || {})) {
+    let e = idx.get(p); if (!e) { e = {}; idx.set(p, e) }
+    e.ra = c
+    e.remoteness = RA_BUCKET[c] || null
+    e.raName = (regions.raLabels || {})[c] || null
   }
   return idx
 }
@@ -9262,11 +9278,17 @@ function LeadMap({ locs, tall, clientId, currency }) {
   // zones defined at all.
   const [groupBy, setGroupBy] = useState('zones')
   const [onlyMine, setOnlyMine] = useState(false)
+  // Cut first, then group: filter to Regional and group by council, and you get
+  // the regional councils rather than having to read past the metro ones.
+  const [raCut, setRaCut] = useState('all')
   const regions = useRegions(groupBy !== 'zones')
   const areaIdx = useMemo(() => areaIndexOf(regions), [regions])
   const byArea = useMemo(() => {
     if (groupBy === 'zones' || !areaIdx) return null
-    const key = groupBy === 'district' ? 'district' : 'council'
+    const key = groupBy === 'district' ? 'district'
+      : groupBy === 'council' ? 'council'
+        : groupBy === 'state' ? 'stateName'
+          : 'remoteness'
     // Which areas the client has actually targeted, so the table can flag them
     // whether or not it is filtered to them.
     const mine = new Set()
@@ -9276,25 +9298,31 @@ function LeadMap({ locs, tall, clientId, currency }) {
       if (e && e[key]) mine.add(e[key])
     }
     const m = new Map()
-    let unknown = 0, unknownLeads = 0
+    let unknown = 0, unknownLeads = 0, cutOut = 0, cutOutLeads = 0
     for (const p of pts) {
       const v = String(p.value).trim().toUpperCase()
       const e = areaIdx.get(v.length === 3 ? '0' + v : v)
       const name = e && e[key]
       if (!name) { unknown++; unknownLeads += p.leads || 0; continue }
-      let g = m.get(name); if (!g) { g = { name, state: e.state, places: 0, leads: 0, booked: 0, won: 0, mine: mine.has(name) }; m.set(name, g) }
+      // The remoteness cut applies to every grouping, including the remoteness
+      // one - where it simply narrows to that bucket.
+      if (raCut !== 'all' && (!e.remoteness || e.remoteness !== raCut)) { cutOut++; cutOutLeads += p.leads || 0; continue }
+      let g = m.get(name)
+      if (!g) { g = { name, state: e.state, places: 0, leads: 0, booked: 0, won: 0, mine: mine.has(name), ra: new Set() }; m.set(name, g) }
       g.places++; g.leads += p.leads || 0; g.booked += p.booked || 0; g.won += p.won || 0
+      if (e.raName) g.ra.add(e.raName)
     }
-    const rows = [...m.values()].map((g) => ({ ...g, winPct: g.leads ? Math.round((g.won / g.leads) * 100) : null }))
-      .sort((a, b) => b.leads - a.leads)
+    const rows = [...m.values()].map((g) => ({ ...g, ra: [...g.ra], winPct: g.leads ? Math.round((g.won / g.leads) * 100) : null }))
+      .sort((a, b) => (groupBy === 'remoteness' ? RA_ORDER.indexOf(a.name) - RA_ORDER.indexOf(b.name) : 0) || b.leads - a.leads)
     return {
       rows: onlyMine ? rows.filter((r) => r.mine) : rows,
       total: rows.length, mineCount: rows.filter((r) => r.mine).length,
       // Targeted areas that produced nothing at all - the ones worth knowing about.
       dry: [...mine].filter((n) => !m.has(n)),
-      unknown, unknownLeads,
+      unknown, unknownLeads, cutOut, cutOutLeads,
+      totalLeads: rows.reduce((a, r) => a + r.leads, 0),
     }
-  }, [groupBy, areaIdx, pts, geo.areas, onlyMine])
+  }, [groupBy, areaIdx, pts, geo.areas, onlyMine, raCut])
   const zones = useMemo(() => {
     if (!areasOn) return null
     const norm = (v) => String(v || '').trim().toUpperCase()
@@ -9396,11 +9424,26 @@ function LeadMap({ locs, tall, clientId, currency }) {
             <div className="lm-grpbar">
               <span className="cap" style={{ fontWeight: 700 }}>Where the leads are</span>
               <div className="optlog-toggle">
-                <button className={groupBy === 'zones' ? 'on' : ''} onClick={() => setGroupBy('zones')} title="The zones you defined in Settings">My zones</button>
-                <button className={groupBy === 'district' ? 'on' : ''} onClick={() => setGroupBy('district')} title="Every lead grouped by the ABS district its postcode sits in, whether or not you targeted it">By district</button>
-                <button className={groupBy === 'council' ? 'on' : ''} onClick={() => setGroupBy('council')} title="Every lead grouped by the council its postcode sits in, whether or not you targeted it">By council</button>
+                {[['zones', 'My zones', 'The zones you defined in Settings'],
+                  ['remoteness', 'Metro / regional', 'Every lead by how far its postcode sits from a major city, on the ABS remoteness scale'],
+                  ['state', 'State', 'Every lead by the state its postcode sits in'],
+                  ['district', 'District', 'Every lead by the ABS district its postcode sits in, whether or not you target it'],
+                  ['council', 'Council', 'Every lead by the council its postcode sits in, whether or not you target it']].map(([k, lbl, t]) => (
+                    <button key={k} className={groupBy === k ? 'on' : ''} onClick={() => setGroupBy(k)} title={t}>{lbl}</button>
+                  ))}
               </div>
-              {groupBy !== 'zones' && byArea ? (
+              {groupBy !== 'zones' ? (
+                <label className="lm-onlymine" title="Cut to one band first, then read the grouping - regional councils on their own, rather than buried under the metro ones">
+                  Show
+                  <select className="lm-racut" value={raCut} onChange={(e) => setRaCut(e.target.value)}>
+                    <option value="all">everywhere</option>
+                    <option value="Metro">metro only</option>
+                    <option value="Regional">regional only</option>
+                    <option value="Remote">remote only</option>
+                  </select>
+                </label>
+              ) : null}
+              {groupBy !== 'zones' && byArea && byArea.mineCount ? (
                 <label className="lm-onlymine"><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} /> Only the {fmtNumber(byArea.mineCount)} I target</label>
               ) : null}
             </div>
@@ -9410,13 +9453,15 @@ function LeadMap({ locs, tall, clientId, currency }) {
                 : !byArea || !byArea.rows.length ? <p className="cap">{onlyMine ? 'No leads came from the areas you target in this period.' : 'None of these leads could be placed in an area.'}</p>
                   : <>
                     <div className="table-wrap"><table className="mini-tbl appt-tbl">
-                      <thead><tr><th className="lft">{groupBy === 'district' ? 'District' : 'Council'}</th><th>Places</th><th>Leads</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
+                      <thead><tr><th className="lft">{groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness'}</th><th>Places</th><th>Leads</th><th>Share</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
                       <tbody>
                         {byArea.rows.map((r) => (
                           <tr key={r.name} className={r.mine ? 'lm-mine' : ''}>
-                            <td className="lft">{r.name}{r.mine ? <span className="lm-tgt" title="You target this area">targeted</span> : null}</td>
+                            <td className="lft" title={r.ra && r.ra.length ? `ABS remoteness: ${r.ra.join(', ')}` : undefined}>{r.name}{r.mine ? <span className="lm-tgt" title="You target this area">targeted</span> : null}</td>
                             <td>{fmtNumber(r.places)}</td>
-                            <td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
+                            <td>{fmtNumber(r.leads)}</td>
+                            <td>{pctOf(r.leads, byArea.totalLeads)}</td>
+                            <td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
                             <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
                           </tr>
                         ))}
@@ -9424,12 +9469,12 @@ function LeadMap({ locs, tall, clientId, currency }) {
                           <tr className="lm-unzoned">
                             <td className="lft">Could not be placed</td>
                             <td>{fmtNumber(byArea.unknown)}</td>
-                            <td>{fmtNumber(byArea.unknownLeads)}</td><td colSpan={3}>-</td>
+                            <td>{fmtNumber(byArea.unknownLeads)}</td><td colSpan={4}>-</td>
                           </tr>
                         ) : null}
                       </tbody>
                     </table></div>
-                    <Caveat>Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : 'council'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
+                    <Caveat>{groupBy === 'remoteness' ? 'Metro, regional and remote are the ABS Remoteness Areas - the official measure of how far a place sits from services, not a guess from population. Metro is "major cities"; regional folds inner and outer regional together; remote folds remote and very remote. The exact class is on each row\u2019s hover. ' : ''}{raCut !== 'all' ? `Cut to ${raCut.toLowerCase()} only: ${fmtNumber(byArea.cutOutLeads)} leads from elsewhere are excluded from every figure here. ` : ''}Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : groupBy === 'council' ? 'council' : groupBy === 'state' ? 'state' : 'remoteness band'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
                   </>
             ) : (
             <>

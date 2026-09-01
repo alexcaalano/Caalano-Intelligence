@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.440.0 - 2026-08-20 · `PENDING` - Paged tables on the Location tab
+## v3.440.0 - 2026-08-20 · `81cdf33` - Paged tables on the Location tab
 
 Every long list on the Location tab now shows ten at a time with page controls
 underneath, instead of running to hundreds of rows or stopping at a hard cap.

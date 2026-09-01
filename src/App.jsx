@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.429.0'
+const APP_VERSION = '3.430.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7219,7 +7219,7 @@ const geoPinLabel = (p) => (p && p.label) || (p ? `${p.lat.toFixed(3)}, ${p.lng.
 //   zone mode    the circle is only a selection tool. Every place already in the
 //                zone is plotted, and clicking one removes it - so a zone built
 //                by radius can be trimmed by hand where the circle overreached.
-function GeoMapEditor({ db, mode, pin, radiusKm, onPin, places, onTogglePlace, bizCoord, height }) {
+function GeoMapEditor({ db, mode, pin, radiusKm, onPin, places, onTogglePlace, bizCoord, height, poa }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const oRef = useRef({})
@@ -7277,13 +7277,26 @@ function GeoMapEditor({ db, mode, pin, radiusKm, onPin, places, onTogglePlace, b
     if (!pts.length) return
     const g = L.layerGroup()
     for (const p of pts) {
+      // The real postcode outline where we have one, so the zone reads as the
+      // area it actually is. A dot is the fallback for the postcodes with no
+      // ground (PO-box-only ranges) and for suburb names, which have no boundary.
+      const parts = poa && poa[p.place.length === 3 ? '0' + p.place : p.place]
+      if (parts) {
+        for (const ring of parts) {
+          const poly = L.polygon(ring, { color: '#12b886', weight: 1.2, fillColor: '#12b886', fillOpacity: 0.28 })
+          poly.bindTooltip(onTogglePlace ? `${p.place} - click to remove` : p.place, { sticky: true })
+          if (onTogglePlace) poly.on('click', (e) => { L.DomEvent.stop(e); onTogglePlace(p.place) })
+          g.addLayer(poly)
+        }
+        continue
+      }
       const m = L.circleMarker([p.lat, p.lng], { radius: 6, color: '#fff', weight: 1.5, fillColor: '#12b886', fillOpacity: 0.9 })
-      m.bindTooltip(onTogglePlace ? `${p.place} - click to remove` : p.place, { direction: 'top' })
-      if (onTogglePlace) m.on('click', (e) => { e.originalEvent.stopPropagation(); L.DomEvent.stop(e); onTogglePlace(p.place) })
+      m.bindTooltip(onTogglePlace ? `${p.place} - no mapped area, shown as a point · click to remove` : p.place, { direction: 'top' })
+      if (onTogglePlace) m.on('click', (e) => { L.DomEvent.stop(e); onTogglePlace(p.place) })
       g.addLayer(m)
     }
     g.addTo(map); o.pts = g
-  }, [pts, ready, onTogglePlace])
+  }, [pts, ready, onTogglePlace, poa])
 
   // The pin, its circle and the resize handle.
   useEffect(() => {
@@ -7324,8 +7337,12 @@ function GeoMapEditor({ db, mode, pin, radiusKm, onPin, places, onTogglePlace, b
     if (!map || !L || !ready) return
     if (o.circle) { map.fitBounds(o.circle.getBounds(), { padding: [22, 22], maxZoom: 13 }); return }
     if (!framed.current && pts.length) {
-      map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])).pad(0.15), { maxZoom: 12 })
-      framed.current = true
+      const all = []
+      for (const p of pts) {
+        const parts = poa && poa[p.place.length === 3 ? '0' + p.place : p.place]
+        if (parts) { for (const r of parts) for (const c of r) all.push(c) } else all.push([p.lat, p.lng])
+      }
+      if (all.length) { map.fitBounds(L.latLngBounds(all).pad(0.12), { maxZoom: 12 }); framed.current = true }
     }
   }, [ready, km, centre && centre[0], centre && centre[1], pts.length])
 
@@ -7392,6 +7409,101 @@ function GeoMapEditor({ db, mode, pin, radiusKm, onPin, places, onTogglePlace, b
   )
 }
 
+// Pick a council instead of typing postcodes. State → the capital-city group →
+// the LGAs inside it, and one click adds every postcode that LGA covers.
+//
+// The grouping is the ABS Greater Capital City structure, so "Greater Sydney" is
+// the real thing (fourteen SA4s, Blue Mountains and Hawkesbury included) rather
+// than a guess at what counts as Sydney.
+let _regCache = null
+let _regPromise = null
+function useRegions(want) {
+  const [d, setD] = useState(_regCache)
+  useEffect(() => {
+    if (!want || _regCache) { if (_regCache) setD(_regCache); return }
+    let alive = true
+    if (!_regPromise) _regPromise = import('./data/auregions.json').then((m) => { _regCache = m.default || m; return _regCache })
+    _regPromise.then((x) => { if (alive) setD(x) }).catch(() => {})
+    return () => { alive = false }
+  }, [want])
+  return d
+}
+function RegionPicker({ regions, onAdd, existing }) {
+  const [st, setSt] = useState('NSW')
+  const [grp, setGrp] = useState('')
+  const [q, setQ] = useState('')
+  // Districts by default. Postcodes do not nest inside council boundaries, so
+  // every postcode -> council mapping has to pick one council for a postcode that
+  // spans several, and the source gets a fair few of those wrong - it files
+  // Castle Hill under Hornsby. The ABS districts group the same postcodes about
+  // three times more tightly, so they are the better default even though
+  // "council" is the word everyone reaches for.
+  const [kind, setKind] = useState('districts')
+  const rows = (regions && regions[kind]) || []
+  const groups = useMemo(() => {
+    if (!regions) return []
+    const seen = []
+    for (const r of rows) if (r.s === st && !seen.includes(r.g)) seen.push(r.g)
+    // The capital comes first: it is what nearly every client is in.
+    return seen.sort((a, b) => (a.startsWith('Greater') || a.startsWith('Australian') ? -1 : 1) - (b.startsWith('Greater') || b.startsWith('Australian') ? -1 : 1) || a.localeCompare(b))
+  }, [regions, st, kind])
+  const grpSel = groups.includes(grp) ? grp : (groups[0] || '')
+  const list = useMemo(() => {
+    if (!regions) return []
+    const needle = q.trim().toLowerCase()
+    return rows
+      .filter((r) => r.s === st && r.g === grpSel && (!needle || r.n.toLowerCase().includes(needle)))
+      .sort((a, b) => a.n.localeCompare(b.n))
+  }, [regions, st, grpSel, q, kind])
+  const have = useMemo(() => new Set((existing || []).map((x) => String(x).trim().toUpperCase())), [existing])
+  if (!regions) return <p className="cap">Loading councils…</p>
+  return (
+    <div className="geo-reg">
+      <div className="geo-reg-row">
+        <label className="fld">
+          <span className="cap">State</span>
+          <select className="inp" value={st} onChange={(e) => { setSt(e.target.value); setGrp(''); setQ('') }}>
+            {regions.states.map((x) => <option key={x.code} value={x.code}>{x.name}</option>)}
+          </select>
+        </label>
+        <label className="fld">
+          <span className="cap">Region</span>
+          <select className="inp" value={grpSel} onChange={(e) => { setGrp(e.target.value); setQ('') }}>
+            {groups.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+        <label className="fld">
+          <span className="cap">Grouped by</span>
+          <select className="inp" value={kind} onChange={(e) => { setKind(e.target.value); setQ('') }}>
+            <option value="districts">District</option>
+            <option value="councils">Council (LGA)</option>
+          </select>
+        </label>
+        <label className="fld geo-reg-find">
+          <span className="cap">Find an area</span>
+          <input className="inp" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`${list.length} in ${grpSel || 'this region'}`} />
+        </label>
+      </div>
+      <p className="cap geo-reg-note">Postcodes do not line up with council boundaries, so an area here is the set of postcodes that mostly sit in it, not an exact match. <b>District</b> is the ABS statistical area and groups postcodes about three times more tightly than the council list, which files a few postcodes under a neighbouring council - so check what gets added and trim it on the map below.</p>
+      <div className="geo-reg-list">
+        {!list.length ? <p className="cap" style={{ margin: 0 }}>No councils match “{q}”.</p>
+          : list.map((r) => {
+            const already = r.p.filter((p) => have.has(p)).length
+            const all = already === r.p.length
+            return (
+              <button key={`${r.s}${r.n}`} type="button" className={`geo-reg-item${all ? ' in' : ''}`}
+                title={all ? 'Every postcode in this council is already in the zone' : `Add ${r.p.length - already} postcodes to the zone`}
+                disabled={all} onClick={() => onAdd(r)}>
+                <b>{r.n}</b>
+                <span>{fmtNumber(r.p.length)} postcode{r.p.length === 1 ? '' : 's'}{already && !all ? ` · ${fmtNumber(already)} already in` : ''}{all ? ' · all added' : ''}</span>
+              </button>
+            )
+          })}
+      </div>
+    </div>
+  )
+}
+
 function GeoSettings({ clientId }) {
   useSettingsSync()
   const [g, setG] = useState(() => loadGeo(clientId))
@@ -7427,6 +7539,28 @@ function GeoSettings({ clientId }) {
   // catchment - and every place already in the zone is plotted, so a zone built
   // by radius can be trimmed by hand where the circle overreached.
   const [areaMap, setAreaMap] = useState(0)
+  const regions = useRegions(g.mode === 'areas')
+  const poaShapes = usePoaShapes(g.mode === 'areas')
+  const [converted, setConverted] = useState(null)
+  // Suburb NAMES have no boundary to draw - only postcodes do. Converting them
+  // means a zone outlines completely instead of half of it showing. The mapping
+  // is reported rather than done silently, because a suburb can share a postcode
+  // with its neighbours and that changes what the zone actually covers.
+  const convertSuburbs = (i) => {
+    const a = g.areas[i]
+    if (!regions || !a) return
+    const out = [], changes = []
+    for (const pl of (a.places || [])) {
+      const v = String(pl).trim().toUpperCase()
+      if (/^\d{3,4}$/.test(v)) { out.push(v.length === 3 ? '0' + v : v); continue }
+      const pc = regions.sub2pc[v]
+      if (pc) { out.push(pc); changes.push([v, pc]) } else out.push(pl)
+    }
+    if (!changes.length) { setConverted({ zone: a.id, changes: [], none: true }); return }
+    saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: [...new Set(out)] } : x)))
+    setConverted({ zone: a.id, changes })
+  }
+  const namedCount = (a) => (a.places || []).filter((p) => !/^\d{3,4}$/.test(String(p).trim())).length
   // The place list backs both the zone editor and the map picker's search and
   // its "what does this circle cover" readout, so radius mode needs it too.
   useEffect(() => {
@@ -7642,6 +7776,19 @@ function GeoSettings({ clientId }) {
                       <button type="button" className={`btn-ghost sm${areaMap === i ? ' on' : ''}`} title="Show this zone on the map below, and draw a circle to add more" onClick={() => setAreaMap(i)}>{areaMap === i ? 'On the map ↓' : 'Show on map'}</button>
                     </span>
                   </div>
+                  {namedCount(a) ? (
+                    <div className="geo-convert">
+                      <span>{fmtNumber(namedCount(a))} entr{namedCount(a) === 1 ? 'y is' : 'ies are'} a suburb name, which has no boundary to draw. Converting to postcodes makes the whole zone outline on the map.</span>
+                      <button type="button" className="btn-ghost sm" disabled={!regions} onClick={() => convertSuburbs(i)}>Convert to postcodes</button>
+                    </div>
+                  ) : null}
+                  {converted && converted.zone === a.id ? (
+                    <div className="geo-convert done">
+                      {converted.none ? <span>Nothing to convert - none of these names matched a postcode.</span>
+                        : <span><b>{fmtNumber(converted.changes.length)} converted:</b> {converted.changes.slice(0, 8).map(([n, pc]) => `${n} → ${pc}`).join(', ')}{converted.changes.length > 8 ? `, +${fmtNumber(converted.changes.length - 8)} more` : ''}</span>}
+                      <button type="button" className="btn-ghost sm" onClick={() => setConverted(null)}>Dismiss</button>
+                    </div>
+                  ) : null}
                   {suggest[a.id] && suggest[a.id].length ? (
                     <div className="geo-sugg">{suggest[a.id].map((sg) => <button key={sg} type="button" onClick={() => addPlace(i, sg)}>{sg}</button>)}</div>
                   ) : null}
@@ -7651,6 +7798,21 @@ function GeoSettings({ clientId }) {
             })}
           </div>
           <button type="button" className="btn-ghost sm" onClick={() => saveAreas([...(g.areas || []), { id: `z${Date.now().toString(36)}`, name: '', places: [], pipelines: 'all' }])}>+ Add a zone</button>
+
+          {/* Build a zone from councils rather than by typing postcodes. The
+              grouping is the ABS Greater Capital City structure, so Greater
+              Sydney is the real fourteen-SA4 thing rather than a guess. */}
+          {(g.areas || []).length ? (() => {
+            const i = Math.min(areaMap || 0, g.areas.length - 1)
+            const a = g.areas[i]
+            return (
+              <>
+                <div className="set-sec-t" style={{ marginTop: 18 }}>Add a council <span className="cap">· into {a.name ? `“${a.name}”` : `zone ${i + 1}`}, chosen on the map selector below</span></div>
+                <RegionPicker regions={regions} existing={a.places || []}
+                  onAdd={(r) => saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: [...new Set([...(x.places || []), ...r.p])] } : x)))} />
+              </>
+            )
+          })() : null}
 
           {/* The map is always here rather than behind a button. A zone is a list
               of four-digit numbers, which is close to unreadable as a shape - and
@@ -7669,6 +7831,7 @@ function GeoSettings({ clientId }) {
                 </div>
                 {!geoDb ? <p className="cap">Loading the map…</p> : (
                   <GeoMapEditor db={geoDb} mode="zone" radiusKm={Number(seed[a.id]) || 10}
+                    poa={poaShapes}
                     places={a.places || []}
                     onTogglePlace={(pl) => saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: (x.places || []).filter((y) => y !== pl) } : x)))}
                     bizCoord={geoDb && b.postalCode && geoDb.pc[b.postalCode] ? geoDb.pc[b.postalCode] : null}
@@ -7682,7 +7845,7 @@ function GeoSettings({ clientId }) {
               </>
             )
           })() : null}
-          <Caveat>A lead is placed by the postcode or suburb captured on their form. Anywhere that appears in two zones counts in <b>both</b> - overlapping zones are a real thing a business might want, so they aren&rsquo;t blocked, but the totals will exceed your lead count and the warning above says where. Leads with no location captured are reported separately rather than dropped.</Caveat>
+          <Caveat>Boundaries, districts and council names come from the Australian Bureau of Statistics (ASGS Edition 3, 2021), used under CC BY 4.0, with the outlines simplified for drawing. A lead is placed by the postcode or suburb captured on their form. Anywhere that appears in two zones counts in <b>both</b> - overlapping zones are a real thing a business might want, so they aren&rsquo;t blocked, but the totals will exceed your lead count and the warning above says where. Leads with no location captured are reported separately rather than dropped.</Caveat>
         </>
       ) : null}
       {tick ? <span className="set-saved-tick" style={{ position: 'static' }}>✓ saved</span> : null}
@@ -8880,44 +9043,46 @@ const outcomeOf = (p) => (p.won ? 'won' : p.booked ? 'booked' : p.lost ? 'lost' 
 const outcomeColor = (o) => (o === 'won' ? LM_GREEN : o === 'booked' ? LM_BLUE : o === 'lost' ? LM_RED : LM_AMBER)
 // Interactive Leaflet map (OpenStreetMap tiles) - real base map with suburb
 // names + zoom/pan. Markers are coloured by outcome and sized by lead volume.
-// Shading a service area, without any boundary data to shade with.
+// Real postcode boundaries, from the ABS Postal Areas set (simplified at build
+// time by scripts/build-geodata.mjs). Loaded on demand, never in the main bundle -
+// it is ~0.9MB gzipped and only two screens ever want it.
 //
-// We hold postcode CENTROIDS, not polygons - so a zone cannot be drawn as its
-// true outline. The two honest options are a disc per postcode, or a hull around
-// them all. A hull is prettier and wrong: it claims every gap between the
-// postcodes as covered, including suburbs deliberately left out. So it is discs -
-// each one corresponds to a postcode actually in the zone, and where they overlap
-// they read as a single area.
-//
-// A fixed disc size would be wrong at both ends: a metro postcode is a couple of
-// kilometres across and an outback one can be fifty. So each disc is sized by how
-// far away its nearest neighbouring postcode is - half that distance, which
-// approximates the ground the centroid stands for - then clamped, so a remote
-// postcode does not shade a quarter of the state and a dense one is still visible.
-const ZONE_DISC_MIN_KM = 1.5
-const ZONE_DISC_MAX_KM = 18
-function zoneDiscs(db, places) {
-  if (!db || !db.pc || !places || !places.length) return []
-  const all = Object.values(db.pc)
-  const out = []
+// This replaces an earlier approach that drew a disc per postcode centroid,
+// because a disc is a guess at a shape we can simply have: postcodes are not
+// circles, they interlock, and the blur of overlapping circles read as a smudge
+// rather than as the area actually selected.
+let _poaCache = null
+let _poaPromise = null
+function usePoaShapes(want) {
+  const [shapes, setShapes] = useState(_poaCache)
+  useEffect(() => {
+    if (!want || _poaCache) { if (_poaCache) setShapes(_poaCache); return }
+    let alive = true
+    if (!_poaPromise) _poaPromise = import('./data/poashapes.json').then((m) => { _poaCache = m.default || m; return _poaCache })
+    _poaPromise.then((d) => { if (alive) setShapes(d) }).catch(() => {})
+    return () => { alive = false }
+  }, [want])
+  return shapes
+}
+// Every ring to draw for a set of places, plus what could not be drawn. A
+// postcode with no boundary is a real thing - PO-box-only ranges have no ground -
+// and is reported rather than quietly missing.
+function zoneRings(shapes, places, sub2pc) {
+  if (!shapes || !places || !places.length) return { rings: [], missing: 0 }
+  const rings = []
   const seen = new Set()
+  let missing = 0
   for (const pl of places) {
-    const v = String(pl).trim().toUpperCase()
+    let v = String(pl).trim().toUpperCase()
+    if (!/^\d{3,4}$/.test(v) && sub2pc && sub2pc[v]) v = sub2pc[v]
+    if (v.length === 3) v = '0' + v
     if (seen.has(v)) continue
     seen.add(v)
-    let c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
-    if (!c) { const sv = db.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]] }
-    if (!c) continue
-    let nn = Infinity
-    for (const o of all) {
-      if (o === c) continue
-      const d = kmBetween(c, o)
-      if (d > 0.01 && d < nn) nn = d
-    }
-    const km = Number.isFinite(nn) ? nn / 2 : ZONE_DISC_MIN_KM
-    out.push({ place: v, lat: c[0], lng: c[1], km: Math.max(ZONE_DISC_MIN_KM, Math.min(ZONE_DISC_MAX_KM, km)) })
+    const parts = shapes[v]
+    if (!parts) { missing++; continue }
+    for (const r of parts) rings.push(r)
   }
-  return out
+  return { rings, missing }
 }
 
 function LeadMap({ locs, tall, clientId, currency }) {
@@ -9032,14 +9197,15 @@ function LeadMap({ locs, tall, clientId, currency }) {
   // Discs are expensive to size (each one scans every postcode for its nearest
   // neighbour), so this is memoised on the zone definitions rather than redone
   // on every filter change or redraw.
+  const poa = usePoaShapes(areasOn)
   const zoneShapes = useMemo(() => {
-    if (!areasOn || !db) return []
-    return (geo.areas || []).filter((a) => (a.places || []).length).map((a, i) => ({
-      id: a.id, name: a.name || `Zone ${i + 1}`,
-      color: LR_HUES.light[i % LR_HUES.light.length],
-      discs: zoneDiscs(db, a.places),
-    }))
-  }, [areasOn, db, geo.areas])
+    if (!areasOn || !poa) return []
+    return (geo.areas || []).filter((a) => (a.places || []).length).map((a, i) => {
+      const { rings, missing } = zoneRings(poa, a.places, null)
+      return { id: a.id, name: a.name || `Zone ${i + 1}`, color: LR_HUES.light[i % LR_HUES.light.length], rings, missing, places: (a.places || []).length }
+    })
+  }, [areasOn, poa, geo.areas])
+  const zoneMissing = zoneShapes.reduce((n, z) => n + z.missing, 0)
   const zones = useMemo(() => {
     if (!areasOn) return null
     const norm = (v) => String(v || '').trim().toUpperCase()
@@ -9079,9 +9245,9 @@ function LeadMap({ locs, tall, clientId, currency }) {
     // would invert that.
     if (shade) {
       for (const z of zoneShapes) {
-        for (const d of z.discs) {
-          L.circle([d.lat, d.lng], {
-            radius: d.km * 1000, color: z.color, weight: 0, fillColor: z.color, fillOpacity: 0.13, interactive: false,
+        for (const r of z.rings) {
+          L.polygon(r, {
+            color: z.color, weight: 1.2, opacity: 0.9, fillColor: z.color, fillOpacity: 0.3, interactive: false,
           }).addTo(layer)
         }
       }
@@ -9161,13 +9327,13 @@ function LeadMap({ locs, tall, clientId, currency }) {
               {shade ? '◉' : '○'} Target areas
             </button>
             <div className="lm-zonekeys">{zoneShapes.map((z) => (
-              <span key={z.id} className={shade ? '' : 'off'}><i style={{ background: z.color }} />{z.name} <b>{fmtNumber(z.discs.length)}</b></span>
+              <span key={z.id} className={shade ? '' : 'off'} title={z.missing ? `${fmtNumber(z.missing)} of this zone's ${fmtNumber(z.places)} places have no mapped area (PO-box-only postcodes) and are not drawn` : undefined}><i style={{ background: z.color }} />{z.name} <b>{fmtNumber(z.places)}</b>{z.missing ? <em> −{fmtNumber(z.missing)}</em> : null}</span>
             ))}</div>
           </div>
         ) : null}
         <div ref={elRef} className={`lead-map-leaflet${tall ? ' lead-map-tall' : ''}`} />
       </div>
-      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the leads{zoneShapes.length && shade ? ' · shaded areas are the zones you have set. We hold postcode centroids, not boundaries, so each postcode is drawn as a disc sized by how far its nearest neighbour sits - close to the ground it covers, and deliberately not a real border' : ''}{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
+      <div className="cap lead-map-cap">{pts.length} of {locs.length} locations plotted · {matchedLeads} leads mapped{clientState ? ` · resolved to ${clientState}` : ''} · marker colour = furthest outcome, size = leads · scroll to zoom, click a dot for the leads{zoneShapes.length && shade ? ` · shaded areas are the real postcode boundaries of the zones you have set (ABS Postal Areas 2021, simplified for drawing)${zoneMissing ? `. ${fmtNumber(zoneMissing)} place${zoneMissing === 1 ? '' : 's'} could not be drawn - PO-box-only postcodes have no area on the ground, though they still count leads` : ''}` : ''}{unmatched.length ? <> · <b>{unmatched.length} unmatched</b>: {unmatched.slice(0, 12).map((u) => u.value).join(', ')}{unmatched.length > 12 ? ` +${unmatched.length - 12}` : ''}</> : null}</div>
       {sel && <LocationLeadsModal loc={sel} clientId={clientId} currency={currency} onClose={() => setSel(null)} />}
     </div>
   )

@@ -18,6 +18,59 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.430.0 - 2026-08-20 · `PENDING` - Real postcode boundaries, and pick an area instead of typing postcodes
+
+**The shading is now the actual postcode boundaries.** The faint discs are gone.
+They were a stand-in for boundary data we did not hold, and they read as a smudge
+rather than as the area actually selected. `scripts/build-geodata.mjs` now builds
+`src/data/poashapes.json` from the ABS Postal Areas 2021 boundaries: 2,641
+postcodes, simplified with a tolerance scaled to each polygon's own size, so a CBD
+postcode a kilometre across keeps its shape while an outback one fifty kilometres
+wide is not stored at a detail nobody will ever see. 34MB of source becomes 3.8MB,
+0.93MB gzipped, loaded on demand and never in the main bundle.
+
+Zones are drawn as filled, outlined shapes on both the Location map and the
+Catchment settings map. Postcodes with no boundary - PO-box-only ranges, which
+have no ground under them - fall back to a point and are counted in the caption
+rather than quietly missing.
+
+**Build a zone by picking an area.** State → Greater Sydney / Rest of NSW → a
+searchable list, and one click adds every postcode in it. The capital-city
+grouping is the real ABS structure listed explicitly, not a name match: Greater
+Brisbane properly includes Ipswich, Logan and Moreton Bay and excludes the Gold
+Coast, which "starts with Brisbane" would get wrong. 497 councils and 333
+districts nationally.
+
+**On which grouping to trust.** Postcodes do not nest inside council boundaries,
+so every postcode-to-council mapping has to file a postcode that spans several
+councils under just one - and the source gets a fair number wrong, filing Castle
+Hill under Hornsby. Rather than ship that silently, both groupings are offered and
+measured: ABS **districts** group the same postcodes about three times more
+tightly (8.0km median spread around their own centre against 23.5km for councils),
+so districts are the default and councils are one selector away. The picker says
+plainly that an area is the postcodes that mostly sit in it, not an exact match,
+and to check what was added and trim it on the map.
+
+**Suburb names convert to postcodes.** Only postcodes have boundaries, so a zone
+holding suburb names could only half-draw. Each zone now offers to convert them
+and reports exactly what it swapped rather than doing it silently.
+
+Also fixed while building this: PO-box and large-volume-receiver postcodes were
+being offered as part of every area. They have no boundary and nobody lives in
+them, and excluding them took drawable coverage from 84% to 99%.
+
+82 assertions on the region data and boundaries, including that Greater Brisbane
+excludes the Gold Coast, that coordinates are stored [lat,lng] rather than
+GeoJSON's [lng,lat] (the wrong order puts every zone in the Indian Ocean), that
+Sydney's CBD outline is drawn over Sydney, that districts really are the tighter
+grouping, and that the known council mis-filing is what it is rather than wished
+away.
+
+Boundaries and area names: Australian Bureau of Statistics, ASGS Edition 3 (2021),
+used under CC BY 4.0 and credited in the app.
+
+---
+
 ## v3.429.0 - 2026-08-20 · `PENDING` - Service areas shaded on the lead map
 
 The Location map showed where leads came from and, separately, a table saying how

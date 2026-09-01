@@ -4201,3 +4201,9 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .loc-find { width: 100%; margin-bottom: 9px; }
 .loc-lead-pc { margin-left: 7px; font-size: 10.5px; font-weight: 700; color: var(--muted);
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 1px 6px; }
+
+/* Key event columns on the location tables. Named after the client's own events,
+   so they can be long - clipped to two lines like the pivot's column heads. */
+th.lm-ke { text-transform: none; letter-spacing: 0; font-size: 10px; max-width: 92px;
+  overflow: hidden; display: table-cell; }
+td.lm-ke-n { font-weight: 700; }

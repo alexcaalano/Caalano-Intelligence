@@ -1313,7 +1313,12 @@ export async function buildForms(locationId, from, to) {
     // A richer record for the location drill-down: the same funnel fields PLUS this
     // lead's initial form answers, so a postcode can list who's there, their status /
     // value / stage / time-in-stage, and what they first told us (drill to notes).
-    const locPerson = { contactId: cid, name: person.name, status: person.status, stageName: person.stageName, pipelineName: person.pipelineName, pipelineId: person.pipelineId, value: person.value, ageDays: person.ageDays, booked: person.booked, shown: person.shown, answers }
+    // stagePos / occurred / calendars are what the key-event test reads: a stage
+    // event compares stagePos against the event's own position, and a calendar
+    // event looks for its calendar in this lead's bookings. Leaving them off made
+    // every stage-type key event count ZERO for every location - the ranking was
+    // there and quietly always empty.
+    const locPerson = { contactId: cid, name: person.name, status: person.status, stageName: person.stageName, stagePos: person.stagePos, pipelineName: person.pipelineName, pipelineId: person.pipelineId, value: person.value, ageDays: person.ageDays, booked: person.booked, shown: person.shown, occurred: person.occurred, calendars: person.calendars, answers }
     // Per-pipeline split, so a multi-pipeline client can categorise a form.
     const pid = o && o.pipelineId
     if (pid) { let bp = e.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; e.byPipe.set(pid, bp) } bump(bp, booked, shown, won, rev) }

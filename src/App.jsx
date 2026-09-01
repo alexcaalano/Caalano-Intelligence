@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.434.0'
+const APP_VERSION = '3.435.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9153,7 +9153,13 @@ function zoneRings(shapes, places, sub2pc) {
   return { rings, missing }
 }
 
-function LeadMap({ locs, tall, clientId, currency }) {
+function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
+  // The client's configured key events, evaluated per lead exactly as the Forms
+  // and ranking views do - so "reached 15 Minute Call" means the same thing here
+  // as everywhere else rather than being a second definition.
+  const kev = useMemo(() => formKeyEvents(clientId, pipe || 'all', pipes || []), [clientId, pipe, pipes])
+  const kEvents = (kev && kev.events) || []
+  const keCount = (people, k) => (people || []).reduce((n, p) => n + (kev.reached(p, k) ? 1 : 0), 0)
   // Dark mode needs its own step of the zone slate, not a dimmed light one.
   const mode = useThemeMode()
   const [db, setDb] = useState(undefined)
@@ -9468,7 +9474,9 @@ function LeadMap({ locs, tall, clientId, currency }) {
                 : !byArea || !byArea.rows.length ? <p className="cap">{onlyMine ? 'No leads came from the areas you target in this period.' : 'None of these leads could be placed in an area.'}</p>
                   : <>
                     <div className="table-wrap"><table className="mini-tbl appt-tbl">
-                      <thead><tr><th className="lft">{groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness'}</th><th>Places</th><th>Leads</th><th>Share</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
+                      <thead><tr><th className="lft">{groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness'}</th><th>Places</th><th>Leads</th><th>Share</th>
+                        {kEvents.map((k, i) => <th key={i} className="lm-ke" title={`Leads here that reached ${k.label}`}>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</th>)}
+                        <th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
                       <tbody>
                         {byArea.rows.map((r) => (
                           <tr key={r.name} className={`${r.mine ? 'lm-mine' : ''}${r.people.length ? ' lm-click' : ''}`}
@@ -9479,6 +9487,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
                             <td>{fmtNumber(r.places)}</td>
                             <td>{fmtNumber(r.leads)}</td>
                             <td>{pctOf(r.leads, byArea.totalLeads)}</td>
+                            {kEvents.map((k, i) => { const n = keCount(r.people, k); return <td key={i} className={n ? 'lm-ke-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of the ${fmtNumber(r.people.length)} leads with detail here reached ${k.label}` : undefined}>{n ? fmtNumber(n) : '-'}</td> })}
                             <td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
                             <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
                           </tr>
@@ -9487,17 +9496,19 @@ function LeadMap({ locs, tall, clientId, currency }) {
                           <tr className="lm-unzoned">
                             <td className="lft">Could not be placed</td>
                             <td>{fmtNumber(byArea.unknown)}</td>
-                            <td>{fmtNumber(byArea.unknownLeads)}</td><td colSpan={4}>-</td>
+                            <td>{fmtNumber(byArea.unknownLeads)}</td><td colSpan={4 + kEvents.length}>-</td>
                           </tr>
                         ) : null}
                       </tbody>
                     </table></div>
-                    <Caveat>{groupBy === 'remoteness' ? 'These are the ABS Remoteness Areas - the official measure of how far a place sits from services, not a guess from population. Metro is "major cities", regional is "inner regional", rural is "outer regional" (the country-town and farmland band), and remote folds remote and very remote together. The exact ABS class is on each row\u2019s hover. ' : ''}{raCut !== 'all' ? `Cut to ${raCut.toLowerCase()} only: ${fmtNumber(byArea.cutOutLeads)} leads from elsewhere are excluded from every figure here. ` : ''}Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : groupBy === 'council' ? 'council' : groupBy === 'state' ? 'state' : 'remoteness band'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
+                    <Caveat>{kEvents.length ? `Key event columns count the leads that reached each of this client\u2019s configured key events. They are counted from the lead records behind each row, which are capped per place, so on a very busy postcode they can read lower than the lead count beside them. ` : ''}{groupBy === 'remoteness' ? 'These are the ABS Remoteness Areas - the official measure of how far a place sits from services, not a guess from population. Metro is "major cities", regional is "inner regional", rural is "outer regional" (the country-town and farmland band), and remote folds remote and very remote together. The exact ABS class is on each row\u2019s hover. ' : ''}{raCut !== 'all' ? `Cut to ${raCut.toLowerCase()} only: ${fmtNumber(byArea.cutOutLeads)} leads from elsewhere are excluded from every figure here. ` : ''}Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : groupBy === 'council' ? 'council' : groupBy === 'state' ? 'state' : 'remoteness band'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
                   </>
             ) : (
             <>
             <div className="table-wrap"><table className="mini-tbl appt-tbl">
-              <thead><tr><th className="lft">Zone</th><th>Places</th><th>Leads</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
+              <thead><tr><th className="lft">Zone</th><th>Places</th><th>Leads</th>
+                {kEvents.map((k, i) => <th key={i} className="lm-ke" title={`Leads in this zone that reached ${k.label}`}>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</th>)}
+                <th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
               <tbody>
                 {zones.rows.map((r) => (
                   <tr key={r.id} className={r.people && r.people.length ? 'lm-click' : ''}
@@ -9506,7 +9517,9 @@ function LeadMap({ locs, tall, clientId, currency }) {
                     onClick={r.people && r.people.length ? () => setSel({ value: r.name, leads: r.leads, booked: r.booked, won: r.won, people: r.people, sub: `${fmtNumber(r.postcodes)} of ${fmtNumber(r.places)} places with leads` }) : undefined}>
                     <td className="lft">{r.people && r.people.length ? <span className="u-chev">▸</span> : null} {r.name}{Array.isArray(r.pipelines) ? <span className="aud-tab">one pipeline</span> : null}</td>
                     <td>{fmtNumber(r.postcodes)} of {fmtNumber(r.places)}</td>
-                    <td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
+                    <td>{fmtNumber(r.leads)}</td>
+                    {kEvents.map((k, i) => { const n = keCount(r.people, k); return <td key={i} className={n ? 'lm-ke-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of the ${fmtNumber((r.people || []).length)} leads with detail here reached ${k.label}` : undefined}>{n ? fmtNumber(n) : '-'}</td> })}
+                    <td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
                     <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
                   </tr>
                 ))}
@@ -9514,7 +9527,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
                   <tr className="lm-unzoned">
                     <td className="lft">Outside every zone</td>
                     <td>{fmtNumber(zones.unzonedPlaces)}</td>
-                    <td>{fmtNumber(zones.unzonedLeads)}</td><td colSpan={3}>-</td>
+                    <td>{fmtNumber(zones.unzonedLeads)}</td><td colSpan={3 + kEvents.length}>-</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -9697,7 +9710,7 @@ function LocationView({ clientId, range, nonce, currency }) {
         <Sc label="Won" value={fmtNumber(tot.won)} />
         <Sc label="Lost" value={fmtNumber(tot.lost)} />
       </div>
-      <LeadMap locs={locs} tall clientId={clientId} currency={currency} />
+      <LeadMap locs={locs} tall clientId={clientId} currency={currency} pipes={pipes} pipe={pipe} />
       {/* Which locations fire the most of a chosen outcome / key event. The pipeline
           filter above scopes both the map and this ranking; the metric dropdown adds
           every configured key event on top of Leads / Booked / Won / Lost. */}

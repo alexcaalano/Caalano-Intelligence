@@ -18,6 +18,40 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.435.0 - 2026-08-20 · `PENDING` - Key events per location, and the bug that was hiding them
+
+Key event columns now sit in both Location tables - zones, and the district /
+council / state / remoteness groupings - counting the leads in each row that
+reached each of this client's configured events. They use the same evaluator as
+the Forms and ranking views, so "reached 15 Minute Call" means the same thing
+here as everywhere else rather than being a second definition of it.
+
+**Building this turned up an existing bug.** The "key events by location" metric
+in the ranking below the map has been there for a while and has been returning
+**zero for every stage-type event**, silently, since the location lead records
+were built without the three fields the key-event test reads: `stagePos` for
+stage events, and `occurred` / `calendars` for calendar ones. A person record
+missing `stagePos` reaches nothing, and nothing is a plausible-looking number.
+Those fields are now carried, which fixes the existing ranking as well as
+supplying the new columns.
+
+That is the shape of bug worth having a test for, so the new suite leads with it:
+the same lead with and without `stagePos`, asserting that the one without reaches
+nothing - the exact silent failure. The other 21 assertions cover that stage
+events are cumulative (reaching Quoted means having passed the 15 Minute Call),
+that an event pinned to one pipeline does not count another pipeline's leads,
+that won counts on status rather than stage, that calendar events read the
+bookings rather than the stage, that an earlier event is never reached by fewer
+leads than a later one, and that a renamed or deleted stage counts nobody rather
+than everybody.
+
+The columns are counted from the lead records behind each row, which are capped
+per place, so on a very busy postcode they can read lower than the lead count
+beside them - the caveat says so rather than letting the two figures quietly
+disagree.
+
+---
+
 ## v3.434.0 - 2026-08-20 · `PENDING` - Rural gets its own band, and every row opens its leads
 
 **Metro / Regional / Rural / Remote.** Regional and rural were folded together;

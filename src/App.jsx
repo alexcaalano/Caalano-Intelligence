@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.437.0'
+const APP_VERSION = '3.438.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9481,11 +9481,24 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
   // view; every other column is one click away.
   const [sort, setSort] = useState({ key: 'leads', dir: -1 })
   const bySort = (k) => () => setSort((s) => (s.key === k ? { key: k, dir: -s.dir } : { key: k, dir: -1 }))
-  const sortHead = (k, label, extra) => (
-    <th key={k} className={`lm-sh${sort.key === k ? ' on' : ''}${extra || ''}`} onClick={bySort(k)} title={`Sort by ${typeof label === 'string' ? label : k}`}>
+  // rowSpan 2 for the plain columns, so they sit against the key events' two-row
+  // group header rather than leaving a blank cell above them.
+  const sortHead = (k, label, extra, span) => (
+    <th key={k} rowSpan={span || undefined} className={`lm-sh${sort.key === k ? ' on' : ''}${extra || ''}`} onClick={bySort(k)} title={`Sort by ${typeof label === 'string' ? label : k}`}>
       {label}<i>{sort.key === k ? (sort.dir < 0 ? '▾' : '▴') : ''}</i>
     </th>
   )
+  // A key event spans two columns - the count and the rate - under one name, so
+  // the name is read once instead of being guessed at from a bare "%".
+  const keGroupHead = (k, i) => (
+    <th key={`g${i}`} colSpan={2} className={`lm-keg${sort.key === `ke${i}` || sort.key === `ker${i}` ? ' on' : ''}`} title={`Leads that reached ${k.label}`}>
+      {k.kind === 'calendar' ? '📅 ' : ''}{k.label}
+    </th>
+  )
+  const keSubHeads = (i) => [
+    sortHead(`ke${i}`, 'Qty', ' lm-kesub'),
+    sortHead(`ker${i}`, '%', ' lm-kesub'),
+  ]
   // One comparator for both tables. Strings sort alphabetically, everything else
   // numerically, and a row with no value for the column sorts last either way
   // rather than jumping to the top on a descending sort.
@@ -9702,21 +9715,21 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                 : !byArea || !byArea.rows.length ? <p className="cap">{onlyMine ? 'No leads came from the areas you target in this period.' : 'None of these leads could be placed in an area.'}</p>
                   : <>
                     <div className="table-wrap"><table className="mini-tbl appt-tbl">
-                      <thead><tr>
-                        {sortHead('name', groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness', ' lft')}
-                        {sortHead('places', 'Places')}
-                        {sortHead('leads', 'Leads')}
-                        {sortHead('share', 'Share')}
-                        {kEvents.map((k, i) => [
-                          sortHead(`ke${i}`, <>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</>, ' lm-ke'),
-                          sortHead(`ker${i}`, '%', ' lm-ker'),
-                        ])}
-                        {/* Booked and Won are the fallback reading. With key events
-                            configured they are a worse version of the same thing,
-                            so they step aside rather than repeating it. */}
-                        {kEvents.length ? null : <>{sortHead('booked', 'Booked')}{sortHead('won', 'Won')}</>}
-                        {sortHead('winPct', 'Win %')}
-                      </tr></thead>
+                      <thead>
+                        <tr>
+                          {sortHead('name', groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness', ' lft', 2)}
+                          {sortHead('places', 'Places', '', 2)}
+                          {sortHead('leads', 'Leads', '', 2)}
+                          {sortHead('share', 'Share', '', 2)}
+                          {kEvents.map(keGroupHead)}
+                          {/* Booked and Won are the fallback reading. With key events
+                              configured they are a worse version of the same thing,
+                              so they step aside rather than repeating it. */}
+                          {kEvents.length ? null : <>{sortHead('booked', 'Booked', '', 2)}{sortHead('won', 'Won', '', 2)}</>}
+                          {sortHead('winPct', 'Win %', '', 2)}
+                        </tr>
+                        {kEvents.length ? <tr className="lm-subhead">{kEvents.map((k, i) => keSubHeads(i))}</tr> : null}
+                      </thead>
                       <tbody>
                         {sortRows(byArea.rows, (r, k) => {
                           if (k === 'name') return r.name
@@ -9755,17 +9768,17 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
             ) : (
             <>
             <div className="table-wrap"><table className="mini-tbl appt-tbl">
-              <thead><tr>
-                {sortHead('name', 'Zone', ' lft')}
-                {sortHead('postcodes', 'Places')}
-                {sortHead('leads', 'Leads')}
-                {kEvents.map((k, i) => [
-                  sortHead(`ke${i}`, <>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</>, ' lm-ke'),
-                  sortHead(`ker${i}`, '%', ' lm-ker'),
-                ])}
-                {kEvents.length ? null : <>{sortHead('booked', 'Booked')}{sortHead('won', 'Won')}</>}
-                {sortHead('winPct', 'Win %')}
-              </tr></thead>
+              <thead>
+                <tr>
+                  {sortHead('name', 'Zone', ' lft', 2)}
+                  {sortHead('postcodes', 'Places', '', 2)}
+                  {sortHead('leads', 'Leads', '', 2)}
+                  {kEvents.map(keGroupHead)}
+                  {kEvents.length ? null : <>{sortHead('booked', 'Booked', '', 2)}{sortHead('won', 'Won', '', 2)}</>}
+                  {sortHead('winPct', 'Win %', '', 2)}
+                </tr>
+                {kEvents.length ? <tr className="lm-subhead">{kEvents.map((k, i) => keSubHeads(i))}</tr> : null}
+              </thead>
               <tbody>
                 {sortRows(zones.rows, (r, k) => {
                   if (k === 'name') return r.name

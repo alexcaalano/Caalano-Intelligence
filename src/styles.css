@@ -4202,10 +4202,16 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .loc-lead-pc { margin-left: 7px; font-size: 10.5px; font-weight: 700; color: var(--muted);
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 1px 6px; }
 
-/* Key event columns on the location tables. Named after the client's own events,
-   so they can be long - clipped to two lines like the pivot's column heads. */
-th.lm-ke { text-transform: none; letter-spacing: 0; font-size: 10px; max-width: 92px;
-  overflow: hidden; display: table-cell; }
+/* Key event columns on the location tables. Each event is one header spanning its
+   count and its rate, so the name is read once rather than inferred from a bare
+   "%" sitting next to a number. Named after the client's own events, so the label
+   can be long - it wraps rather than pushing the table wide. */
+th.lm-keg { text-transform: none; letter-spacing: 0; font-size: 10.5px; font-weight: 800;
+  text-align: center; white-space: normal; line-height: 1.25; padding-bottom: 5px;
+  border-bottom: 1px solid var(--border); }
+th.lm-keg.on { color: var(--accent, #6d5efc); }
+th.lm-kesub { font-size: 9.5px; font-weight: 700; padding-top: 3px; }
+tr.lm-subhead th { border-bottom: 1px solid var(--border-2); }
 td.lm-ke-n { font-weight: 700; }
 
 /* Sortable column heads. The arrow only appears on the active one, so the header

@@ -18,6 +18,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.438.0 - 2026-08-20 · `PENDING` - Key events get a grouped header
+
+Each key event on the Location tables is now one header spanning two columns -
+**Qty** and **%** underneath it - instead of the event name over the count and a
+bare "%" beside it. The name is read once rather than inferred from a percentage
+sitting next to a number, and with six key events across the table that is the
+difference between scanning it and decoding it.
+
+Both sub-columns still sort independently, and the group header highlights when
+either of its two is the active sort. The plain columns span both header rows so
+nothing sits over an empty cell.
+
+Verified in a browser at three widths in both themes: every group header sits
+exactly over its own two sub-columns, every sub-column sits exactly over its own
+body cells, and no header is clipped or pushes the table wide.
+
+---
+
 ## v3.437.0 - 2026-08-20 · `PENDING` - Fix: every lead was counted twice in its own location
 
 **"4 leads · lead detail for 2" was not a cap - it was double counting.** A

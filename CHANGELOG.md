@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.441.0 - 2026-08-20 · `PENDING` - Fix Meta spend reading $0.00 on the Overview
+## v3.441.0 - 2026-08-20 · `76596c2` - Fix Meta spend reading $0.00 on the Overview
 
 The Channel split, the paid scorecards and every cost-per figure derived from
 them showed **$0.00 of Meta spend** for clients who were plainly spending. Google

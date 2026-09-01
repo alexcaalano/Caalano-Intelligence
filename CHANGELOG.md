@@ -18,6 +18,37 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.436.0 - 2026-08-20 · `PENDING` - Sortable location tables, reach rates, channel split
+
+**Every column sorts.** Click any header in either Location table - name, places,
+leads, share, any key event, its reach rate, win rate - and click again to
+reverse. Names sort A-Z first, numbers biggest-first, and a row with no value for
+that column sorts **last** either way rather than claiming the top of a
+descending sort.
+
+**Each key event gets a reach rate beside it.** "Pool Specialist Booked Call: 1"
+now reads "1 · 25%" against that row's 4 leads, so a small area with a high
+conversion is visible next to a big one with a poor one instead of being buried
+by volume.
+
+**Booked and Won step aside when key events exist.** With key events configured
+they were a worse version of the same thing, sitting in the two rightmost
+columns. They now appear only as the fallback for a client with no key events
+set. Win % stays either way.
+
+**Channel split.** All channels / Meta / Google / everything else, on both
+tables. It reads each location's own per-channel tally rather than filtering its
+lead list - the lead records are capped at 60 per place, so a busy postcode would
+otherwise report a channel mix drawn from its first 60 leads and quietly disagree
+with its own lead count.
+
+27 assertions on the sort alone, including that a missing value never sorts to
+the top, that ties keep a stable order between renders, that the two directions
+are exact reverses, that sorting never adds or loses a row, and that a reach rate
+on a row with zero leads sorts last rather than dividing by zero.
+
+---
+
 ## v3.435.0 - 2026-08-20 · `PENDING` - Key events per location, and the bug that was hiding them
 
 Key event columns now sit in both Location tables - zones, and the district /

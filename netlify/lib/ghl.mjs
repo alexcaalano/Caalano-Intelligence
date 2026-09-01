@@ -1269,7 +1269,11 @@ export async function buildForms(locationId, from, to) {
   const agg = new Map()
   const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map(), people: [] } ; agg.set(L.label, e) } return e }
   const bump = (o, booked, shown, won, rev) => { o.leads++; if (booked) o.booked++; if (shown) o.shown++; if (won) { o.won++; o.revenue += rev } }
-  const bumpLoc = (m, value, booked, won, lost, pid, person) => { if (!value) return; let a = m.get(value); if (!a) { a = { value, leads: 0, booked: 0, won: 0, lost: 0, byPipe: {}, people: [], _seen: new Set() }; m.set(value, a) } a.leads++; if (booked) a.booked++; if (won) a.won++; if (lost) a.lost++; if (pid) { const b = a.byPipe[pid] || (a.byPipe[pid] = { leads: 0, booked: 0, won: 0, lost: 0 }); b.leads++; if (booked) b.booked++; if (won) b.won++; if (lost) b.lost++ } if (person && person.contactId && !a._seen.has(person.contactId) && a.people.length < 60) { a._seen.add(person.contactId); a.people.push(person) } }
+  // Per-location totals, split by pipeline AND by channel. The channel split is
+  // kept as its own tally rather than derived from `people`, which is capped - a
+  // busy postcode would otherwise report a channel mix drawn from its first 60
+  // leads and quietly disagree with its own lead count.
+  const bumpLoc = (m, value, booked, won, lost, pid, person, chan) => { if (!value) return; let a = m.get(value); if (!a) { a = { value, leads: 0, booked: 0, won: 0, lost: 0, byPipe: {}, byChan: {}, people: [], _seen: new Set() }; m.set(value, a) } a.leads++; if (booked) a.booked++; if (won) a.won++; if (lost) a.lost++; if (pid) { const b = a.byPipe[pid] || (a.byPipe[pid] = { leads: 0, booked: 0, won: 0, lost: 0 }); b.leads++; if (booked) b.booked++; if (won) b.won++; if (lost) b.lost++ } { const ck = chan || 'other'; const c = a.byChan[ck] || (a.byChan[ck] = { leads: 0, booked: 0, won: 0, lost: 0 }); c.leads++; if (booked) c.booked++; if (won) c.won++; if (lost) c.lost++ } if (person && person.contactId && !a._seen.has(person.contactId) && a.people.length < 60) { a._seen.add(person.contactId); a.people.push(person) } }
   for (const [cid, { L, answers, pc, name }] of contactData) {
     const e = ent(L)
     const f = apptByContact.get(cid); const booked = !!(f && f.bookedInPeriod); const shown = !!(f && f.shownByStatus)
@@ -1318,19 +1322,19 @@ export async function buildForms(locationId, from, to) {
     // event looks for its calendar in this lead's bookings. Leaving them off made
     // every stage-type key event count ZERO for every location - the ranking was
     // there and quietly always empty.
-    const locPerson = { contactId: cid, name: person.name, status: person.status, stageName: person.stageName, stagePos: person.stagePos, pipelineName: person.pipelineName, pipelineId: person.pipelineId, value: person.value, ageDays: person.ageDays, booked: person.booked, shown: person.shown, occurred: person.occurred, calendars: person.calendars, answers }
+    const locPerson = { contactId: cid, name: person.name, status: person.status, stageName: person.stageName, stagePos: person.stagePos, pipelineName: person.pipelineName, pipelineId: person.pipelineId, value: person.value, ageDays: person.ageDays, booked: person.booked, shown: person.shown, occurred: person.occurred, calendars: person.calendars, channel: person.channel, answers }
     // Per-pipeline split, so a multi-pipeline client can categorise a form.
     const pid = o && o.pipelineId
     if (pid) { let bp = e.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 }; e.byPipe.set(pid, bp) } bump(bp, booked, shown, won, rev) }
     // Location breakdown: postcode + any location-style answer.
-    if (pc && /^[0-9A-Za-z\- ]{3,10}$/.test(pc)) bumpLoc(e.loc, pc, booked, won, lost, pid, locPerson)
+    if (pc && /^[0-9A-Za-z\- ]{3,10}$/.test(pc)) bumpLoc(e.loc, pc, booked, won, lost, pid, locPerson, person.channel)
     // Answer-level segmentation: per question, per answer value.
     for (const [q, v] of Object.entries(answers)) {
       let qm = e.seg.get(q); if (!qm) { qm = new Map(); e.seg.set(q, qm) }
       let av = qm.get(v); if (!av) { av = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, people: [] }; qm.set(v, av) }
       bump(av, booked, shown, won, rev)
       if (av.people.length < 80) av.people.push(person)
-      if (LOC_RE.test(q)) bumpLoc(e.loc, v, booked, won, lost, pid, locPerson)
+      if (LOC_RE.test(q)) bumpLoc(e.loc, v, booked, won, lost, pid, locPerson, person.channel)
     }
   }
   const forms = [...agg.values()].sort((a, b) => b.leads - a.leads).map((e) => {

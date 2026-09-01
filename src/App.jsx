@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.435.0'
+const APP_VERSION = '3.436.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9297,8 +9297,42 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
   // Cut first, then group: filter to Regional and group by council, and you get
   // the regional councils rather than having to read past the metro ones.
   const [raCut, setRaCut] = useState('all')
+  // Meta / Google / everything. Read from each location's own channel tally, not
+  // from its capped lead list, so a busy postcode's split matches its lead count.
+  const [chanCut, setChanCut] = useState('all')
+  // Whatever column was last clicked. Leads descending is the sensible opening
+  // view; every other column is one click away.
+  const [sort, setSort] = useState({ key: 'leads', dir: -1 })
+  const bySort = (k) => () => setSort((s) => (s.key === k ? { key: k, dir: -s.dir } : { key: k, dir: -1 }))
+  const sortHead = (k, label, extra) => (
+    <th key={k} className={`lm-sh${sort.key === k ? ' on' : ''}${extra || ''}`} onClick={bySort(k)} title={`Sort by ${typeof label === 'string' ? label : k}`}>
+      {label}<i>{sort.key === k ? (sort.dir < 0 ? '▾' : '▴') : ''}</i>
+    </th>
+  )
+  // One comparator for both tables. Strings sort alphabetically, everything else
+  // numerically, and a row with no value for the column sorts last either way
+  // rather than jumping to the top on a descending sort.
+  const sortRows = (rows, valOf) => {
+    const out = rows.slice()
+    out.sort((a, b) => {
+      const va = valOf(a, sort.key), vb = valOf(b, sort.key)
+      if (typeof va === 'string' || typeof vb === 'string') return String(va || '').localeCompare(String(vb || '')) * -sort.dir
+      const na = va == null ? -Infinity : va, nb = vb == null ? -Infinity : vb
+      return (na - nb) * sort.dir || 0
+    })
+    return out
+  }
   const regions = useRegions(groupBy !== 'zones')
   const areaIdx = useMemo(() => areaIndexOf(regions), [regions])
+  // A location's counts under the current channel cut. Falls back to the whole
+  // location when a client's data predates the per-channel tally, rather than
+  // reporting zeros for everyone.
+  const chanOf = (p) => {
+    if (chanCut === 'all') return p
+    const c = p.byChan && p.byChan[chanCut]
+    return c || (p.byChan ? { leads: 0, booked: 0, won: 0, lost: 0 } : p)
+  }
+  const chanPeople = (people) => (chanCut === 'all' ? people : (people || []).filter((x) => (x.channel || 'other') === chanCut))
   const byArea = useMemo(() => {
     if (groupBy === 'zones' || !areaIdx) return null
     const key = groupBy === 'district' ? 'district'
@@ -9323,11 +9357,13 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
       // The remoteness cut applies to every grouping, including the remoteness
       // one - where it simply narrows to that bucket.
       if (raCut !== 'all' && (!e.remoteness || e.remoteness !== raCut)) { cutOut++; cutOutLeads += p.leads || 0; continue }
+      const c = chanOf(p)
+      if (chanCut !== 'all' && !c.leads) continue
       let g = m.get(name)
       if (!g) { g = { name, state: e.state, places: 0, leads: 0, booked: 0, won: 0, mine: mine.has(name), ra: new Set(), people: [], parts: [] }; m.set(name, g) }
-      g.places++; g.leads += p.leads || 0; g.booked += p.booked || 0; g.won += p.won || 0
+      g.places++; g.leads += c.leads || 0; g.booked += c.booked || 0; g.won += c.won || 0
       // The leads themselves, so a row can open the same drill a map dot does.
-      for (const person of (p.people || [])) g.people.push({ ...person, place: p.value })
+      for (const person of chanPeople(p.people)) g.people.push({ ...person, place: p.value })
       g.parts.push(p.value)
       if (e.raName) g.ra.add(e.raName)
     }
@@ -9341,19 +9377,19 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
       unknown, unknownLeads, cutOut, cutOutLeads,
       totalLeads: rows.reduce((a, r) => a + r.leads, 0),
     }
-  }, [groupBy, areaIdx, pts, geo.areas, onlyMine, raCut])
+  }, [groupBy, areaIdx, pts, geo.areas, onlyMine, raCut, chanCut])
   const zones = useMemo(() => {
     if (!areasOn) return null
     const norm = (v) => String(v || '').trim().toUpperCase()
     const rows = (geo.areas || []).filter((a) => (a.places || []).length).map((a) => {
       const set = new Set((a.places || []).map(norm))
       const hit = pts.filter((p) => set.has(norm(p.value)))
-      const sum = (k) => hit.reduce((n, p) => n + (p[k] || 0), 0)
+      const sum = (k) => hit.reduce((n, p) => n + (chanOf(p)[k] || 0), 0)
       const leads = sum('leads'), won = sum('won')
       return {
         id: a.id, name: a.name || 'Unnamed zone', places: (a.places || []).length,
         pipelines: a.pipelines, postcodes: hit.length,
-        people: hit.flatMap((p) => (p.people || []).map((x) => ({ ...x, place: p.value }))),
+        people: hit.flatMap((p) => chanPeople(p.people).map((x) => ({ ...x, place: p.value }))),
         leads, booked: sum('booked'), won,
         winPct: leads ? Math.round((won / leads) * 100) : null,
       }
@@ -9369,7 +9405,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
       // but needs saying out loud or the numbers look broken.
       overlap: rows.reduce((n, r) => n + r.leads, 0) > pts.reduce((n, p) => n + (p.leads || 0), 0),
     }
-  }, [areasOn, geo.areas, pts])
+  }, [areasOn, geo.areas, pts, chanCut])
 
   // (Re)draw markers whenever the points or filter change; fit to bounds.
   const maxLeads = Math.max(1, ...pts.map((p) => p.leads))
@@ -9452,6 +9488,14 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                     <button key={k} className={groupBy === k ? 'on' : ''} onClick={() => setGroupBy(k)} title={t}>{lbl}</button>
                   ))}
               </div>
+              <label className="lm-onlymine" title="Split by where the lead came from, read from each location's own channel tally rather than its capped lead list">
+                <select className="lm-racut" value={chanCut} onChange={(e) => setChanCut(e.target.value)}>
+                  <option value="all">All channels</option>
+                  <option value="meta">Meta only</option>
+                  <option value="google">Google only</option>
+                  <option value="other">Everything else</option>
+                </select>
+              </label>
               {groupBy !== 'zones' ? (
                 <label className="lm-onlymine" title="Cut to one band first, then read the grouping - regional councils on their own, rather than buried under the metro ones">
                   Show
@@ -9474,11 +9518,29 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                 : !byArea || !byArea.rows.length ? <p className="cap">{onlyMine ? 'No leads came from the areas you target in this period.' : 'None of these leads could be placed in an area.'}</p>
                   : <>
                     <div className="table-wrap"><table className="mini-tbl appt-tbl">
-                      <thead><tr><th className="lft">{groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness'}</th><th>Places</th><th>Leads</th><th>Share</th>
-                        {kEvents.map((k, i) => <th key={i} className="lm-ke" title={`Leads here that reached ${k.label}`}>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</th>)}
-                        <th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
+                      <thead><tr>
+                        {sortHead('name', groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness', ' lft')}
+                        {sortHead('places', 'Places')}
+                        {sortHead('leads', 'Leads')}
+                        {sortHead('share', 'Share')}
+                        {kEvents.map((k, i) => [
+                          sortHead(`ke${i}`, <>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</>, ' lm-ke'),
+                          sortHead(`ker${i}`, '%', ' lm-ker'),
+                        ])}
+                        {/* Booked and Won are the fallback reading. With key events
+                            configured they are a worse version of the same thing,
+                            so they step aside rather than repeating it. */}
+                        {kEvents.length ? null : <>{sortHead('booked', 'Booked')}{sortHead('won', 'Won')}</>}
+                        {sortHead('winPct', 'Win %')}
+                      </tr></thead>
                       <tbody>
-                        {byArea.rows.map((r) => (
+                        {sortRows(byArea.rows, (r, k) => {
+                          if (k === 'name') return r.name
+                          if (k === 'share') return byArea.totalLeads ? r.leads / byArea.totalLeads : 0
+                          if (k.startsWith('ker')) { const i = +k.slice(3); const kk = kEvents[i]; return r.leads ? keCount(r.people, kk) / r.leads : null }
+                          if (k.startsWith('ke')) { const i = +k.slice(2); return keCount(r.people, kEvents[i]) }
+                          return r[k]
+                        }).map((r) => (
                           <tr key={r.name} className={`${r.mine ? 'lm-mine' : ''}${r.people.length ? ' lm-click' : ''}`}
                             style={r.people.length ? { cursor: 'pointer' } : undefined}
                             title={r.people.length ? `Open the ${fmtNumber(r.people.length)} leads behind this row` : 'No lead detail loaded for this row'}
@@ -9487,8 +9549,11 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                             <td>{fmtNumber(r.places)}</td>
                             <td>{fmtNumber(r.leads)}</td>
                             <td>{pctOf(r.leads, byArea.totalLeads)}</td>
-                            {kEvents.map((k, i) => { const n = keCount(r.people, k); return <td key={i} className={n ? 'lm-ke-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of the ${fmtNumber(r.people.length)} leads with detail here reached ${k.label}` : undefined}>{n ? fmtNumber(n) : '-'}</td> })}
-                            <td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
+                            {kEvents.map((k, i) => { const n = keCount(r.people, k); return [
+                              <td key={`n${i}`} className={n ? 'lm-ke-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of the ${fmtNumber(r.people.length)} leads with detail here reached ${k.label}` : undefined}>{n ? fmtNumber(n) : '-'}</td>,
+                              <td key={`r${i}`} className={n ? 'lm-ker-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of ${fmtNumber(r.leads)} leads reached ${k.label}` : undefined}>{n && r.leads ? pctOf(n, r.leads) : '-'}</td>,
+                            ] })}
+                            {kEvents.length ? null : <><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td></>}
                             <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
                           </tr>
                         ))}
@@ -9496,7 +9561,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                           <tr className="lm-unzoned">
                             <td className="lft">Could not be placed</td>
                             <td>{fmtNumber(byArea.unknown)}</td>
-                            <td>{fmtNumber(byArea.unknownLeads)}</td><td colSpan={4 + kEvents.length}>-</td>
+                            <td>{fmtNumber(byArea.unknownLeads)}</td><td colSpan={2 + kEvents.length * 2 + (kEvents.length ? 0 : 2)}>-</td>
                           </tr>
                         ) : null}
                       </tbody>
@@ -9506,11 +9571,24 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
             ) : (
             <>
             <div className="table-wrap"><table className="mini-tbl appt-tbl">
-              <thead><tr><th className="lft">Zone</th><th>Places</th><th>Leads</th>
-                {kEvents.map((k, i) => <th key={i} className="lm-ke" title={`Leads in this zone that reached ${k.label}`}>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</th>)}
-                <th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
+              <thead><tr>
+                {sortHead('name', 'Zone', ' lft')}
+                {sortHead('postcodes', 'Places')}
+                {sortHead('leads', 'Leads')}
+                {kEvents.map((k, i) => [
+                  sortHead(`ke${i}`, <>{k.kind === 'calendar' ? '📅 ' : ''}{k.label}</>, ' lm-ke'),
+                  sortHead(`ker${i}`, '%', ' lm-ker'),
+                ])}
+                {kEvents.length ? null : <>{sortHead('booked', 'Booked')}{sortHead('won', 'Won')}</>}
+                {sortHead('winPct', 'Win %')}
+              </tr></thead>
               <tbody>
-                {zones.rows.map((r) => (
+                {sortRows(zones.rows, (r, k) => {
+                  if (k === 'name') return r.name
+                  if (k.startsWith('ker')) { const i = +k.slice(3); return r.leads ? keCount(r.people, kEvents[i]) / r.leads : null }
+                  if (k.startsWith('ke')) { const i = +k.slice(2); return keCount(r.people, kEvents[i]) }
+                  return r[k]
+                }).map((r) => (
                   <tr key={r.id} className={r.people && r.people.length ? 'lm-click' : ''}
                     style={r.people && r.people.length ? { cursor: 'pointer' } : undefined}
                     title={r.people && r.people.length ? `Open the ${fmtNumber(r.people.length)} leads in this zone` : 'No lead detail loaded for this zone'}
@@ -9518,8 +9596,11 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                     <td className="lft">{r.people && r.people.length ? <span className="u-chev">▸</span> : null} {r.name}{Array.isArray(r.pipelines) ? <span className="aud-tab">one pipeline</span> : null}</td>
                     <td>{fmtNumber(r.postcodes)} of {fmtNumber(r.places)}</td>
                     <td>{fmtNumber(r.leads)}</td>
-                    {kEvents.map((k, i) => { const n = keCount(r.people, k); return <td key={i} className={n ? 'lm-ke-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of the ${fmtNumber((r.people || []).length)} leads with detail here reached ${k.label}` : undefined}>{n ? fmtNumber(n) : '-'}</td> })}
-                    <td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
+                    {kEvents.map((k, i) => { const n = keCount(r.people, k); return [
+                      <td key={`n${i}`} className={n ? 'lm-ke-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of the ${fmtNumber((r.people || []).length)} leads with detail here reached ${k.label}` : undefined}>{n ? fmtNumber(n) : '-'}</td>,
+                      <td key={`r${i}`} className={n ? 'lm-ker-n' : 'lrv-z'} title={n ? `${fmtNumber(n)} of ${fmtNumber(r.leads)} leads reached ${k.label}` : undefined}>{n && r.leads ? pctOf(n, r.leads) : '-'}</td>,
+                    ] })}
+                    {kEvents.length ? null : <><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td></>}
                     <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
                   </tr>
                 ))}
@@ -9527,7 +9608,7 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
                   <tr className="lm-unzoned">
                     <td className="lft">Outside every zone</td>
                     <td>{fmtNumber(zones.unzonedPlaces)}</td>
-                    <td>{fmtNumber(zones.unzonedLeads)}</td><td colSpan={3 + kEvents.length}>-</td>
+                    <td>{fmtNumber(zones.unzonedLeads)}</td><td colSpan={1 + kEvents.length * 2 + (kEvents.length ? 0 : 2)}>-</td>
                   </tr>
                 ) : null}
               </tbody>

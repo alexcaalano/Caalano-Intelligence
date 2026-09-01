@@ -4207,3 +4207,13 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 th.lm-ke { text-transform: none; letter-spacing: 0; font-size: 10px; max-width: 92px;
   overflow: hidden; display: table-cell; }
 td.lm-ke-n { font-weight: 700; }
+
+/* Sortable column heads. The arrow only appears on the active one, so the header
+   row stays quiet until it is being used. */
+th.lm-sh { cursor: pointer; user-select: none; white-space: nowrap; }
+th.lm-sh:hover { color: var(--text); }
+th.lm-sh.on { color: var(--accent, #6d5efc); }
+th.lm-sh > i { font-style: normal; font-size: 9px; margin-left: 3px; }
+/* The reach-rate column that follows each key event: same value, read as a rate. */
+th.lm-ker { max-width: 44px; }
+td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }

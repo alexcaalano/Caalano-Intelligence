@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.442.0 - 2026-08-20 · `PENDING` - Scope every per-client ad read to its account
+## v3.442.0 - 2026-08-20 · `1527323` - Scope every per-client ad read to its account
 
 Follow-on from v3.441.0, which fixed the Overview's Meta spend. The same pattern
 was everywhere: **53 more** Meta / Google reads pulled every ad account on the

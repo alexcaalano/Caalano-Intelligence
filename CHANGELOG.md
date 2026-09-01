@@ -18,6 +18,41 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.434.0 - 2026-08-20 · `PENDING` - Rural gets its own band, and every row opens its leads
+
+**Metro / Regional / Rural / Remote.** Regional and rural were folded together;
+they are now separate, because the ABS bands already draw that line: "inner
+regional" is the regional-centre band (Ballarat, Cairns) and "outer regional" is
+the country-town and farmland band everyone means by rural (Bathurst). Both are
+substantial - neither is a hair-split of the other - and the exact ABS class stays
+on each row's hover.
+
+The Modified Monash Model was the obvious alternative, since it says "regional
+centre" and "rural town" in so many words. It was rejected on the data: 551 of its
+2,652 postcodes carry more than one value against zero ambiguity in the ABS bands,
+and it measures town *size* rather than distance - it files Broken Hill as a
+"large rural town" when it is one of the most remote places in the country.
+
+**Every row in the table now opens its leads.** Zones, districts, councils,
+states and remoteness bands all click through to the same drill a map dot opens:
+each lead with its status, pipeline stage, time in stage and value, expanding to
+its form answers, and expanding again to that contact's notes.
+
+Opened from a whole council a drill can hold hundreds, so it gained two things: a
+search across name, stage, pipeline and postcode, and a default sort by **longest
+in stage first** - the leads stuck the longest are the reason anyone opens it.
+Each lead now shows its own postcode beside the name, which matters once a row
+spans more than one.
+
+**The location scorecards use the full width.** They were on `auto-fill`, which
+leaves empty grid tracks, so five tiles bunched at the left of a wide screen.
+
+25 assertions, updated for the four-band split - including that all four bands
+are populated, that regional and rural are both substantial rather than one band
+split in two, and that the four cuts still partition the placeable leads exactly.
+
+---
+
 ## v3.433.0 - 2026-08-20 · `PENDING` - Metro / regional / remote, state, and cut-then-drill
 
 The Location tab now groups leads five ways - **My zones · Metro / regional ·

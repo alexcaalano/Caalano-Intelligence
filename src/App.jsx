@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.433.0'
+const APP_VERSION = '3.434.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7433,8 +7433,18 @@ function useRegions(want) {
 // The ABS Remoteness Areas, collapsed to the three buckets people actually talk
 // in. The five-level detail is kept on the row so a "Regional" figure can still
 // say whether it is inner or outer regional.
-const RA_BUCKET = { 1: 'Metro', 2: 'Regional', 3: 'Regional', 4: 'Remote', 5: 'Remote' }
-const RA_ORDER = ['Metro', 'Regional', 'Remote']
+// The ABS five levels, named the way people talk. "Outer regional" is the band of
+// country towns and farmland everyone calls RURAL, so it gets that name rather
+// than being folded in with the regional centres it does not resemble.
+//
+// The Modified Monash Model was the other candidate - it says "regional centre"
+// and "rural town" in so many words - and was rejected on the data: 551 of its
+// 2,652 postcodes carry more than one MMM value, against zero ambiguity in the
+// ABS bands, and it measures town SIZE rather than distance, which files Broken
+// Hill as a "large rural town" when it is one of the most remote places in the
+// country.
+const RA_BUCKET = { 1: 'Metro', 2: 'Regional', 3: 'Rural', 4: 'Remote', 5: 'Remote' }
+const RA_ORDER = ['Metro', 'Regional', 'Rural', 'Remote']
 const STATE_FULL = {
   NSW: 'New South Wales', VIC: 'Victoria', QLD: 'Queensland', SA: 'South Australia',
   WA: 'Western Australia', TAS: 'Tasmania', NT: 'Northern Territory', ACT: 'Australian Capital Territory',
@@ -9308,8 +9318,11 @@ function LeadMap({ locs, tall, clientId, currency }) {
       // one - where it simply narrows to that bucket.
       if (raCut !== 'all' && (!e.remoteness || e.remoteness !== raCut)) { cutOut++; cutOutLeads += p.leads || 0; continue }
       let g = m.get(name)
-      if (!g) { g = { name, state: e.state, places: 0, leads: 0, booked: 0, won: 0, mine: mine.has(name), ra: new Set() }; m.set(name, g) }
+      if (!g) { g = { name, state: e.state, places: 0, leads: 0, booked: 0, won: 0, mine: mine.has(name), ra: new Set(), people: [], parts: [] }; m.set(name, g) }
       g.places++; g.leads += p.leads || 0; g.booked += p.booked || 0; g.won += p.won || 0
+      // The leads themselves, so a row can open the same drill a map dot does.
+      for (const person of (p.people || [])) g.people.push({ ...person, place: p.value })
+      g.parts.push(p.value)
       if (e.raName) g.ra.add(e.raName)
     }
     const rows = [...m.values()].map((g) => ({ ...g, ra: [...g.ra], winPct: g.leads ? Math.round((g.won / g.leads) * 100) : null }))
@@ -9334,6 +9347,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
       return {
         id: a.id, name: a.name || 'Unnamed zone', places: (a.places || []).length,
         pipelines: a.pipelines, postcodes: hit.length,
+        people: hit.flatMap((p) => (p.people || []).map((x) => ({ ...x, place: p.value }))),
         leads, booked: sum('booked'), won,
         winPct: leads ? Math.round((won / leads) * 100) : null,
       }
@@ -9425,7 +9439,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
               <span className="cap" style={{ fontWeight: 700 }}>Where the leads are</span>
               <div className="optlog-toggle">
                 {[['zones', 'My zones', 'The zones you defined in Settings'],
-                  ['remoteness', 'Metro / regional', 'Every lead by how far its postcode sits from a major city, on the ABS remoteness scale'],
+                  ['remoteness', 'Metro / rural', 'Every lead by how far its postcode sits from a major city, on the ABS remoteness scale'],
                   ['state', 'State', 'Every lead by the state its postcode sits in'],
                   ['district', 'District', 'Every lead by the ABS district its postcode sits in, whether or not you target it'],
                   ['council', 'Council', 'Every lead by the council its postcode sits in, whether or not you target it']].map(([k, lbl, t]) => (
@@ -9439,6 +9453,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
                     <option value="all">everywhere</option>
                     <option value="Metro">metro only</option>
                     <option value="Regional">regional only</option>
+                    <option value="Rural">rural only</option>
                     <option value="Remote">remote only</option>
                   </select>
                 </label>
@@ -9456,8 +9471,11 @@ function LeadMap({ locs, tall, clientId, currency }) {
                       <thead><tr><th className="lft">{groupBy === 'district' ? 'District' : groupBy === 'council' ? 'Council' : groupBy === 'state' ? 'State' : 'Remoteness'}</th><th>Places</th><th>Leads</th><th>Share</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
                       <tbody>
                         {byArea.rows.map((r) => (
-                          <tr key={r.name} className={r.mine ? 'lm-mine' : ''}>
-                            <td className="lft" title={r.ra && r.ra.length ? `ABS remoteness: ${r.ra.join(', ')}` : undefined}>{r.name}{r.mine ? <span className="lm-tgt" title="You target this area">targeted</span> : null}</td>
+                          <tr key={r.name} className={`${r.mine ? 'lm-mine' : ''}${r.people.length ? ' lm-click' : ''}`}
+                            style={r.people.length ? { cursor: 'pointer' } : undefined}
+                            title={r.people.length ? `Open the ${fmtNumber(r.people.length)} leads behind this row` : 'No lead detail loaded for this row'}
+                            onClick={r.people.length ? () => setSel({ value: r.name, leads: r.leads, booked: r.booked, won: r.won, people: r.people, sub: `${fmtNumber(r.places)} postcode${r.places === 1 ? '' : 's'}${r.ra && r.ra.length ? ` · ${r.ra.join(', ')}` : ''}` }) : undefined}>
+                            <td className="lft" title={r.ra && r.ra.length ? `ABS remoteness: ${r.ra.join(', ')}` : undefined}>{r.people.length ? <span className="u-chev">▸</span> : null} {r.name}{r.mine ? <span className="lm-tgt" title="You target this area">targeted</span> : null}</td>
                             <td>{fmtNumber(r.places)}</td>
                             <td>{fmtNumber(r.leads)}</td>
                             <td>{pctOf(r.leads, byArea.totalLeads)}</td>
@@ -9474,7 +9492,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
                         ) : null}
                       </tbody>
                     </table></div>
-                    <Caveat>{groupBy === 'remoteness' ? 'Metro, regional and remote are the ABS Remoteness Areas - the official measure of how far a place sits from services, not a guess from population. Metro is "major cities"; regional folds inner and outer regional together; remote folds remote and very remote. The exact class is on each row\u2019s hover. ' : ''}{raCut !== 'all' ? `Cut to ${raCut.toLowerCase()} only: ${fmtNumber(byArea.cutOutLeads)} leads from elsewhere are excluded from every figure here. ` : ''}Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : groupBy === 'council' ? 'council' : groupBy === 'state' ? 'state' : 'remoteness band'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
+                    <Caveat>{groupBy === 'remoteness' ? 'These are the ABS Remoteness Areas - the official measure of how far a place sits from services, not a guess from population. Metro is "major cities", regional is "inner regional", rural is "outer regional" (the country-town and farmland band), and remote folds remote and very remote together. The exact ABS class is on each row\u2019s hover. ' : ''}{raCut !== 'all' ? `Cut to ${raCut.toLowerCase()} only: ${fmtNumber(byArea.cutOutLeads)} leads from elsewhere are excluded from every figure here. ` : ''}Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : groupBy === 'council' ? 'council' : groupBy === 'state' ? 'state' : 'remoteness band'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
                   </>
             ) : (
             <>
@@ -9482,8 +9500,11 @@ function LeadMap({ locs, tall, clientId, currency }) {
               <thead><tr><th className="lft">Zone</th><th>Places</th><th>Leads</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
               <tbody>
                 {zones.rows.map((r) => (
-                  <tr key={r.id}>
-                    <td className="lft">{r.name}{Array.isArray(r.pipelines) ? <span className="aud-tab">one pipeline</span> : null}</td>
+                  <tr key={r.id} className={r.people && r.people.length ? 'lm-click' : ''}
+                    style={r.people && r.people.length ? { cursor: 'pointer' } : undefined}
+                    title={r.people && r.people.length ? `Open the ${fmtNumber(r.people.length)} leads in this zone` : 'No lead detail loaded for this zone'}
+                    onClick={r.people && r.people.length ? () => setSel({ value: r.name, leads: r.leads, booked: r.booked, won: r.won, people: r.people, sub: `${fmtNumber(r.postcodes)} of ${fmtNumber(r.places)} places with leads` }) : undefined}>
+                    <td className="lft">{r.people && r.people.length ? <span className="u-chev">▸</span> : null} {r.name}{Array.isArray(r.pipelines) ? <span className="aud-tab">one pipeline</span> : null}</td>
                     <td>{fmtNumber(r.postcodes)} of {fmtNumber(r.places)}</td>
                     <td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
                     <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
@@ -9543,16 +9564,29 @@ function LocationLeadsModal({ loc, clientId, currency, onClose }) {
   useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') onClose() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
   const won = people.filter((p) => p.status === 'won').length
   const lost = people.filter((p) => p.status === 'lost').length
+  const [q, setQ] = useState('')
+  // Longest in stage first: a drill opened from a whole council can hold hundreds,
+  // and the ones stuck the longest are the reason anyone opens it.
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    return people
+      .filter((p) => !needle || [p.name, p.stageName, p.pipelineName, p.place, p.status].some((v) => v && String(v).toLowerCase().includes(needle)))
+      .slice()
+      .sort((a, b) => (b.ageDays || 0) - (a.ageDays || 0))
+  }, [people, q])
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal loc-modal" onClick={(e) => e.stopPropagation()}>
         <div className="m-head">
-          <div><h3 style={{ margin: 0 }}>📍 {loc.value}</h3><span className="cap">{fmtNumber(loc.leads)} lead{loc.leads === 1 ? '' : 's'} · {fmtNumber(loc.booked || 0)} booked · {won} won · {lost} lost{people.length < loc.leads ? ` · showing ${people.length}` : ''}</span></div>
+          <div><h3 style={{ margin: 0 }}>📍 {loc.value}</h3><span className="cap">{loc.sub ? `${loc.sub} · ` : ''}{fmtNumber(loc.leads)} lead{loc.leads === 1 ? '' : 's'} · {fmtNumber(loc.booked || 0)} booked · {won} won · {lost} lost{people.length < loc.leads ? ` · lead detail for ${fmtNumber(people.length)}` : ''}</span></div>
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
         <div className="m-body">
-          {people.length ? <div className="loc-people">{people.map((p, i) => <LocationLeadRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</div>
-            : <div className="cap">No lead detail for this location yet{loc.leads ? ' - press Refresh to load the latest' : ''}.</div>}
+          {people.length ? <>
+            {people.length > 6 ? <input className="inp loc-find" placeholder={`Search ${fmtNumber(people.length)} leads by name, stage or postcode…`} value={q} onChange={(e) => setQ(e.target.value)} /> : null}
+            {!shown.length ? <div className="cap">Nothing matches “{q}”.</div>
+              : <div className="loc-people">{shown.map((p, i) => <LocationLeadRow key={p.contactId || i} p={p} clientId={clientId} money={money} />)}</div>}
+          </> : <div className="cap">No lead detail for this location yet{loc.leads ? ' - press Refresh to load the latest' : ''}.</div>}
         </div>
       </div>
     </div>
@@ -9570,7 +9604,7 @@ function LocationLeadRow({ p, clientId, money }) {
   return (
     <div className={`loc-lead${open ? ' open' : ''}`}>
       <button className="loc-lead-head" onClick={toggle} title="Show form answers + notes">
-        <span className="loc-lead-name">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name || 'Lead'}</span>
+        <span className="loc-lead-name">{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name || 'Lead'}{p.place ? <span className="loc-lead-pc">{p.place}</span> : null}</span>
         <span className="loc-lead-meta">{statusChip(p.status)}{p.stageName ? <span className="loc-lead-stage">{p.stageName}{p.pipelineName && p.pipelineName !== 'Pipeline' ? <span className="cap"> · {p.pipelineName}</span> : null}</span> : null}{p.ageDays != null ? <span className={`loc-lead-age${p.ageDays > 30 ? ' u-stale' : ''}`}>{fmtNumber(p.ageDays)}d in stage</span> : null}<span className="loc-lead-val">{p.value ? money(p.value) : '-'}</span></span>
       </button>
       {open && <div className="loc-lead-body">
@@ -9653,7 +9687,10 @@ function LocationView({ clientId, range, nonce, currency }) {
     <>
       <div className="lvl-title">Lead locations <span className="sub">· where leads come from, who booked, who won · {rangeLabel(range)}</span></div>
       <FormPipeFilter pipes={pipes} value={pipe} onChange={setPipe} />
-      <div className="scorecard">
+      {/* sc-fit, not the default: auto-fill leaves empty tracks on the right, so
+          five tiles bunched at the left edge of a wide screen. auto-fit collapses
+          them and the tiles take the width. */}
+      <div className="scorecard sc-fit">
         <Sc label="Locations" value={fmtNumber(locs.length)} />
         <Sc label="Leads mapped" value={fmtNumber(tot.leads)} />
         <Sc label="Booked" value={fmtNumber(tot.booked)} />

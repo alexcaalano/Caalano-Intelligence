@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.425.0'
+const APP_VERSION = '3.426.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7164,6 +7164,204 @@ function useCalendars(clientId, nonce) {
    Off by default: "how far did they travel" is a question about a business
    people go TO. For a client whose work happens at the customer's address it
    means nothing, so nothing appears on the map until it is switched on here. */
+// --- Catchment pin picker ----------------------------------------------------
+// Drop a pin, drag a radius - the same gesture as radius targeting in Ads Manager
+// or Google Ads, so the catchment can be set to where the business ACTUALLY draws
+// from rather than to whichever postcode centroid happens to sit nearest.
+//
+// A typed postcode puts the origin at that postcode's centroid, which for a large
+// or oddly-shaped postcode can sit a few kilometres from the door. A pin does not
+// have that problem: it is the exact point, and every distance downstream is
+// measured from it.
+const GEO_PIN_MIN_KM = 1
+const GEO_PIN_MAX_KM = 500
+const AU_CENTRE = [-25.6, 134.4]
+// Nearest place we hold coordinates for, so a dropped pin can name itself. Runs
+// over ~16k suburbs on each drag, which is cheap enough to keep live.
+function nearestPlace(db, lat, lng) {
+  if (!db || !db.sub) return null
+  let best = null, bestKm = Infinity
+  for (const [name, v] of Object.entries(db.sub)) {
+    const list = typeof v[0] === 'number' ? [v] : v
+    for (const c of list) {
+      const km = kmBetween([lat, lng], [c[0], c[1]])
+      if (km < bestKm) { bestKm = km; best = { name, state: c[2], km } }
+    }
+  }
+  return best
+}
+// Everything the circle would cover, which is the closest this can get to the
+// "estimated reach" figure the ad platforms show beside their radius control.
+function placesWithin(db, lat, lng, km) {
+  if (!db || !db.pc) return { postcodes: 0, suburbs: [] }
+  let postcodes = 0
+  for (const c of Object.values(db.pc)) if (kmBetween([lat, lng], c) <= km) postcodes++
+  const subs = []
+  for (const [name, v] of Object.entries(db.sub)) {
+    const list = typeof v[0] === 'number' ? [v] : v
+    for (const c of list) {
+      const d = kmBetween([lat, lng], [c[0], c[1]])
+      if (d <= km) { subs.push({ name, km: d }); break }
+    }
+  }
+  subs.sort((a, b) => a.km - b.km)
+  return { postcodes, suburbs: subs }
+}
+const geoPinLabel = (p) => (p && p.label) || (p ? `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}` : '')
+
+function GeoPinPicker({ open, onClose, pin, radiusKm, onSave, db, bizCoord }) {
+  const elRef = useRef(null)
+  const mapRef = useRef(null)
+  const objRef = useRef({})
+  const [pos, setPos] = useState(null)
+  const [km, setKm] = useState(radiusKm || 15)
+  const [q, setQ] = useState('')
+  const [ready, setReady] = useState(false)
+  // Reset to whatever is stored each time the picker is opened, so cancelling and
+  // reopening never resumes a half-made edit.
+  useEffect(() => {
+    if (!open) return
+    setPos(pin && Number.isFinite(pin.lat) ? [pin.lat, pin.lng] : (bizCoord || null))
+    setKm(radiusKm || 15)
+    setQ('')
+  }, [open, pin, radiusKm, bizCoord])
+
+  useEffect(() => {
+    if (!open || !elRef.current || mapRef.current) return
+    let dead = false
+    import('leaflet').then((mod) => {
+      if (dead || !elRef.current || mapRef.current) return
+      const L = mod.default || mod
+      const start = pos || bizCoord || AU_CENTRE
+      const map = L.map(elRef.current, { zoomControl: true }).setView(start, pos || bizCoord ? 10 : 4)
+      // Same tiles and attribution as the lead map, so the picker and the map it
+      // configures look like one thing - and OSM's attribution is a licence term,
+      // not decoration.
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map)
+      mapRef.current = map
+      objRef.current.L = L
+      // Clicking anywhere moves the pin - the fastest way to place it, and the
+      // behaviour anyone who has used radius targeting already expects.
+      map.on('click', (e) => setPos([e.latlng.lat, e.latlng.lng]))
+      setReady(true)
+      setTimeout(() => map.invalidateSize(), 60)
+    }).catch(() => {})
+    return () => { dead = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; objRef.current = {} } setReady(false) }
+  }, [open])
+
+  // Draw / redraw the pin, its circle, and the handle that resizes it.
+  useEffect(() => {
+    const map = mapRef.current, L = objRef.current.L
+    if (!map || !L || !ready) return
+    const o = objRef.current
+    for (const k of ['marker', 'circle', 'handle']) if (o[k]) { map.removeLayer(o[k]); o[k] = null }
+    if (!pos) return
+    o.circle = L.circle(pos, { radius: km * 1000, color: '#6d5efc', weight: 2, fillColor: '#6d5efc', fillOpacity: 0.10 }).addTo(map)
+    // A divIcon, not Leaflet's default marker: the default one references image
+    // assets that do not resolve through the bundler and render as a broken
+    // image. Every other map in the app uses circleMarker for the same reason,
+    // but this pin has to be draggable, which circleMarker is not.
+    o.marker = L.marker(pos, {
+      draggable: true,
+      icon: L.divIcon({ className: 'geo-pin-mark', html: '<i></i>', iconSize: [22, 22], iconAnchor: [11, 11] }),
+      keyboard: false,
+    }).addTo(map)
+    o.marker.on('drag', (e) => { const ll = e.target.getLatLng(); if (o.circle) o.circle.setLatLng(ll) })
+    o.marker.on('dragend', (e) => { const ll = e.target.getLatLng(); setPos([ll.lat, ll.lng]) })
+    // A handle on the circle's edge, due east of the pin. Dragging it sets the
+    // radius to its own distance from the centre - which is the direct-manipulation
+    // half of the gesture; the number field is the precise half.
+    const edge = L.latLng(pos[0], pos[1] + (km / (111.32 * Math.cos(pos[0] * Math.PI / 180))))
+    o.handle = L.marker(edge, {
+      draggable: true,
+      icon: L.divIcon({ className: 'geo-handle', html: '<i></i>', iconSize: [16, 16], iconAnchor: [8, 8] }),
+      keyboard: false,
+    }).addTo(map)
+    o.handle.on('drag', (e) => {
+      const d = kmBetween(pos, [e.target.getLatLng().lat, e.target.getLatLng().lng])
+      const next = Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Math.round(d)))
+      if (o.circle) o.circle.setRadius(next * 1000)
+    })
+    o.handle.on('dragend', (e) => {
+      const d = kmBetween(pos, [e.target.getLatLng().lat, e.target.getLatLng().lng])
+      setKm(Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Math.round(d))))
+    })
+  }, [pos, km, ready])
+
+  // Keep the whole circle in view when it changes size, so a big radius does not
+  // silently run off the edges.
+  useEffect(() => {
+    const map = mapRef.current, o = objRef.current
+    if (!map || !o.circle || !pos) return
+    map.fitBounds(o.circle.getBounds(), { padding: [24, 24], maxZoom: 13 })
+  }, [km, pos && pos[0], pos && pos[1], ready])
+
+  const near = useMemo(() => (pos && db ? nearestPlace(db, pos[0], pos[1]) : null), [pos && pos[0], pos && pos[1], db])
+  const cover = useMemo(() => (pos && db ? placesWithin(db, pos[0], pos[1], km) : null), [pos && pos[0], pos && pos[1], km, db])
+  const search = () => {
+    const v = String(q || '').trim()
+    if (!v || !db) return
+    let c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
+    if (!c) { const sv = db.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]] }
+    if (!c) return
+    setPos([c[0], c[1]])
+    if (mapRef.current) mapRef.current.setView(c, 11)
+  }
+  if (!open) return null
+  return (
+    <Overlay>
+      <div className="mr-drill-overlay no-print" onClick={onClose}>
+        <div className="mr-drill geo-pin-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="mr-drill-head">
+            <div>
+              <h3 style={{ margin: 0 }}>Set the catchment on the map</h3>
+              <p className="cap" style={{ margin: '2px 0 0' }}>Click to drop the pin, drag it to move, and drag the handle on the edge to size the radius.</p>
+            </div>
+            <button className="mr-drill-x" onClick={onClose}>✕</button>
+          </div>
+          <div className="geo-pin-body">
+            <div className="geo-pin-map" ref={elRef} />
+            <div className="geo-pin-side">
+              <label className="cap">Jump to a suburb or postcode</label>
+              <div className="geo-pin-search">
+                <input className="inp" value={q} placeholder="e.g. Norwest or 2153"
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); search() } }} />
+                <button className="btn-ghost sm" onClick={search}>Go</button>
+              </div>
+              <label className="cap" style={{ marginTop: 14 }}>Radius</label>
+              <div className="geo-pin-km">
+                <input type="range" min={GEO_PIN_MIN_KM} max={100} value={Math.min(km, 100)}
+                  onChange={(e) => setKm(Number(e.target.value))} />
+                <input className="inp" type="number" min={GEO_PIN_MIN_KM} max={GEO_PIN_MAX_KM} value={km}
+                  onChange={(e) => setKm(Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Number(e.target.value) || GEO_PIN_MIN_KM)))} />
+                <span className="cap">km</span>
+              </div>
+              <div className="geo-pin-read">
+                {!pos ? <p className="cap">No pin yet - click the map to drop one.</p> : <>
+                  <div className="geo-pin-k">Pin</div>
+                  <div className="geo-pin-v">{near ? `${near.name}${near.state ? `, ${near.state}` : ''}` : 'Dropped pin'}</div>
+                  <div className="cap">{pos[0].toFixed(4)}, {pos[1].toFixed(4)}{near ? ` · ${near.km < 1 ? 'in' : `${near.km.toFixed(1)}km from`} ${near.name}` : ''}</div>
+                  {cover ? <>
+                    <div className="geo-pin-k" style={{ marginTop: 12 }}>Covered</div>
+                    <div className="geo-pin-v">{fmtNumber(cover.postcodes)} postcodes</div>
+                    <div className="cap">{cover.suburbs.length ? cover.suburbs.slice(0, 6).map((s) => s.name).join(', ') + (cover.suburbs.length > 6 ? `, +${fmtNumber(cover.suburbs.length - 6)} more` : '') : 'No populated places inside this radius.'}</div>
+                  </> : null}
+                </>}
+              </div>
+              <div className="geo-pin-acts">
+                <button className="set-details-save" disabled={!pos} onClick={() => { onSave({ lat: pos[0], lng: pos[1], label: near ? near.name : null }, km); onClose() }}>Use this catchment</button>
+                <button className="btn-ghost sm" onClick={onClose}>Cancel</button>
+              </div>
+              <p className="cap" style={{ marginTop: 10 }}>Distances to leads are still measured to <b>postcode centroids</b>, so the circle is exact but each lead's position is only as precise as its postcode. That is sound across hundreds of leads and rough for any single one.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Overlay>
+  )
+}
+
 function GeoSettings({ clientId }) {
   useSettingsSync()
   const [g, setG] = useState(() => loadGeo(clientId))
@@ -7194,8 +7392,11 @@ function GeoSettings({ clientId }) {
   const [draft, setDraft] = useState({})
   const [seed, setSeed] = useState({})
   const [suggest, setSuggest] = useState({})
+  const [pinOpen, setPinOpen] = useState(false)
+  // The place list backs both the zone editor and the map picker's search and
+  // its "what does this circle cover" readout, so radius mode needs it too.
   useEffect(() => {
-    if (g.mode !== 'areas' || geoDb) return
+    if ((g.mode !== 'areas' && g.mode !== 'radius') || geoDb) return
     let a = true
     import('./data/aupostcodes.json').then((m) => { if (a) setGeoDb(m.default || m) }).catch(() => {})
     return () => { a = false }
@@ -7283,12 +7484,22 @@ function GeoSettings({ clientId }) {
               <select className="inp" value={g.origin} onChange={(e) => save({ ...g, origin: e.target.value })}>
                 <option value="business">The business address in the CRM</option>
                 <option value="place">A suburb or postcode I&rsquo;ll type</option>
+                <option value="pin">A point I drop on the map</option>
               </select>
             </div>
             {g.origin === 'place' ? (
               <div className="fld">
                 <label className="cap">Suburb or postcode</label>
                 <input className="inp" value={g.place} onChange={(e) => setG({ ...g, place: e.target.value })} onBlur={() => save(g)} placeholder="e.g. Norwest or 2153" />
+              </div>
+            ) : null}
+            {g.origin === 'pin' ? (
+              <div className="fld">
+                <label className="cap">Pinned point</label>
+                <button type="button" className="geo-pin-btn" onClick={() => setPinOpen(true)}>
+                  {g.pin ? <><b>{geoPinLabel(g.pin)}</b><span>{g.pin.lat.toFixed(4)}, {g.pin.lng.toFixed(4)} · {g.radiusKm}km</span></>
+                    : <><b>Drop a pin on the map</b><span>Click to open the map picker</span></>}
+                </button>
               </div>
             ) : null}
             <div className="fld">
@@ -7305,7 +7516,11 @@ function GeoSettings({ clientId }) {
           {g.origin === 'business' && !b.postalCode && b.city ? (
             <div className="geo-biz"><span className="geo-warn">No postcode on the business record - the suburb will be used, which is less precise.</span></div>
           ) : null}
-          {!originText ? <div className="geo-biz"><span className="geo-warn">Nothing to measure from yet, so the map will show no catchment.</span></div> : null}
+          {g.origin !== 'pin' && !originText ? <div className="geo-biz"><span className="geo-warn">Nothing to measure from yet, so the map will show no catchment.</span></div> : null}
+          {g.origin === 'pin' && !g.pin ? <div className="geo-biz"><span className="geo-warn">No pin dropped yet, so the map will show no catchment.</span></div> : null}
+          <GeoPinPicker open={pinOpen} onClose={() => setPinOpen(false)} pin={g.pin} radiusKm={g.radiusKm} db={geoDb}
+            bizCoord={geoDb && b.postalCode && geoDb.pc[b.postalCode] ? geoDb.pc[b.postalCode] : null}
+            onSave={(pin, km) => save({ ...g, origin: 'pin', pin, radiusKm: km })} />
 
           {pipelines && pipelines.length > 1 ? (
             <>
@@ -8597,7 +8812,7 @@ function LeadMap({ locs, tall, clientId, currency }) {
   const areasOn = geo.mode === 'areas' && (geo.areas || []).some((a) => (a.places || []).length)
   const [biz, setBiz] = useState(null)
   useEffect(() => {
-    if (!geoOn || !clientId || geo.origin !== 'business') return
+    if (!geoOn || !clientId || geo.origin !== 'business') return   // pin / typed place need no CRM read
     let a = true
     fetch(`/.netlify/functions/windsor?scope=bizloc&client=${encodeURIComponent(clientId)}`)
       .then((r) => (r.ok ? r.json() : null)).then((j) => { if (a && j && !j.error) setBiz(j) }).catch(() => {})
@@ -8651,10 +8866,16 @@ function LeadMap({ locs, tall, clientId, currency }) {
   // Where the business is, and how far each pocket of leads sits from it.
   const catch_ = useMemo(() => {
     if (!geoOn || !db) return null
-    const want = geo.origin === 'business' ? (biz && (biz.postalCode || biz.city)) : geo.place
-    if (!want) return null
-    const v = String(want).trim()
-    let c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
+    // A dropped pin IS the origin - no place lookup, no centroid in between. That
+    // is the whole reason for offering it: a typed postcode measures from the
+    // centre of an area that can be tens of kilometres across.
+    const pinned = geo.origin === 'pin' && geo.pin && Number.isFinite(geo.pin.lat) && Number.isFinite(geo.pin.lng)
+      ? [geo.pin.lat, geo.pin.lng] : null
+    const want = pinned ? null : geo.origin === 'business' ? (biz && (biz.postalCode || biz.city)) : geo.place
+    if (!pinned && !want) return null
+    const v = String(want || '').trim()
+    let c = pinned
+    if (!c) c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
     if (!c) { const sv = db.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : ((sv.find((x) => x[2] === clientState) || sv[0]).slice(0, 2)) }
     if (!c) return null
     const withKm = pts.map((p) => ({ ...p, km: kmBetween(c, [p.lat, p.lng]) }))
@@ -8669,11 +8890,13 @@ function LeadMap({ locs, tall, clientId, currency }) {
     const total = withKm.reduce((n, p) => n + (p.leads || 0), 0)
     const band = (lo, hi) => withKm.reduce((n, p) => n + (p.km >= lo && p.km < hi ? (p.leads || 0) : 0), 0)
     return {
-      origin: c, label: geo.origin === 'business' ? (biz && [biz.city, biz.postalCode].filter(Boolean).join(' ')) || 'Business' : v,
+      origin: c, pinned: !!pinned,
+      label: pinned ? (geo.pin.label || 'Pinned point')
+        : geo.origin === 'business' ? (biz && [biz.city, biz.postalCode].filter(Boolean).join(' ')) || 'Business' : v,
       radiusKm: R, median, total, inside, outside: total - inside,
       bands: [['≤5 km', band(0, 5)], ['5-15 km', band(5, 15)], ['15-30 km', band(15, 30)], ['30 km+', band(30, Infinity)]],
     }
-  }, [geoOn, db, geo.origin, geo.place, geo.radiusKm, biz, pts, clientState])
+  }, [geoOn, db, geo.origin, geo.place, geo.radiusKm, geo.pin && geo.pin.lat, geo.pin && geo.pin.lng, biz, pts, clientState])
 
   // Which zone (or zones) each pocket of leads falls in. Membership is a set
   // lookup on the place itself, so there is no edge-of-circle guesswork - a lead

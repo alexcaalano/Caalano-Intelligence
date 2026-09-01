@@ -18,6 +18,53 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.426.0 - 2026-08-20 · `PENDING` - Drop a pin on a map to set the catchment
+
+Catchment had two ways to say where people travel to: the CRM business address,
+or a suburb/postcode typed in. Both resolve to a **postcode centroid**, and a
+postcode is not a point - a city one is a couple of kilometres across, a rural
+one can be fifty. The origin every distance is measured from could sit well away
+from the actual front door.
+
+There is now a third option: **a point dropped on a map**, with the same gesture
+as radius targeting in Ads Manager or Google Ads. Click to drop the pin, drag it
+to move, and drag the handle on the circle's edge to size the radius - or type
+the kilometres exactly, since direct manipulation is good for finding the shape
+and bad for hitting a round number.
+
+The panel beside the map earns its place:
+
+- **The pin names itself** from the nearest place we hold coordinates for, so a
+  saved catchment reads "NORWEST, NSW" rather than a pair of decimals - and it
+  says how far the pin is from that place, so a pin dropped in the middle of
+  nowhere is honest about it rather than claiming a suburb it is nowhere near.
+- **What the circle covers** - the postcode count and the nearest suburbs by
+  name. It is the closest equivalent to the reach estimate the ad platforms show
+  beside their radius control, and it makes a too-big or too-small radius obvious
+  before it is saved.
+- **Search** jumps the map to any suburb or postcode, so setting a catchment for
+  a client in another state does not start with panning across the country.
+
+When a pin is set, the lead map measures from that exact point - no place lookup,
+no centroid in between - and the catchment ring is drawn where the pin is. Leads
+are still positioned by postcode centroid, which the picker says plainly: the
+circle is exact, each lead's position is only as precise as its postcode.
+
+50 assertions cover the reverse lookup and the coverage counts against real
+Australian coordinates - Sydney resolves in NSW, Melbourne in VIC, coverage never
+shrinks as the radius grows, and the edge handle lands within 0.11km of the
+requested radius at every latitude from Darwin to Hobart. A live browser test
+drives the real Leaflet map and checks the circle, the pin and the handle all
+render and respond.
+
+Caught while testing: the draggable pin was the only `L.marker` in the codebase,
+and Leaflet's default marker icon does not survive the bundler - it would have
+rendered as a broken image. Every other map here uses `circleMarker` for that
+reason, which cannot be dragged, so the pin is a CSS `divIcon` instead. The
+browser test now asserts no broken images on the map.
+
+---
+
 ## v3.425.0 - 2026-08-20 · `PENDING` - Scorecard above the Lost Reasons table
 
 Seven tiles now sit above the Lost Reasons breakdown, so the losses have

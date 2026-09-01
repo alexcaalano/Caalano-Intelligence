@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.427.0'
+const APP_VERSION = '3.428.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7209,160 +7209,186 @@ function placesWithin(db, lat, lng, km) {
 }
 const geoPinLabel = (p) => (p && p.label) || (p ? `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}` : '')
 
-function GeoPinPicker({ open, onClose, pin, radiusKm, onSave, db, bizCoord, title, saveLabel }) {
+// One inline map, used by both catchment modes. It is shown by default rather
+// than hidden behind a button, because the map IS the setting - a radius or a
+// list of postcodes is far easier to judge as a shape than as a number or a wall
+// of four-digit chips.
+//
+//   radius mode  the pin is the origin and the circle is the catchment. Clicking
+//                the map moves the pin; dragging the edge handle sizes it.
+//   zone mode    the circle is only a selection tool. Every place already in the
+//                zone is plotted, and clicking one removes it - so a zone built
+//                by radius can be trimmed by hand where the circle overreached.
+function GeoMapEditor({ db, mode, pin, radiusKm, onPin, places, onTogglePlace, bizCoord, height }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
-  const objRef = useRef({})
-  const [pos, setPos] = useState(null)
-  const [km, setKm] = useState(radiusKm || 15)
-  const [q, setQ] = useState('')
+  const oRef = useRef({})
   const [ready, setReady] = useState(false)
-  // Reset to whatever is stored each time the picker is opened, so cancelling and
-  // reopening never resumes a half-made edit.
-  useEffect(() => {
-    if (!open) return
-    setPos(pin && Number.isFinite(pin.lat) ? [pin.lat, pin.lng] : (bizCoord || null))
-    setKm(radiusKm || 15)
-    setQ('')
-  }, [open, pin, radiusKm, bizCoord])
+  const [km, setKm] = useState(radiusKm || 10)
+  const [q, setQ] = useState('')
+  const [draw, setDraw] = useState(mode === 'radius' ? null : null)   // zone mode: circle centre while selecting
+  const zone = mode === 'zone'
+  const centre = zone ? draw : (pin && Number.isFinite(pin.lat) ? [pin.lat, pin.lng] : null)
+  useEffect(() => { setKm(radiusKm || 10) }, [radiusKm])
+
+  // Resolve the zone's places to points once per change, so the map can plot them.
+  const pts = useMemo(() => {
+    if (!db || !places || !places.length) return []
+    const out = []
+    for (const pl of places) {
+      const v = String(pl).trim()
+      let c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
+      if (!c) { const sv = db.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]] }
+      if (c) out.push({ place: v, lat: c[0], lng: c[1] })
+    }
+    return out
+  }, [db, places])
+  // A place we hold no coordinates for still belongs to the zone - it just cannot
+  // be drawn, and saying so is better than quietly plotting one fewer.
+  const unplotted = (places || []).length - pts.length
 
   useEffect(() => {
-    if (!open || !elRef.current || mapRef.current) return
+    if (!elRef.current || mapRef.current) return
     let dead = false
     import('leaflet').then((mod) => {
       if (dead || !elRef.current || mapRef.current) return
       const L = mod.default || mod
-      const start = pos || bizCoord || AU_CENTRE
-      const map = L.map(elRef.current, { zoomControl: true }).setView(start, pos || bizCoord ? 10 : 4)
-      // Same tiles and attribution as the lead map, so the picker and the map it
-      // configures look like one thing - and OSM's attribution is a licence term,
-      // not decoration.
+      const start = centre || bizCoord || AU_CENTRE
+      const map = L.map(elRef.current, { zoomControl: true }).setView(start, centre || bizCoord ? 10 : 4)
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 19 }).addTo(map)
-      mapRef.current = map
-      objRef.current.L = L
-      // Clicking anywhere moves the pin - the fastest way to place it, and the
-      // behaviour anyone who has used radius targeting already expects.
-      map.on('click', (e) => setPos([e.latlng.lat, e.latlng.lng]))
+      mapRef.current = map; oRef.current.L = L
+      map.on('click', (e) => {
+        const p = [e.latlng.lat, e.latlng.lng]
+        if (zone) setDraw(p)
+        else onPin({ lat: p[0], lng: p[1], label: (nearestPlace(db, p[0], p[1]) || {}).name || null }, km)
+      })
       setReady(true)
       setTimeout(() => map.invalidateSize(), 60)
     }).catch(() => {})
-    return () => { dead = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; objRef.current = {} } setReady(false) }
-  }, [open])
+    return () => { dead = true; if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; oRef.current = {} } setReady(false) }
+  }, [])
 
-  // Draw / redraw the pin, its circle, and the handle that resizes it.
+  // The plotted places. Redrawn whenever the zone changes, which is what makes a
+  // typed postcode appear on the map the moment it is added.
   useEffect(() => {
-    const map = mapRef.current, L = objRef.current.L
+    const map = mapRef.current, L = oRef.current.L, o = oRef.current
     if (!map || !L || !ready) return
-    const o = objRef.current
-    for (const k of ['marker', 'circle', 'handle']) if (o[k]) { map.removeLayer(o[k]); o[k] = null }
-    if (!pos) return
-    o.circle = L.circle(pos, { radius: km * 1000, color: '#6d5efc', weight: 2, fillColor: '#6d5efc', fillOpacity: 0.10 }).addTo(map)
-    // A divIcon, not Leaflet's default marker: the default one references image
-    // assets that do not resolve through the bundler and render as a broken
-    // image. Every other map in the app uses circleMarker for the same reason,
-    // but this pin has to be draggable, which circleMarker is not.
-    o.marker = L.marker(pos, {
-      draggable: true,
-      icon: L.divIcon({ className: 'geo-pin-mark', html: '<i></i>', iconSize: [22, 22], iconAnchor: [11, 11] }),
-      keyboard: false,
-    }).addTo(map)
-    o.marker.on('drag', (e) => { const ll = e.target.getLatLng(); if (o.circle) o.circle.setLatLng(ll) })
-    o.marker.on('dragend', (e) => { const ll = e.target.getLatLng(); setPos([ll.lat, ll.lng]) })
-    // A handle on the circle's edge, due east of the pin. Dragging it sets the
-    // radius to its own distance from the centre - which is the direct-manipulation
-    // half of the gesture; the number field is the precise half.
-    const edge = L.latLng(pos[0], pos[1] + (km / (111.32 * Math.cos(pos[0] * Math.PI / 180))))
-    o.handle = L.marker(edge, {
-      draggable: true,
-      icon: L.divIcon({ className: 'geo-handle', html: '<i></i>', iconSize: [16, 16], iconAnchor: [8, 8] }),
-      keyboard: false,
-    }).addTo(map)
-    o.handle.on('drag', (e) => {
-      const d = kmBetween(pos, [e.target.getLatLng().lat, e.target.getLatLng().lng])
-      const next = Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Math.round(d)))
-      if (o.circle) o.circle.setRadius(next * 1000)
-    })
-    o.handle.on('dragend', (e) => {
-      const d = kmBetween(pos, [e.target.getLatLng().lat, e.target.getLatLng().lng])
-      setKm(Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Math.round(d))))
-    })
-  }, [pos, km, ready])
+    if (o.pts) { map.removeLayer(o.pts); o.pts = null }
+    if (!pts.length) return
+    const g = L.layerGroup()
+    for (const p of pts) {
+      const m = L.circleMarker([p.lat, p.lng], { radius: 6, color: '#fff', weight: 1.5, fillColor: '#12b886', fillOpacity: 0.9 })
+      m.bindTooltip(onTogglePlace ? `${p.place} - click to remove` : p.place, { direction: 'top' })
+      if (onTogglePlace) m.on('click', (e) => { e.originalEvent.stopPropagation(); L.DomEvent.stop(e); onTogglePlace(p.place) })
+      g.addLayer(m)
+    }
+    g.addTo(map); o.pts = g
+  }, [pts, ready, onTogglePlace])
 
-  // Keep the whole circle in view when it changes size, so a big radius does not
-  // silently run off the edges.
+  // The pin, its circle and the resize handle.
   useEffect(() => {
-    const map = mapRef.current, o = objRef.current
-    if (!map || !o.circle || !pos) return
-    map.fitBounds(o.circle.getBounds(), { padding: [24, 24], maxZoom: 13 })
-  }, [km, pos && pos[0], pos && pos[1], ready])
+    const map = mapRef.current, L = oRef.current.L, o = oRef.current
+    if (!map || !L || !ready) return
+    for (const k of ['circle', 'marker', 'handle']) if (o[k]) { map.removeLayer(o[k]); o[k] = null }
+    if (!centre) return
+    o.circle = L.circle(centre, { radius: km * 1000, color: '#6d5efc', weight: 2, fillColor: '#6d5efc', fillOpacity: zone ? 0.06 : 0.10 }).addTo(map)
+    o.marker = L.marker(centre, {
+      draggable: true, keyboard: false,
+      icon: L.divIcon({ className: 'geo-pin-mark', html: '<i></i>', iconSize: [22, 22], iconAnchor: [11, 11] }),
+    }).addTo(map)
+    o.marker.on('drag', (e) => { if (o.circle) o.circle.setLatLng(e.target.getLatLng()) })
+    o.marker.on('dragend', (e) => {
+      const ll = e.target.getLatLng()
+      if (zone) setDraw([ll.lat, ll.lng])
+      else onPin({ lat: ll.lat, lng: ll.lng, label: (nearestPlace(db, ll.lat, ll.lng) || {}).name || null }, km)
+    })
+    const edge = L.latLng(centre[0], centre[1] + (km / (111.32 * Math.cos(centre[0] * Math.PI / 180))))
+    o.handle = L.marker(edge, {
+      draggable: true, keyboard: false,
+      icon: L.divIcon({ className: 'geo-handle', html: '<i></i>', iconSize: [16, 16], iconAnchor: [8, 8] }),
+    }).addTo(map)
+    const kmAt = (e) => Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Math.round(kmBetween(centre, [e.target.getLatLng().lat, e.target.getLatLng().lng]))))
+    o.handle.on('drag', (e) => { if (o.circle) o.circle.setRadius(kmAt(e) * 1000) })
+    o.handle.on('dragend', (e) => {
+      const next = kmAt(e)
+      setKm(next)
+      if (!zone) onPin({ lat: centre[0], lng: centre[1], label: pin ? pin.label : null }, next)
+    })
+  }, [centre && centre[0], centre && centre[1], km, ready, zone])
 
-  const near = useMemo(() => (pos && db ? nearestPlace(db, pos[0], pos[1]) : null), [pos && pos[0], pos && pos[1], db])
-  const cover = useMemo(() => (pos && db ? placesWithin(db, pos[0], pos[1], km) : null), [pos && pos[0], pos && pos[1], km, db])
-  const search = () => {
+  // Frame whatever there is to see: the circle when one is drawn, otherwise the
+  // places, so opening a zone shows the zone rather than the whole country.
+  const framed = useRef(false)
+  useEffect(() => {
+    const map = mapRef.current, L = oRef.current.L, o = oRef.current
+    if (!map || !L || !ready) return
+    if (o.circle) { map.fitBounds(o.circle.getBounds(), { padding: [22, 22], maxZoom: 13 }); return }
+    if (!framed.current && pts.length) {
+      map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])).pad(0.15), { maxZoom: 12 })
+      framed.current = true
+    }
+  }, [ready, km, centre && centre[0], centre && centre[1], pts.length])
+
+  const near = useMemo(() => (centre && db ? nearestPlace(db, centre[0], centre[1]) : null), [centre && centre[0], centre && centre[1], db])
+  const cover = useMemo(() => (centre && db ? placesWithin(db, centre[0], centre[1], km) : null), [centre && centre[0], centre && centre[1], km, db])
+  const jump = () => {
     const v = String(q || '').trim()
     if (!v || !db) return
     let c = /^\d{4}$/.test(v) ? db.pc[v] : /^\d{3}$/.test(v) ? db.pc['0' + v] : null
     if (!c) { const sv = db.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]] }
     if (!c) return
-    setPos([c[0], c[1]])
     if (mapRef.current) mapRef.current.setView(c, 11)
+    setQ('')
   }
-  if (!open) return null
   return (
-    <Overlay>
-      <div className="mr-drill-overlay no-print" onClick={onClose}>
-        <div className="mr-drill geo-pin-modal" onClick={(e) => e.stopPropagation()}>
-          <div className="mr-drill-head">
-            <div>
-              <h3 style={{ margin: 0 }}>{title || 'Set the catchment on the map'}</h3>
-              <p className="cap" style={{ margin: '2px 0 0' }}>Click to drop the pin, drag it to move, and drag the handle on the edge to size the radius.</p>
-            </div>
-            <button className="mr-drill-x" onClick={onClose}>✕</button>
-          </div>
-          <div className="geo-pin-body">
-            <div className="geo-pin-map" ref={elRef} />
-            <div className="geo-pin-side">
-              <label className="cap">Jump to a suburb or postcode</label>
-              <div className="geo-pin-search">
-                <input className="inp" value={q} placeholder="e.g. Norwest or 2153"
-                  onChange={(e) => setQ(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); search() } }} />
-                <button className="btn-ghost sm" onClick={search}>Go</button>
-              </div>
-              <label className="cap" style={{ marginTop: 14 }}>Radius</label>
-              <div className="geo-pin-km">
-                <input type="range" min={GEO_PIN_MIN_KM} max={100} value={Math.min(km, 100)}
-                  onChange={(e) => setKm(Number(e.target.value))} />
-                <input className="inp" type="number" min={GEO_PIN_MIN_KM} max={GEO_PIN_MAX_KM} value={km}
-                  onChange={(e) => setKm(Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Number(e.target.value) || GEO_PIN_MIN_KM)))} />
-                <span className="cap">km</span>
-              </div>
-              <div className="geo-pin-read">
-                {!pos ? <p className="cap">No pin yet - click the map to drop one.</p> : <>
-                  <div className="geo-pin-k">Pin</div>
-                  <div className="geo-pin-v">{near ? `${near.name}${near.state ? `, ${near.state}` : ''}` : 'Dropped pin'}</div>
-                  <div className="cap">{pos[0].toFixed(4)}, {pos[1].toFixed(4)}{near ? ` · ${near.km < 1 ? 'in' : `${near.km.toFixed(1)}km from`} ${near.name}` : ''}</div>
-                  {cover ? <>
-                    <div className="geo-pin-k" style={{ marginTop: 12 }}>Covered</div>
-                    <div className="geo-pin-v">{fmtNumber(cover.postcodes)} postcodes</div>
-                    <div className="cap">{cover.suburbs.length ? cover.suburbs.slice(0, 6).map((s) => s.name).join(', ') + (cover.suburbs.length > 6 ? `, +${fmtNumber(cover.suburbs.length - 6)} more` : '') : 'No populated places inside this radius.'}</div>
-                  </> : null}
-                </>}
-              </div>
-              <div className="geo-pin-acts">
-                <button className="set-details-save" disabled={!pos} onClick={() => { onSave({ lat: pos[0], lng: pos[1], label: near ? near.name : null }, km); onClose() }}>
-                  {saveLabel ? `${saveLabel}${cover ? ` (${fmtNumber(cover.postcodes)})` : ''}` : 'Use this catchment'}
-                </button>
-                <button className="btn-ghost sm" onClick={onClose}>Cancel</button>
-              </div>
-              <p className="cap" style={{ marginTop: 10 }}>{saveLabel
-                ? <>The circle is only a way of choosing postcodes. Once added they are a plain list you can edit by hand, and a lead is either in the zone or it is not - none of the edge-of-circle guesswork a radius carries.</>
-                : <>Distances to leads are still measured to <b>postcode centroids</b>, so the circle is exact but each lead's position is only as precise as its postcode. That is sound across hundreds of leads and rough for any single one.</>}</p>
-            </div>
-          </div>
+    <div className="geo-mapedit">
+      <div className="geo-pin-map" style={height ? { height } : undefined} ref={elRef} />
+      <div className="geo-pin-side">
+        <div className="geo-pin-search">
+          <input className="inp" value={q} placeholder="Find a suburb or postcode"
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); jump() } }} />
+          <button type="button" className="btn-ghost sm" onClick={jump}>Go</button>
         </div>
+        <label className="cap" style={{ marginTop: 12 }}>{zone ? 'Selection radius' : 'Catchment radius'}</label>
+        <div className="geo-pin-km">
+          <input type="range" min={GEO_PIN_MIN_KM} max={100} value={Math.min(km, 100)}
+            onChange={(e) => { const v = Number(e.target.value); setKm(v); if (!zone && centre) onPin({ lat: centre[0], lng: centre[1], label: pin ? pin.label : null }, v) }} />
+          <input className="inp" type="number" min={GEO_PIN_MIN_KM} max={GEO_PIN_MAX_KM} value={km}
+            onChange={(e) => { const v = Math.max(GEO_PIN_MIN_KM, Math.min(GEO_PIN_MAX_KM, Number(e.target.value) || GEO_PIN_MIN_KM)); setKm(v); if (!zone && centre) onPin({ lat: centre[0], lng: centre[1], label: pin ? pin.label : null }, v) }} />
+          <span className="cap">km</span>
+        </div>
+        <div className="geo-pin-read">
+          {!centre ? <p className="cap" style={{ margin: 0 }}>{zone ? 'Click the map to place a selection circle, then add everything inside it.' : 'Click the map to drop the catchment pin.'}</p> : <>
+            <div className="geo-pin-k">{zone ? 'Circle centred on' : 'Measuring from'}</div>
+            <div className="geo-pin-v">{near ? `${near.name}${near.state ? `, ${near.state}` : ''}` : 'Dropped pin'}</div>
+            <div className="cap">{centre[0].toFixed(4)}, {centre[1].toFixed(4)}{near && near.km >= 1 ? ` · ${near.km.toFixed(1)}km from ${near.name}` : ''}</div>
+            {cover ? <>
+              <div className="geo-pin-k" style={{ marginTop: 10 }}>Inside the circle</div>
+              <div className="geo-pin-v">{fmtNumber(cover.postcodes)} postcodes</div>
+              <div className="cap">{cover.suburbs.length ? cover.suburbs.slice(0, 5).map((s) => s.name).join(', ') + (cover.suburbs.length > 5 ? `, +${fmtNumber(cover.suburbs.length - 5)} more` : '') : 'Nothing populated in this radius.'}</div>
+            </> : null}
+          </>}
+          {zone && pts.length ? <>
+            <div className="geo-pin-k" style={{ marginTop: 10 }}>In this zone</div>
+            <div className="geo-pin-v">{fmtNumber((places || []).length)} places</div>
+            <div className="cap">Green dots. Click one on the map to take it out.{unplotted ? ` ${fmtNumber(unplotted)} could not be placed and are not drawn.` : ''}</div>
+          </> : null}
+        </div>
+        {zone ? (
+          <div className="geo-pin-acts">
+            <button type="button" className="set-details-save" disabled={!centre || !cover || !cover.postcodes}
+              onClick={() => { onPin(null, km, centre); setDraw(null) }}>
+              Add {cover ? fmtNumber(cover.postcodes) : ''} postcodes
+            </button>
+            {centre ? <button type="button" className="btn-ghost sm" onClick={() => setDraw(null)}>Clear circle</button> : null}
+          </div>
+        ) : null}
+        <p className="cap geo-mapedit-note">{zone
+          ? 'The circle only chooses postcodes - once added they are a plain list, so a lead is either in the zone or it is not.'
+          : 'Leads are positioned by postcode centroid, so the circle is exact but any single lead is only as precise as its postcode.'}</p>
       </div>
-    </Overlay>
+    </div>
   )
 }
 
@@ -7396,12 +7422,11 @@ function GeoSettings({ clientId }) {
   const [draft, setDraft] = useState({})
   const [seed, setSeed] = useState({})
   const [suggest, setSuggest] = useState({})
-  const [pinOpen, setPinOpen] = useState(false)
-  // Which zone's map is open, by index. Zones use the same picker as the radius
-  // mode, but the circle FILLS the zone with the postcodes inside it rather than
-  // becoming the catchment itself - so the "Fill by radius" helper stops being a
-  // number typed blind and becomes a shape you can see before committing to it.
-  const [areaMap, setAreaMap] = useState(null)
+  // Which zone the map is showing. Zones share the radius editor, but there the
+  // circle FILLS the zone with the postcodes inside it rather than becoming the
+  // catchment - and every place already in the zone is plotted, so a zone built
+  // by radius can be trimmed by hand where the circle overreached.
+  const [areaMap, setAreaMap] = useState(0)
   // The place list backs both the zone editor and the map picker's search and
   // its "what does this circle cover" readout, so radius mode needs it too.
   useEffect(() => {
@@ -7464,6 +7489,19 @@ function GeoSettings({ clientId }) {
       : 'No business address is set in the CRM (Settings \u2192 Business Profile). Type a suburb or postcode above instead.'
   // The origin has to resolve to a postcode or suburb we hold coordinates for.
   const originText = g.origin === 'business' ? (b.postalCode || b.city || '') : g.place
+  // Where the map should show the origin while the mode is still "business
+  // address" or "typed place" - so the circle is visible from the moment the tab
+  // opens rather than only after a pin is dropped. Clicking the map then switches
+  // the mode to a pin, which is the whole point: you can see what you are moving
+  // away from and why it was not quite right.
+  const originPin = useMemo(() => {
+    if (g.origin === 'pin') return g.pin || null
+    const v = String(originText || '').trim()
+    if (!v || !geoDb) return null
+    let c = /^\d{4}$/.test(v) ? geoDb.pc[v] : /^\d{3}$/.test(v) ? geoDb.pc['0' + v] : null
+    if (!c) { const sv = geoDb.sub[normSub(v)]; if (sv) c = typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]] }
+    return c ? { lat: c[0], lng: c[1], label: v } : null
+  }, [g.origin, g.pin, originText, geoDb])
   return (
     <div className="set-tabpane">
       <div className="set-sec-t">Catchment - how far people travel</div>
@@ -7505,10 +7543,10 @@ function GeoSettings({ clientId }) {
             {g.origin === 'pin' ? (
               <div className="fld">
                 <label className="cap">Pinned point</label>
-                <button type="button" className="geo-pin-btn" onClick={() => setPinOpen(true)}>
+                <div className="geo-pin-btn as-read">
                   {g.pin ? <><b>{geoPinLabel(g.pin)}</b><span>{g.pin.lat.toFixed(4)}, {g.pin.lng.toFixed(4)} · {g.radiusKm}km</span></>
-                    : <><b>Drop a pin on the map</b><span>Click to open the map picker</span></>}
-                </button>
+                    : <><b>No pin yet</b><span>Click the map below to drop one</span></>}
+                </div>
               </div>
             ) : null}
             <div className="fld">
@@ -7526,10 +7564,16 @@ function GeoSettings({ clientId }) {
             <div className="geo-biz"><span className="geo-warn">No postcode on the business record - the suburb will be used, which is less precise.</span></div>
           ) : null}
           {g.origin !== 'pin' && !originText ? <div className="geo-biz"><span className="geo-warn">Nothing to measure from yet, so the map will show no catchment.</span></div> : null}
-          {g.origin === 'pin' && !g.pin ? <div className="geo-biz"><span className="geo-warn">No pin dropped yet, so the map will show no catchment.</span></div> : null}
-          <GeoPinPicker open={pinOpen} onClose={() => setPinOpen(false)} pin={g.pin} radiusKm={g.radiusKm} db={geoDb}
-            bizCoord={geoDb && b.postalCode && geoDb.pc[b.postalCode] ? geoDb.pc[b.postalCode] : null}
-            onSave={(pin, km) => save({ ...g, origin: 'pin', pin, radiusKm: km })} />
+
+          {/* The map is always here, not behind a button: a radius is far easier
+              to judge as a shape than as a number, and clicking it is the fastest
+              way to set the origin exactly rather than to a postcode centroid. */}
+          <div className="set-sec-t" style={{ marginTop: 16 }}>On the map <span className="cap">· click to place the pin, drag the edge to size it</span></div>
+          {!geoDb ? <p className="cap">Loading the map…</p> : (
+            <GeoMapEditor db={geoDb} mode="radius" pin={g.origin === 'pin' ? g.pin : originPin} radiusKm={g.radiusKm}
+              bizCoord={geoDb && b.postalCode && geoDb.pc[b.postalCode] ? geoDb.pc[b.postalCode] : null}
+              onPin={(pin, km) => save({ ...g, origin: 'pin', pin, radiusKm: km })} />
+          )}
 
           {pipelines && pipelines.length > 1 ? (
             <>
@@ -7554,25 +7598,6 @@ function GeoSettings({ clientId }) {
           <Caveat>Distance is measured between postcode centroids, so it is sound across a few hundred leads and unreliable for any single one - a city postcode is a couple of kilometres across and a rural one can be fifty. Leads with no location captured, and anything outside Australia, are counted separately rather than plotted wrong.</Caveat>
         </>
       ) : null}
-      {/* Zones share the radius picker. Saving here does not set a catchment - it
-          adds every postcode inside the circle to that zone, so the shape is
-          visible before it turns into a list of postcodes. */}
-      {areaMap != null && g.areas && g.areas[areaMap] ? (() => {
-        const a = g.areas[areaMap]
-        const centres = (a.places || []).map((pl) => (/^\d{3,4}$/.test(pl) ? geoDb && geoDb.pc[pl] : (() => { const sv = geoDb && geoDb.sub[normSub(pl)]; return sv ? (typeof sv[0] === 'number' ? [sv[0], sv[1]] : [sv[0][0], sv[0][1]]) : null })())).filter(Boolean)
-        return <GeoPinPicker open db={geoDb} pin={null} radiusKm={Number(seed[a.id]) || 10}
-          bizCoord={centres[0] || (geoDb && b.postalCode && geoDb.pc[b.postalCode]) || null}
-          title={`Draw ${a.name ? `“${a.name}”` : 'this zone'} on the map`}
-          saveLabel="Add these postcodes to the zone"
-          onClose={() => setAreaMap(null)}
-          onSave={(pin, km) => {
-            if (!geoDb) return
-            const found = new Set(a.places || [])
-            for (const [pc, c] of Object.entries(geoDb.pc)) if (kmBetween([pin.lat, pin.lng], c) <= km) found.add(pc)
-            saveAreas(g.areas.map((x, j) => (j === areaMap ? { ...x, places: [...found] } : x)))
-            setAreaMap(null)
-          }} />
-      })() : null}
       {g.mode === 'areas' ? (
         <>
           <Caveat>
@@ -7614,7 +7639,7 @@ function GeoSettings({ clientId }) {
                     <span className="geo-seed">
                       <input className="inp" style={{ width: 74 }} placeholder="km" value={seed[a.id] || ''} onChange={(e) => setSeed({ ...seed, [a.id]: e.target.value })} />
                       <button type="button" className="btn-ghost sm" title="Add every postcode within this many km of the places already in the zone" onClick={() => seedRadius(i)}>Fill by radius</button>
-                      <button type="button" className="btn-ghost sm" title="Draw the area on a map and add every postcode inside it" onClick={() => setAreaMap(i)}>Draw on map</button>
+                      <button type="button" className={`btn-ghost sm${areaMap === i ? ' on' : ''}`} title="Show this zone on the map below, and draw a circle to add more" onClick={() => setAreaMap(i)}>{areaMap === i ? 'On the map ↓' : 'Show on map'}</button>
                     </span>
                   </div>
                   {suggest[a.id] && suggest[a.id].length ? (
@@ -7626,6 +7651,37 @@ function GeoSettings({ clientId }) {
             })}
           </div>
           <button type="button" className="btn-ghost sm" onClick={() => saveAreas([...(g.areas || []), { id: `z${Date.now().toString(36)}`, name: '', places: [], pipelines: 'all' }])}>+ Add a zone</button>
+
+          {/* The map is always here rather than behind a button. A zone is a list
+              of four-digit numbers, which is close to unreadable as a shape - and
+              the shape is the thing being decided. */}
+          {(g.areas || []).length ? (() => {
+            const i = Math.min(areaMap || 0, g.areas.length - 1)
+            const a = g.areas[i]
+            return (
+              <>
+                <div className="set-sec-t" style={{ marginTop: 16 }}>
+                  On the map
+                  {g.areas.length > 1 ? <select className="inp geo-zone-sel" value={i} onChange={(e) => setAreaMap(Number(e.target.value))}>
+                    {g.areas.map((z, j) => <option key={z.id} value={j}>{z.name || `Zone ${j + 1}`} ({(z.places || []).length})</option>)}
+                  </select> : null}
+                  <span className="cap"> · green dots are the zone; click one to remove it. Click empty map to draw a selection circle.</span>
+                </div>
+                {!geoDb ? <p className="cap">Loading the map…</p> : (
+                  <GeoMapEditor db={geoDb} mode="zone" radiusKm={Number(seed[a.id]) || 10}
+                    places={a.places || []}
+                    onTogglePlace={(pl) => saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: (x.places || []).filter((y) => y !== pl) } : x)))}
+                    bizCoord={geoDb && b.postalCode && geoDb.pc[b.postalCode] ? geoDb.pc[b.postalCode] : null}
+                    onPin={(_pin, km, centre) => {
+                      if (!geoDb || !centre) return
+                      const found = new Set(a.places || [])
+                      for (const [pc, c] of Object.entries(geoDb.pc)) if (kmBetween(centre, c) <= km) found.add(pc)
+                      saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: [...found] } : x)))
+                    }} />
+                )}
+              </>
+            )
+          })() : null}
           <Caveat>A lead is placed by the postcode or suburb captured on their form. Anywhere that appears in two zones counts in <b>both</b> - overlapping zones are a real thing a business might want, so they aren&rsquo;t blocked, but the totals will exceed your lead count and the warning above says where. Leads with no location captured are reported separately rather than dropped.</Caveat>
         </>
       ) : null}

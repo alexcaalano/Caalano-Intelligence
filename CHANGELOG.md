@@ -18,6 +18,35 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.428.0 - 2026-08-20 · `PENDING` - The map is the setting, in both catchment modes
+
+The map was behind a button and only in one mode. It is now **shown by default in
+both**, inline in the settings pane, because a radius or a list of four-digit
+postcodes is close to unreadable as a number and obvious as a shape.
+
+**Radius from one location** opens with the current origin already drawn - even
+before a pin is set, the circle is shown at the business address or the typed
+postcode, so you can see what you are moving away from and why it was not quite
+right. Click anywhere to place the pin exactly, drag the edge handle or type the
+kilometres, and the origin switches to that point.
+
+**Service areas** shows the selected zone with **every place in it plotted as a
+green dot**, named on hover. Typing a postcode into the zone puts a dot on the
+map straight away, so a zone stops being a wall of numbers you cannot picture.
+Clicking a dot removes that place - which is what makes a radius fill usable: draw
+the circle to get the bulk, then trim the two or three suburbs it overreached
+into. A zone selector switches the map between zones.
+
+Places we hold no coordinates for still belong to the zone; they simply cannot be
+drawn, and the panel says how many rather than quietly plotting one fewer.
+
+Verified in a real browser against the real place database: 11 of 12 places plot
+(the twelfth is deliberately unresolvable), every dot lands inside the map box,
+clicking a dot reports back the right postcode, and there are no broken marker
+images at three widths in both themes.
+
+---
+
 ## v3.427.0 - 2026-08-20 · `PENDING` - Draw a service area on the map too
 
 The map picker added in v3.426.0 only appeared under **Radius from one

@@ -18,6 +18,44 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.443.0 - 2026-08-20 · `PENDING` - Finish the scoping sweep, and fix what it broke
+
+Auditing the rest of the file for the same pull-everything-then-filter pattern
+turned up more of it, plus a regression v3.442.0 introduced.
+
+**The regression, fixed.** Scoping changes what an unconnected account looks like.
+Asking for every account and filtering left nothing; asking Windsor for one
+account it does not hold is a hard error instead. Two clients are in exactly that
+state - **book-a-midwife** and **rlm-telehealth**, whose Meta ad accounts were
+never granted to the Windsor connection - and one Meta read has no `.catch`, so
+their Meta tab would have thrown where it used to render empty. `windsorFetch`
+now treats "account is not available" on a scoped call as an empty result, which
+is what it was before and what is true, and records it separately from a real
+failure. Tested against the three real error bodies, and against six genuine
+failures that must still throw.
+
+**More of the pattern, now scoped.** `hourlySpend` (hour-of-day spend, both ad
+platforms) - missed the first time because its connector is a variable rather than
+a literal, so a check that matched on the literal never saw it. The CRM rollup
+endpoint. Google Analytics. And all of organic social: the Instagram and Facebook
+Page reads in `buildSocial`, `socialPerDay` and `socialMonth`, the connection
+probes and the Page field probe - roughly 40 calls, fixed at their three shared
+helpers. Every connector was verified to accept account scoping first (facebook,
+google_ads, gohighlevel, instagram, facebook_organic).
+
+**The check is stricter.** It no longer only matches literal ad connectors; any
+`windsorFetch` narrowed by an `acctEq` filter afterwards must scope, whatever the
+connector. That rule caught the CRM rollup endpoint on its first run.
+
+Sixteen reads stay unscoped on purpose and now say why on the line: the portfolio
+row per client, trends, account discovery, the account-lister diagnostic, and the
+public-Instagram tool where the account is somebody else's profile.
+
+**Not a code problem, but worth knowing:** three clients' Instagram ids in the
+`SOCIAL` map are not in the Windsor Instagram connection either - nexia-health,
+healan-centre and simchat. Their organic social has no data to show and will keep
+reading empty until those accounts are granted.
+
 ## v3.442.0 - 2026-08-20 · `1527323` - Scope every per-client ad read to its account
 
 Follow-on from v3.441.0, which fixed the Overview's Meta spend. The same pattern

@@ -16,12 +16,23 @@ import fs from 'fs'
 
 const file = process.argv[2] || 'netlify/functions/windsor.mjs'
 const lines = fs.readFileSync(file, 'utf8').split('\n')
-const CALL = /windsorFetch\(\s*'(facebook|google_ads)'/g
+// Two ways a call qualifies. A literal ad connector is the obvious one. The other
+// is any windsorFetch whose rows are filtered by acctEq right afterwards - that
+// filter IS the pull-everything-then-narrow pattern, whatever the connector, and
+// it is how `hourlySpend` slipped through the first sweep: its connector is a
+// variable, so matching on the literal never saw it.
+const CALL = /windsorFetch\(\s*(?:'(facebook|google_ads)'|([A-Za-z_$][\w$.]*))/g
+
+// An acctEq filter within a few lines of the call, which is where the narrowing
+// always sits - on the same line, in a .then, or on the next statement.
+const narrowsAfter = (i) => lines.slice(i, i + 3).some((l) => /acctEq\(/.test(l))
 
 const bad = []
 let scoped = 0, agency = 0
 lines.forEach((l, i) => {
   for (const m of l.matchAll(CALL)) {
+    const adConnector = m[1]
+    if (!adConnector && !narrowsAfter(i)) continue   // some other connector, not narrowed to one account
     // The tail of this call - up to the next windsorFetch on the same line, so a
     // line holding two calls is judged one at a time rather than as a whole.
     const rest = l.slice(m.index + 1)
@@ -29,7 +40,7 @@ lines.forEach((l, i) => {
     const call = next === -1 ? rest : rest.slice(0, next)
     if (/accounts:/.test(call)) { scoped++; continue }
     if (/\/\/ agency-wide:/.test(l)) { agency++; continue }
-    bad.push({ line: i + 1, connector: m[1], text: l.trim().slice(0, 110) })
+    bad.push({ line: i + 1, connector: adConnector || `via ${m[2]}`, text: l.trim().slice(0, 110) })
   }
 })
 

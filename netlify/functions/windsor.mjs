@@ -307,6 +307,10 @@ function windowDays(from, to, preset) {
   if (String(preset || '').includes('month')) return 31
   return 30
 }
+// Accounts asked for that the Windsor connection does not hold. Populated by
+// windsorFetch; surfaced by the connection diagnostics rather than thrown, since
+// it is a setup problem (the ad account was never granted) and not a fault.
+const unavailableAccounts = new Set()
 async function windsorFetch(connector, fields, from, to, preset, key, opts = {}) {
   // Demo account: answer from the generated dataset. The signal is the KEY, not
   // a module-level flag - the key is resolved once per request from the client
@@ -341,7 +345,21 @@ async function windsorFetch(connector, fields, from, to, preset, key, opts = {})
   const timeoutMs = days > 120 ? 8500 : days > 60 ? 8000 : 7500
   const retries = days > 60 ? 0 : 1
   const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries })
-  if (!r.ok) throw new Error(`Windsor ${connector} ${r.status}: ${(await r.text()).slice(0, 200)}`)
+  if (!r.ok) {
+    const body = (await r.text()).slice(0, 400)
+    // Scoping by `accounts` changes what an UNCONNECTED account looks like. Asking
+    // for every account and filtering used to leave nothing; asking for one Windsor
+    // does not hold is a hard error instead. Two clients are in exactly that state
+    // (their Meta account was never granted to the Windsor connection), and turning
+    // their previously-empty read into a thrown error would take a whole tab down.
+    // So it stays empty - which is the truth, there is no data for them - and is
+    // recorded so it can be told apart from a real failure.
+    if (opts.accounts && /is not available|Grant access to your accounts/i.test(body)) {
+      unavailableAccounts.add(`${connector}:${opts.accounts}`)
+      return withDemo([])
+    }
+    throw new Error(`Windsor ${connector} ${r.status}: ${body.slice(0, 200)}`)
+  }
   const j = await r.json()
   return withDemo(j.data || j.result || [])
 }
@@ -1199,7 +1217,7 @@ async function buildOverview(from, to, preset, key, wonBasis = 'created') {
     // (matches the previous behaviour: no rows → no crm key, rather than $0/0).
     const tally = (id, rows) => { if (!rows.length) return; let revenue = 0, won = 0; for (const r of rows) if (String(r.opportunity_status || '').toLowerCase() === 'won') { revenue += num(r.opportunity_monetary_value); won++ } out[id] = { revenue, won } }
     if (!(from && to)) {
-      const rows = await windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key).catch(() => [])
+      const rows = await windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_monetary_value'], from, to, preset, key)  // agency-wide: the portfolio needs every client at once.catch(() => [])
       const by = {}; for (const r of rows) { const id = ghlRev[norm(r.account_id)]; if (!id) continue; (by[id] = by[id] || []).push(r) }
       for (const id in by) tally(id, by[id])
       return out
@@ -1310,8 +1328,8 @@ async function buildTrends(key) {
       .catch(() => windsorFetch('facebook', baseFbFields, dstr(start), dstr(today), null, key))  // agency-wide: fallback for the line above, same agency-wide pull
       .catch(() => { metaOk = false; return [] }),
     windsorFetch('google_ads', ['account_id', 'campaign', 'date', 'spend', 'conversions'], dstr(start), dstr(today), null, key).catch(() => { googleOk = false; return [] }),  // agency-wide: trends cover every client at once
-    windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at', 'opportunity_source', 'opportunity_monetary_value'], dstr(start), dstr(today), null, key).catch(() => []),
-    windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),
+    windsorFetch('gohighlevel', ['account_id', 'opportunity_status', 'opportunity_pipeline_id', 'opportunity_pipeline_stage_id', 'opportunity_created_at', 'opportunity_source', 'opportunity_monetary_value'], dstr(start), dstr(today), null, key).catch(() => []),  // agency-wide: trends cover every client at once
+    windsorFetch('gohighlevel', ['account_id', 'pipeline_id', 'pipeline_name', 'pipeline_stages'], dstr(start), dstr(today), null, key).catch(() => []),  // agency-wide: trends cover every client at once
   ])
   const days = []; for (let i = 0; i < 56; i++) { const d = new Date(today); d.setUTCDate(d.getUTCDate() - i); days.push(dstr(d)) }
   const dayIndex = new Map(days.map((d, i) => [d, i])) // 0 = today, larger = older
@@ -1876,9 +1894,9 @@ async function resolveGa4Slug(key) {
   try { return await _ga4SlugInflight } finally { _ga4SlugInflight = null }
 }
 // GA4 fetch that always targets the resolved slug (not the stale const).
-async function windsorGa4(fields, from, to, preset, key) {
+async function windsorGa4(fields, from, to, preset, key, opts = {}) {
   const slug = await resolveGa4Slug(key)
-  return windsorFetch(slug, fields, from, to, preset, key)
+  return windsorFetch(slug, fields, from, to, preset, key, opts)
 }
 function ga4Agg(rows, keyFn) {
   const m = new Map()
@@ -1895,7 +1913,7 @@ const ga4Pct = (v) => { const n = num(v); return n > 0 && n <= 1 ? n * 100 : n }
 async function buildGanalytics(propertyId, from, to, preset, key) {
   const filt = (rows) => (rows || []).filter((r) => r.account_id == null || acctEq(r.account_id, propertyId))
   const pr = prevRange(from, to)
-  const q = (fields, f = from, t = to, p = preset) => windsorGa4(['account_id', ...fields], f, t, p, key).then(filt).catch(() => null)
+  const q = (fields, f = from, t = to, p = preset) => windsorGa4(['account_id', ...fields], f, t, p, key, { accounts: propertyId }).then(filt).catch(() => null)
   // Fallback query: if the rich field set fails (one unknown field 400s the whole
   // Windsor call), retry with a minimal always-present set so the tab still renders
   // the core metrics instead of showing empty.
@@ -2329,7 +2347,10 @@ function rollupGhl(rows) {
 // everything is best-effort (a failed sub-fetch yields [] and the rest renders).
 async function buildSocial(soc, from, to, key, clientId) {
   const igId = soc.ig, fbo = soc.fbo
-  const F = (connector, fields) => windsorFetch(connector, fields, from, to, null, key).catch(() => [])
+  // Scoped at the API per connector - the IG business id for instagram, the Page
+  // id for facebook_organic. That is exactly what the .then(igFilt) / .then(fbFilt)
+  // below were doing after the rows had already crossed the wire.
+  const F = (connector, fields) => windsorFetch(connector, fields, from, to, null, key, { accounts: connector === 'instagram' ? igId : fbo }).catch(() => [])
   const byDate = (rows, map) => { const m = new Map(); for (const r of rows) { const d = String(r.date || r.timestamp || '').slice(0, 10); if (!d) continue; const e = m.get(d) || { date: d }; map(e, r); m.set(d, e) } return [...m.values()].sort((a, b) => a.date.localeCompare(b.date)) }
   const sum = (rows, k) => rows.reduce((a, r) => a + num(r[k]), 0)
   const lastNonNull = (rows, k) => { for (let i = rows.length - 1; i >= 0; i--) { if (rows[i][k] != null && rows[i][k] !== '') return num(rows[i][k]) } return 0 }
@@ -2439,7 +2460,10 @@ async function loadSocialSnap(clientId) { try { return (await socialStore().get(
 // bodies - this is the durable, storable core.
 async function socialPerDay(soc, from, to, key) {
   const igId = soc.ig, fbo = soc.fbo
-  const F = (c, f) => windsorFetch(c, f, from, to, null, key).catch(() => [])
+  // Scoped at the API per connector - the IG business id for instagram, the Page
+  // id for facebook_organic. That is exactly what the .then(igFilt) / .then(fbFilt)
+  // below were doing after the rows had already crossed the wire.
+  const F = (c, f) => windsorFetch(c, f, from, to, null, key, { accounts: c === 'instagram' ? igId : fbo }).catch(() => [])
   const demoArr = (rows, nk, sk, cap) => { const out = rows.map((r) => ({ name: r[nk], size: num(r[sk]) })).filter((x) => x.name && x.size).sort((a, b) => b.size - a.size); return cap ? out.slice(0, cap) : out }
   const lastNonNull = (rows, k) => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i][k] != null && rows[i][k] !== '') return num(rows[i][k]); return 0 }
   let ig = null, fb = null
@@ -2525,7 +2549,10 @@ export async function runSocialSnapshots() {
 // deltas, so they're historically accurate even though absolute followers is
 // "current only". Returns per-platform + a blended summary for one month.
 async function socialMonth(soc, from, to, key) {
-  const F = (c, f) => windsorFetch(c, f, from, to, null, key).catch(() => [])
+  // Scoped at the API per connector - the IG business id for instagram, the Page
+  // id for facebook_organic. That is exactly what the .then(igFilt) / .then(fbFilt)
+  // below were doing after the rows had already crossed the wire.
+  const F = (c, f) => windsorFetch(c, f, from, to, null, key, { accounts: c === 'instagram' ? soc.ig : soc.fbo }).catch(() => [])
   const sum = (rows, k) => rows.reduce((a, r) => a + num(r[k]), 0)
   let ig = null, fb = null
   if (soc.ig) {
@@ -3003,7 +3030,7 @@ async function hourlySpend(cc, from, to, preset, key) {
     if (!acct) return null
     for (const f of HOUR_FIELDS[connector]) {
       try {
-        const rows = await windsorFetch(connector, ['account_id', f, 'spend'], from, to, preset, key)
+        const rows = await windsorFetch(connector, ['account_id', f, 'spend'], from, to, preset, key, { accounts: acct })
         const mine = (rows || []).filter((r) => !r.account_id || acctEq(r.account_id, acct))
         let placed = 0
         for (const r of mine) { const h = parseHourBucket(r[f]); if (h == null) continue; into[h] += num(r.spend); placed++ }
@@ -3383,8 +3410,8 @@ export default async (req) => {
       const ids = Object.keys(SOCIAL).filter((id) => canView(id))
       const live = async (soc) => {
         const jobs = []
-        if (soc.ig) jobs.push(windsorFetch('instagram', ['account_id', 'followers_count', 'media_count'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.ig))).catch(() => []))
-        if (soc.fbo) jobs.push(windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.fbo))).catch(() => []))
+        if (soc.ig) jobs.push(windsorFetch('instagram', ['account_id', 'followers_count', 'media_count'], null, null, 'last_30d', key, { accounts: soc.ig }).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.ig))).catch(() => []))
+        if (soc.fbo) jobs.push(windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key, { accounts: soc.fbo }).then((rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,soc.fbo))).catch(() => []))
         const res = await Promise.all(jobs)
         return res.some((rows) => rows && rows.some((r) => num(r.followers_count) || num(r.media_count) || num(r.page_fans)))
       }
@@ -3421,8 +3448,8 @@ export default async (req) => {
       // Current absolute follower counts (per platform) - the anchor for
       // reconstructing each month's total followers (start → end).
       let curIg = 0, curFb = 0
-      if (soc.ig) { const r = await windsorFetch('instagram', ['account_id', 'followers_count'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.ig))).catch(() => []); curIg = Math.max(0, ...r.map((x) => num(x.followers_count)), 0) }
-      if (soc.fbo) { const r = await windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.fbo))).catch(() => []); curFb = Math.max(0, ...r.map((x) => num(x.page_fans)), 0) }
+      if (soc.ig) { const r = await windsorFetch('instagram', ['account_id', 'followers_count'], null, null, 'last_30d', key, { accounts: soc.ig }).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.ig))).catch(() => []); curIg = Math.max(0, ...r.map((x) => num(x.followers_count)), 0) }
+      if (soc.fbo) { const r = await windsorFetch('facebook_organic', ['account_id', 'page_fans'], null, null, 'last_30d', key, { accounts: soc.fbo }).then((rows) => rows.filter((x) => !x.account_id || norm(x.account_id) === norm(soc.fbo))).catch(() => []); curFb = Math.max(0, ...r.map((x) => num(x.page_fans)), 0) }
       const curTotal = curIg + curFb
       const months = await Promise.all(list.map((m) => socialMonth(soc, m.from, m.to, key).then((d) => ({ month: m.key, label: m.label, ig: d.ig, fb: d.fb, ...d.blend }))))
       // Walk newest → oldest: end-of-latest ≈ today's count; each earlier month's
@@ -3444,7 +3471,7 @@ export default async (req) => {
         const w0 = list[0].from, w1 = list[list.length - 1].to
         const probe = async (cands) => {
           for (const f of cands) {
-            const rows = await windsorFetch('facebook_organic', ['account_id', 'date', f], w0, w1, null, key).then(fbFilt).catch(() => null)
+            const rows = await windsorFetch('facebook_organic', ['account_id', 'date', f], w0, w1, null, key, { accounts: soc.fbo }).then(fbFilt).catch(() => null)
             if (rows && rows.some((r) => r[f] != null)) return { field: f, rows }
           }
           return null
@@ -3484,7 +3511,7 @@ export default async (req) => {
     const pull = async (slugs) => {
       for (const s of slugs) for (const f of tryFields) {
         try {
-          const rows = await windsorFetch(s, f, null, null, 'last_90d', key)
+          const rows = await windsorFetch(s, f, null, null, 'last_90d', key)  // agency-wide: connector DISCOVERY - it is looking for which accounts exist
           if (rows && rows.length) { const m = new Map(); for (const r of rows) { const id = r.account_id; if (!id) continue; if (!m.has(norm(id))) { const handle = r.profile_username || r.username || r.account_name || String(id); m.set(norm(id), { id, name: r.profile_name || r.account_name || handle, handle }) } } return { connector: s, accounts: [...m.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))).slice(0, 200) } }
         } catch { /* try next field set / slug */ }
       }
@@ -3502,6 +3529,9 @@ export default async (req) => {
     const account = url.searchParams.get('account')
     if (!account) return json({ error: 'account required' }, 400)
     const filt = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id,account))
+    // Not scoped by `accounts`: this is the PUBLIC Instagram connector, where the
+    // account is somebody else's profile rather than one of ours, so the param does
+    // not mean the same thing. An admin diagnostic, and the filter above narrows it.
     const safe = async (variants, pre) => { for (const ff of variants) { try { const rows = await windsorFetch(connector, ff, pre ? null : from, pre ? null : to, pre || null, key); return filt(rows) } catch { /* try simpler field set */ } } return [] }
     try {
       // Public IG connector field names differ from the owned `instagram` one:
@@ -3555,7 +3585,7 @@ export default async (req) => {
     if (!connector) return json({ error: 'connector slug required (e.g. instagram_public)' }, 400)
     const wfields = (url.searchParams.get('wfields') || 'account_id,account_name').split(',').map((s) => s.trim()).filter(Boolean)
     try {
-      const rows = await windsorFetch(connector, wfields, from, to, preset || 'last_30d', key)
+      const rows = await windsorFetch(connector, wfields, from, to, preset || 'last_30d', key)  // agency-wide: account LISTER diagnostic - enumerating accounts is the whole job
       const accounts = [...new Map(rows.map((r) => [norm(r.account_id), { account_id: r.account_id, account_name: r.account_name || r.username || r.name || null }])).values()].slice(0, 100)
       return json({ connector, rowCount: rows.length, accounts, sampleKeys: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) }, 200)
     } catch (e) { return json({ connector, error: String(e.message || e) }, 502) }
@@ -4978,7 +5008,7 @@ export default async (req) => {
       return json({ client, channel, period: { from, to, preset }, meta }, 200, true)
     }
     const fields = [...spec.dims, ...spec.metrics]
-    const rowsAll = await windsorFetch(spec.connector, fields, from, to, preset, key)
+    const rowsAll = await windsorFetch(spec.connector, fields, from, to, preset, key, { accounts: accountId })
     const rows = rowsAll.filter((r) => !r.account_id || acctEq(r.account_id,accountId))
     if (debug) return json({ channel, accountId, fieldsRequested: fields, rowCount: rows.length, sample: rows.slice(0, 3), sampleKeys: rows[0] ? Object.keys(rows[0]) : [] })
     return json({ client, channel, period: { from, to, preset }, ghl: rollupGhl(rows) }, 200, true)

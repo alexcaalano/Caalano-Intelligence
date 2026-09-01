@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.444.0 - 2026-08-20 · `PENDING` - Drop "Paid vs all lead sources" from the monthly report
+## v3.444.0 - 2026-08-20 · `601bb81` - Drop "Paid vs all lead sources" from the monthly report
 
 Removed the stacked source-mix bar and its "All Caalano Systems vs paid results"
 table from the key-events slide. The slide now ends on the created-on funnel,

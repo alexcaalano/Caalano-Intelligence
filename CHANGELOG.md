@@ -18,6 +18,48 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.432.0 - 2026-08-20 · `PENDING` - Leads per area, with or without zones
+
+Two changes, and the second is the more useful one.
+
+**Picking areas now creates a zone each.** Adding The Hills and Blacktown used to
+pour both into one zone and report a single combined number, which is not why
+anyone picks two councils. Each pick now becomes its own zone named after the
+area, so the Location tab reports them separately. Picking the same area twice
+tops up the existing zone rather than making a duplicate. There is a tickbox to
+go back to the old behaviour when you genuinely want one combined zone, and
+radius or hand-built zones are named by you as before.
+
+**The Location tab groups leads three ways.** A control above the table:
+
+- **My zones** - the zones you defined. Is the targeting working?
+- **By district** / **By council** - every lead grouped by the area its postcode
+  belongs to, *whether or not you target it*. Where are the leads actually
+  coming from?
+
+The second reading needs no zones at all, which is the point: a client with
+nothing configured can still open the tab and see their leads broken down by
+council, sorted busiest first. Areas you do target are marked in the table rather
+than filtered away, so both questions are answered by one view - and there is a
+tickbox to narrow to just yours when that is what you want.
+
+It also reports the case that is easy to miss: **targeted areas that produced no
+leads at all** are named under the table, since a zero row cannot appear in a
+table built from leads that exist.
+
+Leads whose postcode cannot be placed are counted in their own row rather than
+quietly dropped, and the same caveat as the picker applies - a postcode is filed
+under exactly one area, so an area sharing its postcodes with a neighbour reads
+smaller than it is.
+
+21 assertions on the grouping, including that every lead lands in exactly one row
+or in "could not be placed", that filtering to targeted areas never invents or
+loses a row, that a targeted area with no leads is reported rather than shown as
+a zero, and that district and council really are different splits of the same
+leads (they disagree for 2,106 of 2,655 postcodes).
+
+---
+
 ## v3.431.0 - 2026-08-20 · `PENDING` - Zone shading stops competing with the lead dots
 
 The zone colours were drawn from the categorical palette, which meant a blue zone

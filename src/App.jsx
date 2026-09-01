@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.431.0'
+const APP_VERSION = '3.432.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7428,7 +7428,23 @@ function useRegions(want) {
   }, [want])
   return d
 }
-function RegionPicker({ regions, onAdd, existing }) {
+// postcode -> { district, council }, inverted from the region lists once so the
+// Location tab can group leads by area without any zones being defined at all.
+function areaIndexOf(regions) {
+  if (!regions) return null
+  const idx = new Map()
+  for (const kind of ['districts', 'councils']) {
+    for (const r of (regions[kind] || [])) {
+      for (const p of r.p) {
+        let e = idx.get(p); if (!e) { e = {}; idx.set(p, e) }
+        e[kind === 'districts' ? 'district' : 'council'] = r.n
+        e.state = r.s
+      }
+    }
+  }
+  return idx
+}
+function RegionPicker({ regions, onAdd, existing, ownZone, setOwnZone, zoneName }) {
   const [st, setSt] = useState('NSW')
   const [grp, setGrp] = useState('')
   const [q, setQ] = useState('')
@@ -7484,6 +7500,10 @@ function RegionPicker({ regions, onAdd, existing }) {
           <input className="inp" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`${list.length} in ${grpSel || 'this region'}`} />
         </label>
       </div>
+      <label className="geo-reg-own">
+        <input type="checkbox" checked={ownZone} onChange={(e) => setOwnZone(e.target.checked)} />
+        <span>Add each area as <b>its own zone</b>, named after it - so the Location tab reports leads per area rather than one combined total.{ownZone ? '' : ` Unticked, everything is added to ${zoneName}.`}</span>
+      </label>
       <p className="cap geo-reg-note">Postcodes do not line up with council boundaries, so an area here is the set of postcodes that mostly sit in it, not an exact match. <b>District</b> is the ABS statistical area and groups postcodes about three times more tightly than the council list, which files a few postcodes under a neighbouring council - so check what gets added and trim it on the map below.</p>
       <div className="geo-reg-list">
         {!list.length ? <p className="cap" style={{ margin: 0 }}>No councils match “{q}”.</p>
@@ -7541,6 +7561,10 @@ function GeoSettings({ clientId }) {
   const [areaMap, setAreaMap] = useState(0)
   const regions = useRegions(g.mode === 'areas')
   const poaShapes = usePoaShapes(g.mode === 'areas')
+  // Picking areas usually means wanting them reported separately - "how are the
+  // Hills doing against Blacktown" - so one zone per area is the default.
+  const [ownZone, setOwnZone] = useState(true)
+  const allPlaces = useMemo(() => (g.areas || []).flatMap((x) => x.places || []), [g.areas])
   const [converted, setConverted] = useState(null)
   // Suburb NAMES have no boundary to draw - only postcodes do. Converting them
   // means a zone outlines completely instead of half of it showing. The mapping
@@ -7807,9 +7831,19 @@ function GeoSettings({ clientId }) {
             const a = g.areas[i]
             return (
               <>
-                <div className="set-sec-t" style={{ marginTop: 18 }}>Add a council <span className="cap">· into {a.name ? `“${a.name}”` : `zone ${i + 1}`}, chosen on the map selector below</span></div>
-                <RegionPicker regions={regions} existing={a.places || []}
-                  onAdd={(r) => saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: [...new Set([...(x.places || []), ...r.p])] } : x)))} />
+                <div className="set-sec-t" style={{ marginTop: 18 }}>Add an area <span className="cap">· {ownZone ? 'each one becomes its own zone' : `into ${a.name ? `“${a.name}”` : `zone ${i + 1}`}`}</span></div>
+                <RegionPicker regions={regions} existing={ownZone ? allPlaces : (a.places || [])}
+                  ownZone={ownZone} setOwnZone={setOwnZone} zoneName={a.name ? `“${a.name}”` : `zone ${i + 1}`}
+                  onAdd={(r) => {
+                    if (!ownZone) { saveAreas(g.areas.map((x, j) => (j === i ? { ...x, places: [...new Set([...(x.places || []), ...r.p])] } : x))); return }
+                    // Its own zone, named after the area. An area already added as
+                    // a zone tops that zone up rather than making a second one with
+                    // the same name.
+                    const at = (g.areas || []).findIndex((x) => (x.name || '').trim().toLowerCase() === r.n.trim().toLowerCase())
+                    if (at >= 0) { saveAreas(g.areas.map((x, j) => (j === at ? { ...x, places: [...new Set([...(x.places || []), ...r.p])] } : x))); setAreaMap(at); return }
+                    const next = [...(g.areas || []), { id: `z${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, name: r.n, places: [...r.p], pipelines: 'all' }]
+                    saveAreas(next); setAreaMap(next.length - 1)
+                  }} />
               </>
             )
           })() : null}
@@ -9222,6 +9256,45 @@ function LeadMap({ locs, tall, clientId, currency }) {
     })
   }, [areasOn, poa, geo.areas])
   const zoneMissing = zoneShapes.reduce((n, z) => n + z.missing, 0)
+  // Three readings of the same leads. "My zones" answers whether the targeting is
+  // working; district and council answer where the leads are actually coming
+  // from, which is a different and often more useful question - and it needs no
+  // zones defined at all.
+  const [groupBy, setGroupBy] = useState('zones')
+  const [onlyMine, setOnlyMine] = useState(false)
+  const regions = useRegions(groupBy !== 'zones')
+  const areaIdx = useMemo(() => areaIndexOf(regions), [regions])
+  const byArea = useMemo(() => {
+    if (groupBy === 'zones' || !areaIdx) return null
+    const key = groupBy === 'district' ? 'district' : 'council'
+    // Which areas the client has actually targeted, so the table can flag them
+    // whether or not it is filtered to them.
+    const mine = new Set()
+    for (const a of (geo.areas || [])) for (const pl of (a.places || [])) {
+      const v = String(pl).trim().toUpperCase()
+      const e = areaIdx.get(v.length === 3 ? '0' + v : v)
+      if (e && e[key]) mine.add(e[key])
+    }
+    const m = new Map()
+    let unknown = 0, unknownLeads = 0
+    for (const p of pts) {
+      const v = String(p.value).trim().toUpperCase()
+      const e = areaIdx.get(v.length === 3 ? '0' + v : v)
+      const name = e && e[key]
+      if (!name) { unknown++; unknownLeads += p.leads || 0; continue }
+      let g = m.get(name); if (!g) { g = { name, state: e.state, places: 0, leads: 0, booked: 0, won: 0, mine: mine.has(name) }; m.set(name, g) }
+      g.places++; g.leads += p.leads || 0; g.booked += p.booked || 0; g.won += p.won || 0
+    }
+    const rows = [...m.values()].map((g) => ({ ...g, winPct: g.leads ? Math.round((g.won / g.leads) * 100) : null }))
+      .sort((a, b) => b.leads - a.leads)
+    return {
+      rows: onlyMine ? rows.filter((r) => r.mine) : rows,
+      total: rows.length, mineCount: rows.filter((r) => r.mine).length,
+      // Targeted areas that produced nothing at all - the ones worth knowing about.
+      dry: [...mine].filter((n) => !m.has(n)),
+      unknown, unknownLeads,
+    }
+  }, [groupBy, areaIdx, pts, geo.areas, onlyMine])
   const zones = useMemo(() => {
     if (!areasOn) return null
     const norm = (v) => String(v || '').trim().toUpperCase()
@@ -9315,9 +9388,51 @@ function LeadMap({ locs, tall, clientId, currency }) {
   return (
     <div className="lead-map-wrap">
       <div className="lead-map">
-        {zones && zones.rows.length ? (
+        {/* The panel is worth showing with no zones at all: "by district" answers
+            where the leads come from, which does not depend on having targeted
+            anything. Only the "my zones" tab needs zones to exist. */}
+        {(zones && zones.rows.length) || groupBy !== 'zones' || (geo.mode === 'areas') ? (
           <div className="lm-catch">
-            <div className="cap" style={{ fontWeight: 700, marginBottom: 7 }}>Service areas</div>
+            <div className="lm-grpbar">
+              <span className="cap" style={{ fontWeight: 700 }}>Where the leads are</span>
+              <div className="optlog-toggle">
+                <button className={groupBy === 'zones' ? 'on' : ''} onClick={() => setGroupBy('zones')} title="The zones you defined in Settings">My zones</button>
+                <button className={groupBy === 'district' ? 'on' : ''} onClick={() => setGroupBy('district')} title="Every lead grouped by the ABS district its postcode sits in, whether or not you targeted it">By district</button>
+                <button className={groupBy === 'council' ? 'on' : ''} onClick={() => setGroupBy('council')} title="Every lead grouped by the council its postcode sits in, whether or not you targeted it">By council</button>
+              </div>
+              {groupBy !== 'zones' && byArea ? (
+                <label className="lm-onlymine"><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} /> Only the {fmtNumber(byArea.mineCount)} I target</label>
+              ) : null}
+            </div>
+            {groupBy === 'zones' && (!zones || !zones.rows.length) ? <p className="cap">No zones defined yet - add some in Settings → Catchment, or switch to <b>By district</b> to see where the leads are coming from anyway.</p>
+              : groupBy !== 'zones' ? (
+              !areaIdx ? <p className="cap">Loading areas…</p>
+                : !byArea || !byArea.rows.length ? <p className="cap">{onlyMine ? 'No leads came from the areas you target in this period.' : 'None of these leads could be placed in an area.'}</p>
+                  : <>
+                    <div className="table-wrap"><table className="mini-tbl appt-tbl">
+                      <thead><tr><th className="lft">{groupBy === 'district' ? 'District' : 'Council'}</th><th>Places</th><th>Leads</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
+                      <tbody>
+                        {byArea.rows.map((r) => (
+                          <tr key={r.name} className={r.mine ? 'lm-mine' : ''}>
+                            <td className="lft">{r.name}{r.mine ? <span className="lm-tgt" title="You target this area">targeted</span> : null}</td>
+                            <td>{fmtNumber(r.places)}</td>
+                            <td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.booked)}</td><td>{fmtNumber(r.won)}</td>
+                            <td>{r.winPct != null ? `${r.winPct}%` : '-'}</td>
+                          </tr>
+                        ))}
+                        {byArea.unknownLeads ? (
+                          <tr className="lm-unzoned">
+                            <td className="lft">Could not be placed</td>
+                            <td>{fmtNumber(byArea.unknown)}</td>
+                            <td>{fmtNumber(byArea.unknownLeads)}</td><td colSpan={3}>-</td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table></div>
+                    <Caveat>Every lead is grouped by the {groupBy === 'district' ? 'ABS district' : 'council'} its postcode belongs to, whether or not you target it - so this answers where the leads actually come from, not only how the targeting is doing. Rows you target are marked{byArea.mineCount ? ` (${fmtNumber(byArea.mineCount)} of ${fmtNumber(byArea.total)} here)` : ''}.{byArea.dry.length ? ` ${fmtNumber(byArea.dry.length)} area${byArea.dry.length === 1 ? '' : 's'} you target produced no leads at all this period: ${byArea.dry.slice(0, 6).join(', ')}${byArea.dry.length > 6 ? `, +${fmtNumber(byArea.dry.length - 6)} more` : ''}.` : ''} A postcode is filed under exactly one area, so an area that shares its postcodes with a neighbour will look smaller than it is - the same caveat as when you picked them.</Caveat>
+                  </>
+            ) : (
+            <>
             <div className="table-wrap"><table className="mini-tbl appt-tbl">
               <thead><tr><th className="lft">Zone</th><th>Places</th><th>Leads</th><th>Booked</th><th>Won</th><th>Win %</th></tr></thead>
               <tbody>
@@ -9339,6 +9454,8 @@ function LeadMap({ locs, tall, clientId, currency }) {
               </tbody>
             </table></div>
             {zones.overlap ? <p className="cap geo-warn" style={{ margin: '7px 0 0' }}>Zones overlap, so the totals above add to more than your lead count - a lead in two zones is counted in both.</p> : null}
+            </>
+            )}
           </div>
         ) : null}
         {catch_ ? (

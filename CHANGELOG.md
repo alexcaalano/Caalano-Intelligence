@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.444.0 - 2026-08-20 · `PENDING` - Drop "Paid vs all lead sources" from the monthly report
+
+Removed the stacked source-mix bar and its "All Caalano Systems vs paid results"
+table from the key-events slide. The slide now ends on the created-on funnel,
+which is the cohort the rest of the page is built around.
+
+Also removes what only that section used: the paid-campaign comparison, the
+non-paid source bucketing (organic / referral / social / email / direct / CRM),
+and the `aggOutcome` helper the two shared - about 90 lines.
+
+The `srcOutcomes` field is deliberately left in the snapshot builder even though
+nothing reads it now. It is collected data, not logic: keeping it costs a little
+snapshot size, dropping it would quietly make this month un-restorable in a way
+the archived months are not.
+
 ## v3.443.0 - 2026-08-20 · `5e63549` - Finish the scoping sweep, and fix what it broke
 
 Auditing the rest of the file for the same pull-everything-then-filter pattern

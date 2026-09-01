@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.443.0'
+const APP_VERSION = '3.444.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -19214,91 +19214,6 @@ function renderMonthlyDeck(rep, h) {
     // pipeline-performance view uses) so each funnel's "cost / event" reads sensibly.
     const funnelLeadTotal = funnelPipes.reduce((s, f) => s + f.leads, 0)
     const funnelSpendOf = (f) => (funnelPipes.length > 1 && funnelLeadTotal ? totalSpend * (f.leads / funnelLeadTotal) : totalSpend)
-    // Paid vs all-sources per key event. "All" = the total funnel above (every lead
-    // source in Caalano Systems). "Paid" = CRM outcomes attributed (via utm_campaign)
-    // to a real Meta/Google campaign - aggregated across every paid campaign, then
-    // read through the same green-column engine so paid ⊆ total at each step.
-    const aggOutcome = (arr) => {
-      const o = { booked: 0, cancelled: 0, shown: 0, shownStage: 0, won: 0, revenue: 0, wonNoVal: 0, leads: 0, stages: {}, cals: {}, calsShown: {}, calsOccurred: {} }
-      for (const e of arr || []) {
-        o.booked += e.booked || 0; o.cancelled += e.cancelled || 0; o.shown += e.shown || 0; o.shownStage += e.shownStage || 0
-        o.won += e.won || 0; o.revenue += e.revenue || 0; o.wonNoVal += e.wonNoVal || 0; o.leads += e.leads || 0
-        for (const k in (e.stages || {})) o.stages[k] = (o.stages[k] || 0) + e.stages[k]
-        for (const k in (e.cals || {})) o.cals[k] = (o.cals[k] || 0) + e.cals[k]
-        for (const k in (e.calsShown || {})) o.calsShown[k] = (o.calsShown[k] || 0) + e.calsShown[k]
-        for (const k in (e.calsOccurred || {})) o.calsOccurred[k] = (o.calsOccurred[k] || 0) + e.calsOccurred[k]
-      }
-      return o
-    }
-    let paidCmp = null
-    if (o360cols && (rep.campOutcomes || []).length) {
-      const paidNames = new Set()
-      for (const c of (meta && meta.campaigns) || []) paidNames.add(unorm(c.name))
-      for (const c of (google && google.campaigns) || []) paidNames.add(unorm(c.name))
-      const paidOutcomes = (rep.campOutcomes || []).filter((e) => paidNames.has(unorm(e.name)))
-      if (paidOutcomes.length) {
-        const paidO = aggOutcome(paidOutcomes)
-        const pf = o360Fields(paidO, totalSpend, paidO.leads || 0, o360cols)
-        const stripLab = (s) => String(s || '').replace(/^📅\s*/, '').trim().toLowerCase()
-        const paidByLabel = new Map()
-        let ci2 = 0
-        for (const g of o360cols.groups) {
-          const seg = o360cols.cols.slice(ci2, ci2 + g.span); ci2 += g.span
-          const first = seg.find((c) => c.gfirst) || seg[0]
-          paidByLabel.set(stripLab(g.label), pf[first.key] || 0)
-        }
-        const rows = [{ label: 'Leads', total: crm.leads || 0, paid: paidO.leads || 0 }]
-        for (const r of funnelRows) rows.push({ label: r.label, total: r.count || 0, paid: paidByLabel.get(stripLab(r.label)) || 0, kind: r.kind })
-        // Clamp paid to total so the stacked bar reads cleanly (different data feeds
-        // can occasionally push paid a hair over total).
-        for (const r of rows) r.paid = Math.min(r.paid, r.total)
-        paidCmp = { rows, paidLeads: paidO.leads || 0, paidWon: paidO.won || 0 }
-      }
-    }
-    // Break the non-paid "other sources" into named channels (organic / direct /
-    // referral / email / social / CRM-manual), measured per key event from the
-    // utm_source outcomes - same green-column engine as "paid". Each bucket's reach
-    // is scaled to fill exactly the non-paid remainder (total − paid) so the stacked
-    // bar still reconciles to the funnel. Falls back to plain Paid-vs-Other if the
-    // per-source data isn't in the (older) snapshot.
-    let srcCmp = null
-    if (paidCmp && o360cols && (rep.srcOutcomes || []).length) {
-      const stripLab2 = (s) => String(s || '').replace(/^📅\s*/, '').trim().toLowerCase()
-      const reachByLabel = (entities) => {
-        const o = aggOutcome(entities); const ff = o360Fields(o, totalSpend, o.leads || 0, o360cols)
-        const m = new Map(); let ci = 0
-        for (const g of o360cols.groups) { const seg = o360cols.cols.slice(ci, ci + g.span); ci += g.span; const first = seg.find((c) => c.gfirst) || seg[0]; m.set(stripLab2(g.label), ff[first.key] || 0) }
-        return { leads: o.leads || 0, byLabel: m }
-      }
-      const BUCKETS = [
-        { key: 'organic', label: 'Organic search', color: '#f59e0b', re: /organic|seo|(?:^|[^a-z])search(?:$|[^a-z])/i },
-        { key: 'referral', label: 'Referral', color: '#0ea5e9', re: /referr?al|refer(?:$|[^a-z])/i },
-        { key: 'social', label: 'Social (organic)', color: '#8b5cf6', re: /facebook|instagram|\bfb\b|\big\b|linkedin|tiktok|social|youtube|twitter/i },
-        { key: 'email', label: 'Email', color: '#ec4899', re: /e-?mail|newsletter|mailchimp|klaviyo|smtp/i },
-        { key: 'direct', label: 'Direct', color: '#64748b', re: /direct|type.?in|\(none\)|\(not\s*set\)|^none$/i },
-        { key: 'crm', label: 'CRM / manual', color: '#14b8a6', re: /manual|import|\bcrm\b|admin|staff|internal|\badded\b|bulk|migrat/i },
-      ]
-      const bucketOf = (name) => { const ch = chanOfSource(name); if (ch === 'meta' || ch === 'google') return null; for (const b of BUCKETS) if (b.re.test(String(name || ''))) return b.key; return 'untracked' }
-      const grouped = new Map()
-      for (const e of rep.srcOutcomes) { const bk = bucketOf(e.name); if (!bk) continue; if (!grouped.has(bk)) grouped.set(bk, []); grouped.get(bk).push(e) }
-      const bucketReach = new Map()
-      for (const [bk, ents] of grouped) bucketReach.set(bk, reachByLabel(ents))
-      if (!bucketReach.has('untracked')) bucketReach.set('untracked', { leads: 0, byLabel: new Map() })
-      const bucketDefs = [...BUCKETS.filter((b) => bucketReach.has(b.key)), { key: 'untracked', label: 'Untracked / other', color: '#c7cdda' }]
-      const rows = paidCmp.rows.map((pr) => {
-        const other = Math.max(0, (pr.total || 0) - (pr.paid || 0))
-        const isLeads = stripLab2(pr.label) === 'leads'
-        const raw = {}; let rawSum = 0
-        for (const b of bucketDefs) { const br = bucketReach.get(b.key); const v = isLeads ? (br.leads || 0) : (br.byLabel.get(stripLab2(pr.label)) || 0); raw[b.key] = Math.max(0, v); rawSum += raw[b.key] }
-        const seg = {}
-        if (rawSum > 0) { let acc = 0; for (let i = 0; i < bucketDefs.length; i++) { const b = bucketDefs[i]; const val = i === bucketDefs.length - 1 ? (other - acc) : Math.round((other * raw[b.key]) / rawSum); seg[b.key] = Math.max(0, val); acc += seg[b.key] } }
-        else { for (const b of bucketDefs) seg[b.key] = 0; seg.untracked = other }
-        return { label: pr.label, total: pr.total, paid: pr.paid, seg }
-      })
-      // Bucket leads totals (for the table) - measured, not scaled.
-      const bucketLeads = bucketDefs.map((b) => ({ ...b, leads: Math.round((bucketReach.get(b.key) || { leads: 0 }).leads || 0) })).filter((b) => b.leads > 0 || b.key === 'untracked')
-      srcCmp = { rows, buckets: bucketDefs, bucketLeads }
-    }
     const otherRev = Math.max(0, realisedRev - paidRev)
     const PIE = ['#6d5efc', '#e0803a', '#e1306c', '#4285f4', '#f59e0b', '#12b886', '#9b8cff', '#ef4444']
     const statusDonut = [
@@ -19545,45 +19460,6 @@ function renderMonthlyDeck(rep, h) {
             </div>
             : <div className="mr-funnel-big"><KeyEventsFunnel rows={funnelPipes[0].rows} total={funnelPipes[0].leads} spend={totalSpend} currency={currency} caveat="One cohort: leads created this month and how far they've progressed. “Cost / event” spreads total ad spend across every event, so it's a blended guide, not paid-only CAC." /></div>)
           : <div className="mr-empty">No key events configured - set them in Settings → Key events.</div>}
-        {paidCmp && paidCmp.rows.length ? (
-          <>
-            <div className="mr-section-lab">Paid vs all lead sources - key events</div>
-            <div className="mr-two mr-two-viz">
-              <div>
-                <div className="mr-viz-lab">Every step: paid (green){srcCmp ? ' + non-paid sources' : ''} within all Caalano Systems{srcCmp ? '' : ' (grey)'}</div>
-                <ResponsiveContainer width="100%" height={Math.max(190, paidCmp.rows.length * 46)}>
-                  <BarChart data={(srcCmp || paidCmp).rows.map((r) => { const o = { name: r.label, total: r.total, Paid: r.paid }; if (srcCmp) { for (const b of srcCmp.buckets) o[b.label] = (r.seg && r.seg[b.key]) || 0 } else o['Other sources'] = Math.max(0, r.total - r.paid); return o })} layout="vertical" margin={{ top: 4, right: 40, left: 4, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" width={128} tick={{ fontSize: 9.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, n) => [fmtNumber(v), n]} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="Paid" stackId="a" fill="#12b886" radius={[0, 0, 0, 0]} maxBarSize={16} />
-                    {srcCmp
-                      ? srcCmp.buckets.map((b, i) => <Bar key={b.key} dataKey={b.label} stackId="a" fill={b.color} maxBarSize={16} radius={i === srcCmp.buckets.length - 1 ? [0, 3, 3, 0] : [0, 0, 0, 0]}>{i === srcCmp.buckets.length - 1 ? <LabelList dataKey="total" position="right" style={{ fontSize: 9, fill: 'var(--muted)' }} /> : null}</Bar>)
-                      : <Bar dataKey="Other sources" stackId="a" fill="#c7cdda" radius={[0, 3, 3, 0]} maxBarSize={16}><LabelList dataKey="total" position="right" style={{ fontSize: 9, fill: 'var(--muted)' }} /></Bar>}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div>
-                <div className="mr-viz-lab">All Caalano Systems vs paid results</div>
-                <MRTable
-                  cols={[
-                    { k: 'label', label: 'Key event', render: (r) => <span className="mr-name">{r.label}</span> },
-                    { k: 'total', label: 'All sources', align: 'r', render: (r) => n0(r.total) },
-                    { k: 'paid', label: 'Paid', align: 'r', render: (r) => <span style={{ color: '#12b886', fontWeight: 700 }}>{n0(r.paid)}</span> },
-                    { k: 'share', label: 'Paid %', align: 'r', render: (r) => pc(r.paid, r.total) },
-                  ]}
-                  rows={paidCmp.rows}
-                />
-                <p className="mr-foot-note" style={{ marginTop: 6 }}>“Paid” = leads whose CRM record carries a Meta/Google campaign UTM; “All sources” includes organic, referral, direct and untracked. The gap is business you're winning beyond ad spend.</p>
-                {srcCmp && srcCmp.bucketLeads.length ? (
-                  <p className="mr-foot-note" style={{ marginTop: 4 }}>Non-paid lead mix: {srcCmp.bucketLeads.map((b) => `${b.label} ${n0(b.leads)}`).join(' · ')}. Each source is its own colour on the bar - hover a step to see the split.</p>
-                ) : null}
-              </div>
-            </div>
-          </>
-        ) : null}
       </MRSlide>
     )
   }

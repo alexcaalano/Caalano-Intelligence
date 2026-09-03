@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.453.0 - 2026-09-03 · `PENDING` - Scenario builder: the funnel decides the win; margins and lifetime value
+
+**The last stage is the win.** The separate "win rate of leads" is gone from
+the scenario builder - it could disagree with the stages above it, and did.
+Whatever reaches the final stage is what is won and priced, so the funnel and
+the outcome cannot drift apart. A new scenario ends in a "Won" stage; opening a
+client forecast as a scenario now appends one, with its step set so the seeded
+funnel closes on the client's real win rate. Saved scenarios can be deleted.
+
+**Advanced - margins and lifetime value.** Gross margin %, purchases per
+customer (lifetime), and an optional typed lifetime value. With those, a second
+row of headline tiles appears: gross profit, LTV, LTV:CAC, LTV-GP:CAC (lifetime
+gross profit against acquisition cost - whether the business keeps anything),
+net of ad spend (revenue − spend) and contribution (gross profit − spend). Every
+tile says what it is made of on hover, because "margin" means different things
+to different people. Twelve more arithmetic cases.
+
 ## v3.452.0 - 2026-09-03 · `4717878` - Forecaster: spend split per pipeline
 
 For a client with several pipelines, the client forecast now starts from that

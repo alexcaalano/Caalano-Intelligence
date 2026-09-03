@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.452.0'
+const APP_VERSION = '3.453.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2194,13 +2194,43 @@ function fcForecast(model, spend, opts = {}) {
     prev = total
     return row
   })
-  const wr = (c) => (c === 'other' ? (model.other && model.other.winRate) || 0 : (model.channels[c] && model.channels[c].winRate) || 0)
-  out.won = { meta: out.leads.meta * wr('meta'), google: out.leads.google * wr('google'), other: out.leads.other * wr('other') }
+  // Won. A client model carries a measured win rate per channel (won / leads in
+  // the sample). A scenario has no such thing - its last stage IS the win, so
+  // won is whatever reached it. One switch, so the two never disagree.
+  const last = out.stages[out.stages.length - 1]
+  if (model.wonIsLastStage && last) out.won = { meta: last.meta, google: last.google, other: last.other }
+  else {
+    const wr = (c) => (c === 'other' ? (model.other && model.other.winRate) || 0 : (model.channels[c] && model.channels[c].winRate) || 0)
+    out.won = { meta: out.leads.meta * wr('meta'), google: out.leads.google * wr('google'), other: out.leads.other * wr('other') }
+  }
   out.won.total = out.won.meta + out.won.google + out.won.other
-  out.revenue = out.won.total * (model.avgDeal || 0)
-  out.cac = out.won.meta + out.won.google ? out.spend.total / (out.won.meta + out.won.google) : null
+  const deal = model.avgDeal || 0
+  out.revenue = out.won.total * deal
+  const paidWon = out.won.meta + out.won.google
+  out.cac = paidWon ? out.spend.total / paidWon : null
   out.paidCpl = out.leads.meta + out.leads.google ? out.spend.total / (out.leads.meta + out.leads.google) : null
-  out.roas = out.spend.total ? ((out.won.meta + out.won.google) * (model.avgDeal || 0)) / out.spend.total : null
+  out.roas = out.spend.total ? (paidWon * deal) / out.spend.total : null
+  // Unit economics, when the inputs exist. Every figure says what it is made of,
+  // because "margin" means three different things to three different people:
+  //   gross profit     revenue x gross margin
+  //   LTV              a typed lifetime value, else the deal x purchases per customer
+  //   LTV:CAC          lifetime revenue per customer against what one cost to win
+  //   LTV-GP:CAC       the same on gross profit - the one that says whether the
+  //                    business actually keeps anything
+  //   net of ad spend  revenue - spend  (what the user asked for as "gross margin")
+  //   contribution     gross profit - spend  (what is left after goods AND ads)
+  const margin = model.grossMargin != null && model.grossMargin !== '' ? Math.max(0, Math.min(1, Number(model.grossMargin) / 100)) : null
+  const purchases = Number(model.purchases) > 0 ? Number(model.purchases) : 1
+  const ltv = Number(model.ltv) > 0 ? Number(model.ltv) : deal * purchases
+  out.econ = {
+    margin, purchases, ltv,
+    grossProfit: margin != null ? out.revenue * margin : null,
+    ltvCac: out.cac ? ltv / out.cac : null,
+    ltvGpCac: out.cac && margin != null ? (ltv * margin) / out.cac : null,
+    netOfSpend: out.revenue - out.spend.total,
+    contribution: margin != null ? out.revenue * margin - out.spend.total : null,
+    perCustomer: { revenue: deal, grossProfit: margin != null ? deal * margin : null, cac: out.cac, contribution: margin != null && out.cac != null ? deal * margin - out.cac : null },
+  }
   return out
 }
 
@@ -2212,26 +2242,36 @@ function fcRatesToSteps(rates) { let prev = 1; return rates.map((r) => { const s
 function fcModelFromScenario(sc) {
   const stages = (sc.stages || []).map((s, i) => ({ key: `s${i}`, name: s.name || `Stage ${i + 1}` }))
   const rates = fcStepsToRates((sc.stages || []).map((s) => s.step))
-  const ch = (c) => ({ cpl: Number(sc[`${c}Cpl`]) > 0 ? Number(sc[`${c}Cpl`]) : null, cplBasis: 'typed', rates, winRate: Math.max(0, Math.min(1, (Number(sc.winRate) || 0) / 100)), own: true })
+  // The last stage is the win, so the win rate is simply how many get there.
+  const winRate = rates.length ? rates[rates.length - 1] : 0
+  const ch = (c) => ({ cpl: Number(sc[`${c}Cpl`]) > 0 ? Number(sc[`${c}Cpl`]) : null, cplBasis: 'typed', rates, winRate, own: true })
   return {
     pipeId: 'scenario', pipeName: sc.name || 'Scenario',
     stages, channels: { meta: ch('meta'), google: ch('google') },
-    other: { leadsPerMonth: Number(sc.otherLeads) || 0, rates, winRate: Math.max(0, Math.min(1, (Number(sc.winRate) || 0) / 100)) },
+    other: { leadsPerMonth: Number(sc.otherLeads) || 0, rates, winRate },
     baseSpend: { meta: Number(sc.metaSpend) || 0, google: Number(sc.googleSpend) || 0 },
     avgDeal: Number(sc.avgDeal) || 0, avgDealBasis: 'typed',
+    wonIsLastStage: true,
+    grossMargin: sc.grossMargin, purchases: sc.purchases, ltv: sc.ltv,
   }
 }
 // A scenario seeded from a live client, so "what if" starts from what is.
 function fcScenarioFromModel(model, spend, name) {
-  const steps = fcRatesToSteps(model.channels.meta.own ? model.channels.meta.rates : (model.channels.google.own ? model.channels.google.rates : model.other.rates))
+  const rates = model.channels.meta.own ? model.channels.meta.rates : (model.channels.google.own ? model.channels.google.rates : model.other.rates)
   const winAll = model.sample ? ((model.sample.won.meta + model.sample.won.google + model.sample.won.other) / Math.max(1, model.sample.leads.meta + model.sample.leads.google + model.sample.leads.other)) : 0
+  // A client's stages end wherever its pipeline ends; the win sits after them.
+  // The scenario gets a final "Won" stage whose step is the win as a share of
+  // whatever reached the last real stage, so the funnel closes on the win.
+  const lastReach = rates.length ? rates[rates.length - 1] : 1
+  const steps = fcRatesToSteps([...rates, Math.min(winAll, lastReach || winAll)])
   return {
     id: `sc_${Date.now().toString(36)}`, name: name || `${model.pipeName} - what if`,
     metaSpend: Math.round(spend.meta || 0), googleSpend: Math.round(spend.google || 0),
     metaCpl: model.channels.meta.cpl ? Math.round(model.channels.meta.cpl) : '', googleCpl: model.channels.google.cpl ? Math.round(model.channels.google.cpl) : '',
     otherLeads: Math.round(model.other.leadsPerMonth || 0),
-    stages: model.stages.map((s, i) => ({ name: s.name, step: steps[i] })),
-    winRate: Math.round(winAll * 1000) / 10, avgDeal: Math.round(model.avgDeal || 0),
+    stages: [...model.stages.map((s, i) => ({ name: s.name, step: steps[i] })), { name: 'Won', step: steps[steps.length - 1] }],
+    avgDeal: Math.round(model.avgDeal || 0),
+    grossMargin: model.grossMargin ?? '', purchases: model.purchases || 1, ltv: '',
     cplRise: 0,
   }
 }
@@ -2254,6 +2294,7 @@ function deleteScenario(id) {
 // conversion from the row above, and what each one costs at this spend.
 function FcFunnel({ fc, model, money, compare }) {
   const rows = [{ key: '__leads', name: 'Leads', meta: fc.leads.meta, google: fc.leads.google, other: fc.leads.other, total: fc.leads.total, step: null, costEach: fc.paidCpl }, ...fc.stages]
+  const wonIsLast = !!model.wonIsLastStage
   const max = Math.max(1, ...rows.map((r) => r.total))
   const n0 = (v) => fmtNumber(Math.round(v))
   return (
@@ -2276,7 +2317,7 @@ function FcFunnel({ fc, model, money, compare }) {
         )
       })}
       <div className="fc-row fc-row-won">
-        <div className="fc-name">Won</div>
+        <div className="fc-name">{wonIsLast ? `Won · ${(rows[rows.length - 1] || {}).name || ''}` : 'Won'}</div>
         <div className="fc-track"><span className="fc-val fc-val-won">{n0(fc.won.total)}<small> · {money(Math.round(fc.revenue))}</small></span></div>
         <div className="fc-step" title="Share of all leads that are won">{fc.leads.total ? `${Math.round((fc.won.total / fc.leads.total) * 100)}%` : ''}</div>
         <div className="fc-cost">{fc.cac != null ? money(Math.round(fc.cac)) : '-'}</div>
@@ -2356,15 +2397,31 @@ function FcSpendInputs({ spend, setSpend, base, money, opts, setOpts, channels, 
 
 function FcHeadline({ fc, model, money }) {
   const n0 = (v) => fmtNumber(Math.round(v))
+  const e = fc.econ || {}
+  const x1 = (v) => (v == null || !isFinite(v) ? '-' : `${v.toFixed(1)}×`)
+  const signed = (v) => (v == null || !isFinite(v) ? '-' : `${v < 0 ? '−' : ''}${money(Math.round(Math.abs(v)))}`)
+  const hasEcon = e.margin != null || e.purchases > 1 || Number(model.ltv) > 0
   return (
-    <div className="scorecard sc-fit fc-head">
-      <Sc label="Paid leads / month" value={n0(fc.leads.meta + fc.leads.google)} tip="Spend ÷ cost per lead, per channel" />
-      <Sc label="Cost per lead" value={fc.paidCpl ? money(Math.round(fc.paidCpl)) : '-'} />
-      <Sc label="Won / month" value={n0(fc.won.total)} tip={`Paid ${n0(fc.won.meta + fc.won.google)} · non-paid ${n0(fc.won.other)}`} />
-      <Sc label="CAC" value={fc.cac ? money(Math.round(fc.cac)) : '-'} tip="Spend ÷ paid wins" />
-      <Sc label="Revenue / month" value={money(Math.round(fc.revenue))} tip={`Won × ${money(Math.round(model.avgDeal || 0))} (${model.avgDealBasis})`} />
-      <Sc label="Return on spend" value={fc.roas != null ? `${fc.roas.toFixed(1)}×` : '-'} tip="Paid revenue ÷ spend" />
-    </div>
+    <>
+      <div className="scorecard sc-fit fc-head">
+        <Sc label="Paid leads / month" value={n0(fc.leads.meta + fc.leads.google)} tip="Spend ÷ cost per lead, per channel" />
+        <Sc label="Cost per lead" value={fc.paidCpl ? money(Math.round(fc.paidCpl)) : '-'} />
+        <Sc label="Won / month" value={n0(fc.won.total)} tip={`Paid ${n0(fc.won.meta + fc.won.google)} · non-paid ${n0(fc.won.other)}`} />
+        <Sc label="CAC" value={fc.cac ? money(Math.round(fc.cac)) : '-'} tip="Spend ÷ paid wins" />
+        <Sc label="Revenue / month" value={money(Math.round(fc.revenue))} tip={`Won × ${money(Math.round(model.avgDeal || 0))} (${model.avgDealBasis})`} />
+        <Sc label="Return on spend" value={x1(fc.roas)} tip="Paid revenue ÷ spend" />
+      </div>
+      {hasEcon ? (
+        <div className="scorecard sc-fit fc-head fc-econ">
+          <Sc label="Gross profit / month" value={e.grossProfit != null ? money(Math.round(e.grossProfit)) : '-'} tip={e.margin != null ? `Revenue × ${Math.round(e.margin * 100)}% gross margin` : 'Set a gross margin'} />
+          <Sc label="LTV" value={money(Math.round(e.ltv || 0))} tip={Number(model.ltv) > 0 ? 'Typed lifetime value' : `${money(Math.round(model.avgDeal || 0))} × ${e.purchases} purchases per customer`} />
+          <Sc label="LTV : CAC" value={x1(e.ltvCac)} tip="Lifetime revenue per customer ÷ cost to win one. 3× is the usual floor for a healthy funnel." />
+          <Sc label="LTV-GP : CAC" value={x1(e.ltvGpCac)} tip={e.margin != null ? 'Lifetime GROSS PROFIT per customer ÷ cost to win one - whether the business keeps anything' : 'Set a gross margin'} />
+          <Sc label="Net of ad spend" value={signed(e.netOfSpend)} tip="Revenue − spend, this month" />
+          <Sc label="Contribution" value={signed(e.contribution)} tip={e.margin != null ? 'Gross profit − spend: what is left after goods and ads' : 'Set a gross margin'} />
+        </div>
+      ) : null}
+    </>
   )
 }
 
@@ -2432,7 +2489,7 @@ function FcClient({ clients, currency, nonce, onSaveScenario }) {
 
 // --- the scenario builder ----------------------------------------------------
 const FC_BLANK = () => ({ id: `sc_${Date.now().toString(36)}`, name: 'New scenario', metaSpend: 3000, googleSpend: 2000, metaCpl: 40, googleCpl: 60, otherLeads: 0,
-  stages: [{ name: 'Booked call', step: 60 }, { name: 'Showed', step: 70 }, { name: 'Quoted', step: 80 }], winRate: 15, avgDeal: 2500, cplRise: 0 })
+  stages: [{ name: 'Booked call', step: 60 }, { name: 'Showed', step: 70 }, { name: 'Quoted', step: 80 }, { name: 'Won', step: 35 }], avgDeal: 2500, grossMargin: '', purchases: 1, ltv: '', cplRise: 0 })
 function FcBuilder({ currency, seed, onSeeded }) {
   useSettingsSync()
   const saved = loadScenarios()
@@ -2486,10 +2543,18 @@ function FcBuilder({ currency, seed, onSeeded }) {
             ))}
             <button className="btn-ghost sm" onClick={() => up({ stages: [...sc.stages, { name: '', step: 50 }] })}>+ Add a stage</button>
           </div>
+          <p className="cap" style={{ margin: '6px 0 0' }}>The last stage is the win - <b>{(sc.stages[sc.stages.length - 1] || {}).name || 'the final stage'}</b> is what gets counted as won and priced.</p>
           <div className="fc-grid2" style={{ marginTop: 14 }}>
-            <label title="Share of ALL leads that become a won deal.">Win rate (of leads)<div className="fc-pct"><input type="number" min="0" max="100" value={n1(sc.winRate)} onChange={(e) => up({ winRate: e.target.value })} /><span>%</span></div></label>
             <label>Average deal value<input type="number" min="0" value={n1(sc.avgDeal)} onChange={(e) => up({ avgDeal: e.target.value })} /></label>
           </div>
+          <details className="fc-adv" open={sc.grossMargin !== '' && sc.grossMargin != null}>
+            <summary>Advanced · margins and lifetime value</summary>
+            <div className="fc-grid2" style={{ marginTop: 10 }}>
+              <label title="Share of each deal's revenue left after the cost of delivering it - before ad spend. Turns on gross profit, LTV-GP:CAC and contribution below.">Gross margin<div className="fc-pct"><input type="number" min="0" max="100" value={n1(sc.grossMargin)} onChange={(e) => up({ grossMargin: e.target.value })} placeholder="e.g. 60" /><span>%</span></div></label>
+              <label title="How many times the average customer buys over their lifetime, this deal included. LTV = deal value x this, unless a lifetime value is typed.">Purchases per customer<input type="number" min="1" step="0.5" value={n1(sc.purchases)} onChange={(e) => up({ purchases: e.target.value })} placeholder="1" /></label>
+              <label title="Type a lifetime value directly if you know it; it overrides deal x purchases.">Lifetime value (override)<input type="number" min="0" value={n1(sc.ltv)} onChange={(e) => up({ ltv: e.target.value })} placeholder={`${Math.round((Number(sc.avgDeal) || 0) * (Number(sc.purchases) || 1))} from deal × purchases`} /></label>
+            </div>
+          </details>
         </div>
         <div className="card">
           <div className="exec-panel-h">{sc.name || 'Scenario'} <span className="sub">· forecast month at {money(Math.round(fc.spend.total))}</span></div>

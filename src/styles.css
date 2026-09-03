@@ -4440,3 +4440,7 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .help-txt code { font-size: 11px; }
 /* Forecaster: the non-paid segment must read against the empty track. */
 .fc-track .fc-bar { background: color-mix(in srgb, var(--border) 45%, transparent); }
+.fc-econ { margin-top: -6px; }
+.fc-adv { margin-top: 14px; border: 1px dashed var(--border-2); border-radius: 10px; padding: 8px 12px; }
+.fc-adv summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--muted); }
+.fc-adv[open] summary { color: var(--text); margin-bottom: 2px; }

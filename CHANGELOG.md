@@ -18,6 +18,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.455.0 - 2026-09-03 · `PENDING` - Views survive a reload
+
+The browser's cache of loaded views lived in memory, so every reload and every
+new tab started cold even when the server had the payload hot. It is now
+mirrored to the browser's own database and restored on the next visit with its
+original timestamp - a view you opened this morning paints at once and
+revalidates behind, exactly like switching back to a tab you already had open.
+
+Scoped to the signed-in person: entries are keyed by who wrote them and only
+theirs come back; anyone else's are dropped; signing out empties the store. So
+a shared machine cannot hand one person's clients to the next. Entries older
+than six hours are pruned; error payloads are never kept.
+
+Tested in a real browser database: nothing persists before sign-in, entries
+round-trip with their timestamp, errors are skipped, a second user restores
+nothing and the first user's rows are gone, stale rows are pruned, a component
+already on screen is told when its data is restored, and sign-out clears it.
+
 ## v3.454.0 - 2026-09-03 · `58109eb` - One build per client open; bizloc cached; KPI table without history
 
 **ccdrill reuses what health built.** Opening a client fires `health` and

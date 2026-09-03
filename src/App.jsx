@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.454.0'
+const APP_VERSION = '3.455.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -600,7 +600,59 @@ function dedupeFetch(url, ttl = 45000) {
 const _swr = new Map()       // url -> { at, data }
 const _swrSubs = new Map()   // url -> Set<fn>
 function swrPeek(url) { const e = _swr.get(url); return e ? e.data : undefined }
-function swrSet(url, data) { _swr.set(url, { at: Date.now(), data }); const s = _swrSubs.get(url); if (s) for (const fn of s) fn(data) }
+function swrSet(url, data) { const e = { at: Date.now(), data }; _swr.set(url, e); swrPersist(url, e); const s = _swrSubs.get(url); if (s) for (const fn of s) fn(data) }
+// --- persistent SWR ----------------------------------------------------------
+// The map above dies with the tab, so every reload and every new tab started
+// cold even when the server had the payload hot. Entries are now mirrored to
+// IndexedDB and restored on the next visit with their original timestamp, so a
+// view paints at once and revalidates behind - the same as switching back to a
+// tab you had open. Scoped to the SIGNED-IN USER: the store is keyed by who
+// wrote it and only their entries come back, and signing out empties it, so a
+// shared machine cannot hand one person's clients to the next.
+const SWR_DB = 'caalano-swr', SWR_STORE = 'entries', SWR_MAX_AGE_MS = 6 * 60 * 60 * 1000
+let _swrDbP = null, _swrWho = null
+function swrDb() {
+  if (_swrDbP) return _swrDbP
+  _swrDbP = new Promise((res) => {
+    try {
+      if (typeof indexedDB === 'undefined') return res(null)
+      const r = indexedDB.open(SWR_DB, 1)
+      r.onupgradeneeded = () => { try { r.result.createObjectStore(SWR_STORE) } catch { /* exists */ } }
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null)
+    } catch { res(null) }
+  })
+  return _swrDbP
+}
+function swrPersist(url, e) {
+  if (!_swrWho || !e || !e.data || (e.data && e.data.error)) return
+  swrDb().then((db) => { if (!db) return; try { db.transaction(SWR_STORE, 'readwrite').objectStore(SWR_STORE).put({ ...e, who: _swrWho }, url) } catch { /* quota / closed */ } }).catch(() => {})
+}
+// Restore this user's entries, dropping anyone else's and anything too old.
+// Subscribers of a restored url are told, so a component already on screen
+// paints from it rather than waiting for the network.
+function swrRestore(who) {
+  _swrWho = who || null
+  if (!_swrWho) return Promise.resolve(0)
+  return swrDb().then((db) => new Promise((res) => {
+    if (!db) return res(0)
+    try {
+      const st = db.transaction(SWR_STORE, 'readwrite').objectStore(SWR_STORE)
+      const req = st.openCursor(); let n = 0
+      req.onsuccess = () => {
+        const c = req.result; if (!c) return res(n)
+        const e = c.value
+        if (!e || e.who !== _swrWho || Date.now() - e.at > SWR_MAX_AGE_MS) c.delete()
+        else if (!_swr.has(c.key)) { _swr.set(c.key, { at: e.at, data: e.data }); n++; const subs = _swrSubs.get(c.key); if (subs) for (const fn of subs) fn(e.data) }
+        c.continue()
+      }
+      req.onerror = () => res(n)
+    } catch { res(0) }
+  })).catch(() => 0)
+}
+function swrClearPersisted() {
+  _swrWho = null
+  return swrDb().then((db) => { if (!db) return; try { db.transaction(SWR_STORE, 'readwrite').objectStore(SWR_STORE).clear() } catch { /* ignore */ } }).catch(() => {})
+}
 function prefetchSwr(url, transform) {
   if (!url || _swr.has(url)) return Promise.resolve()
   return dedupeFetch(url).then((r) => r.json()).then((j) => { if (j && !j.error) swrSet(url, transform ? transform(j) : j) }).catch(() => {})
@@ -21335,7 +21387,11 @@ export default function App() {
   useEffect(() => { check() }, [])
   const clearInvite = () => { try { window.history.replaceState({}, '', window.location.pathname) } catch {} }
   const onSignedIn = (user) => { clearInvite(); setAuth({ status: 'ready', enabled: true, user, needsSetup: false }) }
-  const onLogout = () => { authApi('logout', { method: 'POST' }).finally(() => setAuth({ status: 'ready', enabled: true, user: null, needsSetup: false })) }
+  const onLogout = () => { swrClearPersisted(); _swr.clear(); authApi('logout', { method: 'POST' }).finally(() => setAuth({ status: 'ready', enabled: true, user: null, needsSetup: false })) }
+  // Bring back this user's cached views the moment we know who they are. In
+  // legacy mode (no login) the whole browser is one user.
+  const swrOwner = auth.status === 'ready' ? (auth.enabled ? (auth.user && auth.user.email) || null : 'local') : null
+  useEffect(() => { if (swrOwner) swrRestore(swrOwner) }, [swrOwner])
 
   if (auth.status === 'loading') return <div className="auth-screen"><div className="auth-card"><Spinner label="Loading…" /></div></div>
   // Accept-invite deep link takes priority (a signed-out invitee, or a new

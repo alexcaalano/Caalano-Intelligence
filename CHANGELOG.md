@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.448.0 - 2026-09-03 · `PENDING` - KPI targets: budget split per pipeline; key events marked
+## v3.448.0 - 2026-09-03 · `d220147` - KPI targets: budget split per pipeline; key events marked
 
 **One budget, shared out.** The monthly budget is now set once for the client -
 it is what the client pays - and each pipeline receives its share by that

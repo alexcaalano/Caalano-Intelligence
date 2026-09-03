@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.451.0 - 2026-09-03 · `PENDING` - Settings: explanations move behind "?" bubbles
+## v3.451.0 - 2026-09-03 · `5a8e959` - Settings: explanations move behind "?" bubbles
 
 Every settings pane used to open with a paragraph or three explaining itself,
 so a pane read as an essay with some inputs in it. Those explanations now sit

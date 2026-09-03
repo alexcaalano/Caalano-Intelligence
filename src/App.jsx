@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.448.0'
+const APP_VERSION = '3.449.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -863,6 +863,18 @@ function loadCloseOverride(clientId) { const o = SETTINGS.clients && SETTINGS.cl
 function saveCloseOverride(clientId, days) {
   const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
   const next = { ...cur, closeDays: (days == null || days === '') ? null : Number(days) }
+  SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
+  writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
+}
+// What kind of business this is. Mostly descriptive, but "clinic" is the one
+// that changes the app: it is what shows the Clinic tab (practitioners,
+// appointment types) in Settings and in the client view. Unset means "work it
+// out" - the server probes for practice-management fields, as it always has.
+const BIZ_TYPES = [['', 'Not set - detect automatically'], ['clinic', 'Clinic / allied health'], ['services', 'Professional services'], ['trades', 'Trades / home services'], ['retail', 'Retail / e-commerce'], ['other', 'Other']]
+function loadBizType(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; return (o && o.bizType) || '' }
+function saveBizType(clientId, bizType) {
+  const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
+  const next = { ...cur, bizType: bizType || null }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
   writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
 }
@@ -6960,8 +6972,11 @@ function CohortView({ clientId, currency, nonce }) {
 // the server first. `probe=1` is a single custom-field read - no contact paging -
 // so this costs nothing on the clients that aren't clinics.
 function useIsClinic(clientId, enabled) {
+  useSettingsSync()
+  const typed = loadBizType(clientId)   // set in Settings → Summary; '' = detect
   const [is, setIs] = useState(false)
   useEffect(() => {
+    if (typed) { setIs(typed === 'clinic'); return }
     if (!enabled || !clientId) { setIs(false); return }
     let alive = true
     fetch(`/.netlify/functions/windsor?client=${clientId}&scope=clinic&probe=1`)
@@ -6969,8 +6984,8 @@ function useIsClinic(clientId, enabled) {
       .then((j) => { if (alive) setIs(!!(j && j.hasClinic)) })
       .catch(() => { if (alive) setIs(false) })
     return () => { alive = false }
-  }, [clientId, enabled])
-  return is
+  }, [clientId, enabled, typed])
+  return typed ? typed === 'clinic' : is
 }
 function useClinic(clientId, nonce = 0) {
   const [st, setSt] = useState({ status: 'loading', data: null })
@@ -13549,11 +13564,13 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
     <div className="linker">
       {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>}
       {open && <div className={embedded ? '' : 'linker-body'}>
-        <p className="cap" style={{ marginTop: 0 }}>Pick the pipeline stages <b>and booked calendars</b> that count as key events for this client - they drive the Key Events funnel &amp; cost-per-event in Caalano360 and the Meta / Google screens. Calendars give you cost per booked appointment (e.g. an initial consult vs a site visit) plus its show rate. <b>Link each calendar to the pipeline stage it represents</b> - the calendar and stage then count as one event (the stage is a fallback for leads that reached it without a tracked booking), and it sits in the right funnel order. You don't need to also add that stage on its own. If several calendars mean the same step, link them to the same stage and they combine. Leave empty for the default leads → booked → shown → won.</p>
+        <p className="cap" style={{ marginTop: 0 }}>Tick the pipeline stages and booked calendars that count as progress for this client - they drive the Key Events funnel and cost-per-event everywhere. Link each ticked calendar to the stage it represents so the two count as one step (the stage catches leads that got there without a tracked booking); several calendars can share a stage. Leave everything empty for the default leads → booked → shown → won.</p>
         <div className="kev-group">
           <div className="kev-pipe">📅 Booked calendars <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· tick the ones that matter, then link each to its pipeline stage</span></div>
           {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
-            : cals.list.length ? <div className="kev-callist">{cals.list.map((cal) => {
+            : cals.list.length ? <div className="kev-caltbl">
+              <div className="kev-calhead"><span /><span>Calendar</span>{multi ? <span>Pipeline</span> : null}<span>Counts as stage</span></div>
+              {[...cals.list].sort((a, b) => (hasCal(b.id) - hasCal(a.id)) || String(a.name).localeCompare(String(b.name))).map((cal) => {
               const on = hasCal(cal.id)
               return (
                 <div className={`kev-cal ${on ? 'on' : ''}`} key={cal.id}>
@@ -13570,6 +13587,7 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
                         </select>
                       </span>
                     : <span className="cap" style={{ opacity: .7 }}>loading stages…</span>)}
+                  {!on ? <span className="kev-off cap">not counted</span> : null}
                 </div>
               )
             })}</div>
@@ -14776,6 +14794,37 @@ function LogoField({ clientId, name }) {
     </div>
   )
 }
+// Everything about WHEN for one client, in one place: which clock the CRM
+// runs on, how long a deal takes, which hours count as working, and - read
+// straight off those - which date ranges are old enough to trust for won and
+// revenue figures.
+function TimingSettings({ clientId, hasMeta }) {
+  useSettingsSync()
+  const ov = loadCloseOverride(clientId)
+  const ranges = [['last_7d', 'Last 7 days'], ['last_14d', 'Last 14 days'], ['last_30d', 'Last 30 days'], ['last_60d', 'Last 60 days'], ['last_90d', 'Last 90 days'], ['this_month', 'This month']]
+  return (
+    <div className="tm-wrap">
+      <div className="set-sec-t">Timezone</div>
+      <TimezoneBadge clientId={clientId} hasMeta={hasMeta} />
+      <div className="set-sec-t" style={{ marginTop: 18 }}>Sales cycle</div>
+      <SalesCycleField clientId={clientId} />
+      <div className="set-sec-t" style={{ marginTop: 18 }}>Work hours <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· speed to lead is measured inside these, so an overnight lead answered at 9am is not a 10-hour response</span></div>
+      <ActiveHoursField clientId={clientId} />
+      <div className="set-sec-t" style={{ marginTop: 18 }}>Data maturity <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· which ranges are old enough to trust for won and revenue</span></div>
+      {ov != null && ov > 0 ? (
+        <div className="tm-mat">
+          {ranges.map(([id, label]) => { const m = rangeMaturity(ov, presetRange(id)); return (
+            <div className={`tm-mat-row${m && m.maturing ? ' maturing' : ' ok'}`} key={id}>
+              <span className="tm-mat-l">{label}</span>
+              <span className="tm-mat-v">{m && m.maturing ? `⏳ still maturing · ${m.shortfall} day${m.shortfall === 1 ? '' : 's'} short` : '✓ mature'}</span>
+            </div>
+          ) })}
+          <p className="cap" style={{ margin: '8px 0 0' }}>A range needs to be about 20% longer than the sales cycle ({ov} days → {Math.round(ov * 1.2)} days) before most of its deals have had time to close. Shorter ranges show the amber ⏳ badge on the client's header and read low on Won, Revenue and ROAS - not because performance is worse, but because the deals are not in yet.</p>
+        </div>
+      ) : <p className="cap">Set the sales cycle above (or let the CRM average stand) and this shows which date ranges are mature. Without a figure, the app uses the CRM's own create → won average when it has one.</p>}
+    </div>
+  )
+}
 function SalesCycleField({ clientId }) {
   const [crm, setCrm] = useState(undefined) // undefined = loading, null = none
   const [ov, setOv] = useState(() => { const v = loadCloseOverride(clientId); return v == null ? '' : String(v) })
@@ -14987,6 +15036,8 @@ function ClientProfileEditor({ clientId }) {
 function SettingsEditModal({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
+  useSettingsSync()
+  const bizType = loadBizType(c.id)
   const [name, setName] = useState(c.name || '')
   const [industry, setIndustry] = useState(c.industry || '')
   const [savedDetails, setSavedDetails] = useState(false)
@@ -15010,7 +15061,8 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   // it just no longer earns a tab nobody opened.
   // Grouped, so eleven destinations read as four ideas rather than a strip
   // that wraps onto two lines. Each entry: [key, label, group, hint].
-  const tabs = [['summary', 'Summary', 'Account', 'Name, linked accounts, hours, logo']]
+  const tabs = [['summary', 'Summary', 'Account', 'Name, linked accounts, logo']]
+  if (c.ghl) tabs.push(['timing', 'Timing', 'Account', 'Timezone, sales cycle, work hours, maturity'])
   if (c.ghl) tabs.push(['keyevents', 'Key events', 'Tracking', 'The stages and calendars that count as progress'])
   if (c.meta) tabs.push(['metaconv', 'Meta conversions', 'Tracking', 'Which Meta result counts as a lead'])
   if (canLink) tabs.push(['links', 'Campaign links', 'Tracking', 'Campaign → pipeline'])
@@ -15019,7 +15071,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   if (c.ghl) tabs.push(['forms', 'Forms', 'Tracking', 'Form → pipeline, and notes'])
   if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets', 'Targets', 'Budget, funnel and efficiency targets'])
   if (c.ghl) tabs.push(['geo', 'Catchment', 'Targets', 'Where the leads should come from'])
-  if (c.ghl) tabs.push(['clinic', 'Clinic', 'Operations', 'Practitioners and appointment types'])
+  if (c.ghl && bizType === 'clinic') tabs.push(['clinic', 'Clinic', 'Operations', 'Practitioners and appointment types'])
   tabs.push(['optlog', 'Optimisation Log', 'Operations', 'The Google Sheet of changes made'])
   if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics', 'Operations', 'Is tracking actually working'])
   const groups = [...new Set(tabs.map((t) => t[2]))]
@@ -15068,6 +15120,10 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
             <div className="set-details">
               <div className="set-field"><label>Client name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div className="set-field"><label>Description / Industry</label><input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Pool builder (trades, high-ticket)" /></div>
+              <div className="set-field set-field-sm"><label>Type of business</label>
+                <select value={bizType} onChange={(e) => saveBizType(c.id, e.target.value)} title="Clinic shows the Clinic tab here and in the client view; the rest are descriptive">
+                  {BIZ_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select></div>
               <button className="set-details-save" disabled={!dirty || !name.trim()} onClick={saveDetails}>{savedDetails ? '✓ Saved' : 'Save details'}</button>
             </div>
             <div className="set-sec-t">Linked accounts</div>
@@ -15077,9 +15133,6 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
               <div className="set-linked-row"><span className="set-linked-l"><span className="ov-pd" style={{ background: '#12b886' }}>CRM</span></span><span className="set-linked-v">{c.ghl ? <><b>{nm('ghl', c.ghl) || c.ghlName || 'Linked'}</b> <code>{c.ghl}</code></> : <span className="cap">Not linked</span>}</span></div>
             </div>
             {canManageAccounts ? <button className="set-relink" onClick={onRelink} title="Change which Caalano Systems / Meta / Google accounts this client links to">✎ Edit linked accounts</button> : <p className="cap" style={{ margin: '4px 0 0' }}>🔒 Only a Super Admin can change or remove the linked accounts.</p>}
-            {c.ghl && <TimezoneBadge clientId={c.id} hasMeta={!!c.meta} />}
-            {c.ghl && <SalesCycleField clientId={c.id} />}
-            {c.ghl && <ActiveHoursField clientId={c.id} />}
             <LogoField clientId={c.id} name={name || c.name} />
             {canManageAccounts && (
               <div className="set-danger">
@@ -15092,6 +15145,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
             )}
           </div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
+          {tab === 'timing' && <div className="set-tabpane"><TimingSettings clientId={c.id} hasMeta={!!c.meta} /></div>}
           {tab === 'geo' && <GeoSettings clientId={c.id} />}
           {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}

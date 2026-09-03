@@ -4336,3 +4336,33 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .kpi-tbl tr.kpi-row-ke td { background: rgba(18,184,134,.07); }
 .kpi-tbl tr.kpi-row-ke td.lft { font-weight: 700; }
 .kpi-ke-tag { display: inline-block; margin-left: 8px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0f8f68; background: rgba(18,184,134,.14); border-radius: 20px; padding: 1px 7px; vertical-align: middle; }
+
+/* --- Key events: calendars as rows, not a wall of chips ------------------- */
+/* One row per calendar: tick, name, then its pipeline / stage links in fixed
+   columns so the eye can run straight down a column. Ticked rows come first. */
+.kev-caltbl { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.kev-calhead { display: grid; grid-template-columns: 0 minmax(0, 1fr) auto auto; gap: 8px; padding: 7px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 800; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+.kev-calhead span:first-child { display: none; }
+.kev-caltbl .kev-cal { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-wrap: nowrap; }
+.kev-caltbl .kev-cal:last-child { border-bottom: none; }
+.kev-caltbl .kev-cal:not(.on) { opacity: .72; }
+.kev-caltbl .kev-cal .kev-item { border: none; background: none; padding: 2px 0; min-width: 0; display: flex; }
+.kev-caltbl .kev-cal .kev-item span { flex: 1 1 auto; }
+.kev-caltbl .kev-cal.on .kev-item { color: var(--text); font-weight: 600; }
+.kev-caltbl .kev-link { justify-self: end; }
+.kev-caltbl .kev-stage { min-width: 200px; max-width: 260px; }
+.kev-off { justify-self: end; opacity: .6; }
+@media (max-width: 760px) {
+  .kev-calhead { display: none; }
+  .kev-caltbl .kev-cal { grid-template-columns: 1fr; }
+  .kev-caltbl .kev-link, .kev-off { justify-self: start; }
+}
+
+/* --- Timing tab: which ranges are mature ------------------------------------ */
+.tm-mat { display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
+.tm-mat-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 12px; border-radius: 9px; background: var(--panel-2); font-size: 12.5px; }
+.tm-mat-row.maturing { background: rgba(245,165,36,.12); }
+.tm-mat-row.ok .tm-mat-v { color: var(--pos); font-weight: 700; }
+.tm-mat-row.maturing .tm-mat-v { color: #b7791f; font-weight: 700; }
+.set-field-sm { flex: 0 1 240px; }
+.set-field select { width: 100%; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 9px; padding: 9px 12px; color: var(--text); font-size: 13px; font-weight: 600; }

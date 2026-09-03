@@ -18,6 +18,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.449.0 - 2026-09-03 · `PENDING` - Client settings: Timing tab, business type, tidier Key events
+
+**Timing** is a new entry under Account. Timezone, sales cycle, and work hours
+move out of Summary into it, joined by a **Data maturity** read-out: for each
+common date range, whether it is long enough (sales cycle + 20%) for its won
+and revenue figures to be trusted, and by how many days it falls short if not.
+Summary is now just name, description, linked accounts, logo and delete.
+
+**Type of business** is a dropdown on Summary. Choosing *Clinic / allied
+health* shows the Clinic tab here and in the client view; any other choice
+hides it; "detect automatically" keeps the existing behaviour, where the server
+probes for practice-management fields. Saved with the client's other settings
+and shared with the team.
+
+**Key events** reads as a table now rather than a wall of chips: one row per
+calendar, ticked rows first, with the pipeline and stage links in fixed columns
+so the eye runs straight down them. Unticked calendars are dimmed and marked
+"not counted". The intro is a third of the length.
+
 ## v3.448.0 - 2026-09-03 · `d220147` - KPI targets: budget split per pipeline; key events marked
 
 **One budget, shared out.** The monthly budget is now set once for the client -

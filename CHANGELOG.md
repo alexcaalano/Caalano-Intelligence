@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.453.0 - 2026-09-03 · `PENDING` - Scenario builder: the funnel decides the win; margins and lifetime value
+## v3.453.0 - 2026-09-03 · `9665603` - Scenario builder: the funnel decides the win; margins and lifetime value
 
 **The last stage is the win.** The separate "win rate of leads" is gone from
 the scenario builder - it could disagree with the stages above it, and did.

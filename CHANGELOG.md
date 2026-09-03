@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.446.0 - 2026-09-03 · `PENDING` - Settings: Overview tab removed
+## v3.446.0 - 2026-09-03 · `239e370` - Settings: Overview tab removed
 
 The per-client **Overview** (brand profile) tab is gone from Settings. The editor
 component is kept - the Creative Cockpit still reads any profile already filled

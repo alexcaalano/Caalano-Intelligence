@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.449.0 - 2026-09-03 · `PENDING` - Client settings: Timing tab, business type, tidier Key events
+## v3.449.0 - 2026-09-03 · `06e890a` - Client settings: Timing tab, business type, tidier Key events
 
 **Timing** is a new entry under Account. Timezone, sales cycle, and work hours
 move out of Summary into it, joined by a **Data maturity** read-out: for each

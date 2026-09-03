@@ -18,6 +18,31 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.447.0 - 2026-09-03 · `PENDING` - KPI targets driven by a monthly budget; grouped client settings
+
+**KPI targets.** A **Monthly budget** field now sits at the top, and every
+funnel target below is worked out from it. Each stage - Leads, then every
+pipeline stage - has a **Target volume** and a **Target cost** column; type into
+either and the other fills in: volume → cost = budget ÷ volume, cost → volume =
+budget ÷ cost. The column you typed is remembered as the intent, so changing
+the budget later re-derives the other side for every stage: a bigger budget
+makes volume-set targets cheaper and buys more of cost-set ones. Derived values
+are shown dashed and tinted so they are never mistaken for a decision. A **Last
+30d** column shows what each stage actually reached and what each one cost at
+last month's spend, so targets are set against reality. The efficiency targets
+(CPL, cost per booked, CPA, booking rate, weekly spend, LTV) are unchanged and
+grouped below; weekly spend now suggests budget ÷ 4.35.
+
+**Client settings navigation.** The eleven tabs that wrapped across two lines
+are now a grouped side navigation - Account, Tracking, Targets, Operations -
+with a one-line hint under each entry. The nav stays put while a long pane
+scrolls, ↑ / ↓ move through it, and the modal reopens on the tab you last used
+for that client. Below 760px it collapses to a grouped select.
+
+Tested the two derivation rules end to end (11 cases: budget arriving later,
+retyping a derived side, clearing, zero, the Leads row) and rendered the nav
+and table in light, dark and narrow.
+
 ## v3.446.0 - 2026-09-03 · `239e370` - Settings: Overview tab removed
 
 The per-client **Overview** (brand profile) tab is gone from Settings. The editor

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.446.0'
+const APP_VERSION = '3.447.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -13114,6 +13114,16 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
 // Campaign → pipeline linker, per client. Fetches the client's campaigns +
 // pipelines on expand and writes overrides to the shared localStorage map that
 // Caalano360 reads for spend attribution.
+// A target is one number per stage, but it can be thought of two ways - "we
+// want 40 site visits" or "a site visit should cost $150" - and with a monthly
+// budget in hand the two are the same statement. So both columns are offered
+// and typing in either fills the other: volume -> cost = spend / volume, cost ->
+// volume = spend / cost. The side that was TYPED is what is stored as the
+// intent; the other is recomputed from the budget whenever the budget changes,
+// so raising the budget lifts every volume target set by cost, and every cost
+// target set by volume gets cheaper - which is what a person changing the
+// budget means.
+const KPI_LEADS_KEY = '*leads'   // the top of the funnel, which is not a pipeline stage
 function KpiEditor({ clientId, embedded, nonce }) {
   const [open, setOpen] = useState(!!embedded)
   const [st, setSt] = useState({ status: 'idle', blend: null })
@@ -13134,10 +13144,52 @@ function KpiEditor({ clientId, embedded, nonce }) {
   useEffect(() => { if (multi && !pid) setPid(pipes[0].id) }, [multi]) // eslint-disable-line
   useEffect(() => { setK(loadKpis(clientId, pid || undefined)) }, [pid, clientId])
   const set = (patch) => setK((p) => { const nx = { ...p, ...patch }; saveKpis(clientId, nx, pid || undefined); return nx })
-  const setStage = (name, val) => setK((p) => { const stages = { ...(p.stages || {}) }; if (val === '') delete stages[name]; else stages[name] = Number(val); const nx = { ...p, stages }; saveKpis(clientId, nx, pid || undefined); return nx })
-  const selPipe = pipes.find((p) => p.id === pid)
-  const stageNames = multi ? ((selPipe && selPipe.stages) || []).map((s) => s.name) : [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))]
+  const selPipe = multi ? pipes.find((p) => p.id === pid) : pipes[0]
+  const stageRows = selPipe ? (selPipe.stages || []) : [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))].map((name) => ({ name }))
   const numOr = (v) => (v == null || v === '' ? '' : v)
+  const spend = Number(k.monthlySpend) > 0 ? Number(k.monthlySpend) : null
+  // Last 30 days, for the "actual" column: what the budget actually bought.
+  const actualSpend = st.blend && st.blend.paid ? Number(st.blend.paid.adSpend) || 0 : 0
+  const actualLeads = selPipe ? ((selPipe.crm && selPipe.crm.leads) || 0) : ((st.blend && st.blend.crm && st.blend.crm.leads) || 0)
+  const actualOf = (key) => (key === KPI_LEADS_KEY ? actualLeads : ((stageRows.find((r) => r.name === key) || {}).count || 0))
+
+  // One edit updates both columns. `basis` records which side was typed.
+  const setTarget = (key, side, raw) => setK((p) => {
+    const stages = { ...(p.stages || {}) }, stageCost = { ...(p.stageCost || {}) }, stageBasis = { ...(p.stageBasis || {}) }
+    if (raw === '') { delete stages[key]; delete stageCost[key]; delete stageBasis[key] }
+    else {
+      const v = Number(raw)
+      if (side === 'volume') { stages[key] = v; stageBasis[key] = 'volume'; if (spend && v > 0) stageCost[key] = Math.round(spend / v); else delete stageCost[key] }
+      else { stageCost[key] = v; stageBasis[key] = 'cost'; if (spend && v > 0) stages[key] = Math.round(spend / v); else delete stages[key] }
+    }
+    const nx = { ...p, stages, stageCost, stageBasis }; saveKpis(clientId, nx, pid || undefined); return nx
+  })
+  // A new budget re-derives every stage's non-typed side from the typed one.
+  const setSpend = (raw) => setK((p) => {
+    const sp = raw === '' ? undefined : Number(raw)
+    const stages = { ...(p.stages || {}) }, stageCost = { ...(p.stageCost || {}) }, stageBasis = p.stageBasis || {}
+    for (const key of new Set([...Object.keys(stages), ...Object.keys(stageCost)])) {
+      const basis = stageBasis[key] || (stages[key] != null ? 'volume' : 'cost')
+      if (!sp) { if (basis === 'volume') delete stageCost[key]; else delete stages[key]; continue }
+      if (basis === 'volume' && stages[key] > 0) stageCost[key] = Math.round(sp / stages[key])
+      if (basis === 'cost' && stageCost[key] > 0) stages[key] = Math.round(sp / stageCost[key])
+    }
+    const nx = { ...p, monthlySpend: sp, stages, stageCost }; saveKpis(clientId, nx, pid || undefined); return nx
+  })
+  const money0 = (v) => (v == null || !isFinite(v) ? '-' : `$${fmtNumber(Math.round(v))}`)
+  const row = (key, label) => {
+    const vol = k.stages && k.stages[key], cost = k.stageCost && k.stageCost[key]
+    const basis = k.stageBasis && k.stageBasis[key]
+    const act = actualOf(key)
+    return (
+      <tr key={key} className={key === KPI_LEADS_KEY ? 'kpi-row-leads' : ''}>
+        <td className="lft" title={label}>{label}</td>
+        <td className="kpi-act">{st.status === 'ok' ? <>{fmtNumber(act)}<small>{act && actualSpend ? ` · ${money0(actualSpend / act)} ea` : ''}</small></> : <span className="lrv-z">…</span>}</td>
+        <td><input type="number" min="0" className={basis === 'cost' ? 'kpi-derived' : ''} value={numOr(vol)} onChange={(e) => setTarget(key, 'volume', e.target.value)} placeholder={spend && cost ? String(Math.round(spend / cost)) : '#'} title={basis === 'cost' ? 'Worked out from the cost target and the monthly budget' : 'Target volume this month'} /></td>
+        <td><input type="number" min="0" className={basis === 'volume' ? 'kpi-derived' : ''} value={numOr(cost)} onChange={(e) => setTarget(key, 'cost', e.target.value)} placeholder={spend && vol ? String(Math.round(spend / vol)) : '$'} title={basis === 'volume' ? 'Worked out from the volume target and the monthly budget' : 'Target cost per one of these'} disabled={!spend && basis !== 'cost'} /></td>
+      </tr>
+    )
+  }
   const body = (
     <div className={embedded ? '' : 'linker-body'}>
       {multi && <div className="kpi-pipe-sel">
@@ -13145,25 +13197,46 @@ function KpiEditor({ clientId, embedded, nonce }) {
         <select value={pid} onChange={(e) => setPid(e.target.value)}>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
         <span className="cap">Targets are set per pipeline for this client.</span>
       </div>}
-      <div className="kpi-inputs">
-        <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-        <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-        <label>Avg client LTV<input type="number" min="0" value={numOr(k.clientLtv)} onChange={(e) => set({ clientLtv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ lifetime value" /></label>
+
+      <div className="kpi-block">
+        <div className="kpi-block-h">Monthly budget <span className="sub">· the number every cost and volume target below is worked out from</span></div>
+        <div className="kpi-spend">
+          <span className="kpi-spend-cur">$</span>
+          <input type="number" min="0" value={numOr(k.monthlySpend)} onChange={(e) => setSpend(e.target.value)} placeholder={actualSpend ? String(Math.round(actualSpend)) : 'per month'} />
+          <span className="cap">{actualSpend ? `Last 30 days: ${money0(actualSpend)} across paid channels.` : 'No paid spend recorded in the last 30 days.'}</span>
+        </div>
       </div>
-      <div className="cap" style={{ marginTop: 2 }}>LTV powers the Caalano360 unit-economics header (LTV:CAC, profit per client). Leave blank to use average deal value.</div>
-      <div className="cap" style={{ marginTop: 8, fontWeight: 700 }}>Weekly Traffic Light targets</div>
-      <div className="kpi-inputs">
-        <label>Weekly spend<input type="number" min="0" value={numOr(k.wkSpend)} onChange={(e) => set({ wkSpend: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ / week" /></label>
-        <label>All-leads CPL<input type="number" min="0" value={numOr(k.cpl)} onChange={(e) => set({ cpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-        <label>Cost / booked appt<input type="number" min="0" value={numOr(k.cpba)} onChange={(e) => set({ cpba: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-        <label>Cost / won (CPA)<input type="number" min="0" value={numOr(k.cpa)} onChange={(e) => set({ cpa: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
-        <label>Booking rate %<input type="number" min="0" value={numOr(k.bookingRate)} onChange={(e) => set({ bookingRate: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="% target" /></label>
+
+      <div className="kpi-block">
+        <div className="kpi-block-h">Funnel targets{multi && selPipe ? ` · ${selPipe.name}` : ''} <span className="sub">· type a volume or a cost - the other is worked out for you</span></div>
+        {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
+          : stageRows.length || st.status === 'ok' ? (
+            <div className="table-wrap"><table className="mini-tbl appt-tbl kpi-tbl">
+              <thead><tr><th className="lft">Stage</th><th title="Reached in the last 30 days, and what each one cost at last month's spend">Last 30d</th><th title="How many you want to reach this stage per month">Target volume</th><th title="What you want each one to cost">Target cost</th></tr></thead>
+              <tbody>
+                {row(KPI_LEADS_KEY, 'Leads')}
+                {stageRows.map((r) => row(r.name, r.name))}
+              </tbody>
+            </table></div>
+          ) : st.status === 'err' ? <p className="cap">Couldn’t load the pipeline just now - targets can still be typed and will apply once it loads.</p> : null}
+        {!spend ? <p className="cap kpi-hint">Enter a monthly budget above and the cost column comes alive: a volume target will show what each one must cost, and a cost target will show how many that buys.</p> : null}
+        <p className="cap">Volume is how many leads reach a stage in a month. A cost target is the budget divided by that volume - so it is a cost per lead that <i>reaches</i> the stage, not a cost per action at it.</p>
       </div>
-      {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
-        : stageNames.length ? <>
-          <div className="cap" style={{ marginTop: 8, fontWeight: 700 }}>Target leads at each pipeline stage{multi && selPipe ? ` · ${selPipe.name}` : ''}</div>
-          <div className="kpi-stages">{stageNames.map((n) => <label className="kpi-stage" key={n}><span title={n}>{n}</span><input type="number" min="0" value={numOr(k.stages && k.stages[n])} onChange={(e) => setStage(n, e.target.value)} placeholder="-" /></label>)}</div>
-        </> : st.status === 'ok' ? <p className="cap">No Caalano Systems pipeline stages found.</p> : null}
+
+      <div className="kpi-block">
+        <div className="kpi-block-h">Efficiency targets <span className="sub">· used by the scorecards and the Weekly Traffic Light</span></div>
+        <div className="kpi-inputs">
+          <label>Meta cost / lead<input type="number" min="0" value={numOr(k.metaCpl)} onChange={(e) => set({ metaCpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Google cost / conv<input type="number" min="0" value={numOr(k.googleCostConv)} onChange={(e) => set({ googleCostConv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>All-leads CPL<input type="number" min="0" value={numOr(k.cpl)} onChange={(e) => set({ cpl: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Cost / booked appt<input type="number" min="0" value={numOr(k.cpba)} onChange={(e) => set({ cpba: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Cost / won (CPA)<input type="number" min="0" value={numOr(k.cpa)} onChange={(e) => set({ cpa: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ target" /></label>
+          <label>Booking rate %<input type="number" min="0" value={numOr(k.bookingRate)} onChange={(e) => set({ bookingRate: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="% target" /></label>
+          <label>Weekly spend<input type="number" min="0" value={numOr(k.wkSpend)} onChange={(e) => set({ wkSpend: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder={spend ? String(Math.round(spend / 4.345)) : '$ per week'} /></label>
+          <label>Avg client LTV<input type="number" min="0" value={numOr(k.clientLtv)} onChange={(e) => set({ clientLtv: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="$ lifetime" /></label>
+        </div>
+        <div className="cap">LTV powers the Caalano360 unit-economics header (LTV:CAC, profit per client). Leave blank to use average deal value.</div>
+      </div>
     </div>
   )
   if (embedded) return body
@@ -14885,19 +14958,35 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   // The brand-profile editor ("Overview") is hidden from the tab strip. Its
   // component stays, since the Creative Cockpit still reads what was filled in;
   // it just no longer earns a tab nobody opened.
-  const tabs = [['summary', 'Summary']]
-  if (c.ghl) tabs.push(['keyevents', 'Key events'])
-  if (c.meta) tabs.push(['metaconv', 'Meta conversions'])
-  if (canLink) tabs.push(['links', 'Campaign links'])
-  if (canLink) tabs.push(['aliases', 'UTM aliases'])
-  if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets'])
-  if (c.ghl) tabs.push(['forms', 'Forms'])
-  if (c.ghl) tabs.push(['geo', 'Catchment'])
-  if (c.ghl) tabs.push(['qualstage', 'Qualified lead'])
-  if (c.ghl) tabs.push(['clinic', 'Clinic'])
-  tabs.push(['optlog', 'Optimisation Log'])
-  if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics'])
-  const [tab, setTab] = useState('summary')
+  // Grouped, so eleven destinations read as four ideas rather than a strip
+  // that wraps onto two lines. Each entry: [key, label, group, hint].
+  const tabs = [['summary', 'Summary', 'Account', 'Name, linked accounts, hours, logo']]
+  if (c.ghl) tabs.push(['keyevents', 'Key events', 'Tracking', 'The stages and calendars that count as progress'])
+  if (c.meta) tabs.push(['metaconv', 'Meta conversions', 'Tracking', 'Which Meta result counts as a lead'])
+  if (canLink) tabs.push(['links', 'Campaign links', 'Tracking', 'Campaign → pipeline'])
+  if (canLink) tabs.push(['aliases', 'UTM aliases', 'Tracking', 'Renamed campaigns, ad sets, creatives'])
+  if (c.ghl) tabs.push(['qualstage', 'Qualified lead', 'Tracking', 'The stage that means qualified'])
+  if (c.ghl) tabs.push(['forms', 'Forms', 'Tracking', 'Form → pipeline, and notes'])
+  if (c.meta || c.google || c.ghl) tabs.push(['kpis', 'KPI targets', 'Targets', 'Budget, funnel and efficiency targets'])
+  if (c.ghl) tabs.push(['geo', 'Catchment', 'Targets', 'Where the leads should come from'])
+  if (c.ghl) tabs.push(['clinic', 'Clinic', 'Operations', 'Practitioners and appointment types'])
+  tabs.push(['optlog', 'Optimisation Log', 'Operations', 'The Google Sheet of changes made'])
+  if (c.ghl && (c.meta || c.google)) tabs.push(['diagnostics', 'Diagnostics', 'Operations', 'Is tracking actually working'])
+  const groups = [...new Set(tabs.map((t) => t[2]))]
+  // The last tab opened for this client is where it reopens: someone setting
+  // KPI targets across ten clients should not land on Summary ten times.
+  const tabKey = `caalano_set_tab:${c.id}`
+  const [tab, setTabRaw] = useState(() => { try { const t = localStorage.getItem(tabKey); return t && tabs.some((x) => x[0] === t) ? t : 'summary' } catch { return 'summary' } })
+  const setTab = (t) => { setTabRaw(t); try { localStorage.setItem(tabKey, t) } catch { /* private mode */ } }
+  // ↑ / ↓ move through the list, so the whole of a client's setup can be
+  // walked without reaching for the mouse.
+  const onNavKey = (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    e.preventDefault()
+    const i = tabs.findIndex((x) => x[0] === tab)
+    const n = tabs[(i + (e.key === 'ArrowDown' ? 1 : tabs.length - 1)) % tabs.length]
+    if (n) setTab(n[0])
+  }
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal" onClick={(e) => e.stopPropagation()}>
@@ -14908,7 +14997,22 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
             <button className="icon-btn" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="set-tabs">{tabs.map(([k, lbl]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{lbl}</button>)}</div>
+        <div className="set-split">
+          <nav className="set-nav" aria-label="Client settings" onKeyDown={onNavKey}>
+            {groups.map((g) => (
+              <div className="set-nav-grp" key={g}>
+                <div className="set-nav-glab">{g}</div>
+                {tabs.filter((t) => t[2] === g).map(([k, lbl, , hint]) => (
+                  <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} title={hint}>
+                    <span className="set-nav-l">{lbl}</span><span className="set-nav-h">{hint}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <select className="set-nav-select" value={tab} onChange={(e) => setTab(e.target.value)} aria-label="Client settings section">
+            {groups.map((g) => <optgroup key={g} label={g}>{tabs.filter((t) => t[2] === g).map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}</optgroup>)}
+          </select>
         <div className="m-body set-tabbody">
           {tab === 'summary' && <div className="set-summary">
             <div className="set-details">
@@ -14948,6 +15052,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           {tab === 'qualstage' && <div className="set-tabpane"><div className="set-sec-t">Qualified lead - stage per pipeline</div><QualStageEditor clientId={c.id} nonce={sig} /></div>}
           {tab === 'optlog' && <div className="set-tabpane"><div className="set-sec-t">Optimisation Log - Google Sheet</div><OptLogSettings clientId={c.id} /></div>}
           {tab === 'diagnostics' && <div className="set-tabpane"><ClientTrackingDiagnostics clientId={c.id} currency={currency} embedded nonce={sig} /></div>}
+        </div>
         </div>
       </div>
     </div>

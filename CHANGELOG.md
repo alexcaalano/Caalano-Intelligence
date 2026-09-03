@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.454.0 - 2026-09-03 · `PENDING` - One build per client open; bizloc cached; KPI table without history
+
+**ccdrill reuses what health built.** Opening a client fires `health` and
+`ccdrill` together, and each rebuilt the same blend from scratch - two
+eight-second builds for one payload. `ccdrill` only needs health's per-channel
+spend and paid leads (which do not depend on the won basis), so it now takes the
+health payload the other request just cached, or the cached blend, and only
+builds as a last resort.
+
+**bizloc is cached** (it was the one per-client read with no cache and no
+retry - 19 of the 21 outright failures in the log) and retried once on a 5xx.
+
+**KPI targets: no history in the table.** The "Last 30d" column is gone. It
+read each stage's current count rather than how many reached it, so "Client
+Won 17" could sit under "Booked 8" and the cost-each figures were nonsense. The
+budget field no longer suggests last month's spend either. Targets are targets.
+
+Also: the Key events header row no longer overlaps on single-pipeline clients,
+and deleting a saved scenario asks first - it is shared with the team.
+
 ## v3.453.0 - 2026-09-03 · `9665603` - Scenario builder: the funnel decides the win; margins and lifetime value
 
 **The last stage is the win.** The separate "win rate of leads" is gone from

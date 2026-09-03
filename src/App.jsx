@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.453.0'
+const APP_VERSION = '3.454.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2495,6 +2495,8 @@ function FcBuilder({ currency, seed, onSeeded }) {
   const saved = loadScenarios()
   const [sc, setSc] = useState(() => seed || saved[0] || FC_BLANK())
   const [dirty, setDirty] = useState(!!seed)
+  const [confirmDel, setConfirmDel] = useState(false)
+  useEffect(() => { setConfirmDel(false) }, [sc.id])
   useEffect(() => { if (seed) { setSc(seed); setDirty(true); onSeeded && onSeeded() } }, [seed]) // eslint-disable-line
   const money = (v) => fmtCurrency(v, currency)
   const up = (patch) => { setSc((p) => ({ ...p, ...patch })); setDirty(true) }
@@ -2515,7 +2517,9 @@ function FcBuilder({ currency, seed, onSeeded }) {
           </select></label>
         <input className="inp fc-name-in" value={sc.name} onChange={(e) => up({ name: e.target.value })} placeholder="Scenario name" />
         <button className="set-details-save" disabled={!dirty} onClick={() => { saveScenario(sc); setDirty(false) }}>{dirty ? 'Save scenario' : '✓ Saved'}</button>
-        {saved.some((s) => s.id === sc.id) ? <button className="btn-ghost sm" onClick={() => { deleteScenario(sc.id); setSc(saved.find((s) => s.id !== sc.id) || FC_BLANK()); setDirty(false) }}>Delete</button> : null}
+        {saved.some((s) => s.id === sc.id) ? (confirmDel
+          ? <span className="fc-del"><span className="cap">Delete “{sc.name}” for everyone?</span><button className="btn-danger sm" onClick={() => { deleteScenario(sc.id); setSc(saved.find((s) => s.id !== sc.id) || FC_BLANK()); setDirty(false); setConfirmDel(false) }}>Yes, delete</button><button className="btn-ghost sm" onClick={() => setConfirmDel(false)}>Keep</button></span>
+          : <button className="btn-ghost sm" onClick={() => setConfirmDel(true)} title="Remove this saved scenario for the whole team">Delete</button>) : null}
         <span className="cap">Saved scenarios are shared with the team.</span>
       </div>
       <FcHeadline fc={fc} model={model} money={money} />
@@ -8161,7 +8165,7 @@ function GeoSettings({ clientId }) {
   useEffect(() => { setG(loadGeo(clientId)) }, [clientId])
   useEffect(() => {
     let a = true
-    apiJson(`/.netlify/functions/windsor?scope=bizloc&client=${encodeURIComponent(clientId)}`, { timeoutMs: 15000, tries: 1 })
+    apiJson(`/.netlify/functions/windsor?scope=bizloc&client=${encodeURIComponent(clientId)}`, { timeoutMs: 15000, tries: 2 })
       .then((j) => { if (a) setBiz({ status: j && !j.error ? 'ok' : 'err', data: j }) })
       .catch(() => { if (a) setBiz({ status: 'err' }) })
     return () => { a = false }
@@ -9945,8 +9949,8 @@ function LeadMap({ locs, tall, clientId, currency, pipes, pipe }) {
   useEffect(() => {
     if (!geoOn || !clientId || geo.origin !== 'business') return   // pin / typed place need no CRM read
     let a = true
-    fetch(`/.netlify/functions/windsor?scope=bizloc&client=${encodeURIComponent(clientId)}`)
-      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (a && j && !j.error) setBiz(j) }).catch(() => {})
+    apiJson(`/.netlify/functions/windsor?scope=bizloc&client=${encodeURIComponent(clientId)}`, { timeoutMs: 15000, tries: 2 })
+      .then((j) => { if (a && j && !j.error) setBiz(j) }).catch(() => {})
     return () => { a = false }
   }, [geoOn, clientId, geo.origin])
 
@@ -13689,12 +13693,7 @@ function KpiEditor({ clientId, embedded, nonce }) {
   const share = multi ? shareOf(selPipe) : 1
   const pipeOverride = multi && Number(k.pipeBudget) > 0 ? Number(k.pipeBudget) : null
   const spend = multi ? (pipeOverride || (clientBudget ? Math.round(clientBudget * share) : null)) : clientBudget
-  // Last 30 days, for the "actual" column: what the budget actually bought -
-  // this pipeline's share of it, not the whole account's.
-  const actualSpendAll = st.blend && st.blend.paid ? Number(st.blend.paid.adSpend) || 0 : 0
-  const actualSpend = actualSpendAll * share
   const actualLeads = selPipe ? ((selPipe.crm && selPipe.crm.leads) || 0) : totalLeads30
-  const actualOf = (key) => (key === KPI_LEADS_KEY ? actualLeads : ((stageRows.find((r) => r.name === key) || {}).count || 0))
   // Which stages are key events, so they stand out in the table: those are the
   // ones the rest of the app reports on, and the targets that matter most.
   const keNames = useMemo(() => {
@@ -13749,11 +13748,9 @@ function KpiEditor({ clientId, embedded, nonce }) {
   const row = (key, label) => {
     const vol = k.stages && k.stages[key], cost = k.stageCost && k.stageCost[key]
     const basis = k.stageBasis && k.stageBasis[key]
-    const act = actualOf(key)
     return (
       <tr key={key} className={`${key === KPI_LEADS_KEY ? 'kpi-row-leads' : ''}${keNames.has(key) ? ' kpi-row-ke' : ''}`}>
         <td className="lft" title={keNames.has(key) ? `${label} - a key event` : label}>{label}{keNames.has(key) ? <span className="kpi-ke-tag" title="A key event: this stage is reported on throughout the app">key event</span> : null}</td>
-        <td className="kpi-act">{st.status === 'ok' ? <>{fmtNumber(act)}<small>{act && actualSpend ? ` · ${money0(actualSpend / act)} ea` : ''}</small></> : <span className="lrv-z">…</span>}</td>
         <td><input type="number" min="0" className={basis === 'cost' ? 'kpi-derived' : ''} value={numOr(vol)} onChange={(e) => setTarget(key, 'volume', e.target.value)} placeholder={spend && cost ? String(Math.round(spend / cost)) : '#'} title={basis === 'cost' ? 'Worked out from the cost target and the monthly budget' : 'Target volume this month'} /></td>
         <td><input type="number" min="0" className={basis === 'volume' ? 'kpi-derived' : ''} value={numOr(cost)} onChange={(e) => setTarget(key, 'cost', e.target.value)} placeholder={spend && vol ? String(Math.round(spend / vol)) : '$'} title={basis === 'volume' ? 'Worked out from the volume target and the monthly budget' : 'Target cost per one of these'} disabled={!spend && basis !== 'cost'} /></td>
       </tr>
@@ -13771,8 +13768,8 @@ function KpiEditor({ clientId, embedded, nonce }) {
         <div className="kpi-block-h">Monthly budget <span className="sub">· the number every cost and volume target below is worked out from</span></div>
         <div className="kpi-spend">
           <span className="kpi-spend-cur">$</span>
-          <input type="number" min="0" value={numOr(clientAll.monthlySpend)} onChange={(e) => setSpend(e.target.value)} placeholder={actualSpendAll ? String(Math.round(actualSpendAll)) : 'per month'} />
-          <span className="cap">{actualSpendAll ? `Last 30 days: ${money0(actualSpendAll)} across paid channels${multi ? ', all pipelines' : ''}.` : 'No paid spend recorded in the last 30 days.'}</span>
+          <input type="number" min="0" value={numOr(clientAll.monthlySpend)} onChange={(e) => setSpend(e.target.value)} placeholder="per month" />
+          <span className="cap">The paid budget for the month{multi ? ', across every pipeline' : ''}.</span>
         </div>
         {multi && selPipe ? (
           <div className="kpi-share">
@@ -13792,7 +13789,7 @@ function KpiEditor({ clientId, embedded, nonce }) {
         {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
           : stageRows.length || st.status === 'ok' ? (
             <div className="table-wrap"><table className="mini-tbl appt-tbl kpi-tbl">
-              <thead><tr><th className="lft">Stage</th><th title="Reached in the last 30 days, and what each one cost at last month's spend">Last 30d</th><th title="How many you want to reach this stage per month">Target volume</th><th title="What you want each one to cost">Target cost</th></tr></thead>
+              <thead><tr><th className="lft">Stage</th><th title="How many you want to reach this stage per month">Target volume</th><th title="What you want each one to cost">Target cost</th></tr></thead>
               <tbody>
                 {row(KPI_LEADS_KEY, 'Leads')}
                 {stageRows.map((r) => row(r.name, r.name))}

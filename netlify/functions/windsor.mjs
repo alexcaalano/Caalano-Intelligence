@@ -2653,7 +2653,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -3994,9 +3994,25 @@ export default async (req) => {
       // The id→name maps hit Windsor, not GoHighLevel, and run alongside the two
       // builds, so resolving the Lost Reasons dimensions costs no extra latency
       // and nothing against the CRM rate limit.
+      // Opening a client fires `health` and `ccdrill` together, and both built the
+      // same blend from scratch - two 8-second builds for one payload. ccdrill only
+      // needs health's `channels` (spend and paid leads per platform, which do not
+      // depend on the won basis), so it takes the health payload the other request
+      // has just cached, or failing that the cached blend, and builds only as a
+      // last resort.
+      const healthFromCache = async () => {
+        if (!from || !to) return null
+        for (const wb of ['closed', 'created']) {
+          const hit = await readResultCache(cacheKeyFrom(new URL(`https://x/?client=${encodeURIComponent(client)}&scope=health&from=${from}&to=${to}&wonBasis=${wb}`))).catch(() => null)
+          if (hit && hit.payload && hit.payload.channels && (Date.now() - hit.at) < STALE_ON_ERROR_MS) return hit.payload
+        }
+        let blend = null
+        try { const hit = await readResultCache(cacheKeyFrom(new URL(`https://x/?client=${encodeURIComponent(client)}&channel=blend&from=${from}&to=${to}`))); if (hit && hit.payload && hit.payload.blend && (Date.now() - hit.at) < STALE_ON_ERROR_MS) blend = hit.payload.blend } catch { /* build */ }
+        return buildHealth(cc, from, to, preset, key, undefined, 'created', blend ? { blend } : {})
+      }
       const [drill, health, idMaps] = await Promise.all([
         buildCcDrill(cc.ghl, from, to, channel),
-        buildHealth(cc, from, to, preset, key).catch(() => null),
+        healthFromCache().catch(() => null),
         (cc.meta || cc.google) ? fetchAdIdNameMaps(cc, from, to, preset, key).catch(() => null) : Promise.resolve(null),
       ])
       if (idMaps) resolveLostAttribution(drill, idMaps)

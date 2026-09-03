@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.445.0 - 2026-09-03 · `PENDING` - Warmers that finish, and stale-while-revalidate
+## v3.445.0 - 2026-09-03 · `4f16797` - Warmers that finish, and stale-while-revalidate
 
 The reliability log for 30 Aug - 3 Sep held 379 slow builds in five days, median
 8-13 seconds, and every one of them was a cache miss - a payload rebuilt on a

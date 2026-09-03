@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.456.0 - 2026-09-03 · `PENDING` - Backups of everything that lives only in Blobs
+## v3.456.0 - 2026-09-03 · `47d1b0e` - Backups of everything that lives only in Blobs
 
 The daily backup covered one store (settings). It now covers the eleven that
 matter - configuration, users, terms acceptances, health / monthly / social /

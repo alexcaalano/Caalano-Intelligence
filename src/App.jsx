@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.445.0'
+const APP_VERSION = '3.446.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -14882,7 +14882,10 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   // Cache-buster tied to the linked accounts, so relinking a client bypasses
   // the 10-min CDN cache on the blend/attribution/calendar responses.
   const sig = normId(c.ghl) + '-' + normId(c.meta) + '-' + normId(c.google)
-  const tabs = [['summary', 'Summary'], ['profile', 'Overview']]
+  // The brand-profile editor ("Overview") is hidden from the tab strip. Its
+  // component stays, since the Creative Cockpit still reads what was filled in;
+  // it just no longer earns a tab nobody opened.
+  const tabs = [['summary', 'Summary']]
   if (c.ghl) tabs.push(['keyevents', 'Key events'])
   if (c.meta) tabs.push(['metaconv', 'Meta conversions'])
   if (canLink) tabs.push(['links', 'Campaign links'])
@@ -14934,7 +14937,6 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
               </div>
             )}
           </div>}
-          {tab === 'profile' && <div className="set-tabpane"><div className="set-sec-t">Overview - client brand profile</div><ClientProfileEditor clientId={c.id} /></div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'geo' && <GeoSettings clientId={c.id} />}
           {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
@@ -16448,7 +16450,7 @@ function CreativeCuratorPage({ clients }) {
         {scope === 'client' && <select className="cc-client-sel" value={clientId || ''} onChange={(e) => setClientId(e.target.value)}>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
         <span className="cap">{scope === 'research' ? 'General ideas for a service / lead-gen business. Board saved under Research.'
           : clientId && profileFilled(clientId) ? `AI uses this client's brand profile (${profileFilled(clientId)}/${PROFILE_FIELDS.length} sections filled).`
-            : 'Tip: fill the client’s brand profile in Settings → Overview so AI ideas fit the brand.'}</span>
+            : 'Ideas are general until a brand profile is filled in for this client.'}</span>
       </div>
       <div className="card cc-builder">
         <div className="cc-row"><span className="cc-row-l">Format</span><CcChips options={CC_FORMATS} value={format} onChange={setFormat} /></div>

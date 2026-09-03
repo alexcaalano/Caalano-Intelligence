@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.446.0 - 2026-09-03 · `PENDING` - Settings: Overview tab removed
+
+The per-client **Overview** (brand profile) tab is gone from Settings. The editor
+component is kept - the Creative Cockpit still reads any profile already filled
+in - but the tab itself no longer sits first in the strip. The cockpit's tip that
+pointed people to Settings → Overview now just says ideas are general until a
+profile exists.
+
 ## v3.445.0 - 2026-09-03 · `4f16797` - Warmers that finish, and stale-while-revalidate
 
 The reliability log for 30 Aug - 3 Sep held 379 slow builds in five days, median

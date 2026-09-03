@@ -4426,3 +4426,17 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
   .fc-build { grid-template-columns: 1fr; }
   .fc-row { grid-template-columns: 120px minmax(0, 1fr) 52px 76px; }
 }
+
+/* --- Help bubbles ----------------------------------------------------------- */
+.help-a { border-bottom: none; display: inline-flex; align-items: center; gap: 6px; cursor: help; outline: none; }
+.help-a:focus-visible .help-q { box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 35%, transparent); }
+.help-q { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--border-2); color: var(--muted); font-size: 11px; font-weight: 800; line-height: 1; flex: none; }
+.help-a:hover .help-q { color: #fff; background: var(--brand); border-color: var(--brand); }
+.help-l { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.help-note { margin: 4px 0 10px; }
+.help-pop { max-width: 380px; pointer-events: none; }
+.help-txt { font-size: 12px; line-height: 1.5; color: var(--text); white-space: normal; }
+.help-txt b { color: var(--text); }
+.help-txt code { font-size: 11px; }
+/* Forecaster: the non-paid segment must read against the empty track. */
+.fc-track .fc-bar { background: color-mix(in srgb, var(--border) 45%, transparent); }

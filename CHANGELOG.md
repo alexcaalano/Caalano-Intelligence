@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.451.0 - 2026-09-03 · `PENDING` - Settings: explanations move behind "?" bubbles
+
+Every settings pane used to open with a paragraph or three explaining itself,
+so a pane read as an essay with some inputs in it. Those explanations now sit
+behind a small **?** - beside a heading, or as a "How this works" chip where a
+paragraph used to be - and appear, formatted, on hover or keyboard focus. The
+words are unchanged; they are just no longer in the way. Twenty-two of them,
+across Timing, Key events, Campaign links, UTM aliases, Qualified lead, KPI
+targets, Catchment, Clinic, Optimisation Log, Creative fatigue, Organic KPIs and
+Daily performance.
+
+The hover popups are keyboard-reachable now (they were mouse-only), which also
+applies to the metric popups elsewhere in the app.
+
+Forecaster: the non-paid segment of each bar is a darker grey, so it reads
+against the empty track in light mode.
+
 ## v3.450.0 - 2026-09-03 · `baef6c4` - Funnel Forecaster
 
 A new left-hand item under Weekly Traffic Light, for staff. What a month of

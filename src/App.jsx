@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.450.0'
+const APP_VERSION = '3.451.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -937,7 +937,7 @@ function HoverPop({ children, className = '', render, style }) {
     })
   }
   return (
-    <span className={`hp-anchor ${className}`} style={style} ref={ref} onMouseEnter={show} onMouseMove={pos ? undefined : show} onMouseLeave={() => setPos(null)}>
+    <span className={`hp-anchor ${className}`} style={style} ref={ref} onMouseEnter={show} onMouseMove={pos ? undefined : show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)} tabIndex={0}>
       {children}
       {pos && (
         <span className="hp-fixed" style={{ left: pos.x, [pos.below ? 'top' : 'bottom']: pos.y }}>
@@ -947,6 +947,21 @@ function HoverPop({ children, className = '', render, style }) {
     </span>
   )
 }
+// A "?" that explains itself on hover or focus. The explanation used to sit on
+// the page as a paragraph above every control, so a settings pane read as an
+// essay with some inputs in it. Now the control is what you see; the reasoning
+// is a hover away, formatted, and never in the way.
+//   <Help>…</Help>            just the ? - beside a label or heading
+//   <HelpNote>…</HelpNote>    ? plus a short "How this works" label - in place of
+//                             a paragraph, where there is no label to sit beside
+function Help({ children, label, title, className = '' }) {
+  return (
+    <HoverPop className={`help-a ${className}`} render={() => <span className="hp-body help-pop">{title ? <span className="hp-t">{title}</span> : null}<span className="help-txt">{children}</span></span>}>
+      <span className="help-q" aria-label="Help">?</span>{label ? <span className="help-l">{label}</span> : null}
+    </HoverPop>
+  )
+}
+function HelpNote({ children, label = 'How this works', title }) { return <div className="help-note"><Help label={label} title={title}>{children}</Help></div> }
 // A signed % chip for the channel-breakdown popups (cur vs prev).
 function ChanDelta({ cur, prev, goodWhenDown = false }) {
   if (cur == null || prev == null || !prev) return null
@@ -2085,7 +2100,7 @@ function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, c
 // forecast here is "if next month behaves like the last three", never a promise,
 // and the page says so. It is staff-only for exactly that reason.
 // ---------------------------------------------------------------------------
-const FC_CHANNELS = [['meta', 'Meta', '#4f7cff'], ['google', 'Google', '#12b886'], ['other', 'Non-paid', '#c7cdda']]
+const FC_CHANNELS = [["meta", "Meta", "#4f7cff"], ["google", "Google", "#12b886"], ["other", "Non-paid", "#9aa5b4"]]
 const FC_MIN_CHANNEL_LEADS = 15   // below this a channel's own stage rates are noise; blended rates are used
 const FC_MIN_CPL_LEADS = 10       // below this the 30-day CPL is replaced by the 90-day one
 
@@ -8192,11 +8207,11 @@ function GeoSettings({ clientId }) {
   return (
     <div className="set-tabpane">
       <div className="set-sec-t">Catchment - how far people travel</div>
-      <Caveat extra="geo-intro">
+      <HelpNote>
         Only worth switching on for a business people come <b>to</b> - a clinic, a showroom, a studio. For work that
         happens at the customer&rsquo;s address, distance-from-base says nothing useful, so this stays off unless you turn
         it on.
-      </Caveat>
+      </HelpNote>
 
       <div className="geo-modes">
         {[['off', 'Off', 'No catchment reporting for this client.'],
@@ -8265,7 +8280,7 @@ function GeoSettings({ clientId }) {
           {pipelines && pipelines.length > 1 ? (
             <>
               <div className="set-sec-t" style={{ marginTop: 18 }}>Per pipeline <span className="cap">· optional</span></div>
-              <Caveat>Leave a pipeline blank to use the {g.radiusKm}km above. Set one where an offer genuinely has a different catchment - people will drive further for a big job than a routine one.</Caveat>
+              <HelpNote>Leave a pipeline blank to use the {g.radiusKm}km above. Set one where an offer genuinely has a different catchment - people will drive further for a big job than a routine one.</HelpNote>
               <div className="geo-pipes">{pipelines.map((p) => (
                 <div className="fld" key={p.id}>
                   <label className="cap">{p.name}</label>
@@ -8287,11 +8302,11 @@ function GeoSettings({ clientId }) {
       ) : null}
       {g.mode === 'areas' ? (
         <>
-          <Caveat>
+          <HelpNote>
             Zones are made of <b>postcodes and suburbs</b>, not circles - so a lead either is in a zone or isn&rsquo;t,
             with none of the guesswork a radius carries at the edges. Use the radius helper to fill a zone quickly, then
             edit it by hand.
-          </Caveat>
+          </HelpNote>
           {!geoDb ? <p className="cap">Loading place list…</p> : null}
           <div className="geo-areas">
             {(g.areas || []).map((a, i) => {
@@ -8432,19 +8447,19 @@ function ClinicSettings({ clientId, nonce }) {
   return (
     <div className="set-tabpane">
       <div className="set-sec-t">Clinic settings</div>
-      <p className="cap set-clinic-intro">
+      <HelpNote>
         A patient only becomes a patient once a <b>clinical</b> booking has seen them. Anything marked <b>Discovery / triage</b>
         stops counting as a visit - it no longer opens a cohort on the retention curve, no longer counts as a rebooking when
         the real first appointment follows, and no longer pulls the visit cadence down. Those bookings still appear in the
         book, because they still occupy real time.
-      </p>
-      {cals.roleBasis === 'type' ? <p className="cap set-clinic-rule">
+      </HelpNote>
+      {cals.roleBasis === 'type' ? <HelpNote>
         This location runs <b>Service Calendars</b>, so the default follows the calendar type: <b>services are clinical</b>,
         ordinary calendars are the discovery layer in front of them. Override any of it below.
-      </p> : cals.status === 'ok' ? <p className="cap set-clinic-rule">
+      </HelpNote> : cals.status === 'ok' ? <HelpNote>
         This location has <b>no Service Calendars</b>, so the default is guessed from each calendar&rsquo;s name - anything
         reading like a discovery, triage, screening or intro call is treated as triage. Set them explicitly to be sure.
-      </p> : null}
+      </HelpNote> : null}
       {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
         : !list.length ? <p className="cap">No calendars found for this client.</p>
           : (
@@ -8453,12 +8468,12 @@ function ClinicSettings({ clientId, nonce }) {
                 <span><b>{fmtNumber(clinical.length)}</b> clinical</span>
                 <span><b>{fmtNumber(triage.length)}</b> triage</span>
               </div>
-              {!clinical.length ? <Caveat extra="cl-warn" style={{ marginTop: 0, marginBottom: 10 }}>
+              {!clinical.length ? <HelpNote>
                 <b>No calendar here is clinical.</b> That&rsquo;s expected when the clinical diary lives in the practice-management
                 system and only the sales calls run through Caalano Systems - the patient counts, LTV and attendance still come
                 from the sync, but the retention curve, rebooking split and visit cadence need clinical bookings in a calendar,
                 so those stay empty until one exists here.
-              </Caveat> : null}
+              </HelpNote> : null}
               {[['service', 'Service calendars', 'What practitioners deliver - these are the clinical bookings'],
                 ['calendar', 'Calendars', 'Booking calendars - usually the discovery / intake layer']]
                 .map(([grp, gLabel, gHint]) => {
@@ -8496,11 +8511,11 @@ function ClinicSettings({ clientId, nonce }) {
                     </div>
                   )
                 })}
-              <Caveat style={{ marginTop: 12 }}>
+              <HelpNote>
                 Calendars marked <b>auto</b> are using the default rule above rather than a choice you&rsquo;ve made - an explicit choice always wins over the default, and
                 sticks even if the calendar is later renamed. Changes apply to the Clinic tab on its next load, and to
                 tonight&rsquo;s snapshot.
-              </Caveat>
+              </HelpNote>
             </>
           )}
     </div>
@@ -13111,7 +13126,7 @@ function OptLogSettings({ clientId }) {
   }
   return (
     <div className="optlog-set">
-      <p className="cap" style={{ marginTop: 0 }}>Paste this client's Optimisation Log Google Sheet link. The sheet must be shared <b>Anyone with the link → Viewer</b>. The client's <b>Optimisation Log</b> tab then reads it live (the first row is treated as column headers).</p>
+      <HelpNote>Paste this client's Optimisation Log Google Sheet link. The sheet must be shared <b>Anyone with the link → Viewer</b>. The client's <b>Optimisation Log</b> tab then reads it live (the first row is treated as column headers).</HelpNote>
       <div className="optlog-set-row">
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/…/edit#gid=0" />
         <button className="set-details-save" onClick={() => saveOptLog(clientId, url.trim())} disabled={url.trim() === loadOptLog(clientId)}>Save</button>
@@ -13709,8 +13724,8 @@ function KpiEditor({ clientId, embedded, nonce }) {
               </tbody>
             </table></div>
           ) : st.status === 'err' ? <p className="cap">Couldn’t load the pipeline just now - targets can still be typed and will apply once it loads.</p> : null}
-        {!spend ? <p className="cap kpi-hint">Enter a monthly budget above and the cost column comes alive: a volume target will show what each one must cost, and a cost target will show how many that buys.</p> : null}
-        <p className="cap">Volume is how many leads reach a stage in a month. A cost target is the budget divided by that volume - so it is a cost per lead that <i>reaches</i> the stage, not a cost per action at it.</p>
+        {!spend ? <p className="cap kpi-hint">Enter a monthly budget above to unlock the cost column.</p> : null}
+        <HelpNote>Volume is how many leads reach a stage in a month. A cost target is the budget divided by that volume - so it is a cost per lead that <i>reaches</i> the stage, not a cost per action at it.</HelpNote>
       </div>
 
       <div className="kpi-block">
@@ -13989,7 +14004,7 @@ function KeyEventsEditor({ clientId, embedded, nonce }) {
     <div className="linker">
       {!embedded && <button className="linker-toggle" onClick={() => setOpen((o) => !o)}>{open ? '▾' : '▸'} Key events{sel.length ? ` · ${sel.length}` : ''}</button>}
       {open && <div className={embedded ? '' : 'linker-body'}>
-        <p className="cap" style={{ marginTop: 0 }}>Tick the pipeline stages and booked calendars that count as progress for this client - they drive the Key Events funnel and cost-per-event everywhere. Link each ticked calendar to the stage it represents so the two count as one step (the stage catches leads that got there without a tracked booking); several calendars can share a stage. Leave everything empty for the default leads → booked → shown → won.</p>
+        <HelpNote>Tick the pipeline stages and booked calendars that count as progress for this client - they drive the Key Events funnel and cost-per-event everywhere. Link each ticked calendar to the stage it represents so the two count as one step (the stage catches leads that got there without a tracked booking); several calendars can share a stage. Leave everything empty for the default leads → booked → shown → won.</HelpNote>
         <div className="kev-group">
           <div className="kev-pipe">📅 Booked calendars <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· tick the ones that matter, then link each to its pipeline stage</span></div>
           {cals.status === 'loading' ? <Spinner label="Loading calendars…" />
@@ -14053,7 +14068,7 @@ function QualStageEditor({ clientId, nonce }) {
   const setStage = (pid, stage) => { const nx = { ...loadQualStage(clientId) }; if (stage) nx[pid] = stage; else delete nx[pid]; saveQualStage(clientId, nx) }
   return (
     <div className="linker">
-      <p className="cap" style={{ marginTop: 0 }}>Pick the stage that marks a lead <b>qualified</b> for each pipeline - typically just after the discovery call. A lead counts as qualified once it <b>reaches that stage or beyond</b>, and any won deal always counts. Leave a pipeline on “Not set” to keep Qualified off for it. <b>Qualified only appears on the dashboards when at least one pipeline has a stage set here.</b></p>
+      <HelpNote>Pick the stage that marks a lead <b>qualified</b> for each pipeline - typically just after the discovery call. A lead counts as qualified once it <b>reaches that stage or beyond</b>, and any won deal always counts. Leave a pipeline on “Not set” to keep Qualified off for it. <b>Qualified only appears on the dashboards when at least one pipeline has a stage set here.</b></HelpNote>
       {st.status === 'loading' ? <Spinner label="Loading pipeline stages…" />
         : pipes.length ? pipes.map((p) => (
           <div className="camp-row" key={p.id}>
@@ -14144,7 +14159,7 @@ function AliasEditor({ clientId, nonce }) {
   const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
   return (
     <div className="linker">
-      <p className="cap" style={{ marginTop: 0 }}>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with - so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown - <b>ignore a row and it keeps its own identity, untouched.</b> If a row is a legit standalone (e.g. a paused campaign) and not a rename, hit <b>Keep separate</b> to clear it from the list without merging anything.</p>
+      <HelpNote>When you rename a campaign, ad set or creative, historical CRM leads keep the <b>old</b> UTM they were stamped with - so their results don't roll into the new name. Link each old UTM below to the current name and they'll aggregate together everywhere (live views and reports). We match on the <b>ad number</b> (the <code>CD_62</code> / <code>CDa_72</code> code) shown as a badge: a green <b>✓ #CODE</b> means the numbers match (high confidence); an amber <b>✓ Approve</b> is a wording guess to verify first. Nothing is linked until you click approve or pick from the dropdown - <b>ignore a row and it keeps its own identity, untouched.</b> If a row is a legit standalone (e.g. a paused campaign) and not a rename, hit <b>Keep separate</b> to clear it from the list without merging anything.</HelpNote>
       {st.status === 'loading' ? <Spinner label="Scanning for unmatched UTMs (last 90 days)…" />
         : st.status === 'err' ? <p className="cap">Couldn't load campaign / CRM data for this client.</p>
         : !namesLoaded ? <div className="alias-warn"><b>⚠ Couldn't load the current campaign / ad-set / ad names</b> from the ad account, so we can't tell which UTMs are unmatched (everything would look unmatched). This is usually a temporary load issue on a large account.<button className="btn-ghost sm" style={{ marginLeft: 8 }} onClick={() => setSt({ status: 'idle' })}>↻ Retry</button></div>
@@ -14618,7 +14633,7 @@ function FatigueSettings() {
   return (
     <div className="card fat-set">
       <h3 style={{ marginTop: 0 }}>Creative fatigue thresholds</h3>
-      <p className="cap" style={{ marginTop: -4 }}>One shared set of rules, applied live to every active Meta client. A creative scores points for high frequency, a falling click-through rate, and a below-average quality ranking: <b>2+ points = High 🔥</b>, <b>1 point = Medium 👀</b>. Changes save to the server and apply on the next load.</p>
+      <HelpNote>One shared set of rules, applied live to every active Meta client. A creative scores points for high frequency, a falling click-through rate, and a below-average quality ranking: <b>2+ points = High 🔥</b>, <b>1 point = Medium 👀</b>. Changes save to the server and apply on the next load.</HelpNote>
       <div className="fat-set-grid">
         <div className="fat-set-col">
           <div className="fat-set-t">Frequency (impressions ÷ reach)</div>
@@ -14661,7 +14676,7 @@ function SocialKpiSettings({ clients }) {
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>Organic social KPIs</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Set each client's <b>monthly</b> organic-social targets. They're scored against the latest month on the Blended view of Organic Social → <b>KPIs &amp; Trends</b>. Saved to the server and shared with the team.</p>
+      <HelpNote>Set each client's <b>monthly</b> organic-social targets. They're scored against the latest month on the Blended view of Organic Social → <b>KPIs &amp; Trends</b>. Saved to the server and shared with the team.</HelpNote>
       <div className="pipe-sel" style={{ marginBottom: 12 }}><label>Client</label>
         <select value={cid} onChange={(e) => setCid(e.target.value)}>{list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
       </div>
@@ -14709,7 +14724,7 @@ function DailyPerfSettings({ clients }) {
   return (
     <div className="card dp-set">
       <h3 style={{ marginTop: 0 }}>Daily performance visibility</h3>
-      <p className="cap" style={{ marginTop: -4 }}>Choose which clients appear on the <b>Daily Performance</b> tab - and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server &amp; shared across your team.</p>
+      <HelpNote>Choose which clients appear on the <b>Daily Performance</b> tab - and, for clients running more than one pipeline, which pipeline tiles show. Everything is on by default. Saved to the server &amp; shared across your team.</HelpNote>
       <div className="dp-bar">
         <span className="dp-count">{shown} of {list.length} clients shown</span>
         <div className="dp-bulk"><button onClick={() => setAll(true)}>Show all</button><button onClick={() => setAll(false)}>Hide all</button></div>
@@ -15244,9 +15259,9 @@ function TimingSettings({ clientId, hasMeta }) {
               <span className="tm-mat-v">{m && m.maturing ? `⏳ still maturing · ${m.shortfall} day${m.shortfall === 1 ? '' : 's'} short` : '✓ mature'}</span>
             </div>
           ) })}
-          <p className="cap" style={{ margin: '8px 0 0' }}>A range needs to be about 20% longer than the sales cycle ({ov} days → {Math.round(ov * 1.2)} days) before most of its deals have had time to close. Shorter ranges show the amber ⏳ badge on the client's header and read low on Won, Revenue and ROAS - not because performance is worse, but because the deals are not in yet.</p>
+          <HelpNote>A range needs to be about 20% longer than the sales cycle ({ov} days → {Math.round(ov * 1.2)} days) before most of its deals have had time to close. Shorter ranges show the amber ⏳ badge on the client's header and read low on Won, Revenue and ROAS - not because performance is worse, but because the deals are not in yet.</HelpNote>
         </div>
-      ) : <p className="cap">Set the sales cycle above (or let the CRM average stand) and this shows which date ranges are mature. Without a figure, the app uses the CRM's own create → won average when it has one.</p>}
+      ) : <HelpNote>Set the sales cycle above (or let the CRM average stand) and this shows which date ranges are mature. Without a figure, the app uses the CRM's own create → won average when it has one.</HelpNote>}
     </div>
   )
 }
@@ -15269,13 +15284,13 @@ function SalesCycleField({ clientId }) {
   return (
     <div className="set-cycle">
       <div className="set-sec-t">Data maturity - average time to close</div>
-      <p className="cap" style={{ marginTop: 0 }}>Calculated automatically by the CRM from your won deals (average days from lead created to won). A <b>20% buffer</b> is added, and any date range shorter than that shows a <b>“Still maturing”</b> flag - a reminder that recent leads haven’t had time to convert yet, so Won / Revenue / ROAS understate the true result. This is never shown on the dashboards as a metric.</p>
+      <HelpNote>Calculated automatically by the CRM from your won deals (average days from lead created to won). A <b>20% buffer</b> is added, and any date range shorter than that shows a <b>“Still maturing”</b> flag - a reminder that recent leads haven’t had time to convert yet, so Won / Revenue / ROAS understate the true result. This is never shown on the dashboards as a metric.</HelpNote>
       <div className="set-cycle-grid">
         <div className="set-cycle-stat"><span className="cap">CRM average</span><b>{crm === undefined ? '…' : crm == null ? 'No won deals yet' : `${crm} days`}</b></div>
         <div className="set-cycle-stat"><span className="cap">With 20% buffer</span><b>{buffered ? `${buffered} days` : '-'}</b></div>
         <div className="set-field set-cycle-in"><label>Manual override (days)</label><input type="number" min="0" value={ov} onChange={(e) => save(e.target.value)} placeholder={crm != null ? `${crm} (CRM)` : 'e.g. 40'} />{saved && <span className="set-saved-tick">✓</span>}</div>
       </div>
-      <p className="cap set-cycle-warn">⚠ Leave blank to use the CRM figure. Only override if you know the true sales cycle (e.g. the CRM history is too short) - the 20% buffer is still applied on top of whatever you enter.</p>
+      <HelpNote>⚠ Leave blank to use the CRM figure. Only override if you know the true sales cycle (e.g. the CRM history is too short) - the 20% buffer is still applied on top of whatever you enter.</HelpNote>
     </div>
   )
 }
@@ -15307,7 +15322,7 @@ function ActiveHoursField({ clientId }) {
   return (
     <div className="set-cycle">
       <div className="set-sec-t">Working hours <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· for Speed to Lead</span>{tick && <span className="set-saved-tick" style={{ position: 'static', marginLeft: 8 }}>✓ saved</span>}</div>
-      <p className="cap" style={{ marginTop: 0 }}>When on, Speed to Lead counts only <b>business minutes</b> - a lead that arrives at 11pm and gets a reply at 9am is a fast response, not a 10-hour one.</p>
+      <HelpNote>When on, Speed to Lead counts only <b>business minutes</b> - a lead that arrives at 11pm and gets a reply at 9am is a fast response, not a 10-hour one.</HelpNote>
       <label className="set-hours-en"><input type="checkbox" checked={enabled} onChange={(e) => onEnable(e.target.checked)} /> Measure Speed to Lead within working hours</label>
       <div className={`set-hours ${enabled ? '' : 'off'}`}>
         <div className="set-hours-days">{DOW_LABELS.map((lbl, i) => <button key={i} className={days.includes(i) ? 'on' : ''} onClick={() => toggleDay(i)} disabled={!enabled}>{lbl}</button>)}</div>

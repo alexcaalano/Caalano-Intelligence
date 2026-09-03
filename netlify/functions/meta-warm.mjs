@@ -1,18 +1,21 @@
-// Scheduled ad-tab warmer. Every ~10 minutes it pre-builds each client's payload for
-// the common rolling ranges into the result cache, so opening the Meta Ads / Google
-// Ads / Caalano360 tabs is a warm-cache hit instead of a cold multi-query Windsor
-// (+ GHL) fan-out. That cold fan-out is what makes the first load slow and, when an
-// upstream call is slow that minute, occasionally tips past the 10s function budget
-// and fails. Meta is warmed for last 7 + 30 days; Google + the Caalano360 blend for
-// last 30 days. Keeping the common ranges hot moves that cost off the user path.
+// Scheduled trigger for the view warmer. Every ten minutes it asks the
+// background function to walk the roster; it does none of the work itself.
 //
-// Scheduled functions can't be invoked over HTTP in production; use the companion
-// `meta-warm-now` endpoint to run it on demand and watch the result.
-import { runMetaWarm } from './windsor.mjs'
-
+// It used to. A scheduled function has the same ~26s ceiling as any other, and
+// walking every client sequentially - three builds of ~8s each - was cut off
+// after the second or third client, every run, forever. The clients that sorted
+// first were always warm; the rest never were. The background function has a
+// 15-minute ceiling and warms stalest-first, so a full pass actually completes.
+//
+// With no site URL (local dev) there is no background function to call, so it
+// falls back to a single in-process pass, which is what it always was.
+import { triggerWarm } from '../lib/warm.mjs'
 export const config = { schedule: '*/10 * * * *' }
-
 export default async () => {
-  try { return Response.json(await runMetaWarm()) }
-  catch (e) { return Response.json({ ok: false, error: String((e && e.message) || e).slice(0, 300) }, { status: 500 }) }
+  const t = await triggerWarm({ plan: 'full' })
+  if (t.triggered) return Response.json({ ok: true, ...t })
+  const { default: run } = await import('./warm-background.mjs')
+  const { warmToken } = await import('../lib/warm.mjs')
+  const r = await run(new Request('https://local/.netlify/functions/warm-background', { method: 'POST', headers: { 'x-warm-token': warmToken() || '' }, body: JSON.stringify({ plan: 'full' }) }))
+  return Response.json({ ok: r.ok, inline: true, trigger: t, ...(await r.json().catch(() => ({}))) })
 }

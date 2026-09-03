@@ -1,14 +1,10 @@
-// On-demand Meta warmer - the HTTP-invokable twin of the scheduled `meta-warm`
-// function (scheduled functions can't be triggered over HTTP). Visit
-// /.netlify/functions/meta-warm-now to pre-build every Meta client's last-7d / last-30d
-// payload into the result cache immediately and see how many ranges each warmed.
-// Owner-guarded. Note: warming every client can exceed the 10s HTTP budget, so a
-// manual run may return partial results - the scheduled run has the full budget.
-import { runMetaWarm } from './windsor.mjs'
+// On-demand twin of the scheduled `meta-warm`: kicks off a full roster pass in
+// the background right now and reports what the LAST completed pass did.
+// Superadmin only. The pass takes a few minutes; call again to see it land.
+import { triggerWarm, readWarmLast, readWarmLock } from '../lib/warm.mjs'
 import { requireOpsAdmin } from '../lib/auth.mjs'
-
 export default async (req) => {
   const deny = await requireOpsAdmin(req); if (deny) return deny
-  try { return Response.json(await runMetaWarm()) }
-  catch (e) { return Response.json({ ok: false, error: String((e && e.message) || e).slice(0, 300) }, { status: 500 }) }
+  const [trigger, last, lock] = await Promise.all([triggerWarm({ plan: 'full' }), readWarmLast(), readWarmLock()])
+  return Response.json({ trigger, running: lock ? { since: new Date(lock.at).toISOString(), plan: lock.plan } : null, last })
 }

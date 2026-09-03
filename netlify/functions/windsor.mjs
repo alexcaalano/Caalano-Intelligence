@@ -16,6 +16,7 @@ import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, demoWi
 const DEMO_KEY = 'demo::windsor'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
+import { isWarmRequest, triggerWarm, claimRevalidate } from '../lib/warm.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
 function parseHours(url) {
   const bhStart = url.searchParams.get('bhStart'), bhEnd = url.searchParams.get('bhEnd'), bhDays = url.searchParams.get('bhDays')
@@ -726,74 +727,15 @@ export async function runOppWarm() {
   return { ok: true, count: results.length, warmed: results.filter((r) => !r.error).length, results }
 }
 
-// Rolling-preset from/to computed in Australia/Sydney - the timezone the staff
-// browsers compute their ranges in (presetRange runs in the viewer's local tz). We
-// MUST produce the exact same dates so the warmed cache lands under the same key the
-// interactive request reads (rangeQuery = ?from=&to=, no preset). Anchoring at
-// noon-UTC on the Sydney calendar date + UTC date arithmetic avoids DST edge cases.
-function sydneyPresetRange(id) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
-  const g = (t) => +parts.find((p) => p.type === t).value
-  const today = new Date(Date.UTC(g('year'), g('month') - 1, g('day'), 12, 0, 0))
-  const iso = (dt) => dt.toISOString().slice(0, 10)
-  const shift = (n) => { const x = new Date(today); x.setUTCDate(x.getUTCDate() - n); return iso(x) }
-  if (id === 'last_7d') return { from: shift(7), to: shift(1) }
-  if (id === 'last_30d') return { from: shift(30), to: shift(1) }
-  return null
-}
-// Scheduled Meta warmer: pre-build each Meta client's payload for the common rolling
-// ranges (last 7 / 30 days) into the result cache, so opening the Meta Ads tab is a
-// warm-cache hit instead of a cold 8-query Windsor fan-out (which is what makes the
-// first load slow, and occasionally tips past the 10s function budget → a failure).
-// Sequential per client (one client's ~8 Windsor calls at a time) so we never blast
-// Windsor. Writes to the SAME key cacheKeyFrom() derives for the interactive URL.
-// Meta is warmed for the two most-viewed windows; Google + the Caalano360 blend
-// (the default tab) only for last_30d, to bound the standing Windsor / GHL load the
-// warmer adds. Sequential per client so we never blast the upstreams.
-const META_WARM_PRESETS = ['last_30d', 'last_7d']
-const AD_WARM_PRESETS = ['last_30d']
-// Write a warmed payload under the exact key cacheKeyFrom() derives for the
-// interactive request (client + channel + from + to; no wonBasis, matching the
-// deep-tab fetch which sends none → the handler's default 'created' basis).
-function _warmWrite(id, channel, rg, extra) {
-  const payload = { client: id, channel, period: { from: rg.from, to: rg.to, preset: null }, ...extra }
-  const ck = cacheKeyFrom(new URL(`https://warm/?client=${encodeURIComponent(id)}&channel=${channel}&from=${rg.from}&to=${rg.to}`))
-  writeResultCache(ck, payload)
-}
-export async function runMetaWarm() {
+// The roster the background warmer walks: the built-in clients plus the ones
+// added in Settings, minus the ones removed there. The warmer itself lives in
+// warm-background.mjs and replays real requests through the handler below, so
+// there is no separate "build for the cache" path to drift from the real one.
+export async function warmRoster() {
   try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
-  const key = process.env.WINDSOR_API_KEY
-  if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
-  const results = []
-  for (const [id, cc] of Object.entries(CLIENTS)) {
-    if (!cc.meta && !cc.google && !cc.ghl) continue
-    const fallback = cc.meta ? await readMetaPrimary(id).catch(() => null) : null
-    let warmed = 0; const errors = []
-    // Meta - the two most-viewed windows.
-    if (cc.meta) for (const pid of META_WARM_PRESETS) {
-      const rg = sydneyPresetRange(pid); if (!rg) continue
-      try { _warmWrite(id, 'meta', rg, { meta: await buildMeta(cc.meta, rg.from, rg.to, null, key, fallback) }); warmed++ }
-      catch (e) { errors.push(`meta ${pid}: ${String(e.message || e).slice(0, 70)}`) }
-    }
-    // Google + Caalano360 blend (default tab) - last_30d only to cap the load.
-    for (const pid of AD_WARM_PRESETS) {
-      const rg = sydneyPresetRange(pid); if (!rg) continue
-      if (cc.google) {
-        try { _warmWrite(id, 'google', rg, { google: await buildGoogle(cc.google, rg.from, rg.to, null, key) }); warmed++ }
-        catch (e) { errors.push(`google ${pid}: ${String(e.message || e).slice(0, 70)}`) }
-      }
-      if (cc.ghl) {
-        try {
-          const blend = await buildBlend(cc, rg.from, rg.to, null, key)
-          blend.wonClosed = await wonInPeriod(cc.ghl, rg.from, rg.to).catch(() => null)
-          blend._wonBasis = 'created' // matches the deep-tab request (no wonBasis param)
-          _warmWrite(id, 'blend', rg, { blend }); warmed++
-        } catch (e) { errors.push(`blend ${pid}: ${String(e.message || e).slice(0, 70)}`) }
-      }
-    }
-    results.push({ client: id, warmed, ...(errors.length ? { errors } : {}) })
-  }
-  return { ok: true, count: results.length, warmed: results.reduce((s, r) => s + r.warmed, 0), results }
+  const out = {}
+  for (const [id, cc] of Object.entries(CLIENTS)) if (cc && (cc.meta || cc.google || cc.ghl)) out[id] = cc
+  return out
 }
 
 // Windsor id→name maps for ad campaign / ad set / creative. CRM UTMs often carry a
@@ -3085,6 +3027,7 @@ export default async (req) => {
   // lookup runs (e.g. the missing-API-key guard), and a const declared later
   // would be in its temporal dead zone at that point.
   let _actor = null
+  let _warm = false    // this request is the background warmer replaying a view
   const mkResponse = (obj, status, cache) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
   const json = async (obj, status = 200, cache = false) => {
     const softErr = status === 200 && obj && obj.error
@@ -3103,7 +3046,7 @@ export default async (req) => {
     if (_ckey && cache && status === 200 && obj && !obj.error && !obj._cache) {
       writeResultCache(_ckey, obj)
       const ms = Date.now() - _t0
-      if (ms > 6000) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms, ..._actor })
+      if (ms > 6000 && !_warm) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms, ..._actor })
     }
     return mkResponse(obj, status, cache)
   }
@@ -3123,10 +3066,15 @@ export default async (req) => {
   // Data requests are the truest signal of someone actually working in the app,
   // so they drive the activity stamp (throttled inside currentUser).
   const me = AUTH_SECRET ? await currentUser(req, AUTH_SECRET, { track: true }).catch(() => null) : null
+  // The background warmer presents a token instead of a session. It is trusted
+  // like the owner path - unrestricted, so what it writes to the cache is what
+  // an unrestricted caller would be served - and named in the log as itself.
+  _warm = isWarmRequest(req)
   // Stamp every subsequent log line with who was on the screen. Name and role
   // ride along so the log reads without a second lookup, and so an entry stays
   // meaningful after someone is renamed or removed.
   if (me) _actor = { user: me.email, userName: me.name || null, userRole: me.role || null }
+  if (_warm) _actor = { user: 'warmer', userName: 'Background warmer', userRole: 'system' }
   // Clients marked "Super-Admin only" in Settings are hidden from everyone who
   // isn't a superadmin. A null caller is the trusted Basic-Auth / legacy path
   // (owner) and a superadmin both see everything, so we only load + apply the
@@ -3143,10 +3091,13 @@ export default async (req) => {
   // reach every client - including Super-Admin-only ones - with no identity, no
   // entry in the reliability log, and no terms acceptance. When the login system
   // is on, there is no legitimate anonymous caller here: the app always sends its
-  // session cookie, and the warmers import runMetaWarm() in-process rather than
+  // session cookie, and the background warmer identifies itself with a token
+  // (checked above) rather than a session, so it is the one caller that may
+  // pass here signed out. Nothing else legitimately does - the app always sends
+  // its cookie, and the -now endpoints check for a superadmin before running.
   // coming through this handler. Legacy mode (no AUTH_SECRET) is unchanged - the
   // shared-password edge gate is the only control there by design.
-  if (!me && process.env.AUTH_SECRET) return json({ error: 'Not signed in.' }, 401)
+  if (!me && !_warm && process.env.AUTH_SECRET) return json({ error: 'Not signed in.' }, 401)
   if (me) {
     if (client && !canSeeClient(me, client)) return json({ error: 'You don’t have access to this account.' }, 403)
     if (client && restrictedSet.has(client)) return json({ error: 'You don’t have access to this account.' }, 403)
@@ -3182,6 +3133,16 @@ export default async (req) => {
     const ttl = resultTtlFor(scope, channel, to)
     if (_staleHit && !bust && (Date.now() - _staleHit.at) < ttl) {
       return json({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000) } }, 200, true)
+    }
+    // Stale-while-revalidate. Past the fresh window, the old behaviour was to
+    // rebuild on the spot - 8 to 13 seconds, on the user's clock, every time the
+    // ten minutes had lapsed. Now a copy up to six hours old is served at once
+    // and the background warmer rebuilds this exact request behind it; the next
+    // open is fresh. The Refresh button (_r) still forces a live rebuild, and the
+    // warmer's own calls never take this branch or they would never rebuild.
+    if (_staleHit && !bust && !_warm && (Date.now() - _staleHit.at) < STALE_ON_ERROR_MS) {
+      if (await claimRevalidate(_ckey)) await triggerWarm({ urls: [url.search] })
+      return json({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true, revalidating: true } }, 200, true)
     }
   }
 
@@ -3282,7 +3243,7 @@ export default async (req) => {
     try {
       const b = await req.json().catch(() => ({}))
       const clean = (v, n) => (v == null ? null : String(v).slice(0, n))
-      await auditLog({
+      if (!_warm) await auditLog({
         view: clean(b.view, 40), client: clean(b.client, 60), tab: clean(b.tab, 40),
         // Duration on the PREVIOUS location, capped at 4h so a tab left open
         // overnight doesn't register as a working day.

@@ -18,6 +18,42 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.445.0 - 2026-09-03 · `PENDING` - Warmers that finish, and stale-while-revalidate
+
+The reliability log for 30 Aug - 3 Sep held 379 slow builds in five days, median
+8-13 seconds, and every one of them was a cache miss - a payload rebuilt on a
+person's clock because nothing had built it beforehand. Three causes, all fixed.
+
+**The warmers were being killed.** They ran inside SCHEDULED functions, which
+have the same ~26s ceiling as any other; a pass over every client at three
+builds of ~8s each was cut off after the second or third client, every ten
+minutes, forever. The clients that sorted first were always warm and the rest
+never were - Nexia sat fourth and was 36% of all slow builds. The work now runs
+in `warm-background`, a background function with a 15-minute ceiling; the
+scheduled functions only trigger it. It warms stalest-client-first and records
+each client as it goes, so a cut-off run still moves the roster along.
+
+**Nothing was served stale.** After the 10-minute fresh window the next open
+paid the full rebuild. Now a copy up to six hours old is served at once and the
+same background warmer rebuilds that exact request behind it. Refresh still
+forces a live build. The warmer's own calls never take this path.
+
+**Warm coverage was narrow.** Only the Meta / Google / Caalano360 tabs. The
+slowest scopes in the log - health, ccdrill, users, agency - were never warmed.
+They are now, for the default range (last 30 days, all channels, closed-won
+basis), along with the three tabs as before.
+
+The warmer no longer hand-builds cache keys: it replays the browser's exact
+requests through the real handler under a warm token, so the key it writes is
+by construction the key that is read. Tested: every planned URL produces the
+same cache key as the app's own URL builders; the token is constant-time
+compared and a signed-out or wrong-token request is still a 401 against the
+real handler. Per-client Home rows (ovrow) stay on stale-while-revalidate only -
+their key carries per-client settings the server cannot see.
+
+Superadmins can kick a pass with `/.netlify/functions/meta-warm-now` (views) or
+`opp-warm-now` (opportunity snapshots); both report the last completed pass.
+
 ## v3.444.0 - 2026-08-20 · `601bb81` - Drop "Paid vs all lead sources" from the monthly report
 
 Removed the stacked source-mix bar and its "All Caalano Systems vs paid results"

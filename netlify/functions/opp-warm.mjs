@@ -1,17 +1,20 @@
-// Scheduled opportunity-snapshot warmer. Every ~5 minutes it refreshes each CRM
-// client's shared /opportunities/search snapshot (Blobs, 15-min TTL) so the
-// interactive scopes (users / ccdrill / speed / appts / forms / health) read the
-// warm cache instead of each re-paging GHL. That endpoint's concurrent cold pulls
-// are the source of nearly every 429 in the reliability log; keeping the snapshot
-// hot moves those pulls off the user path.
+// Scheduled trigger for the opportunity-snapshot warmer. Every five minutes it
+// asks the background function to refresh each CRM client's shared
+// /opportunities/search snapshot (Blobs, 15-min TTL), so the interactive scopes
+// read a warm page instead of each re-paging GoHighLevel - those concurrent
+// cold pulls were the source of nearly every 429 in the reliability log.
 //
-// Scheduled functions can't be invoked over HTTP in production; use the companion
-// `opp-warm-now` endpoint to run it on demand and watch the result.
-import { runOppWarm } from './windsor.mjs'
-
+// The refresh itself used to run here, budgeted at ten minutes on the belief
+// that a scheduled function had a long ceiling. It has the same ~26s as any
+// other, so the pass was killed after a couple of clients every time. It now
+// runs where the ten minutes are real. Local dev falls back to running inline.
+import { triggerWarm } from '../lib/warm.mjs'
 export const config = { schedule: '*/5 * * * *' }
-
 export default async () => {
-  try { return Response.json(await runOppWarm()) }
-  catch (e) { return Response.json({ ok: false, error: String((e && e.message) || e).slice(0, 300) }, { status: 500 }) }
+  const t = await triggerWarm({ plan: 'opps' })
+  if (t.triggered) return Response.json({ ok: true, ...t })
+  const { default: run } = await import('./warm-background.mjs')
+  const { warmToken } = await import('../lib/warm.mjs')
+  const r = await run(new Request('https://local/.netlify/functions/warm-background', { method: 'POST', headers: { 'x-warm-token': warmToken() || '' }, body: JSON.stringify({ plan: 'opps' }) }))
+  return Response.json({ ok: r.ok, inline: true, trigger: t, ...(await r.json().catch(() => ({}))) })
 }

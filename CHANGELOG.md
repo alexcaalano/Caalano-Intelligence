@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.452.0 - 2026-09-03 · `PENDING` - Forecaster: spend split per pipeline
+## v3.452.0 - 2026-09-03 · `4717878` - Forecaster: spend split per pipeline
 
 For a client with several pipelines, the client forecast now starts from that
 pipeline's **share** of the account's last-30-day spend - by its share of last

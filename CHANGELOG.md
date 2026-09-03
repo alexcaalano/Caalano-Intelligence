@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.457.0 - 2026-09-03 · `PENDING` - Lost Reasons: scorecards follow the filters, filters take several values
+## v3.457.0 - 2026-09-03 · `72e8240` - Lost Reasons: scorecards follow the filters, filters take several values
 
 The Opportunities scorecards on Lost Reasons (leads, open, won, lost, result
 rate, time to won, time to lost) were the whole period regardless of what was

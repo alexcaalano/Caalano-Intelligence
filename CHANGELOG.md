@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.455.0 - 2026-09-03 · `PENDING` - Views survive a reload
+## v3.455.0 - 2026-09-03 · `3023d8a` - Views survive a reload
 
 The browser's cache of loaded views lived in memory, so every reload and every
 new tab started cold even when the server had the payload hot. It is now

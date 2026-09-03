@@ -4452,3 +4452,22 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .fc-del { display: inline-flex; align-items: center; gap: 8px; }
 .btn-danger { background: transparent; border: 1px solid var(--neg); color: var(--neg); border-radius: 8px; padding: 6px 10px; font-weight: 700; cursor: pointer; }
 .btn-danger.sm { font-size: 11.5px; padding: 4px 9px; }
+
+/* --- Lost reasons: multi-select filters ------------------------------------ */
+.lrv-mp { position: relative; }
+.lrv-mp-btn { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 6px 9px; font-size: 12.5px; font-weight: 600; color: var(--text); cursor: pointer; }
+.lrv-mp.has .lrv-mp-btn { border-color: var(--brand); color: var(--brand); }
+.lrv-mp-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrv-mp-car { color: var(--faint); font-size: 10px; }
+.lrv-mp-pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; min-width: 260px; max-width: 360px; background: var(--panel); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; }
+.lrv-mp-q { width: 100%; box-sizing: border-box; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 7px; padding: 6px 9px; color: var(--text); font-size: 12.5px; margin-bottom: 4px; }
+.lrv-mp-list { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; }
+.lrv-mp-it { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; cursor: pointer; }
+.lrv-mp-it:hover { background: var(--panel-2); }
+.lrv-mp-it.on { color: var(--text); font-weight: 600; }
+.lrv-mp-it.zero { opacity: .55; }
+.lrv-mp-it input { accent-color: var(--brand); margin: 0; }
+.lrv-mp-v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrv-mp-n { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.lrv-mp-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 4px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
+.lr-filt { color: var(--brand); }

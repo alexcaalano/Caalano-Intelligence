@@ -4240,6 +4240,15 @@ export async function buildCcDrill(locationId, from, to, channel) {
   for (const k of LOST_FACT_KEYS) { factDict[k] = []; factIdx[k] = new Map() }
   const fIdx = (k, v) => { const val = v || 'Not tagged'; const m = factIdx[k]; let i = m.get(val); if (i === undefined) { i = factDict[k].length; factDict[k].push(val); m.set(val, i) } return i }
   const factRows = []
+  // One compact row per opportunity of ANY status, sharing the dictionaries
+  // above, so the Lost Reasons scorecards can follow the same filters as the
+  // breakdown: open / won / lost and time-to-decision for exactly the campaigns,
+  // channels or stages picked, not the whole cohort. Status, dims, stage
+  // position, and days from creation to decision (null for open, or where the
+  // dates were unusable - the same rule the time-to tiles use).
+  const OPP_FACT_KEYS = ['pipeline', 'stage', 'campaign', 'adset', 'creative', 'keyword', 'source', 'channel']
+  const OPP_FACT_CAP = 6000
+  const oppRows = []
   // Stage ordering, per pipeline, so the UI can offer "lost at this stage" and
   // "lost at this stage or later" as two readings of the same data. A stage name
   // alone cannot answer the second question - it needs to know what came after
@@ -4284,10 +4293,11 @@ export async function buildCcDrill(locationId, from, to, channel) {
     // typical case is what anyone reading this wants. A negative gap (the status
     // stamp predating creation) or one beyond a year is data noise, not a slow
     // decision, so it is excluded rather than allowed to set the figure.
+    let decisionDays = null
     if (isWon || isLost) {
       const cM = Date.parse(o.createdAt), sM = Date.parse(o.lastStatusChangeAt || '')
       const days = (isFinite(cM) && isFinite(sM)) ? (sM - cM) / DAY : null
-      if (days != null && days >= 0 && days <= 365) (isWon ? ttWon : ttLost).push(days)
+      if (days != null && days >= 0 && days <= 365) { (isWon ? ttWon : ttLost).push(days); decisionDays = Math.round(days * 10) / 10 }
       else if (isWon) ttWonSkip++
       else ttLostSkip++
     }
@@ -4298,6 +4308,16 @@ export async function buildCcDrill(locationId, from, to, channel) {
       if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val }
       else if (isLost) pa.lost++
       else { pa.open++; pa.openValue += val }
+    }
+    if (oppRows.length < OPP_FACT_CAP) {
+      oppRows.push([
+        isWon ? 1 : isLost ? 2 : 0,
+        fIdx('pipeline', pipeName[o.pipelineId] || null), fIdx('stage', stg ? stg.name : null),
+        fIdx('campaign', u.campaign || null), fIdx('adset', u.medium || null),
+        fIdx('creative', u.content || null), fIdx('keyword', u.term || null),
+        fIdx('source', label || null), fIdx('channel', ch || null),
+        stg ? stg.pos : -1, decisionDays,
+      ])
     }
     let bs = bySource.get(label); if (!bs) { bs = { source: label, channel: ch, kind, count: 0, value: 0, opps: [] }; bySource.set(label, bs) }
     bs.count++; bs.value += val
@@ -4403,6 +4423,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
     openByStage: [...openByStage.values()].map((g) => ({ key: g.key, stage: g.stage, stageId: g.stageId, pipeline: g.pipeline, pipelineId: g.pipelineId, pos: g.pos, count: g.count, value: Math.round(g.value), deals: g.deals.sort((a, b) => b.value - a.value) })).sort((a, b) => a.pos - b.pos),
     lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),
     lostFacts: { keys: LOST_FACT_KEYS, dict: factDict, rows: factRows, stageOrder, total: lostCount, capped: lostCount > factRows.length },
+    oppFacts: { keys: OPP_FACT_KEYS, dict: factDict, rows: oppRows, total: leadCount, capped: leadCount > oppRows.length },
     lostBy: Object.fromEntries(LOST_DIMS.map((d) => [d, [...lostDim[d].values()]
       .map((e) => ({ key: e.key, count: e.count, value: Math.round(e.value),
         reasons: [...e.r.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count).slice(0, 20) }))

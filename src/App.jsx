@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.456.0'
+const APP_VERSION = '3.457.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -5307,6 +5307,73 @@ function lrFacts(cc) {
   })
 }
 
+// Every opportunity in the period, any status - the rows the scorecards follow
+// the filters with. Same dictionaries as the lost rows.
+function lrOppFacts(cc) {
+  const f = cc && cc.oppFacts
+  if (!f || !f.rows) return []
+  const keys = f.keys || []
+  const STATUS = ['open', 'won', 'lost']
+  return f.rows.map((r) => {
+    const o = { status: STATUS[r[0]] || 'open' }
+    keys.forEach((k, i) => { o[k] = (f.dict[k] || [])[r[i + 1]] })
+    o.stagePos = r[keys.length + 1]
+    o.days = r[keys.length + 2]
+    return o
+  })
+}
+// Key events are a per-client SETTING, so "which key event did this deal reach"
+// is worked out here, not in the payload: the furthest configured event whose
+// stage sits at or before the deal's stage, judged inside the deal's pipeline.
+function lrKeyEventSpec(clientId) {
+  return (loadKeyEvents(clientId) || [])
+    .map((k) => (typeof k === 'string' ? { stage: k } : k))
+    .filter((k) => k && k.stage)
+    .map((k) => ({ name: String(k.label || k.stage), stage: String(k.stage).trim().toLowerCase() }))
+}
+function lrKeyEventOf(evs, stageOrder, f) {
+  if (!evs.length) return 'No key events configured'
+  const order = stageOrder[f.pipeline] || {}
+  let best = null, bestPos = -1
+  for (const e of evs) {
+    const hit = Object.keys(order).find((n) => n.trim().toLowerCase() === e.stage)
+    if (hit === undefined) continue
+    const pos = order[hit]
+    if (pos <= f.stagePos && pos > bestPos) { bestPos = pos; best = e.name }
+  }
+  return best || 'Before first key event'
+}
+// A filter is a LIST of values now, any of which matches. Stage keeps its two
+// readings: the deals sitting in one of the chosen stages, or everyone who got
+// at least that far (judged per pipeline, since positions differ between them).
+function lrMatch(r, dim, vals, stageFilter, posIn) {
+  if (!vals || !vals.length) return true
+  if (dim === 'stage' && stageFilter === 'beyond') return vals.some((v) => { const p = posIn(r.pipeline, v); return p != null && r.stagePos >= p })
+  return vals.includes(r[dim])
+}
+// The scorecard figures for whatever survives the filters. Reason is a
+// lost-only dimension, so it never narrows open or won: the cohort is cut by
+// every OTHER filter, and the lost tile takes the reason-filtered count.
+function lrCohortStats(oppFacts, active, match, lostFiltered) {
+  const cut = active.filter(([d]) => d !== 'reason')
+  const reasonOn = active.length !== cut.length
+  const rows = oppFacts.filter((r) => cut.every(([d, v]) => match(r, d, v)))
+  const by = (st) => rows.filter((r) => r.status === st)
+  const won = by('won'), lost = by('lost'), open = by('open')
+  const sortNum = (a) => [...a].sort((x, y) => x - y)
+  const medOf = (a) => { if (!a.length) return null; const q = sortNum(a); const m = Math.floor(q.length / 2); return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2 }
+  const pct = (a, q) => (a.length ? sortNum(a)[Math.min(a.length - 1, Math.floor(a.length * q))] : null)
+  const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10)
+  const tt = (list) => {
+    const arr = list.map((r) => r.days).filter((d) => d != null)
+    return { median: r1(medOf(arr)), mean: arr.length ? r1(arr.reduce((a, b) => a + b, 0) / arr.length) : null, n: arr.length, skipped: list.length - arr.length, p25: arr.length >= 8 ? r1(pct(arr, 0.25)) : null, p75: arr.length >= 8 ? r1(pct(arr, 0.75)) : null }
+  }
+  return {
+    totals: { leads: rows.length, open: open.length, won: won.length, lost: reasonOn ? lostFiltered : lost.length },
+    timeToWon: tt(won), timeToLost: tt(lost), reasonOn,
+  }
+}
+
 // --- Lost Reasons: the visual layer -----------------------------------------
 //
 // Colour here is doing one job - identity - so it follows the categorical rules:
@@ -5545,13 +5612,58 @@ const lrDays = (d) => {
 // The scorecard above the Lost Reasons screen. Counts are for the whole period on
 // a created basis - deliberately NOT narrowed by the filters below, which are for
 // interrogating the lost deals rather than redefining the cohort.
-function LostScorecards({ cc, range, money }) {
-  const t = (cc && cc.totals) || null
+// A dropdown that takes several values. Closed, it reads like the select it
+// replaces - "All (25)", one value, or "3 selected"; open, it is a list of
+// checkboxes with the count behind each, a search box once the list is long,
+// and Clear / Done. Closes on a click outside or Escape.
+function MultiPick({ options, value, onChange, allLabel }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  const sel = new Set(value)
+  const needle = q.trim().toLowerCase()
+  const shown = needle ? options.filter(([v]) => String(v).toLowerCase().includes(needle)) : options
+  const label = !value.length ? allLabel : value.length === 1 ? value[0] : `${value.length} selected`
+  return (
+    <div className={`lrv-mp${open ? ' open' : ''}${value.length ? ' has' : ''}`} ref={ref}>
+      <button type="button" className="lrv-mp-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open} title={value.length > 1 ? value.join(', ') : undefined}>
+        <span className="lrv-mp-txt">{label}</span><span className="lrv-mp-car">▾</span>
+      </button>
+      {open ? (
+        <div className="lrv-mp-pop" role="listbox" aria-multiselectable="true">
+          {options.length > 10 ? <input className="lrv-mp-q" autoFocus placeholder="Find…" value={q} onChange={(e) => setQ(e.target.value)} /> : null}
+          <div className="lrv-mp-list">
+            {shown.length ? shown.map(([v, n]) => (
+              <label key={v} className={`lrv-mp-it${sel.has(v) ? ' on' : ''}${!n ? ' zero' : ''}`}>
+                <input type="checkbox" checked={sel.has(v)} onChange={() => onChange(sel.has(v) ? value.filter((x) => x !== v) : [...value, v])} />
+                <span className="lrv-mp-v" title={v}>{v}</span><span className="lrv-mp-n">{fmtNumber(n)}</span>
+              </label>
+            )) : <div className="cap" style={{ padding: '6px 10px' }}>Nothing matches.</div>}
+          </div>
+          <div className="lrv-mp-foot">
+            <button type="button" className="btn-ghost sm" disabled={!value.length} onClick={() => onChange([])}>Clear</button>
+            <span className="cap">{value.length ? `${value.length} of ${options.length}` : `any of ${options.length}`}</span>
+            <button type="button" className="set-details-save" onClick={() => setOpen(false)}>Done</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+function LostScorecards({ cc, range, money, cohort, filterNote }) {
+  const t = cohort ? cohort.totals : ((cc && cc.totals) || null)
   if (!t) return null
   const leads = t.leads || 0
   const decided = (t.won || 0) + (t.lost || 0)
-  const tw = cc.timeToWon || null
-  const tl = cc.timeToLost || null
+  const tw = cohort ? cohort.timeToWon : (cc.timeToWon || null)
+  const tl = cohort ? cohort.timeToLost : (cc.timeToLost || null)
   // A tile whose figure would be built on almost nothing says so rather than
   // printing a confident number.
   const thin = (x) => !!(x && x.n > 0 && x.n < 8)
@@ -5566,7 +5678,7 @@ function LostScorecards({ cc, range, money }) {
   ])
   return (
     <div className="card u-lrsc">
-      <div className="exec-panel-h">Opportunities <span className="sub">· {rangeLabel(range)} · counted by the period the lead arrived in, so this is the same cohort the table below breaks down</span></div>
+      <div className="exec-panel-h">Opportunities <span className="sub">· {rangeLabel(range)}{filterNote ? <> · <b className="lr-filt">filtered</b> to {filterNote}{cohort && cohort.reasonOn ? ' (reason narrows the lost count only)' : ''}</> : ' · counted by the period the lead arrived in, so this is the same cohort the table below breaks down'}</span></div>
       <div className="timing-scards">
         <LrPop className="tm-sc hero" sub="Every opportunity created in this period"
           title={`${fmtNumber(leads)} opportunities`}
@@ -5643,30 +5755,13 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   const cc = st.data || null
   const mode = useThemeMode()
   const rawFacts = useMemo(() => lrFacts(cc), [cc])
-  // Key event is derived here rather than in the payload, because key events are
-  // a per-client SETTING and the backend has no business knowing them. A deal
-  // reached a key event if its stage sits at or past that event's stage, judged
-  // inside its own pipeline; the furthest one it reached is the useful answer.
+  const evs = useMemo(() => lrKeyEventSpec(clientId), [clientId, cc])
+  const stageOrderAll = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
   const facts = useMemo(() => {
-    const so = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
-    const evs = (loadKeyEvents(clientId) || [])
-      .map((k) => (typeof k === 'string' ? { stage: k } : k))
-      .filter((k) => k && k.stage)
-      .map((k) => ({ name: String(k.label || k.stage), stage: String(k.stage).trim().toLowerCase() }))
-    if (!evs.length) return rawFacts.map((f) => ({ ...f, keyevent: 'No key events configured' }))
-    return rawFacts.map((f) => {
-      const order = so[f.pipeline] || {}
-      let best = null, bestPos = -1
-      for (const e of evs) {
-        // Stage names are matched case-insensitively against this pipeline's list.
-        const hit = Object.keys(order).find((n) => n.trim().toLowerCase() === e.stage)
-        if (hit === undefined) continue
-        const pos = order[hit]
-        if (pos <= f.stagePos && pos > bestPos) { bestPos = pos; best = e.name }
-      }
-      return { ...f, keyevent: best || 'Before first key event' }
-    })
+    return rawFacts.map((f) => ({ ...f, keyevent: lrKeyEventOf(evs, stageOrderAll, f) }))
   }, [rawFacts, cc, clientId, nonce])
+  // Every opportunity, enriched the same way, for the scorecards.
+  const oppFacts = useMemo(() => lrOppFacts(cc).map((f) => ({ ...f, keyevent: lrKeyEventOf(evs, stageOrderAll, f) })), [cc, evs])
   const colors = useMemo(() => lrColorMap(facts, mode), [facts, mode])
   // Funnel position for the two ordered dimensions, so every list of stages or
   // key events reads in funnel order rather than by how many deals died in each.
@@ -5736,7 +5831,9 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
     if (orderedDim(dim)) { const d = rankOf(dim, a.key) - rankOf(dim, b.key); if (d) return d }
     return b.count - a.count || String(a.key).localeCompare(String(b.key))
   }
-  const setF = (dim, val) => { setOpen(null); setFilters((f) => { const n = { ...f }; if (!val) delete n[dim]; else n[dim] = val; return n }) }
+  // A filter holds a LIST of values. Setting an empty list removes it.
+  const setF = (dim, vals) => { setOpen(null); setFilters((f) => { const n = { ...f }; const list = Array.isArray(vals) ? vals : (vals ? [vals] : []); if (!list.length) delete n[dim]; else n[dim] = list; return n }) }
+  const toggleF = (dim, val) => setF(dim, (filters[dim] || []).includes(val) ? (filters[dim] || []).filter((x) => x !== val) : [...(filters[dim] || []), val])
   const active = Object.entries(filters)
   const stageOrder = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
   // Stage position is read inside the deal's OWN pipeline: two pipelines can hold
@@ -5749,12 +5846,13 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   // Filtering to a stage has two useful meanings. "At this stage" is the deals
   // that died exactly there. "This stage or later" is everyone who got at least
   // that far - the population that cleared the stage, whatever killed them after.
-  const matchDim = (r, d, v) => {
-    if (d === 'stage' && stageFilter === 'beyond') { const p = posIn(r.pipeline, v); return p != null && r.stagePos >= p }
-    return r[d] === v
-  }
+  const matchDim = (r, d, vals) => lrMatch(r, d, vals, stageFilter, posIn)
   const passes = (r, skip) => active.every(([d, v]) => d === skip || matchDim(r, d, v))
   const rows = useMemo(() => facts.filter((r) => passes(r, null)), [facts, filters, stageFilter, cc])
+  // The scorecards follow the filters. With nothing selected the server's own
+  // figures stand (they are never capped); otherwise the cohort is recomputed
+  // from the per-opportunity rows.
+  const cohort = useMemo(() => (active.length && oppFacts.length ? lrCohortStats(oppFacts, active, matchDim, rows.length) : null), [oppFacts, filters, stageFilter, rows.length])
   const optionsFor = (dim) => {
     const m = new Map()
     for (const r of facts) if (passes(r, dim)) m.set(r[dim], (m.get(r[dim]) || 0) + 1)
@@ -5762,7 +5860,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
     // Keep it in its own list at zero rather than letting the control fall blank:
     // the filter would still be applied but no longer visible in the thing
     // applying it, and there would be nothing left to click to undo it.
-    if (filters[dim] && !m.has(filters[dim])) m.set(filters[dim], 0)
+    for (const v of (filters[dim] || [])) if (!m.has(v)) m.set(v, 0)
     const rows = [...m.entries()].map(([key, count]) => ({ key, count }))
     rows.sort(cmpFor(dim))
     return rows.map((r) => [r.key, r.count])
@@ -5853,7 +5951,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   const peopleOf = (g) => g.rows.map((r) => byContact.get(r.contactId) || { contactId: r.contactId, name: r.name, stage: r.stage, pipeline: r.pipeline, value: r.value, channelSource: r.source, utmContent: r.creative, formAnswers: [] })
   return (
     <>
-      <LostScorecards cc={cc} range={range} money={money} />
+      <LostScorecards cc={cc} range={range} money={money} cohort={cohort} filterNote={active.length ? active.map(([d, vals]) => `${LR_LABEL[d]}: ${vals.join(', ')}`).join(' · ') : null} />
       <div className="card">
         <div className="exec-panel-h">Lost reasons <span className="sub">· {fmtNumber(rows.length)}{rows.length !== allTot ? ` of ${fmtNumber(allTot)}` : ''} lost{totVal ? `, ${money(totVal)}` : ''} · {rangeLabel(range)}</span></div>
         {st.status === 'loading' && !cc ? <Spinner label="Loading lost deals…" />
@@ -5866,13 +5964,10 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                     const opts = optionsFor(k)
                     return (
                       <React.Fragment key={k}>
-                        <label className={`lrv-f${filters[k] ? ' on' : ''}`} title={LR_TIP[k]}>
+                        <div className={`lrv-f${(filters[k] || []).length ? ' on' : ''}`} title={LR_TIP[k]}>
                           <span className="lrv-f-lab">{lbl}</span>
-                          <select value={filters[k] || ''} onChange={(e) => setF(k, e.target.value)}>
-                            <option value="">All ({fmtNumber(opts.reduce((a, o) => a + o[1], 0))})</option>
-                            {opts.map(([v, n]) => <option key={v} value={v}>{v} ({fmtNumber(n)})</option>)}
-                          </select>
-                        </label>
+                          <MultiPick options={opts} value={filters[k] || []} onChange={(vals) => setF(k, vals)} allLabel={`All (${fmtNumber(opts.reduce((a, o) => a + o[1], 0))})`} />
+                        </div>
                         {/* Stage is the one dimension with a direction to it, so it gets
                             a second control: pick a stage, then say whether you mean the
                             deals that died there or everyone who reached it. */}
@@ -5888,7 +5983,7 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
                   })}
                 </div>
                 {active.length ? <div className="lrv-chips">
-                  {active.map(([d, v]) => <button key={d} className="lrv-chip" onClick={() => setF(d, '')} title={`Remove the ${LR_LABEL[d]} filter`}>{LR_LABEL[d]}: <b>{v}</b>{d === 'stage' && stageFilter === 'beyond' ? ' or later' : ''} ✕</button>)}
+                  {active.flatMap(([d, vals]) => vals.map((v) => <button key={`${d}:${v}`} className="lrv-chip" onClick={() => toggleF(d, v)} title={`Remove ${v} from the ${LR_LABEL[d]} filter`}>{LR_LABEL[d]}: <b>{v}</b>{d === 'stage' && stageFilter === 'beyond' ? ' or later' : ''} ✕</button>))}
                   <button className="lrv-chip lrv-clear" onClick={() => { setFilters({}); setOpen(null) }}>Clear all</button>
                 </div> : null}
                 <div className="lrv-pivot">

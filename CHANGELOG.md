@@ -18,6 +18,31 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.457.0 - 2026-09-03 · `PENDING` - Lost Reasons: scorecards follow the filters, filters take several values
+
+The Opportunities scorecards on Lost Reasons (leads, open, won, lost, result
+rate, time to won, time to lost) were the whole period regardless of what was
+filtered below them. They now follow the filters: pick a campaign, a channel or
+a stage and the tiles recompute for exactly those deals, with the header saying
+what they are filtered to. Reason is a lost-only dimension, so it narrows the
+lost count without touching open or won, and the header says so.
+
+Every filter is now multi-select. Each picker opens a checklist with live counts
+and a search box once it has more than ten options, several values can be ticked
+(any of them matches), and each chosen value gets its own chip so one can be
+removed without clearing the rest. Stage keeps its two readings - at the stage,
+or the stage and everything after it - for every stage picked.
+
+The Caalano Systems drill payload now carries one compact row per opportunity
+(status, dimensions, stage position, days to decision, up to 6,000 per period)
+so the cohort maths runs in the browser with no extra request. With no filter
+the server's own uncapped figures still stand.
+
+New `tests/lr_test.mjs` covers the row decoding, list matching, the two stage
+readings across pipelines, and the cohort figures.
+
+---
+
 ## v3.456.0 - 2026-09-03 · `47d1b0e` - Backups of everything that lives only in Blobs
 
 The daily backup covered one store (settings). It now covers the eleven that

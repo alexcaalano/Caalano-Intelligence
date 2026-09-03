@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.447.0'
+const APP_VERSION = '3.448.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -13147,11 +13147,29 @@ function KpiEditor({ clientId, embedded, nonce }) {
   const selPipe = multi ? pipes.find((p) => p.id === pid) : pipes[0]
   const stageRows = selPipe ? (selPipe.stages || []) : [...new Set(pipes.flatMap((p) => (p.stages || []).map((s) => s.name)))].map((name) => ({ name }))
   const numOr = (v) => (v == null || v === '' ? '' : v)
-  const spend = Number(k.monthlySpend) > 0 ? Number(k.monthlySpend) : null
-  // Last 30 days, for the "actual" column: what the budget actually bought.
-  const actualSpend = st.blend && st.blend.paid ? Number(st.blend.paid.adSpend) || 0 : 0
-  const actualLeads = selPipe ? ((selPipe.crm && selPipe.crm.leads) || 0) : ((st.blend && st.blend.crm && st.blend.crm.leads) || 0)
+  // The budget is one number for the CLIENT - it is what the client pays - and
+  // each pipeline gets its share of it by that pipeline's share of last month's
+  // leads, the same allocation the Channel split uses. A pipeline can be given
+  // its own figure instead, which sticks until it is cleared.
+  useSettingsSync()
+  const clientAll = SETTINGS.kpis[clientId] || {}
+  const clientBudget = Number(clientAll.monthlySpend) > 0 ? Number(clientAll.monthlySpend) : null
+  const totalLeads30 = (st.blend && st.blend.crm && st.blend.crm.leads) || 0
+  const shareOf = (p) => (p && totalLeads30 ? ((p.crm && p.crm.leads) || 0) / totalLeads30 : 1)
+  const share = multi ? shareOf(selPipe) : 1
+  const pipeOverride = multi && Number(k.pipeBudget) > 0 ? Number(k.pipeBudget) : null
+  const spend = multi ? (pipeOverride || (clientBudget ? Math.round(clientBudget * share) : null)) : clientBudget
+  // Last 30 days, for the "actual" column: what the budget actually bought -
+  // this pipeline's share of it, not the whole account's.
+  const actualSpendAll = st.blend && st.blend.paid ? Number(st.blend.paid.adSpend) || 0 : 0
+  const actualSpend = actualSpendAll * share
+  const actualLeads = selPipe ? ((selPipe.crm && selPipe.crm.leads) || 0) : totalLeads30
   const actualOf = (key) => (key === KPI_LEADS_KEY ? actualLeads : ((stageRows.find((r) => r.name === key) || {}).count || 0))
+  // Which stages are key events, so they stand out in the table: those are the
+  // ones the rest of the app reports on, and the targets that matter most.
+  const keNames = useMemo(() => {
+    try { const ke = formKeyEvents(clientId, pid || 'all', pipes); return new Set((ke.events || []).map((e) => (e.kind === 'calendar' ? e.stage : e.ref)).filter(Boolean)) } catch { return new Set() }
+  }, [clientId, pid, pipes])
 
   // One edit updates both columns. `basis` records which side was typed.
   const setTarget = (key, side, raw) => setK((p) => {
@@ -13165,8 +13183,7 @@ function KpiEditor({ clientId, embedded, nonce }) {
     const nx = { ...p, stages, stageCost, stageBasis }; saveKpis(clientId, nx, pid || undefined); return nx
   })
   // A new budget re-derives every stage's non-typed side from the typed one.
-  const setSpend = (raw) => setK((p) => {
-    const sp = raw === '' ? undefined : Number(raw)
+  const rederive = (p, sp) => {
     const stages = { ...(p.stages || {}) }, stageCost = { ...(p.stageCost || {}) }, stageBasis = p.stageBasis || {}
     for (const key of new Set([...Object.keys(stages), ...Object.keys(stageCost)])) {
       const basis = stageBasis[key] || (stages[key] != null ? 'volume' : 'cost')
@@ -13174,7 +13191,29 @@ function KpiEditor({ clientId, embedded, nonce }) {
       if (basis === 'volume' && stages[key] > 0) stageCost[key] = Math.round(sp / stages[key])
       if (basis === 'cost' && stageCost[key] > 0) stages[key] = Math.round(sp / stageCost[key])
     }
-    const nx = { ...p, monthlySpend: sp, stages, stageCost }; saveKpis(clientId, nx, pid || undefined); return nx
+    return { ...p, stages, stageCost }
+  }
+  // The client's budget. Every pipeline's derived side follows it, so all of
+  // them are re-derived and written, not only the one on screen.
+  const setSpend = (raw) => {
+    const sp = raw === '' ? undefined : Number(raw)
+    const all = SETTINGS.kpis[clientId] || {}
+    const { byPipeline, ...clientLevel } = all
+    if (multi && byPipeline) {
+      for (const p of pipes) {
+        const cur = byPipeline[p.id]; if (!cur) continue
+        const eff = Number(cur.pipeBudget) > 0 ? Number(cur.pipeBudget) : (sp ? Math.round(sp * shareOf(p)) : undefined)
+        saveKpis(clientId, rederive(cur, eff), p.id)
+      }
+    }
+    saveKpis(clientId, { ...clientLevel, monthlySpend: sp }, undefined)
+    setK(loadKpis(clientId, pid || undefined))
+  }
+  // A pipeline's own figure, overriding its share; empty goes back to the share.
+  const setPipeBudget = (raw) => setK((p) => {
+    const v = raw === '' ? undefined : Number(raw)
+    const eff = v || (clientBudget ? Math.round(clientBudget * share) : undefined)
+    const nx = { ...rederive(p, eff), pipeBudget: v }; saveKpis(clientId, nx, pid || undefined); return nx
   })
   const money0 = (v) => (v == null || !isFinite(v) ? '-' : `$${fmtNumber(Math.round(v))}`)
   const row = (key, label) => {
@@ -13182,8 +13221,8 @@ function KpiEditor({ clientId, embedded, nonce }) {
     const basis = k.stageBasis && k.stageBasis[key]
     const act = actualOf(key)
     return (
-      <tr key={key} className={key === KPI_LEADS_KEY ? 'kpi-row-leads' : ''}>
-        <td className="lft" title={label}>{label}</td>
+      <tr key={key} className={`${key === KPI_LEADS_KEY ? 'kpi-row-leads' : ''}${keNames.has(key) ? ' kpi-row-ke' : ''}`}>
+        <td className="lft" title={keNames.has(key) ? `${label} - a key event` : label}>{label}{keNames.has(key) ? <span className="kpi-ke-tag" title="A key event: this stage is reported on throughout the app">key event</span> : null}</td>
         <td className="kpi-act">{st.status === 'ok' ? <>{fmtNumber(act)}<small>{act && actualSpend ? ` · ${money0(actualSpend / act)} ea` : ''}</small></> : <span className="lrv-z">…</span>}</td>
         <td><input type="number" min="0" className={basis === 'cost' ? 'kpi-derived' : ''} value={numOr(vol)} onChange={(e) => setTarget(key, 'volume', e.target.value)} placeholder={spend && cost ? String(Math.round(spend / cost)) : '#'} title={basis === 'cost' ? 'Worked out from the cost target and the monthly budget' : 'Target volume this month'} /></td>
         <td><input type="number" min="0" className={basis === 'volume' ? 'kpi-derived' : ''} value={numOr(cost)} onChange={(e) => setTarget(key, 'cost', e.target.value)} placeholder={spend && vol ? String(Math.round(spend / vol)) : '$'} title={basis === 'volume' ? 'Worked out from the volume target and the monthly budget' : 'Target cost per one of these'} disabled={!spend && basis !== 'cost'} /></td>
@@ -13202,9 +13241,20 @@ function KpiEditor({ clientId, embedded, nonce }) {
         <div className="kpi-block-h">Monthly budget <span className="sub">· the number every cost and volume target below is worked out from</span></div>
         <div className="kpi-spend">
           <span className="kpi-spend-cur">$</span>
-          <input type="number" min="0" value={numOr(k.monthlySpend)} onChange={(e) => setSpend(e.target.value)} placeholder={actualSpend ? String(Math.round(actualSpend)) : 'per month'} />
-          <span className="cap">{actualSpend ? `Last 30 days: ${money0(actualSpend)} across paid channels.` : 'No paid spend recorded in the last 30 days.'}</span>
+          <input type="number" min="0" value={numOr(clientAll.monthlySpend)} onChange={(e) => setSpend(e.target.value)} placeholder={actualSpendAll ? String(Math.round(actualSpendAll)) : 'per month'} />
+          <span className="cap">{actualSpendAll ? `Last 30 days: ${money0(actualSpendAll)} across paid channels${multi ? ', all pipelines' : ''}.` : 'No paid spend recorded in the last 30 days.'}</span>
         </div>
+        {multi && selPipe ? (
+          <div className="kpi-share">
+            <div className="kpi-share-h">This pipeline's share <span className="sub">· {Math.round(share * 100)}% of the budget, by its share of last month's leads ({fmtNumber(actualLeads)} of {fmtNumber(totalLeads30)})</span></div>
+            <div className="kpi-spend">
+              <span className="kpi-spend-cur">$</span>
+              <input type="number" min="0" className={pipeOverride ? '' : 'kpi-derived'} value={numOr(k.pipeBudget)} onChange={(e) => setPipeBudget(e.target.value)} placeholder={clientBudget ? String(Math.round(clientBudget * share)) : '-'} title={pipeOverride ? 'Set for this pipeline - clear it to go back to the share' : 'Worked out from the client budget; type a figure to override it'} />
+              <span className="cap">{pipeOverride ? `Overriding the ${money0(clientBudget ? clientBudget * share : 0)} share.` : clientBudget ? `Type a figure to give this pipeline a different budget.` : 'Set the client budget above first.'}</span>
+            </div>
+            <div className="kpi-share-list">{pipes.map((p) => <span key={p.id} className={p.id === pid ? 'on' : ''}>{p.name} <b>{Math.round(shareOf(p) * 100)}%</b></span>)}</div>
+          </div>
+        ) : null}
       </div>
 
       <div className="kpi-block">

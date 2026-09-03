@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.448.0 - 2026-09-03 · `PENDING` - KPI targets: budget split per pipeline; key events marked
+
+**One budget, shared out.** The monthly budget is now set once for the client -
+it is what the client pays - and each pipeline receives its share by that
+pipeline's share of last month's leads, the same allocation the Channel split
+uses. The share is shown next to the pipeline picker with every pipeline's
+percentage; a pipeline can be given its own figure instead, which sticks until
+cleared. Changing the client budget re-derives every pipeline's targets, not
+only the one on screen. The **Last 30d** cost-per-stage now uses the pipeline's
+share of spend rather than the whole account's - previously a pipeline with one
+lead read as "$10,582 each" because it was being charged for everything.
+
+**Key events stand out.** Stages configured as key events are tinted and tagged
+in the funnel-targets table, so the rows the rest of the app reports on are
+the ones you see first.
+
 ## v3.447.0 - 2026-09-03 · `5ab5f50` - KPI targets driven by a monthly budget; grouped client settings
 
 **KPI targets.** A **Monthly budget** field now sits at the top, and every

@@ -4324,3 +4324,15 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .kpi-row-leads td { font-weight: 700; }
 .kpi-hint { background: rgba(109,94,252,.08); border-radius: 9px; padding: 8px 10px; }
 .kpi-inputs { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+/* Per-pipeline share of the client budget, and the key-event rows. */
+.kpi-share { margin-top: 12px; padding: 10px 12px; background: rgba(109,94,252,.06); border: 1px dashed var(--border-2); border-radius: 10px; }
+.kpi-share-h { font-size: 12px; font-weight: 800; margin-bottom: 6px; }
+.kpi-share-h .sub { font-weight: 500; color: var(--muted); }
+.kpi-share .kpi-spend input { width: 130px; font-size: 14px; }
+.kpi-share .kpi-spend input.kpi-derived { border-style: dashed; border-color: var(--brand); background: rgba(109,94,252,.10); }
+.kpi-share-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.kpi-share-list span { font-size: 11px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px; }
+.kpi-share-list span.on { border-color: var(--brand); color: var(--text); }
+.kpi-tbl tr.kpi-row-ke td { background: rgba(18,184,134,.07); }
+.kpi-tbl tr.kpi-row-ke td.lft { font-weight: 700; }
+.kpi-ke-tag { display: inline-block; margin-left: 8px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #0f8f68; background: rgba(18,184,134,.14); border-radius: 20px; padding: 1px 7px; vertical-align: middle; }

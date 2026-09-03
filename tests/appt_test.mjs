@@ -1,13 +1,17 @@
 const ROOT = new URL('../', import.meta.url).pathname
 // Extract the coalescing wrapper from ghl.mjs and drive it with a stub builder.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'netlify/lib/ghl.mjs', 'utf8')
 const i = src.indexOf('const APPT_MEM_MS')
 const j = src.indexOf('async function _fetchAppointments')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_appt.mjs',
+fs.writeFileSync(TMP + '_appt.mjs',
   'export let _fetchAppointments\nexport function __inject(f) { _fetchAppointments = f }\n' +
   src.slice(i, j) + '\nexport { fetchAppointments, _apptMem, _apptInflight }\n')
-const M = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_appt.mjs')
+const M = await import(TMP + '_appt.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

@@ -2,11 +2,15 @@ const ROOT = new URL('../', import.meta.url).pathname
 // The flat->grid reshape and the two clocks. Getting the day/hour indexing wrong
 // would silently rotate the whole heatmap, which no amount of eyeballing catches.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
 const i = src.indexOf('function flatGrid(flat)')
 const j = src.indexOf('function EnquiryTimesSection')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_enq.mjs', src.slice(i, j) + '\nexport { flatGrid }\n')
-const { flatGrid } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_enq.mjs')
+fs.writeFileSync(TMP + '_enq.mjs', src.slice(i, j) + '\nexport { flatGrid }\n')
+const { flatGrid } = await import(TMP + '_enq.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

@@ -2,12 +2,16 @@ const ROOT = new URL('../', import.meta.url).pathname
 // Extract the real map and predicate from windsor.mjs and exercise them, so this
 // tests the shipped rules rather than a restatement of them.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'netlify/functions/windsor.mjs', 'utf8')
 const i = src.indexOf('const VIEWER_TABS_ALL =')
 const j = src.indexOf('\n}', src.indexOf('function viewerAllowed')) + 2
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_perm.mjs',
+fs.writeFileSync(TMP + '_perm.mjs',
   src.slice(i, j) + '\nexport { viewerAllowed, VIEWER_TABS_ALL, VIEWER_REQ_TABS }\n')
-const { viewerAllowed } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_perm.mjs')
+const { viewerAllowed } = await import(TMP + '_perm.mjs')
 
 let fails = 0
 const ok = (cond, msg) => { if (!cond) { fails++; console.log('FAIL:', msg) } else console.log('ok  ', msg) }

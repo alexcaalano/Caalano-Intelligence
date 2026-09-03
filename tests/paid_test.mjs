@@ -1,13 +1,17 @@
 const ROOT = new URL('../', import.meta.url).pathname
 // The blend: leads at their arrival hour against spend at that hour, per channel.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
 const i = src.indexOf('const PAID_BLOCKS =')
 const j = src.indexOf('function PaidByHour')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_pb.mjs',
+fs.writeFileSync(TMP + '_pb.mjs',
   'const enqHourLabel = (h) => (h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`)\n' +
   src.slice(i, j) + '\nexport { paidByHour, PAID_BLOCKS }\n')
-const { paidByHour, PAID_BLOCKS } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_pb.mjs')
+const { paidByHour, PAID_BLOCKS } = await import(TMP + '_pb.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

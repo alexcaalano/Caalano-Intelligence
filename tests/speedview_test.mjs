@@ -2,11 +2,15 @@ const ROOT = new URL('../', import.meta.url).pathname
 // The guard chain that has now crashed the view twice. Tested against the payload
 // shapes the two fetches actually produce, including the ones that broke it.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
 const i = src.indexOf('function speedViewState')
 const j = src.indexOf('function TimingView')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_sv.mjs', src.slice(i, j) + '\nexport { speedViewState }\n')
-const { speedViewState } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_sv.mjs')
+fs.writeFileSync(TMP + '_sv.mjs', src.slice(i, j) + '\nexport { speedViewState }\n')
+const { speedViewState } = await import(TMP + '_sv.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

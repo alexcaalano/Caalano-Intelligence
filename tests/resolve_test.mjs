@@ -4,12 +4,16 @@ const ROOT = new URL('../', import.meta.url).pathname
 // ids sharing one ad group, an unresolvable id, and a name that merely looks
 // numeric-adjacent.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'netlify/functions/windsor.mjs', 'utf8')
 const start = src.indexOf('const LOST_ID_DIMS =')
 const end = src.indexOf('// Rewrite each Forms person')
 const mod = src.slice(start, end) + '\nexport { resolveLostAttribution, LOST_ID_DIMS }\n'
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_rla.mjs', mod)
-const { resolveLostAttribution } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_rla.mjs')
+fs.writeFileSync(TMP + '_rla.mjs', mod)
+const { resolveLostAttribution } = await import(TMP + '_rla.mjs')
 
 const maps = {
   campaign: { '22314183244': 'ADHD Assessments - Search', '23302211694': 'Allied Health - Broad' },

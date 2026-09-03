@@ -1,11 +1,15 @@
 const ROOT = new URL('../', import.meta.url).pathname
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
 const i = src.indexOf('const normCdf =')
 const j = src.indexOf('function EnqWindowTest')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_ww.mjs',
+fs.writeFileSync(TMP + '_ww.mjs',
   src.slice(i, j) + '\nexport { normCdf, twoProp, hoursInWindow, hourWrap }\n')
-const { normCdf, twoProp, hoursInWindow, hourWrap } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_ww.mjs')
+const { normCdf, twoProp, hoursInWindow, hourWrap } = await import(TMP + '_ww.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

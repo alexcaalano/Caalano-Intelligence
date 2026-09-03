@@ -1,12 +1,16 @@
 const ROOT = new URL('../', import.meta.url).pathname
 // Extract the real budget helpers from ghl.mjs and exercise them directly.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'netlify/lib/ghl.mjs', 'utf8')
 const i = src.indexOf('const BUDGET_MIN_MS')
 const j = src.indexOf('export async function resilientFetch')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_budget.mjs',
+fs.writeFileSync(TMP + '_budget.mjs',
   src.slice(i, j) + '\nexport { budgetLeft, budgetedTimeout, budgetAllowsRetry, BUDGET_MIN_MS, BUDGET_RETRY_MS }\n')
-const B = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_budget.mjs')
+const B = await import(TMP + '_budget.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

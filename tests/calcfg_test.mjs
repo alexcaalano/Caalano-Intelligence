@@ -2,14 +2,18 @@ const ROOT = new URL('../', import.meta.url).pathname
 // Extract fetchCalendarConfig from ghl.mjs and drive it with injected stubs, so
 // this exercises the shipped function rather than a paraphrase of it.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'netlify/lib/ghl.mjs', 'utf8')
 const i = src.indexOf('const CAL_MEM_MS')
 const j = src.indexOf('async function fetchAppointments')
 const body = src.slice(i, j)
   .replace('const _calStore = () => getStore({ name: \'caalano-pipecache\', consistency: \'strong\' })', 'const _calStore = () => STORE')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_cal.mjs',
+fs.writeFileSync(TMP + '_cal.mjs',
   'export let STORE, ghlGet\nexport function __inject(s, g) { STORE = s; ghlGet = g }\n' + body + '\nexport { fetchCalendarConfig, _calMem }\n')
-const M = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_cal.mjs')
+const M = await import(TMP + '_cal.mjs')
 
 const mkStore = () => { const b = new Map(); return { get: async (k) => b.has(k) ? JSON.parse(JSON.stringify(b.get(k))) : null, setJSON: async (k, v) => { b.set(k, JSON.parse(JSON.stringify(v))) }, dump: () => b } }
 let fails = 0

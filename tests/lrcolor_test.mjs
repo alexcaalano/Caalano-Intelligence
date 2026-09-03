@@ -1,14 +1,18 @@
 const ROOT = new URL('../', import.meta.url).pathname
 // Extract the real colour map + signal maths from App.jsx and exercise them.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
 const grab = (from, to) => src.slice(src.indexOf(from), src.indexOf(to))
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_lrc.mjs',
+fs.writeFileSync(TMP + '_lrc.mjs',
   grab('const LR_HUES = {', 'function LrPop') +
   grab('function lrColorMap', 'function LrReasonMix') +
   grab('const LR_SIG_MIN_GROUP', 'function LrSignals') +
   '\nexport { lrColorMap, lrSignals, LR_HUES, LR_MAX_HUES }\n')
-const { lrColorMap, lrSignals, LR_HUES, LR_MAX_HUES } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_lrc.mjs')
+const { lrColorMap, lrSignals, LR_HUES, LR_MAX_HUES } = await import(TMP + '_lrc.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

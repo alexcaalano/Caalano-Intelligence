@@ -1,17 +1,21 @@
 const ROOT = new URL('../', import.meta.url).pathname
 // The marginal rollups: every cell counted once, in the right bucket.
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
+// A scratch dir that exists on every machine, including the CI runner.
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'c360-test-')) + '/'
 const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
 const i = src.indexOf('const ENQ_BLOCKS =')
 const j = src.indexOf('function EnqMarginal')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_mg.mjs',
+fs.writeFileSync(TMP + '_mg.mjs',
   'const ENQ_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]\nconst enqHourLabel = (h) => `${h}:00`\n' +
   src.slice(i, j) + '\nexport { enqMarginal, ENQ_BLOCKS }\n')
-const { enqMarginal, ENQ_BLOCKS } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_mg.mjs')
+const { enqMarginal, ENQ_BLOCKS } = await import(TMP + '_mg.mjs')
 // pickMeasure, tested against the same grid.
 const k = src.indexOf('function pickMeasure')
-fs.writeFileSync('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_pm.mjs', src.slice(k, src.indexOf('function flatGrid')) + '\nexport { pickMeasure }\n')
-const { pickMeasure } = await import('/tmp/claude-0/-home-user-Dashboard/279073be-812c-5059-944a-7feaa35710ad/scratchpad/_pm.mjs')
+fs.writeFileSync(TMP + '_pm.mjs', src.slice(k, src.indexOf('function flatGrid')) + '\nexport { pickMeasure }\n')
+const { pickMeasure } = await import(TMP + '_pm.mjs')
 
 let fails = 0
 const ok = (c, m) => { if (!c) { fails++; console.log('FAIL:', m) } else console.log('ok  ', m) }

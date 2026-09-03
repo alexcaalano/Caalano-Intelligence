@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.447.0 - 2026-09-03 · `PENDING` - KPI targets driven by a monthly budget; grouped client settings
+## v3.447.0 - 2026-09-03 · `5ab5f50` - KPI targets driven by a monthly budget; grouped client settings
 
 **KPI targets.** A **Monthly budget** field now sits at the top, and every
 funnel target below is worked out from it. Each stage - Leads, then every

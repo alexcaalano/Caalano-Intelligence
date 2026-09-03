@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.450.0 - 2026-09-03 · `PENDING` - Funnel Forecaster
+## v3.450.0 - 2026-09-03 · `baef6c4` - Funnel Forecaster
 
 A new left-hand item under Weekly Traffic Light, for staff. What a month of
 spend should turn into, stage by stage.

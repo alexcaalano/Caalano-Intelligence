@@ -53,3 +53,12 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# --- Environments -------------------------------------------------------------
+# Production deploys from the branch set in Netlify -> Site configuration ->
+# Build & deploy -> Branches. `staging` is a branch deploy: enable it there
+# ("Branch deploys: let me add individual branches -> staging") and it gets its
+# own URL, its own Blob stores, and any environment variables scoped to the
+# "Branch deploys" context. Anything set below applies on top for that branch.
+[context.staging]
+  # e.g. environment = { SITE_NAME = "staging" }

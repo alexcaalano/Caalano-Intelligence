@@ -1,0 +1,29 @@
+# Every push and pull request: the static checks, the unit tests, and a real
+# build. A red run here means the change would have broken production; before
+# this, the only thing that ran before deploy was the build itself.
+name: Checks and tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Static checks (top-level, TDZ, undefined names, Windsor scoping)
+        run: npm run check
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npx vite build
+        env:
+          COMMIT_REF: ${{ github.sha }}

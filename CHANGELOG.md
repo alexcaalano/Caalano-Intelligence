@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.454.0 - 2026-09-03 · `PENDING` - One build per client open; bizloc cached; KPI table without history
+## v3.454.0 - 2026-09-03 · `58109eb` - One build per client open; bizloc cached; KPI table without history
 
 **ccdrill reuses what health built.** Opening a client fires `health` and
 `ccdrill` together, and each rebuilt the same blend from scratch - two

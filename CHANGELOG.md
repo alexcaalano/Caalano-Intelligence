@@ -18,6 +18,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.456.0 - 2026-09-03 · `PENDING` - Backups of everything that lives only in Blobs
+
+The daily backup covered one store (settings). It now covers the eleven that
+matter - configuration, users, terms acceptances, health / monthly / social /
+clinic history, the audit trail, the reliability log, Meta verdicts, scan
+state - one file per store under `backups/latest/` and `backups/daily/<day>/`.
+The Caalano Systems OAuth token is never written to GitHub.
+
+**`backup-export`** is a superadmin one-click download of the same, as a single
+JSON file, with no GitHub token needed - so a backup can always be taken by hand
+before anything risky. `?secrets=1` adds the token store for the copy that goes
+in the password manager. The file names its format and date, lists what was
+deliberately left out (the rebuildable caches), and every store carries its key
+count and whether it was capped.
+
+`BACKUP.md` in the repo says what lives where, how to take a backup, and how to
+restore. Tested the collector against a fake store: every store present, JSON
+and non-JSON values kept, pagination past the first page, the log capped and
+flagged, secrets excluded unless asked.
+
+Also: the daily job says plainly when it has been skipping for want of a token.
+
 ## v3.455.0 - 2026-09-03 · `3023d8a` - Views survive a reload
 
 The browser's cache of loaded views lived in memory, so every reload and every

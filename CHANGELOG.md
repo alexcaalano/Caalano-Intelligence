@@ -18,6 +18,53 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.450.0 - 2026-09-03 · `PENDING` - Funnel Forecaster
+
+A new left-hand item under Weekly Traffic Light, for staff. What a month of
+spend should turn into, stage by stage.
+
+**Client forecast.** Pick a client and a pipeline. The model reads the client's
+own numbers: cost per lead per channel from the last 30 days of paid spend and
+paid-attributed CRM leads (the 90-day figure where the month is too thin), and
+how far leads get - the share reaching each pipeline stage, and the win rate -
+from the last 90 days, per channel where the channel has 15+ leads and blended
+where it does not. Move the Meta and Google spend and the funnel re-forecasts:
+each stage as a stacked bar (Meta / Google / non-paid), the forecast count, the
+step conversion from the stage above, and what each one costs at that spend;
+won and revenue at the bottom; a headline row of paid leads, CPL, won, CAC,
+revenue and return on spend. Non-paid leads (organic, referral, direct) are a
+flat baseline that does not move with spend, and can be switched off.
+
+Beneath the funnel, a **spend-against-outcome** chart runs the budget from half
+to double today's level with the same channel mix: paid leads, won and CAC at
+each step, with today marked. It is the one picture that answers "is more
+budget worth it".
+
+**Diminishing returns** is an optional assumption, off by default: cost per lead
+rises by a chosen amount (10-40%) for every +50% of spend above the last 30
+days. Spending less never makes leads cheaper. Flagged as an assumption
+wherever it appears.
+
+Until the spend is touched, grey "vs" figures show what actually happened in
+the last 30 days at that spend - a sanity check that the average reproduces
+the recent past before it is trusted forward.
+
+**Scenario builder.** The same model with every input typed: spend and cost
+per lead per channel, a non-paid baseline, any number of stages each with its
+conversion from the stage before (a show rate on a meeting, a quote rate, a
+booking rate), win rate and average deal value. "Open as a scenario" from a
+client forecast seeds every field from that client's real last 90 days.
+Scenarios are saved and shared with the team.
+
+Tested the arithmetic (19 cases: per-channel scaling, cumulative reach, step
+conversion, cost per reach, CAC over paid wins only, diminishing returns above
+and below baseline, the non-paid switch, empty channels, the step ↔ reach
+round-trip, and a typed scenario end to end) and rendered the funnel in light,
+dark and narrow.
+
+Fixes in passing: Catchment (`geo`) settings were never accepted by the server's
+write allow-list, so they lived in the browser only - they persist now.
+
 ## v3.449.0 - 2026-09-03 · `06e890a` - Client settings: Timing tab, business type, tidier Key events
 
 **Timing** is a new entry under Account. Timezone, sales cycle, and work hours

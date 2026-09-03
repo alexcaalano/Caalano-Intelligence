@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.449.0'
+const APP_VERSION = '3.450.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2070,6 +2070,430 @@ function WkDual({ data, costKey, costName, countKey, countName, kpi, currency, c
     </ResponsiveContainer>
   )
 }
+// ---------------------------------------------------------------------------
+// Funnel Forecaster - what a month of spend should turn into, stage by stage.
+//
+// Two ways in. A CLIENT forecast reads the client's own numbers: the last 30
+// days of paid spend per channel (what a lead costs today) and the last 90 days
+// of CRM outcomes for a pipeline (how far paid leads get, per channel). Move the
+// spend and the funnel re-forecasts. A SCENARIO is the same model with every
+// number typed by hand - spend, cost per lead, the stages, and the step
+// conversion between each - for a client that does not exist yet, or a funnel
+// that does not exist yet.
+//
+// Everything is an average applied forward. That is the honest limit of it: a
+// forecast here is "if next month behaves like the last three", never a promise,
+// and the page says so. It is staff-only for exactly that reason.
+// ---------------------------------------------------------------------------
+const FC_CHANNELS = [['meta', 'Meta', '#4f7cff'], ['google', 'Google', '#12b886'], ['other', 'Non-paid', '#c7cdda']]
+const FC_MIN_CHANNEL_LEADS = 15   // below this a channel's own stage rates are noise; blended rates are used
+const FC_MIN_CPL_LEADS = 10       // below this the 30-day CPL is replaced by the 90-day one
+
+// The model, from a client's ccdrill payloads. `d90` carries the funnel and the
+// channel split; `d30` carries the current run-rate of spend and paid leads.
+function fcModelFromClient(d90, d30, pipeId, kpis) {
+  if (!d90 || !d90.pipelinesFunnel) return null
+  const pipe = (d90.pipelinesFunnel || []).find((p) => p.id === pipeId) || d90.pipelinesFunnel[0]
+  if (!pipe) return null
+  const contrib = ((d90.pipeContribution || []).find((p) => p.id === pipe.id)) || null
+  const chan = (contrib && contrib.chan) || { meta: {}, google: {}, other: {} }
+  const leads = { meta: chan.meta.leads || 0, google: chan.google.leads || 0, other: chan.other.leads || 0 }
+  const won = { meta: chan.meta.won || 0, google: chan.google.won || 0, other: chan.other.won || 0 }
+  const totalLeads = leads.meta + leads.google + leads.other
+  const stages = (pipe.stages || []).slice().sort((a, b) => a.pos - b.pos)
+  // Cumulative reach per channel: the share of that channel's leads that got at
+  // least this far. Thin channels borrow the blended curve.
+  const rates = {}
+  for (const c of ['meta', 'google', 'other']) {
+    const own = leads[c] >= FC_MIN_CHANNEL_LEADS
+    rates[c] = stages.map((s) => (own ? (s[c] || 0) / leads[c] : (totalLeads ? (s.count || 0) / totalLeads : 0)))
+  }
+  const winRate = {}
+  for (const c of ['meta', 'google', 'other']) winRate[c] = leads[c] >= FC_MIN_CHANNEL_LEADS ? won[c] / leads[c] : (totalLeads ? (won.meta + won.google + won.other) / totalLeads : 0)
+  // Cost per lead: today's rate if it rests on enough leads, else the quarter's.
+  const sp30 = (d30 && d30.spend) || {}, pd30 = (d30 && d30.paid) || {}
+  const sp90 = d90.spend || {}, pd90 = d90.paid || {}
+  const cplOf = (c) => {
+    const l30 = pd30[`${c}Leads`] || 0, l90 = pd90[`${c}Leads`] || 0
+    if (l30 >= FC_MIN_CPL_LEADS && sp30[c] > 0) return { cpl: sp30[c] / l30, basis: '30d' }
+    if (l90 > 0 && sp90[c] > 0) return { cpl: sp90[c] / l90, basis: '90d' }
+    return { cpl: null, basis: null }
+  }
+  const meta = cplOf('meta'), google = cplOf('google')
+  const rev = (contrib && contrib.revenue) || 0, wonAll = won.meta + won.google + won.other
+  const avgDeal = kpis && Number(kpis.clientLtv) > 0 ? Number(kpis.clientLtv) : (wonAll ? rev / wonAll : 0)
+  return {
+    pipeId: pipe.id, pipeName: pipe.name,
+    stages: stages.map((s) => ({ key: s.id, name: s.name })),
+    channels: {
+      meta: { cpl: meta.cpl, cplBasis: meta.basis, rates: rates.meta, winRate: winRate.meta, own: leads.meta >= FC_MIN_CHANNEL_LEADS },
+      google: { cpl: google.cpl, cplBasis: google.basis, rates: rates.google, winRate: winRate.google, own: leads.google >= FC_MIN_CHANNEL_LEADS },
+    },
+    other: { leadsPerMonth: leads.other / 3, rates: rates.other, winRate: winRate.other },
+    baseSpend: { meta: sp30.meta || 0, google: sp30.google || 0 },
+    avgDeal, avgDealBasis: kpis && Number(kpis.clientLtv) > 0 ? 'LTV target' : 'won deals, last 90d',
+    sample: { leads, won, days: 90 },
+  }
+}
+
+// The arithmetic. Pure, so it can be tested and so a scenario and a client
+// forecast are the same thing with different inputs.
+//   model  as above (a scenario supplies the same shape by hand)
+//   spend  { meta, google } per month
+//   opts   { cplRise: 0..1 - how much CPL rises per +50% spend over baseline;
+//            includeOther: keep the non-paid baseline in the totals }
+function fcForecast(model, spend, opts = {}) {
+  const rise = Number(opts.cplRise) || 0
+  const out = { leads: { meta: 0, google: 0, other: 0 }, cpl: {}, spend: { meta: 0, google: 0, total: 0 } }
+  for (const c of ['meta', 'google']) {
+    const ch = model.channels[c]
+    const s = Math.max(0, Number(spend[c]) || 0)
+    out.spend[c] = s; out.spend.total += s
+    if (!ch || !ch.cpl || !s) { out.leads[c] = 0; out.cpl[c] = ch ? ch.cpl : null; continue }
+    // Past the current run-rate, each extra half-again of spend lifts CPL by
+    // `rise`. Below it, CPL holds - nobody gets cheaper leads by spending less.
+    const base = model.baseSpend && model.baseSpend[c] > 0 ? model.baseSpend[c] : s
+    const over = Math.max(0, s / base - 1)
+    const cpl = ch.cpl * (1 + rise * (over / 0.5))
+    out.cpl[c] = cpl
+    out.leads[c] = s / cpl
+  }
+  out.leads.other = opts.includeOther === false ? 0 : (model.other ? model.other.leadsPerMonth || 0 : 0)
+  out.leads.total = out.leads.meta + out.leads.google + out.leads.other
+  const reach = (c, i) => { const r = c === 'other' ? model.other && model.other.rates : model.channels[c] && model.channels[c].rates; return out.leads[c] * ((r && r[i]) || 0) }
+  let prev = out.leads.total
+  out.stages = model.stages.map((s, i) => {
+    const m = reach('meta', i), g = reach('google', i), o = reach('other', i)
+    const total = m + g + o
+    const row = { key: s.key, name: s.name, meta: m, google: g, other: o, total, ofLeads: out.leads.total ? total / out.leads.total : 0, step: prev ? total / prev : 0, costEach: total ? out.spend.total / total : null }
+    prev = total
+    return row
+  })
+  const wr = (c) => (c === 'other' ? (model.other && model.other.winRate) || 0 : (model.channels[c] && model.channels[c].winRate) || 0)
+  out.won = { meta: out.leads.meta * wr('meta'), google: out.leads.google * wr('google'), other: out.leads.other * wr('other') }
+  out.won.total = out.won.meta + out.won.google + out.won.other
+  out.revenue = out.won.total * (model.avgDeal || 0)
+  out.cac = out.won.meta + out.won.google ? out.spend.total / (out.won.meta + out.won.google) : null
+  out.paidCpl = out.leads.meta + out.leads.google ? out.spend.total / (out.leads.meta + out.leads.google) : null
+  out.roas = out.spend.total ? ((out.won.meta + out.won.google) * (model.avgDeal || 0)) / out.spend.total : null
+  return out
+}
+
+// A scenario is typed as STEP conversions (each stage as a share of the one
+// before), because that is how people think about a funnel. The model wants
+// cumulative reach, so this converts.
+function fcStepsToRates(steps) { let acc = 1; return steps.map((p) => { acc *= Math.max(0, Math.min(1, (Number(p) || 0) / 100)); return acc }) }
+function fcRatesToSteps(rates) { let prev = 1; return rates.map((r) => { const s = prev ? (r / prev) * 100 : 0; prev = r; return Math.round(s * 10) / 10 }) }
+function fcModelFromScenario(sc) {
+  const stages = (sc.stages || []).map((s, i) => ({ key: `s${i}`, name: s.name || `Stage ${i + 1}` }))
+  const rates = fcStepsToRates((sc.stages || []).map((s) => s.step))
+  const ch = (c) => ({ cpl: Number(sc[`${c}Cpl`]) > 0 ? Number(sc[`${c}Cpl`]) : null, cplBasis: 'typed', rates, winRate: Math.max(0, Math.min(1, (Number(sc.winRate) || 0) / 100)), own: true })
+  return {
+    pipeId: 'scenario', pipeName: sc.name || 'Scenario',
+    stages, channels: { meta: ch('meta'), google: ch('google') },
+    other: { leadsPerMonth: Number(sc.otherLeads) || 0, rates, winRate: Math.max(0, Math.min(1, (Number(sc.winRate) || 0) / 100)) },
+    baseSpend: { meta: Number(sc.metaSpend) || 0, google: Number(sc.googleSpend) || 0 },
+    avgDeal: Number(sc.avgDeal) || 0, avgDealBasis: 'typed',
+  }
+}
+// A scenario seeded from a live client, so "what if" starts from what is.
+function fcScenarioFromModel(model, spend, name) {
+  const steps = fcRatesToSteps(model.channels.meta.own ? model.channels.meta.rates : (model.channels.google.own ? model.channels.google.rates : model.other.rates))
+  const winAll = model.sample ? ((model.sample.won.meta + model.sample.won.google + model.sample.won.other) / Math.max(1, model.sample.leads.meta + model.sample.leads.google + model.sample.leads.other)) : 0
+  return {
+    id: `sc_${Date.now().toString(36)}`, name: name || `${model.pipeName} - what if`,
+    metaSpend: Math.round(spend.meta || 0), googleSpend: Math.round(spend.google || 0),
+    metaCpl: model.channels.meta.cpl ? Math.round(model.channels.meta.cpl) : '', googleCpl: model.channels.google.cpl ? Math.round(model.channels.google.cpl) : '',
+    otherLeads: Math.round(model.other.leadsPerMonth || 0),
+    stages: model.stages.map((s, i) => ({ name: s.name, step: steps[i] })),
+    winRate: Math.round(winAll * 1000) / 10, avgDeal: Math.round(model.avgDeal || 0),
+    cplRise: 0,
+  }
+}
+
+// --- storage ----------------------------------------------------------------
+function loadScenarios() { return Object.values(SETTINGS.forecasts || {}).filter((s) => s && s.id).sort((a, b) => (b.at || 0) - (a.at || 0)) }
+function saveScenario(sc) {
+  const next = { ...(SETTINGS.forecasts || {}), [sc.id]: { ...sc, at: Date.now() } }
+  SETTINGS.forecasts = next; writeLS(FORECAST_KEY, next); saveSettingsRemote({ forecasts: { [sc.id]: next[sc.id] } }); bumpSettings()
+}
+function deleteScenario(id) {
+  const next = { ...(SETTINGS.forecasts || {}) }; delete next[id]
+  SETTINGS.forecasts = next; writeLS(FORECAST_KEY, next); saveSettingsRemote({ forecasts: { [id]: null } }); bumpSettings()
+}
+
+// --- the funnel picture ------------------------------------------------------
+// Stacked horizontal bars, widest at the top, one colour per channel - drawn
+// with plain elements so the numbers sit exactly where the bars end and it
+// prints. Each row: name, the three segments, the forecast count, the step
+// conversion from the row above, and what each one costs at this spend.
+function FcFunnel({ fc, model, money, compare }) {
+  const rows = [{ key: '__leads', name: 'Leads', meta: fc.leads.meta, google: fc.leads.google, other: fc.leads.other, total: fc.leads.total, step: null, costEach: fc.paidCpl }, ...fc.stages]
+  const max = Math.max(1, ...rows.map((r) => r.total))
+  const n0 = (v) => fmtNumber(Math.round(v))
+  return (
+    <div className="fc-funnel">
+      {rows.map((r, i) => {
+        const w = (r.total / max) * 100
+        const cmp = compare && (i === 0 ? compare.leads : compare.stages[i - 1])
+        return (
+          <div className="fc-row" key={r.key}>
+            <div className="fc-name" title={r.name}>{r.name}</div>
+            <div className="fc-track">
+              <div className="fc-bar" style={{ width: `${Math.max(w, 0.5)}%` }} title={`${n0(r.meta)} Meta · ${n0(r.google)} Google · ${n0(r.other)} non-paid`}>
+                {r.total > 0 && FC_CHANNELS.map(([c, , col]) => <span key={c} style={{ width: `${(r[c] / r.total) * 100}%`, background: col }} />)}
+              </div>
+              <span className="fc-val">{n0(r.total)}{cmp != null ? <small className={r.total >= cmp ? 'up' : 'dn'}> vs {n0(cmp)}</small> : null}</span>
+            </div>
+            <div className="fc-step">{r.step != null ? `${Math.round(r.step * 100)}%` : ''}</div>
+            <div className="fc-cost">{r.costEach != null && isFinite(r.costEach) ? money(Math.round(r.costEach)) : '-'}</div>
+          </div>
+        )
+      })}
+      <div className="fc-row fc-row-won">
+        <div className="fc-name">Won</div>
+        <div className="fc-track"><span className="fc-val fc-val-won">{n0(fc.won.total)}<small> · {money(Math.round(fc.revenue))}</small></span></div>
+        <div className="fc-step" title="Share of all leads that are won">{fc.leads.total ? `${Math.round((fc.won.total / fc.leads.total) * 100)}%` : ''}</div>
+        <div className="fc-cost">{fc.cac != null ? money(Math.round(fc.cac)) : '-'}</div>
+      </div>
+      <div className="fc-legend">
+        {FC_CHANNELS.map(([c, l, col]) => <span key={c}><i style={{ background: col }} />{l}</span>)}
+        <span className="fc-legend-k">step % = share of the stage above · cost = total spend ÷ reached</span>
+      </div>
+    </div>
+  )
+}
+
+// Spend from half to double the current level, and what each level buys. The
+// one chart that answers "is more budget worth it" in a glance.
+function FcCurve({ model, spend, opts, money }) {
+  const total = (spend.meta || 0) + (spend.google || 0)
+  if (!total) return null
+  const split = { meta: (spend.meta || 0) / total, google: (spend.google || 0) / total }
+  const pts = []
+  for (let f = 0.5; f <= 2.0001; f += 0.125) {
+    const s = total * f
+    const fc = fcForecast(model, { meta: s * split.meta, google: s * split.google }, opts)
+    pts.push({ spend: Math.round(s), leads: Math.round(fc.leads.meta + fc.leads.google), won: Math.round((fc.won.meta + fc.won.google) * 10) / 10, cac: fc.cac ? Math.round(fc.cac) : null, now: Math.abs(f - 1) < 0.01 })
+  }
+  return (
+    <div className="fc-curve">
+      <div className="fc-curve-h">Spend against outcome <span className="sub">· half to double today's budget, same channel mix{opts.cplRise ? ' · with rising CPL' : ''}</span></div>
+      <ResponsiveContainer width="100%" height={190}>
+        <ComposedChart data={pts} margin={{ top: 6, right: 12, bottom: 2, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="spend" tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={(v) => money(v)} axisLine={false} tickLine={false} />
+          <YAxis yAxisId="l" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} tickFormatter={(v) => money(v)} />
+          <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v, n) => [n === 'CAC' ? money(v) : fmtNumber(v), n]} labelFormatter={(v) => `Spend ${money(v)} / month`} />
+          <Bar yAxisId="l" dataKey="leads" name="Paid leads" fill="#4f7cff" fillOpacity={0.35} maxBarSize={22} />
+          <Line yAxisId="l" dataKey="won" name="Won" stroke="#12b886" strokeWidth={2.5} dot={false} />
+          <Line yAxisId="r" dataKey="cac" name="CAC" stroke="#e0803a" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+          <ReferenceLine yAxisId="l" x={Math.round(total)} stroke="var(--text)" strokeDasharray="4 3" label={{ value: 'today', fontSize: 10, fill: 'var(--muted)', position: 'top' }} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function FcSpendInputs({ spend, setSpend, base, money, opts, setOpts, channels }) {
+  const total = (spend.meta || 0) + (spend.google || 0)
+  return (
+    <div className="fc-inputs">
+      {['meta', 'google'].map((c) => {
+        const ch = channels[c]
+        const off = !ch || !ch.cpl
+        return (
+          <div className={`fc-in${off ? ' off' : ''}`} key={c}>
+            <div className="fc-in-h"><span className="ov-pd" style={{ background: c === 'meta' ? '#4f7cff' : '#12b886' }}>{c === 'meta' ? 'Meta' : 'Google'}</span> spend / month
+              {off ? <span className="cap"> · no cost per lead on record</span> : <span className="cap"> · {money(Math.round(ch.cpl))} per lead{ch.cplBasis && ch.cplBasis !== 'typed' ? ` (${ch.cplBasis})` : ''}</span>}
+            </div>
+            <div className="fc-in-row">
+              <input type="range" min={0} max={Math.max(1000, Math.round((base[c] || 0) * 3), Math.round(spend[c] || 0))} step={50} value={Math.round(spend[c] || 0)} disabled={off} onChange={(e) => setSpend({ ...spend, [c]: Number(e.target.value) })} />
+              <span className="fc-in-cur">$</span>
+              <input type="number" min={0} step={50} value={Math.round(spend[c] || 0)} disabled={off} onChange={(e) => setSpend({ ...spend, [c]: Math.max(0, Number(e.target.value) || 0) })} />
+            </div>
+            {base[c] > 0 && Math.abs((spend[c] || 0) - base[c]) > 1 ? <div className="cap">{(spend[c] || 0) > base[c] ? '+' : ''}{Math.round((((spend[c] || 0) - base[c]) / base[c]) * 100)}% on the last 30 days ({money(Math.round(base[c]))})</div> : base[c] > 0 ? <div className="cap">Last 30 days: {money(Math.round(base[c]))}</div> : null}
+          </div>
+        )
+      })}
+      <div className="fc-in fc-in-total">
+        <div className="fc-in-h">Total <b>{money(Math.round(total))}</b> / month</div>
+        <label className="fc-opt" title="Doubling spend rarely doubles leads: auctions get more expensive as you buy more of them. This raises cost per lead by the chosen amount for every +50% of spend above the last 30 days. An assumption, not a measurement.">
+          <input type="checkbox" checked={!!opts.cplRise} onChange={(e) => setOpts({ ...opts, cplRise: e.target.checked ? 0.15 : 0 })} /> Diminishing returns
+          {opts.cplRise ? <select value={String(opts.cplRise)} onChange={(e) => setOpts({ ...opts, cplRise: Number(e.target.value) })}>{[0.1, 0.15, 0.25, 0.4].map((v) => <option key={v} value={String(v)}>CPL +{Math.round(v * 100)}% per +50% spend</option>)}</select> : null}
+        </label>
+        <label className="fc-opt" title="Leads that arrive without ads - organic, referral, direct. They do not move with spend, so they are shown as a flat baseline."><input type="checkbox" checked={opts.includeOther !== false} onChange={(e) => setOpts({ ...opts, includeOther: e.target.checked })} /> Include non-paid baseline</label>
+      </div>
+    </div>
+  )
+}
+
+function FcHeadline({ fc, model, money }) {
+  const n0 = (v) => fmtNumber(Math.round(v))
+  return (
+    <div className="scorecard sc-fit fc-head">
+      <Sc label="Paid leads / month" value={n0(fc.leads.meta + fc.leads.google)} tip="Spend ÷ cost per lead, per channel" />
+      <Sc label="Cost per lead" value={fc.paidCpl ? money(Math.round(fc.paidCpl)) : '-'} />
+      <Sc label="Won / month" value={n0(fc.won.total)} tip={`Paid ${n0(fc.won.meta + fc.won.google)} · non-paid ${n0(fc.won.other)}`} />
+      <Sc label="CAC" value={fc.cac ? money(Math.round(fc.cac)) : '-'} tip="Spend ÷ paid wins" />
+      <Sc label="Revenue / month" value={money(Math.round(fc.revenue))} tip={`Won × ${money(Math.round(model.avgDeal || 0))} (${model.avgDealBasis})`} />
+      <Sc label="Return on spend" value={fc.roas != null ? `${fc.roas.toFixed(1)}×` : '-'} tip="Paid revenue ÷ spend" />
+    </div>
+  )
+}
+
+// --- the client forecast -----------------------------------------------------
+function FcClient({ clients, currency, nonce, onSaveScenario }) {
+  const [cid, setCid] = useState(clients[0]?.id || null)
+  const [pid, setPid] = useState('')
+  const [spend, setSpendRaw] = useState(null)   // null = follow the client's last 30 days until touched
+  const [opts, setOpts] = useState({ cplRise: 0, includeOther: true })
+  const r90 = useMemo(() => presetRange('last_90d'), [])
+  const r30 = useMemo(() => presetRange('last_30d'), [])
+  const d90 = useCcDrill(cid, r90, nonce, 'all')
+  const d30 = useCcDrill(cid, r30, nonce, 'all')
+  const money = (v) => fmtCurrency(v, currency)
+  useEffect(() => { setPid(''); setSpendRaw(null) }, [cid])
+  const pipes = (d90.data && d90.data.pipelinesFunnel) || []
+  useEffect(() => { if (pipes.length && !pipes.some((p) => p.id === pid)) setPid(pipes[0].id) }, [pipes.length]) // eslint-disable-line
+  const model = useMemo(() => (d90.data && d30.data ? fcModelFromClient(d90.data, d30.data, pid, loadKpis(cid, pid || undefined)) : null), [d90.data, d30.data, pid, cid])
+  const base = model ? model.baseSpend : { meta: 0, google: 0 }
+  const live = spend || base
+  const fc = useMemo(() => (model ? fcForecast(model, live, opts) : null), [model, live, opts])
+  // What the same model says about the LAST 30 days, at last month's spend: a
+  // sanity check that the average reproduces the recent past before it is
+  // trusted forward.
+  const actual = d30.data && model ? (() => {
+    const p = (d30.data.pipelinesFunnel || []).find((x) => x.id === model.pipeId)
+    const c = ((d30.data.pipeContribution || []).find((x) => x.id === model.pipeId) || {}).chan
+    if (!p || !c) return null
+    return { leads: (c.meta.leads || 0) + (c.google.leads || 0) + (c.other.leads || 0), stages: model.stages.map((s) => ((p.stages || []).find((x) => x.id === s.key) || {}).count || 0) }
+  })() : null
+  const loading = d90.status === 'loading' || d30.status === 'loading'
+  return (
+    <>
+      <div className="fc-bar">
+        <label className="fc-pick"><span className="cap">Client</span>
+          <select value={cid || ''} onChange={(e) => setCid(e.target.value)}>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        {pipes.length > 1 ? <label className="fc-pick"><span className="cap">Pipeline</span>
+          <select value={pid} onChange={(e) => { setPid(e.target.value); setSpendRaw(null) }}>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label> : null}
+        {model ? <button className="btn-ghost sm" onClick={() => onSaveScenario(fcScenarioFromModel(model, live))} title="Copy these numbers into the scenario builder to change anything about them">Open as a scenario →</button> : null}
+        {spend ? <button className="btn-ghost sm" onClick={() => setSpendRaw(null)}>Reset to last 30 days</button> : null}
+      </div>
+      {loading && !model ? <div className="card"><Spinner label="Reading the last 90 days…" /></div>
+        : !model ? <div className="card empty-deep"><div className="big">📉</div><b>Nothing to forecast from.</b><p>{cid ? 'This client has no pipeline activity in the last 90 days, or no CRM connection.' : 'Pick a client.'}</p></div>
+          : <>
+            <FcHeadline fc={fc} model={model} money={money} />
+            <div className="card">
+              <FcSpendInputs spend={live} setSpend={setSpendRaw} base={base} money={money} opts={opts} setOpts={setOpts} channels={model.channels} />
+            </div>
+            <div className="card">
+              <div className="exec-panel-h">{model.pipeName} <span className="sub">· forecast month at {money(Math.round(fc.spend.total))} · stage rates from the last 90 days, cost per lead from the last 30</span></div>
+              <FcFunnel fc={fc} model={model} money={money} compare={spend ? null : actual} />
+              <FcCurve model={model} spend={live} opts={opts} money={money} />
+              <Caveat>
+                Everything here is an average applied forward - "if next month behaves like the last three" - so it is a planning number, not a promise.
+                {' '}Paid leads scale with spend; the non-paid baseline ({fmtNumber(Math.round(model.other.leadsPerMonth))} leads a month from organic, referral and direct) does not.
+                {' '}Stage rates are per channel where the channel has {FC_MIN_CHANNEL_LEADS}+ leads in the sample{!model.channels.meta.own || !model.channels.google.own ? ` - ${[!model.channels.meta.own && 'Meta', !model.channels.google.own && 'Google'].filter(Boolean).join(' and ')} borrow${!model.channels.meta.own && !model.channels.google.own ? '' : 's'} the blended curve` : ''}.
+                {' '}Sample: {fmtNumber(model.sample.leads.meta + model.sample.leads.google + model.sample.leads.other)} leads, {fmtNumber(model.sample.won.meta + model.sample.won.google + model.sample.won.other)} won, in 90 days.
+                {!spend && actual ? ' The grey "vs" figures are what actually happened in the last 30 days at that spend - if the forecast is far from them, the last month was unusual and the average should be read with that in mind.' : ''}
+              </Caveat>
+            </div>
+          </>}
+    </>
+  )
+}
+
+// --- the scenario builder ----------------------------------------------------
+const FC_BLANK = () => ({ id: `sc_${Date.now().toString(36)}`, name: 'New scenario', metaSpend: 3000, googleSpend: 2000, metaCpl: 40, googleCpl: 60, otherLeads: 0,
+  stages: [{ name: 'Booked call', step: 60 }, { name: 'Showed', step: 70 }, { name: 'Quoted', step: 80 }], winRate: 15, avgDeal: 2500, cplRise: 0 })
+function FcBuilder({ currency, seed, onSeeded }) {
+  useSettingsSync()
+  const saved = loadScenarios()
+  const [sc, setSc] = useState(() => seed || saved[0] || FC_BLANK())
+  const [dirty, setDirty] = useState(!!seed)
+  useEffect(() => { if (seed) { setSc(seed); setDirty(true); onSeeded && onSeeded() } }, [seed]) // eslint-disable-line
+  const money = (v) => fmtCurrency(v, currency)
+  const up = (patch) => { setSc((p) => ({ ...p, ...patch })); setDirty(true) }
+  const upStage = (i, patch) => up({ stages: sc.stages.map((s, j) => (j === i ? { ...s, ...patch } : s)) })
+  const model = useMemo(() => fcModelFromScenario(sc), [sc])
+  const spend = { meta: Number(sc.metaSpend) || 0, google: Number(sc.googleSpend) || 0 }
+  const opts = { cplRise: Number(sc.cplRise) || 0, includeOther: true }
+  const fc = useMemo(() => fcForecast(model, spend, opts), [model, sc.metaSpend, sc.googleSpend, sc.cplRise])
+  const n1 = (v) => (v == null || v === '' ? '' : v)
+  return (
+    <>
+      <div className="fc-bar">
+        <label className="fc-pick"><span className="cap">Scenario</span>
+          <select value={saved.some((s) => s.id === sc.id) ? sc.id : '__cur'} onChange={(e) => { if (e.target.value === '__new') { setSc(FC_BLANK()); setDirty(true) } else { const s = saved.find((x) => x.id === e.target.value); if (s) { setSc(s); setDirty(false) } } }}>
+            {!saved.some((s) => s.id === sc.id) ? <option value="__cur">{sc.name}{dirty ? ' (unsaved)' : ''}</option> : null}
+            {saved.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="__new">+ New scenario</option>
+          </select></label>
+        <input className="inp fc-name-in" value={sc.name} onChange={(e) => up({ name: e.target.value })} placeholder="Scenario name" />
+        <button className="set-details-save" disabled={!dirty} onClick={() => { saveScenario(sc); setDirty(false) }}>{dirty ? 'Save scenario' : '✓ Saved'}</button>
+        {saved.some((s) => s.id === sc.id) ? <button className="btn-ghost sm" onClick={() => { deleteScenario(sc.id); setSc(saved.find((s) => s.id !== sc.id) || FC_BLANK()); setDirty(false) }}>Delete</button> : null}
+        <span className="cap">Saved scenarios are shared with the team.</span>
+      </div>
+      <FcHeadline fc={fc} model={model} money={money} />
+      <div className="fc-build">
+        <div className="card fc-build-in">
+          <div className="exec-panel-h">Inputs</div>
+          <div className="fc-grid2">
+            <label>Meta spend / month<input type="number" min="0" step="50" value={n1(sc.metaSpend)} onChange={(e) => up({ metaSpend: e.target.value })} /></label>
+            <label>Meta cost / lead<input type="number" min="0" value={n1(sc.metaCpl)} onChange={(e) => up({ metaCpl: e.target.value })} /></label>
+            <label>Google spend / month<input type="number" min="0" step="50" value={n1(sc.googleSpend)} onChange={(e) => up({ googleSpend: e.target.value })} /></label>
+            <label>Google cost / lead<input type="number" min="0" value={n1(sc.googleCpl)} onChange={(e) => up({ googleCpl: e.target.value })} /></label>
+            <label title="Leads a month that arrive without ads. They flow through the same stages but do not move with spend.">Non-paid leads / month<input type="number" min="0" value={n1(sc.otherLeads)} onChange={(e) => up({ otherLeads: e.target.value })} /></label>
+            <label title="Raises cost per lead by this much for every +50% of spend over the typed spend. Leave at 0 to scale in a straight line.">CPL rise per +50% spend<div className="fc-pct"><input type="number" min="0" max="100" value={Math.round((Number(sc.cplRise) || 0) * 100)} onChange={(e) => up({ cplRise: Math.max(0, Number(e.target.value) || 0) / 100 })} /><span>%</span></div></label>
+          </div>
+          <div className="exec-panel-h" style={{ marginTop: 14 }}>Stages <span className="sub">· each as a share of the one before it</span></div>
+          <div className="fc-stages">
+            <div className="fc-stage fc-stage-head"><span>Leads</span><span className="cap">100% · the top</span></div>
+            {sc.stages.map((s, i) => (
+              <div className="fc-stage" key={i}>
+                <input className="inp" value={s.name} onChange={(e) => upStage(i, { name: e.target.value })} placeholder={`Stage ${i + 1}`} />
+                <div className="fc-pct"><input type="number" min="0" max="100" value={n1(s.step)} onChange={(e) => upStage(i, { step: e.target.value })} title={`Share of ${i ? sc.stages[i - 1].name || 'the stage above' : 'leads'} that reach this stage - a show rate, a quote rate, a booking rate`} /><span>%</span></div>
+                <span className="fc-stage-of cap">{Math.round(fcStepsToRates(sc.stages.map((x) => x.step))[i] * 100)}% of leads</span>
+                <button className="icon-btn sm" title="Remove this stage" onClick={() => up({ stages: sc.stages.filter((_, j) => j !== i) })}>✕</button>
+              </div>
+            ))}
+            <button className="btn-ghost sm" onClick={() => up({ stages: [...sc.stages, { name: '', step: 50 }] })}>+ Add a stage</button>
+          </div>
+          <div className="fc-grid2" style={{ marginTop: 14 }}>
+            <label title="Share of ALL leads that become a won deal.">Win rate (of leads)<div className="fc-pct"><input type="number" min="0" max="100" value={n1(sc.winRate)} onChange={(e) => up({ winRate: e.target.value })} /><span>%</span></div></label>
+            <label>Average deal value<input type="number" min="0" value={n1(sc.avgDeal)} onChange={(e) => up({ avgDeal: e.target.value })} /></label>
+          </div>
+        </div>
+        <div className="card">
+          <div className="exec-panel-h">{sc.name || 'Scenario'} <span className="sub">· forecast month at {money(Math.round(fc.spend.total))}</span></div>
+          <FcFunnel fc={fc} model={model} money={money} />
+          <FcCurve model={model} spend={spend} opts={opts} money={money} />
+          <Caveat>A scenario is only as good as its inputs. "Open as a scenario" from a client forecast seeds every field from that client's real last 90 days, which is a better place to start than a guess.</Caveat>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function FunnelForecaster({ rows, currency, nonce }) {
+  const clients = useMemo(() => [...rows].filter((c) => c.c && c.c.ghl).sort((a, b) => a.name.localeCompare(b.name)), [rows])
+  const [mode, setMode] = useState('client')
+  const [seed, setSeed] = useState(null)
+  return (
+    <div className="fc-wrap">
+      <div className="optlog-toggle fc-mode">
+        <button className={mode === 'client' ? 'on' : ''} onClick={() => setMode('client')}>Client forecast</button>
+        <button className={mode === 'builder' ? 'on' : ''} onClick={() => setMode('builder')}>Scenario builder</button>
+      </div>
+      {mode === 'client'
+        ? <FcClient clients={clients} currency={currency} nonce={nonce} onSaveScenario={(sc) => { setSeed(sc); setMode('builder') }} />
+        : <FcBuilder currency={currency} seed={seed} onSeeded={() => setSeed(null)} />}
+    </div>
+  )
+}
+
 function WeeklyTab({ rows, currency, nonce, wonBasis = 'closed' }) {
   const clients = [...rows].sort((a, b) => a.name.localeCompare(b.name))
   const [cid, setCid] = useState(clients[0]?.id || null)
@@ -3522,6 +3946,7 @@ const CMAP_KEY = 'caalano_campmap'
 const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
 const ANNOT_KEY = 'caalano_annot'   // global: show the methodology prose or not
+const FORECAST_KEY = 'caalano_forecasts'   // { [scenarioId]: scenario } - saved Funnel Forecaster scenarios, shared
 const GEO_KEY = 'caalano_geo'             // { clientId: { mode, origin, place, radiusKm, byPipeline } }
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -3574,7 +3999,7 @@ const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendly
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -3604,8 +4029,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -14336,7 +14761,7 @@ function parseChangelog(raw) {
 }
 // Human labels for the top-level views, for the activity trail.
 const VIEW_LABEL = {
-  overview: 'Agency Overview', trends: 'Trends', weekly: 'Weekly Traffic Light', cockpit: 'Creative Cockpit',
+  overview: 'Agency Overview', trends: 'Trends', weekly: 'Weekly Traffic Light', forecast: 'Funnel Forecaster', cockpit: 'Creative Cockpit',
   insights: 'Meta Insights', update: 'Client Update', monthly: 'Monthly Report', reports: 'Monthly Reports',
   social: 'Organic Social Media', settings: 'Settings', clients: 'Client workspace',
 }
@@ -20428,6 +20853,7 @@ function NavIcon({ name }) {
     overview: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
     trends: <><polyline points="3 16 9 10 13 14 21 6" /><polyline points="15 6 21 6 21 12" /></>,
     weekly: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /><path d="M8.5 15l2 2 4-4" /></>,
+    forecast: <><path d="M3 5h18l-7 8v6l-4 2v-8z" /></>,
     cockpit: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5M8 20v-5M16 20v-5" /></>,
     curator: <><circle cx="13.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="10.5" r="2.5" /><circle cx="8.5" cy="7.5" r="2.5" /><circle cx="6.5" cy="12.5" r="2.5" /><path d="M12 22a4 4 0 0 1 0-8 3 3 0 0 0 0-6" /></>,
     insights: <><path d="M3 12h4l2.5 7 4-15 2.5 8H21" /></>,
@@ -20498,7 +20924,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // Back/Forward work, and any screen can be linked to. The URL is never an
 // authorisation boundary - every data request is still checked server-side, so a
 // link to a client you can't see simply returns 403 and falls back to home.
-const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
+const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'forecast', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
 function readNavUrl() {
   try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), s: p.get('s'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
 }
@@ -20735,6 +21161,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <button className={curView === 'overview' ? 'active' : ''} onClick={() => go('overview')}><span className="ic"><NavIcon name="overview" /></span>Agency Overview</button>
             <button className={curView === 'trends' ? 'active' : ''} onClick={() => go('trends')}><span className="ic"><NavIcon name="trends" /></span>Daily Performance</button>
             <button className={curView === 'weekly' ? 'active' : ''} onClick={() => go('weekly')}><span className="ic"><NavIcon name="weekly" /></span>Weekly Traffic Light</button>
+            {!isViewer && <button className={curView === 'forecast' ? 'active' : ''} onClick={() => go('forecast')}><span className="ic"><NavIcon name="forecast" /></span>Funnel Forecaster</button>}
             <button className={curView === 'cockpit' ? 'active' : ''} onClick={() => go('cockpit')}><span className="ic"><NavIcon name="cockpit" /></span>Creative Cockpit</button>
             <button className={curView === 'insights' ? 'active' : ''} onClick={() => go('insights')}><span className="ic"><NavIcon name="insights" /></span>Meta Insights</button>
             <button className={curView === 'update' ? 'active' : ''} onClick={() => go('update')}><span className="ic"><NavIcon name="update" /></span>Client Update</button>
@@ -20778,8 +21205,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </div>
         <div className="head">
           <div>
-            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
-            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client - campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
+            <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
+            <p>{curView === 'overview' ? 'Blended paid performance across all clients, live for the selected range.' : curView === 'trends' ? 'Rolling 3 / 7 / 14 / 21 / 28-day performance per client, each vs the prior equal window.' : curView === 'weekly' ? 'One client at a time, reported Monday-Sunday by ISO week - spend pacing, leads, appointments and wins vs KPI.' : curView === 'forecast' ? 'What a month of spend should turn into, stage by stage - from each client\u2019s own last 90 days, or a scenario you build.' : curView === 'cockpit' ? 'Every creative for a client, with performance, categorisation and AI strategy.' : curView === 'curator' ? 'Strategise new creatives to make: pick Format, Style, CTA, Audience and Angle for instant or AI concept ideas, and save the best to a board.' : curView === 'insights' ? 'Everything Meta-derived in one place - delivery health, creative fatigue and more, across every active Meta client.' : curView === 'update' ? 'Generate a client-ready account update (WhatsApp + email) for the selected range.' : curView === 'monthly' ? 'Build a frozen, slide-based monthly report for one client - campaign → ad set → creative → Google → Caalano360 → team → ROI. Export to PDF.' : curView === 'social' ? 'Organic Instagram + Facebook Page performance per client - followers, reach, engagement, best posts and audience, for the selected range.' : curView === 'reports' ? 'Your published monthly reports - frozen snapshots you can read on screen or download as a PDF.' : curView === 'settings' ? (isViewer ? 'Your account.' : 'Clients, key events, KPI targets and campaign links - saved to the server and shared across your team.') : isViewer ? 'Your live reporting for the selected range.' : 'Open any client for their Overall, CRM, Meta and Google workspace.'}</p>
           </div>
           <div className="spacer" />
           {curView !== 'settings' && curView !== 'monthly' && curView !== 'reports' && <DateRange range={range} onChange={setRange} busy={agency.status === 'loading'} />}
@@ -20790,6 +21217,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           {curView === 'overview' && !isViewer && <Overview rows={rows} currency={data.currency} periodLabel={rangeLabel(range)} live={agency.status === 'ok'} alerts={agency.data && agency.data.alerts} range={range} nonce={refreshKey} wonBasis={wonBasis} onPick={openClient} />}
           {curView === 'trends' && !isViewer && <TrendsTab rows={rows} currency={data.currency} nonce={refreshKey} onPick={openClient} />}
           {curView === 'weekly' && !isViewer && <WeeklyTab rows={rows} currency={data.currency} nonce={refreshKey} wonBasis={wonBasis} />}
+          {curView === 'forecast' && !isViewer && <FunnelForecaster rows={rows} currency={data.currency} nonce={refreshKey} />}
           {curView === 'cockpit' && !isViewer && <CreativeCockpitPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}
           {curView === 'insights' && !isViewer && <MetaInsightsPage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} />}
           {curView === 'update' && !isViewer && <ClientUpdatePage clients={visibleClients} currency={data.currency} range={range} nonce={refreshKey} authUser={authUser} />}

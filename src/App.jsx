@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.451.0'
+const APP_VERSION = '3.452.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2135,6 +2135,15 @@ function fcModelFromClient(d90, d30, pipeId, kpis) {
     return { cpl: null, basis: null }
   }
   const meta = cplOf('meta'), google = cplOf('google')
+  // A client with several pipelines spends on all of them at once; this
+  // pipeline's starting spend is its share of the account's last 30 days, by its
+  // share of last month's leads - the same split the KPI targets and the Channel
+  // split use. Cost per lead stays account-level: a Meta lead costs what it
+  // costs whichever pipeline it lands in.
+  const c30 = (d30 && d30.pipeContribution) || []
+  const pl = (x) => (x && x.chan ? (x.chan.meta.leads || 0) + (x.chan.google.leads || 0) + (x.chan.other.leads || 0) : 0)
+  const mine30 = c30.find((x) => x.id === pipe.id), all30 = c30.reduce((n, x) => n + pl(x), 0)
+  const share = c30.length > 1 && all30 ? pl(mine30) / all30 : 1
   const rev = (contrib && contrib.revenue) || 0, wonAll = won.meta + won.google + won.other
   const avgDeal = kpis && Number(kpis.clientLtv) > 0 ? Number(kpis.clientLtv) : (wonAll ? rev / wonAll : 0)
   return {
@@ -2145,7 +2154,8 @@ function fcModelFromClient(d90, d30, pipeId, kpis) {
       google: { cpl: google.cpl, cplBasis: google.basis, rates: rates.google, winRate: winRate.google, own: leads.google >= FC_MIN_CHANNEL_LEADS },
     },
     other: { leadsPerMonth: leads.other / 3, rates: rates.other, winRate: winRate.other },
-    baseSpend: { meta: sp30.meta || 0, google: sp30.google || 0 },
+    baseSpend: { meta: (sp30.meta || 0) * share, google: (sp30.google || 0) * share },
+    spendShare: share,
     avgDeal, avgDealBasis: kpis && Number(kpis.clientLtv) > 0 ? 'LTV target' : 'won deals, last 90d',
     sample: { leads, won, days: 90 },
   }
@@ -2311,7 +2321,7 @@ function FcCurve({ model, spend, opts, money }) {
   )
 }
 
-function FcSpendInputs({ spend, setSpend, base, money, opts, setOpts, channels }) {
+function FcSpendInputs({ spend, setSpend, base, money, opts, setOpts, channels, share = 1 }) {
   const total = (spend.meta || 0) + (spend.google || 0)
   return (
     <div className="fc-inputs">
@@ -2328,7 +2338,7 @@ function FcSpendInputs({ spend, setSpend, base, money, opts, setOpts, channels }
               <span className="fc-in-cur">$</span>
               <input type="number" min={0} step={50} value={Math.round(spend[c] || 0)} disabled={off} onChange={(e) => setSpend({ ...spend, [c]: Math.max(0, Number(e.target.value) || 0) })} />
             </div>
-            {base[c] > 0 && Math.abs((spend[c] || 0) - base[c]) > 1 ? <div className="cap">{(spend[c] || 0) > base[c] ? '+' : ''}{Math.round((((spend[c] || 0) - base[c]) / base[c]) * 100)}% on the last 30 days ({money(Math.round(base[c]))})</div> : base[c] > 0 ? <div className="cap">Last 30 days: {money(Math.round(base[c]))}</div> : null}
+            {base[c] > 0 && Math.abs((spend[c] || 0) - base[c]) > 1 ? <div className="cap">{(spend[c] || 0) > base[c] ? '+' : ''}{Math.round((((spend[c] || 0) - base[c]) / base[c]) * 100)}% on the last 30 days ({money(Math.round(base[c]))}{share < 1 ? `, this pipeline's ${Math.round(share * 100)}% share` : ''})</div> : base[c] > 0 ? <div className="cap">Last 30 days: {money(Math.round(base[c]))}{share < 1 ? ` · this pipeline's ${Math.round(share * 100)}% share of the account` : ''}</div> : null}
           </div>
         )
       })}
@@ -2401,7 +2411,7 @@ function FcClient({ clients, currency, nonce, onSaveScenario }) {
           : <>
             <FcHeadline fc={fc} model={model} money={money} />
             <div className="card">
-              <FcSpendInputs spend={live} setSpend={setSpendRaw} base={base} money={money} opts={opts} setOpts={setOpts} channels={model.channels} />
+              <FcSpendInputs spend={live} setSpend={setSpendRaw} base={base} money={money} opts={opts} setOpts={setOpts} channels={model.channels} share={model.spendShare || 1} />
             </div>
             <div className="card">
               <div className="exec-panel-h">{model.pipeName} <span className="sub">· forecast month at {money(Math.round(fc.spend.total))} · stage rates from the last 90 days, cost per lead from the last 30</span></div>

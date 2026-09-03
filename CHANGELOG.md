@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.452.0 - 2026-09-03 · `PENDING` - Forecaster: spend split per pipeline
+
+For a client with several pipelines, the client forecast now starts from that
+pipeline's **share** of the account's last-30-day spend - by its share of last
+month's leads, the same split the KPI targets and the Channel split use -
+rather than from the whole account's spend. The spend inputs say so ("this
+pipeline's 62% share of the account"). Cost per lead stays account-level: a
+Meta lead costs what it costs whichever pipeline it lands in. Single-pipeline
+clients are unchanged. Four more arithmetic cases.
+
 ## v3.451.0 - 2026-09-03 · `5a8e959` - Settings: explanations move behind "?" bubbles
 
 Every settings pane used to open with a paragraph or three explaining itself,

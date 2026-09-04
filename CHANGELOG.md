@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.467.0 - 2026-09-04 · `PENDING` - Key event reach fills the width
+## v3.467.0 - 2026-09-04 · `caa4e85` - Key event reach fills the width
 
 The reach cards inherited the seven fixed columns of the tile rows above,
 so four key events used four sevenths of the row. They now stretch to fill

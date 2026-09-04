@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.469.0 - 2026-09-04 · `PENDING` - Closed-basis wins from a won-only snapshot
+## v3.469.0 - 2026-09-04 · `118d3e2` - Closed-basis wins from a won-only snapshot
 
 v3.468.0 walked the last 400 days of wins live inside the drill build, which
 on a busy account either ran past the function's time budget - in which case

@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.472.0 - 2026-09-04 · `PENDING` - A cut-short wins read is flagged, never saved as complete
+
+The won-only snapshot pages newest-first, and a cold interactive build has a
+seven-second deadline. On Nexia that reached April 2026 and stopped, leaving
+the four September 2025 wins out - and the short set was then saved as the
+fifteen-minute copy, so every request read it. A walk that stops short of
+the window's far edge is now flagged, served for that request only, and
+kept out of the store so the warmer's full walk replaces it within five
+minutes. The Won tile says "read cut short, the oldest may be missing" when
+that is what it is showing.
+
+---
+
 ## v3.471.0 - 2026-09-04 · `fb9a8b0` - A saved copy says so, and says why
 
 When a live rebuild of the CRM figures fails, the cache gate serves the last

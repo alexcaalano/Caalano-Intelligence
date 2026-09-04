@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.471.0'
+const APP_VERSION = '3.472.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7666,7 +7666,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '-'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
             <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '-'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked - by calendar' })} />
             <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '-'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate - by calendar' })} />
-            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '-'} flat={wonBasis === 'closed' ? `closed in period · by won date${cc && cc.wonRead ? (cc.wonRead.failed ? ' · wins read failed, retry' : ` · ${fmtNumber(cc.wonRead.onFile)} wins on file (430d)${cc.wonRead.truncated ? ', capped' : ''}`) : ''}` : (oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' ')} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
+            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '-'} flat={wonBasis === 'closed' ? `closed in period · by won date${cc && cc.wonRead ? (cc.wonRead.failed ? ' · wins read failed, retry' : ` · ${fmtNumber(cc.wonRead.onFile)} wins on file (430d)${cc.wonRead.truncated ? ' · read cut short, the oldest may be missing - refresh in a few minutes' : ''}`) : ''}` : (oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' ')} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
             <Kpi label="Revenue" value={revV != null ? money(revV) : '-'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue - won deals' })} />
             <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '-'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />

@@ -352,8 +352,12 @@ async function _pageOpportunities(locTok, locationId, from, to, cap = 1500, opts
   // set can raise deadlineMs.
   const t0 = Date.now()
   const deadlineMs = opts.deadlineMs || 6500
+  // `cut` = the walk stopped for time, pages or cap before it reached the far
+  // edge of the window, so the oldest rows are missing. Callers that cache the
+  // result must not present a cut walk as the complete set.
+  let cut = false, reachedEnd = false
   while (guard++ < maxPages && out.length < effCap) {
-    if (Date.now() - t0 > deadlineMs) break
+    if (Date.now() - t0 > deadlineMs) { cut = true; break }
     const q = { location_id: locationId, limit: 100, order: 'added_desc' }
     // A status filter (won / lost / open) makes a long look-back cheap: the
     // closed-basis drill needs every WIN of the last 400 days, not every lead.
@@ -366,10 +370,12 @@ async function _pageOpportunities(locTok, locationId, from, to, cap = 1500, opts
     const meta = j.meta || {}
     const nextId = meta.startAfterId || (batch.length ? batch[batch.length - 1].id : null)
     const nextAfter = meta.startAfter || (batch.length ? (batch[batch.length - 1].sort || [])[0] : null)
-    if (batch.length < 100 || !nextId || nextId === startAfterId) break
-    if (fromMs != null && oldest < fromMs) break // page went past the window (newest-first)
+    if (batch.length < 100 || !nextId || nextId === startAfterId) { reachedEnd = true; break }
+    if (fromMs != null && oldest < fromMs) { reachedEnd = true; break } // page went past the window (newest-first)
     startAfter = nextAfter; startAfterId = nextId
   }
+  if (!reachedEnd) cut = true
+  out.cut = cut
   return out
 }
 // --- Shared per-location opportunity snapshot ------------------------------
@@ -546,10 +552,15 @@ export async function wonSnapshot(locTok, locationId, opts = {}) {
     const to = new Date(now).toISOString().slice(0, 10)
     const from = new Date(now - WON_SNAP_DAYS * 86400000).toISOString().slice(0, 10)
     const opps = await _pageOpportunities(locTok, locationId, from, to, WON_SNAP_CAP, { status: 'won', deadlineMs: force ? 25000 : 7000 })
-    const raw = { at: Date.now(), opps }
-    const snap = { at: raw.at, opps, truncated: opps.length >= WON_SNAP_CAP }
+    // A walk cut short by the interactive deadline is missing its OLDEST wins -
+    // precisely the ones this snapshot exists for. It is served for this request,
+    // flagged, and kept out of Blobs so the warmer's full walk replaces it rather
+    // than every request for the next fifteen minutes reading the short set.
+    const truncated = opps.length >= WON_SNAP_CAP || !!opps.cut
+    const raw = { at: Date.now(), opps: [...opps] }
+    const snap = { at: raw.at, opps: raw.opps, truncated }
     _wonSnapMem.set(locationId, snap)
-    try { await _oppStore().setJSON('won:' + locationId, raw) } catch { /* memory copy still serves */ }
+    if (!truncated) { try { await _oppStore().setJSON('won:' + locationId, raw) } catch { /* memory copy still serves */ } }
     return snap
   })()
   _wonSnapInflight.set(locationId, build)

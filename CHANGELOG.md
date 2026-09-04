@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.477.0 - 2026-09-04 · `PENDING` - Channel performance: ROAS, and the win-rate index per table
+
+The Channel performance table gains a **ROAS** column (revenue ÷ spend, per
+channel and per pipeline when split). The win-rate index chip is now against
+that table's own blended rate - the pipeline's, when split by pipeline -
+instead of repeating the account-wide 55 / 126 on every pipeline.
+
+---
+
 ## v3.476.0 - 2026-09-04 · `23afe41` - The banner belongs to the page it sits on
 
 The 360 Intelligence banner showed the whole account's CRM lines on every

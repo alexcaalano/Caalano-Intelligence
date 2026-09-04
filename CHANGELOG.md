@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.467.0 - 2026-09-04 · `PENDING` - Key event reach fills the width
+
+The reach cards inherited the seven fixed columns of the tile rows above,
+so four key events used four sevenths of the row. They now stretch to fill
+it, however many events a pipeline has.
+
+---
+
 ## v3.466.0 - 2026-09-04 · `2571720` - Caalano360 honours the Won basis
 
 The Won basis toggle (Closed / Created) has governed the health score, the

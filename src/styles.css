@@ -4510,6 +4510,9 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .intel-skel { height: 12px; border-radius: 6px; background: var(--panel-2); width: 78%; animation: intel-pulse 1.3s ease-in-out infinite; }
 .intel-skel.w2 { width: 55%; }
 @keyframes intel-pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+/* The reach row fills the width whatever the number of key events, instead of
+   inheriting the seven fixed columns of the tile rows above it. */
+.scorecard.exec-kpis.ir-row { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .ir-card { position: relative; }
 .ir-card.ir-bn { border-color: var(--neg, #e0566c); box-shadow: inset 0 0 0 1px var(--neg, #e0566c); }
 .ir-flag { flex: 0 0 auto; margin-left: 8px; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: var(--neg, #e0566c); border-radius: 5px; padding: 2px 6px; }

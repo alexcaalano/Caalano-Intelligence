@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.480.0 - 2026-09-04 · `PENDING` - Cash collected
+## v3.480.0 - 2026-09-04 · `fd1ba72` - Cash collected
 
 A client can now record what each won deal has actually paid on a numeric
 opportunity field named **Cash Collected** in Caalano Systems (a running

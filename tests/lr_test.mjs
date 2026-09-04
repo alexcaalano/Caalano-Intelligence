@@ -9,7 +9,7 @@ const lift = (name) => {
   for (; i < src.length; i++) { const c = src[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) break } }
   return src.slice(a, i + 1)
 }
-const body = ['lrOppFacts', 'lrFacts', 'lrMatch', 'lrCohortStats', 'lrFoldDict', 'applyAliases'].map(lift).join('\n') + "\nconst unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')\nconst LR_FOLD_LEVEL = { campaign: 'campaign', adset: 'medium', creative: 'content', keyword: null }\nconst lrFoldVal = (fold, k, v) => (fold && fold[k] && fold[k][v]) || v"
+const body = ['lrTimeStats', 'lrOppFacts', 'lrFacts', 'lrMatch', 'lrCohortStats', 'lrFoldDict', 'applyAliases'].map(lift).join('\n') + "\nconst unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')\nconst LR_FOLD_LEVEL = { campaign: 'campaign', adset: 'medium', creative: 'content', keyword: null }\nconst lrFoldVal = (fold, k, v) => (fold && fold[k] && fold[k][v]) || v"
 const { lrOppFacts, lrFacts, lrMatch, lrCohortStats, lrFoldDict, applyAliases } = new Function(body + '\nreturn { lrOppFacts, lrFacts, lrMatch, lrCohortStats, lrFoldDict, applyAliases }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }

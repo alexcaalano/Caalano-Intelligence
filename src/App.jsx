@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.460.0'
+const APP_VERSION = '3.461.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6974,6 +6974,352 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
 }
 
 const CC_CHANS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['google', 'Google'], ['meta', 'Meta']]
+
+/* ============ Caalano360 intelligence ============
+   Deterministic reads of the figures already on screen: the key-event reach
+   with its bottleneck, each channel to its outcomes, what moved most against
+   the previous equal window, and every cut indexed against the account's own
+   average. Pure functions over the (lensed) drill payload, so the same model
+   feeds the tab sections, the banner on every major tab, and the tests. */
+const INTEL_MIN_BASE = 10   // a rate is judged only once its denominator has this many
+const INTEL_MIN_MOVE = 15   // % change worth calling a mover (counts / money)
+const INTEL_MIN_PTS = 8     // percentage-point change worth calling a mover (rates)
+const intelPct = (cur, prev) => (prev ? ((cur - prev) / prev) * 100 : null)
+const intelRate = (n, d) => (d ? n / d : null)
+
+// Key event reach rows with step conversions and the bottleneck. Rows arrive in
+// stage order, grouped by pipeline (a multi-pipeline client has one row set per
+// pipeline). Step = share of the row above (leads for the first). The bottleneck
+// is the LOWEST step whose base is big enough to judge - the same rule the
+// Revenue bottleneck panel uses - so both always point at the same stage.
+function intelReach(rows, leadTotal, prevRows, prevLeadTotal) {
+  const keyOf = (r) => `${r.pipeline || ''}|${r.label}`
+  const prevBy = new Map((prevRows || []).map((r) => [keyOf(r), r]))
+  const groups = new Map()
+  for (const r of rows || []) { const k = r.pipeline || '__all__'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r) }
+  const out = []
+  for (const [pid, rs] of groups) {
+    const base = (rs[0] && rs[0].leadBase) || leadTotal || 0
+    const pr0 = prevBy.get(keyOf(rs[0]))
+    const prevBase = (pr0 && pr0.leadBase) || prevLeadTotal || 0
+    let above = base, prevAbove = prevBase
+    const mine = rs.map((r) => {
+      const pr = prevBy.get(keyOf(r))
+      const row = {
+        ...r, pipelineId: pid, base, prevBase,
+        rate: intelRate(r.count, base), prevRate: pr ? intelRate(pr.count, prevBase) : null,
+        step: intelRate(r.count, above), prevStep: pr ? intelRate(pr.count, prevAbove) : null,
+        stepBase: above, prevCount: pr ? pr.count : null, bottleneck: false,
+      }
+      above = r.count; prevAbove = pr ? pr.count : 0
+      return row
+    })
+    const cands = mine.filter((o) => o.step != null && o.stepBase >= INTEL_MIN_BASE)
+    if (cands.length) cands.reduce((a, b) => (b.step < a.step ? b : a)).bottleneck = true
+    out.push(...mine)
+  }
+  return out
+}
+
+// Each channel to its outcomes, with an index against the blended figure.
+function intelChannels(cc) {
+  if (!cc) return []
+  const sp = cc.spend || {}, tot = cc.totals || {}
+  const spendOf = { meta: sp.meta || 0, google: sp.google || 0, other: 0 }
+  const rows = (cc.closeByChannel || []).map((c) => {
+    const k = c.channel === 'meta' || c.channel === 'google' ? c.channel : 'other'
+    const spend = spendOf[k], leads = c.leads || 0, won = c.won || 0, lost = Math.max(0, (c.closed || 0) - won)
+    return { key: k, label: k === 'meta' ? 'Meta' : k === 'google' ? 'Google' : 'Non-paid', spend, leads, won, lost, revenue: c.revenue || 0, winRate: intelRate(won, leads), resultRate: intelRate(won, won + lost), cpl: spend && leads ? spend / leads : null, cac: spend && won ? spend / won : null, avgDeal: won ? (c.revenue || 0) / won : null, roas: spend && c.revenue ? c.revenue / spend : null, thin: leads < INTEL_MIN_BASE }
+  })
+  const leads = tot.leads || rows.reduce((s, r) => s + r.leads, 0), won = tot.won || rows.reduce((s, r) => s + r.won, 0), lost = tot.lost || rows.reduce((s, r) => s + r.lost, 0)
+  const base = { winRate: intelRate(won, leads), resultRate: intelRate(won, won + lost) }
+  const idx = (v, b) => (v == null || !b ? null : Math.round((v / b) * 100))
+  for (const r of rows) { r.idx = { winRate: r.thin ? null : idx(r.winRate, base.winRate), resultRate: r.thin ? null : idx(r.resultRate, base.resultRate) }; r.share = intelRate(r.leads, leads) }
+  return rows.sort((a, b) => b.leads - a.leads)
+}
+
+// What moved most against the previous equal window. Counts and money need a
+// real base on both sides; rates are judged in percentage points. Each mover
+// says which way is good, so the badge colour is right without a lookup.
+function intelMovers(cc, pcc, reach, prevReach) {
+  if (!cc || !pcc) return []
+  const out = []
+  const t = cc.totals || {}, pt = pcc.totals || {}
+  const count = (key, label, cur, prev, goodUp, why) => {
+    if (cur == null || prev == null || Math.max(cur, prev) < 5) return
+    const pct = intelPct(cur, prev); if (pct == null || Math.abs(pct) < INTEL_MIN_MOVE) return
+    out.push({ key, label, kind: 'count', cur, prev, pct, score: Math.abs(pct), good: goodUp ? pct > 0 : pct < 0, why })
+  }
+  const money = (key, label, cur, prev, goodUp, why) => {
+    if (!cur || !prev || Math.max(cur, prev) < 50) return
+    const pct = intelPct(cur, prev); if (pct == null || Math.abs(pct) < INTEL_MIN_MOVE) return
+    out.push({ key, label, kind: 'money', cur, prev, pct, score: Math.abs(pct), good: goodUp ? pct > 0 : pct < 0, why })
+  }
+  const rate = (key, label, cur, prev, curBase, prevBase, goodUp, why) => {
+    if (cur == null || prev == null || curBase < INTEL_MIN_BASE || prevBase < INTEL_MIN_BASE) return
+    const pts = (cur - prev) * 100; if (Math.abs(pts) < INTEL_MIN_PTS) return
+    out.push({ key, label, kind: 'rate', cur, prev, pts, score: Math.abs(pts) * 2, good: goodUp ? pts > 0 : pts < 0, why })
+  }
+  const leadsPct = intelPct(t.leads, pt.leads)
+  count('leads', 'Opportunities', t.leads, pt.leads, true)
+  count('won', 'Won', t.won, pt.won, true, leadsPct != null && Math.abs(leadsPct) >= INTEL_MIN_MOVE ? `opportunities ${leadsPct > 0 ? 'up' : 'down'} ${Math.abs(Math.round(leadsPct))}% too` : (t.leads && pt.leads ? `on ${t.leads >= pt.leads ? 'as many or more' : 'fewer'} opportunities - the conversion moved` : undefined))
+  count('lost', 'Lost', t.lost, pt.lost, false)
+  money('revenue', 'Revenue', (cc.revenue || {}).total, (pcc.revenue || {}).total, true, t.won && pt.won ? `${t.won} vs ${pt.won} won` : undefined)
+  const rr = intelRate(t.won, (t.won || 0) + (t.lost || 0)), prr = intelRate(pt.won, (pt.won || 0) + (pt.lost || 0))
+  rate('result', 'Result rate', rr, prr, (t.won || 0) + (t.lost || 0), (pt.won || 0) + (pt.lost || 0), true, 'won ÷ resulted')
+  const sp = cc.spend || {}, psp = pcc.spend || {}, pd = cc.paid || {}, ppd = pcc.paid || {}
+  money('spend', 'Ad spend', sp.total, psp.total, false)
+  const cplWhy = (cur, prev, leads, prevLeads, spend, prevSpend) => { const lp = intelPct(leads, prevLeads), spc = intelPct(spend, prevSpend); if (lp == null || spc == null) return undefined; const f = (v) => `${v > 0 ? '+' : ''}${Math.round(v)}%`; return `leads ${f(lp)} vs spend ${f(spc)}` }
+  money('cpl', 'Cost per lead (paid)', pd.paidCpl, ppd.paidCpl, false, cplWhy(pd.paidCpl, ppd.paidCpl, pd.paidLeads, ppd.paidLeads, sp.total, psp.total))
+  money('cpa', 'Cost per won (paid)', pd.paidCpa, ppd.paidCpa, false, pd.paidWon != null && ppd.paidWon != null ? `${pd.paidWon} vs ${ppd.paidWon} paid wins` : undefined)
+  for (const k of ['meta', 'google']) {
+    const L = k === 'meta' ? 'Meta' : 'Google'
+    money(`cpl:${k}`, `${L} cost per lead`, pd[`${k}Cpl`], ppd[`${k}Cpl`], false, cplWhy(pd[`${k}Cpl`], ppd[`${k}Cpl`], pd[`${k}Leads`], ppd[`${k}Leads`], sp[k], psp[k]))
+    count(`leads:${k}`, `${L} leads`, pd[`${k}Leads`], ppd[`${k}Leads`], true)
+    count(`won:${k}`, `${L} wins`, pd[`${k}Won`], ppd[`${k}Won`], true)
+  }
+  // Key event reach, per event, in points of leads.
+  const pr = new Map((prevReach || []).map((r) => [`${r.pipelineId}|${r.label}`, r]))
+  for (const r of reach || []) { const p = pr.get(`${r.pipelineId}|${r.label}`); if (p) rate(`reach:${r.pipelineId}|${r.label}`, `Reach · ${r.label}${r.pipeline && r.pipelineName ? ` (${r.pipelineName})` : ''}`, r.rate, p.rate, r.base, p.base, true, `${r.count} of ${r.base} vs ${p.count} of ${p.base}`) }
+  // The top lost reason's share of losses.
+  const lr = cc.lostByReason || [], plr = pcc.lostByReason || []
+  if (lr.length && (t.lost || 0) >= INTEL_MIN_BASE && (pt.lost || 0) >= INTEL_MIN_BASE) {
+    const top = lr[0]; const prevTop = plr.find((x) => x.reason === top.reason)
+    if (prevTop) rate(`lost:${top.reason}`, `Lost to "${top.reason}"`, intelRate(top.count, t.lost), intelRate(prevTop.count, pt.lost), t.lost, pt.lost, false, `${top.count} of ${t.lost} losses vs ${prevTop.count} of ${pt.lost}`)
+  }
+  // The headline figures keep their place; the per-channel and per-event cuts
+  // fill what is left, so a busy account cannot crowd revenue off the list.
+  const HEAD = new Set(['leads', 'won', 'lost', 'revenue', 'result', 'spend', 'cpl', 'cpa'])
+  out.sort((a, b) => b.score - a.score)
+  const keep = [...out.filter((m) => HEAD.has(m.key)), ...out.filter((m) => !HEAD.has(m.key))].slice(0, 10)
+  return keep.sort((a, b) => b.score - a.score)
+}
+
+// Every cut indexed against the account's own blended figure (100 = the
+// average for this range and pipeline). Pipelines (when more than one),
+// channels, and the campaigns with the most leads, read from the
+// per-opportunity rows so a campaign's win rate and reach are its own.
+// `firstKe` maps a pipeline NAME to { pos, label } of its first key event.
+function intelIndex(cc, firstKe) {
+  const f = cc && cc.oppFacts
+  if (!f || !f.rows || !f.keys) return null
+  const keys = f.keys, dict = f.dict || {}
+  const iPipe = keys.indexOf('pipeline'), iChan = keys.indexOf('channel'), iCamp = keys.indexOf('campaign'), iPos = keys.length + 1
+  const reached = (r) => { if (r[0] === 1) return true; const pn = (dict.pipeline || [])[r[iPipe + 1]]; const k = firstKe && (firstKe[pn] || firstKe['*']); return !!(k && k.pos != null && r[iPos] >= k.pos) }
+  const acc = () => ({ leads: 0, won: 0, lost: 0, reach: 0 })
+  const bump = (a, r) => { a.leads++; if (r[0] === 1) a.won++; else if (r[0] === 2) a.lost++; if (reached(r)) a.reach++ }
+  const base = acc(); const by = { pipeline: new Map(), channel: new Map(), campaign: new Map() }
+  const get = (m, k) => { let a = m.get(k); if (!a) { a = acc(); m.set(k, a) } return a }
+  for (const r of f.rows) {
+    bump(base, r)
+    bump(get(by.pipeline, (dict.pipeline || [])[r[iPipe + 1]] || 'Pipeline'), r)
+    const ch = (dict.channel || [])[r[iChan + 1]]; bump(get(by.channel, ch === 'meta' || ch === 'google' ? ch : 'other'), r)
+    bump(get(by.campaign, (dict.campaign || [])[r[iCamp + 1]] || 'Not tagged'), r)
+  }
+  const sp = (cc.spend || {}); const spendOf = { meta: sp.meta || 0, google: sp.google || 0 }
+  const metrics = (a, spend) => ({ leads: a.leads, won: a.won, lost: a.lost, reach: a.reach, winRate: intelRate(a.won, a.leads), resultRate: intelRate(a.won, a.won + a.lost), keReach: intelRate(a.reach, a.leads), cpl: spend && a.leads ? spend / a.leads : null })
+  const baseM = metrics(base, (sp.meta || 0) + (sp.google || 0) ? null : null)
+  // Blended paid CPL for the index base: paid spend over paid leads.
+  const paidLeads = (by.channel.get('meta') || acc()).leads + (by.channel.get('google') || acc()).leads
+  baseM.cpl = paidLeads && (spendOf.meta + spendOf.google) ? (spendOf.meta + spendOf.google) / paidLeads : null
+  const idx = (v, b) => (v == null || !b ? null : Math.round((v / b) * 100))
+  const seg = (kind, label, a, spend) => { const m = metrics(a, spend); const thin = a.leads < INTEL_MIN_BASE; return { kind, label, ...m, share: intelRate(a.leads, base.leads), thin, idx: thin ? {} : { winRate: idx(m.winRate, baseM.winRate), resultRate: idx(m.resultRate, baseM.resultRate), keReach: idx(m.keReach, baseM.keReach), cpl: idx(m.cpl, baseM.cpl) } } }
+  const pipelines = by.pipeline.size > 1 ? [...by.pipeline.entries()].map(([k, a]) => seg('pipeline', k, a, null)) : []
+  const channels = [...by.channel.entries()].map(([k, a]) => seg('channel', k === 'meta' ? 'Meta' : k === 'google' ? 'Google' : 'Non-paid', a, spendOf[k] || null))
+  const campaigns = [...by.campaign.entries()].filter(([k]) => k !== 'Not tagged').map(([k, a]) => seg('campaign', k, a, null)).sort((a, b) => b.leads - a.leads).slice(0, 8)
+  const sortLeads = (x) => x.sort((a, b) => b.leads - a.leads)
+  return { base: baseM, pipelines: sortLeads(pipelines), channels: sortLeads(channels), campaigns, capped: !!f.capped, total: f.total || base.leads }
+}
+
+// The banner: ranked, deterministic sentences from the model. Each line carries
+// the tabs it speaks to, so a tab can lead with what concerns it; a line is
+// never invented, only ordered.
+function intelLines(m, money) {
+  const out = []
+  if (!m) return out
+  const add = (sev, tags, text) => out.push({ sev, tags, text })
+  const pc = (v) => (v == null ? '-' : `${Math.round(v * 100)}%`)
+  const t = (m.cc && m.cc.totals) || {}
+  const leads = t.leads || 0
+  if (leads && leads < 30) add('low', ['overall', 'users', 'lostreasons'], `Only ${fmtNumber(leads)} opportunities in this period - the rates below are indicative, not a trend.`)
+  // Bottleneck.
+  const bn = (m.reach || []).filter((r) => r.bottleneck).sort((a, b) => a.step - b.step)[0]
+  if (bn) {
+    const from = bn.stepBase === bn.base ? 'leads' : `those reaching the step before`
+    const pipeTxt = bn.pipelineName ? ` in ${bn.pipelineName}` : ''
+    const prev = bn.prevStep != null ? (Math.abs(bn.step - bn.prevStep) * 100 >= INTEL_MIN_PTS ? ` - ${bn.step < bn.prevStep ? 'down' : 'up'} from ${pc(bn.prevStep)} last period` : ' - about the same as last period') : ''
+    add(bn.step < 0.35 ? 'high' : 'med', ['overall', 'users', 'timing', 'appts', 'calls'], `Biggest leak${pipeTxt}: ${pc(bn.step)} of ${from} go on to ${bn.label.replace(/^📅 /, '')} (${fmtNumber(bn.count)} of ${fmtNumber(bn.stepBase)}), the lowest step in the funnel${prev}.`)
+  }
+  // Channels to outcomes.
+  const ch = (m.channels || []).filter((c) => !c.thin && (c.key === 'meta' || c.key === 'google'))
+  if (ch.length >= 2) {
+    const [a, b] = [...ch].sort((x, y) => (y.winRate || 0) - (x.winRate || 0))
+    const cacTxt = a.cac && b.cac ? ` ${b.cac > a.cac ? b.label : a.label} costs ${(Math.max(a.cac, b.cac) / Math.min(a.cac, b.cac)).toFixed(1)}× more per win.` : ''
+    if ((a.winRate || 0) - (b.winRate || 0) >= 0.05 || cacTxt) add('med', ['overall', 'meta', 'google'], `${a.label} wins ${pc(a.winRate)} of its ${fmtNumber(a.leads)} leads${a.cac ? ` at ${money(Math.round(a.cac))} each` : ''}; ${b.label} ${pc(b.winRate)} of ${fmtNumber(b.leads)}${b.cac ? ` at ${money(Math.round(b.cac))}` : ''}.${cacTxt}`)
+  } else if (ch.length === 1) {
+    const a = ch[0]; add('low', ['overall', a.key], `${a.label} wins ${pc(a.winRate)} of its ${fmtNumber(a.leads)} leads${a.cac ? ` at ${money(Math.round(a.cac))} per win` : ''}${a.cpl ? `, ${money(Math.round(a.cpl))} per lead` : ''}.`)
+  }
+  // Movers.
+  for (const mv of (m.movers || []).slice(0, 2)) {
+    const f = mv.kind === 'money' ? (v) => money(Math.round(v)) : mv.kind === 'rate' ? pc : (v) => fmtNumber(v)
+    const chg = mv.kind === 'rate' ? `${mv.pts > 0 ? '+' : ''}${Math.round(mv.pts)} pts` : `${mv.pct > 0 ? '+' : ''}${Math.round(mv.pct)}%`
+    add(mv.good ? 'good' : (mv.score >= 40 ? 'high' : 'med'), ['overall', ...(mv.key.includes('meta') ? ['meta'] : []), ...(mv.key.includes('google') ? ['google'] : []), ...(mv.key.startsWith('lost') ? ['lostreasons'] : []), ...(mv.key.startsWith('reach') ? ['users', 'appts'] : [])], `${mv.label} ${chg} vs the previous period: ${f(mv.cur)} from ${f(mv.prev)}${mv.why ? ` (${mv.why})` : ''}.`)
+  }
+  // Indexing outliers.
+  const ix = m.index
+  if (ix) {
+    // The under-performer first (it is the one to act on), then the best.
+    const cands = [...(ix.campaigns || []), ...(ix.pipelines || [])].filter((sg) => !sg.thin && sg.leads >= 15 && sg.idx.winRate != null && (sg.idx.winRate <= 60 || sg.idx.winRate >= 140))
+    const worst = cands.filter((sg) => sg.idx.winRate < 100).sort((a, b) => a.idx.winRate - b.idx.winRate)[0]
+    const best = cands.filter((sg) => sg.idx.winRate > 100).sort((a, b) => b.idx.winRate - a.idx.winRate)[0]
+    for (const outl of [worst, best]) if (outl) add(outl.idx.winRate < 100 ? 'med' : 'good', ['overall', 'meta', 'google', 'lostreasons'], `${outl.kind === 'campaign' ? 'Campaign' : 'Pipeline'} ${outl.label} converts at ${outl.idx.winRate}% of the account average (${fmtNumber(outl.won)} of ${fmtNumber(outl.leads)} won)${outl.idx.keReach != null && outl.idx.keReach < 80 ? `, and only ${fmtNumber(outl.reach)} reached the first key event` : ''}.`)
+  }
+  // Lost reasons and pace.
+  const lr = (m.cc && m.cc.lostByReason) || []
+  if (lr.length && (t.lost || 0) >= INTEL_MIN_BASE) { const top = lr[0]; const sh = top.count / t.lost; if (sh >= 0.4) add('med', ['overall', 'lostreasons', 'users'], `"${top.reason}" accounts for ${pc(sh)} of lost deals (${fmtNumber(top.count)} of ${fmtNumber(t.lost)}).`) }
+  const tw = m.cc && m.cc.timeToWon, tl = m.cc && m.cc.timeToLost
+  if (tw && tl && tw.n >= 5 && tl.n >= 5 && tw.median != null && tl.median != null) {
+    if (tl.median >= tw.median * 1.5 && tl.median - tw.median >= 3) add('med', ['overall', 'timing', 'users', 'lostreasons'], `Losses take ${tl.median} days to be called against ${tw.median} days to win - effort is going into deals that were never closing.`)
+    else if (tw.median >= tl.median * 1.5 && tw.median - tl.median >= 3) add('good', ['overall', 'timing', 'users'], `Losses are called in ${tl.median} days against ${tw.median} days to win - disqualification is quick.`)
+  }
+  const resulted = (t.won || 0) + (t.lost || 0)
+  if (leads >= INTEL_MIN_BASE && resulted / leads < 0.5) add('low', ['overall', 'users'], `${pc(resulted / leads)} of opportunities have been worked to a result, so the win and loss splits read from a minority of the period.`)
+  const rank = { high: 0, med: 1, good: 2, low: 3 }
+  return out.sort((a, b) => rank[a.sev] - rank[b.sev])
+}
+
+// One model from a current and previous (lensed) drill payload.
+function buildIntel(cc, pcc, clientId, money) {
+  if (!cc) return null
+  const tot = cc.totals || {}, ptot = (pcc && pcc.totals) || {}
+  const kef = ccKeyEventFunnel(cc, clientId, tot.won, tot.leads)
+  const pkef = pcc ? ccKeyEventFunnel(pcc, clientId, ptot.won, ptot.leads) : { rows: [], leadTotal: 0 }
+  const names = kef.pipeNames || new Map()
+  const reach = intelReach(kef.rows, kef.leadTotal, pkef.rows, pkef.leadTotal).map((r) => ({ ...r, pipelineName: r.pipeline ? (names.get(r.pipeline) || null) : null }))
+  const prevReach = intelReach(pkef.rows, pkef.leadTotal, [], 0)
+  // First key event per pipeline (by name), for the reach index.
+  const firstKe = {}
+  const stagePos = stagePosMap(cc.pipelinesFunnel || [])
+  const byPipe = new Map(); for (const r of kef.rows) { const k = r.pipeline || '*'; if (!byPipe.has(k)) byPipe.set(k, r) }
+  for (const [pid, r] of byPipe) {
+    const stageName = r.kind === 'calendar' ? r.stage : r.ref
+    const pos = stageName ? (pid !== '*' && stagePos.has(pid + '::' + stageName) ? stagePos.get(pid + '::' + stageName) : stagePos.get(stageName)) : null
+    if (pos == null) continue
+    const pname = pid === '*' ? '*' : (names.get(pid) || pid)
+    firstKe[pname] = { pos, label: r.label }
+  }
+  const channels = intelChannels(cc)
+  const movers = intelMovers(cc, pcc, reach, prevReach)
+  const index = intelIndex(cc, firstKe)
+  const m = { cc, pcc, reach, channels, movers, index, firstKe, usingKe: kef.usingKe, multi: kef.multi }
+  m.lines = intelLines(m, money || ((v) => `$${fmtNumber(v)}`))
+  return m
+}
+// The intelligence banner: the same strip on every major tab. Lines are the
+// model's, ordered so the ones that speak to the open tab come first.
+const INTEL_TABS = new Set(['overall', 'meta', 'google', 'users', 'forms', 'location', 'appts', 'calls', 'timing', 'lostreasons'])
+function IntelBanner({ model, status, tab, pipeName, range }) {
+  const [more, setMore] = useState(false)
+  useEffect(() => { setMore(false) }, [tab, pipeName])
+  const lines = (model && model.lines) || []
+  const key = tab || 'overall'
+  const ordered = [...lines].sort((a, b) => (b.tags.includes(key) ? 1 : 0) - (a.tags.includes(key) ? 1 : 0))
+  const shown = more ? ordered : ordered.slice(0, 3)
+  return (
+    <div className={`intel-banner${status === 'loading' ? ' is-loading' : ''}`}>
+      <div className="intel-h"><span className="intel-mark">360</span><b>Intelligence</b><span className="sub">· {rangeLabel(range)}{pipeName ? <> · <b>{pipeName}</b> pipeline</> : ''} · read from the figures on this page, against the previous equal window</span></div>
+      {status === 'loading' && !model ? <div className="intel-lines"><div className="intel-skel" /><div className="intel-skel w2" /></div>
+        : status === 'err' && !model ? <div className="cap">No CRM read for this period yet, so there is nothing to say.</div>
+          : !model ? null
+            : !lines.length ? <div className="cap">Nothing stands out - the funnel, channels and movers are all within their usual range for this period.</div>
+              : <>
+                <ul className="intel-lines">{shown.map((l, i) => <li key={i} className={`intel-line sev-${l.sev}`}><span className="intel-dot" />{l.text}</li>)}</ul>
+                {ordered.length > 3 ? <button type="button" className="link-btn intel-more" onClick={() => setMore((m) => !m)}>{more ? 'Show less' : `${ordered.length - 3} more`}</button> : null}
+              </>}
+    </div>
+  )
+}
+// Key event reach, with the step from the row before and the bottleneck flagged.
+function IntelReach({ reach, multi, leadTotal, chanLabel, money, spend }) {
+  const groups = new Map()
+  for (const r of reach) { if (!groups.has(r.pipelineId)) groups.set(r.pipelineId, []); groups.get(r.pipelineId).push(r) }
+  const list = [...groups.entries()].map(([pid, rows]) => ({ pid, name: pid === '__all__' ? 'All pipelines' : (rows[0].pipelineName || 'Pipeline'), rows, base: rows[0].base }))
+  list.sort((a, b) => (a.pid === '__all__' ? 1 : b.pid === '__all__' ? -1 : b.base - a.base))
+  const pc = (v) => `${Math.round(v * 100)}%`
+  return <>
+    <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· {multi ? "share of each event's pipeline leads" : `share of ${fmtNumber(leadTotal)} ${chanLabel ? `${chanLabel} ` : ''}leads`} · the step is the share of the row before · the lowest step is the bottleneck</span></div>
+    {list.map((g) => <div key={g.pid}>
+      {multi ? <div className="cc-pipe-lab"><span className="c360-dot" /> {g.name} <span className="sub" style={{ fontWeight: 500 }}>· {fmtNumber(g.base)} leads</span></div> : null}
+      <div className="scorecard exec-kpis ir-row">
+        {g.rows.map((r, i) => {
+          const dPts = r.prevRate != null && r.rate != null ? Math.round((r.rate - r.prevRate) * 100) : null
+          return (
+            <div key={i} className={`card kpi ir-card${r.bottleneck ? ' ir-bn' : ''}`} title={r.bottleneck ? 'The lowest step conversion in this funnel - the biggest leak' : undefined}>
+              <div className="top"><span className="label">{r.label}</span>{r.bottleneck ? <span className="ir-flag">Bottleneck</span> : null}</div>
+              <div className="value">{r.rate != null ? pc(r.rate) : '-'}</div>
+              <div className="ir-sub">{fmtNumber(r.count)} of {fmtNumber(r.base)}{dPts != null ? <span className={`ir-delta ${dPts > 0 ? 'up' : dPts < 0 ? 'down' : 'flat'}`}>{dPts > 0 ? '▲' : dPts < 0 ? '▼' : '·'} {Math.abs(dPts)} pts</span> : null}</div>
+              <div className="ir-step">{i === 0 ? 'first key event' : r.step != null ? <>{pc(r.step)} of the {fmtNumber(r.stepBase)} before{r.prevStep != null ? <span className="ir-was"> · was {pc(r.prevStep)}</span> : null}</> : '-'}</div>
+              {spend && r.count ? <div className="ir-cost">{money(Math.round(spend / r.count))} each</div> : null}
+            </div>
+          )
+        })}
+      </div>
+    </div>)}
+  </>
+}
+function IdxChip({ v, goodUp = true, title }) {
+  if (v == null) return <span className="idx-chip idx-na" title="Too few to index (under 10 leads) or no baseline">-</span>
+  const d = v - 100
+  const cls = Math.abs(d) < 15 ? 'idx-flat' : ((d > 0) === goodUp ? 'idx-good' : 'idx-bad')
+  return <span className={`idx-chip ${cls}`} title={title || `${v} against the account average of 100`}>{v}</span>
+}
+function IntelMovers({ movers, money, hasPrev }) {
+  const fmt = (m, v) => (m.kind === 'money' ? money(Math.round(v)) : m.kind === 'rate' ? `${Math.round(v * 100)}%` : fmtNumber(v))
+  const chg = (m) => (m.kind === 'rate' ? `${m.pts > 0 ? '▲' : '▼'} ${Math.abs(Math.round(m.pts))} pts` : `${m.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(m.pct))}%`)
+  return (
+    <div className="card">
+      <div className="exec-panel-h">Biggest movers <span className="sub">· against the previous equal window · a count needs 5, a rate 10, before it is judged</span></div>
+      {!hasPrev ? <p className="cap" style={{ margin: 0 }}>Waiting on the previous period.</p>
+        : !movers.length ? <p className="cap" style={{ margin: 0 }}>Nothing moved more than 15% (or 8 points on a rate) against the previous period.</p>
+          : <div className="mov-list">{movers.map((m) => (
+            <div className="mov-item mov-static" key={m.key}>
+              <span className={`mov-badge ${m.good ? 'good' : 'bad'}`}>{chg(m)}</span>
+              <div className="mov-body"><b>{m.label}</b><span className="cap">{fmt(m, m.cur)} from {fmt(m, m.prev)}{m.why ? ` · ${m.why}` : ''}</span></div>
+            </div>
+          ))}</div>}
+    </div>
+  )
+}
+function IntelIndex({ index, money }) {
+  if (!index) return null
+  const pc = (v) => (v == null ? '-' : `${Math.round(v * 100)}%`)
+  const rows = (kind, list) => list.map((sg) => (
+    <tr key={kind + sg.label} className={sg.thin ? 'idx-thin' : ''}>
+      <td className="lft">{sg.label}{sg.thin ? <span className="cap"> · thin</span> : null}</td>
+      <td>{fmtNumber(sg.leads)} <span className="cap">{sg.share != null ? `${Math.round(sg.share * 100)}%` : ''}</span></td>
+      <td>{fmtNumber(sg.won)}</td>
+      <td>{pc(sg.winRate)} <IdxChip v={sg.idx.winRate} /></td>
+      <td>{pc(sg.resultRate)} <IdxChip v={sg.idx.resultRate} /></td>
+      <td>{pc(sg.keReach)} <IdxChip v={sg.idx.keReach} /></td>
+      <td>{sg.cpl != null ? money(Math.round(sg.cpl)) : '-'} {sg.cpl != null ? <IdxChip v={sg.idx.cpl} goodUp={false} /> : null}</td>
+    </tr>
+  ))
+  const b = index.base
+  const groups = [['Pipelines', index.pipelines], ['Channels', index.channels], ['Campaigns · most leads', index.campaigns]].filter(([, l]) => l && l.length)
+  return (
+    <div className="card">
+      <div className="exec-panel-h">Indexing insights <span className="sub">· every cut against this account's own average for the period (100 = the average; 130 is 30% above it)</span></div>
+      <div className="tbl-scroll"><table className="mini-tbl users-tbl idx-tbl">
+        <thead><tr><th className="lft">Cut</th><th>Leads · share</th><th>Won</th><th>Win rate</th><th>Result rate</th><th title="Reached the first key event, or won">Reach 1st key event</th><th>Cost / lead</th></tr></thead>
+        <tbody>
+          <tr className="idx-base"><td className="lft">Account average</td><td>{fmtNumber(b.leads)}</td><td>{fmtNumber(b.won)}</td><td>{pc(b.winRate)}</td><td>{pc(b.resultRate)}</td><td>{pc(b.keReach)}</td><td>{b.cpl != null ? money(Math.round(b.cpl)) : '-'}</td></tr>
+          {groups.map(([lab, list]) => <React.Fragment key={lab}><tr className="idx-grp"><td className="lft" colSpan={7}>{lab}</td></tr>{rows(lab, list)}</React.Fragment>)}
+        </tbody>
+      </table></div>
+      <Caveat>Each figure is that cut's own, divided by the account's, so a campaign at 140 on win rate wins at 1.4× the account's rate for the same period and pipeline. Cost per lead indexes only where spend is attributable (the paid channels); a lower index is the better one there. Cuts under 10 leads are shown but not indexed.{index.capped ? ` The per-opportunity rows are sampled past ${fmtNumber(index.total)} opportunities, so campaign figures here are from the sample.` : ''}</Caveat>
+    </div>
+  )
+}
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
@@ -7017,6 +7363,11 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const prevCcDrill = useCcDrill(clientId, prevRange || range, nonce, chan)
   const pccRaw = (prevRange && prevCcDrill.status === 'ok' && prevCcDrill.data && prevCcDrill.data.oppsBySource) ? prevCcDrill.data : null
   const pcc = useMemo(() => lensCc(pccRaw, pipe), [pccRaw, pipe])
+  const money = (v) => fmtCurrency(v, currency)
+  // The intelligence model: reach with the bottleneck, channels to outcomes,
+  // movers, indexing. Same (lensed, channel-scoped) payloads as every tile.
+  const keTick = JSON.stringify(loadKeyEvents(clientId))
+  const intel = useMemo(() => buildIntel(cc, pcc, clientId, money), [cc, pcc, clientId, keTick]) // eslint-disable-line
   // Spend for the active channel toggle, from a (lensed) drill payload.
   const spendOf = (d, chn) => { const sp = (d && d.spend) || {}; return chn === 'meta' ? (sp.meta || 0) : chn === 'google' ? (sp.google || 0) : chn === 'nonpaid' ? 0 : (sp.total || 0) }
   const [drill, setDrill] = useState(null)
@@ -7027,7 +7378,6 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [bf, setBf] = useState({ running: false, done: 0, err: null })
   const canBackfill = !authUser || authUser.role !== 'viewer'
   useEffect(() => { setAi(loadInsights(clientId + ':exec')); setAiErr(null); setBf({ running: false, done: 0, err: null }) }, [clientId])
-  const money = (v) => fmtCurrency(v, currency)
   // Seed the score trend on demand: walk the backfill cursor (weekly points,
   // ~12 months back) a few points per call, then reload health for the sparkline.
   const runBackfill = async () => {
@@ -7133,7 +7483,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <span>Command centre <span className="sub">· {pipeLabel ? <><b>{pipeLabel}</b> pipeline</> : 'all of Caalano Systems'} for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
             <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
           </div>
-          <div className="cc-group-lab x-internal">Spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
+          <div className="cc-group-lab x-internal">Performance snapshot · spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
           <div className="scorecard exec-kpis exec-kpis-4 x-internal">
             <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
             <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '-'} cur={paidCpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead - paid attributed' })} />
@@ -7151,44 +7501,14 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
             <Kpi label="Result rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ resulted" onClick={tileClick({ kind: 'close', title: 'Result rate - by channel' })} />
           </div>
-          {kef.usingKe && kef.rows.length ? <>
-            <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· {kef.multi ? "share of each event's pipeline leads" : `share of ${fmtNumber(kef.leadTotal)} ${chActive ? `${CC_CHANS.find((c) => c[0] === chan)[1]} leads` : 'leads'}`}</span></div>
-            {kef.multi
-              ? (() => {
-                  // Split the reach cards by pipeline (same as the Meta Ads view) so a
-                  // multi-pipeline client sees each pipeline's key events on their own
-                  // row instead of one union list with the same stage repeated.
-                  const byPipe = new Map()
-                  for (const r of kef.rows) { const k = r.pipeline || '__all__'; if (!byPipe.has(k)) byPipe.set(k, []); byPipe.get(k).push(r) }
-                  const groups = [...byPipe.entries()].map(([pid, rs]) => ({ pid, name: pid === '__all__' ? 'All pipelines' : ((kef.pipeNames && kef.pipeNames.get(pid)) || 'Pipeline'), rows: rs, leads: (rs[0] && rs[0].leadBase) || kef.leadTotal }))
-                  groups.sort((a, b) => (a.pid === '__all__' ? 1 : b.pid === '__all__' ? -1 : b.leads - a.leads))
-                  return groups.map((g) => <div key={g.pid}>
-                    <div className="cc-pipe-lab"><span className="c360-dot" /> {g.name} <span className="sub" style={{ fontWeight: 500 }}>· {fmtNumber(g.leads)} leads</span></div>
-                    <div className="scorecard exec-kpis">
-                      {g.rows.map((r, i) => { const base = r.leadBase || g.leads; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '-'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
-                    </div>
-                  </div>)
-                })()
-              : <div className="scorecard exec-kpis">
-                  {kef.rows.map((r, i) => { const base = r.leadBase || kef.leadTotal; return <Kpi key={i} label={r.label} value={base ? `${Math.round((r.count / base) * 100)}%` : '-'} flat={`${fmtNumber(r.count)} of ${fmtNumber(base)}`} /> })}
-                </div>}
-          </> : null}
+          {kef.usingKe && kef.rows.length && intel ? <IntelReach reach={intel.reach} multi={kef.multi} leadTotal={kef.leadTotal} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} money={money} spend={chanSpend || 0} /> : null}
         </div>
       })()}
-
-      {/* Pipeline performance - per-pipeline overall key-event scorecards (all
-          channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
-      {cc ? (() => {
-        const chn = h.channels || {}
-        const curSpend = pipeOn ? spendOf(cc, chan) : chan === 'all' ? (k.adSpend || 0) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : 0
-        const prevSpend = pipeOn ? (pcc ? spendOf(pcc, chan) : null) : chan === 'all' ? (pv.adSpend || 0) : null // channel-split prev spend isn't available
-        return <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />
-      })() : null}
 
       {/* Channel split - per-channel spend → key events → wins & efficiency. Above
           the bottleneck so the channel scoreboard reads first. (Internal figures.) */}
       <div className="card x-internal">
-        <div className="exec-panel-h">Channel split <span className="sub">· spend → key events → wins &amp; efficiency, per paid channel</span></div>
+        <div className="exec-panel-h">Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the account's</span></div>
         {(() => {
           const ch = pipeOn ? { metaSpend: cc.spend.meta, googleSpend: cc.spend.google, metaLeads: cc.paid.metaLeads, googleConv: cc.paid.googleLeads } : (h.channels || {})
           // A channel whose ad read failed has NO spend figure, which is a
@@ -7204,7 +7524,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
           const renderTable = (evLabels, rows) => (
             <div className="tbl-scroll"><table className="mini-tbl users-tbl">
-              <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th></tr></thead>
+              <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against the account's own win rate (100 = the account)">Win rate</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th></tr></thead>
               <tbody>{rows.map((r) => (
                 <tr key={r.key}>
                   <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
@@ -7212,6 +7532,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
                   <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
                   {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
                   <td>{fmtNumber(r.won)}</td>
+                  <td>{r.leads ? `${Math.round(((r.won || 0) / r.leads) * 100)}%` : '-'} {(() => { const ic = intel && intel.channels.find((c) => c.key === r.key); return ic && !ic.thin ? <IdxChip v={ic.idx.winRate} /> : null })()}</td>
                   <td>{money(r.revenue)}</td>
                   <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
                   <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
@@ -7265,6 +7586,19 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           return renderTable(evLabels, rows)
         })()}
       </div>
+
+      {/* Biggest movers and Indexing insights - from the same model as the reach above. */}
+      {cc && intel ? <IntelMovers movers={intel.movers} money={money} hasPrev={!!pcc} /> : null}
+      {cc && intel ? <IntelIndex index={intel.index} money={money} /> : null}
+
+      {/* Pipeline performance - per-pipeline overall key-event scorecards (all
+          channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
+      {cc ? (() => {
+        const chn = h.channels || {}
+        const curSpend = pipeOn ? spendOf(cc, chan) : chan === 'all' ? (k.adSpend || 0) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : 0
+        const prevSpend = pipeOn ? (pcc ? spendOf(pcc, chan) : null) : chan === 'all' ? (pv.adSpend || 0) : null // channel-split prev spend isn't available
+        return <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />
+      })() : null}
 
       {/* Revenue bottleneck funnel - client key events + calendar show-rate.
           Passes the selected channel's spend so a paid view shows cost/stage. */}
@@ -13875,6 +14209,17 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   const ccForPipes = useCcDrill(((config && config.clients) || []).some((c) => c.id === client.id && c.ghl) ? client.id : null, range, nonce, 'all')
   const pipes = useMemo(() => ((ccForPipes.data && ccForPipes.data.pipelinesFunnel) || []).map((p) => ({ id: p.id, name: p.name })), [ccForPipes.data])
   const pipeName = pipe !== 'all' ? ((pipes.find((p) => p.id === pipe) || {}).name || null) : null
+  // The intelligence banner reads the same drill payloads (current and previous
+  // window) through the shared cache, lensed to the workspace pipeline.
+  const crmId = ((config && config.clients) || []).some((c) => c.id === client.id && c.ghl) ? client.id : null
+  const prevRangeW = prevRangeOf(range)
+  const ccPrevW = useCcDrill(crmId && prevRangeW ? crmId : null, prevRangeW || range, nonce, 'all')
+  const keTickW = JSON.stringify(loadKeyEvents(client.id))
+  const intel = useMemo(() => {
+    const raw = ccForPipes.data && ccForPipes.data.oppsBySource ? ccForPipes.data : null
+    const praw = ccPrevW.data && ccPrevW.data.oppsBySource ? ccPrevW.data : null
+    return buildIntel(lensCc(raw, pipe), lensCc(praw, pipe), client.id, (v) => fmtCurrency(v, data.currency))
+  }, [ccForPipes.data, ccPrevW.data, pipe, client.id, keTickW, data.currency]) // eslint-disable-line
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
   // Same function, same access check - a client id in the URL can't reach an
@@ -13942,6 +14287,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}<PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} /></div>
       </div>
       <div style={{ marginTop: 16 }}>
+        {crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Meta', range)} /></div>

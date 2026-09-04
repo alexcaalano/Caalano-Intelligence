@@ -18,6 +18,39 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.461.0 - 2026-09-04 · `PENDING` - Caalano360 Intelligence: banner, bottlenecks, channel outcomes, movers, indexing
+
+The Caalano360 tab now reads as a hierarchy, every part of it within the
+chosen pipeline and channel: **Performance snapshot** (the existing spend,
+efficiency and pipeline tiles), **Key event reach** with the step from the
+row before, its change against the previous period, and the lowest step
+flagged as the **bottleneck** (the same rule the Revenue bottleneck panel
+uses, so both point at the same stage), **Channel performance** (the channel
+split, now with each channel's win rate indexed against the account's),
+**Biggest movers** against the previous equal window (counts need 5, rates
+10, before they are judged; headline figures keep their place), and
+**Indexing insights**: pipelines, channels and the campaigns with the most
+leads, each indexed against the account's own average for the period
+(100 = the average) on win rate, result rate, reach of the first key event
+and cost per lead.
+
+A **360 Intelligence** banner sits at the top of every major client tab
+(Caalano360, Meta, Google, Users, Forms, Location, Appointments, Call
+Reporting, Timing, Lost Reasons): deterministic sentences read from the same
+figures - the biggest leak, channel to outcomes, the top movers, an indexing
+outlier (under-performer first), lost-reason concentration, decision pace,
+and a thin-data caveat - ordered so the lines that speak to the open tab come
+first. No AI, no delay, identical for everyone.
+
+Nothing was removed: Pipeline performance, the Revenue bottleneck, Lost
+reasons, Priority actions and the rest follow the new sections as before.
+New `tests/intel_test.mjs` (41 checks) covers the reach and bottleneck rule,
+channel outcomes, movers, indexing and the banner wording. Also fixes the
+Lost Reasons test, which broke in v3.460.0 when its lifted code began using
+the shared time-stats helper.
+
+---
+
 ## v3.460.0 - 2026-09-04 · `c200562` - Pipeline is a first-class filter: one picker for the whole client workspace
 
 Each tab used to carry its own pipeline picker and forget it on the next tab.

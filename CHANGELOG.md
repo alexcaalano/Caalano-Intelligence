@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.478.0 - 2026-09-04 · `PENDING` - Pipeline picker above the tab bar
+## v3.478.0 - 2026-09-04 · `ef91155` - Pipeline picker above the tab bar
 
 The picker lived at the end of the tab bar, which scrolls sideways on a
 narrow screen, so it was hidden off the right edge. It now sits in the

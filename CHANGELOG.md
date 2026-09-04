@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.468.0 - 2026-09-04 · `PENDING` - Closed-basis wins: read every win of the last 400 days
+## v3.468.0 - 2026-09-04 · `4f09056` - Closed-basis wins: read every win of the last 400 days
 
 v3.466.0 made the drill count wins by status change on the Closed basis, but
 it looked for them in the shared opportunity snapshot, which is capped

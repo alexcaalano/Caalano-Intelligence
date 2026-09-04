@@ -4414,11 +4414,14 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
       revenueTotal += val
       if (ch === 'meta') { metaWon++; paidWon++ } else if (ch === 'google') { googleWon++; paidWon++ }
       const closeMs = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)
-      const closeDate = isFinite(closeMs) ? new Date(closeMs).toISOString().slice(0, 10) : null
+      // Calendar dates in the client's own timezone, so a deal created at 9am in
+      // Melbourne is dated the day Melbourne saw, not the UTC day before.
+      const dayIn = (ms) => (isFinite(ms) ? new Date(ms).toLocaleDateString('en-CA', { timeZone: tz }) : null)
+      const closeDate = dayIn(closeMs)
       // Created date and days to close ride along so the Won deals drill can show
       // how long each deal took, not just when it landed.
       const createdMs = Date.parse(o.createdAt)
-      const createdDate = isFinite(createdMs) ? new Date(createdMs).toISOString().slice(0, 10) : null
+      const createdDate = dayIn(createdMs)
       const daysToClose = (isFinite(createdMs) && isFinite(closeMs) && closeMs >= createdMs) ? Math.round((closeMs - createdMs) / DAY) : null
       if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, createdDate, daysToClose, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline' })
       cc.won++; cc.revenue += val; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })

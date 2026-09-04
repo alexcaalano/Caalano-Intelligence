@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.475.0 - 2026-09-04 · `PENDING` - Dates read DD/MM/YYYY
+
+Every place a full date was shown as YYYY-MM-DD now shows DD/MM/YYYY: the
+custom period label in the header, the Won deals and close-by-channel
+drills, last-appointment cells and the change-log version dates. Day labels
+in the daily tables and cohort weeks ("16 Jul") are unchanged, being
+unambiguous. The deal drill's created and won dates are also now the day in
+the client's own timezone rather than the UTC day, so a lead created at 9am
+in Melbourne no longer reads as the day before.
+
+---
+
 ## v3.474.0 - 2026-09-04 · `44925c2` - Caalano360 waits for every read, then says what failed
 
 The tab painted from the health score first and repainted when the CRM

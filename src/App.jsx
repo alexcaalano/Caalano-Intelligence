@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.474.0'
+const APP_VERSION = '3.475.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6817,7 +6817,7 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
     const deals = (d.revenue && d.revenue.deals) || []
     subhead = `${fmtNumber(deals.length)} won ${deals.length === 1 ? 'deal' : 'deals'} · ${money((d.revenue && d.revenue.total) || 0)}`
     body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Created on</th><th>Won on</th><th title="Days from the lead arriving to being marked won">Time to close</th><th className="lft">Source</th></tr></thead>
-      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.createdDate || '-'}</td><td>{dl.closeDate || '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
+      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.createdDate ? fmtDMY(dl.createdDate) : '-'}</td><td>{dl.closeDate ? fmtDMY(dl.closeDate) : '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
       : <div className="cap">No won deals in this period.</div>
   } else if (drill.kind === 'spend') {
     subhead = `${money(spend.total || 0)} total ad spend`
@@ -6858,7 +6858,7 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
       title = `${chLabel(c.channel)} - won deals`
       subhead = `${fmtNumber(c.won)} won of ${fmtNumber(c.closed)} resulted · ${c.closeRate != null ? c.closeRate + '%' : '-'} result rate`
       body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Won on</th></tr></thead>
-        <tbody>{(c.deals || []).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '-'}</td></tr>)}</tbody></table>
+        <tbody>{(c.deals || []).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate ? fmtDMY(dl.closeDate) : '-'}</td></tr>)}</tbody></table>
     } else {
       const chans = d.closeByChannel || []
       subhead = 'Result rate by channel · resulted = won + lost · click a channel for its won deals'
@@ -7891,7 +7891,17 @@ function presetRange(id) {
   }
 }
 const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
-const rangeLabel = (r) => r.label || `${r.from} → ${r.to}`
+// Dates are shown DD/MM/YYYY throughout. Accepts YYYY-MM-DD or an ISO
+// datetime (shown in the viewer's local day); anything else passes through.
+function fmtDMY(v) {
+  if (v == null || v === '') return ''
+  const s = String(v)
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/)
+  if (m && s.length === 10) return `${m[3]}/${m[2]}/${m[1]}`
+  const d = new Date(s)
+  return isFinite(d.getTime()) ? d.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : s
+}
+const rangeLabel = (r) => r.label || `${fmtDMY(r.from)} → ${fmtDMY(r.to)}`
 // The equal-length period immediately BEFORE this range, for period-over-period
 // comparisons (e.g. leaderboard rank movement). from/to are inclusive YYYY-MM-DD.
 const prevRange = (r) => {
@@ -8500,7 +8510,7 @@ function ClinicPatientRow({ p, clientId, money, cols, extra }) {
       <tr className={open ? 'row-sel' : ''} style={{ cursor: p.contactId ? 'pointer' : 'default' }} onClick={p.contactId ? toggle : undefined}>
         <td className="lft" title={p.name}>{p.contactId ? <span className="u-chev">{open ? '▾' : '▸'}</span> : null} {p.name}</td>
         {extra}
-        <td className="lft">{p.lastAppt ? String(p.lastAppt).slice(0, 10) : '-'}</td>
+        <td className="lft">{p.lastAppt ? fmtDMY(String(p.lastAppt).slice(0, 10)) : '-'}</td>
         <td className="lft">{p.channel ? (CLINIC_CHAN[p.channel] || p.channel) : <span className="cc-none">-</span>}</td>
       </tr>
       {open && <tr className="u-notes-row"><td colSpan={cols}>
@@ -10061,7 +10071,7 @@ function ClinicView({ clientId, currency, nonce }) {
                         <td className="lft">{p.name || <span className="cap">-</span>}{!p.visits ? <span className="cl-leadtag">lead</span> : null}</td>
                         <td>{p.visits != null ? fmtNumber(p.visits) : '-'}</td>
                         <td>{money(p.spent)}</td>
-                        <td className="lft">{p.lastAppt || <span className="cap">-</span>}</td>
+                        <td className="lft">{p.lastAppt ? fmtDMY(p.lastAppt) : <span className="cap">-</span>}</td>
                         <td className="lft">{p.practitioner || <span className="cap">-</span>}</td>
                       </tr>
                     ))}</tbody>
@@ -15987,7 +15997,7 @@ function LogsPanel({ clients }) {
               <div className="logs-verrow" key={v.version}>
                 <div className="logs-vermeta">
                   <span className="logs-ver">{v.version}</span>
-                  {v.date && <span className="logs-verdate">{v.date}</span>}
+                  {v.date && <span className="logs-verdate">{fmtDMY(v.date)}</span>}
                   {v.status && <span className={`logs-verstat ${/pending/i.test(v.status) ? 'pend' : 'live'}`}>{/pending/i.test(v.status) ? 'PENDING' : v.status}</span>}
                 </div>
                 <div className="logs-verbody">
@@ -22079,7 +22089,7 @@ function rangePatch(range) {
 }
 function rangeFromUrl(u) {
   if (u.r && PRESETS.some((x) => x.id === u.r)) return presetRange(u.r)
-  if (u.from && u.to && DATE_RE.test(u.from) && DATE_RE.test(u.to)) return { from: u.from, to: u.to, label: `${u.from} → ${u.to}` }
+  if (u.from && u.to && DATE_RE.test(u.from) && DATE_RE.test(u.to)) return { from: u.from, to: u.to, label: `${fmtDMY(u.from)} → ${fmtDMY(u.to)}` }
   return null
 }
 const wbPatch = (wb) => ({ wb: wb === 'created' ? 'created' : null })

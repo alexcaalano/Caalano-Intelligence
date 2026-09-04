@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.472.0 - 2026-09-04 · `PENDING` - A cut-short wins read is flagged, never saved as complete
+## v3.472.0 - 2026-09-04 · `4bd046e` - A cut-short wins read is flagged, never saved as complete
 
 The won-only snapshot pages newest-first, and a cold interactive build has a
 seven-second deadline. On Nexia that reached April 2026 and stopped, leaving

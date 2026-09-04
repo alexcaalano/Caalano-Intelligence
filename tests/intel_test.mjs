@@ -111,7 +111,7 @@ ok('the channel line compares win rates and cost per win', L.some((l) => /Meta w
 ok('the lost-reason concentration line', L.some((l) => /"Budget" accounts for 50% of lost deals \(20 of 40\)/.test(l.text)))
 ok('the pace line', L.some((l) => /Losses take 14 days to be called against 4 days to win/.test(l.text)))
 ok('mover lines carry tab tags', L.filter((l) => /vs the previous period/.test(l.text)).every((l) => l.tags.includes('overall')))
-ok('the strongest under-index leads the findings lines, then the best', (() => { const i = L.findIndex((l) => /Camp B \(campaign\) win only 5% of the time against the account's 22%/.test(l.text)); const j = L.findIndex((l) => /Camp A \(campaign\) win 40% of the time, 1\.8×/.test(l.text)); return i >= 0 && j > i })(), L.map((l) => l.text))
+ok('the strongest under-index leads the findings lines, then the best', (() => { const i = L.findIndex((l) => /win only 5% of the time against the account's 22% \(1 of 20 won\)/.test(l.text)); const j = L.findIndex((l) => /win 40% of the time, 1\.8× the account's 22%/.test(l.text)); return i >= 0 && j > i })(), L.map((l) => l.text))
 ok('thin period caveat appears under 30 leads', intelLines({ cc: { totals: { leads: 12, won: 1, lost: 2 } }, reach: [], channels: [], movers: [] }, money).some((l) => /Only 12 opportunities/.test(l.text)))
 ok('empty model -> no lines, no throw', intelLines(null, money).length === 0 && intelLines({ cc: null, reach: [], channels: [], movers: [] }, money).length === 0)
 

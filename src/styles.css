@@ -354,7 +354,7 @@ tbody tr:hover { background: var(--panel-2); }
 /* Settings modal carries many tabs + wide content, so give it the most room -
    wide enough that the tab strip never has to scroll sideways. */
 .set-modal { width: min(1240px, 96vw); }
-.modal .m-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
+.modal .m-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); z-index: 5; }
 .modal .m-head h3 { margin: 0; font-size: 16px; }
 .modal .m-body { padding: 18px 22px; }
 .set-client { border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; margin-bottom: 10px; }
@@ -4291,7 +4291,10 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
    long pane (Key events, Diagnostics) scrolls. Below 760px it collapses to a
    select, which reads the same groups. */
 .set-split { display: grid; grid-template-columns: 218px minmax(0, 1fr); align-items: start; }
-.set-nav { position: sticky; top: 70px; align-self: start; padding: 14px 10px 14px 16px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+/* The nav sticks under the modal header, never over it: the header paints above
+   (z-index) and the nav scrolls inside its own box when it is taller than the
+   space left below the header, instead of sliding up behind the client name. */
+.set-nav { position: sticky; top: 70px; align-self: start; box-sizing: border-box; max-height: calc(90vh - 70px); overflow-y: auto; padding: 14px 10px 14px 16px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
 .set-nav-grp { display: flex; flex-direction: column; gap: 2px; }
 .set-nav-glab { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); font-weight: 800; padding: 0 10px 4px; }
 .set-nav button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; background: none; border: none; border-radius: 9px; padding: 7px 10px; color: var(--muted); cursor: pointer; }

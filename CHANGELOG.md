@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.458.0 - 2026-09-04 · `PENDING` - Settings: the section list no longer slides over the client name
+
+Scrolling a long settings section (Key events with several pipelines) let the
+section list ride up over the modal header, so "Nexia Health Care" and the
+Summary item sat on top of each other. The header now paints above everything
+that scrolls beneath it, and the section list scrolls inside its own box when it
+is taller than the space under the header, so it stays put instead of sliding
+up. The browser tooltip on each section, which repeated the hint already shown
+under the label, is gone.
+
+---
+
 ## v3.457.0 - 2026-09-03 · `72e8240` - Lost Reasons: scorecards follow the filters, filters take several values
 
 The Opportunities scorecards on Lost Reasons (leads, open, won, lost, result

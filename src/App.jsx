@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.457.0'
+const APP_VERSION = '3.458.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -15764,7 +15764,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
               <div className="set-nav-grp" key={g}>
                 <div className="set-nav-glab">{g}</div>
                 {tabs.filter((t) => t[2] === g).map(([k, lbl, , hint]) => (
-                  <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)} title={hint}>
+                  <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
                     <span className="set-nav-l">{lbl}</span><span className="set-nav-h">{hint}</span>
                   </button>
                 ))}

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.461.0 - 2026-09-04 · `PENDING` - Caalano360 Intelligence: banner, bottlenecks, channel outcomes, movers, indexing
+## v3.461.0 - 2026-09-04 · `4a1d604` - Caalano360 Intelligence: banner, bottlenecks, channel outcomes, movers, indexing
 
 The Caalano360 tab now reads as a hierarchy, every part of it within the
 chosen pipeline and channel: **Performance snapshot** (the existing spend,

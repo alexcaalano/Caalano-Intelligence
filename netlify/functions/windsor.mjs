@@ -359,7 +359,11 @@ async function windsorFetch(connector, fields, from, to, preset, key, opts = {})
       unavailableAccounts.add(`${connector}:${opts.accounts}`)
       return withDemo([])
     }
-    throw new Error(`Windsor ${connector} ${r.status}: ${body.slice(0, 200)}`)
+    const err = new Error(`Windsor ${connector} ${r.status}: ${body.slice(0, 200)}`)
+    // An access problem is the one failure a retry cannot fix, so it is marked
+    // here and carried up to the browser, which shows an error only for these.
+    err.auth = r.status === 401 || r.status === 403 || /api[_ ]?key|unauthori[sz]ed|forbidden|invalid.*(key|token)|not authenticated/i.test(body)
+    throw err
   }
   const j = await r.json()
   return withDemo(j.data || j.result || [])
@@ -4982,6 +4986,11 @@ export default async (req) => {
       const fallback = await readMetaPrimary(client)
       const core = url.searchParams.get('part') === 'core'
       const meta = await buildMeta(accountId, from, to, preset, key, fallback, { core })
+      // An essential read (account / campaign / ad-set) that did not come back
+      // must not be served - or cached - as "no activity". Returned as a soft
+      // error: the cache gate serves the last good copy if it has one, and the
+      // browser keeps loading and tries again rather than painting an empty tab.
+      if (meta && meta.adReadOk === false) return json({ client, channel, period: { from, to, preset }, error: 'Meta read incomplete: the ad platform did not answer in time. Retrying.', incomplete: true, soft: true }, 200, false)
       return json({ client, channel, period: { from, to, preset }, meta }, 200, true)
     }
     const fields = [...spec.dims, ...spec.metrics]
@@ -4990,6 +4999,6 @@ export default async (req) => {
     if (debug) return json({ channel, accountId, fieldsRequested: fields, rowCount: rows.length, sample: rows.slice(0, 3), sampleKeys: rows[0] ? Object.keys(rows[0]) : [] })
     return json({ client, channel, period: { from, to, preset }, ghl: rollupGhl(rows) }, 200, true)
   } catch (e) {
-    return json({ error: String(e.message || e) }, 502)
+    return json({ error: String(e.message || e), auth: !!(e && e.auth), soft: !(e && e.auth) }, 502)
   }
 }

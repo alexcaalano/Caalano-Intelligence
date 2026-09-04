@@ -33,6 +33,10 @@ ok('a step whose base is under 10 is not judged', R[1].bottleneck === true && !R
 R = intelReach([{ label: 'A', kind: 'stage', count: 50, leadBase: 100, pipeline: 'x' }, { label: 'B', kind: 'stage', count: 40, leadBase: 100, pipeline: 'x' }, { label: 'A', kind: 'stage', count: 10, leadBase: 50, pipeline: 'y' }, { label: 'B', kind: 'stage', count: 9, leadBase: 50, pipeline: 'y' }], 150, [], 0)
 ok('one bottleneck per pipeline', R.filter((r) => r.bottleneck).map((r) => r.pipelineId + r.label).join() === 'xA,yA', R.map((r) => [r.pipelineId, r.label, r.bottleneck]))
 ok('no rows -> no throw', intelReach([], 0, [], 0).length === 0)
+// Closed basis: more wins than leads. Clamped, flagged, not a mover.
+R = intelReach([{ label: 'Call', kind: 'stage', count: 110, leadBase: 31 }, { label: 'Won', kind: 'won', count: 110, leadBase: 31 }], 31, [{ label: 'Call', kind: 'stage', count: 112, leadBase: 27 }, { label: 'Won', kind: 'won', count: 112, leadBase: 27 }], 27)
+ok('reach over 100% is clamped and flagged', R[0].rate === 1 && R[0].over === true && R[0].prevRate === 1 && R[0].prevOver === true && R[1].step === 1, R)
+ok('flagged rows never become reach movers', !intelMovers({ totals: { leads: 31, won: 110, lost: 0 } }, { totals: { leads: 27, won: 112, lost: 0 } }, R, intelReach([{ label: 'Call', kind: 'stage', count: 112, leadBase: 27 }], 27, [], 0)).some((m) => m.key.startsWith('reach')))
 
 // --- channels ------------------------------------------------------------------
 const cc = {

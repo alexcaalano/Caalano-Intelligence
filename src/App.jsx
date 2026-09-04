@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.462.0'
+const APP_VERSION = '3.463.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3856,6 +3856,13 @@ function DeepError({ channel, error, range, onRetry }) {
   // A session expiry isn't a timeout - the login cookie lapsed, so the pull came
   // back "Not authenticated". Show a sign-in message, not the misleading "temporary
   // timeout", and reload (which re-runs the auth check → login screen).
+  const refused = /api[_ ]?key|unauthori[sz]ed|forbidden|invalid.*(key|token)|\b403\b/i.test(String(error || ''))
+  if (refused) return <div className="card empty-deep"><div className="big">🔐</div>
+    <b>{channel} refused the read.</b>
+    <p style={{ maxWidth: 520, margin: '8px auto 0' }}>The data connection's access to this {channel} account was rejected, so retrying will not help. Check the account is still granted to the Windsor connection and that the API key is current, then retry.</p>
+    {error ? <p className="cap" style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12, opacity: .8 }}>{String(error)}</p> : null}
+    {onRetry ? <button className="set-relink" style={{ marginTop: 12 }} onClick={onRetry}>↻ Retry</button> : null}
+  </div>
   const authExpired = /not authenticated|unauthenticated|session (expired|timed out|has expired)|token expired|please (log|sign) ?in|401/i.test(String(error || ''))
   if (authExpired) return <div className="card empty-deep"><div className="big">🔐</div>
     <b>Your session expired.</b>
@@ -7005,13 +7012,21 @@ function intelReach(rows, leadTotal, prevRows, prevLeadTotal) {
     let above = base, prevAbove = prevBase
     const mine = rs.map((r) => {
       const pr = prevBy.get(keyOf(r))
+      // On the Closed won basis, wins are counted by close date while leads are
+      // counted by arrival, and every won deal is assumed to have passed every
+      // stage - so a stage can carry more deals than the period's leads. That is
+      // not a rate of these leads: it is clamped at 100%, flagged, and kept out
+      // of the movers rather than reported as 355%.
+      const cap = (v) => (v == null ? null : Math.min(1, v))
       const row = {
         ...r, pipelineId: pid, base, prevBase,
-        rate: intelRate(r.count, base), prevRate: pr ? intelRate(pr.count, prevBase) : null,
-        step: intelRate(r.count, above), prevStep: pr ? intelRate(pr.count, prevAbove) : null,
+        rate: cap(intelRate(r.count, base)), prevRate: pr ? cap(intelRate(pr.count, prevBase)) : null,
+        step: cap(intelRate(r.count, above)), prevStep: pr ? cap(intelRate(pr.count, prevAbove)) : null,
         stepBase: above, prevCount: pr ? pr.count : null, bottleneck: false,
+        over: base > 0 && r.count > base, prevOver: !!(pr && prevBase > 0 && pr.count > prevBase),
       }
-      above = r.count; prevAbove = pr ? pr.count : 0
+      // An inflated row cannot be the base of the next step either.
+      above = base > 0 ? Math.min(r.count, base) : r.count; prevAbove = pr ? (prevBase > 0 ? Math.min(pr.count, prevBase) : pr.count) : 0
       return row
     })
     const cands = mine.filter((o) => o.step != null && o.stepBase >= INTEL_MIN_BASE)
@@ -7080,7 +7095,7 @@ function intelMovers(cc, pcc, reach, prevReach) {
   }
   // Key event reach, per event, in points of leads.
   const pr = new Map((prevReach || []).map((r) => [`${r.pipelineId}|${r.label}`, r]))
-  for (const r of reach || []) { const p = pr.get(`${r.pipelineId}|${r.label}`); if (p) rate(`reach:${r.pipelineId}|${r.label}`, `Reach · ${r.label}${r.pipeline && r.pipelineName ? ` (${r.pipelineName})` : ''}`, r.rate, p.rate, r.base, p.base, true, `${r.count} of ${r.base} vs ${p.count} of ${p.base}`) }
+  for (const r of reach || []) { if (r.over || r.prevOver) continue; const p = pr.get(`${r.pipelineId}|${r.label}`); if (p) rate(`reach:${r.pipelineId}|${r.label}`, `Reach · ${r.label}${r.pipeline && r.pipelineName ? ` (${r.pipelineName})` : ''}`, r.rate, p.rate, r.base, p.base, true, `${r.count} of ${r.base} vs ${p.count} of ${p.base}`) }
   // The top lost reason's share of losses.
   const lr = cc.lostByReason || [], plr = pcc.lostByReason || []
   if (lr.length && (t.lost || 0) >= INTEL_MIN_BASE && (pt.lost || 0) >= INTEL_MIN_BASE) {
@@ -7223,7 +7238,10 @@ function IntelBanner({ model, status, tab, pipeName, range }) {
   useEffect(() => { setMore(false) }, [tab, pipeName])
   const lines = (model && model.lines) || []
   const key = tab || 'overall'
-  const ordered = [...lines].sort((a, b) => (b.tags.includes(key) ? 1 : 0) - (a.tags.includes(key) ? 1 : 0))
+  // A channel tab is about that channel: lines that speak only to the other
+  // paid channel are left out, the rest lead with the ones tagged for this tab.
+  const other = key === 'meta' ? 'google' : key === 'google' ? 'meta' : null
+  const ordered = lines.filter((l) => !(other && l.tags.includes(other) && !l.tags.includes(key))).sort((a, b) => (b.tags.includes(key) ? 1 : 0) - (a.tags.includes(key) ? 1 : 0))
   const shown = more ? ordered : ordered.slice(0, 3)
   return (
     <div className={`intel-banner${status === 'loading' ? ' is-loading' : ''}`}>
@@ -7257,7 +7275,7 @@ function IntelReach({ reach, multi, leadTotal, chanLabel, money, spend }) {
             <div key={i} className={`card kpi ir-card${r.bottleneck ? ' ir-bn' : ''}`} title={r.bottleneck ? 'The lowest step conversion in this funnel - the biggest leak' : undefined}>
               <div className="top"><span className="label">{r.label}</span>{r.bottleneck ? <span className="ir-flag">Bottleneck</span> : null}</div>
               <div className="value">{r.rate != null ? pc(r.rate) : '-'}</div>
-              <div className="ir-sub">{fmtNumber(r.count)} of {fmtNumber(r.base)}{dPts != null ? <span className={`ir-delta ${dPts > 0 ? 'up' : dPts < 0 ? 'down' : 'flat'}`}>{dPts > 0 ? '▲' : dPts < 0 ? '▼' : '·'} {Math.abs(dPts)} pts</span> : null}</div>
+              <div className="ir-sub">{fmtNumber(r.count)} of {fmtNumber(r.base)}{r.over ? <span className="ir-over" title="More deals resulted at this stage than arrived as leads in the period. On the Closed won basis wins are counted by close date, so this is not a rate of these leads - switch Won basis to Created for a true cohort read.">more than arrived</span> : dPts != null ? <span className={`ir-delta ${dPts > 0 ? 'up' : dPts < 0 ? 'down' : 'flat'}`}>{dPts > 0 ? '▲' : dPts < 0 ? '▼' : '·'} {Math.abs(dPts)} pts</span> : null}</div>
               <div className="ir-step">{i === 0 ? 'first key event' : r.step != null ? <>{pc(r.step)} of the {fmtNumber(r.stepBase)} before{r.prevStep != null ? <span className="ir-was"> · was {pc(r.prevStep)}</span> : null}</> : '-'}</div>
               {spend && r.count ? <div className="ir-cost">{money(Math.round(spend / r.count))} each</div> : null}
             </div>
@@ -7772,10 +7790,13 @@ function mergeMetaParts(parts) {
 // Human label for the deep-data loading state, covering the monthly-chunk
 // progress and the auto-retry progress of the single-call path.
 function deepLoadLabel(progress, chLabel, range) {
+  if (progress && progress.stalled) return `${chLabel} is slow to answer - still trying every ${Math.round(DEEP_SLOW_RETRY_MS / 1000)}s. Nothing is wrong with your access.`
   if (progress && progress.retry) return `Taking longer than usual - retrying… (${progress.retry + 1}/${progress.of + 1})`
   if (progress && progress.total) return `Loading ${rangeLabel(range)} ${chLabel} data… ${progress.done}/${progress.total} months`
   return `Loading live ${chLabel} data…`
 }
+const DEEP_FAST_RETRIES = 5   // quick attempts with backoff before slowing down (6 in all)
+const DEEP_SLOW_RETRY_MS = 20000
 function useLiveDeep(clientId, channel, range, nonce = 0) {
   const [state, setState] = useState({ status: 'idle', data: null, progress: null })
   const q = rangeQuery(range)
@@ -7796,8 +7817,13 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
       // opened) so there's no spinner; otherwise show loading and fetch.
       const seed = swrPeek(base)
       setState(seed !== undefined ? { status: 'ok', data: seed, progress: null } : { status: 'loading', data: null, progress: null })
-      const MAX = 2 // up to 3 attempts total
-      const permanent = (j) => /no\s+\w+\s+account|not connected|connect your/i.test(String((j && j.error) || ''))
+      // A read that fails for any reason other than access is retried, first
+      // quickly with backoff, then slowly for as long as the tab is open - the
+      // loading screen stays up throughout. Only an access failure (a refused
+      // key, a lapsed session, no account linked) shows an error, because that
+      // is the one thing another attempt cannot fix.
+      const MAX = DEEP_FAST_RETRIES
+      const permanent = (j) => !!(j && (j.auth || /no\s+\w+\s+account|not connected|connect your|not authenticated|unauthenticated|401|403/i.test(String(j.error || ''))))
       const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
       // Progressive first paint (Meta only): the full pull fires 8 Windsor queries and
       // can take several seconds cold. If it hasn't landed quickly, fetch a lighter
@@ -7811,7 +7837,7 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
           try {
             const r = await fetch(`${base}&part=core`)
             const j = await r.json().catch(() => null)
-            if (!alive || fullDone || !j || j.error) return
+            if (!alive || fullDone || !j || j.error || j.incomplete) return
             coreShown = true; corePayload = j
             setState({ status: 'ok', data: j, progress: { core: true } })
           } catch { /* full is still coming */ }
@@ -7827,12 +7853,21 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
         } catch (e) { j = { error: 'Network error / timeout reaching the data function.' } }
         finally { clearTimeout(timer) }
         if (!alive) return
-        if (j && !j.error) { fullDone = true; if (coreTimer) clearTimeout(coreTimer); swrSet(base, j); setState({ status: 'ok', data: j, progress: null }); return }
+        if (j && !j.error && !j.incomplete) { fullDone = true; if (coreTimer) clearTimeout(coreTimer); swrSet(base, j); setState({ status: 'ok', data: j, progress: null }); return }
+        if (j && j.incomplete && !j.error) j = { ...j, error: 'incomplete' }
+        // An access failure is final. Anything else with nothing to show keeps the
+        // loading screen and moves to slow retries instead of an error card.
+        if (!permanent(j) && n >= MAX && !coreShown && seed === undefined) {
+          setState({ status: 'loading', data: null, progress: { stalled: true, tries: n + 1 } })
+          await sleep(DEEP_SLOW_RETRY_MS)
+          if (!alive) return
+          return attempt(n + 1)
+        }
         // On a hard failure or exhausted retries, keep the cached copy if we have one -
         // or the core payload if it already painted (better than an error card).
         if (permanent(j) || n >= MAX) { fullDone = true; if (coreShown) { setState({ status: 'ok', data: { ...corePayload, meta: { ...corePayload.meta, coreOnly: false } }, progress: null }); return } setState(seed !== undefined ? { status: 'ok', data: seed, progress: null } : { status: 'err', data: j || null, progress: null }); return }
         if (!coreShown) setState(seed !== undefined ? { status: 'ok', data: seed, progress: { retry: n + 1, of: MAX } } : { status: 'loading', data: null, progress: { retry: n + 1, of: MAX } })
-        await sleep(1200 * (n + 1))
+        await sleep(Math.min(1500 * (n + 1), 6000))
         if (!alive) return
         return attempt(n + 1)
       }
@@ -7849,7 +7884,7 @@ function useLiveDeep(clientId, channel, range, nonce = 0) {
       try {
         const r = await fetch(`/.netlify/functions/windsor?client=${clientId}&channel=${channel}&from=${c.from}&to=${c.to}${nonce ? `&_r=${nonce}` : ''}`)
         const j = await r.json().catch(() => null)
-        if (!j || j.error) throw new Error((j && j.error) || 'chunk failed')
+        if (!j || j.error || j.incomplete) throw new Error((j && j.error) || 'chunk failed')
         bump(); return j
       } catch (e) {
         if (attempt < 1) return fetchChunk(c, attempt + 1)

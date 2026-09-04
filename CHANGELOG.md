@@ -18,6 +18,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.463.0 - 2026-09-04 · `PENDING` - Keep loading and retry; an error only for access failures
+
+A Meta or Google read that did not finish used to be painted as "No activity
+in this period" (Meta) or an error card (Google), and the empty Meta answer
+was cached for ten minutes so it stuck until Refresh. Now an incomplete read
+is a soft failure: the server never caches it and serves the last good copy
+if it has one, and the browser keeps the loading screen up and tries again -
+six quick attempts with backoff, then every 20 seconds for as long as the tab
+is open, with the loader saying so. The error card appears only when the
+platform refuses access (a rejected key, a lapsed session, no account
+linked), because that is the one failure another attempt cannot fix.
+
+Also on the Intelligence banner: a channel tab no longer shows lines that
+belong only to the other channel (Google movers on the Meta tab). And a
+reach figure over 100% - possible on the Closed won basis, where wins are
+counted by close date while leads by arrival, and every won deal is assumed
+to have passed every stage - is clamped, marked "more than arrived", kept
+out of the movers, and no longer inflates the next step's base.
+
+---
+
 ## v3.462.0 - 2026-09-04 · `47c6e4e` - Loading: "360 is connecting the dots"
 
 Every wait in the app now comes through one loader. Nothing shows for the

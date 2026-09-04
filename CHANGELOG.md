@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.466.0 - 2026-09-04 · `PENDING` - Caalano360 honours the Won basis
+## v3.466.0 - 2026-09-04 · `2571720` - Caalano360 honours the Won basis
 
 The Won basis toggle (Closed / Created) has governed the health score, the
 Overview and the Weekly view, but never the Caalano360 tab: since 18 August

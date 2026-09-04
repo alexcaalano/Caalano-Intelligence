@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.473.0 - 2026-09-04 · `PENDING` - Won deals drill: created on and time to close
+## v3.473.0 - 2026-09-04 · `9c57c16` - Won deals drill: created on and time to close
 
 The Won deals drill on Caalano360 gains a **Created on** column and a
 **Time to close** column (days from the lead arriving to being marked won,

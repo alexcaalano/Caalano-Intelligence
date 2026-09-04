@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.471.0 - 2026-09-04 · `PENDING` - A saved copy says so, and says why
+
+When a live rebuild of the CRM figures fails, the cache gate serves the last
+good copy rather than an error - which is right, but it was silent, so an
+out-of-date number could sit on the Caalano360 tab looking live. The served
+copy now carries the rebuild's error and the tab shows a strip: "Showing a
+saved copy from N min ago. The live rebuild failed: <error>. Refresh to try
+again." Diagnosing the Nexia won count led here: the payload on screen had
+been built before the won-only snapshot existed, and nothing said so.
+
+---
+
 ## v3.470.0 - 2026-09-04 · `85ddde5` - Loader shows only the branded line
 
 The tab loader dropped its small caption ("Taking longer than usual -

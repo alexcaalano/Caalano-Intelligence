@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.470.0'
+const APP_VERSION = '3.471.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7495,6 +7495,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const crmAgg = useCrmAgg(clientId, range, nonce, chan)
   const ccDrill = useCcDrill(clientId, range, nonce, chan, wonBasis)
   const ccRaw = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
+  // A saved copy served because the live rebuild failed is said out loud, with
+  // the failure, rather than passed off as the live figure.
+  const ccStale = ccRaw && ccRaw._cache && ccRaw._cache.stale ? ccRaw._cache : null
   // The pipeline lens: every figure below is re-cut to the chosen pipeline in
   // the browser, from the same payload. `pipeOn` is the flag the tiles use to
   // stop falling back to the account-wide health / per-rep figures.
@@ -7586,6 +7589,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const actions = priorityActions(h, money, crmAgg)
   return (
     <div className="exec-wrap">
+      {ccStale ? <div className="note cc-stale"><b>Showing a saved copy of the CRM figures from {ccStale.age >= 3600 ? `${Math.round(ccStale.age / 3600)} h` : `${Math.max(1, Math.round(ccStale.age / 60))} min`} ago.</b> {ccStale.error ? <>The live rebuild failed: <code>{ccStale.error}</code>. </> : 'The live rebuild is running behind it. '}Refresh to try again.</div> : null}
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         // Within a pipeline the per-rep aggregation (account-wide) is not a

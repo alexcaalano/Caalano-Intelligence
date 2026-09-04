@@ -3042,7 +3042,9 @@ export default async (req) => {
     // awaited so the failure is durably recorded before the lambda can freeze.
     if (_ckey && _staleHit && softErr && (Date.now() - _staleHit.at) < STALE_ON_ERROR_MS) {
       await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at, ..._actor })
-      return mkResponse({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true } }, 200, true)
+      // The rebuild's own error rides along, so the page can say WHY it is showing
+      // a saved copy instead of leaving a silent, out-of-date number on screen.
+      return mkResponse({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true, error: String(obj.error).slice(0, 240) } }, 200, true)
     }
     if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ..._actor })
     // Write-through: cache a freshly-built success, and flag builds that came close

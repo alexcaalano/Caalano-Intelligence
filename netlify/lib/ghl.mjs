@@ -623,6 +623,63 @@ const STAGE_EXC = /(cancel|no.?show|no.?answer|disqualif|lost)/i
 // would 429, fall back to [], and silently blank every stage number while the
 // snapshot-served counts (leads / won / open) still showed. Cache it, and on a failed
 // live pull serve the last-good copy rather than an empty list.
+// Cash collected. A client that records what a won deal has actually paid does
+// it on a numeric opportunity field named "Cash Collected" (a running total, so
+// a deal paid in two parts carries the sum). The definitions are read once per
+// hour per location (same cache shape as the pipelines) and the value is read
+// off each won opportunity in the drill - no extra request per deal. A deal
+// with no value entered is unknown, not zero, and is reported that way.
+const CF_MEM_MS = 600000
+const CF_BLOB_MS = 3600000
+const _cfMem = new Map()       // locationId -> { at, fields }
+const _cfStore = () => getStore({ name: 'caalano-cfcache', consistency: 'strong' })
+export async function oppCustomFields(locTok, locationId, force = false) {
+  const now = Date.now()
+  const mem = _cfMem.get(locationId)
+  if (!force && mem && now - mem.at < CF_MEM_MS) return mem.fields
+  let cached = null
+  try { const hit = await _cfStore().get(locationId, { type: 'json' }); if (hit && Array.isArray(hit.fields)) cached = hit } catch { /* blobs unavailable */ }
+  if (!force && cached && now - cached.at < CF_BLOB_MS) { _cfMem.set(locationId, cached); return cached.fields }
+  try {
+    const j = await ghlGet(locTok, `/locations/${locationId}/customFields`, { model: 'opportunity' })
+    const fields = (j.customFields || j.customField || []).filter((f) => !f.model || /opportunit/i.test(String(f.model)))
+      .map((f) => ({ id: f.id, key: f.fieldKey || null, name: f.name || f.fieldKey || f.id, dataType: f.dataType || null }))
+    const rec = { at: now, fields }
+    _cfMem.set(locationId, rec)
+    try { await _cfStore().setJSON(locationId, rec) } catch { /* ignore */ }
+    return fields
+  } catch (e) {
+    if (cached && Array.isArray(cached.fields)) { _cfMem.set(locationId, cached); return cached.fields }
+    throw e
+  }
+}
+// The field that holds cash collected, by name or key ("Cash Collected",
+// "cash_collected", "Cash collected to date" all match). Null when none exists.
+export function cashFieldOf(fields) {
+  const hit = (fields || []).find((f) => /cash\s*_?\s*collected/i.test(String(f.name || '')) || /cash_?collected/i.test(String(f.key || '')))
+  return hit ? { id: hit.id, key: hit.key || null, name: hit.name || 'Cash Collected' } : null
+}
+// The cash recorded on one opportunity, or null when nothing was entered. The
+// search API carries custom fields as [{ id, fieldValueString|fieldValueNumber|
+// fieldValue|value, type }]; a MONETORY value may arrive as "1,500.00".
+export function oppCashValue(o, field) {
+  if (!o || !field) return null
+  const list = Array.isArray(o.customFields) ? o.customFields : Array.isArray(o.customField) ? o.customField : []
+  for (const cf of list) {
+    if (!cf || typeof cf !== 'object') continue
+    const id = cf.id || cf.fieldId || cf.key || cf.fieldKey
+    if (!(id && (id === field.id || (field.key && id === field.key)))) continue
+    const raw = cf.fieldValueNumber !== undefined ? cf.fieldValueNumber : cf.fieldValue !== undefined ? cf.fieldValue : cf.fieldValueString !== undefined ? cf.fieldValueString : cf.value
+    if (raw == null || raw === '') return null
+    if (typeof raw === 'number') return isFinite(raw) ? raw : null
+    const cleaned = String(raw).replace(/[^0-9.-]/g, '')
+    if (!/[0-9]/.test(cleaned)) return null   // "tbc", "-", "n/a": nothing entered
+    const n = Number(cleaned)
+    return isFinite(n) ? n : null
+  }
+  return null
+}
+
 const PIPE_MEM_MS = 600000     // 10 min in-memory freshness
 // Pipelines rarely change - but when they DO, a 24h cache meant a renamed stage
 // kept showing its old name for a day, including on the settings screen where
@@ -4249,7 +4306,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   // because the shared snapshot is capped newest-first and on a busy account
   // reaches back only a few months - the wins it lacked were exactly the older
   // leads that closed this range.
-  const [wideOpps0, pipelines, appts, reasons, formAns, userRows, wonSnap] = await Promise.all([
+  const [wideOpps0, pipelines, appts, reasons, formAns, userRows, wonSnap, cashField] = await Promise.all([
     // Best-effort snapshot: this 120-day window is only for name resolution + close
     // context; the in-period cohort (from..to) is recent and always fully covered.
     // Serving from the warm snapshot here avoids the live /opportunities/search page
@@ -4261,6 +4318,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     formAnswersByContact(locTok, locationId, from, to).catch(() => new Map()),
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
     closedBasis ? wonSnapshot(locTok, locationId).catch(() => null) : Promise.resolve(null),
+    oppCustomFields(locTok, locationId).then(cashFieldOf).catch(() => null),
   ])
   // Merge the won-only read into the wide set by id, so nothing is counted twice.
   const wonWide = (wonSnap && wonSnap.opps) || []
@@ -4351,6 +4409,10 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   const closeByChannel = new Map()
   let revenueTotal = 0, openValueTotal = 0, openCount = 0, wonCount = 0, lostCount = 0, leadCount = 0
   let paidWon = 0, metaWon = 0, googleWon = 0
+  // Cash collected on the won deals: the running total, how many deals have a
+  // value entered at all, and how many are paid in full (cash at or above the
+  // deal value, on a deal that has a value).
+  let cashTotal = 0, cashEntered = 0, cashPif = 0
   const stageAt = new Map() // pipelineId -> Map(stageId -> count), for the key-events funnel
   const stageAtChan = new Map() // pipelineId -> Map(stageId -> {meta,google,other}) for the per-channel funnel
   const chBucket = (ch) => (ch === 'meta' ? 'meta' : ch === 'google' ? 'google' : 'other')
@@ -4364,6 +4426,8 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null
     const name = contactNameOf(o)
     const { inCohort, isWonNow, isWon, isLost, isOpen } = ccDrillClassify(o, fromMs, toMs, basis)
+    const cash = isWon && cashField ? oppCashValue(o, cashField) : null
+    const paidInFull = cash != null && val > 0 && cash >= val
     if (inCohort && o.pipelineId && o.pipelineStageId) {
       let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1)
       let smc = stageAtChan.get(o.pipelineId); if (!smc) { smc = new Map(); stageAtChan.set(o.pipelineId, smc) }
@@ -4388,9 +4452,9 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     }
     if (o.pipelineId) {
       let pa = pipeAgg.get(o.pipelineId)
-      if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, chan: { meta: { leads: 0, won: 0, revenue: 0 }, google: { leads: 0, won: 0, revenue: 0 }, other: { leads: 0, won: 0, revenue: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
+      if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, cash: 0, cashEntered: 0, paidInFull: 0, chan: { meta: { leads: 0, won: 0, revenue: 0, cash: 0 }, google: { leads: 0, won: 0, revenue: 0, cash: 0 }, other: { leads: 0, won: 0, revenue: 0, cash: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
       if (inCohort) { pa.leads++; pa.chan[cb].leads++ }
-      if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val }
+      if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val; if (cash != null) { pa.cash += cash; pa.cashEntered++; pa.chan[cb].cash += cash; if (paidInFull) pa.paidInFull++ } }
       else if (isLost) pa.lost++
       else if (isOpen) { pa.open++; pa.openValue += val }
     }
@@ -4408,7 +4472,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     }
     let bs = bySource.get(label); if (!bs) { bs = { source: label, channel: ch, kind, count: 0, value: 0, opps: [] }; bySource.set(label, bs) }
     if (inCohort) { bs.count++; bs.value += val; if (bs.opps.length < 100) bs.opps.push({ name, status: isWonNow ? 'won' : isLost ? 'lost' : 'open', stage: stg ? stg.name : null, value: Math.round(val), channel: ch }) }
-    let cc = closeByChannel.get(ch); if (!cc) { cc = { channel: ch, won: 0, lost: 0, leads: 0, revenue: 0, deals: [] }; closeByChannel.set(ch, cc) }
+    let cc = closeByChannel.get(ch); if (!cc) { cc = { channel: ch, won: 0, lost: 0, leads: 0, revenue: 0, cash: 0, deals: [] }; closeByChannel.set(ch, cc) }
     if (inCohort) cc.leads++
     if (isWon) {
       revenueTotal += val
@@ -4423,7 +4487,8 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
       const createdMs = Date.parse(o.createdAt)
       const createdDate = dayIn(createdMs)
       const daysToClose = (isFinite(createdMs) && isFinite(closeMs) && closeMs >= createdMs) ? Math.round((closeMs - createdMs) / DAY) : null
-      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, createdDate, daysToClose, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline' })
+      if (cash != null) { cashTotal += cash; cashEntered++; if (paidInFull) cashPif++; cc.cash += cash }
+      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, createdDate, daysToClose, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline', cash: cash != null ? Math.round(cash) : null, paidInFull })
       cc.won++; cc.revenue += val; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })
     } else if (isLost) {
       cc.lost++
@@ -4481,7 +4546,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     }
     return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, shown, people }
   }).filter((c) => c.booked || c.occurred || c.shown).sort((a, b) => b.booked - a.booked)
-  const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, leads: c.leads, revenue: Math.round(c.revenue), closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
+  const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, leads: c.leads, revenue: Math.round(c.revenue), cash: Math.round(c.cash || 0), closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
   openDeals.sort((a, b) => b.value - a.value)
   // Per-pipeline stage AT-counts (funnel order) so the frontend key-events
   // funnel can compute cumulative reach via reachedByStage().
@@ -4490,7 +4555,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     const stages = (pi ? pi.stages : []).map((s) => { const cc = smc.get(s.id) || { meta: 0, google: 0, other: 0 }; return { id: s.id, name: s.name, pos: s.pos, count: sm.get(s.id) || 0, meta: cc.meta, google: cc.google, other: cc.other } })
     return { id: p.id, name: p.name, stages }
   }).filter((p) => p.stages.some((s) => s.count > 0))
-  const pipeContribution = [...pipeAgg.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue), openValue: Math.round(p.openValue), chan: { meta: { ...p.chan.meta, revenue: Math.round(p.chan.meta.revenue) }, google: { ...p.chan.google, revenue: Math.round(p.chan.google.revenue) }, other: { ...p.chan.other, revenue: Math.round(p.chan.other.revenue) } } })).sort((a, b) => b.leads - a.leads)
+  const pipeContribution = [...pipeAgg.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue), openValue: Math.round(p.openValue), cash: Math.round(p.cash), chan: { meta: { ...p.chan.meta, revenue: Math.round(p.chan.meta.revenue), cash: Math.round(p.chan.meta.cash) }, google: { ...p.chan.google, revenue: Math.round(p.chan.google.revenue), cash: Math.round(p.chan.google.cash) }, other: { ...p.chan.other, revenue: Math.round(p.chan.other.revenue), cash: Math.round(p.chan.other.cash) } } })).sort((a, b) => b.leads - a.leads)
   // The MEDIAN, not the mean: a handful of deals that sat open for months drag an
   // average away from the typical case, which is what anyone reading a tile wants.
   // The quartiles come with it, because a median of 4 days means something quite
@@ -4513,6 +4578,9 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     timeToLost: timeTo(ttLost, ttLostSkip),
     oppsBySource: [...bySource.values()].map((s) => ({ ...s, value: Math.round(s.value) })).sort((a, b) => b.count - a.count),
     revenue: { total: Math.round(revenueTotal), count: wonCount, deals: wonDeals },
+    // Cash collected on the won deals above. Null when the account has no such
+    // field, so the UI can say so rather than show a zero.
+    cash: cashField ? { field: cashField, collected: Math.round(cashTotal), entered: cashEntered, paidInFull: cashPif, won: wonCount, outstanding: Math.max(0, Math.round(revenueTotal - cashTotal)) } : null,
     open: { total: openCount, value: Math.round(openValueTotal), deals: openDeals },
     openByStage: [...openByStage.values()].map((g) => ({ key: g.key, stage: g.stage, stageId: g.stageId, pipeline: g.pipeline, pipelineId: g.pipelineId, pos: g.pos, count: g.count, value: Math.round(g.value), deals: g.deals.sort((a, b) => b.value - a.value) })).sort((a, b) => a.pos - b.pos),
     lostByReason: [...lostByReason.values()].map((r) => ({ ...r, value: Math.round(r.value) })).sort((a, b) => b.count - a.count),

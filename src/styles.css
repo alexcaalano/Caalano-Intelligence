@@ -4596,3 +4596,9 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .cw-top { flex-wrap: wrap; }
 .cw-pipe.cw-pipe-top { margin-left: auto; align-self: center; }
 @media (max-width: 760px) { .cw-pipe.cw-pipe-top { margin-left: 0; flex-basis: 100%; } }
+
+/* Cash position (Caalano360) */
+.set-field .set-check { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; padding: 9px 0; cursor: pointer; }
+.set-field .set-check input { width: auto; margin: 0; }
+.cc-pif { color: var(--good, #12b886); font-weight: 700; }
+.cc-cash-none { margin: 4px 0 10px; }

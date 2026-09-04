@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.479.0'
+const APP_VERSION = '3.480.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -927,6 +927,17 @@ function loadBizType(clientId) { const o = SETTINGS.clients && SETTINGS.clients[
 function saveBizType(clientId, bizType) {
   const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
   const next = { ...cur, bizType: bizType || null }
+  SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
+  writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
+}
+// Cash collected. Off by default; when a client records what each won deal has
+// actually paid on a "Cash Collected" opportunity field in Caalano Systems, this
+// turns on the Cash position row in Caalano360 (cash collected, cash ROAS, paid
+// in full, outstanding). The figures are always read - the switch only shows them.
+function loadCashOn(clientId) { const o = SETTINGS.clients && SETTINGS.clients[clientId]; return !!(o && o.cash && o.cash.enabled) }
+function saveCashOn(clientId, enabled) {
+  const cur = (SETTINGS.clients && SETTINGS.clients[clientId]) || {}
+  const next = { ...cur, cash: { ...(cur.cash || {}), enabled: !!enabled } }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
   writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
 }
@@ -4243,7 +4254,7 @@ function lensCc(cc, pid) {
   const pf = (cc.pipelinesFunnel || []).find((p) => p.id === pid) || null
   const pc = (cc.pipeContribution || []).find((p) => p.id === pid) || null
   const name = (pf && pf.name) || (pc && pc.name) || 'Pipeline'
-  const z = () => ({ leads: 0, won: 0, revenue: 0 })
+  const z = () => ({ leads: 0, won: 0, revenue: 0, cash: 0 })
   const chan = (pc && pc.chan) || { meta: z(), google: z(), other: z() }
   const all = cc.pipeContribution || []
   const tot = (k) => all.reduce((s, p) => s + ((p.chan && p.chan[k] && p.chan[k].leads) || 0), 0)
@@ -4280,7 +4291,7 @@ function lensCc(cc, pid) {
       else if (r[0] === 1) ttWon.push(r[di])
     }
   }
-  const closeByChannel = ['meta', 'google', 'other'].map((k) => { const c = chan[k] || z(); const won = c.won || 0, lost = lostByCh[k] || 0, closed = won + lost; return { channel: k, won, closed, leads: c.leads || 0, revenue: c.revenue || 0, closeRate: closed ? Math.round((won / closed) * 100) : null, deals: [] } }).filter((c) => c.leads || c.won)
+  const closeByChannel = ['meta', 'google', 'other'].map((k) => { const c = chan[k] || z(); const won = c.won || 0, lost = lostByCh[k] || 0, closed = won + lost; return { channel: k, won, closed, leads: c.leads || 0, revenue: c.revenue || 0, cash: c.cash || 0, closeRate: closed ? Math.round((won / closed) * 100) : null, deals: [] } }).filter((c) => c.leads || c.won)
   // Lost reasons: the account-wide list already carries a per-pipeline cut; the
   // people behind each reason are narrowed to this pipeline for the drill.
   const lbp = ((cc.lostBy && cc.lostBy.pipeline) || []).find((p) => p.key === name) || null
@@ -4292,6 +4303,8 @@ function lensCc(cc, pid) {
     pipelinesFunnel: pf ? [pf] : [], pipeContribution: pc ? [pc] : [],
     totals: { leads: pc ? pc.leads : 0, won: pc ? pc.won : 0, lost: pc ? pc.lost : 0, open: pc ? pc.open : 0 },
     revenue: { ...(cc.revenue || {}), total: pc ? pc.revenue : 0, count: pc ? pc.won : 0, deals: ((cc.revenue && cc.revenue.deals) || []).filter(inPipe) },
+    // Cash follows the pipeline exactly - it is summed per pipeline server-side.
+    cash: cc.cash ? { ...cc.cash, collected: pc ? (pc.cash || 0) : 0, entered: pc ? (pc.cashEntered || 0) : 0, paidInFull: pc ? (pc.paidInFull || 0) : 0, won: pc ? pc.won : 0, outstanding: pc ? Math.max(0, (pc.revenue || 0) - (pc.cash || 0)) : 0 } : cc.cash,
     open: { ...(cc.open || {}), total: pc ? pc.open : 0, value: pc ? pc.openValue : 0, deals: ((cc.open && cc.open.deals) || []).filter(inPipe) },
     spend: { meta: metaSpend, google: googleSpend, total: totalSpend, allocated: true },
     paid, closeByChannel, lostFacts, oppFacts, lostByReason,
@@ -6816,8 +6829,13 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   } else if (drill.kind === 'revenue') {
     const deals = (d.revenue && d.revenue.deals) || []
     subhead = `${fmtNumber(deals.length)} won ${deals.length === 1 ? 'deal' : 'deals'} · ${money((d.revenue && d.revenue.total) || 0)}`
-    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Created on</th><th>Won on</th><th title="Days from the lead arriving to being marked won">Time to close</th><th className="lft">Source</th></tr></thead>
-      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.createdDate ? fmtDMY(dl.createdDate) : '-'}</td><td>{dl.closeDate ? fmtDMY(dl.closeDate) : '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
+    // Cash collected per deal when the client tracks it: the figure entered on
+    // the deal, a tick when it covers the deal value, and a dash when nothing
+    // has been entered (unknown, not zero).
+    const cashCol = !!(d.cash && loadCashOn(clientId))
+    if (cashCol) subhead += ` · ${money(d.cash.collected || 0)} collected · ${fmtNumber(d.cash.paidInFull || 0)} paid in full`
+    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th>{cashCol ? <th title="Cash collected on this deal, from the Cash Collected field · ✓ = paid in full">Cash</th> : null}<th>Created on</th><th>Won on</th><th title="Days from the lead arriving to being marked won">Time to close</th><th className="lft">Source</th></tr></thead>
+      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td>{cashCol ? <td>{dl.cash == null ? <span className="lrv-z" title="No cash entered on this deal">-</span> : <>{money(dl.cash)}{dl.paidInFull ? <span className="cc-pif" title="Paid in full"> ✓</span> : null}</>}</td> : null}<td>{dl.createdDate ? fmtDMY(dl.createdDate) : '-'}</td><td>{dl.closeDate ? fmtDMY(dl.closeDate) : '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
       : <div className="cap">No won deals in this period.</div>
   } else if (drill.kind === 'spend') {
     subhead = `${money(spend.total || 0)} total ad spend`
@@ -7238,6 +7256,15 @@ function intelLines(m, money) {
     const prev = bn.prevStep != null ? (Math.abs(bn.step - bn.prevStep) * 100 >= INTEL_MIN_PTS ? ` - ${bn.step < bn.prevStep ? 'down' : 'up'} from ${pc(bn.prevStep)} last period` : ' - about the same as last period') : ''
     add(bn.step < 0.35 ? 'high' : 'med', ['overall', 'users', 'timing', 'appts', 'calls'], `Biggest leak${pipeTxt}: ${pc(bn.step)} of ${from} go on to ${bn.label.replace(/^📅 /, '')} (${fmtNumber(bn.count)} of ${fmtNumber(bn.stepBase)}), the lowest step in the funnel${prev}.`)
   }
+  // Cash position, when the client records cash collected on won deals.
+  const cs = m.cashOn && m.cc && m.cc.cash
+  if (cs && (cs.won || 0) > 0) {
+    const rev = (m.cc.revenue && m.cc.revenue.total) || 0
+    const share = rev ? (cs.collected || 0) / rev : null
+    const spend = (m.cc.spend && m.cc.spend.total) || 0
+    const notEntered = Math.max(0, (cs.won || 0) - (cs.entered || 0))
+    add(share != null && share < 0.5 ? 'med' : 'low', ['overall'], `Cash collected ${money(cs.collected || 0)} of ${money(rev)} closed${share != null ? ` (${pc(share)})` : ''}, ${fmtNumber(cs.paidInFull || 0)} of ${fmtNumber(cs.won)} won deals paid in full${spend ? ` - ${((cs.collected || 0) / spend).toFixed(1)}x cash ROAS` : ''}${notEntered ? `; ${fmtNumber(notEntered)} won ${notEntered === 1 ? 'deal has' : 'deals have'} no cash entered yet` : ''}.`)
+  }
   // Channels to outcomes.
   const ch = (m.channels || []).filter((c) => !c.thin && (c.key === 'meta' || c.key === 'google'))
   if (ch.length >= 2) {
@@ -7345,7 +7372,7 @@ function buildIntel(cc, pcc, clientId, money) {
   const fold = lrFoldDict(cc, loadAliases(clientId))
   const index = intelIndex(cc, firstKe, fold)
   const findings = intelFindings(cc, pcc, fold, firstKe)
-  const m = { cc, pcc, reach, channels, movers, index, findings, firstKe, usingKe: kef.usingKe, multi: kef.multi }
+  const m = { cc, pcc, reach, channels, movers, index, findings, firstKe, usingKe: kef.usingKe, multi: kef.multi, cashOn: loadCashOn(clientId) }
   m.lines = intelLines(m, money || ((v) => `$${fmtNumber(v)}`))
   return m
 }
@@ -7549,6 +7576,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [retry, setRetry] = useState(0)
   const nonceX = retry ? `${nonce || 0}.${retry}` : nonce
   const isViewer = !!(authUser && authUser.role === 'viewer')
+  // Cash position row: per-client switch in Settings → Account summary.
+  const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
+  useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
   const health = useHealth(clientId, range, nonceX, reload, wonBasis)
   const crmAggSt = useSwrJson(crmAggUrl(clientId, range, nonceX, chan), { transform: aggUsersToCrm })
   const crmAgg = crmAggSt.data
@@ -7596,7 +7626,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // The intelligence model: reach with the bottleneck, channels to outcomes,
   // movers, indexing. Same (lensed, channel-scoped) payloads as every tile.
   const keTick = JSON.stringify(loadKeyEvents(clientId))
-  const intel = useMemo(() => buildIntel(cc, pcc, clientId, money), [cc, pcc, clientId, keTick]) // eslint-disable-line
+  const intel = useMemo(() => buildIntel(cc, pcc, clientId, money), [cc, pcc, clientId, keTick, cashOn]) // eslint-disable-line
   // Spend for the active channel toggle, from a (lensed) drill payload.
   const spendOf = (d, chn) => { const sp = (d && d.spend) || {}; return chn === 'meta' ? (sp.meta || 0) : chn === 'google' ? (sp.google || 0) : chn === 'nonpaid' ? 0 : (sp.total || 0) }
   const [drill, setDrill] = useState(null)
@@ -7751,6 +7781,26 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
             <Kpi label="Result rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ resulted" onClick={tileClick({ kind: 'close', title: 'Result rate - by channel' })} />
           </div>
+          {cashOn && cc ? (() => {
+            // Cash position: what the won deals above have actually paid, from the
+            // client's "Cash Collected" opportunity field. A deal with nothing
+            // entered is unknown, not zero, so the count of entered deals is shown.
+            const cs = cc.cash
+            if (!cs) return <div className="cap cc-cash-none">Cash collected is switched on for this client, but Caalano Systems has no opportunity field named <b>Cash Collected</b> on this account. Add a numeric (monetary) opportunity field with that name and the cash position will show here.</div>
+            const pcs = pcc && pcc.cash ? pcc.cash : null
+            const cashV = cs.collected || 0
+            const cashRoas = chanSpend ? cashV / chanSpend : null
+            const notEntered = Math.max(0, (cs.won || 0) - (cs.entered || 0))
+            return <>
+              <div className="cc-group-lab">Cash position <span className="sub" style={{ fontWeight: 500 }}>· what the won deals have actually paid, from the Cash Collected field · {fmtNumber(cs.entered || 0)} of {fmtNumber(cs.won || 0)} won deals have a figure entered</span></div>
+              <div className="scorecard exec-kpis exec-kpis-4">
+                <Kpi label="Cash collected" value={money(cashV)} cur={pcs ? cashV : null} prev={pcs ? (pcs.collected || 0) : null} flat={pcs ? undefined : (revV ? `${pctOf(cashV, revV)} of ${money(revV)} closed` : ' ')} onClick={tileClick({ kind: 'revenue', title: 'Won deals - cash collected' })} />
+                <Kpi label="Cash ROAS" value={cashRoas != null ? `${cashRoas.toFixed(1)}x` : '-'} cur={cashRoas} flat={chanSpend ? `cash ÷ ${money(chanSpend)} spend${roas != null ? ` · ${roas.toFixed(1)}x on deal value` : ''}` : 'no ad spend in this view'} />
+                <Kpi label="Paid in full" value={fmtNumber(cs.paidInFull || 0)} flat={cs.won ? `${pctOf(cs.paidInFull || 0, cs.won)} of won · cash at or above deal value` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals - paid in full' })} />
+                <Kpi label="Outstanding" value={money(cs.outstanding || 0)} flat={`${money(revV || 0)} closed less ${money(cashV)} collected${notEntered ? ` · ${fmtNumber(notEntered)} ${notEntered === 1 ? 'deal has' : 'deals have'} no cash entered` : ''}`} goodWhenDown onClick={tileClick({ kind: 'revenue', title: 'Won deals - outstanding' })} />
+              </div>
+            </>
+          })() : null}
           {kef.usingKe && kef.rows.length && intel ? <IntelReach reach={intel.reach} multi={kef.multi} leadTotal={kef.leadTotal} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} money={money} spend={chanSpend || 0} /> : null}
         </div>
       })()}
@@ -7772,6 +7822,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           if (!hasCh && (mDead || gDead)) return <div className="cap">Couldn’t load {mDead && gDead ? 'Meta or Google' : mDead ? 'Meta' : 'Google'} spend for this period - the ad read timed out. The CRM figures on this page are unaffected; try a shorter range or refresh.</div>
           if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
           const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
+          const cashCols = cashOn && !!(cc && cc.cash)
           const renderTable = (evLabels, rows) => {
             // Win rate is indexed against THIS table's blended rate (the pipeline's
             // own when split by pipeline), not the account's.
@@ -7780,7 +7831,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             const idxOf = (r) => (r.leads >= INTEL_MIN_BASE && baseWin && r.leads ? Math.round(((r.won || 0) / r.leads / baseWin) * 100) : null)
             return (
             <div className="tbl-scroll"><table className="mini-tbl users-tbl">
-              <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th><th title="Revenue ÷ spend">ROAS</th></tr></thead>
+              <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th><th title="Revenue ÷ spend">ROAS</th>{cashCols ? <><th title="Cash collected on this channel's won deals">Cash</th><th title="Cash collected ÷ spend">Cash ROAS</th></> : null}</tr></thead>
               <tbody>{rows.map((r) => (
                 <tr key={r.key}>
                   <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
@@ -7794,6 +7845,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
                   <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
                   <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
                   <td>{r.dead || !r.spend ? '-' : `${((r.revenue || 0) / r.spend).toFixed(1)}×`}</td>
+                  {cashCols ? <><td>{money(r.cash || 0)}</td><td>{r.dead || !r.spend ? '-' : `${((r.cash || 0) / r.spend).toFixed(1)}×`}</td></> : null}
                 </tr>
               ))}</tbody>
             </table></div>
@@ -7817,10 +7869,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               {byPipe.map((pk) => {
                 const pc = contrib.get(pk.pipeId)
                 const mk = (key, label, ke, adSpendTot, leadTot) => {
-                  const cch = (pc && pc.chan && pc.chan[key]) || { leads: 0, won: 0, revenue: 0 }
+                  const cch = (pc && pc.chan && pc.chan[key]) || { leads: 0, won: 0, revenue: 0, cash: 0 }
                   const spend = leadTot ? adSpendTot * ((cch.leads || 0) / leadTot) : 0
                   const won = cch.won || 0, revenue = cch.revenue || 0
-                  return { key, label, spend, dead: dead(key), leads: cch.leads || 0, ke, won, revenue, closeRate: null, cac: won ? spend / won : null, avgDeal: won ? revenue / won : null }
+                  return { key, label, spend, dead: dead(key), leads: cch.leads || 0, ke, won, revenue, cash: cch.cash || 0, closeRate: null, cac: won ? spend / won : null, avgDeal: won ? revenue / won : null }
                 }
                 const rows = [
                   mk('meta', 'Meta', pk.meta, ch.metaSpend || 0, totMeta),
@@ -7840,7 +7892,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           const rows = [
             { key: 'meta', label: 'Meta', spend: ch.metaSpend || 0, adLeads: ch.metaLeads || 0, ke: cke ? cke.meta : [] },
             { key: 'google', label: 'Google', spend: ch.googleSpend || 0, adLeads: ch.googleConv || 0, ke: cke ? cke.google : [] },
-          ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, dead: dead(r.key), leads: c.leads || 0, won, revenue, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
+          ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, dead: dead(r.key), leads: c.leads || 0, won, revenue, cash: c.cash || 0, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
           return renderTable(evLabels, rows)
         })()}
       </div>
@@ -14603,11 +14655,13 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   const prevRangeW = prevRangeOf(range)
   const ccPrevW = useCcDrill(crmId && prevRangeW ? crmId : null, prevRangeW || range, nonce, 'all', wonBasis)
   const keTickW = JSON.stringify(loadKeyEvents(client.id))
+  const [cashOnW, setCashOnW] = useState(() => loadCashOn(client.id))
+  useEffect(() => { setCashOnW(loadCashOn(client.id)); return onSettings(() => setCashOnW(loadCashOn(client.id))) }, [client.id])
   const intel = useMemo(() => {
     const raw = ccForPipes.data && ccForPipes.data.oppsBySource ? ccForPipes.data : null
     const praw = ccPrevW.data && ccPrevW.data.oppsBySource ? ccPrevW.data : null
     return buildIntel(lensCc(raw, pipe), lensCc(praw, pipe), client.id, (v) => fmtCurrency(v, data.currency))
-  }, [ccForPipes.data, ccPrevW.data, pipe, client.id, keTickW, data.currency]) // eslint-disable-line
+  }, [ccForPipes.data, ccPrevW.data, pipe, client.id, keTickW, data.currency, cashOnW]) // eslint-disable-line
   // Insight models published by the open tab (see useTabIntel).
   const [tabIntel, setTabIntel] = useState({})
   const publishIntel = React.useCallback((t, model) => setTabIntel((m) => (m[t] === model ? m : { ...m, [t]: model })), [])
@@ -16631,6 +16685,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
   useSettingsSync()
   const bizType = loadBizType(c.id)
+  const [cashOn, setCashOn] = useState(() => loadCashOn(c.id))
   const [name, setName] = useState(c.name || '')
   const [industry, setIndustry] = useState(c.industry || '')
   const [savedDetails, setSavedDetails] = useState(false)
@@ -16717,6 +16772,10 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
                 <select value={bizType} onChange={(e) => saveBizType(c.id, e.target.value)} title="Clinic shows the Clinic tab here and in the client view; the rest are descriptive">
                   {BIZ_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select></div>
+              <div className="set-field set-field-sm"><label>Cash collected</label>
+                <label className="set-check" title="Reads the numeric opportunity field named 'Cash Collected' in Caalano Systems - a running total of what each won deal has paid. Shows cash collected, cash ROAS, paid in full and outstanding on Caalano360.">
+                  <input type="checkbox" checked={cashOn} onChange={(e) => { saveCashOn(c.id, e.target.checked); setCashOn(e.target.checked) }} /> Show cash position on Caalano360
+                </label></div>
               <button className="set-details-save" disabled={!dirty || !name.trim()} onClick={saveDetails}>{savedDetails ? '✓ Saved' : 'Save details'}</button>
             </div>
             <div className="set-sec-t">Linked accounts</div>

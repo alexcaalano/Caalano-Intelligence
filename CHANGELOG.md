@@ -18,6 +18,34 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.480.0 - 2026-09-04 · `PENDING` - Cash collected
+
+A client can now record what each won deal has actually paid on a numeric
+opportunity field named **Cash Collected** in Caalano Systems (a running
+total, so a deal paid in parts carries the sum). Caalano360 reads it off every
+won deal in the drill - no extra request per deal - and, when the client's
+switch is on (Settings → Account summary → *Show cash position on
+Caalano360*), shows a **Cash position** row under Pipeline & revenue:
+
+- **Cash collected** with its share of the revenue closed, against the
+  previous period.
+- **Cash ROAS** - cash ÷ ad spend, next to the deal-value ROAS.
+- **Paid in full** - deals whose cash is at or above the deal value, as a
+  count and a share of won.
+- **Outstanding** - revenue closed less cash collected, with how many won
+  deals have no cash entered yet.
+
+The Won deals drill gains a Cash column (✓ = paid in full, dash = nothing
+entered), Channel performance gains Cash and Cash ROAS columns, and the
+intelligence banner carries a cash line. Everything follows the pipeline
+picker, channel toggle and date range like the tiles around it.
+
+A deal with no figure entered is treated as unknown, not zero. An account with
+the switch on but no such field is told so rather than shown zeros. The field
+definitions are read once an hour per location.
+
+---
+
 ## v3.479.0 - 2026-09-04 · `914bb26` - ROAS is the last column
 
 In Channel performance, ROAS moves to the end of the row, after Avg deal.

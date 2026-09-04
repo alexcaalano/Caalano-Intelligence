@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.478.0 - 2026-09-04 · `PENDING` - Pipeline picker above the tab bar
+
+The picker lived at the end of the tab bar, which scrolls sideways on a
+narrow screen, so it was hidden off the right edge. It now sits in the
+client header row beside the name, right-aligned on a wide screen and on
+its own line under the name on a narrow one, always visible.
+
+---
+
 ## v3.477.0 - 2026-09-04 · `9388f31` - Channel performance: ROAS, and the win-rate index per table
 
 The Channel performance table gains a **ROAS** column (revenue ÷ spend, per

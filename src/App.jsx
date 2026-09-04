@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.477.0'
+const APP_VERSION = '3.478.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -14675,8 +14675,11 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         <div className="cw-top">
           <Avatar id={client.id} name={client.name} i={index} />
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span> <MaturityBadge clientId={client.id} crmAvg={crmAvgClose} range={range} /></h2><div className="meta">{client.industry}</div></div>
+          {/* Above the tab bar, not inside it: the tab bar scrolls sideways on a
+              narrow screen and hid the picker off the right edge. */}
+          <PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} className="cw-pipe-top" />
         </div>
-        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}<PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} /></div>
+        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       </div>
       <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div style={{ marginTop: 16 }}>
         {(curTab === 'meta' || curTab === 'google')

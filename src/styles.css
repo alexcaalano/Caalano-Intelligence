@@ -4590,3 +4590,9 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .cc-problems { border-left: 4px solid var(--neg, #e0566c); }
 .cc-problems ul { margin: 6px 0 8px; padding-left: 18px; }
 .cc-problems li { margin: 2px 0; }
+
+/* The pipeline picker sits in the client header row, right-aligned, and wraps
+   under the name on a narrow screen - never inside the scrolling tab bar. */
+.cw-top { flex-wrap: wrap; }
+.cw-pipe.cw-pipe-top { margin-left: auto; align-self: center; }
+@media (max-width: 760px) { .cw-pipe.cw-pipe-top { margin-left: 0; flex-basis: 100%; } }

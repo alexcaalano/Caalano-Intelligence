@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.458.0 - 2026-09-04 · `PENDING` - Settings: the section list no longer slides over the client name
+## v3.458.0 - 2026-09-04 · `0c1b9c1` - Settings: the section list no longer slides over the client name
 
 Scrolling a long settings section (Key events with several pipelines) let the
 section list ride up over the modal header, so "Nexia Health Care" and the

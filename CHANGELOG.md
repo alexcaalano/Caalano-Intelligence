@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.474.0 - 2026-09-04 · `PENDING` - Caalano360 waits for every read, then says what failed
+
+The tab painted from the health score first and repainted when the CRM
+drill landed, so on a slow drill the Won tile sat on the wrong figure for
+several seconds. It now stays on the loading screen until the health score,
+the CRM drill, the previous period and the per-rep read have all answered,
+then paints once, complete. Anything that did not come back is listed in a
+strip above the tiles - health score, Meta or Google spend, the drill, the
+previous period, the per-rep read, a failed or cut-short wins read - with
+what that leaves missing and a "Retry the reads" button that re-issues
+every read on the tab.
+
+---
+
 ## v3.473.0 - 2026-09-04 · `9c57c16` - Won deals drill: created on and time to close
 
 The Won deals drill on Caalano360 gains a **Created on** column and a

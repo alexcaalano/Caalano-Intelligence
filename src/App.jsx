@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.473.0'
+const APP_VERSION = '3.474.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7491,9 +7491,15 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
   useEffect(() => { setChan('all') }, [clientId])
-  const health = useHealth(clientId, range, nonce, reload, wonBasis)
-  const crmAgg = useCrmAgg(clientId, range, nonce, chan)
-  const ccDrill = useCcDrill(clientId, range, nonce, chan, wonBasis)
+  // A local retry re-issues every read on this tab (the app Refresh does the
+  // same for the whole app). It rides on the nonce so every hook sees it.
+  const [retry, setRetry] = useState(0)
+  const nonceX = retry ? `${nonce || 0}.${retry}` : nonce
+  const isViewer = !!(authUser && authUser.role === 'viewer')
+  const health = useHealth(clientId, range, nonceX, reload, wonBasis)
+  const crmAggSt = useSwrJson(crmAggUrl(clientId, range, nonceX, chan), { transform: aggUsersToCrm })
+  const crmAgg = crmAggSt.data
+  const ccDrill = useCcDrill(clientId, range, nonceX, chan, wonBasis)
   const ccRaw = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
   // A saved copy served because the live rebuild failed is said out loud, with
   // the failure, rather than passed off as the live figure.
@@ -7530,7 +7536,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // Previous-period CRM drill, so the per-pipeline key-event scorecards can show
   // vs-prev deltas (same shape, one period back).
   const prevRange = prevRangeOf(range)
-  const prevCcDrill = useCcDrill(clientId, prevRange || range, nonce, chan, wonBasis)
+  const prevCcDrill = useCcDrill(clientId, prevRange || range, nonceX, chan, wonBasis)
   const pccRaw = (prevRange && prevCcDrill.status === 'ok' && prevCcDrill.data && prevCcDrill.data.oppsBySource) ? prevCcDrill.data : null
   const pcc = useMemo(() => lensCc(pccRaw, pipe), [pccRaw, pipe])
   const money = (v) => fmtCurrency(v, currency)
@@ -7579,8 +7585,27 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       saveInsights(clientId + ':exec', rec); setAi(rec)
     } catch (e) { setAiErr(String(e.message || e)) } finally { setAiLoading(false) }
   }
-  if (health.status === 'loading') return <TabLoading kind="exec" label="Scoring business health…" />
-  if (health.status === 'err' || !health.data) return <div className="note">Couldn’t load the executive health score for this period. The detailed breakdown below is still available.</div>
+  // Everything the tab is built from is waited for together, so the figures
+  // paint once, complete, rather than from the health score first and the
+  // drill a few seconds later with the Won tile changing under the reader.
+  // Viewers cannot read the drill, so it is not waited for on their behalf.
+  const waiting = health.status === 'loading' || crmAggSt.status === 'loading' || (!isViewer && (ccDrill.status === 'loading' || (prevRange && prevCcDrill.status === 'loading')))
+  if (waiting) return <TabLoading kind="exec" label="Scoring business health…" />
+  // What did not come back is said before any number is read.
+  const problems = []
+  if (health.status === 'err' || !health.data) problems.push('The health score and ad spend read failed, so spend, the cost tiles and Priority actions are missing.')
+  else {
+    const ok = health.data.adsOk || {}
+    if (ok.meta === false) problems.push('Meta spend did not come back, so Meta cost figures read n/a.')
+    if (ok.google === false) problems.push('Google spend did not come back, so Google cost figures read n/a.')
+  }
+  if (!isViewer && (ccDrill.status === 'err' || !ccRaw)) problems.push('The CRM drill did not load. Opportunities, wins, revenue, key events and lost reasons below come from the health score instead, and the tiles will not open.')
+  if (!isViewer && prevRange && (prevCcDrill.status === 'err' || !pccRaw)) problems.push('The previous period did not load, so vs-prev changes and Biggest movers are missing.')
+  if (crmAggSt.status === 'err') problems.push('The per-rep read failed, so Team performance may be empty.')
+  if (ccRaw && ccRaw.wonRead && ccRaw.wonRead.failed) problems.push('The wins read failed, so Won on the Closed basis is short of the CRM.')
+  if (ccRaw && ccRaw.wonRead && ccRaw.wonRead.truncated) problems.push('The wins read was cut short, so the oldest wins may be missing. The warmer completes it within five minutes.')
+  const problemStrip = problems.length ? <div className="note cc-problems"><b>Some of this page did not load.</b><ul>{problems.map((t, i) => <li key={i}>{t}</li>)}</ul><button type="button" className="set-relink" onClick={() => setRetry((n) => n + 1)}>↻ Retry the reads</button></div> : null
+  if (health.status === 'err' || !health.data) return <div className="exec-wrap">{problemStrip}</div>
   const h = health.data
   const sc = h.score || {}
   const k = h.kpis || {}
@@ -7589,6 +7614,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const actions = priorityActions(h, money, crmAgg)
   return (
     <div className="exec-wrap">
+      {problemStrip}
       {ccStale ? <div className="note cc-stale"><b>Showing a saved copy of the CRM figures from {ccStale.age >= 3600 ? `${Math.round(ccStale.age / 3600)} h` : `${Math.max(1, Math.round(ccStale.age / 60))} min`} ago.</b> {ccStale.error ? <>The live rebuild failed: <code>{ccStale.error}</code>. </> : 'The live rebuild is running behind it. '}Refresh to try again.</div> : null}
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {

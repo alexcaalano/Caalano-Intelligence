@@ -517,15 +517,55 @@ async function oppSnapshot(locTok, locationId, opts = {}) {
 // read the Blobs cache instead of each re-paging /opportunities/search - which is
 // what causes the concurrent-cold-invocation 429 bursts. Force-refreshes past the
 // in-memory window so the scheduled run always writes a fresh cross-invocation copy.
+// A second, small snapshot: every WON opportunity of the last 430 days, read
+// with the API's status filter (a few pages, not a few thousand rows). The
+// closed won basis needs older leads that closed in the range, and the main
+// snapshot - capped newest-first - does not reach them on a busy account. Same
+// memory + Blobs caching, same warmer, no lock (the walk is short).
+const WON_SNAP_DAYS = 430
+const WON_SNAP_CAP = 2500
+const _wonSnapMem = new Map()
+const _wonSnapInflight = new Map()
+async function _readWonSnap(loc) {
+  try {
+    const hit = await _oppStore().get('won:' + loc, { type: 'json' })
+    if (hit && Array.isArray(hit.opps) && (Date.now() - hit.at) < OPP_SNAP_BLOB_MS) { const snap = { at: hit.at, opps: hit.opps, truncated: hit.opps.length >= WON_SNAP_CAP }; _wonSnapMem.set(loc, snap); return snap }
+  } catch { /* fall through */ }
+  return null
+}
+export async function wonSnapshot(locTok, locationId, opts = {}) {
+  const force = !!opts.force
+  const now = Date.now()
+  if (!force) {
+    const mem = _wonSnapMem.get(locationId)
+    if (mem && now - mem.at < OPP_SNAP_MEM_MS) return mem
+    if (_wonSnapInflight.has(locationId)) return _wonSnapInflight.get(locationId)
+  }
+  const build = (async () => {
+    if (!force) { const hit = await _readWonSnap(locationId); if (hit) return hit }
+    const to = new Date(now).toISOString().slice(0, 10)
+    const from = new Date(now - WON_SNAP_DAYS * 86400000).toISOString().slice(0, 10)
+    const opps = await _pageOpportunities(locTok, locationId, from, to, WON_SNAP_CAP, { status: 'won', deadlineMs: force ? 25000 : 7000 })
+    const raw = { at: Date.now(), opps }
+    const snap = { at: raw.at, opps, truncated: opps.length >= WON_SNAP_CAP }
+    _wonSnapMem.set(locationId, snap)
+    try { await _oppStore().setJSON('won:' + locationId, raw) } catch { /* memory copy still serves */ }
+    return snap
+  })()
+  _wonSnapInflight.set(locationId, build)
+  try { return await build } finally { _wonSnapInflight.delete(locationId) }
+}
 export async function warmOppSnapshot(locationId) {
   const locTok = await locationTokenOrDemo(locationId)
   const snap = await oppSnapshot(locTok, locationId, { force: true })
+  let won = 0
+  try { won = (await wonSnapshot(locTok, locationId, { force: true })).opps.length } catch { /* next pass */ }
   // Also refresh the pipelines cache so interactive loads never hit the live
   // /opportunities/pipelines call (the one that, when rate-limited, blanked the
   // funnel + stage reach). Best-effort - a miss just means the next load fetches it.
   let pipes = 0
   try { pipes = (await fetchPipelines(locTok, locationId)).length } catch { /* ignore */ }
-  return { opps: snap ? snap.opps.length : 0, truncated: !!(snap && snap.truncated), pipelines: pipes }
+  return { opps: snap ? snap.opps.length : 0, truncated: !!(snap && snap.truncated), pipelines: pipes, won }
 }
 async function allOpportunities(locTok, locationId, from, to, cap = 1500, opts = {}) {
   // Serve from the shared snapshot when it covers the requested window; otherwise
@@ -4194,12 +4234,11 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
-  // Closed basis: every win of the last 400 days, read live and won-only (a
-  // handful of pages), because the shared snapshot is capped newest-first and
-  // on a busy account reaches back only a few months - the wins it lacked were
-  // exactly the older leads that closed this range. Same look-back as wonInPeriod.
-  const wonFrom = new Date((fromMs != null ? fromMs : Date.now()) - 400 * DAY).toISOString().slice(0, 10)
-  const [wideOpps0, pipelines, appts, reasons, formAns, userRows, wonWide] = await Promise.all([
+  // Closed basis: every win of the last 430 days from the won-only snapshot,
+  // because the shared snapshot is capped newest-first and on a busy account
+  // reaches back only a few months - the wins it lacked were exactly the older
+  // leads that closed this range.
+  const [wideOpps0, pipelines, appts, reasons, formAns, userRows, wonSnap] = await Promise.all([
     // Best-effort snapshot: this 120-day window is only for name resolution + close
     // context; the in-period cohort (from..to) is recent and always fully covered.
     // Serving from the warm snapshot here avoids the live /opportunities/search page
@@ -4210,11 +4249,15 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     formAnswersByContact(locTok, locationId, from, to).catch(() => new Map()),
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
-    closedBasis ? allOpportunities(locTok, locationId, wonFrom, to, 2500, { noSnapshot: true, status: 'won', deadlineMs: 6500 }).catch(() => []) : Promise.resolve([]),
+    closedBasis ? wonSnapshot(locTok, locationId).catch(() => null) : Promise.resolve(null),
   ])
   // Merge the won-only read into the wide set by id, so nothing is counted twice.
+  const wonWide = (wonSnap && wonSnap.opps) || []
   let wideOpps = wideOpps0
   if (wonWide.length) { const byId = new Map(wideOpps0.map((o) => [o.id, o])); for (const o of wonWide) if (o && o.id && !byId.has(o.id)) byId.set(o.id, o); wideOpps = [...byId.values()] }
+  // What the closed-basis read had to work with - shown under the Won tile, so a
+  // short count can be told apart from a short read.
+  const wonRead = closedBasis ? { onFile: wonWide.length, at: wonSnap ? wonSnap.at : null, truncated: !!(wonSnap && wonSnap.truncated), failed: !wonSnap } : null
   const idx = stageIndexFrom(pipelines)
   const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))
@@ -4445,7 +4488,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   })
   return {
     connected: true, tz, channel: chan || 'all',
-    basis, totals: { leads: leadCount, won: wonCount, lost: lostCount, open: openCount },
+    basis, wonRead, totals: { leads: leadCount, won: wonCount, lost: lostCount, open: openCount },
     // Days from a lead arriving to the moment it was marked won or lost.
     timeToWon: timeTo(ttWon, ttWonSkip),
     timeToLost: timeTo(ttLost, ttLostSkip),

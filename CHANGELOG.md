@@ -18,6 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.469.0 - 2026-09-04 · `PENDING` - Closed-basis wins from a won-only snapshot
+
+v3.468.0 walked the last 400 days of wins live inside the drill build, which
+on a busy account either ran past the function's time budget - in which case
+the cache gate served the previous payload, still showing 10 - or came back
+short. The wins now come from a second, small snapshot: every won
+opportunity of the last 430 days, read with the CRM's status filter (a few
+pages), cached in memory and Blobs like the opportunity snapshot and
+refreshed by the same five-minute warmer. The drill reads it instead of
+paging. The Won tile on the Closed basis now says how many wins were on file
+for the read ("16 · 412 wins on file (430d)"), so a short count and a short
+read can be told apart.
+
+---
+
 ## v3.468.0 - 2026-09-04 · `4f09056` - Closed-basis wins: read every win of the last 400 days
 
 v3.466.0 made the drill count wins by status change on the Closed basis, but

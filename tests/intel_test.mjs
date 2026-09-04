@@ -10,9 +10,9 @@ const lift = (name) => {
   return src.slice(a, i + 1)
 }
 const consts = src.slice(src.indexOf('const INTEL_MIN_BASE'), src.indexOf('function intelReach('))
-const body = consts + ['intelReach', 'intelChannels', 'intelMovers', 'intelIndex', 'intelLines', 'intelAds', 'intelFindings'].map(lift).join('\n') + "\nconst fmtNumber = (v) => String(v)\n"
+const body = consts + ['intelReach', 'intelChannels', 'intelMovers', 'intelIndex', 'intelLines', 'intelAds', 'intelFindings', 'intelLocation'].map(lift).join('\n') + "\nconst fmtNumber = (v) => String(v)\n"
 const consts2 = src.slice(src.indexOf('const INTEL_DIMS'), src.indexOf('function intelFindings('))
-const { intelReach, intelChannels, intelMovers, intelIndex, intelLines, intelAds, intelFindings } = new Function(body + consts2 + 'return { intelReach, intelChannels, intelMovers, intelIndex, intelLines, intelAds, intelFindings }')()
+const { intelReach, intelChannels, intelMovers, intelIndex, intelLines, intelAds, intelFindings, intelLocation } = new Function(body + consts2 + 'return { intelReach, intelChannels, intelMovers, intelIndex, intelLines, intelAds, intelFindings, intelLocation }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
 const near = (a, b, t = 1e-6) => Math.abs(a - b) <= t
@@ -138,6 +138,21 @@ ok('lines carry the channel tag', A.lines.every((l) => l.tags.includes('meta')))
 const g = intelAds({ totals: { cost: 500, conversions: 10 }, prev: { cost: 500, conversions: 10 }, campaigns: [{ campaign: 'G1', cost: 450, conversions: 9 }, { campaign: 'G2', cost: 50, conversions: 1 }] }, 'google', money)
 ok('google: conversions, concentration line, no movement line', g.results === 10 && g.lines.some((l) => /^G1 carries 90% of Google spend/.test(l.text)) && !g.lines.some((l) => /previous period/.test(l.text)), g.lines.map((l) => l.text))
 ok('too little spend -> one caveat', intelAds({ totals: { spend: 12 }, campaigns: [] }, 'meta', money).lines.length === 1 && intelAds(null, 'meta', money) === null)
+
+
+// --- the Location page's own model ---
+const locs = [
+  { value: 'Frankston', leads: 40, booked: 30, won: 12, lost: 10 }, { value: 'Dandenong', leads: 30, booked: 8, won: 1, lost: 20 },
+  { value: 'Cranbourne', leads: 20, booked: 15, won: 4, lost: 5 }, { value: 'Berwick', leads: 12, booked: 0, won: 0, lost: 3 }, { value: 'Rye', leads: 3, booked: 1, won: 1, lost: 0 },
+]
+const LM = intelLocation(locs, money)
+ok('location: concentration line names the top areas', LM.kind === 'page' && LM.lines.some((l) => /^Frankston, Dandenong, Cranbourne supply 86% of located leads \(90 of 105\) across 5 areas\./.test(l.text)), LM.lines.map((l) => l.text))
+ok('location: worst and best win rate against the client', LM.lines.some((l) => /^Dandenong wins only 3% of its 30 leads against 17%/.test(l.text)) && LM.lines.some((l) => /^Frankston wins 30% of its 40 leads, 1\.8× the client's 17%/.test(l.text)), LM.lines.map((l) => l.text))
+ok('location: booking drop and lost concentration', LM.lines.some((l) => /^Dandenong books 27% of its 30 leads against 51%/.test(l.text)) && LM.lines.some((l) => /67% of Dandenong's 30 leads end up lost, against 36%/.test(l.text)), LM.lines.map((l) => l.text))
+ok('location: an area that only sends leads', LM.lines.some((l) => /^Berwick sent 12 leads with no booking and no win\./.test(l.text)))
+ok('location: thin areas are never judged', !LM.lines.some((l) => /Rye/.test(l.text)))
+ok('location: too few leads -> one caveat; none -> nothing', intelLocation([{ value: 'A', leads: 4, won: 1 }], money).lines.length === 1 && intelLocation([], money).lines.length === 0)
+ok('location lines are tagged for the page only', LM.lines.every((l) => l.tags.length === 1 && l.tags[0] === 'location'))
 
 console.log(`${n - bad}/${n} intelligence checks passed`)
 if (bad) process.exit(1)

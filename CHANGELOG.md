@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.476.0 - 2026-09-04 · `PENDING` - The banner belongs to the page it sits on
+
+The 360 Intelligence banner showed the whole account's CRM lines on every
+tab, only reordered. It is now the open page's: a page that has its own
+model publishes it from exactly the data it has loaded - already cut to the
+pipeline and date range - and the banner shows that and nothing else.
+**Location** is the first: which areas supply the leads, which win or book
+above or below the client's own rate, where leads end up lost, and areas
+that only send leads. Meta and Google keep their own ad models. Every other
+tab shows only the shared CRM lines tagged for it (Lost Reasons gets the
+lost-reason, stage and pace lines; Timing the pace and bottleneck; Users the
+funnel and rep-facing lines) rather than the full account read; Caalano360
+keeps everything. Page models for Users, Forms, Appointments, Calls and
+Timing follow.
+
+---
+
 ## v3.475.0 - 2026-09-04 · `e742db7` - Dates read DD/MM/YYYY
 
 Every place a full date was shown as YYYY-MM-DD now shows DD/MM/YYYY: the

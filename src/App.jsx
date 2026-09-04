@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.475.0'
+const APP_VERSION = '3.476.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7352,6 +7352,60 @@ function buildIntel(cc, pcc, clientId, money) {
 // The intelligence banner: the same strip on every major tab. Lines are the
 // model's, ordered so the ones that speak to the open tab come first.
 const INTEL_TABS = new Set(['overall', 'meta', 'google', 'users', 'forms', 'location', 'appts', 'calls', 'timing', 'lostreasons'])
+// A page owns its insights. A tab that has its own model publishes it here from
+// exactly the data it has loaded - already cut to the pipeline and range - and
+// the banner shows that and nothing else. A tab without one gets only the
+// shared CRM lines that are tagged for it, never the whole account's.
+const IntelPubCtx = React.createContext(null)
+function useTabIntel(tab, model) {
+  const ctx = React.useContext(IntelPubCtx)
+  useEffect(() => {
+    if (!ctx) return
+    ctx.publish(tab, model)
+    return () => ctx.publish(tab, null)
+  }, [ctx, tab, model])
+}
+// The Location page: where the leads come from, and which areas convert
+// better or worse than the client's own average. `locs` are the merged
+// location rows the page draws, already projected to the pipeline.
+function intelLocation(locs, money, opts = {}) {
+  const rows = (locs || []).map((l) => ({ name: l.label || l.value || l.name || 'Unknown', leads: l.leads || 0, booked: l.booked || 0, won: l.won || 0, lost: l.lost || 0 })).filter((r) => r.leads > 0).sort((a, b) => b.leads - a.leads)
+  const lines = []
+  const add = (sev, text) => lines.push({ sev, tags: ['location'], text })
+  const total = rows.reduce((s, r) => s + r.leads, 0)
+  if (!total) return { kind: 'page', page: 'Location', lines, total: 0 }
+  const pc = (v) => `${Math.round(v * 100)}%`
+  if (total < INTEL_MIN_BASE) { add('low', `Only ${fmtNumber(total)} located leads in this period - too few to read by area.`); return { kind: 'page', page: 'Location', lines, total } }
+  // Concentration.
+  const top3 = rows.slice(0, 3); const top3Leads = top3.reduce((s, r) => s + r.leads, 0)
+  add(top3Leads / total >= 0.6 ? 'med' : 'low', `${top3.map((r) => r.name).join(', ')} ${top3.length === 1 ? 'supplies' : 'supply'} ${pc(top3Leads / total)} of located leads (${fmtNumber(top3Leads)} of ${fmtNumber(total)}) across ${fmtNumber(rows.length)} areas.`)
+  // Win rate against the client's own.
+  const won = rows.reduce((s, r) => s + r.won, 0), booked = rows.reduce((s, r) => s + r.booked, 0), lost = rows.reduce((s, r) => s + r.lost, 0)
+  const bWin = total ? won / total : 0, bBook = total ? booked / total : 0, bLost = total ? lost / total : 0
+  const big = rows.filter((r) => r.leads >= INTEL_MIN_BASE)
+  const idx = (v, b) => (b ? Math.round((v / b) * 100) : null)
+  if (bWin) {
+    const w = big.map((r) => ({ r, i: idx(r.won / r.leads, bWin) })).filter((x) => x.i != null && Math.abs(x.r.won - bWin * x.r.leads) >= 2)
+    const best = w.filter((x) => x.i >= 130).sort((a, b) => b.i - a.i)[0], worst = w.filter((x) => x.i <= 70).sort((a, b) => a.i - b.i)[0]
+    if (worst) add('med', `${worst.r.name} wins only ${pc(worst.r.won / worst.r.leads)} of its ${fmtNumber(worst.r.leads)} leads against ${pc(bWin)} across the client (${fmtNumber(worst.r.won)} won).`)
+    if (best) add('good', `${best.r.name} wins ${pc(best.r.won / best.r.leads)} of its ${fmtNumber(best.r.leads)} leads, ${(best.r.won / best.r.leads / bWin).toFixed(1)}× the client's ${pc(bWin)} (${fmtNumber(best.r.won)} won).`)
+  }
+  if (bBook) {
+    const b = big.map((r) => ({ r, i: idx(r.booked / r.leads, bBook) })).filter((x) => x.i != null && Math.abs(x.r.booked - bBook * x.r.leads) >= 3)
+    const worst = b.filter((x) => x.i <= 70).sort((a, b2) => a.i - b2.i)[0]
+    if (worst) add('med', `${worst.r.name} books ${pc(worst.r.booked / worst.r.leads)} of its ${fmtNumber(worst.r.leads)} leads against ${pc(bBook)} across the client - the drop is before the call.`)
+  }
+  if (bLost) {
+    const l = big.map((r) => ({ r, i: idx(r.lost / r.leads, bLost) })).filter((x) => x.i != null && x.i >= 140 && x.r.lost >= 3).sort((a, b) => b.i - a.i)[0]
+    if (l) add('med', `${pc(l.r.lost / l.r.leads)} of ${l.r.name}'s ${fmtNumber(l.r.leads)} leads end up lost, against ${pc(bLost)} across the client (${fmtNumber(l.r.lost)} lost).`)
+  }
+  // Areas that only send leads.
+  const dead = big.filter((r) => !r.won && !r.booked).sort((a, b) => b.leads - a.leads)[0]
+  if (dead) add('low', `${dead.name} sent ${fmtNumber(dead.leads)} leads with no booking and no win.`)
+  const rank = { high: 0, med: 1, good: 2, low: 3 }
+  lines.sort((a, b) => rank[a.sev] - rank[b.sev])
+  return { kind: 'page', page: 'Location', lines, total }
+}
 const INTEL_OPEN_KEY = 'caalano_intel_open'
 function IntelBanner({ model, status, tab, pipeName, range }) {
   // Collapsed to one line by default; opening shows every line and is remembered.
@@ -7359,23 +7413,22 @@ function IntelBanner({ model, status, tab, pipeName, range }) {
   const toggle = () => setOpen((o) => { const nx = !o; try { localStorage.setItem(INTEL_OPEN_KEY, nx ? '1' : '0') } catch { /* private mode */ } return nx })
   const lines = (model && model.lines) || []
   const key = tab || 'overall'
-  // A channel tab is about that channel: lines that speak only to the other
-  // paid channel are left out, the rest lead with the ones tagged for this tab.
-  const other = key === 'meta' ? 'google' : key === 'google' ? 'meta' : null
-  const ordered = lines.filter((l) => !(other && l.tags.includes(other) && !l.tags.includes(key))).sort((a, b) => (b.tags.includes(key) ? 1 : 0) - (a.tags.includes(key) ? 1 : 0))
+  // Only this page's lines: a page model is all its own; the shared CRM model is
+  // cut to the lines tagged for the open tab (Caalano360 keeps every line).
+  const ordered = (model && model.kind === 'page') || model && model.kind === 'ads' || key === 'overall' ? lines : lines.filter((l) => l.tags.includes(key))
   const worst = ordered[0]
   const n = ordered.length
-  const source = model && model.kind === 'ads' ? `the ${model.channel === 'meta' ? 'Meta' : 'Google'} figures on this page` : 'the figures on this page'
+  const source = model && model.kind === 'ads' ? `the ${model.channel === 'meta' ? 'Meta' : 'Google'} figures on this page` : model && model.kind === 'page' ? `the ${model.page} figures on this page` : 'the CRM figures behind this page'
   return (
     <div className={`intel-banner${open ? ' open' : ''}${status === 'loading' ? ' is-loading' : ''}`}>
       <button type="button" className="intel-h intel-toggle" onClick={toggle} aria-expanded={open}>
         <span className="intel-mark">360</span><b>Intelligence</b>
         <span className="sub">· {rangeLabel(range)}{pipeName ? <> · <b>{pipeName}</b> pipeline</> : ''} · read from {source}, against the previous equal window</span>
-        <span className="intel-count">{status === 'loading' && !model ? 'reading…' : status === 'err' && !model ? 'no read' : !model ? '' : n ? `${n} insight${n === 1 ? '' : 's'}` : 'nothing stands out'}{worst && !open ? <span className={`intel-dot inline sev-${worst.sev}`} /> : null}</span>
+        <span className="intel-count">{(status === 'loading' && !model) || (model && model.loading) ? 'reading…' : status === 'err' && !model ? 'no read' : !model ? '' : n ? `${n} insight${n === 1 ? '' : 's'}` : 'nothing stands out'}{worst && !open ? <span className={`intel-dot inline sev-${worst.sev}`} /> : null}</span>
         <span className="intel-chev" aria-hidden="true">{open ? '▴' : '▾'}</span>
       </button>
       {!open ? null
-        : status === 'loading' && !model ? <div className="intel-lines"><div className="intel-skel" /><div className="intel-skel w2" /></div>
+        : (status === 'loading' && !model) || (model && model.loading) ? <div className="intel-lines"><div className="intel-skel" /><div className="intel-skel w2" /></div>
           : status === 'err' && !model ? <div className="cap">No read for this period yet, so there is nothing to say.</div>
             : !model ? null
               : !n ? <div className="cap">Nothing stands out - everything on this page is within its usual range for the period.</div>
@@ -11595,6 +11648,9 @@ function LocationView({ clientId, range, nonce, currency, pipe: pipeProp, onPipe
   }, [locs, locMetric, clientId, pipe, pipes])
   const rankPg = usePager(rank.rows.length, `${locMetric}|${pipe}|${rank.rows.length}`)
   const allPg = usePager(locs.length, `${pipe}|${locs.length}`)
+  // This page's own insights, from the rows it draws.
+  const locIntel = useMemo(() => (st.status === 'loading' ? { kind: 'page', page: 'Location', lines: [], loading: true } : intelLocation(locs, money)), [locs, st.status]) // eslint-disable-line
+  useTabIntel('location', locIntel)
   if (st.status === 'loading') return <TabLoading kind="table" label="Loading lead locations…" />
   const d = st.data
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load location data.</b></div>
@@ -14544,6 +14600,10 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
     const praw = ccPrevW.data && ccPrevW.data.oppsBySource ? ccPrevW.data : null
     return buildIntel(lensCc(raw, pipe), lensCc(praw, pipe), client.id, (v) => fmtCurrency(v, data.currency))
   }, [ccForPipes.data, ccPrevW.data, pipe, client.id, keTickW, data.currency]) // eslint-disable-line
+  // Insight models published by the open tab (see useTabIntel).
+  const [tabIntel, setTabIntel] = useState({})
+  const publishIntel = React.useCallback((t, model) => setTabIntel((m) => (m[t] === model ? m : { ...m, [t]: model })), [])
+  const intelCtx = useMemo(() => ({ publish: publishIntel }), [publishIntel])
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
   // Same function, same access check - a client id in the URL can't reach an
@@ -14610,10 +14670,11 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         </div>
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}<PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} /></div>
       </div>
-      <LoadCtx.Provider value={curTab}><div style={{ marginTop: 16 }}>
+      <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div style={{ marginTop: 16 }}>
         {(curTab === 'meta' || curTab === 'google')
-          ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={null} range={range} />
-          : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
+          ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={pipeName} range={range} />
+          : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
+            : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'meta' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Meta', range)} />
@@ -14635,7 +14696,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}
-      </div></LoadCtx.Provider>
+      </div></IntelPubCtx.Provider></LoadCtx.Provider>
     </>
   )
 }

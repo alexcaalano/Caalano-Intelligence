@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.459.0'
+const APP_VERSION = '3.460.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2837,8 +2837,8 @@ function DataLoadBar({ label = 'Meta ads', has360, status, pipeLoading }) {
   )
 }
 
-function MetaDeep({ deep, currency, attr, clientId, range, nonce }) {
-  const [pipe, setPipe] = useState('all')
+function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp, onPipe }) {
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr)
   const pipeLoading = pipe !== 'all' && (!pipeAttr || pipeAttr.status === 'loading')
   // Full pipeline list for the picker comes from the account-wide attribution
@@ -3453,8 +3453,8 @@ function aggByMatchInitial(arr) {
 }
 const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
 const mtColor = (t) => MT_COLOR[t] || '#8b5cf6'
-function GoogleDeep({ deep, currency, attr, clientId, range, nonce }) {
-  const [pipe, setPipe] = useState('all')
+function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp, onPipe }) {
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr)
   const pipeLoading = pipe !== 'all' && (!pipeAttr || pipeAttr.status === 'loading')
   const allPipes = (attr && attr.data && attr.data.attribution && attr.data.attribution.allPipelines) || []
@@ -4183,6 +4183,115 @@ async function hydrateSettings() {
   bumpSettings()
 }
 // Re-render the subscribing component when settings hydrate / change.
+// --- Pipeline: one filter for the whole client workspace ---------------------
+// The pipeline is a first-class filter. ClientWorkspace owns one value (and the
+// URL ?p=), every tab reads and writes that same value through this hook, so
+// switching tabs never loses the pipeline and a link carries it. A tab rendered
+// on its own (no prop) keeps a local filter, so nothing else has to change.
+// `valid` (optional) is the list of ids the tab can actually show - a pipeline
+// the tab has no data for reads as "all" rather than as a blank picker.
+function usePipeState(prop, onChange, valid) {
+  const [local, setLocal] = useState('all')
+  const raw = prop != null ? prop : local
+  const pipe = (raw !== 'all' && valid && valid.length && !valid.some((p) => (p && (p.id != null ? p.id : p)) === raw)) ? 'all' : raw
+  const setPipe = React.useCallback((v) => { setLocal(v || 'all'); if (onChange) onChange(v || 'all') }, [onChange])
+  return [pipe, setPipe]
+}
+function PipelinePicker({ pipes, value, onChange, className }) {
+  if (!pipes || pipes.length < 2) return null
+  const cur = pipes.some((p) => p.id === value) ? value : 'all'
+  return (
+    <label className={`cw-pipe${cur !== 'all' ? ' on' : ''}${className ? ' ' + className : ''}`} title="Every tab recalculates within the chosen pipeline">
+      <span className="cw-pipe-l">Pipeline</span>
+      <select value={cur} onChange={(e) => onChange(e.target.value)}>
+        <option value="all">All pipelines</option>
+        {pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      {cur !== 'all' ? <button type="button" className="cw-pipe-x" onClick={() => onChange('all')} title="Back to all pipelines">✕</button> : null}
+    </label>
+  )
+}
+// Median / mean / quartiles of a list of day counts - the same figures the
+// time-to tiles show, shared so the pipeline lens and the Lost Reasons cohort
+// produce identical numbers.
+function lrTimeStats(list) {
+  const arr = list.filter((d) => d != null)
+  const q = [...arr].sort((x, y) => x - y)
+  const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10)
+  const med = q.length ? (q.length % 2 ? q[Math.floor(q.length / 2)] : (q[q.length / 2 - 1] + q[q.length / 2]) / 2) : null
+  const pct = (f) => q[Math.min(q.length - 1, Math.floor(q.length * f))]
+  return { median: r1(med), mean: q.length ? r1(q.reduce((a, b) => a + b, 0) / q.length) : null, n: q.length, skipped: list.length - arr.length, p25: q.length >= 8 ? r1(pct(0.25)) : null, p75: q.length >= 8 ? r1(pct(0.75)) : null }
+}
+// Everything on the Caalano360 tab within ONE pipeline. The drill payload is
+// built account-wide but carries every per-pipeline piece needed to re-cut it
+// in the browser - the stage funnel per pipeline, each pipeline's leads / won /
+// lost / open / revenue by channel, and one row per opportunity with its
+// pipeline - so nothing is re-fetched. Spend is allocated to the pipeline by its
+// share of each channel's leads (the rule the Channel split already uses), so
+// cost per lead is the account's while cost per event and per win are the
+// pipeline's own. Calendars and lead sources are not pipeline-aware in the
+// payload; those stay account-wide and the lens says so.
+function lensCc(cc, pid) {
+  if (!cc || !pid || pid === 'all') return cc
+  const pf = (cc.pipelinesFunnel || []).find((p) => p.id === pid) || null
+  const pc = (cc.pipeContribution || []).find((p) => p.id === pid) || null
+  const name = (pf && pf.name) || (pc && pc.name) || 'Pipeline'
+  const z = () => ({ leads: 0, won: 0, revenue: 0 })
+  const chan = (pc && pc.chan) || { meta: z(), google: z(), other: z() }
+  const all = cc.pipeContribution || []
+  const tot = (k) => all.reduce((s, p) => s + ((p.chan && p.chan[k] && p.chan[k].leads) || 0), 0)
+  const share = (k) => { const t = tot(k); return t ? ((chan[k] && chan[k].leads) || 0) / t : 0 }
+  const sp = cc.spend || {}
+  const metaSpend = Math.round((sp.meta || 0) * share('meta')), googleSpend = Math.round((sp.google || 0) * share('google'))
+  const totalSpend = metaSpend + googleSpend
+  const r2 = (v) => Math.round(v * 100) / 100
+  const metaLeads = chan.meta.leads || 0, googleLeads = chan.google.leads || 0, paidLeads = metaLeads + googleLeads
+  const metaWon = chan.meta.won || 0, googleWon = chan.google.won || 0, paidWon = metaWon + googleWon
+  const paid = {
+    metaLeads, googleLeads, paidLeads,
+    metaCpl: metaLeads ? r2(metaSpend / metaLeads) : null, googleCpl: googleLeads ? r2(googleSpend / googleLeads) : null, paidCpl: paidLeads ? r2(totalSpend / paidLeads) : null,
+    paidWon, metaWon, googleWon,
+    paidCpa: paidWon ? r2(totalSpend / paidWon) : null, metaCpa: metaWon ? r2(metaSpend / metaWon) : null, googleCpa: googleWon ? r2(googleSpend / googleWon) : null,
+  }
+  // The per-opportunity rows name the pipeline rather than id it.
+  const cut = (f, off) => {
+    if (!f || !f.rows || !f.keys) return f
+    const i = f.keys.indexOf('pipeline'); if (i < 0) return f
+    const di = ((f.dict && f.dict.pipeline) || []).indexOf(name)
+    return { ...f, rows: di < 0 ? [] : f.rows.filter((r) => r[i + off] === di) }
+  }
+  const lostFacts = cut(cc.lostFacts, 0), oppFacts = cut(cc.oppFacts, 1)
+  if (lostFacts && lostFacts.rows) lostFacts.total = pc ? pc.lost : lostFacts.rows.length
+  if (oppFacts && oppFacts.rows) oppFacts.total = pc ? pc.leads : oppFacts.rows.length
+  // Lost by channel and the time-to figures come from the rows; leads, won and
+  // revenue by channel are exact from the pipeline's contribution.
+  const lostByCh = {}; const ttWon = [], ttLost = []
+  if (oppFacts && oppFacts.rows && oppFacts.keys) {
+    const ci = oppFacts.keys.indexOf('channel'), cd = (oppFacts.dict && oppFacts.dict.channel) || [], di = oppFacts.keys.length + 2
+    for (const r of oppFacts.rows) {
+      if (r[0] === 2) { const ch = cd[r[ci + 1]]; const b = ch === 'meta' || ch === 'google' ? ch : 'other'; lostByCh[b] = (lostByCh[b] || 0) + 1; ttLost.push(r[di]) }
+      else if (r[0] === 1) ttWon.push(r[di])
+    }
+  }
+  const closeByChannel = ['meta', 'google', 'other'].map((k) => { const c = chan[k] || z(); const won = c.won || 0, lost = lostByCh[k] || 0, closed = won + lost; return { channel: k, won, closed, leads: c.leads || 0, revenue: c.revenue || 0, closeRate: closed ? Math.round((won / closed) * 100) : null, deals: [] } }).filter((c) => c.leads || c.won)
+  // Lost reasons: the account-wide list already carries a per-pipeline cut; the
+  // people behind each reason are narrowed to this pipeline for the drill.
+  const lbp = ((cc.lostBy && cc.lostBy.pipeline) || []).find((p) => p.key === name) || null
+  const lostByReason = lbp ? lbp.reasons.map((r) => { const full = (cc.lostByReason || []).find((x) => x.reason === r.reason) || {}; return { ...full, ...r, people: (full.people || []).filter((pp) => pp.pipeline === name) } }) : []
+  const inPipe = (d) => !d.pipeline || d.pipeline === name
+  return {
+    ...cc,
+    lens: { pipeline: pid, name, empty: !pf && !pc, calendarsAccountWide: true, sourcesAccountWide: true },
+    pipelinesFunnel: pf ? [pf] : [], pipeContribution: pc ? [pc] : [],
+    totals: { leads: pc ? pc.leads : 0, won: pc ? pc.won : 0, lost: pc ? pc.lost : 0, open: pc ? pc.open : 0 },
+    revenue: { ...(cc.revenue || {}), total: pc ? pc.revenue : 0, count: pc ? pc.won : 0, deals: ((cc.revenue && cc.revenue.deals) || []).filter(inPipe) },
+    open: { ...(cc.open || {}), total: pc ? pc.open : 0, value: pc ? pc.openValue : 0, deals: ((cc.open && cc.open.deals) || []).filter(inPipe) },
+    spend: { meta: metaSpend, google: googleSpend, total: totalSpend, allocated: true },
+    paid, closeByChannel, lostFacts, oppFacts, lostByReason,
+    lostBy: { ...(cc.lostBy || {}), pipeline: lbp ? [lbp] : [] },
+    timeToWon: lrTimeStats(ttWon), timeToLost: lrTimeStats(ttLost),
+  }
+}
 function useSettingsSync() {
   const [, force] = React.useReducer((x) => x + 1, 0)
   useEffect(() => onSettings(force), [])
@@ -5174,10 +5283,10 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
 // Compact lead-location summary for Caalano360 - a map preview + top places, from
 // the forms feed (postcode / suburb answers). Renders only when leads carried a
 // location; links out to the full Location tab.
-function LocationSummary({ clientId, range, nonce, onNav }) {
+function LocationSummary({ clientId, range, nonce, onNav, pipe: pipeProp, onPipe }) {
   const st = useForms(clientId, range, nonce)
   const db = useAuDb()
-  const [pipe, setPipe] = useState('all')
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   // Pipeline options come from the forms feed's own per-pipeline rollup, so the
   // list only ever offers pipelines that actually produced a located lead.
   const pipes = useMemo(() => {
@@ -5400,14 +5509,7 @@ function lrCohortStats(oppFacts, active, match, lostFiltered) {
   const rows = oppFacts.filter((r) => cut.every(([d, v]) => match(r, d, v)))
   const by = (st) => rows.filter((r) => r.status === st)
   const won = by('won'), lost = by('lost'), open = by('open')
-  const sortNum = (a) => [...a].sort((x, y) => x - y)
-  const medOf = (a) => { if (!a.length) return null; const q = sortNum(a); const m = Math.floor(q.length / 2); return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2 }
-  const pct = (a, q) => (a.length ? sortNum(a)[Math.min(a.length - 1, Math.floor(a.length * q))] : null)
-  const r1 = (v) => (v == null ? null : Math.round(v * 10) / 10)
-  const tt = (list) => {
-    const arr = list.map((r) => r.days).filter((d) => d != null)
-    return { median: r1(medOf(arr)), mean: arr.length ? r1(arr.reduce((a, b) => a + b, 0) / arr.length) : null, n: arr.length, skipped: list.length - arr.length, p25: arr.length >= 8 ? r1(pct(arr, 0.25)) : null, p75: arr.length >= 8 ? r1(pct(arr, 0.75)) : null }
-  }
+  const tt = (list) => lrTimeStats(list.map((r) => r.days))
   return {
     totals: { leads: rows.length, open: open.length, won: won.length, lost: reasonOn ? lostFiltered : lost.length },
     timeToWon: tt(won), timeToLost: tt(lost), reasonOn,
@@ -5767,10 +5869,13 @@ function LostScorecards({ cc, range, money, cohort, filterNote }) {
   )
 }
 
-function LostReasonsView({ clientId, range, nonce, currency }) {
+function LostReasonsView({ clientId, range, nonce, currency, pipeName }) {
   // Filters are applied here, not on the server, so stacking or clearing one is
   // instant and never refetches. The payload is every lost deal in the period.
   const [filters, setFilters] = useState({})
+  // The workspace pipeline presets this view's pipeline filter (by name - the
+  // facts name pipelines rather than id them). Clearing it upstream clears it here.
+  useEffect(() => { setFilters((f) => { const n = { ...f }; if (pipeName) n.pipeline = [pipeName]; else delete n.pipeline; return n }) }, [pipeName])
   const [groupBy, setGroupBy] = useState('reason')
   const [colBy, setColBy] = useState('source')
   // Two readings of the stage cut. "At this stage" is where each deal actually
@@ -6869,14 +6974,20 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
 }
 
 const CC_CHANS = [['all', 'All'], ['paid', 'Paid'], ['nonpaid', 'Non-paid'], ['google', 'Google'], ['meta', 'Meta']]
-function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed' }) {
+function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
   useEffect(() => { setChan('all') }, [clientId])
   const health = useHealth(clientId, range, nonce, reload, wonBasis)
   const crmAgg = useCrmAgg(clientId, range, nonce, chan)
   const ccDrill = useCcDrill(clientId, range, nonce, chan)
-  const cc = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
+  const ccRaw = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
+  // The pipeline lens: every figure below is re-cut to the chosen pipeline in
+  // the browser, from the same payload. `pipeOn` is the flag the tiles use to
+  // stop falling back to the account-wide health / per-rep figures.
+  const cc = useMemo(() => lensCc(ccRaw, pipe), [ccRaw, pipe])
+  const pipeOn = !!(cc && cc.lens)
+  const pipeLabel = pipeOn ? cc.lens.name : null
   // Phase-2 prefetch: warm the other filter channels (Paid / Non-paid / Google /
   // Meta) in the background so the toggle switches instantly on first click. Delayed
   // + staggered so it never competes with the active view or trips GHL rate limits.
@@ -6904,7 +7015,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // vs-prev deltas (same shape, one period back).
   const prevRange = prevRangeOf(range)
   const prevCcDrill = useCcDrill(clientId, prevRange || range, nonce, chan)
-  const pcc = (prevRange && prevCcDrill.status === 'ok' && prevCcDrill.data && prevCcDrill.data.oppsBySource) ? prevCcDrill.data : null
+  const pccRaw = (prevRange && prevCcDrill.status === 'ok' && prevCcDrill.data && prevCcDrill.data.oppsBySource) ? prevCcDrill.data : null
+  const pcc = useMemo(() => lensCc(pccRaw, pipe), [pccRaw, pipe])
+  // Spend for the active channel toggle, from a (lensed) drill payload.
+  const spendOf = (d, chn) => { const sp = (d && d.spend) || {}; return chn === 'meta' ? (sp.meta || 0) : chn === 'google' ? (sp.google || 0) : chn === 'nonpaid' ? 0 : (sp.total || 0) }
   const [drill, setDrill] = useState(null)
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
@@ -6957,7 +7071,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     <div className="exec-wrap">
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
-        const ca = crmAgg || {}
+        // Within a pipeline the per-rep aggregation (account-wide) is not a
+        // valid fallback, so it is switched off and the lensed drill is the source.
+        const ca = pipeOn ? {} : (crmAgg || {})
         const chActive = chan !== 'all'
         // Every metric follows the channel toggle. CRM counts come from the
         // channel-scoped scope=users feed (crmAgg); spend + paid cost figures are
@@ -6965,11 +7081,13 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const chn = h.channels || {}
         const p = (cc && cc.paid) || {}
         // Channel-scoped ad spend.
-        const chanSpend = chan === 'all' ? k.adSpend
-          : chan === 'meta' ? chn.metaSpend
-            : chan === 'google' ? chn.googleSpend
-              : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0))
-                : 0 // non-paid has no ad spend
+        const chanSpend = pipeOn ? spendOf(cc, chan)
+          : chan === 'all' ? k.adSpend
+            : chan === 'meta' ? chn.metaSpend
+              : chan === 'google' ? chn.googleSpend
+                : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0))
+                  : 0 // non-paid has no ad spend
+        const prevChanSpend = pipeOn ? (pcc ? spendOf(pcc, chan) : null) : (chActive ? null : pv.adSpend)
         // Cost per lead / won for the selected channel (paid-attributed). Non-paid
         // has no attributable spend, so cost figures are n/a there.
         const cplV = chan === 'meta' ? p.metaCpl : chan === 'google' ? p.googleCpl : chan === 'nonpaid' ? null : p.paidCpl
@@ -6987,34 +7105,37 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         // opps aren't assigned showed 0 on the tiles but 35 in the drill). crmAgg /
         // health (k) remain the fallback for viewers / while ccdrill is still loading.
         const ccTot = (cc && cc.totals) || null
-        const ccBooked = cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.booked || 0), 0) : null
-        const ccShown = cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.shown || 0), 0) : null
+        const kefTot0 = (cc && cc.totals) || null
+        const kef = ccKeyEventFunnel(cc, clientId, kefTot0 ? kefTot0.won : k.won, kefTot0 ? kefTot0.leads : k.leads)
+        const kefCal = kef.rows.filter((r) => r.kind === 'calendar')
+        const ccBooked = pipeOn ? (kefCal.length ? kefCal.reduce((s, r) => s + (r.count || 0), 0) : null)
+          : cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.booked || 0), 0) : null
+        const ccShown = pipeOn ? (kefCal.length ? kefCal.reduce((s, r) => s + (r.shown || 0), 0) : null)
+          : cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.shown || 0), 0) : null
         const oppsV = ccTot ? ccTot.leads : (ca.opps != null ? ca.opps : k.leads)
-        const bookedV = ccBooked != null ? ccBooked : (ca.booked != null ? ca.booked : k.booked)
-        const shownV = ccShown != null ? ccShown : (ca.shown != null ? ca.shown : k.shown)
+        const bookedV = ccBooked != null ? ccBooked : pipeOn ? null : (ca.booked != null ? ca.booked : k.booked)
+        const shownV = ccShown != null ? ccShown : pipeOn ? null : (ca.shown != null ? ca.shown : k.shown)
         const wonV = ccTot ? ccTot.won : (ca.won != null ? ca.won : k.won)
         const revV = (cc && cc.revenue) ? cc.revenue.total : (ca.revenue != null ? ca.revenue : k.revenue)
-        const avgV = wonV ? Math.round((revV || 0) / wonV) : ((ccTot || ca.won != null) ? null : k.avgDeal)
+        const avgV = wonV ? Math.round((revV || 0) / wonV) : ((ccTot || ca.won != null || pipeOn) ? null : k.avgDeal)
         const openV = ccTot ? ccTot.open : (ca.open != null ? ca.open : null)
-        const openValV = (cc && cc.open) ? cc.open.value : (ca.openValue != null ? ca.openValue : (k.openValue != null ? k.openValue : null))
+        const openValV = (cc && cc.open) ? cc.open.value : (ca.openValue != null ? ca.openValue : (k.openValue != null && !pipeOn ? k.openValue : null))
         const lost = ccTot ? ccTot.lost : (ca.lost != null ? ca.lost : null)
-        const cpBookedV = (chanSpend && bookedV) ? Math.round(chanSpend / bookedV) : (chActive ? null : k.cpBooked)
+        const cpBookedV = (chanSpend && bookedV) ? Math.round(chanSpend / bookedV) : ((chActive || pipeOn) ? null : k.cpBooked)
         const roas = (chanSpend && revV) ? revV / chanSpend : null
-        const cpl2 = (!chActive && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
+        const cpl2 = (!chActive && !pipeOn && pv.leads && pv.adSpend) ? Math.round(pv.adSpend / pv.leads) : null
         const tileClick = (drill2) => (cc ? () => setDrill(drill2) : undefined)
         // Key-event reach as rates - each selected key event as a share of leads.
         // Denominator/won come from the ccdrill totals (same opportunity basis as
         // the funnel numerators) in both all and channel views.
-        const kefTot = (cc && cc.totals) || null
-        const kef = ccKeyEventFunnel(cc, clientId, kefTot ? kefTot.won : k.won, kefTot ? kefTot.leads : k.leads)
         return <div className="exec-cc">
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <span>Command centre <span className="sub">· all of Caalano Systems for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
+            <span>Command centre <span className="sub">· {pipeLabel ? <><b>{pipeLabel}</b> pipeline</> : 'all of Caalano Systems'} for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
             <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
           </div>
           <div className="cc-group-lab x-internal">Spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
           <div className="scorecard exec-kpis exec-kpis-4 x-internal">
-            <Kpi label="Ad spend" value={chanSpend != null ? money(chanSpend) : '-'} cur={chActive ? null : k.adSpend} prev={chActive ? null : pv.adSpend} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+            <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
             <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '-'} cur={paidCpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead - paid attributed' })} />
             <Kpi label="Cost / booked" value={cpBookedV != null ? money(cpBookedV) : '-'} cur={cpBookedV} goodWhenDown />
             <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : '-'} cur={paidCpa} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won - paid attributed' })} />
@@ -7059,8 +7180,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
       {cc ? (() => {
         const chn = h.channels || {}
-        const curSpend = chan === 'all' ? (k.adSpend || 0) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : 0
-        const prevSpend = chan === 'all' ? (pv.adSpend || 0) : null // channel-split prev spend isn't available
+        const curSpend = pipeOn ? spendOf(cc, chan) : chan === 'all' ? (k.adSpend || 0) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : 0
+        const prevSpend = pipeOn ? (pcc ? spendOf(pcc, chan) : null) : chan === 'all' ? (pv.adSpend || 0) : null // channel-split prev spend isn't available
         return <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />
       })() : null}
 
@@ -7069,7 +7190,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       <div className="card x-internal">
         <div className="exec-panel-h">Channel split <span className="sub">· spend → key events → wins &amp; efficiency, per paid channel</span></div>
         {(() => {
-          const ch = h.channels || {}
+          const ch = pipeOn ? { metaSpend: cc.spend.meta, googleSpend: cc.spend.google, metaLeads: cc.paid.metaLeads, googleConv: cc.paid.googleLeads } : (h.channels || {})
           // A channel whose ad read failed has NO spend figure, which is a
           // different thing from having spent nothing - and the difference matters,
           // because $0.00 next to 140 leads reads as free leads rather than as a
@@ -7147,7 +7268,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
 
       {/* Revenue bottleneck funnel - client key events + calendar show-rate.
           Passes the selected channel's spend so a paid view shows cost/stage. */}
-      {(() => { const chn = h.channels || {}; const bnSpend = chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : chan === 'all' ? (k.adSpend || 0) : 0
+      {(() => { const chn = h.channels || {}; const bnSpend = pipeOn ? spendOf(cc, chan) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : chan === 'all' ? (k.adSpend || 0) : 0
         return <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} chan={chan} stageSpend={bnSpend} onNav={onNav} /> })()}
 
       {/* Lost reasons - full width so the table never needs to scroll sideways.
@@ -7166,7 +7287,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
 
       {/* Priority actions - a prioritised read of the command centre */}
       <div className="card exec-actions">
-        <div className="exec-panel-h">Priority actions</div>
+        <div className="exec-panel-h">Priority actions{pipeOn ? <span className="sub"> · account-wide, from the health score</span> : null}</div>
         {actions.length ? <ul className="exec-act-list">{actions.map((a, i) => <li key={i} className={`exec-act sev-${a.sev}`}><span className="exec-act-dot" />{a.text}</li>)}</ul>
           : <div className="cap">Nothing flagged this period - the numbers are tracking with or ahead of last period.</div>}
         <div className="exec-nav"><button className="link-btn" onClick={() => onNav && onNav('users')}>Open the Users tab →</button></div>
@@ -7181,11 +7302,12 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
 
       {/* Lead locations - map preview (only shows if leads carried a location) */}
-      <LocationSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />
+      <LocationSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} pipe={pipe} onPipe={onPipe} />
 
       {/* Speed to lead - response-timing summary (only shows if measured) */}
       <TimingSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />
 
+      {pipeOn ? <div className="cap exec-foot">Within the <b>{pipeLabel}</b> pipeline: opportunities, key events, wins, revenue, lost reasons and time-to figures are that pipeline's own. Ad spend is allocated to it by its share of each channel's leads, so cost per lead reads as the account's while cost per event and per win are the pipeline's. Calendars and lead sources are not pipeline-aware in the CRM feed and stay account-wide.</div> : null}
       <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only - clients may reply on channels outside Caalano Systems.</div>
 
       {drill && cc && <CcDrillModal drill={drill} cc={cc} money={money} clientId={clientId} onClose={() => setDrill(null)} />}
@@ -10775,10 +10897,10 @@ function FormLocations({ form }) {
 // across all of the client's forms, coloured by outcome (red lead / amber
 // booked / green won). Reuses the forms feed (which already carries per-answer
 // location + outcomes) so it needs no new backend call.
-function LocationView({ clientId, range, nonce, currency }) {
+function LocationView({ clientId, range, nonce, currency, pipe: pipeProp, onPipe }) {
   const st = useForms(clientId, range, nonce)
   const db = useAuDb()
-  const [pipe, setPipe] = useState('all')
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   const [locMetric, setLocMetric] = useState('leads') // which outcome/key event ranks the "by location" list
   const [locDrill, setLocDrill] = useState(null) // a location clicked from the key-events ranking
   const money = (v) => fmtCurrency(v, currency)
@@ -10952,9 +11074,9 @@ function FormsCharts({ forms, kEvents, reached, evLabel }) {
     </div>
   )
 }
-function FormsView({ clientId, currency, range, nonce }) {
+function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe }) {
   const st = useForms(clientId, range, nonce)
-  const [pipeFilter, setPipeFilter] = useState('all')
+  const [pipeFilter, setPipeFilter] = usePipeState(pipeProp, onPipe)
   const [sort, setSort] = useState({ key: 'leads', dir: -1 })
   const [open, setOpen] = useState(() => new Set())
   const [editForm, setEditForm] = useState(null)
@@ -11113,10 +11235,10 @@ function ApptResultedDrill({ C, onClose, label }) {
     </div>
   )
 }
-function AppointmentsView({ clientId, range, nonce }) {
+function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [chan, setChan] = useState('all')
-  const [pipe, setPipe] = useState('all')
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   const [cals, setCals] = useState(null) // null = use default for pipe; array = explicit
   const [userSel, setUserSel] = useState('all')
   const [showDbg, setShowDbg] = useState(false)
@@ -11910,11 +12032,11 @@ function flatGrid(flat) {
   for (let d = 0; d < 7; d++) { const row = []; for (let h = 0; h < 24; h++) row.push({ leads: flat[d * 24 + h] || 0, booked: 0 }); g.push(row) }
   return g
 }
-function EnquiryTimesSection({ clientId, range, nonce }) {
+function EnquiryTimesSection({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [view, setView] = useState('leads')
   const [keyStage, setKeyStage] = useState(null)
-  const [pipe, setPipe] = useState('all')
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   const [gran, setGran] = useState('grid')
   const [paidOpen, setPaidOpen] = useState(false)
   const [paidChan, setPaidChan] = useState('paid')
@@ -12725,9 +12847,9 @@ function CadChart({ rows, view, money }) {
     </div>
   )
 }
-function CallCadenceSection({ clientId, range, nonce, cadence, cohort, loading, pipes }) {
+function CallCadenceSection({ clientId, range, nonce, cadence, cohort, loading, pipes, pipe: pipeProp, onPipe }) {
   const [view, setView] = useState('lead')
-  const [pipe, setPipe] = useState('all')
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   const [open, setOpen] = useState(true)
   const obsEnd = useMemo(() => (range && range.to ? Date.parse(`${range.to}T23:59:59`) : Date.now()), [range])
   const d = useMemo(() => {
@@ -12922,7 +13044,7 @@ function mergeCallChunks(parts) {
 }
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const dayTick = (v) => { const s = String(v); const dt = new Date(s + 'T00:00:00Z'); return isNaN(dt) ? s.slice(5) : `${s.slice(5)} ${DOW[dt.getUTCDay()]}` }
-function CallReportView({ clientId, range, nonce }) {
+function CallReportView({ clientId, range, nonce, pipe, onPipe }) {
   const [d, setD] = useState(null)
   const [prog, setProg] = useState({ done: 0, total: 0 })
   const [selRep, setSelRep] = useState('all')
@@ -13026,7 +13148,7 @@ function CallReportView({ clientId, range, nonce }) {
           {t.missedInbound ? <div className="tm-sc warn"><span className="tm-lab">Missed inbound</span><b>{fmtNumber(t.missedInbound)}</b><span className="tm-sub">unanswered / voicemail</span></div> : null}
         </div>
       </div>
-      <CallCadenceSection clientId={clientId} range={range} nonce={nonce}
+      <CallCadenceSection clientId={clientId} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe}
         cadence={d.cadence} cohort={cohort} loading={cohort === undefined}
         pipes={(cohort && cohort.pipelines) || null} />
       {d.daily && d.daily.length > 1 && (() => {
@@ -13091,9 +13213,9 @@ function CallReportView({ clientId, range, nonce }) {
     </>
   )
 }
-function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed' }) {
+function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe: pipeProp, onPipe }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
-  const [pipe, setPipe] = useState('all')
+  const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
   const [chan, setChan] = useState('all')
   const [sort, setSort] = useState({ key: 'won', dir: -1 })
   const [open, setOpen] = useState(null) // expanded user id
@@ -13741,6 +13863,18 @@ function OptimisationLog({ clientId, sheet, embedded = false }) {
 function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis = 'closed', onBack, authUser, initialTab, onTabChange }) {
   useSettingsSync()
   const [tab, setTab] = useState(initialTab || 'overall')
+  // The workspace-wide pipeline filter. Read from the URL once, written back on
+  // every change (replace, not push - it is a lens on the page, not a page), and
+  // reset when the client changes. The list comes from the same drill payload
+  // the Caalano360 tab is built from, so it is already cached whenever that tab
+  // has loaded; a CRM-less client never fetches it.
+  const [pipe, setPipeRaw] = useState(() => readNavUrl().p || 'all')
+  const setPipe = React.useCallback((v) => { const nx = v || 'all'; setPipeRaw(nx); writeNavUrl({ p: nx === 'all' ? null : nx }, false) }, [])
+  const firstClient = useRef(client.id)
+  useEffect(() => { if (firstClient.current !== client.id) { firstClient.current = client.id; setPipe('all') } }, [client.id]) // eslint-disable-line
+  const ccForPipes = useCcDrill(((config && config.clients) || []).some((c) => c.id === client.id && c.ghl) ? client.id : null, range, nonce, 'all')
+  const pipes = useMemo(() => ((ccForPipes.data && ccForPipes.data.pipelinesFunnel) || []).map((p) => ({ id: p.id, name: p.name })), [ccForPipes.data])
+  const pipeName = pipe !== 'all' ? ((pipes.find((p) => p.id === pipe) || {}).name || null) : null
   const [baked, setBaked] = useState(undefined)
   const [crmAvgClose, setCrmAvgClose] = useState(null)
   // Same function, same access check - a client id in the URL can't reach an
@@ -13805,27 +13939,27 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           <Avatar id={client.id} name={client.name} i={index} />
           <div><h2>{client.name} <span className={`tk ${tk.cls}`}>{tk.label}</span> <MaturityBadge clientId={client.id} crmAvg={crmAvgClose} range={range} /></h2><div className="meta">{client.industry}</div></div>
         </div>
-        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
+        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}<PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} /></div>
       </div>
       <div style={{ marginTop: 16 }}>
-        {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} />}
-        {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} />}
+        {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
+        {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Meta', range)} /></div>
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
-            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months - ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months - ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /></>)}
         {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Google', range)} /></div>
           : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
-            : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
+            : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /></>)}
         {curTab === 'analytics' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Analytics', range)} /></div>
           : (live.status === 'err' && !liveOK('ganalytics')) ? <DeepError channel="Google Analytics" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('ganalytics') ? 'live' : null} label={presetLabel} /><AnalyticsDeep deep={srcFor('ganalytics')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
-        {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
-        {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} />}
-        {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} />}
-        {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
-        {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /><StageTimingSection clientId={client.id} nonce={nonce} /></>}
-        {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} />}
+        {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} />}
+        {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} />}
+        {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} />}
+        {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipe={pipe} onPipe={setPipe} />}
+        {curTab === 'timing' && <><EnquiryTimesSection clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /><TimingView clientId={client.id} range={range} nonce={nonce} currency={data.currency} /><StageTimingSection clientId={client.id} nonce={nonce} /></>}
+        {curTab === 'lostreasons' && <LostReasonsView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipeName={pipeName} />}
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}
@@ -21216,7 +21350,7 @@ function ClientSwitcher({ clients, active, onPick, idxOf }) {
 // link to a client you can't see simply returns 403 and falls back to home.
 const NAV_VIEWS = new Set(['overview', 'trends', 'weekly', 'forecast', 'cockpit', 'curator', 'insights', 'update', 'monthly', 'social', 'reports', 'settings', 'clients'])
 function readNavUrl() {
-  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), s: p.get('s'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
+  try { const p = new URLSearchParams(window.location.search); return { v: p.get('v'), c: p.get('c'), t: p.get('t'), p: p.get('p'), s: p.get('s'), r: p.get('r'), from: p.get('from'), to: p.get('to'), wb: p.get('wb'), m: p.get('m') } } catch { return {} }
 }
 // writeNavUrl takes a PATCH: each key is set (truthy) or deleted (falsy); keys not
 // present are left untouched, so partial writers (view vs range vs won-basis) compose
@@ -21409,8 +21543,8 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
   // Config for the Settings page keeps deleted clients (so the Deleted filter can
   // restore them); the main app's baseClients above already hides them everywhere else.
   const cfgMerged = config ? { ...config, clients: [...(config.clients || []).map(applyOv), ...extras.filter((cu) => !(config.clients || []).some((c) => c.id === cu.id))] } : config
-  const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, m: null, s: v === 'settings' ? undefined : null }, true) }
-  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', m: null, s: null }, true) }
+  const go = (v) => { setView(v); setPicked(null); setNavOpen(false); writeNavUrl({ v, c: null, t: null, p: null, m: null, s: v === 'settings' ? undefined : null }, true) }
+  const openClient = (c) => { setPicked(c); setView('clients'); setClientTab('overall'); setNavOpen(false); writeNavUrl({ v: 'clients', c: c.id, t: 'overall', p: null, m: null, s: null }, true) }
   // Access role gates the whole shell. Viewers (clients) never reach agency-wide
   // views - they land straight in their assigned client(s).
   const role = authEnabled && authUser ? authUser.role : 'admin'

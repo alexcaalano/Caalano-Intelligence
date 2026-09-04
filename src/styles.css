@@ -4478,3 +4478,13 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .lrv-mp-n { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11.5px; }
 .lrv-mp-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 4px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
 .lr-filt { color: var(--brand); }
+
+/* Workspace-wide pipeline picker, at the end of the client tab row. */
+.cw-pipe { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 4px 6px 4px 10px; border: 1px solid var(--border-2); border-radius: 9px; background: var(--panel-2); font-size: 12px; }
+.cw-pipe.on { border-color: var(--brand); }
+.cw-pipe-l { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 800; color: var(--faint); }
+.cw-pipe select { background: transparent; border: none; color: var(--text); font-weight: 700; font-size: 12.5px; max-width: 220px; }
+.cw-pipe.on select { color: var(--brand); }
+.cw-pipe-x { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 2px; }
+.cw-pipe-x:hover { color: var(--text); }
+@media (max-width: 760px) { .cw-pipe { margin-left: 0; width: 100%; box-sizing: border-box; } .cw-pipe select { max-width: none; flex: 1; } }

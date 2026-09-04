@@ -18,6 +18,31 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.460.0 - 2026-09-04 · `PENDING` - Pipeline is a first-class filter: one picker for the whole client workspace
+
+Each tab used to carry its own pipeline picker and forget it on the next tab.
+There is now one **Pipeline** picker at the end of the client tab row, carried
+in the link (`?p=`), that every tab follows: Caalano360, Meta Ads, Google Ads,
+Users, Forms, Location, Appointments, Call Reporting, Timing and Lost Reasons.
+A tab's own picker still works and moves the same value.
+
+On the Caalano360 tab everything recalculates within the chosen pipeline, in
+the browser, from the same payload: opportunities, booked and shown (from the
+pipeline's calendar key events), won, revenue, open pipeline, lost, result
+rate, key event reach, pipeline performance, the channel split, the revenue
+bottleneck, lost reasons with their people, and the time-to figures. Ad spend
+is allocated to the pipeline by its share of each channel's leads - the rule
+the channel split already used - and the tile says "allocated". Calendars and
+lead sources are not pipeline-aware in the CRM feed and stay account-wide; a
+note under the tab says so. Won deals now carry their pipeline so the revenue
+drill narrows too.
+
+New `tests/lens_test.mjs` covers the lens: totals, allocation, re-derived paid
+costs, row cuts, close-by-channel, lost reasons, time-to, empty and legacy
+payloads, and that the original payload is never mutated.
+
+---
+
 ## v3.459.0 - 2026-09-04 · `832c241` - One campaign, one name: spelling variants fold together in Lost Reasons
 
 Leads arrive stamped with whatever case and punctuation the link carried, so

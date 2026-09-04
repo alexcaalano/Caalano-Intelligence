@@ -4329,7 +4329,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
       if (ch === 'meta') { metaWon++; paidWon++ } else if (ch === 'google') { googleWon++; paidWon++ }
       const closeMs = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)
       const closeDate = isFinite(closeMs) ? new Date(closeMs).toISOString().slice(0, 10) : null
-      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, channel: ch })
+      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline' })
       cc.won++; cc.revenue += val; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })
     } else if (isLost) {
       cc.lost++

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.461.0'
+const APP_VERSION = '3.462.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2515,7 +2515,7 @@ function FcClient({ clients, currency, nonce, onSaveScenario }) {
         {model ? <button className="btn-ghost sm" onClick={() => onSaveScenario(fcScenarioFromModel(model, live))} title="Copy these numbers into the scenario builder to change anything about them">Open as a scenario →</button> : null}
         {spend ? <button className="btn-ghost sm" onClick={() => setSpendRaw(null)}>Reset to last 30 days</button> : null}
       </div>
-      {loading && !model ? <div className="card"><Spinner label="Reading the last 90 days…" /></div>
+      {loading && !model ? <TabLoading kind="table" label="Reading the last 90 days…" />
         : !model ? <div className="card empty-deep"><div className="big">📉</div><b>Nothing to forecast from.</b><p>{cid ? 'This client has no pipeline activity in the last 90 days, or no CRM connection.' : 'Pick a client.'}</p></div>
           : <>
             <FcHeadline fc={fc} model={model} money={money} />
@@ -2675,7 +2675,7 @@ function WeeklyTab({ rows, currency, nonce, wonBasis = 'closed' }) {
           <select value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>{[4, 6, 8, 12].map((n) => <option key={n} value={n}>Last {n} weeks</option>)}</select>
         </div>
       </div>
-      {wk.status === 'loading' ? <div className="card"><Spinner label="Loading weekly data…" /></div>
+      {wk.status === 'loading' ? <TabLoading kind="table" label="Loading weekly data…" />
         : wk.status === 'err' || !wk.data || !wk.data.weeks ? <div className="card"><p className="cap" style={{ margin: 0 }}>Couldn't load weekly data - try Refresh.</p></div>
           : (() => {
             const W = wk.data.weeks.map((w) => ({
@@ -6102,7 +6102,7 @@ function LostReasonsView({ clientId, range, nonce, currency, pipeName }) {
       <LostScorecards cc={cc} range={range} money={money} cohort={cohort} filterNote={active.length ? active.map(([d, vals]) => `${LR_LABEL[d]}: ${vals.join(', ')}`).join(' · ') : null} />
       <div className="card">
         <div className="exec-panel-h">Lost reasons <span className="sub">· {fmtNumber(rows.length)}{rows.length !== allTot ? ` of ${fmtNumber(allTot)}` : ''} lost{totVal ? `, ${money(totVal)}` : ''} · {rangeLabel(range)}</span></div>
-        {st.status === 'loading' && !cc ? <Spinner label="Loading lost deals…" />
+        {st.status === 'loading' && !cc ? <Spinner big label="Loading lost deals…" />
           : st.status === 'err' ? <div className="cap">Couldn’t load the CRM breakdown - try again.</div>
             : !facts.length ? <div className="cap">No lost opportunities recorded in this period. ✅</div>
               : <>
@@ -7409,7 +7409,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       saveInsights(clientId + ':exec', rec); setAi(rec)
     } catch (e) { setAiErr(String(e.message || e)) } finally { setAiLoading(false) }
   }
-  if (health.status === 'loading') return <div className="card"><Spinner label="Scoring business health…" /></div>
+  if (health.status === 'loading') return <TabLoading kind="exec" label="Scoring business health…" />
   if (health.status === 'err' || !health.data) return <div className="note">Couldn’t load the executive health score for this period. The detailed breakdown below is still available.</div>
   const h = health.data
   const sc = h.score || {}
@@ -7924,8 +7924,109 @@ function Pager({ pg, unit = 'rows' }) {
     </div>
   )
 }
-function Spinner({ label }) {
-  return <div className="spin-wrap"><span className="spin" />{label && <span className="spin-lbl">{label}</span>}</div>
+/* ============ Loading: 360 is connecting the dots ============
+   Every wait in the app comes through here. Nothing is shown for the first
+   third of a second - a read that lands from the cache never flashes a loader
+   - and nothing is held on screen a moment longer than the data takes. A
+   tab-level wait (`big`, or TabLoading) gets the branded sequence: the mark,
+   "360 is connecting the dots", and short lines that rotate through what the
+   read is actually doing for the open tab. An inline wait keeps the compact
+   spinner. Reduced-motion users get the same words with still marks. */
+const LOAD_REVEAL_MS = 320
+const LOAD_ROTATE_MS = 1500
+const LoadCtx = React.createContext(null)
+const LOAD_LINES = {
+  overall: ['following the leads', 'checking key events', 'matching spend to outcomes', 'spotting the leaks', 'reading the pipeline', 'finding outliers'],
+  meta: ['reading the ad account', 'matching spend to leads', 'checking the creatives', 'finding outliers', 'checking key events'],
+  google: ['reading the ad account', 'matching spend to leads', 'checking the keywords', 'finding outliers', 'checking key events'],
+  analytics: ['reading the sessions', 'following the traffic', 'matching visits to leads'],
+  users: ["following each rep's deals", 'checking key events', 'timing the follow-ups', 'spotting the leaks'],
+  forms: ['reading the forms', 'following the leads', 'matching forms to pipelines'],
+  location: ['placing the leads', 'reading the catchment', 'finding the hot spots'],
+  appts: ['checking the calendars', 'counting shows and no-shows', 'timing the bookings'],
+  calperf: ['checking the calendars', 'counting shows and no-shows'],
+  calls: ['reading the call log', 'timing the cadence', 'following the leads'],
+  timing: ['timing the first reply', 'checking work hours', 'measuring speed to lead', 'reading when enquiries land'],
+  lostreasons: ['reading why deals were lost', 'grouping the reasons', 'spotting the leaks', 'finding outliers'],
+  cohorts: ["following each week's leads", 'checking who booked and won'],
+  clinic: ['reading the practice sync', 'following the patients'],
+  optlog: ['reading the change log', 'lining up the changes'],
+  agency: ['checking every client', 'scoring business health', 'spotting the movers', 'connecting the dots'],
+  weekly: ['reading the week', 'spotting the movers', 'checking the lights'],
+  generic: ['connecting the dots', 'following the leads', 'checking key events', 'finding outliers'],
+}
+function loadPoolFor(tab, label) {
+  if (tab && LOAD_LINES[tab]) return LOAD_LINES[tab]
+  const l = String(label || '').toLowerCase()
+  if (/meta|creative/.test(l)) return LOAD_LINES.meta
+  if (/google|keyword/.test(l)) return LOAD_LINES.google
+  if (/analytics|session/.test(l)) return LOAD_LINES.analytics
+  if (/speed to lead|enquir|cadence|stage|timing/.test(l)) return LOAD_LINES.timing
+  if (/calendar|appointment/.test(l)) return LOAD_LINES.appts
+  if (/lost/.test(l)) return LOAD_LINES.lostreasons
+  if (/user|rep\b/.test(l)) return LOAD_LINES.users
+  if (/form/.test(l)) return LOAD_LINES.forms
+  if (/location|map/.test(l)) return LOAD_LINES.location
+  if (/cohort/.test(l)) return LOAD_LINES.cohorts
+  if (/clinic/.test(l)) return LOAD_LINES.clinic
+  if (/weekly|week/.test(l)) return LOAD_LINES.weekly
+  if (/scanning your|every client|business health|accounts/.test(l)) return LOAD_LINES.agency
+  return LOAD_LINES.generic
+}
+// Reveal only once the wait is real; rotate the line while it lasts.
+function useLoadReveal(pool, rotate) {
+  const [shown, setShown] = useState(false)
+  const [i, setI] = useState(0)
+  useEffect(() => { const t = setTimeout(() => setShown(true), LOAD_REVEAL_MS); return () => clearTimeout(t) }, [])
+  useEffect(() => {
+    if (!rotate || !shown || !pool || pool.length < 2) return
+    const t = setInterval(() => setI((x) => x + 1), LOAD_ROTATE_MS)
+    return () => clearInterval(t)
+  }, [rotate, shown, pool])
+  return [shown, pool && pool.length ? pool[i % pool.length] : '']
+}
+function ConnectMark() {
+  // Three nodes being joined - the dots, connected. Pure SVG, no library.
+  return (
+    <svg className="c360-mark" viewBox="0 0 48 48" width="34" height="34" aria-hidden="true">
+      <path className="c360-edge e1" d="M10 34 L24 12" /><path className="c360-edge e2" d="M24 12 L38 30" /><path className="c360-edge e3" d="M38 30 L10 34" />
+      <circle className="c360-node n1" cx="10" cy="34" r="4" /><circle className="c360-node n2" cx="24" cy="12" r="4" /><circle className="c360-node n3" cx="38" cy="30" r="4" />
+    </svg>
+  )
+}
+function Spinner({ label, big }) {
+  const tab = React.useContext(LoadCtx)
+  const pool = useMemo(() => loadPoolFor(tab, label), [tab, label])
+  const [shown, line] = useLoadReveal(pool, !!big)
+  if (big) {
+    return (
+      <div className={`c360-load${shown ? ' shown' : ''}`} role="status" aria-live="polite" aria-busy="true">
+        <ConnectMark />
+        <div className="c360-load-t"><b>360</b> is connecting the dots<span className="c360-load-dots" /></div>
+        <div className="c360-load-line" key={line}>{line}</div>
+        {label ? <div className="c360-load-cap">{label}</div> : null}
+      </div>
+    )
+  }
+  return <div className={`spin-wrap${shown ? '' : ' pending'}`} role="status" aria-busy="true"><span className="spin" />{label && <span className="spin-lbl">{label}</span>}</div>
+}
+// What a tab looks like before its data lands: the shape of the content,
+// not a blank card, with the branded sequence once the wait is real.
+function Skeleton({ kind = 'table' }) {
+  const tiles = (n) => <div className="sk-tiles">{Array.from({ length: n }, (_, i) => <div className="sk-tile" key={i}><span className="sk-l" /><span className="sk-v" /></div>)}</div>
+  const table = (rows) => <div className="sk-table">{Array.from({ length: rows }, (_, i) => <div className="sk-row" key={i}><span className="sk-c w3" /><span className="sk-c w1" /><span className="sk-c w1" /><span className="sk-c w2" /><span className="sk-c w1" /></div>)}</div>
+  if (kind === 'exec') return <>{tiles(4)}{tiles(4)}</>
+  if (kind === 'ads') return <>{tiles(4)}<div className="sk-chart" />{table(4)}</>
+  if (kind === 'grid') return <div className="sk-grid">{Array.from({ length: 6 }, (_, i) => <div className="sk-card" key={i} />)}</div>
+  return <>{tiles(3)}{table(6)}</>
+}
+function TabLoading({ kind, label }) {
+  return (
+    <div className="card tab-loading" aria-busy="true">
+      <Spinner big label={label} />
+      <div className="sk-wrap" aria-hidden="true"><Skeleton kind={kind} /></div>
+    </div>
+  )
 }
 
 function Calendar({ from, to, onPick }) {
@@ -8028,7 +8129,7 @@ function CohortView({ clientId, currency, nonce }) {
   const kpis = loadKpis(clientId)
   const [chan, setChan] = useState('all')
   const money = (v) => fmtCurrency(v, currency)
-  if (co.status === 'loading') return <div className="card"><Spinner label="Loading cohorts…" /></div>
+  if (co.status === 'loading') return <TabLoading kind="table" label="Loading cohorts…" />
   if (co.status !== 'ok' || !co.data || !co.data.weeks || !co.data.weeks.length) return <div className="card empty-deep"><div className="big">📈</div><b>No cohort data yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>Cohorts need Caalano Systems CRM data over several weeks. Once leads flow through the funnel this fills in.</p></div>
   const raw = co.data.weeks // oldest -> newest
   // Channel filter: All = every source (spend ÷ all leads = blended MER). Paid =
@@ -9251,7 +9352,7 @@ function ClinicView({ clientId, currency, nonce }) {
   const [work, setWork] = useState('winback')
   const [peek, setPeek] = useState(null)   // { title, sub, people } - the row drill
   const money = (v) => fmtCurrency(v, currency)
-  if (st.status === 'loading') return <div className="card"><Spinner label="Loading clinic data…" /></div>
+  if (st.status === 'loading') return <TabLoading kind="table" label="Loading clinic data…" />
   const d = st.data
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load clinic data.</b></div>
   if (d.ghl === false || d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected for this client.</b></div>
@@ -10208,7 +10309,7 @@ function FormsSettingsTab({ clientId }) {
   const [, force] = useState(0)
   const bump = () => force((n) => n + 1)
   useSettingsSync()
-  if (st.status === 'loading') return <Spinner label="Loading forms…" />
+  if (st.status === 'loading') return <TabLoading kind="table" label="Loading forms…" />
   const d = st.data
   if (!d || d.error || d.connected === false) return <p className="cap">Couldn’t load this client’s forms.</p>
   const forms = d.forms || []
@@ -11271,7 +11372,7 @@ function LocationView({ clientId, range, nonce, currency, pipe: pipeProp, onPipe
   }, [locs, locMetric, clientId, pipe, pipes])
   const rankPg = usePager(rank.rows.length, `${locMetric}|${pipe}|${rank.rows.length}`)
   const allPg = usePager(locs.length, `${pipe}|${locs.length}`)
-  if (st.status === 'loading') return <div className="card"><Spinner label="Loading lead locations…" /></div>
+  if (st.status === 'loading') return <TabLoading kind="table" label="Loading lead locations…" />
   const d = st.data
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn’t load location data.</b></div>
   if (d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected.</b></div>
@@ -11417,7 +11518,7 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe })
   useSettingsSync()
   const toggle = (f) => setOpen((prev) => { const n = new Set(prev); n.has(f) ? n.delete(f) : n.add(f); return n })
   const money = (v) => fmtCurrency(v, currency)
-  if (st.status === 'loading') return <div className="card"><Spinner label="Loading form performance…" /></div>
+  if (st.status === 'loading') return <TabLoading kind="table" label="Loading form performance…" />
   const d = st.data
   if (st.status === 'err' || !d) return <div className="card empty-deep"><div className="big">⚠️</div><b>Couldn't load forms.</b></div>
   if (d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn't connected.</b></div>
@@ -11594,7 +11695,7 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
       .finally(() => clearTimeout(timer))
     return () => { alive = false; ctl.abort() }
   }, [clientId, rangeQuery(range), pipeParam, calParam, userParam, nonce])
-  if (st.status === 'loading') return <div className="card"><Spinner label="Analysing appointments (booking timing & outcomes)…" /></div>
+  if (st.status === 'loading') return <TabLoading kind="table" label="Analysing appointments (booking timing & outcomes)…" />
   const dd = st.data || {}
   if (st.status === 'err' || dd.connected === false) return <div className="card empty-deep"><div className="big">📅</div><b>Couldn't load appointments.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{dd.error || 'Caalano Systems not connected.'}</p></div>
   const pipes = dd.allPipelines || []
@@ -12457,7 +12558,7 @@ function EnquiryTimesSection({ clientId, range, nonce, pipe: pipeProp, onPipe })
       topHour: byHour.indexOf(Math.max(...byHour)), topDay: byDay.indexOf(Math.max(...byDay)),
       inHours, outHours, weekend }
   }, [g, hrs])
-  if (st.status === 'loading') return <div className="card"><Spinner label="Reading when enquiries and bookings land…" /></div>
+  if (st.status === 'loading') return <TabLoading kind="table" label="Reading when enquiries and bookings land…" />
   if (st.status === 'err' || !d || d.connected === false || d.ghl === false || !g) return null
   if (!stats || !stats.total) return null
   const noun = isLeads ? 'enquiries' : view === 'made' ? 'bookings' : view === 'slot' ? 'appointments'
@@ -12648,7 +12749,7 @@ function StageTimingSection({ clientId, nonce }) {
   }, [clientId, nonce])
   const keyNames = useMemo(() => new Set((loadKeyEvents(clientId) || []).map((k) => String(typeof k === 'string' ? k : (k.stage || k.name || '')).trim().toLowerCase()).filter(Boolean)), [clientId])
   const d = st.data
-  if (st.status === 'loading') return <div className="card"><Spinner label="Measuring time in each stage…" /></div>
+  if (st.status === 'loading') return <TabLoading kind="table" label="Measuring time in each stage…" />
   if (st.status === 'err' || !d || d.connected === false || d.ghl === false) return null
   const pipes = d.pipelines || []
   if (!pipes.length) return null
@@ -12786,7 +12887,7 @@ function TimingView({ clientId, range, nonce, currency }) {
   // carries one: a not-connected or errored scan response must not replace a
   // perfectly good sampled view with a crash.
   const { view: svView, d } = speedViewState(st, scan)
-  if (svView === 'loading') return <div className="card"><Spinner label="Measuring speed to lead…" /></div>
+  if (svView === 'loading') return <TabLoading kind="table" label="Measuring speed to lead…" />
   if (svView === 'error') return <div className="card empty-deep"><div className="big">⏱️</div><b>Couldn’t measure speed to lead.</b><p style={{ maxWidth: 520 }}>The CRM didn’t answer in time. Try Refresh, or a smaller date range.</p></div>
   if (svView === 'empty') return <div className="card empty-deep"><div className="big">⏱️</div><b>No leads with conversations in this range.</b><p style={{ maxWidth: 520 }}>Speed to lead needs leads that were messaged or called.</p></div>
   const maxB = Math.max(1, ...d.buckets.map((b) => b.count))
@@ -13210,7 +13311,7 @@ function CallCadenceSection({ clientId, range, nonce, cadence, cohort, loading, 
     const after = solid.find((r) => r.day > last.day) || null
     return { base, last, after, floor }
   }, [rows])
-  if (loading) return <div className="card"><Spinner label="Working out the call cadence…" /></div>
+  if (loading) return <TabLoading kind="table" label="Working out the call cadence…" />
   if (!d) return null
   if (!d.leadsTotal) return <div className="card"><div className="exec-panel-h">Call cadence</div><div className="cap">No leads arrived in this period, so there is no cadence to measure.</div></div>
   const cur = CAD_VIEWS.find(([k]) => k === view) || CAD_VIEWS[0]
@@ -13600,7 +13701,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
   const pipes = d.pipelines || []
   const totalSpend = (d.spendByChannel && d.spendByChannel[chan] != null) ? d.spendByChannel[chan] : (d.totalSpend || 0)
   const repActivity = <><UserCallActivity users={users} clientId={clientId} range={range} nonce={nonce} currency={currency} /><UserApptActivity clientId={clientId} range={range} nonce={nonce} /></>
-  if (st.status === 'loading') return <div className="timing-view"><div className="card"><Spinner label="Loading user performance…" /></div>{repActivity}</div>
+  if (st.status === 'loading') return <div className="timing-view"><TabLoading kind="table" label="Loading user performance…" />{repActivity}</div>
   if (st.status === 'err' || d.connected === false) return <div className="timing-view"><div className="card empty-deep"><div className="big">👤</div><b>Couldn't load the rep leaderboard.</b><p style={{ maxWidth: 520, margin: '8px auto 0', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{d.error || 'Caalano Systems not connected.'}</p><p className="cap" style={{ maxWidth: 520, margin: '8px auto 0' }}>The leaderboard (opportunities-heavy) couldn't load for this window - try a smaller range. Call activity still shows below.</p></div>{repActivity}</div>
   const pipeSel = pipes.length > 1 && (
     <label className="appt-f"><span>Pipeline</span><select value={pipe} onChange={(e) => { setPipe(e.target.value); setOpen(null) }}><option value="all">All pipelines</option>{pipes.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -14286,17 +14387,17 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         </div>
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}<PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} /></div>
       </div>
-      <div style={{ marginTop: 16 }}>
+      <LoadCtx.Provider value={curTab}><div style={{ marginTop: 16 }}>
         {crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
-        {curTab === 'meta' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Meta', range)} /></div>
+        {curTab === 'meta' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Meta', range)} />
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months - ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /></>)}
-        {curTab === 'google' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Google', range)} /></div>
+        {curTab === 'google' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Google', range)} />
           : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /></>)}
-        {curTab === 'analytics' && (live.status === 'loading' ? <div className="card"><Spinner label={deepLoadLabel(live.progress, 'Analytics', range)} /></div>
+        {curTab === 'analytics' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Analytics', range)} />
           : (live.status === 'err' && !liveOK('ganalytics')) ? <DeepError channel="Google Analytics" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('ganalytics') ? 'live' : null} label={presetLabel} /><AnalyticsDeep deep={srcFor('ganalytics')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
@@ -14309,7 +14410,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'calperf' && <CalPerfView clientId={client.id} range={range} nonce={nonce} />}
         {curTab === 'clinic' && <ClinicView clientId={client.id} currency={data.currency} nonce={nonce} />}
         {curTab === 'optlog' && <ChangeLogTab clientId={client.id} range={range} nonce={nonce} hasMeta={!!(cfg.meta || client.meta)} hasGoogle={!!(cfg.google || client.google)} />}
-      </div>
+      </div></LoadCtx.Provider>
     </>
   )
 }
@@ -15282,7 +15383,7 @@ function AutoOnboardModal({ existing, onClose }) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><button className="btn-ghost sm" onClick={() => load(true)} disabled={st.status === 'loading'}>⟳ Refresh</button><button className="icon-btn" onClick={onClose}>✕</button></div>
         </div>
         <div className="m-body">
-          {st.status === 'loading' ? <Spinner label="Scanning your Caalano Systems, Meta &amp; Google accounts…" />
+          {st.status === 'loading' ? <Spinner big label="Scanning your Caalano Systems, Meta &amp; Google accounts…" />
             : st.status === 'err' ? <div className="cap">Couldn’t load accounts - <button className="btn-ghost sm" onClick={() => load(true)}>try again</button>.</div>
               : rows.length === 0 ? <div className="empty-deep" style={{ padding: '26px 10px' }}><div className="big">✓</div><b>Every Caalano Systems location is already linked to a client.</b><p className="cap">New sub-account? Install the app on it and add its ad account to your Meta Business Manager + Windsor, then hit Refresh.</p></div>
                 : (<>

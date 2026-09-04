@@ -18,6 +18,28 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.462.0 - 2026-09-04 · `PENDING` - Loading: "360 is connecting the dots"
+
+Every wait in the app now comes through one loader. Nothing shows for the
+first third of a second, so a read that lands from the cache never flashes a
+spinner, and nothing is held on screen a moment longer than the data takes -
+there are no artificial delays. A tab-level wait gets the branded sequence:
+the three-node mark being joined, "360 is connecting the dots", and short
+lines that rotate through what the read is doing for the open tab ("following
+the leads", "checking key events", "spotting the leaks", "finding outliers",
+"reading the ad account", "timing the first reply", and so on - a pool per
+tab), with the original detail line kept as a caption (the Meta and Google
+reads still report which months have loaded). Under it sits a skeleton of the
+content's shape - KPI tiles, a chart, table rows - rather than a blank card.
+
+Converted: Caalano360, Meta, Google, Analytics, Users, Forms, Location,
+Appointments, Call Reporting, Timing (all three reads), Lost Reasons, Cohorts,
+Clinic, Weekly Traffic Light and the agency scan. Inline waits (notes, terms,
+calendars, pipeline stages) keep the compact spinner, also delayed-reveal.
+Reduced-motion users get the same words with still marks.
+
+---
+
 ## v3.461.0 - 2026-09-04 · `4a1d604` - Caalano360 Intelligence: banner, bottlenecks, channel outcomes, movers, indexing
 
 The Caalano360 tab now reads as a hierarchy, every part of it within the

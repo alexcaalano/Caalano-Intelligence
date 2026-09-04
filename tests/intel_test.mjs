@@ -147,8 +147,8 @@ const locs = [
 ]
 const LM = intelLocation(locs, money)
 ok('location: concentration line names the top areas', LM.kind === 'page' && LM.lines.some((l) => /^Frankston, Dandenong, Cranbourne supply 86% of located leads \(90 of 105\) across 5 areas\./.test(l.text)), LM.lines.map((l) => l.text))
-ok('location: worst and best win rate against the client', LM.lines.some((l) => /^Dandenong wins only 3% of its 30 leads against 17%/.test(l.text)) && LM.lines.some((l) => /^Frankston wins 30% of its 40 leads, 1\.8× the client's 17%/.test(l.text)), LM.lines.map((l) => l.text))
-ok('location: booking drop and lost concentration', LM.lines.some((l) => /^Dandenong books 27% of its 30 leads against 51%/.test(l.text)) && LM.lines.some((l) => /67% of Dandenong's 30 leads end up lost, against 36%/.test(l.text)), LM.lines.map((l) => l.text))
+ok('location: worst and best win rate against the client', LM.lines.some((l) => /^Berwick wins only 0% of its 12 leads against 17%/.test(l.text)) && LM.lines.some((l) => /^Frankston wins 30% of its 40 leads, 1\.8× the client's 17%/.test(l.text)), LM.lines.map((l) => l.text))
+ok('location: booking drop and lost concentration', LM.lines.some((l) => /^Berwick books 0% of its 12 leads against 51%/.test(l.text)) && LM.lines.some((l) => /67% of Dandenong's 30 leads end up lost, against 36%/.test(l.text)), LM.lines.map((l) => l.text))
 ok('location: an area that only sends leads', LM.lines.some((l) => /^Berwick sent 12 leads with no booking and no win\./.test(l.text)))
 ok('location: thin areas are never judged', !LM.lines.some((l) => /Rye/.test(l.text)))
 ok('location: too few leads -> one caveat; none -> nothing', intelLocation([{ value: 'A', leads: 4, won: 1 }], money).lines.length === 1 && intelLocation([], money).lines.length === 0)

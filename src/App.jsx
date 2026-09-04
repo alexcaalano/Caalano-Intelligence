@@ -7949,10 +7949,10 @@ const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
 function fmtDMY(v) {
   if (v == null || v === '') return ''
   const s = String(v)
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/)
+  const m = s.match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:$|T)/)
   if (m && s.length === 10) return `${m[3]}/${m[2]}/${m[1]}`
-  const d = new Date(s)
-  return isFinite(d.getTime()) ? d.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : s
+  const when = new Date(s)
+  return isFinite(when.getTime()) ? when.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : s
 }
 const rangeLabel = (r) => r.label || `${fmtDMY(r.from)} → ${fmtDMY(r.to)}`
 // The equal-length period immediately BEFORE this range, for period-over-period

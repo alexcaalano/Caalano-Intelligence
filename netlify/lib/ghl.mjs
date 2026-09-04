@@ -355,6 +355,9 @@ async function _pageOpportunities(locTok, locationId, from, to, cap = 1500, opts
   while (guard++ < maxPages && out.length < effCap) {
     if (Date.now() - t0 > deadlineMs) break
     const q = { location_id: locationId, limit: 100, order: 'added_desc' }
+    // A status filter (won / lost / open) makes a long look-back cheap: the
+    // closed-basis drill needs every WIN of the last 400 days, not every lead.
+    if (opts.status) q.status = opts.status
     if (startAfter != null) { q.startAfter = startAfter; q.startAfterId = startAfterId }
     const j = await ghlGet(locTok, '/opportunities/search', q)
     const batch = j.opportunities || []
@@ -4190,21 +4193,28 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   const closedBasis = basis === 'closed'
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
-  // Closed basis looks back as far as wonInPeriod does, so a deal that arrived
-  // months ago and closed this range is found.
-  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - (closedBasis ? 400 : 120) * DAY).toISOString().slice(0, 10)
-  const [wideOpps, pipelines, appts, reasons, formAns, userRows] = await Promise.all([
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  // Closed basis: every win of the last 400 days, read live and won-only (a
+  // handful of pages), because the shared snapshot is capped newest-first and
+  // on a busy account reaches back only a few months - the wins it lacked were
+  // exactly the older leads that closed this range. Same look-back as wonInPeriod.
+  const wonFrom = new Date((fromMs != null ? fromMs : Date.now()) - 400 * DAY).toISOString().slice(0, 10)
+  const [wideOpps0, pipelines, appts, reasons, formAns, userRows, wonWide] = await Promise.all([
     // Best-effort snapshot: this 120-day window is only for name resolution + close
     // context; the in-period cohort (from..to) is recent and always fully covered.
     // Serving from the warm snapshot here avoids the live /opportunities/search page
     // that was the single biggest source of 429s for high-volume clients.
-    allOpportunities(locTok, locationId, wideFrom, to, closedBasis ? 2500 : 2000, { snapshotBestEffort: true }),
+    allOpportunities(locTok, locationId, wideFrom, to, 2000, { snapshotBestEffort: true }),
     fetchPipelines(locTok, locationId),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), perCalendar: new Map() })),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     formAnswersByContact(locTok, locationId, from, to).catch(() => new Map()),
     ghlGet(locTok, '/users/', { locationId }).then((j) => j.users || []).catch(() => []),
+    closedBasis ? allOpportunities(locTok, locationId, wonFrom, to, 2500, { noSnapshot: true, status: 'won', deadlineMs: 6500 }).catch(() => []) : Promise.resolve([]),
   ])
+  // Merge the won-only read into the wide set by id, so nothing is counted twice.
+  let wideOpps = wideOpps0
+  if (wonWide.length) { const byId = new Map(wideOpps0.map((o) => [o.id, o])); for (const o of wonWide) if (o && o.id && !byId.has(o.id)) byId.set(o.id, o); wideOpps = [...byId.values()] }
   const idx = stageIndexFrom(pipelines)
   const pipeName = {}; for (const p of pipelines) pipeName[p.id] = p.name
   const userName = {}; for (const u of userRows) userName[u.id || u._id] = u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || ('User ' + String(u.id || '').slice(-4))

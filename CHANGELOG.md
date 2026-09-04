@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.468.0 - 2026-09-04 · `PENDING` - Closed-basis wins: read every win of the last 400 days
+
+v3.466.0 made the drill count wins by status change on the Closed basis, but
+it looked for them in the shared opportunity snapshot, which is capped
+newest-first and on a busy account reaches back only a few months. Nexia's
+last 14 days showed 10 wins against the CRM's 16: the six missing were the
+older leads (four from September 2025, two from April and May) that closed
+this fortnight and were simply not in the snapshot. The drill now reads the
+wins of the last 400 days live and won-only - a few pages, run alongside the
+other reads - and merges them in by id. Refresh once after deploy so the
+cached payload is replaced.
+
+---
+
 ## v3.467.0 - 2026-09-04 · `caa4e85` - Key event reach fills the width
 
 The reach cards inherited the seven fixed columns of the tile rows above,

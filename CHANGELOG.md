@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.463.0 - 2026-09-04 · `PENDING` - Keep loading and retry; an error only for access failures
+## v3.463.0 - 2026-09-04 · `edf53ea` - Keep loading and retry; an error only for access failures
 
 A Meta or Google read that did not finish used to be painted as "No activity
 in this period" (Meta) or an error card (Google), and the empty Meta answer

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.475.0 - 2026-09-04 · `PENDING` - Dates read DD/MM/YYYY
+## v3.475.0 - 2026-09-04 · `e742db7` - Dates read DD/MM/YYYY
 
 Every place a full date was shown as YYYY-MM-DD now shows DD/MM/YYYY: the
 custom period label in the header, the Won deals and close-by-channel

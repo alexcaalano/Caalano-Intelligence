@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.474.0 - 2026-09-04 · `PENDING` - Caalano360 waits for every read, then says what failed
+## v3.474.0 - 2026-09-04 · `44925c2` - Caalano360 waits for every read, then says what failed
 
 The tab painted from the health score first and repainted when the CRM
 drill landed, so on a slow drill the Won tile sat on the wrong figure for

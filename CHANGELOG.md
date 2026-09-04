@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.479.0 - 2026-09-04 · `PENDING` - ROAS is the last column
+## v3.479.0 - 2026-09-04 · `914bb26` - ROAS is the last column
 
 In Channel performance, ROAS moves to the end of the row, after Avg deal.
 

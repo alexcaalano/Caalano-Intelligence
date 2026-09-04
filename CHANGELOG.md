@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.459.0 - 2026-09-04 · `PENDING` - One campaign, one name: spelling variants fold together in Lost Reasons
+## v3.459.0 - 2026-09-04 · `832c241` - One campaign, one name: spelling variants fold together in Lost Reasons
 
 Leads arrive stamped with whatever case and punctuation the link carried, so
 the same campaign turned up in the Lost Reasons filters three times

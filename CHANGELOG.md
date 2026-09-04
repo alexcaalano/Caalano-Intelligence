@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.473.0 - 2026-09-04 · `PENDING` - Won deals drill: created on and time to close
+
+The Won deals drill on Caalano360 gains a **Created on** column and a
+**Time to close** column (days from the lead arriving to being marked won,
+"same day" when it closed the day it arrived). Older cached payloads show a
+dash until they are rebuilt.
+
+---
+
 ## v3.472.0 - 2026-09-04 · `4bd046e` - A cut-short wins read is flagged, never saved as complete
 
 The won-only snapshot pages newest-first, and a cold interactive build has a

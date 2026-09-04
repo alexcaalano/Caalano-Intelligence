@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.472.0'
+const APP_VERSION = '3.473.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6816,8 +6816,8 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
   } else if (drill.kind === 'revenue') {
     const deals = (d.revenue && d.revenue.deals) || []
     subhead = `${fmtNumber(deals.length)} won ${deals.length === 1 ? 'deal' : 'deals'} · ${money((d.revenue && d.revenue.total) || 0)}`
-    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Won on</th><th className="lft">Source</th></tr></thead>
-      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.closeDate || '-'}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
+    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th><th>Created on</th><th>Won on</th><th title="Days from the lead arriving to being marked won">Time to close</th><th className="lft">Source</th></tr></thead>
+      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td><td>{dl.createdDate || '-'}</td><td>{dl.closeDate || '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
       : <div className="cap">No won deals in this period.</div>
   } else if (drill.kind === 'spend') {
     subhead = `${money(spend.total || 0)} total ad spend`

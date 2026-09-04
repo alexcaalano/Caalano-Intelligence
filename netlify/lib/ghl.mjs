@@ -4415,7 +4415,12 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
       if (ch === 'meta') { metaWon++; paidWon++ } else if (ch === 'google') { googleWon++; paidWon++ }
       const closeMs = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)
       const closeDate = isFinite(closeMs) ? new Date(closeMs).toISOString().slice(0, 10) : null
-      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline' })
+      // Created date and days to close ride along so the Won deals drill can show
+      // how long each deal took, not just when it landed.
+      const createdMs = Date.parse(o.createdAt)
+      const createdDate = isFinite(createdMs) ? new Date(createdMs).toISOString().slice(0, 10) : null
+      const daysToClose = (isFinite(createdMs) && isFinite(closeMs) && closeMs >= createdMs) ? Math.round((closeMs - createdMs) / DAY) : null
+      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, createdDate, daysToClose, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline' })
       cc.won++; cc.revenue += val; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })
     } else if (isLost) {
       cc.lost++

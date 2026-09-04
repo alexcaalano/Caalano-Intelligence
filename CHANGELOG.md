@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.476.0 - 2026-09-04 · `PENDING` - The banner belongs to the page it sits on
+## v3.476.0 - 2026-09-04 · `23afe41` - The banner belongs to the page it sits on
 
 The 360 Intelligence banner showed the whole account's CRM lines on every
 tab, only reordered. It is now the open page's: a page that has its own

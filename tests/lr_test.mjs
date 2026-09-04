@@ -9,8 +9,8 @@ const lift = (name) => {
   for (; i < src.length; i++) { const c = src[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) break } }
   return src.slice(a, i + 1)
 }
-const body = ['lrOppFacts', 'lrMatch', 'lrCohortStats'].map(lift).join('\n')
-const { lrOppFacts, lrMatch, lrCohortStats } = new Function(body + '\nreturn { lrOppFacts, lrMatch, lrCohortStats }')()
+const body = ['lrOppFacts', 'lrFacts', 'lrMatch', 'lrCohortStats', 'lrFoldDict', 'applyAliases'].map(lift).join('\n') + "\nconst unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')\nconst LR_FOLD_LEVEL = { campaign: 'campaign', adset: 'medium', creative: 'content', keyword: null }\nconst lrFoldVal = (fold, k, v) => (fold && fold[k] && fold[k][v]) || v"
+const { lrOppFacts, lrFacts, lrMatch, lrCohortStats, lrFoldDict, applyAliases } = new Function(body + '\nreturn { lrOppFacts, lrFacts, lrMatch, lrCohortStats, lrFoldDict, applyAliases }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
 
@@ -82,6 +82,36 @@ ok('quartiles withheld under 8', stats({ campaign: ['CD_062', 'CD_063'] }).timeT
 // Empty cohort is all zeros and nulls, never NaN.
 s = stats({ campaign: ['CD_999'] })
 ok('empty cohort is clean', s.totals.leads === 0 && s.timeToWon.median === null && s.timeToWon.mean === null, s)
+
+
+// --- spelling variants fold to one name -------------------------------------
+const fdict = { ...dict, campaign: ['Cd_12_page_view_a_adhd', 'CD_12_Page_View_A_ADHD', 'CD 12 page view a adhd', 'CD_13_Other', 'Not tagged'], creative: ['vid_a', 'VID_A'] }
+const frows = [
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null], [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, null], // 3 x lowercase
+  [1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 5],                                                                      // 1 x TitleCase
+  [2, 0, 0, 2, 0, 1, 0, 0, 0, 0, 2],                                                                      // 1 x spaced
+  [0, 0, 0, 3, 0, 0, 0, 0, 0, 0, null],                                                                   // CD_13
+]
+const fcc = { oppFacts: { keys, dict: fdict, rows: frows } }
+let fold = lrFoldDict(fcc, { campaign: {}, medium: {}, content: {} })
+ok('variants map to the most-common spelling', fold.campaign && fold.campaign['CD_12_Page_View_A_ADHD'] === 'Cd_12_page_view_a_adhd' && fold.campaign['CD 12 page view a adhd'] === 'Cd_12_page_view_a_adhd', fold.campaign)
+ok('the chosen spelling is not mapped to itself, and lone names are untouched', fold.campaign && !('Cd_12_page_view_a_adhd' in fold.campaign) && !('CD_13_Other' in fold.campaign), fold.campaign)
+ok('creative folds too', fold.creative && fold.creative['VID_A'] === 'vid_a', fold.creative)
+ok('Not tagged never folds', !fold.campaign || !('Not tagged' in fold.campaign))
+let fo = lrOppFacts(fcc, fold)
+ok('decoded rows carry the folded name', new Set(fo.slice(0, 5).map((r) => r.campaign)).size === 1 && fo[5].campaign === 'CD_13_Other', fo.map((r) => r.campaign))
+fold = lrFoldDict(fcc, { campaign: { 'cd_12_page_view_a_adhd': 'CD_12 Page View (2026)' }, medium: {}, content: {} })
+ok('a manual alias wins over the count, matched case-insensitively', fold.campaign && ['Cd_12_page_view_a_adhd', 'CD_12_Page_View_A_ADHD', 'CD 12 page view a adhd'].every((v) => fold.campaign[v] === 'CD_12 Page View (2026)'), fold.campaign)
+ok('no facts -> empty fold, not a throw', Object.keys(lrFoldDict(null, {})).length === 0 && Object.keys(lrFoldDict({}, {})).length === 0)
+// Lost rows fold with the same dictionary.
+const lcc = { lostFacts: { keys: ['reason', 'campaign'], dict: { reason: ['Budget'], campaign: ['cd_12_x', 'CD_12_X'] }, rows: [[0, 0, 0, null, 'A', 1], [0, 1, 0, null, 'B', 1], [0, 1, 0, null, 'C', 1]] } }
+const lfold = lrFoldDict(lcc, {})
+ok('lost-only payload folds by lost rows', lfold.campaign && lfold.campaign['cd_12_x'] === 'CD_12_X', lfold)
+ok('lrFacts applies it', lrFacts(lcc, lfold).every((r) => r.campaign === 'CD_12_X'))
+// Outcome lists fold even with no aliases at all.
+const merged = applyAliases([{ name: 'CD_12_X', leads: 10, won: 1 }, { name: 'cd_12_x', leads: 3, won: 0 }, { name: 'CD_13', leads: 2, won: 0 }], {})
+ok('applyAliases folds spelling variants with an empty map', merged.length === 2 && merged[0].name === 'CD_12_X' && merged[0].leads === 13 && merged[0].won === 1, merged)
+ok('applyAliases with no map at all', applyAliases([{ name: 'a b', leads: 1 }, { name: 'A_B', leads: 1 }]).length === 1)
 
 console.log(`${n - bad}/${n} lost-reason cohort checks passed`)
 if (bad) process.exit(1)

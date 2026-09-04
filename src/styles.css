@@ -2507,6 +2507,10 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .alias-cur { flex: 1 1 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #12b886; font-weight: 700; }
 .alias-sel { flex: 1 1 45%; min-width: 0; max-width: 100%; }
 .alias-set { background: rgba(18,184,134,.06); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; }
+.alias-folded { margin: 0 0 8px; }
+.alias-folded > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); padding: 4px 0; }
+.alias-folded > summary b { color: var(--text); }
+.alias-row.alias-fold { padding: 3px 0 3px 12px; opacity: .85; }
 .alias-x { background: none; border: none; color: var(--faint); cursor: pointer; font-size: 12px; flex: 0 0 auto; }
 .alias-x:hover { color: var(--neg); }
 @media (max-width: 640px) { .alias-row { flex-wrap: wrap; } .alias-old, .alias-cur, .alias-sel { flex: 1 1 100%; } .alias-arrow { display: none; } }

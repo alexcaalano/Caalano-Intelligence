@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.458.0'
+const APP_VERSION = '3.459.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4380,10 +4380,12 @@ function setKeep(clientId, level, name, on) {
 }
 // Fold old-UTM outcome rows into their current-name row using an alias map
 // { oldName: currentName }. Sums numeric fields and merges the stage/calendar maps.
+// Spelling variants (case, punctuation) of one name are folded together even
+// with no aliases set - the first entry seen keeps its spelling, and the lists
+// arrive most-leads-first, so that is the spelling most leads carry.
 function applyAliases(arr, aliasMap) {
-  if (!Array.isArray(arr) || !arr.length || !aliasMap || !Object.keys(aliasMap).length) return arr || []
-  const norm = new Map(); for (const k in aliasMap) if (aliasMap[k]) norm.set(unorm(k), aliasMap[k])
-  if (!norm.size) return arr
+  if (!Array.isArray(arr) || !arr.length) return arr || []
+  const norm = new Map(); if (aliasMap) for (const k in aliasMap) if (aliasMap[k]) norm.set(unorm(k), aliasMap[k])
   const MAPS = ['stages', 'cals', 'calsShown', 'calsOccurred']
   const byCanon = new Map(); const order = []
   for (const e of arr) {
@@ -5291,14 +5293,52 @@ const LR_LABEL = Object.fromEntries(LR_DIMS.map((d) => [d[0], d[1]]))
 const LR_TIP = Object.fromEntries(LR_DIMS.map((d) => [d[0], d[2]]))
 const LR_COLS_MAX = 6
 
+// One name per campaign / ad set / creative / keyword, however the UTM was
+// typed. Leads arrive stamped with whatever case and punctuation the link
+// carried - "CD_12_Page_View", "cd_12_page_view", "CD 12 page view" - and the
+// rest of the app already treats those as one thing (the alias editor hides
+// them as matched, the outcome tables merge them). The fact rows carried the
+// raw spellings, so Lost Reasons showed one campaign three times. This builds
+// raw spelling -> display name per dimension: a manual alias wins, otherwise
+// the spelling with the most opportunities behind it.
+const LR_FOLD_LEVEL = { campaign: 'campaign', adset: 'medium', creative: 'content', keyword: null }
+function lrFoldDict(cc, aliases) {
+  const out = {}
+  const lf = cc && cc.lostFacts, of = cc && cc.oppFacts
+  const dictOf = (k) => ((of && of.dict && of.dict[k]) || (lf && lf.dict && lf.dict[k]) || [])
+  for (const dim of Object.keys(LR_FOLD_LEVEL)) {
+    const dict = dictOf(dim)
+    if (!dict.length) continue
+    // Rows per raw spelling, from every opportunity where we have them.
+    const src = (of && of.rows && of.rows.length) ? of : lf
+    const idx = src && src.keys ? src.keys.indexOf(dim) : -1
+    const off = src === of ? 1 : 0   // opp rows lead with the status byte
+    const count = new Map()
+    if (idx >= 0 && src.rows) for (const r of src.rows) count.set(r[idx + off], (count.get(r[idx + off]) || 0) + 1)
+    const manual = (aliases && LR_FOLD_LEVEL[dim] && aliases[LR_FOLD_LEVEL[dim]]) || {}
+    const alias = new Map(); for (const k in manual) if (manual[k]) alias.set(unorm(k), manual[k])
+    const groups = new Map()   // unorm -> [dictIndex...]
+    dict.forEach((v, i) => { if (v === 'Not tagged') return; const key = unorm(v); if (!key) return; const g = groups.get(key); if (g) g.push(i); else groups.set(key, [i]) })
+    const map = {}
+    for (const [key, ids] of groups) {
+      const target = alias.get(key)
+      const display = target || dict[ids.reduce((b, i) => ((count.get(i) || 0) > (count.get(b) || 0) ? i : b), ids[0])]
+      if (ids.length > 1 || target) for (const i of ids) if (dict[i] !== display) map[dict[i]] = display
+    }
+    if (Object.keys(map).length) out[dim] = map
+  }
+  return out
+}
+const lrFoldVal = (fold, k, v) => (fold && fold[k] && fold[k][v]) || v
+
 // Decode the dictionary-encoded fact rows into plain objects once per payload.
-function lrFacts(cc) {
+function lrFacts(cc, fold) {
   const f = cc && cc.lostFacts
   if (!f || !f.rows) return []
   const keys = f.keys || []
   return f.rows.map((r) => {
     const o = {}
-    keys.forEach((k, i) => { o[k] = (f.dict[k] || [])[r[i]] })
+    keys.forEach((k, i) => { o[k] = lrFoldVal(fold, k, (f.dict[k] || [])[r[i]]) })
     o.value = r[keys.length] || 0
     o.contactId = r[keys.length + 1] || null
     o.name = r[keys.length + 2] || '-'
@@ -5309,14 +5349,14 @@ function lrFacts(cc) {
 
 // Every opportunity in the period, any status - the rows the scorecards follow
 // the filters with. Same dictionaries as the lost rows.
-function lrOppFacts(cc) {
+function lrOppFacts(cc, fold) {
   const f = cc && cc.oppFacts
   if (!f || !f.rows) return []
   const keys = f.keys || []
   const STATUS = ['open', 'won', 'lost']
   return f.rows.map((r) => {
     const o = { status: STATUS[r[0]] || 'open' }
-    keys.forEach((k, i) => { o[k] = (f.dict[k] || [])[r[i + 1]] })
+    keys.forEach((k, i) => { o[k] = lrFoldVal(fold, k, (f.dict[k] || [])[r[i + 1]]) })
     o.stagePos = r[keys.length + 1]
     o.days = r[keys.length + 2]
     return o
@@ -5754,14 +5794,17 @@ function LostReasonsView({ clientId, range, nonce, currency }) {
   const money = (v) => fmtCurrency(v, currency)
   const cc = st.data || null
   const mode = useThemeMode()
-  const rawFacts = useMemo(() => lrFacts(cc), [cc])
+  useSettingsSync()
+  const aliasesAll = SETTINGS.aliases
+  const fold = useMemo(() => lrFoldDict(cc, loadAliases(clientId)), [cc, clientId, aliasesAll])
+  const rawFacts = useMemo(() => lrFacts(cc, fold), [cc, fold])
   const evs = useMemo(() => lrKeyEventSpec(clientId), [clientId, cc])
   const stageOrderAll = (cc && cc.lostFacts && cc.lostFacts.stageOrder) || {}
   const facts = useMemo(() => {
     return rawFacts.map((f) => ({ ...f, keyevent: lrKeyEventOf(evs, stageOrderAll, f) }))
   }, [rawFacts, cc, clientId, nonce])
   // Every opportunity, enriched the same way, for the scorecards.
-  const oppFacts = useMemo(() => lrOppFacts(cc).map((f) => ({ ...f, keyevent: lrKeyEventOf(evs, stageOrderAll, f) })), [cc, evs])
+  const oppFacts = useMemo(() => lrOppFacts(cc, fold).map((f) => ({ ...f, keyevent: lrKeyEventOf(evs, stageOrderAll, f) })), [cc, fold, evs])
   const colors = useMemo(() => lrColorMap(facts, mode), [facts, mode])
   // Funnel position for the two ordered dimensions, so every list of stages or
   // key events reads in funnel order rather than by how many deals died in each.
@@ -14375,6 +14418,15 @@ function AliasEditor({ clientId, nonce }) {
       && !(keep[lvl] && keep[lvl][o.name])
       && !(aliases[lvl] && aliases[lvl][o.name])).sort((a, b) => b.leads - a.leads).slice(0, 40)
   }
+  // Old spellings that differ from a current name only by case or punctuation.
+  // They are not offered for linking because they already fold into that name
+  // everywhere - but they are listed, so "no unmatched UTMs" never hides them.
+  const folded = (lvl) => {
+    if (!namesLoaded) return []
+    const live = new Map(curList[lvl].map((o) => [unorm(o.name), o.name]))
+    return (outcomes[lvl] || []).filter((o) => o.leads > 0 && o.name && live.has(unorm(o.name)) && live.get(unorm(o.name)) !== o.name && !(aliases[lvl] && aliases[lvl][o.name]))
+      .map((o) => ({ ...o, cur: live.get(unorm(o.name)) })).sort((a, b) => b.leads - a.leads).slice(0, 40)
+  }
   const LEVELS = [['campaign', 'Campaigns', 'utm_campaign'], ['medium', 'Ad sets', 'utm_medium'], ['content', 'Creatives', 'utm_content']]
   return (
     <div className="linker">
@@ -14384,6 +14436,7 @@ function AliasEditor({ clientId, nonce }) {
         : !namesLoaded ? <div className="alias-warn"><b>⚠ Couldn't load the current campaign / ad-set / ad names</b> from the ad account, so we can't tell which UTMs are unmatched (everything would look unmatched). This is usually a temporary load issue on a large account.<button className="btn-ghost sm" style={{ marginLeft: 8 }} onClick={() => setSt({ status: 'idle' })}>↻ Retry</button></div>
           : LEVELS.map(([lvl, label, utm]) => {
             const un = unmatched(lvl)
+            const fo = folded(lvl)
             const existing = Object.entries(aliases[lvl] || {})
             const keptList = Object.keys(keep[lvl] || {})
             return (
@@ -14395,6 +14448,9 @@ function AliasEditor({ clientId, nonce }) {
                 {keptList.length > 0 && <div className="alias-existing">{keptList.map((oldN) => (
                   <div className="alias-row alias-kept" key={oldN}><span className="alias-old" title={oldN}>{oldN}</span><span className="alias-kept-tag">kept separate</span><button className="alias-x" title="Undo - show this UTM in the unmatched list again" onClick={() => setKeep(clientId, lvl, oldN, false)}>✕</button></div>
                 ))}</div>}
+                {fo.length > 0 && <details className="alias-folded"><summary><b>{fo.length} spelling{fo.length === 1 ? '' : 's'}</b> fold into current names automatically <span className="cap">· same name, different case or punctuation - already counted together everywhere</span></summary>{fo.map((o) => (
+                  <div className="alias-row alias-fold" key={o.name}><span className="alias-old" title={o.name}>{o.name} <span className="alias-leads">· {fmtNumber(o.leads)} lead{o.leads === 1 ? '' : 's'}</span></span><span className="alias-arrow">→</span><span className="alias-cur" title={o.cur}>{o.cur}</span></div>
+                ))}</details>}
                 {un.length === 0 ? <p className="cap" style={{ margin: '2px 0 0' }}>{existing.length ? 'No further unmatched UTMs.' : 'No unmatched UTMs - everything ties to a current name.'}</p>
                   : un.map((o) => {
                     const oc = adCode(o.name)

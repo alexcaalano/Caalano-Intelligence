@@ -18,6 +18,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.459.0 - 2026-09-04 · `PENDING` - One campaign, one name: spelling variants fold together in Lost Reasons
+
+Leads arrive stamped with whatever case and punctuation the link carried, so
+the same campaign turned up in the Lost Reasons filters three times
+(`Cd_12_page_view_a_adhd…`, `CD_12_Page_View_A_ADHD…`, `Cd_12_page_view_a_adhd As…`)
+while the UTM aliases screen reported nothing to link - it already treated
+those as the same name and hid them. The two now agree.
+
+- **Lost Reasons** folds spelling variants of a campaign, ad set, creative or
+  keyword into one name: a manual alias wins, otherwise the spelling most
+  leads carry. Every filter, chip, table and scorecard uses the folded name.
+- **Outcome tables** everywhere fold spelling variants even when a client has
+  no aliases set (they only did so once an alias existed).
+- **UTM aliases** lists what it folds automatically, per level, under an
+  expandable "N spellings fold into current names automatically" line with
+  the old spelling, its lead count and the current name it folds into - so
+  "no unmatched UTMs" never hides a variant again. Real renames still need
+  linking as before.
+
+---
+
 ## v3.458.0 - 2026-09-04 · `0c1b9c1` - Settings: the section list no longer slides over the client name
 
 Scrolling a long settings section (Key events with several pipelines) let the

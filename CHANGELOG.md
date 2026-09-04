@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.460.0 - 2026-09-04 · `PENDING` - Pipeline is a first-class filter: one picker for the whole client workspace
+## v3.460.0 - 2026-09-04 · `c200562` - Pipeline is a first-class filter: one picker for the whole client workspace
 
 Each tab used to carry its own pipeline picker and forget it on the next tab.
 There is now one **Pipeline** picker at the end of the client tab row, carried

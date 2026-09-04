@@ -10,8 +10,9 @@ const lift = (name) => {
   return src.slice(a, i + 1)
 }
 const consts = src.slice(src.indexOf('const INTEL_MIN_BASE'), src.indexOf('function intelReach('))
-const body = consts + ['intelReach', 'intelChannels', 'intelMovers', 'intelIndex', 'intelLines'].map(lift).join('\n') + "\nconst fmtNumber = (v) => String(v)\n"
-const { intelReach, intelChannels, intelMovers, intelIndex, intelLines } = new Function(body + 'return { intelReach, intelChannels, intelMovers, intelIndex, intelLines }')()
+const body = consts + ['intelReach', 'intelChannels', 'intelMovers', 'intelIndex', 'intelLines', 'intelAds', 'intelFindings'].map(lift).join('\n') + "\nconst fmtNumber = (v) => String(v)\n"
+const consts2 = src.slice(src.indexOf('const INTEL_DIMS'), src.indexOf('function intelFindings('))
+const { intelReach, intelChannels, intelMovers, intelIndex, intelLines, intelAds, intelFindings } = new Function(body + consts2 + 'return { intelReach, intelChannels, intelMovers, intelIndex, intelLines, intelAds, intelFindings }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
 const near = (a, b, t = 1e-6) => Math.abs(a - b) <= t
@@ -33,6 +34,9 @@ ok('a step whose base is under 10 is not judged', R[1].bottleneck === true && !R
 R = intelReach([{ label: 'A', kind: 'stage', count: 50, leadBase: 100, pipeline: 'x' }, { label: 'B', kind: 'stage', count: 40, leadBase: 100, pipeline: 'x' }, { label: 'A', kind: 'stage', count: 10, leadBase: 50, pipeline: 'y' }, { label: 'B', kind: 'stage', count: 9, leadBase: 50, pipeline: 'y' }], 150, [], 0)
 ok('one bottleneck per pipeline', R.filter((r) => r.bottleneck).map((r) => r.pipelineId + r.label).join() === 'xA,yA', R.map((r) => [r.pipelineId, r.label, r.bottleneck]))
 ok('no rows -> no throw', intelReach([], 0, [], 0).length === 0)
+// Not split by pipeline: every event sits in one chain whatever it is tagged.
+R = intelReach([{ label: 'Call', kind: 'stage', count: 83, leadBase: 127, pipeline: 'x' }, { label: 'Paid', kind: 'stage', count: 1, leadBase: 127, pipeline: 'x' }, { label: 'Call', kind: 'stage', count: 110, leadBase: 127, pipeline: 'y' }], 127, [], 0, false)
+ok('single-pipeline view is one row', new Set(R.map((r) => r.pipelineId)).size === 1 && R.filter((r) => r.bottleneck).length === 1, R.map((r) => r.pipelineId))
 // Closed basis: more wins than leads. Clamped, flagged, not a mover.
 R = intelReach([{ label: 'Call', kind: 'stage', count: 110, leadBase: 31 }, { label: 'Won', kind: 'won', count: 110, leadBase: 31 }], 31, [{ label: 'Call', kind: 'stage', count: 112, leadBase: 27 }, { label: 'Won', kind: 'won', count: 112, leadBase: 27 }], 27)
 ok('reach over 100% is clamped and flagged', R[0].rate === 1 && R[0].over === true && R[0].prevRate === 1 && R[0].prevOver === true && R[1].step === 1, R)
@@ -99,7 +103,7 @@ ok('thin cut is shown but not indexed', (() => { const J = intelIndex({ ...icc, 
 ok('no facts -> null', intelIndex({}, {}) === null)
 
 // --- banner lines --------------------------------------------------------------
-const model = { cc, pcc, reach: intelReach(rows, 100, prev, 80).map((r) => ({ ...r, pipelineName: 'Allied' })), channels: C, movers: M, index: I }
+const model = { cc, pcc, reach: intelReach(rows, 100, prev, 80).map((r) => ({ ...r, pipelineName: 'Allied' })), channels: C, movers: M, index: I, findings: intelFindings(icc, null, {}, { P1: { pos: 1, label: 'Booked' }, P2: { pos: 2, label: 'Won' } }) }
 const L = intelLines(model, money)
 ok('lines exist and are ranked high first', L.length >= 4 && L[0].sev === 'high' || L[0].sev === 'med', L.map((l) => l.sev))
 ok('the bottleneck line names the step and both counts', L.some((l) => /Biggest leak in Allied: 30% .*Showed \(12 of 40\)/.test(l.text) && /down from 50%/.test(l.text)), L.map((l) => l.text))
@@ -107,8 +111,33 @@ ok('the channel line compares win rates and cost per win', L.some((l) => /Meta w
 ok('the lost-reason concentration line', L.some((l) => /"Budget" accounts for 50% of lost deals \(20 of 40\)/.test(l.text)))
 ok('the pace line', L.some((l) => /Losses take 14 days to be called against 4 days to win/.test(l.text)))
 ok('mover lines carry tab tags', L.filter((l) => /vs the previous period/.test(l.text)).every((l) => l.tags.includes('overall')))
-ok('an indexing outlier line, under-performer first', (() => { const i = L.findIndex((l) => /Campaign Camp B converts at 23% of the account average \(1 of 20 won\), and only 5 reached the first key event/.test(l.text)); const j = L.findIndex((l) => /Camp A converts at 182%/.test(l.text)); return i >= 0 && j > i })(), L.map((l) => l.text))
+ok('the strongest under-index leads the findings lines, then the best', (() => { const i = L.findIndex((l) => /Camp B \(campaign\) win only 5% of the time against the account's 22%/.test(l.text)); const j = L.findIndex((l) => /Camp A \(campaign\) win 40% of the time, 1\.8×/.test(l.text)); return i >= 0 && j > i })(), L.map((l) => l.text))
 ok('thin period caveat appears under 30 leads', intelLines({ cc: { totals: { leads: 12, won: 1, lost: 2 } }, reach: [], channels: [], movers: [] }, money).some((l) => /Only 12 opportunities/.test(l.text)))
 ok('empty model -> no lines, no throw', intelLines(null, money).length === 0 && intelLines({ cc: null, reach: [], channels: [], movers: [] }, money).length === 0)
+
+// --- the ad tabs read their own page ------------------------------------------
+const metaDeep = { totals: { spend: 1000, leads: 20 }, prev: { spend: 800, leads: 20 }, campaigns: [
+  { name: 'A', spend: 600, results: 15, prev: { spend: 500, leads: 12 } }, { name: 'B', spend: 300, results: 2, prev: { spend: 300, leads: 8 } }, { name: 'C', spend: 100, results: 0, prev: null }],
+  ads: [{ name: 'ad1', spend: 40, results: 0 }, { name: 'ad2', spend: 10, results: 0 }] }
+let A = intelAds(metaDeep, 'meta', money)
+ok('ads model: results from campaigns, cost per result', A.spend === 1000 && A.results === 17 && near(A.cpr, 1000 / 17), A)
+ok('cost per result move line', A.lines.some((l) => /Cost per result \+47% vs the previous period: \$59 from \$40 \(results -15% vs spend \+25%\)/.test(l.text)), A.lines.map((l) => l.text))
+ok('campaign against the account cost per result', A.lines.some((l) => /^B costs \$150 per result, 255% of the account's \$59/.test(l.text)) && A.lines.some((l) => /^A is the efficient one: \$40 per result, 68%/.test(l.text)), A.lines.map((l) => l.text))
+// --- findings across every cut ---
+const F = intelFindings(icc, null, { campaign: { 'Camp B': 'Camp B' } }, { P1: { pos: 1, label: 'Booked' }, P2: { pos: 2, label: 'Won' } })
+ok('findings: campaign A ahead on win rate, B behind', F.some((x) => x.dim === 'campaign' && x.label === 'Camp A' && x.metric === 'win' && x.better && x.idx === 182) && F.some((x) => x.label === 'Camp B' && x.metric === 'win' && !x.better && x.idx === 23), F.map((x) => [x.dim, x.label, x.metric, x.idx, x.better]))
+ok('findings read as sentences', F.find((x) => x.label === 'Camp A' && x.metric === 'win').text === 'Camp A (campaign) win 40% of the time, 1.8× the account\'s 22% (8 of 20 won).', F.find((x) => x.label === 'Camp A' && x.metric === 'win').text)
+ok('channels are findings too, thin cuts are not', F.some((x) => x.dim === 'channel' && x.label === 'Meta') && !F.some((x) => x.n < 10))
+ok('the strongest finding ranks first', F[0].score >= F[F.length - 1].score)
+const FL = intelFindings({ ...icc, lostFacts: { keys: ['reason', 'pipeline', 'stage'], dict: { reason: ['Budget', 'Cold'], pipeline: ['P1'], stage: ['Called #3', 'New'] }, rows: [...Array(8).fill([0, 0, 0]), ...Array(2).fill([1, 0, 1])] } }, { lostFacts: { keys: ['reason', 'pipeline', 'stage'], dict: { reason: ['Budget', 'Cold'], pipeline: ['P1'], stage: ['Called #3'] }, rows: [...Array(5).fill([0, 0, 0]), ...Array(5).fill([1, 0, 0])] } }, {}, {})
+ok('losses concentrate at a stage and a reason, with the move vs prev', FL.some((x) => x.metric === 'loststage' && /Losses pile up at Called #3: 80% of lost deals/.test(x.text)) && FL.some((x) => x.metric === 'lostreason' && /"Budget" is 80% of lost deals \(8 of 10\), up from 50% last period/.test(x.text)), FL.map((x) => x.text))
+ok('no facts -> no findings', intelFindings({}, null, {}, {}).length === 0)
+ok('zero-result spend flagged', A.lines.some((l) => /^C spent \$100 with no results/.test(l.text) && l.sev === 'high'))
+ok('dead ad flagged, the tiny one ignored', A.lines.some((l) => /^1 ad spent \$40 with no results \(ad1\)/.test(l.text)))
+ok('lines carry the channel tag', A.lines.every((l) => l.tags.includes('meta')))
+const g = intelAds({ totals: { cost: 500, conversions: 10 }, prev: { cost: 500, conversions: 10 }, campaigns: [{ campaign: 'G1', cost: 450, conversions: 9 }, { campaign: 'G2', cost: 50, conversions: 1 }] }, 'google', money)
+ok('google: conversions, concentration line, no movement line', g.results === 10 && g.lines.some((l) => /^G1 carries 90% of Google spend/.test(l.text)) && !g.lines.some((l) => /previous period/.test(l.text)), g.lines.map((l) => l.text))
+ok('too little spend -> one caveat', intelAds({ totals: { spend: 12 }, campaigns: [] }, 'meta', money).lines.length === 1 && intelAds(null, 'meta', money) === null)
+
 console.log(`${n - bad}/${n} intelligence checks passed`)
 if (bad) process.exit(1)

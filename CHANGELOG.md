@@ -18,6 +18,33 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.464.0 - 2026-09-04 · `PENDING` - Intelligence reads each page, opens collapsed, and finds over/under-indexes across every cut
+
+- **The banner reads the page it sits on.** On Meta Ads and Google Ads it is
+  built from that tab's own payload - spend, results, cost per result, the
+  campaigns and ads, the previous window - not the CRM drill: cost-per-result
+  movement with its spend/results decomposition, campaigns priced against the
+  account's cost per result, spend with no results, one-campaign concentration,
+  dead ads. CRM tabs keep the CRM model.
+- **Collapsed by default.** One line - "360 Intelligence · 5 insights" with a
+  dot for the most serious one - and a click opens every line, remembered
+  between visits.
+- **Indexing insights became "Where this account over- and under-indexes":**
+  plain-English findings across pipelines, channels, campaigns, ad sets,
+  creatives, keywords and sources (win rate, reach of the first key event,
+  lost share, each against the account's own figure for the period and
+  pipeline), plus where losses concentrate - the stage they sit at and the
+  reason, with its move against last period. Split into "Pulling ahead" and
+  "Falling behind", strongest first; the table lives behind a disclosure.
+  Campaign names are folded the way Lost Reasons folds them, so one campaign
+  no longer appears three times. Locations and form answers are not in this
+  read yet.
+- **Key event reach** is one row again unless the tab is split by pipeline.
+  The cards had grouped by each event's pipeline tag, which split a single
+  view in two.
+
+---
+
 ## v3.463.0 - 2026-09-04 · `edf53ea` - Keep loading and retry; an error only for access failures
 
 A Meta or Google read that did not finish used to be painted as "No activity

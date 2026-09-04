@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.463.0'
+const APP_VERSION = '3.464.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6999,11 +6999,13 @@ const intelRate = (n, d) => (d ? n / d : null)
 // pipeline). Step = share of the row above (leads for the first). The bottleneck
 // is the LOWEST step whose base is big enough to judge - the same rule the
 // Revenue bottleneck panel uses - so both always point at the same stage.
-function intelReach(rows, leadTotal, prevRows, prevLeadTotal) {
+function intelReach(rows, leadTotal, prevRows, prevLeadTotal, multi = true) {
   const keyOf = (r) => `${r.pipeline || ''}|${r.label}`
   const prevBy = new Map((prevRows || []).map((r) => [keyOf(r), r]))
+  // One chain per pipeline only when the view is split by pipeline; otherwise
+  // every key event sits in one row, as the reach tiles always have.
   const groups = new Map()
-  for (const r of rows || []) { const k = r.pipeline || '__all__'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r) }
+  for (const r of rows || []) { const k = multi ? (r.pipeline || '__all__') : '__all__'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r) }
   const out = []
   for (const [pid, rs] of groups) {
     const base = (rs[0] && rs[0].leadBase) || leadTotal || 0
@@ -7115,7 +7117,7 @@ function intelMovers(cc, pcc, reach, prevReach) {
 // channels, and the campaigns with the most leads, read from the
 // per-opportunity rows so a campaign's win rate and reach are its own.
 // `firstKe` maps a pipeline NAME to { pos, label } of its first key event.
-function intelIndex(cc, firstKe) {
+function intelIndex(cc, firstKe, fold) {
   const f = cc && cc.oppFacts
   if (!f || !f.rows || !f.keys) return null
   const keys = f.keys, dict = f.dict || {}
@@ -7129,7 +7131,8 @@ function intelIndex(cc, firstKe) {
     bump(base, r)
     bump(get(by.pipeline, (dict.pipeline || [])[r[iPipe + 1]] || 'Pipeline'), r)
     const ch = (dict.channel || [])[r[iChan + 1]]; bump(get(by.channel, ch === 'meta' || ch === 'google' ? ch : 'other'), r)
-    bump(get(by.campaign, (dict.campaign || [])[r[iCamp + 1]] || 'Not tagged'), r)
+    const rawCamp = (dict.campaign || [])[r[iCamp + 1]] || 'Not tagged'
+    bump(get(by.campaign, (fold && fold.campaign && fold.campaign[rawCamp]) || rawCamp), r)
   }
   const sp = (cc.spend || {}); const spendOf = { meta: sp.meta || 0, google: sp.google || 0 }
   const metrics = (a, spend) => ({ leads: a.leads, won: a.won, lost: a.lost, reach: a.reach, winRate: intelRate(a.won, a.leads), resultRate: intelRate(a.won, a.won + a.lost), keReach: intelRate(a.reach, a.leads), cpl: spend && a.leads ? spend / a.leads : null })
@@ -7144,6 +7147,68 @@ function intelIndex(cc, firstKe) {
   const campaigns = [...by.campaign.entries()].filter(([k]) => k !== 'Not tagged').map(([k, a]) => seg('campaign', k, a, null)).sort((a, b) => b.leads - a.leads).slice(0, 8)
   const sortLeads = (x) => x.sort((a, b) => b.leads - a.leads)
   return { base: baseM, pipelines: sortLeads(pipelines), channels: sortLeads(channels), campaigns, capped: !!f.capped, total: f.total || base.leads }
+}
+
+// Where the account over- and under-indexes, in plain English, across every
+// cut the drill carries: pipeline, channel, campaign, ad set, creative,
+// keyword, source (from the per-opportunity rows, names folded like Lost
+// Reasons), plus where losses concentrate - the reason and the stage. Each
+// finding is one cut, one measure, against the account's own figure for the
+// same period and pipeline. Thin cuts are never judged.
+const INTEL_DIMS = [['pipeline', 'pipeline'], ['channel', 'channel'], ['campaign', 'campaign'], ['adset', 'ad set'], ['creative', 'creative'], ['keyword', 'keyword'], ['source', 'source']]
+function intelFindings(cc, pcc, fold, firstKe, opts = {}) {
+  const f = cc && cc.oppFacts
+  if (!f || !f.rows || !f.keys) return []
+  const keys = f.keys, dict = f.dict || {}, iPipe = keys.indexOf('pipeline'), iPos = keys.length + 1
+  const nameOf = (dim, r) => { const i = keys.indexOf(dim); if (i < 0) return null; const raw = (dict[dim] || [])[r[i + 1]]; return raw == null ? null : ((fold && fold[dim] && fold[dim][raw]) || raw) }
+  const reached = (r) => { if (r[0] === 1) return true; const pn = (dict.pipeline || [])[r[iPipe + 1]]; const k = firstKe && (firstKe[pn] || firstKe['*']); return !!(k && k.pos != null && r[iPos] >= k.pos) }
+  const acc = () => ({ leads: 0, won: 0, lost: 0, reach: 0 })
+  const bump = (a, r) => { a.leads++; if (r[0] === 1) a.won++; else if (r[0] === 2) a.lost++; if (reached(r)) a.reach++ }
+  const base = acc(); const by = new Map(INTEL_DIMS.map(([d]) => [d, new Map()]))
+  for (const r of f.rows) {
+    bump(base, r)
+    for (const [d] of INTEL_DIMS) { const nm = nameOf(d, r); if (!nm || nm === 'Not tagged' || nm === 'other' && d === 'channel' && false) continue; const m = by.get(d); let a = m.get(nm); if (!a) { a = acc(); m.set(nm, a) } bump(a, r) }
+  }
+  const out = []
+  const rate = (n, d) => (d ? n / d : null)
+  const idx = (v, b) => (v == null || !b ? null : Math.round((v / b) * 100))
+  const keLabel = (firstKe && Object.values(firstKe)[0] && Object.values(firstKe)[0].label) || 'the first key event'
+  const pc = (v) => `${Math.round(v * 100)}%`
+  const chanLabel = (k) => (k === 'meta' ? 'Meta' : k === 'google' ? 'Google' : k === 'other' ? 'Non-paid' : k)
+  const B = { win: rate(base.won, base.leads), reach: rate(base.reach, base.leads), lost: rate(base.lost, base.leads) }
+  const skipPipes = by.get('pipeline').size < 2
+  for (const [d, dLabel] of INTEL_DIMS) {
+    if (d === 'pipeline' && skipPipes) continue
+    for (const [nm, a] of by.get(d)) {
+      if (a.leads < INTEL_MIN_BASE) continue
+      const label = d === 'channel' ? chanLabel(nm) : nm
+      const who = d === 'channel' ? `${label} leads` : `${label} (${dLabel})`
+      const M = { win: rate(a.won, a.leads), reach: rate(a.reach, a.leads), lost: rate(a.lost, a.leads) }
+      const push = (metric, v, b, better, text, weight) => { const i = idx(v, b); if (i == null || (i < 130 && i > 70)) return; out.push({ dim: d, label, metric, idx: i, value: v, base: b, n: a.leads, better, text, score: Math.abs(i - 100) * Math.log2(a.leads) * weight }) }
+      // Win rate: at least two deals of difference, so one lucky win cannot make a finding.
+      if (B.win && Math.abs(a.won - B.win * a.leads) >= 2) push('win', M.win, B.win, M.win > B.win, M.win > B.win ? `${who} win ${pc(M.win)} of the time, ${(M.win / B.win).toFixed(1)}× the account's ${pc(B.win)} (${fmtNumber(a.won)} of ${fmtNumber(a.leads)} won).` : `${who} win only ${pc(M.win)} of the time against the account's ${pc(B.win)} (${fmtNumber(a.won)} of ${fmtNumber(a.leads)} won).`, 1.2)
+      if (B.reach && Math.abs(a.reach - B.reach * a.leads) >= 3) push('reach', M.reach, B.reach, M.reach > B.reach, `${who} reach ${keLabel} ${pc(M.reach)} of the time vs ${pc(B.reach)} across the account (${fmtNumber(a.reach)} of ${fmtNumber(a.leads)}).`, 1)
+      if (B.lost && Math.abs(a.lost - B.lost * a.leads) >= 3) push('lost', M.lost, B.lost, M.lost < B.lost, `${pc(M.lost)} of ${who} end up lost, vs ${pc(B.lost)} across the account (${fmtNumber(a.lost)} of ${fmtNumber(a.leads)}).`, 0.9)
+    }
+  }
+  // Where losses concentrate: the stage, and the reason (with its move vs prev).
+  const lf = cc.lostFacts
+  if (lf && lf.rows && lf.keys) {
+    const iStage = lf.keys.indexOf('stage'), iReason = lf.keys.indexOf('reason')
+    const total = lf.rows.length
+    if (total >= INTEL_MIN_BASE) {
+      const cnt = (i) => { const m = new Map(); for (const r of lf.rows) { const v = (lf.dict[lf.keys[i]] || [])[r[i]]; if (v && v !== 'Not tagged') m.set(v, (m.get(v) || 0) + 1) } return [...m.entries()].sort((a, b) => b[1] - a[1]) }
+      if (iStage >= 0) { const [st, n] = cnt(iStage)[0] || []; if (st && n / total >= 0.35) out.push({ dim: 'stage', label: st, metric: 'loststage', idx: null, value: n / total, base: null, n, better: false, text: `Losses pile up at ${st}: ${pc(n / total)} of lost deals were sitting there (${fmtNumber(n)} of ${fmtNumber(total)}).`, score: 40 * Math.log2(total) }) }
+      if (iReason >= 0) {
+        const [rs, n] = cnt(iReason)[0] || []
+        const plf = pcc && pcc.lostFacts, pi = plf && plf.keys ? plf.keys.indexOf('reason') : -1
+        let prevShare = null
+        if (rs && plf && plf.rows && pi >= 0 && plf.rows.length >= INTEL_MIN_BASE) { const pn = plf.rows.filter((r) => (plf.dict.reason || [])[r[pi]] === rs).length; prevShare = pn / plf.rows.length }
+        if (rs && (n / total >= 0.35 || (prevShare != null && Math.abs(n / total - prevShare) >= 0.1))) out.push({ dim: 'reason', label: rs, metric: 'lostreason', idx: null, value: n / total, base: prevShare, n, better: prevShare != null && n / total < prevShare, text: `"${rs}" is ${pc(n / total)} of lost deals (${fmtNumber(n)} of ${fmtNumber(total)})${prevShare != null ? `, ${n / total > prevShare ? 'up' : 'down'} from ${pc(prevShare)} last period` : ''}.`, score: (30 + (prevShare != null ? Math.abs(n / total - prevShare) * 200 : 0)) * Math.log2(total) })
+      }
+    }
+  }
+  return out.sort((a, b) => b.score - a.score)
 }
 
 // The banner: ranked, deterministic sentences from the model. Each line carries
@@ -7183,11 +7248,12 @@ function intelLines(m, money) {
   // Indexing outliers.
   const ix = m.index
   if (ix) {
-    // The under-performer first (it is the one to act on), then the best.
-    const cands = [...(ix.campaigns || []), ...(ix.pipelines || [])].filter((sg) => !sg.thin && sg.leads >= 15 && sg.idx.winRate != null && (sg.idx.winRate <= 60 || sg.idx.winRate >= 140))
-    const worst = cands.filter((sg) => sg.idx.winRate < 100).sort((a, b) => a.idx.winRate - b.idx.winRate)[0]
-    const best = cands.filter((sg) => sg.idx.winRate > 100).sort((a, b) => b.idx.winRate - a.idx.winRate)[0]
-    for (const outl of [worst, best]) if (outl) add(outl.idx.winRate < 100 ? 'med' : 'good', ['overall', 'meta', 'google', 'lostreasons'], `${outl.kind === 'campaign' ? 'Campaign' : 'Pipeline'} ${outl.label} converts at ${outl.idx.winRate}% of the account average (${fmtNumber(outl.won)} of ${fmtNumber(outl.leads)} won)${outl.idx.keReach != null && outl.idx.keReach < 80 ? `, and only ${fmtNumber(outl.reach)} reached the first key event` : ''}.`)
+    // The strongest under-index first (it is the one to act on), then the strongest over-index.
+    const fs = m.findings || []
+    const worst = fs.find((x) => !x.better), best = fs.find((x) => x.better)
+    const tagsFor = (x) => ['overall', ...(x.dim === 'channel' && x.label === 'Meta' ? ['meta'] : []), ...(x.dim === 'channel' && x.label === 'Google' ? ['google'] : []), ...(['campaign', 'adset', 'creative', 'keyword'].includes(x.dim) ? ['meta', 'google'] : []), ...(['reason', 'stage', 'lost'].includes(x.dim) || x.metric === 'lost' ? ['lostreasons'] : []), ...(x.dim === 'source' ? ['forms', 'location'] : [])]
+    if (worst) add(worst.metric === 'loststage' || worst.metric === 'lostreason' ? 'med' : 'med', tagsFor(worst), worst.text)
+    if (best && best !== worst) add('good', tagsFor(best), best.text)
   }
   // Lost reasons and pace.
   const lr = (m.cc && m.cc.lostByReason) || []
@@ -7203,6 +7269,49 @@ function intelLines(m, money) {
   return out.sort((a, b) => rank[a.sev] - rank[b.sev])
 }
 
+// The Meta and Google tabs read THEIR page: the deep payload those tabs are
+// drawn from (spend, results, cost per result, campaigns, ads, the previous
+// window), not the CRM drill. Same discipline: deterministic, thin-data aware.
+function intelAds(d, channel, money) {
+  if (!d) return null
+  const meta = channel === 'meta'
+  const tot = d.totals || {}, prev = d.prev || {}
+  const camps = (d.campaigns || []).map((c) => ({ name: c.name || c.campaign || 'Campaign', spend: (meta ? c.spend : c.cost) || 0, results: (meta ? c.results : c.conversions) || 0, prevSpend: c.prev ? ((meta ? c.prev.spend : c.prev.cost) || 0) : null, prevResults: c.prev ? ((meta ? c.prev.leads : c.prev.conversions) || 0) : null }))
+  const spend = (meta ? tot.spend : tot.cost) || camps.reduce((s, c) => s + c.spend, 0)
+  const results = camps.length ? camps.reduce((s, c) => s + c.results, 0) : ((meta ? tot.leads : tot.conversions) || 0)
+  const prevSpend = (meta ? prev.spend : prev.cost) || 0, prevResults = (meta ? prev.leads : prev.conversions) || 0
+  const cpr = results ? spend / results : null, prevCpr = prevResults ? prevSpend / prevResults : null
+  const unit = meta ? 'result' : 'conversion'
+  const L = meta ? 'Meta' : 'Google'
+  const lines = []
+  const add = (sev, text) => lines.push({ sev, tags: [channel, 'overall'], text })
+  const f = (v) => `${v > 0 ? '+' : ''}${Math.round(v)}%`
+  if (!spend || spend < 50) { add('low', `Only ${money(Math.round(spend || 0))} spent on ${L} in this period - too little to read.`); return { kind: 'ads', channel, lines, spend, results, cpr } }
+  // Headline movement.
+  const sp = intelPct(spend, prevSpend), rp = intelPct(results, prevResults), cp = intelPct(cpr, prevCpr)
+  if (cp != null && prevSpend >= 50 && Math.abs(cp) >= INTEL_MIN_MOVE) add(cp > 0 ? (cp >= 40 ? 'high' : 'med') : 'good', `Cost per ${unit} ${f(cp)} vs the previous period: ${money(Math.round(cpr))} from ${money(Math.round(prevCpr))} (${unit}s ${f(rp)} vs spend ${f(sp)}).`)
+  else if (rp != null && Math.max(results, prevResults) >= 5 && Math.abs(rp) >= INTEL_MIN_MOVE) add(rp > 0 ? 'good' : 'med', `${L} ${unit}s ${f(rp)} vs the previous period: ${fmtNumber(results)} from ${fmtNumber(prevResults)}${sp != null ? ` on spend ${f(sp)}` : ''}.`)
+  else if (sp != null && prevSpend >= 50 && Math.abs(sp) >= INTEL_MIN_MOVE) add('low', `${L} spend ${f(sp)} vs the previous period: ${money(Math.round(spend))} from ${money(Math.round(prevSpend))}, with cost per ${unit} about the same.`)
+  // Campaigns against the account's own cost per result.
+  const big = camps.filter((c) => c.spend >= Math.max(50, spend * 0.1))
+  const idxOf = (c) => (cpr && c.results ? Math.round(((c.spend / c.results) / cpr) * 100) : null)
+  const worst = big.filter((c) => idxOf(c) != null && idxOf(c) >= 140).sort((a, b) => idxOf(b) - idxOf(a))[0]
+  const best = big.filter((c) => idxOf(c) != null && idxOf(c) <= 70 && c.results >= 3).sort((a, b) => idxOf(a) - idxOf(b))[0]
+  if (worst) add('med', `${worst.name} costs ${money(Math.round(worst.spend / worst.results))} per ${unit}, ${idxOf(worst)}% of the account's ${money(Math.round(cpr))} (${fmtNumber(worst.results)} from ${money(Math.round(worst.spend))}).`)
+  if (best) add('good', `${best.name} is the efficient one: ${money(Math.round(best.spend / best.results))} per ${unit}, ${idxOf(best)}% of the account's (${fmtNumber(best.results)} from ${money(Math.round(best.spend))}).`)
+  const zero = camps.filter((c) => c.spend >= Math.max(50, spend * 0.05) && !c.results).sort((a, b) => b.spend - a.spend)
+  if (zero.length) add('high', `${zero.length === 1 ? zero[0].name + ' spent' : `${zero.length} campaigns spent`} ${money(Math.round(zero.reduce((a, c) => a + c.spend, 0)))} with no ${unit}s${zero.length > 1 ? ` (largest ${zero[0].name})` : ''}.`)
+  const top = [...camps].sort((a, b) => b.spend - a.spend)[0]
+  if (top && camps.length > 1 && top.spend / spend >= 0.6) add('low', `${top.name} carries ${Math.round((top.spend / spend) * 100)}% of ${L} spend - the account rides on one campaign.`)
+  if (meta && Array.isArray(d.ads) && d.ads.length) {
+    const dead = d.ads.filter((a) => (a.spend || 0) >= 30 && !(a.results || 0))
+    if (dead.length) add(dead.length >= 3 ? 'med' : 'low', `${dead.length} ad${dead.length === 1 ? '' : 's'} spent ${money(Math.round(dead.reduce((a, x) => a + (x.spend || 0), 0)))} with no ${unit}s${dead.length === 1 ? ` (${dead[0].name})` : ''}.`)
+  }
+  const rank = { high: 0, med: 1, good: 2, low: 3 }
+  lines.sort((a, b) => rank[a.sev] - rank[b.sev])
+  return { kind: 'ads', channel, lines, spend, results, cpr }
+}
+
 // One model from a current and previous (lensed) drill payload.
 function buildIntel(cc, pcc, clientId, money) {
   if (!cc) return null
@@ -7210,8 +7319,8 @@ function buildIntel(cc, pcc, clientId, money) {
   const kef = ccKeyEventFunnel(cc, clientId, tot.won, tot.leads)
   const pkef = pcc ? ccKeyEventFunnel(pcc, clientId, ptot.won, ptot.leads) : { rows: [], leadTotal: 0 }
   const names = kef.pipeNames || new Map()
-  const reach = intelReach(kef.rows, kef.leadTotal, pkef.rows, pkef.leadTotal).map((r) => ({ ...r, pipelineName: r.pipeline ? (names.get(r.pipeline) || null) : null }))
-  const prevReach = intelReach(pkef.rows, pkef.leadTotal, [], 0)
+  const reach = intelReach(kef.rows, kef.leadTotal, pkef.rows, pkef.leadTotal, kef.multi).map((r) => ({ ...r, pipelineName: kef.multi && r.pipeline ? (names.get(r.pipeline) || null) : null }))
+  const prevReach = intelReach(pkef.rows, pkef.leadTotal, [], 0, kef.multi)
   // First key event per pipeline (by name), for the reach index.
   const firstKe = {}
   const stagePos = stagePosMap(cc.pipelinesFunnel || [])
@@ -7225,35 +7334,44 @@ function buildIntel(cc, pcc, clientId, money) {
   }
   const channels = intelChannels(cc)
   const movers = intelMovers(cc, pcc, reach, prevReach)
-  const index = intelIndex(cc, firstKe)
-  const m = { cc, pcc, reach, channels, movers, index, firstKe, usingKe: kef.usingKe, multi: kef.multi }
+  const fold = lrFoldDict(cc, loadAliases(clientId))
+  const index = intelIndex(cc, firstKe, fold)
+  const findings = intelFindings(cc, pcc, fold, firstKe)
+  const m = { cc, pcc, reach, channels, movers, index, findings, firstKe, usingKe: kef.usingKe, multi: kef.multi }
   m.lines = intelLines(m, money || ((v) => `$${fmtNumber(v)}`))
   return m
 }
 // The intelligence banner: the same strip on every major tab. Lines are the
 // model's, ordered so the ones that speak to the open tab come first.
 const INTEL_TABS = new Set(['overall', 'meta', 'google', 'users', 'forms', 'location', 'appts', 'calls', 'timing', 'lostreasons'])
+const INTEL_OPEN_KEY = 'caalano_intel_open'
 function IntelBanner({ model, status, tab, pipeName, range }) {
-  const [more, setMore] = useState(false)
-  useEffect(() => { setMore(false) }, [tab, pipeName])
+  // Collapsed to one line by default; opening shows every line and is remembered.
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(INTEL_OPEN_KEY) === '1' } catch { return false } })
+  const toggle = () => setOpen((o) => { const nx = !o; try { localStorage.setItem(INTEL_OPEN_KEY, nx ? '1' : '0') } catch { /* private mode */ } return nx })
   const lines = (model && model.lines) || []
   const key = tab || 'overall'
   // A channel tab is about that channel: lines that speak only to the other
   // paid channel are left out, the rest lead with the ones tagged for this tab.
   const other = key === 'meta' ? 'google' : key === 'google' ? 'meta' : null
   const ordered = lines.filter((l) => !(other && l.tags.includes(other) && !l.tags.includes(key))).sort((a, b) => (b.tags.includes(key) ? 1 : 0) - (a.tags.includes(key) ? 1 : 0))
-  const shown = more ? ordered : ordered.slice(0, 3)
+  const worst = ordered[0]
+  const n = ordered.length
+  const source = model && model.kind === 'ads' ? `the ${model.channel === 'meta' ? 'Meta' : 'Google'} figures on this page` : 'the figures on this page'
   return (
-    <div className={`intel-banner${status === 'loading' ? ' is-loading' : ''}`}>
-      <div className="intel-h"><span className="intel-mark">360</span><b>Intelligence</b><span className="sub">· {rangeLabel(range)}{pipeName ? <> · <b>{pipeName}</b> pipeline</> : ''} · read from the figures on this page, against the previous equal window</span></div>
-      {status === 'loading' && !model ? <div className="intel-lines"><div className="intel-skel" /><div className="intel-skel w2" /></div>
-        : status === 'err' && !model ? <div className="cap">No CRM read for this period yet, so there is nothing to say.</div>
-          : !model ? null
-            : !lines.length ? <div className="cap">Nothing stands out - the funnel, channels and movers are all within their usual range for this period.</div>
-              : <>
-                <ul className="intel-lines">{shown.map((l, i) => <li key={i} className={`intel-line sev-${l.sev}`}><span className="intel-dot" />{l.text}</li>)}</ul>
-                {ordered.length > 3 ? <button type="button" className="link-btn intel-more" onClick={() => setMore((m) => !m)}>{more ? 'Show less' : `${ordered.length - 3} more`}</button> : null}
-              </>}
+    <div className={`intel-banner${open ? ' open' : ''}${status === 'loading' ? ' is-loading' : ''}`}>
+      <button type="button" className="intel-h intel-toggle" onClick={toggle} aria-expanded={open}>
+        <span className="intel-mark">360</span><b>Intelligence</b>
+        <span className="sub">· {rangeLabel(range)}{pipeName ? <> · <b>{pipeName}</b> pipeline</> : ''} · read from {source}, against the previous equal window</span>
+        <span className="intel-count">{status === 'loading' && !model ? 'reading…' : status === 'err' && !model ? 'no read' : !model ? '' : n ? `${n} insight${n === 1 ? '' : 's'}` : 'nothing stands out'}{worst && !open ? <span className={`intel-dot inline sev-${worst.sev}`} /> : null}</span>
+        <span className="intel-chev" aria-hidden="true">{open ? '▴' : '▾'}</span>
+      </button>
+      {!open ? null
+        : status === 'loading' && !model ? <div className="intel-lines"><div className="intel-skel" /><div className="intel-skel w2" /></div>
+          : status === 'err' && !model ? <div className="cap">No read for this period yet, so there is nothing to say.</div>
+            : !model ? null
+              : !n ? <div className="cap">Nothing stands out - everything on this page is within its usual range for the period.</div>
+                : <ul className="intel-lines">{ordered.map((l, i) => <li key={i} className={`intel-line sev-${l.sev}`}><span className="intel-dot" />{l.text}</li>)}</ul>}
     </div>
   )
 }
@@ -7308,7 +7426,30 @@ function IntelMovers({ movers, money, hasPrev }) {
     </div>
   )
 }
-function IntelIndex({ index, money }) {
+function IntelFindings({ findings, index, money }) {
+  if (!findings) return null
+  const ahead = findings.filter((x) => x.better).slice(0, 6), behind = findings.filter((x) => !x.better).slice(0, 6)
+  const DIM = { pipeline: 'Pipeline', channel: 'Channel', campaign: 'Campaign', adset: 'Ad set', creative: 'Creative', keyword: 'Keyword', source: 'Source', stage: 'Stage', reason: 'Lost reason' }
+  const item = (x, i) => (
+    <li key={i} className={`if-item ${x.better ? 'good' : 'bad'}`}>
+      <span className="if-chip">{x.idx != null ? x.idx : `${Math.round(x.value * 100)}%`}</span>
+      <div className="if-body"><span>{x.text}</span><span className="cap">{DIM[x.dim] || x.dim} · {x.metric === 'win' ? 'win rate' : x.metric === 'reach' ? 'reach' : x.metric === 'lost' ? 'lost share' : x.metric === 'loststage' ? 'where losses sit' : 'lost reason'}{x.idx != null ? ` · ${x.idx} against 100` : ''}</span></div>
+    </li>
+  )
+  return (
+    <div className="card">
+      <div className="exec-panel-h">Where this account over- and under-indexes <span className="sub">· every cut measured against the account's own average for this period and pipeline · 100 is the average, 150 is half as much again, 50 is half</span></div>
+      {!findings.length ? <p className="cap" style={{ margin: 0 }}>No cut with enough leads (10 or more) sits far enough from the account's average to call out this period.</p>
+        : <div className="if-cols">
+          <div><div className="if-h good">Pulling ahead</div>{ahead.length ? <ul className="if-list">{ahead.map(item)}</ul> : <p className="cap">Nothing ahead of the average by a clear margin.</p>}</div>
+          <div><div className="if-h bad">Falling behind</div>{behind.length ? <ul className="if-list">{behind.map(item)}</ul> : <p className="cap">Nothing behind the average by a clear margin.</p>}</div>
+        </div>}
+      {index ? <details className="if-details"><summary>The full table · pipelines, channels and the campaigns with the most leads</summary><IntelIndex index={index} money={money} bare /></details> : null}
+      <Caveat>Each finding is one cut against the account as a whole for the same period and pipeline, so it is relative: a campaign "pulling ahead" in a poor period is still the best of that period. Cuts under 10 leads are never judged, and a win-rate finding needs at least two deals of difference so one lucky win cannot make one. Campaign, ad set, creative and keyword names are folded the same way Lost Reasons folds them. Locations and form answers are not in this read yet.</Caveat>
+    </div>
+  )
+}
+function IntelIndex({ index, money, bare }) {
   if (!index) return null
   const pc = (v) => (v == null ? '-' : `${Math.round(v * 100)}%`)
   const rows = (kind, list) => list.map((sg) => (
@@ -7325,8 +7466,8 @@ function IntelIndex({ index, money }) {
   const b = index.base
   const groups = [['Pipelines', index.pipelines], ['Channels', index.channels], ['Campaigns · most leads', index.campaigns]].filter(([, l]) => l && l.length)
   return (
-    <div className="card">
-      <div className="exec-panel-h">Indexing insights <span className="sub">· every cut against this account's own average for the period (100 = the average; 130 is 30% above it)</span></div>
+    <div className={bare ? 'idx-bare' : 'card'}>
+      {bare ? null : <div className="exec-panel-h">Indexing insights <span className="sub">· every cut against this account's own average for the period (100 = the average; 130 is 30% above it)</span></div>}
       <div className="tbl-scroll"><table className="mini-tbl users-tbl idx-tbl">
         <thead><tr><th className="lft">Cut</th><th>Leads · share</th><th>Won</th><th>Win rate</th><th>Result rate</th><th title="Reached the first key event, or won">Reach 1st key event</th><th>Cost / lead</th></tr></thead>
         <tbody>
@@ -7607,7 +7748,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
 
       {/* Biggest movers and Indexing insights - from the same model as the reach above. */}
       {cc && intel ? <IntelMovers movers={intel.movers} money={money} hasPrev={!!pcc} /> : null}
-      {cc && intel ? <IntelIndex index={intel.index} money={money} /> : null}
+      {cc && intel ? <IntelFindings findings={intel.findings} index={intel.index} money={money} /> : null}
 
       {/* Pipeline performance - per-pipeline overall key-event scorecards (all
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
@@ -14423,7 +14564,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}<PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} /></div>
       </div>
       <LoadCtx.Provider value={curTab}><div style={{ marginTop: 16 }}>
-        {crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
+        {(curTab === 'meta' || curTab === 'google')
+          ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={null} range={range} />
+          : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'meta' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Meta', range)} />

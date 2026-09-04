@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.465.0 - 2026-09-04 · `PENDING` - Pipeline lens applies to the key events themselves
+## v3.465.0 - 2026-09-04 · `4c3fd0a` - Pipeline lens applies to the key events themselves
 
 With a pipeline chosen in the header, the Revenue bottleneck, Key event
 reach and Channel performance still listed the other pipeline's key events

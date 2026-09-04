@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.464.0 - 2026-09-04 · `PENDING` - Intelligence reads each page, opens collapsed, and finds over/under-indexes across every cut
+## v3.464.0 - 2026-09-04 · `9b32a4a` - Intelligence reads each page, opens collapsed, and finds over/under-indexes across every cut
 
 - **The banner reads the page it sits on.** On Meta Ads and Google Ads it is
   built from that tab's own payload - spend, results, cost per result, the

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.462.0 - 2026-09-04 · `PENDING` - Loading: "360 is connecting the dots"
+## v3.462.0 - 2026-09-04 · `47c6e4e` - Loading: "360 is connecting the dots"
 
 Every wait in the app now comes through one loader. Nothing shows for the
 first third of a second, so a read that lands from the cache never flashes a

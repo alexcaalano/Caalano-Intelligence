@@ -18,6 +18,12 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.479.0 - 2026-09-04 · `PENDING` - ROAS is the last column
+
+In Channel performance, ROAS moves to the end of the row, after Avg deal.
+
+---
+
 ## v3.478.0 - 2026-09-04 · `ef91155` - Pipeline picker above the tab bar
 
 The picker lived at the end of the tab bar, which scrolls sideways on a

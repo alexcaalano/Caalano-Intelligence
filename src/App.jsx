@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.464.0'
+const APP_VERSION = '3.465.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6354,9 +6354,13 @@ function priorityActions(h, money, ca) {
 // Build a client's key-event funnel rows from the ccdrill payload. Shared by the
 // Revenue-bottleneck panel and the command-centre Rates tiles so both read the
 // exact same numbers. Returns { rows, leadTotal, usingKe }.
+// Within a pipeline lens only that pipeline's key events apply: stage names are
+// shared between pipelines, so without this the other pipeline's "15 Minute
+// Call" would still resolve against the lensed funnel and appear twice.
+const ccKeyEventsOf = (cc, clientId) => (clientId ? keyEventsForPipe(loadKeyEvents(clientId), cc && cc.lens ? cc.lens.pipeline : 'all') : [])
 function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const pipes = (cc && cc.pipelinesFunnel) || []
-  const keList = clientId ? loadKeyEvents(clientId) : []
+  const keList = ccKeyEventsOf(cc, clientId)
   const rmap = reachedByStage(pipes)
   const stagePos = stagePosMap(pipes)
   const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, cancelled: 0 }]))
@@ -6380,7 +6384,7 @@ const sourceDotChan = (ch) => ch === 'meta' ? '#4f7cff' : ch === 'google' ? '#12
 // Returns { labels:[{label,kind}], meta:[counts], google:[counts] } or null.
 function channelKeyEvents(cc, clientId) {
   const pipes = (cc && cc.pipelinesFunnel) || []
-  const keList = clientId ? loadKeyEvents(clientId) : []
+  const keList = ccKeyEventsOf(cc, clientId)
   if (!keList.length || !pipes.length) return null
   const wonByCh = {}; for (const c of (cc.closeByChannel || [])) wonByCh[c.channel] = c.won || 0
   const rowsFor = (chanKey) => {

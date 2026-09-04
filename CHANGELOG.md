@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.465.0 - 2026-09-04 · `PENDING` - Pipeline lens applies to the key events themselves
+
+With a pipeline chosen in the header, the Revenue bottleneck, Key event
+reach and Channel performance still listed the other pipeline's key events
+("15 Minute Call" and "Payment Collected" twice), because stage names are
+shared between pipelines and the other pipeline's events resolved against
+the lensed funnel. Within a lens only that pipeline's key events now apply.
+
+---
+
 ## v3.464.0 - 2026-09-04 · `9b32a4a` - Intelligence reads each page, opens collapsed, and finds over/under-indexes across every cut
 
 - **The banner reads the page it sits on.** On Meta Ads and Google Ads it is

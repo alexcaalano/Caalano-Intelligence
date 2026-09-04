@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.470.0 - 2026-09-04 · `PENDING` - Loader shows only the branded line
+## v3.470.0 - 2026-09-04 · `85ddde5` - Loader shows only the branded line
 
 The tab loader dropped its small caption ("Taking longer than usual -
 retrying… (3/6)", "Loading live Meta data…"). The mark, "360 is connecting

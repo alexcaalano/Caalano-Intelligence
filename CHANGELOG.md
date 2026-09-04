@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.477.0 - 2026-09-04 · `PENDING` - Channel performance: ROAS, and the win-rate index per table
+## v3.477.0 - 2026-09-04 · `9388f31` - Channel performance: ROAS, and the win-rate index per table
 
 The Channel performance table gains a **ROAS** column (revenue ÷ spend, per
 channel and per pipeline when split). The win-rate index chip is now against

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.469.0'
+const APP_VERSION = '3.470.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8188,7 +8188,6 @@ function Spinner({ label, big }) {
         <ConnectMark />
         <div className="c360-load-t"><b>360</b> is connecting the dots<span className="c360-load-dots" /></div>
         <div className="c360-load-line" key={line}>{line}</div>
-        {label ? <div className="c360-load-cap">{label}</div> : null}
       </div>
     )
   }

@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.470.0 - 2026-09-04 · `PENDING` - Loader shows only the branded line
+
+The tab loader dropped its small caption ("Taking longer than usual -
+retrying… (3/6)", "Loading live Meta data…"). The mark, "360 is connecting
+the dots" and the rotating line are all that shows; the detail still steers
+which lines rotate.
+
+---
+
 ## v3.469.0 - 2026-09-04 · `118d3e2` - Closed-basis wins from a won-only snapshot
 
 v3.468.0 walked the last 400 days of wins live inside the drill build, which

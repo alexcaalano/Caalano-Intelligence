@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.471.0 - 2026-09-04 · `PENDING` - A saved copy says so, and says why
+## v3.471.0 - 2026-09-04 · `fb9a8b0` - A saved copy says so, and says why
 
 When a live rebuild of the CRM figures fails, the cache gate serves the last
 good copy rather than an error - which is right, but it was silent, so an

@@ -18,6 +18,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.466.0 - 2026-09-04 · `PENDING` - Caalano360 honours the Won basis
+
+The Won basis toggle (Closed / Created) has governed the health score, the
+Overview and the Weekly view, but never the Caalano360 tab: since 18 August
+its tiles came from the drill, and the drill only ever counted wins inside
+the cohort of leads created in the range. On the Closed basis that could not
+match a status-change filter in Caalano Systems for the same dates.
+
+The drill now takes the basis. On **Closed**, a win counts when its status
+change landed in the range, whichever period the lead arrived in (looking
+back 400 days, the same rule the health score uses), so Won, Revenue, cost
+per won, the channel split's wins and each pipeline's wins agree with the
+CRM's own filter and with the health score. On **Created** nothing changes.
+Leads, open and lost are always the leads that arrived in the range, and the
+Won tile says "closed in period · by won date" on the Closed basis so the two
+populations are not read as one rate. Lost Reasons and the forecaster are
+cohort tools and stay on the created basis. The warmer warms the Closed
+basis, which is the app's default.
+
+New `tests/drillbasis_test.mjs` pins the rule for both bases.
+
+---
+
 ## v3.465.0 - 2026-09-04 · `4c3fd0a` - Pipeline lens applies to the key events themselves
 
 With a pipeline chosen in the header, the Revenue bottleneck, Key event

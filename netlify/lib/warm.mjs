@@ -114,7 +114,7 @@ export function planForClient(id, cc, ranges) {
   const r30 = ranges.r30, r7 = ranges.r7
   if (cc.ghl) {
     urls.push(q({ client: id, scope: 'health', from: r30.from, to: r30.to, wonBasis: 'closed' }))
-    urls.push(q({ scope: 'ccdrill', client: id, channel: 'all', from: r30.from, to: r30.to }))
+    urls.push(q({ scope: 'ccdrill', client: id, channel: 'all', from: r30.from, to: r30.to, wonBasis: 'closed' }))
     urls.push(q({ scope: 'users', client: id, channel: 'all', from: r30.from, to: r30.to }))
     urls.push(q({ client: id, channel: 'blend', from: r30.from, to: r30.to }))
   }

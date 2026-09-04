@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.465.0'
+const APP_VERSION = '3.466.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2485,8 +2485,8 @@ function FcClient({ clients, currency, nonce, onSaveScenario }) {
   const [opts, setOpts] = useState({ cplRise: 0, includeOther: true })
   const r90 = useMemo(() => presetRange('last_90d'), [])
   const r30 = useMemo(() => presetRange('last_30d'), [])
-  const d90 = useCcDrill(cid, r90, nonce, 'all')
-  const d30 = useCcDrill(cid, r30, nonce, 'all')
+  const d90 = useCcDrill(cid, r90, nonce, 'all', 'created')
+  const d30 = useCcDrill(cid, r30, nonce, 'all', 'created')
   const money = (v) => fmtCurrency(v, currency)
   useEffect(() => { setPid(''); setSpendRaw(null) }, [cid])
   const pipes = (d90.data && d90.data.pipelinesFunnel) || []
@@ -5902,7 +5902,7 @@ function LostReasonsView({ clientId, range, nonce, currency, pipeName }) {
   const [visA, setVisA] = useState('channel')
   const [visB, setVisB] = useState('keyevent')
   const [open, setOpen] = useState(null)
-  const st = useCcDrill(clientId, range, nonce, 'all')
+  const st = useCcDrill(clientId, range, nonce, 'all', 'created')
   const money = (v) => fmtCurrency(v, currency)
   const cc = st.data || null
   const mode = useThemeMode()
@@ -6654,9 +6654,13 @@ function useCrmAgg(clientId, range, nonce, channel = 'all') {
 // Command-centre drill dataset (scope=ccdrill) - backs every clickable tile.
 // Channel-scoped: passing a channel re-pivots the whole drill (funnel, open-by-
 // stage, sources, revenue, lost, close, bookings) to that channel's opportunities.
-const ccDrillUrl = (clientId, range, nonce, channel) => clientId ? `/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
-function useCcDrill(clientId, range, nonce = 0, channel = 'all') {
-  return useSwrJson(ccDrillUrl(clientId, range, nonce, channel))
+// The won basis travels with the drill: `closed` counts wins by their status
+// change landing in the range (the CRM's own filter), `created` counts wins
+// among the leads that arrived in it. Leads, open and lost are always the
+// created cohort. Cohort tools (Lost Reasons, the forecaster) ask for `created`.
+const ccDrillUrl = (clientId, range, nonce, channel, wonBasis = 'closed') => clientId ? `/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${rangeQuery(range)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}${nonce ? `&_r=${nonce}` : ''}` : null
+function useCcDrill(clientId, range, nonce = 0, channel = 'all', wonBasis = 'closed') {
+  return useSwrJson(ccDrillUrl(clientId, range, nonce, channel, wonBasis))
 }
 const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
 const chLabel = (ch) => ch === 'meta' ? 'Meta' : ch === 'google' ? 'Google' : ch === 'other' ? 'Other' : ch
@@ -7489,7 +7493,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   useEffect(() => { setChan('all') }, [clientId])
   const health = useHealth(clientId, range, nonce, reload, wonBasis)
   const crmAgg = useCrmAgg(clientId, range, nonce, chan)
-  const ccDrill = useCcDrill(clientId, range, nonce, chan)
+  const ccDrill = useCcDrill(clientId, range, nonce, chan, wonBasis)
   const ccRaw = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
   // The pipeline lens: every figure below is re-cut to the chosen pipeline in
   // the browser, from the same payload. `pipeOn` is the flag the tiles use to
@@ -7515,15 +7519,15 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         if (cancelled) return
         await prefetchSwr(crmAggUrl(clientId, range, nonce, ch), aggUsersToCrm)
         if (cancelled) return
-        await prefetchSwr(ccDrillUrl(clientId, range, nonce, ch))
+        await prefetchSwr(ccDrillUrl(clientId, range, nonce, ch, wonBasis))
       }
     })()
     return () => { cancelled = true }
-  }, [clientId, rq, nonce, primeReady])
+  }, [clientId, rq, nonce, primeReady, wonBasis])
   // Previous-period CRM drill, so the per-pipeline key-event scorecards can show
   // vs-prev deltas (same shape, one period back).
   const prevRange = prevRangeOf(range)
-  const prevCcDrill = useCcDrill(clientId, prevRange || range, nonce, chan)
+  const prevCcDrill = useCcDrill(clientId, prevRange || range, nonce, chan, wonBasis)
   const pccRaw = (prevRange && prevCcDrill.status === 'ok' && prevCcDrill.data && prevCcDrill.data.oppsBySource) ? prevCcDrill.data : null
   const pcc = useMemo(() => lensCc(pccRaw, pipe), [pccRaw, pipe])
   const money = (v) => fmtCurrency(v, currency)
@@ -7658,7 +7662,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '-'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
             <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '-'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked - by calendar' })} />
             <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '-'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate - by calendar' })} />
-            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '-'} flat={oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
+            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '-'} flat={wonBasis === 'closed' ? 'closed in period · by won date' : (oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' ')} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
             <Kpi label="Revenue" value={revV != null ? money(revV) : '-'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue - won deals' })} />
             <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '-'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
@@ -14487,14 +14491,14 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   const setPipe = React.useCallback((v) => { const nx = v || 'all'; setPipeRaw(nx); writeNavUrl({ p: nx === 'all' ? null : nx }, false) }, [])
   const firstClient = useRef(client.id)
   useEffect(() => { if (firstClient.current !== client.id) { firstClient.current = client.id; setPipe('all') } }, [client.id]) // eslint-disable-line
-  const ccForPipes = useCcDrill(((config && config.clients) || []).some((c) => c.id === client.id && c.ghl) ? client.id : null, range, nonce, 'all')
+  const ccForPipes = useCcDrill(((config && config.clients) || []).some((c) => c.id === client.id && c.ghl) ? client.id : null, range, nonce, 'all', wonBasis)
   const pipes = useMemo(() => ((ccForPipes.data && ccForPipes.data.pipelinesFunnel) || []).map((p) => ({ id: p.id, name: p.name })), [ccForPipes.data])
   const pipeName = pipe !== 'all' ? ((pipes.find((p) => p.id === pipe) || {}).name || null) : null
   // The intelligence banner reads the same drill payloads (current and previous
   // window) through the shared cache, lensed to the workspace pipeline.
   const crmId = ((config && config.clients) || []).some((c) => c.id === client.id && c.ghl) ? client.id : null
   const prevRangeW = prevRangeOf(range)
-  const ccPrevW = useCcDrill(crmId && prevRangeW ? crmId : null, prevRangeW || range, nonce, 'all')
+  const ccPrevW = useCcDrill(crmId && prevRangeW ? crmId : null, prevRangeW || range, nonce, 'all', wonBasis)
   const keTickW = JSON.stringify(loadKeyEvents(client.id))
   const intel = useMemo(() => {
     const raw = ccForPipes.data && ccForPipes.data.oppsBySource ? ccForPipes.data : null

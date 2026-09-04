@@ -4165,19 +4165,40 @@ async function formAnswersByContact(locTok, locationId, from, to) {
 // calendar booking/show, and per-channel close rate. Spend / paid-lead figures
 // are added by the caller (windsor) from the health feed. Each opp is classified
 // to a paid channel via channelOf(utmOf()) with a friendly source label.
-export async function buildCcDrill(locationId, from, to, channel) {
+// Which figures an opportunity feeds, under a won basis. The cohort - leads,
+// open, lost, the stage funnel - is always the opportunities CREATED in the
+// range. Wins follow the basis: on `created` a cohort deal that is won now
+// counts; on `closed` a win counts when its status change landed in the range,
+// whenever the lead arrived - the same rule the health score and the Overview
+// use, so the Caalano360 tiles agree with them and with a status-change filter
+// in the CRM. A cohort deal won after the range (a past range) is a lead only.
+export function ccDrillClassify(o, fromMs, toMs, basis) {
+  const inWindow = (ms) => isFinite(ms) && (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs)
+  const st = String(o.status || '').toLowerCase()
+  const inCohort = inWindow(Date.parse(o.createdAt))
+  const isWonNow = st === 'won'
+  const closedIn = isWonNow && inWindow(Date.parse(o.lastStatusChangeAt || ''))
+  const isWon = basis === 'closed' ? closedIn : (inCohort && isWonNow)
+  const isLost = inCohort && (st === 'lost' || st === 'abandoned')
+  const isOpen = inCohort && !isWonNow && !isLost
+  return { inCohort, isWonNow, isWon, isLost, isOpen, counts: inCohort || isWon }
+}
+export async function buildCcDrill(locationId, from, to, channel, basis = 'created') {
   const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
+  const closedBasis = basis === 'closed'
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
-  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - 120 * DAY).toISOString().slice(0, 10)
+  // Closed basis looks back as far as wonInPeriod does, so a deal that arrived
+  // months ago and closed this range is found.
+  const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - (closedBasis ? 400 : 120) * DAY).toISOString().slice(0, 10)
   const [wideOpps, pipelines, appts, reasons, formAns, userRows] = await Promise.all([
     // Best-effort snapshot: this 120-day window is only for name resolution + close
     // context; the in-period cohort (from..to) is recent and always fully covered.
     // Serving from the warm snapshot here avoids the live /opportunities/search page
     // that was the single biggest source of 429s for high-volume clients.
-    allOpportunities(locTok, locationId, wideFrom, to, 2000, { snapshotBestEffort: true }),
+    allOpportunities(locTok, locationId, wideFrom, to, closedBasis ? 2500 : 2000, { snapshotBestEffort: true }),
     fetchPipelines(locTok, locationId),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), perCalendar: new Map() })),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
@@ -4198,7 +4219,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
   // When set, the whole drill (funnel, open-by-stage, sources, revenue, lost,
   // close, and calendar bookings) reflects only opportunities on that channel.
   const chan = channel && channel !== 'all' ? channel : null
-  let opps = wideOpps.filter((o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) })
+  let opps = wideOpps.filter((o) => ccDrillClassify(o, fromMs, toMs, basis).counts)
   if (chan) opps = opps.filter((o) => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })
   // Contacts that belong to this channel - used to scope calendar bookings, which
   // aren't UTM-tagged themselves, to the same channel as the opportunities.
@@ -4273,20 +4294,20 @@ export async function buildCcDrill(locationId, from, to, channel) {
   // can show how much each channel drives each pipeline without extra fetches.
   const pipeAgg = new Map() // pipelineId -> aggregate
   for (const o of opps) {
-    const st = String(o.status || '').toLowerCase()
     const val = num(o.monetaryValue)
     const u = utmOf(o); const ch = channelOf(u); const cb = chBucket(ch)
     const label = sourceLabel(u, ch); const kind = kindOf(ch, label)
     const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null
     const name = contactNameOf(o)
-    if (o.pipelineId && o.pipelineStageId) {
+    const { inCohort, isWonNow, isWon, isLost, isOpen } = ccDrillClassify(o, fromMs, toMs, basis)
+    if (inCohort && o.pipelineId && o.pipelineStageId) {
       let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1)
       let smc = stageAtChan.get(o.pipelineId); if (!smc) { smc = new Map(); stageAtChan.set(o.pipelineId, smc) }
       let cobj = smc.get(o.pipelineStageId); if (!cobj) { cobj = { meta: 0, google: 0, other: 0 }; smc.set(o.pipelineStageId, cobj) }
       cobj[cb]++
     }
-    const isWon = st === 'won', isLost = st === 'lost' || st === 'abandoned'
-    leadCount++; if (isWon) wonCount++; if (isLost) lostCount++
+    if (inCohort) leadCount++
+    if (isWon) wonCount++; if (isLost) lostCount++
     // How long a decision took, from the lead arriving to being marked. Kept as
     // the full list rather than a running mean so the MEDIAN can be reported: a
     // couple of deals that sat open for a year drag an average badly, and the
@@ -4304,14 +4325,16 @@ export async function buildCcDrill(locationId, from, to, channel) {
     if (o.pipelineId) {
       let pa = pipeAgg.get(o.pipelineId)
       if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, chan: { meta: { leads: 0, won: 0, revenue: 0 }, google: { leads: 0, won: 0, revenue: 0 }, other: { leads: 0, won: 0, revenue: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
-      pa.leads++; pa.chan[cb].leads++
+      if (inCohort) { pa.leads++; pa.chan[cb].leads++ }
       if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val }
       else if (isLost) pa.lost++
-      else { pa.open++; pa.openValue += val }
+      else if (isOpen) { pa.open++; pa.openValue += val }
     }
-    if (oppRows.length < OPP_FACT_CAP) {
+    // The per-opportunity rows are the cohort's, and a cohort deal that is won
+    // reads as won there whatever the basis - they feed cohort tools.
+    if (inCohort && oppRows.length < OPP_FACT_CAP) {
       oppRows.push([
-        isWon ? 1 : isLost ? 2 : 0,
+        isWonNow ? 1 : isLost ? 2 : 0,
         fIdx('pipeline', pipeName[o.pipelineId] || null), fIdx('stage', stg ? stg.name : null),
         fIdx('campaign', u.campaign || null), fIdx('adset', u.medium || null),
         fIdx('creative', u.content || null), fIdx('keyword', u.term || null),
@@ -4320,10 +4343,9 @@ export async function buildCcDrill(locationId, from, to, channel) {
       ])
     }
     let bs = bySource.get(label); if (!bs) { bs = { source: label, channel: ch, kind, count: 0, value: 0, opps: [] }; bySource.set(label, bs) }
-    bs.count++; bs.value += val
-    if (bs.opps.length < 100) bs.opps.push({ name, status: isWon ? 'won' : isLost ? 'lost' : 'open', stage: stg ? stg.name : null, value: Math.round(val), channel: ch })
+    if (inCohort) { bs.count++; bs.value += val; if (bs.opps.length < 100) bs.opps.push({ name, status: isWonNow ? 'won' : isLost ? 'lost' : 'open', stage: stg ? stg.name : null, value: Math.round(val), channel: ch }) }
     let cc = closeByChannel.get(ch); if (!cc) { cc = { channel: ch, won: 0, lost: 0, leads: 0, revenue: 0, deals: [] }; closeByChannel.set(ch, cc) }
-    cc.leads++
+    if (inCohort) cc.leads++
     if (isWon) {
       revenueTotal += val
       if (ch === 'meta') { metaWon++; paidWon++ } else if (ch === 'google') { googleWon++; paidWon++ }
@@ -4359,7 +4381,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
         }
       }
       if (lr.people.length < 150) lr.people.push({ contactId: cid, name, stage: stg ? stg.name : null, pipeline: pipeName[o.pipelineId] || null, value: Math.round(val), oppSource: o.source || null, channelSource: label, utmSource: u.source || null, utmContent: u.content || null, formAnswers: (cid && formAns.get(cid)) || [] })
-    } else {
+    } else if (isOpen) {
       openCount++; openValueTotal += val
       const aMs = Date.parse(o.lastStageChangeAt || o.lastStatusChangeAt || o.createdAt)
       const ageDays = isFinite(aMs) ? Math.max(0, Math.round((nowMs - aMs) / DAY)) : null
@@ -4413,7 +4435,7 @@ export async function buildCcDrill(locationId, from, to, channel) {
   })
   return {
     connected: true, tz, channel: chan || 'all',
-    totals: { leads: leadCount, won: wonCount, lost: lostCount, open: openCount },
+    basis, totals: { leads: leadCount, won: wonCount, lost: lostCount, open: openCount },
     // Days from a lead arriving to the moment it was marked won or lost.
     timeToWon: timeTo(ttWon, ttWonSkip),
     timeToLost: timeTo(ttLost, ttLostSkip),

@@ -4015,7 +4015,7 @@ export default async (req) => {
         return buildHealth(cc, from, to, preset, key, undefined, 'created', blend ? { blend } : {})
       }
       const [drill, health, idMaps] = await Promise.all([
-        buildCcDrill(cc.ghl, from, to, channel),
+        buildCcDrill(cc.ghl, from, to, channel, url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'),
         healthFromCache().catch(() => null),
         (cc.meta || cc.google) ? fetchAdIdNameMaps(cc, from, to, preset, key).catch(() => null) : Promise.resolve(null),
       ])

@@ -18,6 +18,26 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.483.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 3
+
+- **Channel performance, redrawn (V2).** The same columns sit under grouped
+  headers (Spend, Key events, Outcomes, Efficiency, ROAS, Cash); the win rate
+  carries an inline bar scaled to the table's best row; the Channel column
+  stays put when the table scrolls; Close %, CAC and Avg deal sit behind a
+  More columns switch. One table per pipeline as before when more than one
+  pipeline is in play.
+- **Biggest movers, drawn.** Each change as a bar left or right of a centre
+  line, sized to the largest move, with the from-to figures under the label.
+- **Collapsible sections.** Every section from Channel performance down -
+  indexing, pipeline performance, revenue bottleneck, lost reasons, priority
+  actions, team, lost people, revenue at risk, locations, speed to lead - can
+  be collapsed to a one-line bar and remembers that per browser. Nothing
+  inside a section changes.
+
+V1 is unchanged.
+
+---
+
 ## v3.482.0 - 2026-09-05 · `d47bb2c` - Overview layout V2, release 2
 
 V2 (super admins, via the Layout switch) becomes a complete page: nothing is

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.482.0'
+const APP_VERSION = '3.483.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7803,6 +7803,44 @@ function ExecReach({ reach, multi, kef, cc, clientId, money, spend, chanLabel, l
   )
 }
 
+// Collapsible sections (V2). Each remembers open or closed per browser; the
+// section's own card is untouched inside, so nothing it shows is lost - a
+// collapsed section is a one-line bar that reopens on click.
+const V2_SEC_KEY = 'caalano_v2_sections'
+function v2SecState() { try { const j = JSON.parse(localStorage.getItem(V2_SEC_KEY) || '{}'); return j && typeof j === 'object' ? j : {} } catch { return {} } }
+function v2SecOpen(state, id) { return !(state && state[id] === false) }
+function V2Section({ id, title, children }) {
+  const [open, setOpen] = useState(() => v2SecOpen(v2SecState(), id))
+  const toggle = () => setOpen((o) => { const nx = !o; try { const st = v2SecState(); st[id] = nx; localStorage.setItem(V2_SEC_KEY, JSON.stringify(st)) } catch { /* private mode */ } return nx })
+  if (!open) return <div className="v2-sec v2-sec-closed"><button type="button" className="v2-sec-bar" onClick={toggle} aria-expanded="false"><span>{title}</span><span className="v2-sec-chev">Expand ▾</span></button></div>
+  return <div className="v2-sec" data-sec={id}><button type="button" className="v2-sec-collapse" onClick={toggle} aria-expanded="true" title="Collapse this section">Collapse ▴</button>{children}</div>
+}
+// Biggest movers drawn: each change as a bar left or right of a centre line,
+// so the list reads as a picture. Same rows as the V1 list.
+function ExecMovers({ movers, money, hasPrev }) {
+  const fmt = (m, v) => (m.kind === 'money' ? money(Math.round(v)) : m.kind === 'rate' ? `${Math.round(v * 100)}%` : fmtNumber(v))
+  const chg = (m) => (m.kind === 'rate' ? `${m.pts > 0 ? '+' : ''}${Math.round(m.pts)} pts` : `${m.pct > 0 ? '+' : ''}${Math.round(m.pct)}%`)
+  const mag = (m) => Math.abs(m.kind === 'rate' ? (m.pts || 0) : (m.pct || 0))
+  const max = Math.max(1, ...(movers || []).map(mag))
+  return (
+    <div className="card" data-sec="movers">
+      <div className="exec-panel-h">Biggest movers <span className="sub">· against the previous equal window · a count needs 5, a rate 10, before it is judged · bar length is the size of the change</span></div>
+      {!hasPrev ? <p className="cap" style={{ margin: 0 }}>Waiting on the previous period.</p>
+        : !movers.length ? <p className="cap" style={{ margin: 0 }}>Nothing moved more than 15% (or 8 points on a rate) against the previous period.</p>
+          : <div className="v2-mv">{movers.map((m, i) => {
+            const w = Math.min(50, (mag(m) / max) * 50), up = (m.kind === 'rate' ? m.pts : m.pct) > 0
+            return (
+              <div key={i} className="v2-mv-row">
+                <div className="l"><b>{m.label}</b><small>{fmt(m, m.cur)} from {fmt(m, m.prev)}{m.why ? ` · ${m.why}` : ''}</small></div>
+                <div className={`pct ${m.good ? 'up' : 'down'}`}>{chg(m)}</div>
+                <div className="bar"><span className={m.good ? 'up' : 'down'} style={up ? { left: '50%', width: `${w}%` } : { left: `${50 - w}%`, width: `${w}%` }} /></div>
+              </div>
+            )
+          })}</div>}
+    </div>
+  )
+}
+
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe, pipes = [] }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
@@ -7872,6 +7910,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // Spend for the active channel toggle, from a (lensed) drill payload.
   const spendOf = (d, chn) => { const sp = (d && d.spend) || {}; return chn === 'meta' ? (sp.meta || 0) : chn === 'google' ? (sp.google || 0) : chn === 'nonpaid' ? 0 : (sp.total || 0) }
   const [drill, setDrill] = useState(null)
+  // V2: secondary table columns shown on demand; sections wrap as collapsible.
+  const [moreCols, setMoreCols] = useState(false)
+  const sec = (id, title, node) => (v2 ? <V2Section id={id} title={title}>{node}</V2Section> : node)
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
   const [aiLoading, setAiLoading] = useState(false)
@@ -8101,8 +8142,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
 
       {/* Channel split - per-channel spend → key events → wins & efficiency. Above
           the bottleneck so the channel scoreboard reads first. (Internal figures.) */}
-      <div className="card x-internal" data-sec="channels">
-        <div className="exec-panel-h">Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the account's</span></div>
+      {sec('channels', 'Channel performance', <div className="card x-internal" data-sec="channels">
+        {v2 ? <div className="v2-sec-h"><h3>Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the table's blend</span></h3><div className="tools"><button type="button" className={moreCols ? 'on' : ''} onClick={() => setMoreCols((m) => !m)}>{moreCols ? 'Fewer columns' : 'More columns'}</button></div></div>
+          : <div className="exec-panel-h">Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the account's</span></div>}
         {(() => {
           const ch = pipeOn ? { metaSpend: cc.spend.meta, googleSpend: cc.spend.google, metaLeads: cc.paid.metaLeads, googleConv: cc.paid.googleLeads } : (h.channels || {})
           // A channel whose ad read failed has NO spend figure, which is a
@@ -8117,7 +8159,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
           const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
           const cashCols = cashOn && !!(cc && cc.cash)
-          const renderTable = (evLabels, rows) => {
+          const renderTableV1 = (evLabels, rows) => {
             // Win rate is indexed against THIS table's blended rate (the pipeline's
             // own when split by pipeline), not the account's.
             const tL = rows.reduce((a, r) => a + (r.leads || 0), 0), tW = rows.reduce((a, r) => a + (r.won || 0), 0)
@@ -8145,6 +8187,48 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             </table></div>
             )
           }
+          // V2: the same columns under grouped headers, an inline bar on the win
+          // rate, the first column frozen, and Close %, CAC and Avg deal behind
+          // the More columns switch. Same rows, same figures.
+          const renderTableV2 = (evLabels, rows) => {
+            const tL = rows.reduce((a, r) => a + (r.leads || 0), 0), tW = rows.reduce((a, r) => a + (r.won || 0), 0)
+            const baseWin = tL ? tW / tL : 0
+            const idxOf = (r) => (r.leads >= INTEL_MIN_BASE && baseWin && r.leads ? Math.round(((r.won || 0) / r.leads / baseWin) * 100) : null)
+            const winOf = (r) => (r.leads ? (r.won || 0) / r.leads : null)
+            const maxWin = Math.max(0.0001, ...rows.map((r) => winOf(r) || 0))
+            const more = moreCols
+            const nKe = evLabels.length
+            return (
+            <div className="tbl-scroll"><table className="mini-tbl users-tbl v2-tbl">
+              <thead>
+                <tr className="v2-grp"><th className="lft"></th><th colSpan={2}><span>Spend</span></th>{nKe ? <th colSpan={nKe}><span>Key events</span></th> : null}<th colSpan={3}><span>Outcomes</span></th>{more ? <th colSpan={3}><span>Efficiency</span></th> : null}<th><span>ROAS</span></th>{cashCols ? <th colSpan={2}><span>Cash</span></th> : null}</tr>
+                <tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th>{more ? <><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th></> : null}<th title="Revenue ÷ spend">ROAS</th>{cashCols ? <><th title="Cash collected on this channel's won deals">Cash</th><th title="Cash collected ÷ spend">Cash ROAS</th></> : null}</tr>
+              </thead>
+              <tbody>{rows.map((r) => {
+                const wr = winOf(r)
+                return (
+                <tr key={r.key}>
+                  <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
+                  <td>{r.dead ? <span className="lrv-z" title="This channel's ad read didn't return, so there is no spend figure for the period - not a measured zero.">n/a</span> : money(r.spend)}</td>
+                  <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
+                  {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
+                  <td>{fmtNumber(r.won)}</td>
+                  <td><span className="v2-ib"><span className="b"><span style={{ width: `${wr != null ? Math.round((wr / maxWin) * 100) : 0}%` }} /></span><span>{wr != null ? `${Math.round(wr * 100)}%` : '-'} {idxOf(r) != null ? <IdxChip v={idxOf(r)} /> : null}</span></span></td>
+                  <td>{money(r.revenue)}</td>
+                  {more ? <>
+                    <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
+                    <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
+                    <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
+                  </> : null}
+                  <td>{r.dead || !r.spend ? '-' : `${((r.revenue || 0) / r.spend).toFixed(1)}×`}</td>
+                  {cashCols ? <><td>{money(r.cash || 0)}</td><td>{r.dead || !r.spend ? '-' : `${((r.cash || 0) / r.spend).toFixed(1)}×`}</td></> : null}
+                </tr>
+                )
+              })}</tbody>
+            </table></div>
+            )
+          }
+          const renderTable = v2 ? renderTableV2 : renderTableV1
           const pipesN = ((cc && cc.pipelinesFunnel) || []).length
           // Multi-pipeline: one Channel-split table per pipeline, each with that
           // pipeline's own key events (no duplicated columns) + its per-channel
@@ -8189,11 +8273,11 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           ].map((r) => { const c = cbc[r.key] || {}; const won = c.won || 0, revenue = c.revenue || 0; return { ...r, dead: dead(r.key), leads: c.leads || 0, won, revenue, cash: c.cash || 0, closeRate: c.closeRate, cac: won ? r.spend / won : null, avgDeal: won ? revenue / won : null } })
           return renderTable(evLabels, rows)
         })()}
-      </div>
+      </div>)}
 
       {/* Biggest movers and Indexing insights - from the same model as the reach above. */}
-      {cc && intel ? <IntelMovers movers={intel.movers} money={money} hasPrev={!!pcc} /> : null}
-      {cc && intel ? <IntelFindings findings={intel.findings} index={intel.index} money={money} /> : null}
+      {cc && intel ? (v2 ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} /></V2Section> : <IntelMovers movers={intel.movers} money={money} hasPrev={!!pcc} />) : null}
+      {cc && intel ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} />) : null}
 
       {/* Pipeline performance - per-pipeline overall key-event scorecards (all
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
@@ -8201,17 +8285,17 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         const chn = h.channels || {}
         const curSpend = pipeOn ? spendOf(cc, chan) : chan === 'all' ? (k.adSpend || 0) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : 0
         const prevSpend = pipeOn ? (pcc ? spendOf(pcc, chan) : null) : chan === 'all' ? (pv.adSpend || 0) : null // channel-split prev spend isn't available
-        return <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />
+        return sec('pipelines', 'Pipeline performance', <PipelinePerformance cc={cc} pcc={pcc} clientId={clientId} currency={currency} spend={{ cur: curSpend, prev: prevSpend }} />)
       })() : null}
 
       {/* Revenue bottleneck funnel - client key events + calendar show-rate.
           Passes the selected channel's spend so a paid view shows cost/stage. */}
       {(() => { const chn = h.channels || {}; const bnSpend = pipeOn ? spendOf(cc, chan) : chan === 'meta' ? (chn.metaSpend || 0) : chan === 'google' ? (chn.googleSpend || 0) : chan === 'paid' ? ((chn.metaSpend || 0) + (chn.googleSpend || 0)) : chan === 'all' ? (k.adSpend || 0) : 0
-        return <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} chan={chan} stageSpend={bnSpend} onNav={onNav} /> })()}
+        return sec('bottleneck', 'Revenue bottleneck', <BottleneckPanel kpis={k} money={money} clientId={clientId} cc={cc} health={h} currency={currency} chan={chan} stageSpend={bnSpend} onNav={onNav} />) })()}
 
       {/* Lost reasons - full width so the table never needs to scroll sideways.
           Rows are clickable → the per-reason people + their form answers. */}
-      <LostReasonsCard cc={cc} crmAgg={crmAgg} money={money} setDrill={setDrill} />
+      {sec('lostreasons', 'Lost reasons', <LostReasonsCard cc={cc} crmAgg={crmAgg} money={money} setDrill={setDrill} />)}
 
       {/* Per-pipeline breakdown - fallback table when the richer per-channel
           Pipeline performance card isn't available (e.g. viewer without ccdrill). */}
@@ -8224,26 +8308,26 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       </div>}
 
       {/* Priority actions - a prioritised read of the command centre */}
-      <div className="card exec-actions">
+      {sec('actions', 'Priority actions', <div className="card exec-actions">
         <div className="exec-panel-h">Priority actions{pipeOn ? <span className="sub"> · account-wide, from the health score</span> : null}</div>
         {actions.length ? <ul className="exec-act-list">{actions.map((a, i) => <li key={i} className={`exec-act sev-${a.sev}`}><span className="exec-act-dot" />{a.text}</li>)}</ul>
           : <div className="cap">Nothing flagged this period - the numbers are tracking with or ahead of last period.</div>}
         <div className="exec-nav"><button className="link-btn" onClick={() => onNav && onNav('users')}>Open the Users tab →</button></div>
-      </div>
+      </div>)}
 
       {/* Team performance - per-rep leaders + each rep's held-up open deals (→ notes) */}
-      <TeamPerformance clientId={clientId} range={range} nonce={nonce} money={money} />
+      {sec('team', 'Team performance', <TeamPerformance clientId={clientId} range={range} nonce={nonce} money={money} />)}
 
       {/* Revenue at risk - account-wide biggest open deals still to chase */}
-      <LostReasonsPanel clientId={clientId} range={range} nonce={nonce} money={money} onNav={onNav} />
+      {sec('lostpanel', 'Lost reasons - people', <LostReasonsPanel clientId={clientId} range={range} nonce={nonce} money={money} onNav={onNav} />)}
 
-      <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />
+      {sec('atrisk', 'Revenue at risk', <AtRiskPanel clientId={clientId} range={range} nonce={nonce} money={money} />)}
 
       {/* Lead locations - map preview (only shows if leads carried a location) */}
-      <LocationSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} pipe={pipe} onPipe={onPipe} />
+      {sec('locations', 'Lead locations', <LocationSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} pipe={pipe} onPipe={onPipe} />)}
 
       {/* Speed to lead - response-timing summary (only shows if measured) */}
-      <TimingSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />
+      {sec('speed', 'Speed to lead', <TimingSummary clientId={clientId} range={range} nonce={nonce} onNav={onNav} />)}
 
       {pipeOn ? <div className="cap exec-foot">Within the <b>{pipeLabel}</b> pipeline: opportunities, key events, wins, revenue, lost reasons and time-to figures are that pipeline's own. Ad spend is allocated to it by its share of each channel's leads, so cost per lead reads as the account's while cost per event and per win are the pipeline's. Calendars and lead sources are not pipeline-aware in the CRM feed and stay account-wide.</div> : null}
       <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only - clients may reply on channels outside Caalano Systems.</div>

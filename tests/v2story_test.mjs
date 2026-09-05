@@ -11,7 +11,7 @@ const liftFrom = (src) => (name) => {
   return src.slice(a, i + 1)
 }
 const la = liftFrom(app), lw = liftFrom(win)
-const { v2StoryPick, v2ReachSplit } = new Function(['v2StoryPick', 'v2ReachSplit'].map(la).join('\n') + '\nreturn { v2StoryPick, v2ReachSplit }')()
+const { v2StoryPick, v2ReachSplit, v2SecOpen } = new Function(['v2StoryPick', 'v2ReachSplit', 'v2SecOpen'].map(la).join('\n') + '\nreturn { v2StoryPick, v2ReachSplit, v2SecOpen }')()
 const { spendByDay } = new Function("const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }\n" + lw('spendByDay') + '\nreturn { spendByDay }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
@@ -51,6 +51,11 @@ ok('google by day', JSON.stringify(sd.google) === '[0,3,0]', sd)
 ok('days echoed', sd.days === days)
 ok('empty rows', JSON.stringify(spendByDay(days, [], null).meta) === '[0,0,0]')
 ok('garbage spend is zero', spendByDay(days, [{ date: '2026-09-01', spend: 'n/a' }], []).meta[0] === 0)
+
+// Sections: open unless the browser remembers them closed.
+ok('section open by default', v2SecOpen({}, 'channels') === true && v2SecOpen(null, 'x') === true)
+ok('section closed when remembered', v2SecOpen({ channels: false }, 'channels') === false)
+ok('other sections unaffected', v2SecOpen({ channels: false }, 'movers') === true)
 
 console.log(`v2story_test: ${n - bad}/${n} passed`)
 if (bad) process.exit(1)

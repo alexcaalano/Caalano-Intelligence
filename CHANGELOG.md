@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.488.0 - 2026-09-05 · `PENDING` - Blended CAC tile, platform drill, reach hover (V2)
+## v3.488.0 - 2026-09-05 · `564a60c` - Blended CAC tile, platform drill, reach hover (V2)
 
 - **Blended CAC** joins the headline row as a sixth tile: this scope's ad
   spend over every deal won, whatever channel it came from, with its change

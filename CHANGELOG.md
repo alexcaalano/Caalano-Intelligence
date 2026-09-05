@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.494.0 - 2026-09-05 · `PENDING` - Funnel by rep, drawn; Call Reporting in the indexing
+## v3.494.0 - 2026-09-05 · `708336d` - Funnel by rep, drawn; Call Reporting in the indexing
 
 - **Users: Funnel by rep.** A drawn block above the leaderboard: each rep's
   leads as a track scaled to the busiest rep, with booked, shown and won

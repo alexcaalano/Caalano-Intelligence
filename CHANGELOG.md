@@ -18,6 +18,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.482.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 2
+
+V2 (super admins, via the Layout switch) becomes a complete page: nothing is
+shown twice any more.
+
+- **Story strip.** The intelligence banner's own lines, drawn as three cards
+  under the headlines - the biggest leak, the channels, what moved - each with
+  a link that scrolls to the section it comes from.
+- **Key event reach, drawn.** The reach cards become stage bars, one chain per
+  pipeline, each bar the share of that pipeline's own leads, split by channel
+  with a tick for the previous period and the leak marked where it happens,
+  with what it cost in the step's own units. A Table button shows the cards as
+  before. This replaces the Performance snapshot and Pipeline & revenue tile
+  rows in V2; Cost per lead, Cost per booked, Cost per won, Open pipeline,
+  Lost and Result rate keep their tiles in a compact row beneath.
+- **Daily ad spend** for the Spend and ROAS sparklines, from a new light read
+  (account, day, spend per platform) that only V2 asks for, so the health
+  score build is untouched. ROAS draws the 7-day rolling revenue over the
+  7-day rolling spend. Both follow the channel toggle and, with a pipeline
+  picked, the same lead-share allocation the totals use.
+
+V1 is unchanged. The shared edits are two anchor attributes on existing
+sections so the story cards can scroll to them.
+
+---
+
 ## v3.481.0 - 2026-09-05 · `e45ce52` - Overview layout V2, release 1
 
 The redesigned Overview starts here, behind a switch. Nothing changes for

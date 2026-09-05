@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.481.0'
+const APP_VERSION = '3.482.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6690,6 +6690,7 @@ function useCrmAgg(clientId, range, nonce, channel = 'all') {
 // change landing in the range (the CRM's own filter), `created` counts wins
 // among the leads that arrived in it. Leads, open and lost are always the
 // created cohort. Cohort tools (Lost Reasons, the forecaster) ask for `created`.
+const spendDailyUrl = (clientId, range, nonce) => clientId && range && range.from && range.to ? `/.netlify/functions/windsor?scope=spenddaily&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
 const ccDrillUrl = (clientId, range, nonce, channel, wonBasis = 'closed') => clientId ? `/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${rangeQuery(range)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}${nonce ? `&_r=${nonce}` : ''}` : null
 function useCcDrill(clientId, range, nonce = 0, channel = 'all', wonBasis = 'closed') {
   return useSwrJson(ccDrillUrl(clientId, range, nonce, channel, wonBasis))
@@ -7520,7 +7521,7 @@ function IntelMovers({ movers, money, hasPrev }) {
   const fmt = (m, v) => (m.kind === 'money' ? money(Math.round(v)) : m.kind === 'rate' ? `${Math.round(v * 100)}%` : fmtNumber(v))
   const chg = (m) => (m.kind === 'rate' ? `${m.pts > 0 ? '▲' : '▼'} ${Math.abs(Math.round(m.pts))} pts` : `${m.pct > 0 ? '▲' : '▼'} ${Math.abs(Math.round(m.pct))}%`)
   return (
-    <div className="card">
+    <div className="card" data-sec="movers">
       <div className="exec-panel-h">Biggest movers <span className="sub">· against the previous equal window · a count needs 5, a rate 10, before it is judged</span></div>
       {!hasPrev ? <p className="cap" style={{ margin: 0 }}>Waiting on the previous period.</p>
         : !movers.length ? <p className="cap" style={{ margin: 0 }}>Nothing moved more than 15% (or 8 points on a rate) against the previous period.</p>
@@ -7671,6 +7672,137 @@ function LayoutSwitch() {
   )
 }
 
+// The three story cards under the headline row: the banner's own lines, picked
+// by what they say (the leak, the channels, what moved), each with the section
+// it points at. Pure, so it can be tested.
+function v2StoryPick(lines) {
+  const ls = Array.isArray(lines) ? lines : []
+  const used = new Set()
+  const take = (pred) => { const l = ls.find((x) => !used.has(x) && pred(x)); if (l) used.add(l); return l || null }
+  const leak = take((l) => /^Biggest leak/.test(l.text))
+  const chans = take((l) => /^(Meta|Google) wins/.test(l.text))
+  const mover = take((l) => / vs the previous period:/.test(l.text)) || take((l) => /^Cash collected/.test(l.text))
+  const fill = () => take(() => true)
+  return [
+    { k: 'leak', head: 'Biggest leak', line: leak || fill(), go: 'reach', act: 'See the funnel' },
+    { k: 'channels', head: 'Channels', line: chans || fill(), go: 'channels', act: 'Compare the channels' },
+    { k: 'moving', head: 'Moving', line: mover || fill(), go: 'movers', act: 'See what moved' },
+  ].filter((c) => c.line)
+}
+function ExecStory({ lines, loading }) {
+  const cards = v2StoryPick(lines)
+  const goTo = (sec) => { const el = document.querySelector(`[data-sec="${sec}"]`); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+  if (loading && !cards.length) return <div className="v2-story"><div className="v2-story-c sev-low"><i /><div><div className="k">360 is reading</div><div className="intel-skel" /><div className="intel-skel w2" /></div></div></div>
+  if (!cards.length) return null
+  return (
+    <div className="v2-story">
+      {cards.map((c) => (
+        <div key={c.k} className={`v2-story-c sev-${c.line.sev}`}><i />
+          <div>
+            <div className="k">{c.head}</div>
+            <p>{c.line.text}</p>
+            <button type="button" className="v2-story-go" onClick={() => goTo(c.go)}>{c.act} →</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+// Per-channel counts for one reach row: Meta and Google from the channel
+// key-event resolution, the rest as "other". A calendar row can carry more
+// bookings than the stage split knows about, so the split is scaled to the
+// row's count rather than allowed to overflow it. Pure, tested.
+function v2ReachSplit(count, meta, google) {
+  const c = Math.max(0, count || 0); let m = Math.max(0, meta || 0), g = Math.max(0, google || 0)
+  if (!c) return { meta: 0, google: 0, other: 0 }
+  if (m + g > c) { const f = c / (m + g); m = Math.round(m * f); g = Math.max(0, c - m) }
+  return { meta: m, google: g, other: Math.max(0, c - m - g) }
+}
+// Key event reach drawn as stage bars, one chain per pipeline: each bar is the
+// share of that pipeline's leads, split by channel, with the previous period as
+// a tick and the leak marked where it happens. Same rows and rules as the
+// reach cards (intelReach); the table view shows those cards.
+function ExecReach({ reach, multi, kef, cc, clientId, money, spend, chanLabel, leadTotal }) {
+  const [table, setTable] = useState(false)
+  const rows = reach || []
+  if (!rows.length) return null
+  const groups = new Map()
+  for (const r of rows) { if (!groups.has(r.pipelineId)) groups.set(r.pipelineId, []); groups.get(r.pipelineId).push(r) }
+  const list = [...groups.entries()].map(([pid, rs]) => ({ pid, name: pid === '__all__' ? null : (rs[0].pipelineName || 'Pipeline'), rows: rs, base: rs[0].base }))
+  list.sort((a, b) => (a.pid === '__all__' ? 1 : b.pid === '__all__' ? -1 : b.base - a.base))
+  // Channel counts per row label, per pipeline (multi) or account-wide.
+  const byPipe = new Map()
+  if (multi) { for (const pk of channelKeyEventsByPipe(cc, clientId)) byPipe.set(pk.pipeId, pk) }
+  const single = !multi ? channelKeyEvents(cc, clientId) : null
+  const chanOf = (pid, label) => {
+    const src = multi ? byPipe.get(pid) : single
+    if (!src) return null
+    const i = src.labels.findIndex((l) => l.label === label)
+    return i < 0 ? null : { meta: src.meta[i] || 0, google: src.google[i] || 0 }
+  }
+  // Leads split: the pipeline's own contribution, or the account's paid feed.
+  const leadsSplit = (pid, base) => {
+    const pc = multi ? ((cc && cc.pipeContribution) || []).find((p) => p.id === pid) : null
+    const m = pc ? ((pc.chan && pc.chan.meta.leads) || 0) : ((cc && cc.paid && cc.paid.metaLeads) || 0)
+    const g = pc ? ((pc.chan && pc.chan.google.leads) || 0) : ((cc && cc.paid && cc.paid.googleLeads) || 0)
+    return v2ReachSplit(base, m, g)
+  }
+  const pc = (v) => `${Math.round(v * 100)}%`
+  const Bar = ({ split, width, prevAt, leak }) => {
+    const tot = split.meta + split.google + split.other || 1
+    return (
+      <div className={`v2-bar${leak ? ' leak' : ''}`}>
+        <div className="track" />
+        <div className="fill" style={{ width: `${Math.max(0, Math.min(100, width * 100))}%` }}>
+          {split.meta ? <span className="m" style={{ flex: split.meta / tot }} title={`Meta ${fmtNumber(split.meta)}`} /> : null}
+          {split.google ? <span className="g" style={{ flex: split.google / tot }} title={`Google ${fmtNumber(split.google)}`} /> : null}
+          {split.other ? <span className="o" style={{ flex: split.other / tot }} title={`Organic, referral, direct ${fmtNumber(split.other)}`} /> : null}
+        </div>
+        {prevAt != null ? <div className="prev" style={{ left: `${Math.max(0, Math.min(100, prevAt * 100))}%` }} title={`Previous period: ${pc(prevAt)}`} /> : null}
+      </div>
+    )
+  }
+  return (
+    <div className="card v2-reach" data-sec="reach">
+      <div className="v2-sec-h">
+        <h3>Key event reach <span className="sub">· {multi ? "share of each pipeline's own leads" : `share of ${fmtNumber(leadTotal)} ${chanLabel ? `${chanLabel} ` : ''}leads`} · the step is the share of the row before · tick = previous period</span></h3>
+        <div className="tools"><button type="button" className={table ? 'on' : ''} onClick={() => setTable((t) => !t)}>{table ? 'Bars' : 'Table'}</button></div>
+      </div>
+      {table ? <IntelReach reach={reach} multi={multi} leadTotal={leadTotal} chanLabel={chanLabel} money={money} spend={spend} /> : list.map((g) => {
+        const bn = g.rows.find((r) => r.bottleneck) || null
+        const bnIdx = bn ? g.rows.indexOf(bn) : -1
+        const before = bnIdx > 0 ? g.rows[bnIdx - 1] : null
+        const missed = bn ? Math.max(0, (bn.stepBase || 0) - (bn.count || 0)) : 0
+        const wouldBe = bn && bn.prevStep != null && bn.stepBase ? Math.round(bn.stepBase * bn.prevStep) - (bn.count || 0) : null
+        return (
+          <div key={g.pid} className="v2-reach-g">
+            {g.name ? <div className="v2-pipe-lab"><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.base)} leads</span></div> : null}
+            <div className="v2-funnel">
+              <div className="st">Opportunities<small>new this period</small></div>
+              <Bar split={leadsSplit(g.pid, g.base)} width={1} prevAt={g.rows[0] && g.rows[0].prevBase && g.base ? Math.min(1, g.rows[0].prevBase / g.base) : null} />
+              <div className="rate">{fmtNumber(g.base)}<small>{g.rows[0] && g.rows[0].prevBase ? `was ${fmtNumber(g.rows[0].prevBase)}` : 'leads'}</small></div>
+              {g.rows.map((r, i) => {
+                const ch = chanOf(g.pid, r.label)
+                const split = ch ? v2ReachSplit(r.count, ch.meta, ch.google) : { meta: 0, google: 0, other: r.count || 0 }
+                const isBn = r === bn
+                return (
+                  <React.Fragment key={i}>
+                    <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{r.kind === 'calendar' ? 'calendar booking' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
+                    <Bar split={split} width={r.rate != null ? r.rate : 0} prevAt={r.prevRate} leak={isBn} />
+                    <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(r.count)}<small>{i === 0 ? `${r.rate != null ? pc(r.rate) : '-'} of leads` : r.step != null ? `${pc(r.step)} of the ${fmtNumber(r.stepBase)} before` : '-'}{spend && r.count ? ` · ${money(Math.round(spend / r.count))} each` : ''}</small></div>
+                  </React.Fragment>
+                )
+              })}
+              {bn ? <div className="leak"><span className="tag">Biggest leak</span><p><b>{fmtNumber(missed)} {missed === 1 ? 'person' : 'people'} reached {before ? before.label.replace(/^📅 /, '') : 'the funnel'} and did not go on to {bn.label.replace(/^📅 /, '')}.</b> {bn.prevStep != null ? (wouldBe > 0 ? `At the previous period's ${pc(bn.prevStep)} this step would have produced ${fmtNumber(wouldBe)} more.` : `This step held at ${pc(bn.step)} against ${pc(bn.prevStep)} last period.`) : `${pc(bn.step)} of those who reached the step before went on.`}</p></div> : null}
+            </div>
+          </div>
+        )
+      })}
+      {!table ? <div className="v2-leg"><span><i className="m" />Meta</span><span><i className="g" />Google</span><span><i className="o" />Organic, referral, direct</span><span><i className="pv" />Previous period</span></div> : null}
+    </div>
+  )
+}
+
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe, pipes = [] }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
@@ -7683,6 +7815,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // Which Overview layout to draw. V1 is untouched below; V2 adds the context
   // bar and headline row and, release by release, replaces sections.
   const v2 = useUiLayout() === 'v2'
+  // Daily ad spend for the V2 headline sparklines - its own light read, only
+  // when V2 is drawing, so V1 never pays for it.
+  const spendDaily = useSwrJson(v2 && !isViewer ? spendDailyUrl(clientId, range, nonceX) : null)
   // Cash position row: per-client switch in Settings → Account summary.
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
@@ -7877,12 +8012,28 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             const pRoas = prevChanSpend && pRev != null ? pRev / prevChanSpend : null
             const dly = (cc && cc.daily) || null
             const days = dly ? dly.days : null
+            // Spend per day for the channel toggle, allocated by the same lead-share
+            // factor the lens applies to the totals when a pipeline is picked.
+            const sd = spendDaily.data && Array.isArray(spendDaily.data.days) && (!days || spendDaily.data.days.length === days.length) ? spendDaily.data : null
+            let spendSeries = null, roasSeries = null
+            if (sd && chan !== 'nonpaid') {
+              const rawSp = (ccRaw && ccRaw.spend) || {}, lensSp = (cc && cc.spend) || {}
+              const mF = chan === 'google' ? 0 : (pipeOn ? (rawSp.meta ? (lensSp.meta || 0) / rawSp.meta : 0) : 1)
+              const gF = chan === 'meta' ? 0 : (pipeOn ? (rawSp.google ? (lensSp.google || 0) / rawSp.google : 0) : 1)
+              spendSeries = sd.days.map((d, i) => (sd.meta[i] || 0) * mF + (sd.google[i] || 0) * gF)
+              if (dly && dly.revenue && dly.revenue.length === spendSeries.length) {
+                const roll = (arr, i) => { let a = 0; for (let j = Math.max(0, i - 6); j <= i; j++) a += arr[j] || 0; return a }
+                let last = 0
+                roasSeries = spendSeries.map((v, i) => { const sp7 = roll(spendSeries, i); if (sp7 > 0) last = roll(dly.revenue, i) / sp7; return last })
+              }
+            }
+            const spendWait = spendDaily.status === 'loading' ? 'reading daily spend…' : ''
             return <ExecHero tiles={[
-              { label: pipeOn ? 'Ad spend (allocated)' : 'Ad spend', value: chanSpend != null ? money(chanSpend) : '-', cur: prevChanSpend != null ? chanSpend : null, prev: prevChanSpend, goodWhenDown: true, flat: pipeOn ? 'by lead share' : undefined, noSeries: 'daily spend arrives with the next release', onClick: tileClick({ kind: 'spend', title: 'Ad spend by platform' }) },
+              { label: pipeOn ? 'Ad spend (allocated)' : 'Ad spend', value: chanSpend != null ? money(chanSpend) : '-', cur: prevChanSpend != null ? chanSpend : null, prev: prevChanSpend, goodWhenDown: true, flat: pipeOn ? 'by lead share' : undefined, series: spendSeries, days: sd ? sd.days : null, fmt: (v) => money(Math.round(v)), noSeries: spendWait, onClick: tileClick({ kind: 'spend', title: 'Ad spend by platform' }) },
               { label: 'Opportunities', value: oppsV != null ? fmtNumber(oppsV) : '-', cur: oppsV, prev: pOpps, series: dly ? dly.leads : null, days, fmt: (v) => `${fmtNumber(v)} new`, onClick: tileClick({ kind: 'opps', title: 'Opportunities by source' }) },
               { label: 'Won', lead: true, value: wonV != null ? fmtNumber(wonV) : '-', cur: wonV, prev: pWon, flat: wonBasis === 'closed' ? 'closed in period' : 'from leads created in period', series: dly ? dly.won : null, days, roll: true, fmt: (v) => `${fmtNumber(v)} won`, onClick: tileClick({ kind: 'revenue', title: 'Won deals' }) },
               { label: 'Revenue', value: revV != null ? money(revV) : '-', cur: revV, prev: pRev, flat: avgV != null ? `avg ${money(avgV)}` : undefined, series: dly ? dly.revenue : null, days, roll: true, fmt: (v) => money(v), onClick: tileClick({ kind: 'revenue', title: 'Revenue - won deals' }) },
-              { label: 'ROAS', value: roas != null ? `${roas.toFixed(1)}x` : '-', cur: roas, prev: pRoas, flat: roas == null ? (chanSpend ? 'no revenue yet' : 'no ad spend in this view') : (cashOn && cc && cc.cash && chanSpend ? `cash ${((cc.cash.collected || 0) / chanSpend).toFixed(1)}x` : undefined), noSeries: 'daily spend arrives with the next release' },
+              { label: 'ROAS', value: roas != null ? `${roas.toFixed(1)}x` : '-', cur: roas, prev: pRoas, flat: roas == null ? (chanSpend ? 'no revenue yet' : 'no ad spend in this view') : (cashOn && cc && cc.cash && chanSpend ? `cash ${((cc.cash.collected || 0) / chanSpend).toFixed(1)}x` : undefined), series: roasSeries, days: sd ? sd.days : null, fmt: (v) => `${v.toFixed(1)}x · 7-day`, noSeries: spendWait },
             ]} />
           })() : null}
           {!v2 ? <>
@@ -7891,6 +8042,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
           </div>
           </> : null}
+          {!v2 ? <>
           <div className="cc-group-lab x-internal">Performance snapshot · spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
           <div className="scorecard exec-kpis exec-kpis-4 x-internal">
             <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
@@ -7909,6 +8061,20 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
             <Kpi label="Result rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ resulted" onClick={tileClick({ kind: 'close', title: 'Result rate - by channel' })} />
           </div>
+          </> : null}
+          {v2 ? <>
+            <ExecStory lines={intel ? intel.lines : []} loading={!intel && !!cc} />
+            {kef.usingKe && kef.rows.length && intel ? <ExecReach reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} clientId={clientId} money={money} spend={chanSpend || 0} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
+            <div className="cc-group-lab x-internal">Efficiency &amp; pipeline health{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
+            <div className="scorecard exec-kpis v2-eff x-internal">
+              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+            </div>
+          </> : null}
           {cashOn && cc ? (() => {
             // Cash position: what the won deals above have actually paid, from the
             // client's "Cash Collected" opportunity field. A deal with nothing
@@ -7929,13 +8095,13 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               </div>
             </>
           })() : null}
-          {kef.usingKe && kef.rows.length && intel ? <IntelReach reach={intel.reach} multi={kef.multi} leadTotal={kef.leadTotal} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} money={money} spend={chanSpend || 0} /> : null}
+          {!v2 && kef.usingKe && kef.rows.length && intel ? <IntelReach reach={intel.reach} multi={kef.multi} leadTotal={kef.leadTotal} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} money={money} spend={chanSpend || 0} /> : null}
         </div>
       })()}
 
       {/* Channel split - per-channel spend → key events → wins & efficiency. Above
           the bottleneck so the channel scoreboard reads first. (Internal figures.) */}
-      <div className="card x-internal">
+      <div className="card x-internal" data-sec="channels">
         <div className="exec-panel-h">Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the account's</span></div>
         {(() => {
           const ch = pipeOn ? { metaSpend: cc.spend.meta, googleSpend: cc.spend.google, metaLeads: cc.paid.metaLeads, googleConv: cc.paid.googleLeads } : (h.channels || {})

@@ -9,7 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
-import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig } from '../lib/ghl.mjs'
+import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
@@ -2645,6 +2645,14 @@ const STALE_ON_ERROR_MS = 6 * 60 * 60 * 1000    // on a rebuild failure, fall ba
 //                          would be picked up within the hour anyway
 const RESULT_TTL_AD_FINAL_MS = 24 * 60 * 60 * 1000
 const RESULT_TTL_AD_SETTLED_MS = 60 * 60 * 1000
+// Ad spend summed per calendar day, one series per platform, aligned to the
+// day list. A platform with no rows at all reads as an all-zero series; the
+// caller's adsOk says whether that is "spent nothing" or "read failed".
+function spendByDay(days, metaRows, googleRows) {
+  const idx = new Map(days.map((d, i) => [d, i]))
+  const series = (rows) => { const out = new Array(days.length).fill(0); for (const r of rows || []) { const i = idx.get(String(r.date || '').slice(0, 10)); if (i !== undefined) out[i] += num(r.spend) } return out.map((v) => Math.round(v * 100) / 100) }
+  return { days, meta: series(metaRows), google: series(googleRows) }
+}
 function resultTtlFor(scope, channel, to) {
   // Only the ad-only channels, and only when the request is channel-scoped (no scope).
   if (scope || (channel !== 'meta' && channel !== 'google') || !to) return RESULT_TTL_MS
@@ -2657,7 +2665,7 @@ function resultTtlFor(scope, channel, to) {
 const cacheStore = () => getStore({ name: 'caalano-cache', consistency: 'strong' })
 // Scopes safe to cache: client-scoped, GET, identical for every authorised
 // caller. (Agency-wide aggregates are filtered per-caller, so they're excluded.)
-const CACHEABLE_SCOPES = new Set(['bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
+const CACHEABLE_SCOPES = new Set(['spenddaily', 'bizloc', 'users', 'callcohort', 'ccdrill', 'speed', 'appts', 'cohorts', 'forms', 'weekly', 'ovrow', 'health', 'updateextra', 'anomalies', 'social', 'socialtrend', 'stagetiming', 'enqtimes', 'usercalls', 'clinic', 'calperf'])
 const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // Agency-wide scopes that carry NO client param. They ARE the slowest first-load
 // calls (whole-roster Windsor + GHL fan-out), so caching them is the single
@@ -3897,6 +3905,23 @@ export default async (req) => {
   // Executive health score - the headline of the Caalano 360 executive tab.
   // Live computation for the selected range plus whatever daily trend history the
   // snapshot job has accumulated (empty until it first runs - no fake history).
+  // Daily ad spend per platform for the Overview headline sparklines (layout
+  // V2). Its own light read - account, date, spend - so the health build is not
+  // touched. Best effort per platform: a platform that fails reads as failed in
+  // adsOk, never as a measured zero.
+  if (url.searchParams.get('scope') === 'spenddaily') {
+    const cc = CLIENTS[client]
+    if (!cc) return json({ scope: 'spenddaily', client, error: `unknown client ${client}` }, 404)
+    if (!from || !to) return json({ scope: 'spenddaily', client, error: 'from and to are required' }, 400)
+    const filt = (id) => (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, id))
+    const adsOk = { meta: cc.meta ? true : null, google: cc.google ? true : null }
+    const [mRows, gRows] = await Promise.all([
+      cc.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend'], from, to, preset, key, { accounts: cc.meta }).then(filt(cc.meta)).catch(() => { adsOk.meta = false; return [] }) : Promise.resolve([]),
+      cc.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend'], from, to, preset, key, { accounts: cc.google }).then(filt(cc.google)).catch(() => { adsOk.google = false; return [] }) : Promise.resolve([]),
+    ])
+    return json({ scope: 'spenddaily', client, period: { from, to }, adsOk, ...spendByDay(dayListBetween(from, to), mRows, gRows) }, 200, true)
+  }
+
   if (url.searchParams.get('scope') === 'health') {
     const cc = CLIENTS[client]
     if (!cc) return json({ scope: 'health', client, error: `unknown client ${client}` }, 404)

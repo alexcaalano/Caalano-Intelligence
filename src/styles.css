@@ -4747,3 +4747,4 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-page .cap { line-height: 1.5; }
 /* Loading and notes keep their place but sit flush with the cards. */
 .v2-page .note { border-style: solid; }
+.v2-pipe-lab .v2-cac { margin-left: auto; font-size: 12px; font-weight: 800; color: var(--text); background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 999px; padding: 2px 10px; }

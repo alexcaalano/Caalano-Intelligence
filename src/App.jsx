@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.486.0'
+const APP_VERSION = '3.487.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7722,7 +7722,7 @@ function v2ReachSplit(count, meta, google) {
 // share of that pipeline's leads, split by channel, with the previous period as
 // a tick and the leak marked where it happens. Same rows and rules as the
 // reach cards (intelReach); the table view shows those cards.
-function ExecReach({ reach, multi, kef, cc, clientId, money, spend, chanLabel, leadTotal }) {
+function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLabel, leadTotal, wonBasis }) {
   const [table, setTable] = useState(false)
   const rows = reach || []
   if (!rows.length) return null
@@ -7748,6 +7748,23 @@ function ExecReach({ reach, multi, kef, cc, clientId, money, spend, chanLabel, l
     return v2ReachSplit(base, m, g)
   }
   const pc = (v) => `${Math.round(v * 100)}%`
+  // The Won row that closes each chain, with cost per won (CAC): the pipeline's
+  // own wins over its own leads, spend allocated by its share of leads - the
+  // same rule Pipeline performance uses. Account-wide when one pipeline.
+  const contrib = new Map(((cc && cc.pipeContribution) || []).map((p) => [p.id, p]))
+  const totLeads = [...contrib.values()].reduce((a, p) => a + (p.leads || 0), 0)
+  const pContrib = new Map(((pcc && pcc.pipeContribution) || []).map((p) => [p.id, p]))
+  const wonRow = (g) => {
+    if (multi) {
+      const p = contrib.get(g.pid); if (!p) return null
+      const pp = pContrib.get(g.pid)
+      const sp = totLeads ? (spend || 0) * ((p.leads || 0) / totLeads) : 0
+      return { count: p.won || 0, base: p.leads || 0, spend: sp, prevRate: pp && pp.leads ? (pp.won || 0) / pp.leads : null, split: v2ReachSplit(p.won || 0, p.chan ? p.chan.meta.won : 0, p.chan ? p.chan.google.won : 0) }
+    }
+    const t = (cc && cc.totals) || {}, pt = (pcc && pcc.totals) || null
+    return { count: t.won || 0, base: t.leads || 0, spend: spend || 0, prevRate: pt && pt.leads ? (pt.won || 0) / pt.leads : null, split: v2ReachSplit(t.won || 0, cc && cc.paid ? cc.paid.metaWon : 0, cc && cc.paid ? cc.paid.googleWon : 0) }
+  }
+  const cacOf = (w) => (w && w.count && w.spend ? money(Math.round(w.spend / w.count)) : null)
   const Bar = ({ split, width, prevAt, leak }) => {
     const tot = split.meta + split.google + split.other || 1
     return (
@@ -7774,9 +7791,12 @@ function ExecReach({ reach, multi, kef, cc, clientId, money, spend, chanLabel, l
         const before = bnIdx > 0 ? g.rows[bnIdx - 1] : null
         const missed = bn ? Math.max(0, (bn.stepBase || 0) - (bn.count || 0)) : 0
         const wouldBe = bn && bn.prevStep != null && bn.stepBase ? Math.round(bn.stepBase * bn.prevStep) - (bn.count || 0) : null
+        const lastIsWon = g.rows.length && g.rows[g.rows.length - 1].kind === 'won'
+        const w = lastIsWon ? null : wonRow(g)
+        const cac = cacOf(w) || (lastIsWon && spend && g.rows[g.rows.length - 1].count ? money(Math.round(spend / g.rows[g.rows.length - 1].count)) : null)
         return (
           <div key={g.pid} className="v2-reach-g">
-            {g.name ? <div className="v2-pipe-lab"><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.base)} leads</span></div> : null}
+            {g.name || cac ? <div className="v2-pipe-lab">{g.name ? <><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.base)} leads</span></> : <span className="sub">All pipelines · {fmtNumber(g.base)} leads</span>}{cac ? <span className="v2-cac" title="Cost per won deal: this scope's ad spend ÷ deals won (spend allocated to a pipeline by its share of leads)">CAC {cac}</span> : null}</div> : null}
             <div className="v2-funnel">
               <div className="st">Opportunities<small>new this period</small></div>
               <Bar split={leadsSplit(g.pid, g.base)} width={1} prevAt={g.rows[0] && g.rows[0].prevBase && g.base ? Math.min(1, g.rows[0].prevBase / g.base) : null} />
@@ -7793,6 +7813,11 @@ function ExecReach({ reach, multi, kef, cc, clientId, money, spend, chanLabel, l
                   </React.Fragment>
                 )
               })}
+              {w ? <>
+                <div className="st">Won<small>{wonBasis === 'closed' ? 'closed in period' : 'from leads created in period'}</small></div>
+                <Bar split={w.split} width={w.base ? Math.min(1, w.count / w.base) : 0} prevAt={w.prevRate} />
+                <div className="rate">{fmtNumber(w.count)}<small>{w.base ? `${pc(w.count / w.base)} of leads` : '-'}{cacOf(w) ? ` · CAC ${cacOf(w)}` : ''}</small></div>
+              </> : null}
               {bn ? <div className="v2-leakcard"><span className="tag">Biggest leak</span><p><b>{fmtNumber(missed)} {missed === 1 ? 'person' : 'people'} reached {before ? before.label.replace(/^📅 /, '') : 'the funnel'} and did not go on to {bn.label.replace(/^📅 /, '')}.</b> {bn.prevStep != null ? (wouldBe > 0 ? `At the previous period's ${pc(bn.prevStep)} this step would have produced ${fmtNumber(wouldBe)} more.` : `This step held at ${pc(bn.step)} against ${pc(bn.prevStep)} last period.`) : `${pc(bn.step)} of those who reached the step before went on.`}</p></div> : null}
             </div>
           </div>
@@ -8127,7 +8152,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           </> : null}
           {v2 ? <>
             <ExecStory lines={intel ? intel.lines : []} loading={!intel && !!cc} />
-            {kef.usingKe && kef.rows.length && intel ? <ExecReach reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} clientId={clientId} money={money} spend={chanSpend || 0} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
+            {kef.usingKe && kef.rows.length && intel ? <ExecReach reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={clientId} money={money} spend={chanSpend || 0} wonBasis={wonBasis} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
             <div className="cc-group-lab x-internal">Efficiency &amp; pipeline health{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
             <div className="scorecard exec-kpis v2-eff x-internal">
               <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />

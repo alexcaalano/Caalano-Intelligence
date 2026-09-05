@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.487.0 - 2026-09-05 · `PENDING` - CAC on the reach section (V2)
+
+Each pipeline's chain in Key event reach now ends with a Won row - wins as a
+share of that pipeline's leads, split by channel, previous period as a tick -
+and the row carries cost per won. The pipeline heading shows the same CAC as
+a chip. Spend is allocated to a pipeline by its share of leads, the rule
+Pipeline performance already uses; with one pipeline it is the scope's spend
+over the scope's wins.
+
+---
+
 ## v3.486.0 - 2026-09-05 · `f7cf21b` - Fix: reach bars broke out of their rows (V2)
 
 The leak note under a funnel and the highlighted leak bar shared a class

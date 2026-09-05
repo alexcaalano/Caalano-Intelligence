@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.482.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 2
+## v3.482.0 - 2026-09-05 · `d47bb2c` - Overview layout V2, release 2
 
 V2 (super admins, via the Layout switch) becomes a complete page: nothing is
 shown twice any more.

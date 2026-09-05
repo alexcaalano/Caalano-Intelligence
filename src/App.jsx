@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.493.0'
+const APP_VERSION = '3.494.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7239,6 +7239,7 @@ function intelPageOf(x) {
   const d = x.dim, k = String(x.key || '')
   if (x.metric === 'ttw' || k === 'ttw') return 'timing'
   if (d === 'calendar' || k.startsWith('show:')) return 'appts'
+  if (d === 'callrep') return 'calls'
   if (d === 'rep' || k.startsWith('rep:')) return 'users'
   if (d === 'location') return 'location'
   if (d === 'form') return 'forms'
@@ -7333,6 +7334,11 @@ function intelFindings(cc, pcc, fold, firstKe, opts = {}) {
     const forms = (opts.forms || []).map((f) => ({ label: f.form || f.name || 'Form', leads: f.leads || 0, won: f.won || 0, booked: f.booked || 0 }))
     cutRate('form', forms, (r) => r.won, (r) => r.leads, 'win', '(form) leads win', true)
     cutRate('form', forms, (r) => r.booked, (r) => r.leads, 'book', '(form) leads book', true)
+    // Call Reporting: connect rate on outbound calls, and the share of leads
+    // called back within five minutes, per rep against the team.
+    const calls = (opts.calls || []).filter((u) => u && u.userId !== 'unassigned').map((u) => ({ label: u.name || 'Unnamed rep', outbound: u.outbound || 0, connected: u.outboundConnected || 0, timed: u.speedSamples || 0, sla: u.sla5Pct != null && u.speedSamples ? Math.round((u.sla5Pct / 100) * u.speedSamples) : 0 }))
+    cutRate('callrep', calls, (r) => r.connected, (r) => r.outbound, 'connect', '(rep) connects', true, 20)
+    cutRate('callrep', calls.filter((r) => r.timed > 0), (r) => r.sla, (r) => r.timed, 'sla', '(rep) calls new leads back within 5 minutes', true)
   }
   for (const x of out) x.page = intelPageOf(x)
   return out.sort((a, b) => b.score - a.score)
@@ -7646,12 +7652,12 @@ function IntelMovers({ movers, money, hasPrev }) {
 function IntelFindings({ findings, index, money, onNav }) {
   if (!findings) return null
   const ahead = findings.filter((x) => x.better).slice(0, 6), behind = findings.filter((x) => !x.better).slice(0, 6)
-  const DIM = { pipeline: 'Pipeline', channel: 'Channel', campaign: 'Campaign', adset: 'Ad set', creative: 'Creative', keyword: 'Keyword', source: 'Source', stage: 'Stage', reason: 'Lost reason', calendar: 'Calendar', rep: 'Rep', location: 'Location', form: 'Form' }
+  const DIM = { pipeline: 'Pipeline', channel: 'Channel', campaign: 'Campaign', adset: 'Ad set', creative: 'Creative', keyword: 'Keyword', source: 'Source', stage: 'Stage', reason: 'Lost reason', calendar: 'Calendar', rep: 'Rep', callrep: 'Rep · calls', location: 'Location', form: 'Form' }
   const item = (x, i) => (
     <li key={i} className={`if-item ${x.better ? 'good' : 'bad'}${onNav ? ' if-go' : ''}`} {...(onNav ? { role: 'button', tabIndex: 0, title: `Open ${INTEL_PAGES[x.page || intelPageOf(x)] || 'the page'}`, onClick: () => onNav(x.page || intelPageOf(x)), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNav(x.page || intelPageOf(x)) } } } : {})}>
       {onNav ? <span className={`if-page pg-${x.page || intelPageOf(x)}`}>{INTEL_PAGES[x.page || intelPageOf(x)] || 'Caalano360'}</span> : null}
       <span className="if-chip">{x.idx != null ? x.idx : `${Math.round(x.value * 100)}%`}</span>
-      <div className="if-body"><span>{x.text}</span><span className="cap">{DIM[x.dim] || x.dim} · {x.metric === 'ttw' ? 'time to win' : x.metric === 'show' ? 'show rate' : x.metric === 'book' ? 'booking rate' : x.metric === 'win' ? 'win rate' : x.metric === 'reach' ? 'reach' : x.metric === 'lost' ? 'lost share' : x.metric === 'loststage' ? 'where losses sit' : 'lost reason'}{x.idx != null ? ` · ${x.idx} against 100` : ''}</span></div>
+      <div className="if-body"><span>{x.text}</span><span className="cap">{DIM[x.dim] || x.dim} · {x.metric === 'ttw' ? 'time to win' : x.metric === 'connect' ? 'connect rate' : x.metric === 'sla' ? '5-minute callback' : x.metric === 'show' ? 'show rate' : x.metric === 'book' ? 'booking rate' : x.metric === 'win' ? 'win rate' : x.metric === 'reach' ? 'reach' : x.metric === 'lost' ? 'lost share' : x.metric === 'loststage' ? 'where losses sit' : 'lost reason'}{x.idx != null ? ` · ${x.idx} against 100` : ''}</span></div>
     </li>
   )
   return (
@@ -8032,6 +8038,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // V2: the forms feed (forms + located leads) so the indexing and movers can
   // speak for the Forms and Location tabs too. Not fetched in V1.
   const formsFeed = useForms(!isViewer ? clientId : null, range, nonceX)
+  // Call Reporting figures per rep, one light read (calls only, no cadence) for
+  // ranges up to a month, so the indexing can speak for that tab as well.
+  const rangeDays = range && range.from && range.to ? Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86400000) + 1 : 0
+  const callsFeed = useSwrJson(!isViewer && rangeDays > 0 && rangeDays <= 31 ? `/.netlify/functions/windsor?scope=usercalls&client=${clientId}&${rangeQuery(range)}&callsonly=1${nonceX ? `&_r=${nonceX}` : ''}` : null)
   // Cash position row: per-client switch in Settings → Account summary.
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
@@ -8086,8 +8096,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     const forms = (formsFeed.data && formsFeed.data.forms) || []
     const locMap = new Map()
     for (const f of forms) for (const l of (f.locations || [])) { const k = l.label || l.value || l.name; if (!k) continue; const e = locMap.get(k) || { label: k, leads: 0, booked: 0, won: 0, lost: 0 }; e.leads += l.leads || 0; e.booked += l.booked || 0; e.won += l.won || 0; e.lost += l.lost || 0; locMap.set(k, e) }
-    return { wide: true, reps: (crmAgg && crmAgg.reps) || [], calendars: (cc && cc.bookingByCalendar) || [], locations: [...locMap.values()], forms }
-  }, [formsFeed.data, crmAgg, cc])
+    const calls = callsFeed.data && !callsFeed.data.error && Array.isArray(callsFeed.data.byUser) ? callsFeed.data.byUser : []
+    return { wide: true, reps: (crmAgg && crmAgg.reps) || [], calendars: (cc && cc.bookingByCalendar) || [], locations: [...locMap.values()], forms, calls }
+  }, [formsFeed.data, crmAgg, cc, callsFeed.data])
   const intel = useMemo(() => buildIntel(cc, pcc, clientId, money, intelExtra), [cc, pcc, clientId, keTick, cashOn, intelExtra]) // eslint-disable-line
   // Spend for the active channel toggle, from a (lensed) drill payload.
   const spendOf = (d, chn) => { const sp = (d && d.spend) || {}; return chn === 'meta' ? (sp.meta || 0) : chn === 'google' ? (sp.google || 0) : chn === 'nonpaid' ? 0 : (sp.total || 0) }
@@ -14659,6 +14670,33 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {(() => {
+        // Funnel by rep, drawn: each rep's leads as a track scaled to the busiest
+        // rep, with booked, shown and won nested inside it. The leaderboard below
+        // carries every figure; this is the same data as a picture.
+        const rows = [...users].filter((u) => (u.leads || 0) > 0).sort((a, b) => (b.leads || 0) - (a.leads || 0)).slice(0, 16)
+        if (!rows.length) return null
+        const mx = Math.max(1, ...rows.map((u) => u.leads || 0))
+        const pc = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
+        return <div className="card">
+          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Funnel by rep <span style={{ fontWeight: 400 }}>· leads as the track, scaled to the busiest rep · booked, shown and won nested inside · top {rows.length}</span></div>
+          <div className="v2-repf">
+            {rows.map((u) => { const L = u.leads || 0; return (
+              <div key={u.id || u.name} className="v2-repf-row">
+                <div className="n"><b>{u.name || 'Unassigned'}</b><small>{fmtNumber(L)} leads</small></div>
+                <div className="t"><div className="bars" style={{ width: `${(L / mx) * 100}%` }}>
+                  <span className="b" style={{ width: `${L ? Math.min(100, ((u.booked || 0) / L) * 100) : 0}%` }} />
+                  <span className="s" style={{ width: `${L ? Math.min(100, ((u.shown || 0) / L) * 100) : 0}%` }} />
+                  <span className="w" style={{ width: `${L ? Math.min(100, ((u.won || 0) / L) * 100) : 0}%` }} />
+                </div></div>
+                <div className="r"><span title="Booked ÷ leads"><i className="b" />{fmtNumber(u.booked || 0)} <em>{pc(u.booked || 0, L)}</em></span><span title="Shown ÷ booked"><i className="s" />{fmtNumber(u.shown || 0)} <em>{pc(u.shown || 0, u.booked || 0)}</em></span><span title="Won ÷ leads"><i className="w" />{fmtNumber(u.won || 0)} <em>{pc(u.won || 0, L)}</em></span></div>
+              </div>
+            ) })}
+          </div>
+          <div className="v2-leg" style={{ marginTop: 10 }}><span><i style={{ background: 'var(--border-2)' }} />Leads</span><span><i className="m" />Booked</span><span><i className="g" />Shown</span><span><i style={{ background: 'var(--brand-2)' }} />Won</span></div>
+        </div>
+      })()}
 
       {repActivity}
 

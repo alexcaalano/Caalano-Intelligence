@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.494.0 - 2026-09-05 · `PENDING` - Funnel by rep, drawn; Call Reporting in the indexing
+
+- **Users: Funnel by rep.** A drawn block above the leaderboard: each rep's
+  leads as a track scaled to the busiest rep, with booked, shown and won
+  nested inside, and the counts and rates beside it. The leaderboard keeps
+  every figure; this is the same data as a picture.
+- **Call Reporting joins the Overview indexing.** Per rep, the connect rate
+  on outbound calls (20 calls or more) and the share of new leads called
+  back within five minutes, against the team, tagged Call Reporting and
+  clickable. Read once per load for ranges up to a month, calls only.
+
+---
+
 ## v3.493.0 - 2026-09-05 · `b33500d` - Story-first opening on every tab; sparklines in the ad scorecards
 
 - **Every tab opens with its story.** The 360 Intelligence banner on Meta,

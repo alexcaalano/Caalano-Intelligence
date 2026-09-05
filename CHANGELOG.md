@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.493.0 - 2026-09-05 · `PENDING` - Story-first opening on every tab; sparklines in the ad scorecards
+## v3.493.0 - 2026-09-05 · `b33500d` - Story-first opening on every tab; sparklines in the ad scorecards
 
 - **Every tab opens with its story.** The 360 Intelligence banner on Meta,
   Google, Users, Forms, Location, Appointments, Call Reporting, Timing and

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.491.0'
+const APP_VERSION = '3.492.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -940,21 +940,6 @@ function saveCashOn(clientId, enabled) {
   const next = { ...cur, cash: { ...(cur.cash || {}), enabled: !!enabled } }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
   writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
-}
-// Overview layout. V1 is the page everyone sees today; V2 is the redesigned
-// Overview, built one section per release on the same figures. A super admin
-// can pick either for their own browser. The server-side default (V1 until it
-// is flipped) decides what everyone else gets, so no client sees a change until
-// that switch is thrown.
-function loadUiV2Default() { return !!(SETTINGS.ui && SETTINGS.ui.v2Default) }
-function saveUiV2Default(on) { SETTINGS.ui = { ...(SETTINGS.ui || {}), v2Default: !!on }; writeLS(UI_KEY, SETTINGS.ui); saveSettingsRemote({ ui: { v2Default: !!on } }); bumpSettings() }
-function loadUiOverride() { try { const v = localStorage.getItem(UI_LAYOUT_KEY); return v === 'v1' || v === 'v2' ? v : '' } catch { return '' } }
-function saveUiOverride(v) { try { if (v) localStorage.setItem(UI_LAYOUT_KEY, v); else localStorage.removeItem(UI_LAYOUT_KEY) } catch { /* private mode */ } bumpSettings() }
-function uiLayoutOf(override, v2Default) { return override === 'v1' || override === 'v2' ? override : (v2Default ? 'v2' : 'v1') }
-function useUiLayout() {
-  const [v, setV] = useState(() => uiLayoutOf(loadUiOverride(), loadUiV2Default()))
-  useEffect(() => onSettings(() => setV(uiLayoutOf(loadUiOverride(), loadUiV2Default()))), [])
-  return v
 }
 // Resolve the sales-cycle length for a client: manual override first, else CRM.
 function closeDaysFor(clientId, crmAvg) { const ov = loadCloseOverride(clientId); return ov != null && ov > 0 ? { days: ov, manual: true } : (crmAvg != null && crmAvg > 0 ? { days: crmAvg, manual: false } : null) }
@@ -7745,20 +7730,6 @@ function ExecHero({ tiles }) {
     </div>
   )
 }
-// Super admins only: which Overview layout this browser shows, and which one
-// everyone else gets by default.
-function LayoutSwitch() {
-  useSettingsSync()
-  const def = loadUiV2Default()
-  const cur = uiLayoutOf(loadUiOverride(), def)
-  return (
-    <div className="side-layout" title="Super admins only. V1 is the Overview everyone sees today; V2 is the redesign, built section by section. Your choice applies to this browser only - the default is what everyone else gets.">
-      <span className="side-layout-l">Layout</span>
-      <span className="side-layout-seg"><button type="button" className={cur === 'v1' ? 'on' : ''} onClick={() => saveUiOverride('v1')}>V1</button><button type="button" className={cur === 'v2' ? 'on' : ''} onClick={() => saveUiOverride('v2')}>V2</button></span>
-      <button type="button" className="side-layout-def" onClick={() => { if (window.confirm(def ? 'Make V1 the default Overview for everyone again?' : 'Make V2 the default Overview for everyone? Anyone without their own choice will see the new layout on their next load.')) saveUiV2Default(!def) }}>everyone: {def ? 'V2' : 'V1'}</button>
-    </div>
-  )
-}
 
 // The three story cards under the headline row: the banner's own lines, picked
 // by what they say (the leak, the channels, what moved), each with the section
@@ -8009,7 +7980,6 @@ function ExecMovers({ movers, money, hasPrev, onNav }) {
     </div>
   )
 }
-
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe, pipes = [] }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
@@ -8019,15 +7989,12 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [retry, setRetry] = useState(0)
   const nonceX = retry ? `${nonce || 0}.${retry}` : nonce
   const isViewer = !!(authUser && authUser.role === 'viewer')
-  // Which Overview layout to draw. V1 is untouched below; V2 adds the context
-  // bar and headline row and, release by release, replaces sections.
-  const v2 = useUiLayout() === 'v2'
   // Daily ad spend for the V2 headline sparklines - its own light read, only
   // when V2 is drawing, so V1 never pays for it.
-  const spendDaily = useSwrJson(v2 && !isViewer ? spendDailyUrl(clientId, range, nonceX) : null)
+  const spendDaily = useSwrJson(!isViewer ? spendDailyUrl(clientId, range, nonceX) : null)
   // V2: the forms feed (forms + located leads) so the indexing and movers can
   // speak for the Forms and Location tabs too. Not fetched in V1.
-  const formsFeed = useForms(v2 && !isViewer ? clientId : null, range, nonceX)
+  const formsFeed = useForms(!isViewer ? clientId : null, range, nonceX)
   // Cash position row: per-client switch in Settings → Account summary.
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
@@ -8079,19 +8046,18 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // movers, indexing. Same (lensed, channel-scoped) payloads as every tile.
   const keTick = JSON.stringify(loadKeyEvents(clientId))
   const intelExtra = useMemo(() => {
-    if (!v2) return null
     const forms = (formsFeed.data && formsFeed.data.forms) || []
     const locMap = new Map()
     for (const f of forms) for (const l of (f.locations || [])) { const k = l.label || l.value || l.name; if (!k) continue; const e = locMap.get(k) || { label: k, leads: 0, booked: 0, won: 0, lost: 0 }; e.leads += l.leads || 0; e.booked += l.booked || 0; e.won += l.won || 0; e.lost += l.lost || 0; locMap.set(k, e) }
     return { wide: true, reps: (crmAgg && crmAgg.reps) || [], calendars: (cc && cc.bookingByCalendar) || [], locations: [...locMap.values()], forms }
-  }, [v2, formsFeed.data, crmAgg, cc])
+  }, [formsFeed.data, crmAgg, cc])
   const intel = useMemo(() => buildIntel(cc, pcc, clientId, money, intelExtra), [cc, pcc, clientId, keTick, cashOn, intelExtra]) // eslint-disable-line
   // Spend for the active channel toggle, from a (lensed) drill payload.
   const spendOf = (d, chn) => { const sp = (d && d.spend) || {}; return chn === 'meta' ? (sp.meta || 0) : chn === 'google' ? (sp.google || 0) : chn === 'nonpaid' ? 0 : (sp.total || 0) }
   const [drill, setDrill] = useState(null)
   // V2: secondary table columns shown on demand; sections wrap as collapsible.
   const [moreCols, setMoreCols] = useState(false)
-  const sec = (id, title, node) => (v2 ? <V2Section id={id} title={title}>{node}</V2Section> : node)
+  const sec = (id, title, node) => <V2Section id={id} title={title}>{node}</V2Section>
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
   const [aiLoading, setAiLoading] = useState(false)
@@ -8161,7 +8127,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     <div className="exec-wrap">
       {problemStrip}
       {ccStale ? <div className="note cc-stale"><b>Showing a saved copy of the CRM figures from {ccStale.age >= 3600 ? `${Math.round(ccStale.age / 3600)} h` : `${Math.max(1, Math.round(ccStale.age / 60))} min`} ago.</b> {ccStale.error ? <>The live rebuild failed: <code>{ccStale.error}</code>. </> : 'The live rebuild is running behind it. '}Refresh to try again.</div> : null}
-      {v2 ? <ExecContextBar clientName={clientName} range={range} pipes={pipes} pipe={pipe} onPipe={onPipe} chan={chan} setChan={setChan} wonBasis={wonBasis} cache={ccRaw && ccRaw._cache} onRefresh={() => setRetry((r) => r + 1)} /> : null}
+      <ExecContextBar clientName={clientName} range={range} pipes={pipes} pipe={pipe} onPipe={onPipe} chan={chan} setChan={setChan} wonBasis={wonBasis} cache={ccRaw && ccRaw._cache} onRefresh={() => setRetry((r) => r + 1)} />
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         // Within a pipeline the per-rep aggregation (account-wide) is not a
@@ -8222,8 +8188,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         // Denominator/won come from the ccdrill totals (same opportunity basis as
         // the funnel numerators) in both all and channel views.
         return <div className="exec-cc">
-          {v2 ? (() => {
-            // Headline row (V2). Same values as the tiles below; the daily series
+          {(() => {
+            // Headline row. Same values as the tiles below; the daily series
             // come from the drill payload and follow the pipeline and channel.
             const pTot = (pcc && pcc.totals) || null
             const pOpps = pTot ? pTot.leads : (pv.leads != null ? pv.leads : null)
@@ -8266,34 +8232,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               { label: 'ROAS', value: roas != null ? `${roas.toFixed(1)}x` : '-', cur: roas, prev: pRoas, flat: roas == null ? (chanSpend ? 'no revenue yet' : 'no ad spend in this view') : (cashOn && cc && cc.cash && chanSpend ? `cash ${((cc.cash.collected || 0) / chanSpend).toFixed(1)}x` : undefined), series: roasSeries, days: sd ? sd.days : null, fmt: (v) => `${v.toFixed(1)}x · 7-day`, noSeries: spendWait, onClick: tileClick({ kind: 'cacplat', title: 'ROAS and CAC by platform' }) },
               { label: 'Blended CAC', value: cacV != null ? money(Math.round(cacV)) : '-', cur: cacV, prev: pCac, goodWhenDown: true, flat: cacV == null ? (chanSpend ? 'no deals won yet' : 'no ad spend in this view') : `${money(chanSpend)} ÷ ${fmtNumber(wonV)} won, any channel`, series: cacSeries, days: sd ? sd.days : null, fmt: (v) => `${money(Math.round(v))} · 7-day`, noSeries: spendWait, onClick: tileClick({ kind: 'cacplat', title: 'CAC and ROAS by platform' }) },
             ]} />
-          })() : null}
-          {!v2 ? <>
-          <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <span>Command centre <span className="sub">· {pipeLabel ? <><b>{pipeLabel}</b> pipeline</> : 'all of Caalano Systems'} for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
-            <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
-          </div>
-          </> : null}
-          {!v2 ? <>
-          <div className="cc-group-lab x-internal">Performance snapshot · spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
-          <div className="scorecard exec-kpis exec-kpis-4 x-internal">
-            <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
-            <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '-'} cur={paidCpl} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead - paid attributed' })} />
-            <Kpi label="Cost / booked" value={cpBookedV != null ? money(cpBookedV) : '-'} cur={cpBookedV} goodWhenDown />
-            <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : '-'} cur={paidCpa} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won - paid attributed' })} />
-          </div>
-          <div className="cc-group-lab">Pipeline &amp; revenue{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]} only</span> : null} <span className="sub" style={{ fontWeight: 500 }}>· top row is the funnel; the small line under each number is its rate</span></div>
-          <div className="scorecard exec-kpis exec-kpis-4">
-            <Kpi label="Opportunities" value={oppsV != null ? fmtNumber(oppsV) : '-'} flat="new this period" onClick={tileClick({ kind: 'opps', title: 'Opportunities by source' })} />
-            <Kpi label="Booked" value={bookedV != null ? fmtNumber(bookedV) : '-'} flat={oppsV ? `${pctOf(bookedV, oppsV)} booking rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Booked - by calendar' })} />
-            <Kpi label="Shown" value={shownV != null ? fmtNumber(shownV) : '-'} flat={bookedV ? `${pctOf(shownV, bookedV)} show rate` : ' '} onClick={tileClick({ kind: 'booking', title: 'Show rate - by calendar' })} />
-            <Kpi label="Won" value={wonV != null ? fmtNumber(wonV) : '-'} flat={wonBasis === 'closed' ? `closed in period · by won date${cc && cc.wonRead ? (cc.wonRead.failed ? ' · wins read failed, retry' : ` · ${fmtNumber(cc.wonRead.onFile)} wins on file (430d)${cc.wonRead.truncated ? ' · read cut short, the oldest may be missing - refresh in a few minutes' : ''}`) : ''}` : (oppsV ? `${pctOf(wonV, oppsV)} conversion` : ' ')} onClick={tileClick({ kind: 'revenue', title: 'Won deals' })} />
-            <Kpi label="Revenue" value={revV != null ? money(revV) : '-'} flat={`${avgV != null ? `avg ${money(avgV)}` : ''}${avgV != null && roas != null ? ' · ' : ''}${roas != null ? `${roas.toFixed(1)}x ROAS` : ''}` || ' '} onClick={tileClick({ kind: 'revenue', title: 'Revenue - won deals' })} />
-            <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '-'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
-            <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
-            <Kpi label="Result rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ resulted" onClick={tileClick({ kind: 'close', title: 'Result rate - by channel' })} />
-          </div>
-          </> : null}
-          {v2 ? <>
+          })()}
+          <>
             <ExecStory lines={intel ? intel.lines : []} loading={!intel && !!cc} />
             {kef.usingKe && kef.rows.length && intel ? <ExecReach reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={clientId} money={money} spend={chanSpend || 0} wonBasis={wonBasis} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
             <div className="cc-group-lab x-internal">Efficiency &amp; pipeline health{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
@@ -8305,7 +8245,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
               <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
             </div>
-          </> : null}
+          </>
           {cashOn && cc ? (() => {
             // Cash position: what the won deals above have actually paid, from the
             // client's "Cash Collected" opportunity field. A deal with nothing
@@ -8326,15 +8266,13 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               </div>
             </>
           })() : null}
-          {!v2 && kef.usingKe && kef.rows.length && intel ? <IntelReach reach={intel.reach} multi={kef.multi} leadTotal={kef.leadTotal} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} money={money} spend={chanSpend || 0} /> : null}
         </div>
       })()}
 
       {/* Channel split - per-channel spend → key events → wins & efficiency. Above
           the bottleneck so the channel scoreboard reads first. (Internal figures.) */}
       {sec('channels', 'Channel performance', <div className="card x-internal" data-sec="channels">
-        {v2 ? <div className="v2-sec-h"><h3>Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the table's blend</span></h3><div className="tools"><button type="button" className={moreCols ? 'on' : ''} onClick={() => setMoreCols((m) => !m)}>{moreCols ? 'Fewer columns' : 'More columns'}</button></div></div>
-          : <div className="exec-panel-h">Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the account's</span></div>}
+        <div className="v2-sec-h"><h3>Channel performance <span className="sub">· spend → key events → outcomes, per paid channel · win rate is indexed against the table's blend</span></h3><div className="tools"><button type="button" className={moreCols ? 'on' : ''} onClick={() => setMoreCols((m) => !m)}>{moreCols ? 'Fewer columns' : 'More columns'}</button></div></div>
         {(() => {
           const ch = pipeOn ? { metaSpend: cc.spend.meta, googleSpend: cc.spend.google, metaLeads: cc.paid.metaLeads, googleConv: cc.paid.googleLeads } : (h.channels || {})
           // A channel whose ad read failed has NO spend figure, which is a
@@ -8349,34 +8287,6 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           if (!hasCh) return <div className="cap">No paid channel spend in this period.</div>
           const evLbl = (e) => (e.kind === 'calendar' ? '📅 ' : '') + (e.label.length > 16 ? e.label.slice(0, 15) + '…' : e.label)
           const cashCols = cashOn && !!(cc && cc.cash)
-          const renderTableV1 = (evLabels, rows) => {
-            // Win rate is indexed against THIS table's blended rate (the pipeline's
-            // own when split by pipeline), not the account's.
-            const tL = rows.reduce((a, r) => a + (r.leads || 0), 0), tW = rows.reduce((a, r) => a + (r.won || 0), 0)
-            const baseWin = tL ? tW / tL : 0
-            const idxOf = (r) => (r.leads >= INTEL_MIN_BASE && baseWin && r.leads ? Math.round(((r.won || 0) / r.leads / baseWin) * 100) : null)
-            return (
-            <div className="tbl-scroll"><table className="mini-tbl users-tbl">
-              <thead><tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th><th title="Revenue ÷ spend">ROAS</th>{cashCols ? <><th title="Cash collected on this channel's won deals">Cash</th><th title="Cash collected ÷ spend">Cash ROAS</th></> : null}</tr></thead>
-              <tbody>{rows.map((r) => (
-                <tr key={r.key}>
-                  <td className="lft"><span className="bn-src"><i style={{ background: sourceDotChan(r.key) }} />{r.label}</span></td>
-                  <td>{r.dead ? <span className="lrv-z" title="This channel's ad read didn't return, so there is no spend figure for the period - not a measured zero.">n/a</span> : money(r.spend)}</td>
-                  <td>{fmtNumber(r.leads || r.adLeads || 0)}</td>
-                  {evLabels.map((e, i) => <td key={i} className="fke-col">{fmtNumber((r.ke && r.ke[i]) || 0)}</td>)}
-                  <td>{fmtNumber(r.won)}</td>
-                  <td>{r.leads ? `${Math.round(((r.won || 0) / r.leads) * 100)}%` : '-'} {idxOf(r) != null ? <IdxChip v={idxOf(r)} /> : null}</td>
-                  <td>{money(r.revenue)}</td>
-                  <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
-                  <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
-                  <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
-                  <td>{r.dead || !r.spend ? '-' : `${((r.revenue || 0) / r.spend).toFixed(1)}×`}</td>
-                  {cashCols ? <><td>{money(r.cash || 0)}</td><td>{r.dead || !r.spend ? '-' : `${((r.cash || 0) / r.spend).toFixed(1)}×`}</td></> : null}
-                </tr>
-              ))}</tbody>
-            </table></div>
-            )
-          }
           // V2: the same columns under grouped headers, an inline bar on the win
           // rate, the first column frozen, and Close %, CAC and Avg deal behind
           // the More columns switch. Same rows, same figures.
@@ -8418,7 +8328,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             </table></div>
             )
           }
-          const renderTable = v2 ? renderTableV2 : renderTableV1
+          const renderTable = renderTableV2
           const pipesN = ((cc && cc.pipelinesFunnel) || []).length
           // Multi-pipeline: one Channel-split table per pipeline, each with that
           // pipeline's own key events (no duplicated columns) + its per-channel
@@ -8466,8 +8376,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       </div>)}
 
       {/* Biggest movers and Indexing insights - from the same model as the reach above. */}
-      {cc && intel ? (v2 ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} onNav={onNav} /></V2Section> : <IntelMovers movers={intel.movers} money={money} hasPrev={!!pcc} />) : null}
-      {cc && intel ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} onNav={v2 ? onNav : undefined} />) : null}
+      {cc && intel ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} onNav={onNav} /></V2Section> : null}
+      {cc && intel ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} onNav={onNav} />) : null}
 
       {/* Pipeline performance - per-pipeline overall key-event scorecards (all
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
@@ -15245,8 +15155,6 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // see (admins/users: everything). curTab keeps a hidden tab from being active.
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
   const isClinic = useIsClinic(client.id, !!cfg.ghl)
-  // V2 layout: the tab strip groups under four areas. V1 strip untouched.
-  const v2ws = useUiLayout() === 'v2'
   // Tab order: ad platforms first (Meta / Google / Analytics), then the CRM tabs
   // (Cohorts → Users → Call Reporting → Forms → Location → Appointments → Timing).
   // Each is still gated on the client actually having that source connected, so a
@@ -15305,11 +15213,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
               narrow screen and hid the picker off the right edge. */}
           <PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} className="cw-pipe-top" />
         </div>
-        {v2ws
-          ? <div className="subtabs v2-tabs" role="tablist">{v2TabGroups(tabs).map((g, gi) => <div key={gi} className="v2-tabgrp">{g.name ? <span className="v2-tabgrp-l">{g.name}</span> : null}{g.tabs.map((t) => <button key={t.id} role="tab" aria-selected={curTab === t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>)}</div>
-          : <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>}
+        <div className="subtabs v2-tabs" role="tablist">{v2TabGroups(tabs).map((g, gi) => <div key={gi} className="v2-tabgrp">{g.name ? <span className="v2-tabgrp-l">{g.name}</span> : null}{g.tabs.map((t) => <button key={t.id} role="tab" aria-selected={curTab === t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>)}</div>
       </div>
-      <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div className={v2ws ? 'v2-page' : undefined} style={{ marginTop: 16 }}>
+      <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div className="v2-page" style={{ marginTop: 16 }}>
         {(curTab === 'meta' || curTab === 'google')
           ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={pipeName} range={range} />
           : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
@@ -22987,7 +22893,6 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <span className="fb-ver"><b>v{APP_VERSION}</b>{__COMMIT_REF__ ? <em>{__COMMIT_REF__}</em> : null}</span>
             <span className="fb-when">deployed {fmtBuildTime(__BUILD_TIME__)}</span>
           </div>
-          {role === 'superadmin' ? <LayoutSwitch /> : null}
           {/* Standing notice. People forget what they signed on day one, so the
               claim sits where they work rather than only in a document. */}
           {showTerms ? <TermsViewer onClose={() => setShowTerms(false)} /> : null}

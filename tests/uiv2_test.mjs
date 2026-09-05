@@ -17,7 +17,7 @@ const mod = path.join(os.tmpdir(), `uiv2_test_${process.pid}.mjs`)
 fs.writeFileSync(mod, lg('dayListBetween') + '\nexport { dayListBetween }\n')
 const { dayListBetween } = await import(mod)
 fs.unlinkSync(mod)
-const { lensCc, uiLayoutOf } = new Function(['lrTimeStats', 'lensCc', 'uiLayoutOf'].map(la).join('\n') + '\nreturn { lensCc, uiLayoutOf }')()
+const { lensCc } = new Function(['lrTimeStats', 'lensCc'].map(la).join('\n') + '\nreturn { lensCc }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
 
@@ -31,13 +31,6 @@ ok('missing is empty', dayListBetween(null, '2026-09-01').length === 0 && dayLis
 ok('garbage is empty', dayListBetween('nope', '2026-09-01').length === 0)
 ok('over a year is empty', dayListBetween('2025-01-01', '2026-09-01').length === 0)
 ok('a full year fits', dayListBetween('2025-09-05', '2026-09-04').length === 365)
-
-// Layout rule: a browser choice wins; otherwise the server default; V1 when unset.
-ok('unset → v1', uiLayoutOf('', false) === 'v1')
-ok('default v2', uiLayoutOf('', true) === 'v2')
-ok('override v1 beats default v2', uiLayoutOf('v1', true) === 'v1')
-ok('override v2 beats default v1', uiLayoutOf('v2', false) === 'v2')
-ok('junk override ignored', uiLayoutOf('v3', false) === 'v1' && uiLayoutOf(null, true) === 'v2')
 
 // The lens carries the pipeline's own daily series against the shared day list.
 const days = ['2026-09-01', '2026-09-02', '2026-09-03']

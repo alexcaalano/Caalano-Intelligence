@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.492.0 - 2026-09-05 · `PENDING` - V2 is the layout. One build.
+
+The redesigned Overview and the shared tab treatment are now what everyone
+sees. The Layout switch, the server default and every V1-only code path are
+removed: the old command-centre header, the two tile rows, the reach cards
+(still reachable through the Table button on Key event reach), the old
+channel table and the old movers list. Nothing a page shows is lost; each
+element moved into its redrawn section over releases v3.481.0 to v3.491.0.
+Viewers see the same layout, with the same figures they were allowed before.
+
+---
+
 ## v3.491.0 - 2026-09-05 · `1267a5c` - Calendar events count booked or reached (V2 reach)
 
 A calendar key event in Key event reach now counts everyone who booked or

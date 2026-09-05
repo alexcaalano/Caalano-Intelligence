@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.485.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 5
+## v3.485.0 - 2026-09-05 · `a36cf3f` - Overview layout V2, release 5
 
 - **One look across every tab (V2).** A shared treatment applied to every
   client view - Meta, Google, Analytics, Cohorts, Users, Call Reporting,

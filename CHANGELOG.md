@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.484.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 4
+## v3.484.0 - 2026-09-05 · `5cb71e6` - Overview layout V2, release 4
 
 - **Grouped tab strip (V2).** The client tabs sit under four areas - Overview
   (Caalano360, Clinic), Acquisition (Meta, Google, Analytics, Change Log),

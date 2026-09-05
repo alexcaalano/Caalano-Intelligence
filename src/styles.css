@@ -4701,3 +4701,10 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-mv-row .bar span { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
 .v2-mv-row .bar span.up { background: var(--pos); } .v2-mv-row .bar span.down { background: var(--neg); }
 @media (max-width: 640px) { .v2-mv-row { grid-template-columns: 1fr 72px 90px; } .v2-sec-collapse { top: 8px; right: 8px; } }
+/* V2 release 4: grouped tab strip */
+.subtabs.v2-tabs { gap: 0; align-items: flex-end; }
+.v2-tabgrp { display: flex; align-items: flex-end; gap: 0; padding-right: 6px; margin-right: 6px; border-right: 1px solid var(--border); }
+.v2-tabgrp:last-child { border-right: 0; }
+.v2-tabgrp-l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; padding: 0 6px 10px 4px; white-space: nowrap; }
+.subtabs.v2-tabs button { padding: 9px 9px; font-size: 12.5px; }
+@media (max-width: 900px) { .v2-tabgrp-l { display: none; } }

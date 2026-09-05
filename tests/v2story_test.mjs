@@ -11,7 +11,8 @@ const liftFrom = (src) => (name) => {
   return src.slice(a, i + 1)
 }
 const la = liftFrom(app), lw = liftFrom(win)
-const { v2StoryPick, v2ReachSplit, v2SecOpen } = new Function(['v2StoryPick', 'v2ReachSplit', 'v2SecOpen'].map(la).join('\n') + '\nreturn { v2StoryPick, v2ReachSplit, v2SecOpen }')()
+const gs = app.indexOf('const V2_TAB_GROUPS = ['); const grpSrc = app.slice(gs, app.indexOf('\n]\n', gs) + 3)
+const { v2StoryPick, v2ReachSplit, v2SecOpen, v2TabGroups } = new Function(grpSrc + ['v2StoryPick', 'v2ReachSplit', 'v2SecOpen', 'v2TabGroups'].map(la).join('\n') + '\nreturn { v2StoryPick, v2ReachSplit, v2SecOpen, v2TabGroups }')()
 const { spendByDay } = new Function("const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }\n" + lw('spendByDay') + '\nreturn { spendByDay }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
@@ -56,6 +57,17 @@ ok('garbage spend is zero', spendByDay(days, [{ date: '2026-09-01', spend: 'n/a'
 ok('section open by default', v2SecOpen({}, 'channels') === true && v2SecOpen(null, 'x') === true)
 ok('section closed when remembered', v2SecOpen({ channels: false }, 'channels') === false)
 ok('other sections unaffected', v2SecOpen({ channels: false }, 'movers') === true)
+
+// Tab groups: every tab kept, in group order, unknown tabs trail, empty groups dropped.
+const tabs = [{ id: 'overall', label: 'Caalano360' }, { id: 'meta', label: 'Meta Ads' }, { id: 'users', label: 'Users' }, { id: 'forms', label: 'Forms' }, { id: 'timing', label: 'Timing' }, { id: 'mystery', label: 'New' }, { id: 'optlog', label: 'Change Log' }]
+const g = v2TabGroups(tabs)
+ok('four groups plus rest', g.map((x) => x.name).join('|') === 'Overview|Acquisition|Pipeline|Audience|', g.map((x) => x.name))
+ok('every tab kept once', g.flatMap((x) => x.tabs.map((t) => t.id)).sort().join() === tabs.map((t) => t.id).sort().join())
+ok('pipeline order', g[2].tabs.map((t) => t.id).join() === 'users,timing')
+ok('optlog under acquisition', g[1].tabs.map((t) => t.id).join() === 'meta,optlog')
+ok('unknown trails', g[4].tabs[0].id === 'mystery')
+ok('no crm tabs no pipeline group', v2TabGroups([{ id: 'overall' }, { id: 'meta' }]).map((x) => x.name).join('|') === 'Overview|Acquisition')
+ok('empty', v2TabGroups([]).length === 0 && v2TabGroups(null).length === 0)
 
 console.log(`v2story_test: ${n - bad}/${n} passed`)
 if (bad) process.exit(1)

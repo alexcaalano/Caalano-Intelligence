@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.483.0'
+const APP_VERSION = '3.484.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7803,6 +7803,28 @@ function ExecReach({ reach, multi, kef, cc, clientId, money, spend, chanLabel, l
   )
 }
 
+// The client tabs under four areas (V2), so the strip stops scrolling on a
+// laptop. Every allowed tab keeps its id and label; a tab outside the known
+// groups goes in a trailing unlabelled group rather than being dropped.
+const V2_TAB_GROUPS = [
+  ['Overview', ['overall', 'clinic']],
+  ['Acquisition', ['meta', 'google', 'analytics', 'optlog']],
+  ['Pipeline', ['cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
+  ['Audience', ['forms', 'location']],
+]
+function v2TabGroups(tabs) {
+  const list = Array.isArray(tabs) ? tabs : []
+  const seen = new Set()
+  const out = []
+  for (const [name, ids] of V2_TAB_GROUPS) {
+    const mine = ids.map((id) => list.find((t) => t.id === id)).filter(Boolean)
+    for (const t of mine) seen.add(t.id)
+    if (mine.length) out.push({ name, tabs: mine })
+  }
+  const rest = list.filter((t) => !seen.has(t.id))
+  if (rest.length) out.push({ name: '', tabs: rest })
+  return out
+}
 // Collapsible sections (V2). Each remembers open or closed per browser; the
 // section's own card is untouched inside, so nothing it shows is lost - a
 // collapsed section is a one-line bar that reopens on click.
@@ -15053,6 +15075,8 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // see (admins/users: everything). curTab keeps a hidden tab from being active.
   const cfg = ((config && config.clients) || []).find((c) => c.id === client.id) || {}
   const isClinic = useIsClinic(client.id, !!cfg.ghl)
+  // V2 layout: the tab strip groups under four areas. V1 strip untouched.
+  const v2ws = useUiLayout() === 'v2'
   // Tab order: ad platforms first (Meta / Google / Analytics), then the CRM tabs
   // (Cohorts → Users → Call Reporting → Forms → Location → Appointments → Timing).
   // Each is still gated on the client actually having that source connected, so a
@@ -15111,7 +15135,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
               narrow screen and hid the picker off the right edge. */}
           <PipelinePicker pipes={pipes} value={pipe} onChange={setPipe} className="cw-pipe-top" />
         </div>
-        <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
+        {v2ws
+          ? <div className="subtabs v2-tabs" role="tablist">{v2TabGroups(tabs).map((g, gi) => <div key={gi} className="v2-tabgrp">{g.name ? <span className="v2-tabgrp-l">{g.name}</span> : null}{g.tabs.map((t) => <button key={t.id} role="tab" aria-selected={curTab === t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>)}</div>
+          : <div className="subtabs">{tabs.map((t) => <button key={t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>}
       </div>
       <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div style={{ marginTop: 16 }}>
         {(curTab === 'meta' || curTab === 'google')

@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.484.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 4
+
+- **Grouped tab strip (V2).** The client tabs sit under four areas - Overview
+  (Caalano360, Clinic), Acquisition (Meta, Google, Analytics, Change Log),
+  Pipeline (Cohorts, Users, Call Reporting, Appointments, Calendars, Timing,
+  Lost Reasons) and Audience (Forms, Location) - so the strip fits a laptop
+  without scrolling. Every tab a user is allowed to see is still there, with
+  the same id, so deep links and viewer grants are unchanged. The group
+  labels drop away on a phone.
+
+V1's strip is unchanged.
+
+---
+
 ## v3.483.0 - 2026-09-05 · `8003757` - Overview layout V2, release 3
 
 - **Channel performance, redrawn (V2).** The same columns sit under grouped

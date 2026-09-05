@@ -4649,7 +4649,7 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-reach-g { margin-top: 12px; }
 .v2-pipe-lab { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; margin: 12px 0 8px; }
 .v2-pipe-lab .sub { color: var(--faint); font-weight: 500; font-size: 12px; }
-.v2-funnel { display: grid; grid-template-columns: 160px 1fr 150px; gap: 8px 14px; align-items: center; }
+.v2-funnel { display: grid; grid-template-columns: 170px 1fr 190px; gap: 8px 14px; align-items: center; }
 .v2-funnel .st { font-size: 13px; font-weight: 700; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .v2-funnel .st small { color: var(--faint); font-weight: 500; font-size: 11.5px; }
 .v2-funnel .st.bn, .v2-funnel .rate.bn { color: var(--neg); }
@@ -4662,17 +4662,17 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-bar .prev { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--text); opacity: .55; border-radius: 1px; }
 .v2-funnel .rate { text-align: right; font-size: 13px; font-weight: 800; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-variant-numeric: tabular-nums; }
 .v2-funnel .rate small { color: var(--faint); font-weight: 500; font-size: 11.5px; }
-.v2-funnel .leak { grid-column: 1 / -1; display: grid; grid-template-columns: 160px 1fr; gap: 14px; align-items: center; margin-top: 2px; }
-.v2-funnel .leak .tag { justify-self: end; display: inline-flex; align-items: center; background: rgba(240,67,91,.14); color: var(--neg); border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
-.v2-funnel .leak p { margin: 0; font-size: 12.5px; color: var(--muted); }
-.v2-funnel .leak p b { color: var(--text); }
+.v2-funnel .v2-leakcard { grid-column: 1 / -1; display: grid; grid-template-columns: 170px 1fr; gap: 14px; align-items: center; margin-top: 2px; }
+.v2-funnel .v2-leakcard .tag { justify-self: end; display: inline-flex; align-items: center; background: rgba(240,67,91,.14); color: var(--neg); border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.v2-funnel .v2-leakcard p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.v2-funnel .v2-leakcard p b { color: var(--text); }
 .v2-leg { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-top: 12px; flex-wrap: wrap; }
 .v2-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 .v2-leg i.m { background: var(--meta); } .v2-leg i.g { background: var(--google); } .v2-leg i.o { background: #c98500; }
 .v2-leg i.pv { width: 2px; height: 12px; background: var(--text); opacity: .55; border-radius: 1px; vertical-align: -2px; margin-right: 8px; }
 .scorecard.exec-kpis.v2-eff { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 @media (max-width: 1000px) { .v2-story { grid-template-columns: 1fr; } .scorecard.exec-kpis.v2-eff { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .v2-funnel { grid-template-columns: 110px 1fr 96px; } .v2-funnel .leak { grid-template-columns: 1fr; } .v2-funnel .leak .tag { justify-self: start; } .scorecard.exec-kpis.v2-eff { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .v2-funnel { grid-template-columns: 110px 1fr 96px; } .v2-funnel .v2-leakcard { grid-template-columns: 1fr; } .v2-funnel .v2-leakcard .tag { justify-self: start; } .scorecard.exec-kpis.v2-eff { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* V2 release 3: collapsible sections, grouped channel table, movers bars */
 .v2-sec { position: relative; }
 .v2-sec-collapse { position: absolute; top: 12px; right: 14px; z-index: 2; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 3px 8px; font-size: 11.5px; font-weight: 600; color: var(--muted); cursor: pointer; }

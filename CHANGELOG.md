@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.486.0 - 2026-09-05 · `PENDING` - Fix: reach bars broke out of their rows (V2)
+
+The leak note under a funnel and the highlighted leak bar shared a class
+name, so the note's full-width rule also stretched the bar and pushed every
+row after it one cell across. Own class for the note; the right-hand figures
+column is a little wider so the count, share and cost fit on two lines.
+
+---
+
 ## v3.485.0 - 2026-09-05 · `a36cf3f` - Overview layout V2, release 5
 
 - **One look across every tab (V2).** A shared treatment applied to every

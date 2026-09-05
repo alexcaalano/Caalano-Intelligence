@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.487.0'
+const APP_VERSION = '3.488.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6857,6 +6857,29 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
     body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th>{cashCol ? <th title="Cash collected on this deal, from the Cash Collected field · ✓ = paid in full">Cash</th> : null}<th>Created on</th><th>Won on</th><th title="Days from the lead arriving to being marked won">Time to close</th><th className="lft">Source</th></tr></thead>
       <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td>{cashCol ? <td>{dl.cash == null ? <span className="lrv-z" title="No cash entered on this deal">-</span> : <>{money(dl.cash)}{dl.paidInFull ? <span className="cc-pif" title="Paid in full"> ✓</span> : null}</>}</td> : null}<td>{dl.createdDate ? fmtDMY(dl.createdDate) : '-'}</td><td>{dl.closeDate ? fmtDMY(dl.closeDate) : '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
       : <div className="cap">No won deals in this period.</div>
+  } else if (drill.kind === 'cacplat') {
+    // Meta and Google carry spend, so they get CAC and ROAS; everything else
+    // (organic, referral, direct) shows its deals and revenue only. Average
+    // time to close is the mean days from lead to won over the deals listed.
+    const deals = (d.revenue && d.revenue.deals) || []
+    const chanOf = (c) => (c === 'meta' || c === 'google' ? c : 'other')
+    const rows = ['meta', 'google', 'other'].map((k) => {
+      const cs = (d.closeByChannel || []).filter((c) => chanOf(c.channel) === k)
+      const won = cs.reduce((a, c) => a + (c.won || 0), 0), revenue = cs.reduce((a, c) => a + (c.revenue || 0), 0), leads = cs.reduce((a, c) => a + (c.leads || 0), 0)
+      const sp = k === 'meta' ? (spend.meta || 0) : k === 'google' ? (spend.google || 0) : null
+      const tt = deals.filter((x) => chanOf(x.channel) === k && x.daysToClose != null).map((x) => x.daysToClose)
+      return { k, label: k === 'meta' ? 'Meta' : k === 'google' ? 'Google' : 'Organic, referral, direct', spend: sp, leads, won, revenue, cac: sp && won ? sp / won : null, roas: sp && revenue ? revenue / sp : null, avgDeal: won ? revenue / won : null, avgClose: tt.length ? tt.reduce((a, v) => a + v, 0) / tt.length : null, n: tt.length }
+    })
+    const totSpend = (spend.meta || 0) + (spend.google || 0), totWon = rows.reduce((a, r) => a + r.won, 0), totRev = rows.reduce((a, r) => a + r.revenue, 0), totLeads = rows.reduce((a, r) => a + r.leads, 0)
+    const ttAll = deals.filter((x) => x.daysToClose != null).map((x) => x.daysToClose)
+    subhead = `${money(totSpend)} ad spend ÷ ${fmtNumber(totWon)} won, any channel = ${totWon && totSpend ? money(Math.round(totSpend / totWon)) : '-'} blended CAC · ${totSpend ? `${(totRev / totSpend).toFixed(1)}x` : '-'} blended ROAS`
+    const days = (v) => (v == null ? '-' : v < 1 ? 'same day' : `${Math.round(v)} d`)
+    body = <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Platform</th><th>Spend</th><th>Leads</th><th>Won</th><th title="Spend ÷ won deals">CAC</th><th>Revenue</th><th title="Revenue ÷ spend">ROAS</th><th title="Revenue ÷ won deals">Avg deal</th><th title="Average days from the lead arriving to being marked won, over the won deals listed">Avg time to close</th></tr></thead>
+      <tbody>
+        {rows.map((r) => <tr key={r.k}><td className="lft"><span className="bn-src"><i style={{ background: r.k === 'other' ? '#c98500' : sourceDotChan(r.k) }} />{r.label}</span></td><td>{r.spend == null ? <span className="lrv-z" title="No ad spend is attributed to organic, referral or direct leads">–</span> : money(r.spend)}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.won)}</td><td>{r.cac != null ? money(Math.round(r.cac)) : '-'}</td><td>{money(r.revenue)}</td><td>{r.roas != null ? `${r.roas.toFixed(1)}x` : '-'}</td><td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td><td>{days(r.avgClose)}{r.n ? <span className="cap"> · {fmtNumber(r.n)}</span> : null}</td></tr>)}
+        <tr className="tot"><td className="lft"><b>All</b></td><td>{money(totSpend)}</td><td>{fmtNumber(totLeads)}</td><td>{fmtNumber(totWon)}</td><td>{totWon && totSpend ? money(Math.round(totSpend / totWon)) : '-'}</td><td>{money(totRev)}</td><td>{totSpend ? `${(totRev / totSpend).toFixed(1)}x` : '-'}</td><td>{totWon ? money(Math.round(totRev / totWon)) : '-'}</td><td>{days(ttAll.length ? ttAll.reduce((a, v) => a + v, 0) / ttAll.length : null)}</td></tr>
+      </tbody></table>
+      <p className="cap" style={{ marginTop: 8 }}>Blended CAC counts every won deal against paid spend, so it is lower than Meta's or Google's own CAC when organic and referral deals close too. Time to close is over the won deals in this period ({fmtNumber(ttAll.length)} with usable dates).</p></div>
   } else if (drill.kind === 'spend') {
     subhead = `${money(spend.total || 0)} total ad spend`
     body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Platform</th><th>Spend</th><th>Share</th></tr></thead>
@@ -7718,6 +7741,34 @@ function v2ReachSplit(count, meta, google) {
   if (m + g > c) { const f = c / (m + g); m = Math.round(m * f); g = Math.max(0, c - m) }
   return { meta: m, google: g, other: Math.max(0, c - m - g) }
 }
+// One reach bar: the share of leads as width, split by channel, the previous
+// period as a tick. Hovering shows the split as a small card rather than the
+// browser's own tooltip.
+function V2ReachBar({ label, count, split, width, prevAt, leak }) {
+  const [hov, setHov] = useState(null)
+  const ref = React.useRef(null)
+  const tot = split.meta + split.google + split.other || 1
+  const pc = (v) => `${Math.round((v / (count || tot || 1)) * 100)}%`
+  const onMove = (e) => { const r = ref.current && ref.current.getBoundingClientRect(); if (!r) return; setHov(Math.max(0.08, Math.min(0.92, (e.clientX - r.left) / r.width))) }
+  return (
+    <div ref={ref} className={`v2-bar${leak ? ' leak' : ''}`} onMouseMove={onMove} onMouseLeave={() => setHov(null)}>
+      <div className="track" />
+      <div className="fill" style={{ width: `${Math.max(0, Math.min(100, width * 100))}%` }}>
+        {split.meta ? <span className="m" style={{ flex: split.meta / tot }} /> : null}
+        {split.google ? <span className="g" style={{ flex: split.google / tot }} /> : null}
+        {split.other ? <span className="o" style={{ flex: split.other / tot }} /> : null}
+      </div>
+      {prevAt != null ? <div className="prev" style={{ left: `${Math.max(0, Math.min(100, prevAt * 100))}%` }} /> : null}
+      {hov != null ? <div className="v2-pop" style={{ left: `${hov * 100}%` }}>
+        <div className="v2-pop-t">{label} <b>{fmtNumber(count)}</b></div>
+        <div className="v2-pop-r"><i className="m" />Meta<b>{fmtNumber(split.meta)}</b><span>{pc(split.meta)}</span></div>
+        <div className="v2-pop-r"><i className="g" />Google<b>{fmtNumber(split.google)}</b><span>{pc(split.google)}</span></div>
+        <div className="v2-pop-r"><i className="o" />Organic, referral, direct<b>{fmtNumber(split.other)}</b><span>{pc(split.other)}</span></div>
+        {prevAt != null ? <div className="v2-pop-p">Previous period {Math.round(prevAt * 100)}% of leads</div> : null}
+      </div> : null}
+    </div>
+  )
+}
 // Key event reach drawn as stage bars, one chain per pipeline: each bar is the
 // share of that pipeline's leads, split by channel, with the previous period as
 // a tick and the leak marked where it happens. Same rows and rules as the
@@ -7765,20 +7816,6 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
     return { count: t.won || 0, base: t.leads || 0, spend: spend || 0, prevRate: pt && pt.leads ? (pt.won || 0) / pt.leads : null, split: v2ReachSplit(t.won || 0, cc && cc.paid ? cc.paid.metaWon : 0, cc && cc.paid ? cc.paid.googleWon : 0) }
   }
   const cacOf = (w) => (w && w.count && w.spend ? money(Math.round(w.spend / w.count)) : null)
-  const Bar = ({ split, width, prevAt, leak }) => {
-    const tot = split.meta + split.google + split.other || 1
-    return (
-      <div className={`v2-bar${leak ? ' leak' : ''}`}>
-        <div className="track" />
-        <div className="fill" style={{ width: `${Math.max(0, Math.min(100, width * 100))}%` }}>
-          {split.meta ? <span className="m" style={{ flex: split.meta / tot }} title={`Meta ${fmtNumber(split.meta)}`} /> : null}
-          {split.google ? <span className="g" style={{ flex: split.google / tot }} title={`Google ${fmtNumber(split.google)}`} /> : null}
-          {split.other ? <span className="o" style={{ flex: split.other / tot }} title={`Organic, referral, direct ${fmtNumber(split.other)}`} /> : null}
-        </div>
-        {prevAt != null ? <div className="prev" style={{ left: `${Math.max(0, Math.min(100, prevAt * 100))}%` }} title={`Previous period: ${pc(prevAt)}`} /> : null}
-      </div>
-    )
-  }
   return (
     <div className="card v2-reach" data-sec="reach">
       <div className="v2-sec-h">
@@ -7799,7 +7836,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
             {g.name || cac ? <div className="v2-pipe-lab">{g.name ? <><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.base)} leads</span></> : <span className="sub">All pipelines · {fmtNumber(g.base)} leads</span>}{cac ? <span className="v2-cac" title="Cost per won deal: this scope's ad spend ÷ deals won (spend allocated to a pipeline by its share of leads)">CAC {cac}</span> : null}</div> : null}
             <div className="v2-funnel">
               <div className="st">Opportunities<small>new this period</small></div>
-              <Bar split={leadsSplit(g.pid, g.base)} width={1} prevAt={g.rows[0] && g.rows[0].prevBase && g.base ? Math.min(1, g.rows[0].prevBase / g.base) : null} />
+              <V2ReachBar label="Opportunities" count={g.base} split={leadsSplit(g.pid, g.base)} width={1} prevAt={g.rows[0] && g.rows[0].prevBase && g.base ? Math.min(1, g.rows[0].prevBase / g.base) : null} />
               <div className="rate">{fmtNumber(g.base)}<small>{g.rows[0] && g.rows[0].prevBase ? `was ${fmtNumber(g.rows[0].prevBase)}` : 'leads'}</small></div>
               {g.rows.map((r, i) => {
                 const ch = chanOf(g.pid, r.label)
@@ -7808,14 +7845,14 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
                 return (
                   <React.Fragment key={i}>
                     <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{r.kind === 'calendar' ? 'calendar booking' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
-                    <Bar split={split} width={r.rate != null ? r.rate : 0} prevAt={r.prevRate} leak={isBn} />
+                    <V2ReachBar label={r.label.replace(/^📅 /, '')} count={r.count} split={split} width={r.rate != null ? r.rate : 0} prevAt={r.prevRate} leak={isBn} />
                     <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(r.count)}<small>{i === 0 ? `${r.rate != null ? pc(r.rate) : '-'} of leads` : r.step != null ? `${pc(r.step)} of the ${fmtNumber(r.stepBase)} before` : '-'}{spend && r.count ? ` · ${money(Math.round(spend / r.count))} each` : ''}</small></div>
                   </React.Fragment>
                 )
               })}
               {w ? <>
                 <div className="st">Won<small>{wonBasis === 'closed' ? 'closed in period' : 'from leads created in period'}</small></div>
-                <Bar split={w.split} width={w.base ? Math.min(1, w.count / w.base) : 0} prevAt={w.prevRate} />
+                <V2ReachBar label="Won" count={w.count} split={w.split} width={w.base ? Math.min(1, w.count / w.base) : 0} prevAt={w.prevRate} />
                 <div className="rate">{fmtNumber(w.count)}<small>{w.base ? `${pc(w.count / w.base)} of leads` : '-'}{cacOf(w) ? ` · CAC ${cacOf(w)}` : ''}</small></div>
               </> : null}
               {bn ? <div className="v2-leakcard"><span className="tag">Biggest leak</span><p><b>{fmtNumber(missed)} {missed === 1 ? 'person' : 'people'} reached {before ? before.label.replace(/^📅 /, '') : 'the funnel'} and did not go on to {bn.label.replace(/^📅 /, '')}.</b> {bn.prevStep != null ? (wouldBe > 0 ? `At the previous period's ${pc(bn.prevStep)} this step would have produced ${fmtNumber(wouldBe)} more.` : `This step held at ${pc(bn.step)} against ${pc(bn.prevStep)} last period.`) : `${pc(bn.step)} of those who reached the step before went on.`}</p></div> : null}
@@ -8116,12 +8153,23 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               }
             }
             const spendWait = spendDaily.status === 'loading' ? 'reading daily spend…' : ''
+            // Blended CAC: this scope's ad spend over every deal won, whatever
+            // channel the deal came from. 7-day rolling for the line.
+            const cacV = chanSpend && wonV ? chanSpend / wonV : null
+            const pCac = prevChanSpend && pWon ? prevChanSpend / pWon : null
+            let cacSeries = null
+            if (spendSeries && dly && dly.won && dly.won.length === spendSeries.length) {
+              const roll = (arr, i) => { let a = 0; for (let j = Math.max(0, i - 6); j <= i; j++) a += arr[j] || 0; return a }
+              let last = 0
+              cacSeries = spendSeries.map((v, i) => { const w7 = roll(dly.won, i); if (w7 > 0) last = roll(spendSeries, i) / w7; return last })
+            }
             return <ExecHero tiles={[
               { label: pipeOn ? 'Ad spend (allocated)' : 'Ad spend', value: chanSpend != null ? money(chanSpend) : '-', cur: prevChanSpend != null ? chanSpend : null, prev: prevChanSpend, goodWhenDown: true, flat: pipeOn ? 'by lead share' : undefined, series: spendSeries, days: sd ? sd.days : null, fmt: (v) => money(Math.round(v)), noSeries: spendWait, onClick: tileClick({ kind: 'spend', title: 'Ad spend by platform' }) },
               { label: 'Opportunities', value: oppsV != null ? fmtNumber(oppsV) : '-', cur: oppsV, prev: pOpps, series: dly ? dly.leads : null, days, fmt: (v) => `${fmtNumber(v)} new`, onClick: tileClick({ kind: 'opps', title: 'Opportunities by source' }) },
-              { label: 'Won', lead: true, value: wonV != null ? fmtNumber(wonV) : '-', cur: wonV, prev: pWon, flat: wonBasis === 'closed' ? 'closed in period' : 'from leads created in period', series: dly ? dly.won : null, days, roll: true, fmt: (v) => `${fmtNumber(v)} won`, onClick: tileClick({ kind: 'revenue', title: 'Won deals' }) },
+              { label: 'Won', value: wonV != null ? fmtNumber(wonV) : '-', cur: wonV, prev: pWon, flat: wonBasis === 'closed' ? 'closed in period' : 'from leads created in period', series: dly ? dly.won : null, days, roll: true, fmt: (v) => `${fmtNumber(v)} won`, onClick: tileClick({ kind: 'revenue', title: 'Won deals' }) },
               { label: 'Revenue', value: revV != null ? money(revV) : '-', cur: revV, prev: pRev, flat: avgV != null ? `avg ${money(avgV)}` : undefined, series: dly ? dly.revenue : null, days, roll: true, fmt: (v) => money(v), onClick: tileClick({ kind: 'revenue', title: 'Revenue - won deals' }) },
-              { label: 'ROAS', value: roas != null ? `${roas.toFixed(1)}x` : '-', cur: roas, prev: pRoas, flat: roas == null ? (chanSpend ? 'no revenue yet' : 'no ad spend in this view') : (cashOn && cc && cc.cash && chanSpend ? `cash ${((cc.cash.collected || 0) / chanSpend).toFixed(1)}x` : undefined), series: roasSeries, days: sd ? sd.days : null, fmt: (v) => `${v.toFixed(1)}x · 7-day`, noSeries: spendWait },
+              { label: 'ROAS', value: roas != null ? `${roas.toFixed(1)}x` : '-', cur: roas, prev: pRoas, flat: roas == null ? (chanSpend ? 'no revenue yet' : 'no ad spend in this view') : (cashOn && cc && cc.cash && chanSpend ? `cash ${((cc.cash.collected || 0) / chanSpend).toFixed(1)}x` : undefined), series: roasSeries, days: sd ? sd.days : null, fmt: (v) => `${v.toFixed(1)}x · 7-day`, noSeries: spendWait, onClick: tileClick({ kind: 'cacplat', title: 'ROAS and CAC by platform' }) },
+              { label: 'Blended CAC', value: cacV != null ? money(Math.round(cacV)) : '-', cur: cacV, prev: pCac, goodWhenDown: true, flat: cacV == null ? (chanSpend ? 'no deals won yet' : 'no ad spend in this view') : `${money(chanSpend)} ÷ ${fmtNumber(wonV)} won, any channel`, series: cacSeries, days: sd ? sd.days : null, fmt: (v) => `${money(Math.round(v))} · 7-day`, noSeries: spendWait, onClick: tileClick({ kind: 'cacplat', title: 'CAC and ROAS by platform' }) },
             ]} />
           })() : null}
           {!v2 ? <>

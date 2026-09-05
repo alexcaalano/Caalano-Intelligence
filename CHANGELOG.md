@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.488.0 - 2026-09-05 · `PENDING` - Blended CAC tile, platform drill, reach hover (V2)
+
+- **Blended CAC** joins the headline row as a sixth tile: this scope's ad
+  spend over every deal won, whatever channel it came from, with its change
+  against the previous period and a 7-day rolling line. All six tiles are the
+  same size now.
+- **CAC and ROAS by platform.** The ROAS and Blended CAC tiles open a drill:
+  Meta and Google with spend, leads, won, CAC, revenue, ROAS, average deal and
+  average time to close; organic, referral and direct with their deals,
+  revenue, average deal and time to close (no spend to divide by); and an All
+  row that is the blended figure.
+- **Reach bars, on hover.** Hovering a bar in Key event reach shows a card
+  with the Meta, Google and organic counts and shares for that event, and
+  where the previous period sat, in place of the browser's own tooltip.
+
+---
+
 ## v3.487.0 - 2026-09-05 · `3fc9596` - CAC on the reach section (V2)
 
 Each pipeline's chain in Key event reach now ends with a Won row - wins as a

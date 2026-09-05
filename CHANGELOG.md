@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.487.0 - 2026-09-05 · `PENDING` - CAC on the reach section (V2)
+## v3.487.0 - 2026-09-05 · `3fc9596` - CAC on the reach section (V2)
 
 Each pipeline's chain in Key event reach now ends with a Won row - wins as a
 share of that pipeline's leads, split by channel, previous period as a tick -

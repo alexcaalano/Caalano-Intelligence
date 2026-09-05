@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.490.0 - 2026-09-05 · `PENDING` - Intelligence across every tab (V2)
+## v3.490.0 - 2026-09-05 · `fa4a7d8` - Intelligence across every tab (V2)
 
 Over- and under-indexing and Biggest movers on Caalano360 now speak for the
 whole workspace, not just paid media, and every card says which page it

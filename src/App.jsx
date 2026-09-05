@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.488.0'
+const APP_VERSION = '3.489.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -8296,8 +8296,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             return (
             <div className="tbl-scroll"><table className="mini-tbl users-tbl v2-tbl">
               <thead>
-                <tr className="v2-grp"><th className="lft"></th><th colSpan={2}><span>Spend</span></th>{nKe ? <th colSpan={nKe}><span>Key events</span></th> : null}<th colSpan={3}><span>Outcomes</span></th>{more ? <th colSpan={3}><span>Efficiency</span></th> : null}<th><span>ROAS</span></th>{cashCols ? <th colSpan={2}><span>Cash</span></th> : null}</tr>
-                <tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th>{more ? <><th title="Won ÷ decided (won + lost)">Close %</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ won deals">Avg deal</th></> : null}<th title="Revenue ÷ spend">ROAS</th>{cashCols ? <><th title="Cash collected on this channel's won deals">Cash</th><th title="Cash collected ÷ spend">Cash ROAS</th></> : null}</tr>
+                <tr className="v2-grp"><th className="lft"></th><th colSpan={2}><span>Spend</span></th>{nKe ? <th colSpan={nKe}><span>Key events</span></th> : null}<th colSpan={3}><span>Outcomes</span></th>{more ? <th colSpan={2}><span>Efficiency</span></th> : null}<th colSpan={2}><span>Return</span></th>{cashCols ? <th colSpan={2}><span>Cash</span></th> : null}</tr>
+                <tr><th className="lft">Channel</th><th>Spend</th><th title="CRM leads attributed to this channel">Leads</th>{evLabels.map((e, i) => <th key={i} className="fke-col" title={`Reached: ${e.label}`}>{evLbl(e)}</th>)}<th>Won</th><th title="Won ÷ leads, with its index against this table's blended win rate (100 = the blend)">Win rate</th><th>Revenue</th>{more ? <><th title="Won ÷ decided (won + lost)">Close %</th><th title="Revenue ÷ won deals">Avg deal</th></> : null}<th title="Revenue ÷ spend">ROAS</th><th title="Spend ÷ won deals">CAC</th>{cashCols ? <><th title="Cash collected on this channel's won deals">Cash</th><th title="Cash collected ÷ spend">Cash ROAS</th></> : null}</tr>
               </thead>
               <tbody>{rows.map((r) => {
                 const wr = winOf(r)
@@ -8312,10 +8312,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
                   <td>{money(r.revenue)}</td>
                   {more ? <>
                     <td>{r.closeRate == null ? '-' : `${r.closeRate}%`}</td>
-                    <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
                     <td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td>
                   </> : null}
                   <td>{r.dead || !r.spend ? '-' : `${((r.revenue || 0) / r.spend).toFixed(1)}×`}</td>
+                  <td>{r.dead || r.cac == null ? '-' : money(Math.round(r.cac))}</td>
                   {cashCols ? <><td>{money(r.cash || 0)}</td><td>{r.dead || !r.spend ? '-' : `${((r.cash || 0) / r.spend).toFixed(1)}×`}</td></> : null}
                 </tr>
                 )

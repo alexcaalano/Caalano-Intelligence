@@ -4760,3 +4760,4 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-pop-r i.m { background: var(--meta); } .v2-pop-r i.g { background: var(--google); } .v2-pop-r i.o { background: #c98500; }
 .v2-pop-p { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; }
 .v2-bar .fill span { min-width: 2px; }
+.v2-page .v2-tbl thead tr.v2-grp th { text-align: center; }

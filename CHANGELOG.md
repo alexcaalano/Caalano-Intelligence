@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.489.0 - 2026-09-05 · `PENDING` - CAC after ROAS in Channel performance (V2)
+
+CAC (spend ÷ won) is always shown, straight after ROAS, per channel and per
+pipeline, under a Return group header. It no longer sits behind More columns;
+that switch now holds Close % and Avg deal. Group headers are centred over
+their columns.
+
+---
+
 ## v3.488.0 - 2026-09-05 · `564a60c` - Blended CAC tile, platform drill, reach hover (V2)
 
 - **Blended CAC** joins the headline row as a sixth tile: this scope's ad

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.496.0 - 2026-09-05 · `PENDING` - Meta and Google tabs follow the won basis
+## v3.496.0 - 2026-09-05 · `f96b86c` - Meta and Google tabs follow the won basis
 
 The attribution feed behind the Caalano360 sections on the Meta and Google
 tabs now takes the workspace's won basis. On Closed, a win counts by the day

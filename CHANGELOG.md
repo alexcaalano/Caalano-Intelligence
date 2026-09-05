@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.483.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 3
+## v3.483.0 - 2026-09-05 · `8003757` - Overview layout V2, release 3
 
 - **Channel performance, redrawn (V2).** The same columns sit under grouped
   headers (Spend, Key events, Outcomes, Efficiency, ROAS, Cash); the win rate

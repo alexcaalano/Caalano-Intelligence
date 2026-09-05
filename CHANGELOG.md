@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.486.0 - 2026-09-05 · `PENDING` - Fix: reach bars broke out of their rows (V2)
+## v3.486.0 - 2026-09-05 · `f7cf21b` - Fix: reach bars broke out of their rows (V2)
 
 The leak note under a funnel and the highlighted leak bar shared a class
 name, so the note's full-width rule also stretched the bar and pushed every

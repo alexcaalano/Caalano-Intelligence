@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.493.0 - 2026-09-05 · `PENDING` - Story-first opening on every tab; sparklines in the ad scorecards
+
+- **Every tab opens with its story.** The 360 Intelligence banner on Meta,
+  Google, Users, Forms, Location, Appointments, Call Reporting, Timing and
+  Lost Reasons now shows its three strongest lines as cards, headed by what
+  they are (Biggest leak, Channels, Moving, Needs attention, Working), with
+  the rest one click away. The Overview keeps its own strip under the
+  headline tiles, so nothing is shown twice there.
+- **Sparklines in the Meta and Google scorecards.** Cost, Impressions, Link
+  Clicks or Clicks, Results or Conversions, and Cost per result or Cost per
+  conversion carry their day-by-day shape across the range, with a hover
+  that names the day. Cost per result is a 7-day rolling figure so it reads
+  as a line. Meta's results tile keeps its number only when the account
+  reports a custom result mix, since the daily feed carries leads alone.
+
+---
+
 ## v3.492.0 - 2026-09-05 · `6304618` - V2 is the layout. One build.
 
 The redesigned Overview and the shared tab treatment are now what everyone

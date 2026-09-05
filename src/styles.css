@@ -4780,3 +4780,12 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-pop-r i.none { visibility: hidden; }
 .v2-pop-r i.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); margin-left: 2px; }
 .v2-funnel .rate small.v2-split { color: var(--muted); font-weight: 600; }
+/* Story-first banner on every tab; sparklines in ad scorecards */
+.intel-banner.story { padding: 10px 14px 12px; }
+.intel-banner.story .intel-h { margin-bottom: 10px; }
+.intel-banner.story .v2-story { margin-bottom: 0; }
+.intel-banner.story .v2-story-c { background: var(--panel-2); }
+.intel-more { margin-top: 10px; background: transparent; border: 0; padding: 0; font-size: 12.5px; font-weight: 700; color: var(--brand-2); cursor: pointer; }
+.intel-banner.story .intel-lines { margin-top: 8px; }
+.sc-spark { margin-top: 6px; }
+.sc-spark .v2-spark { height: 32px; margin-top: 0; }

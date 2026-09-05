@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.492.0'
+const APP_VERSION = '3.493.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2812,11 +2812,19 @@ function ScDelta({ cur, prev, goodWhenDown }) {
   const up = pct >= 0; const good = goodWhenDown ? !up : up
   return <div className={`sc-d ${good ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct))} <span className="sc-vs">vs prev</span></div>
 }
-function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat, tip, pop }) {
+// 7-day rolling ratio of two daily fields (cost per result and the like), so a
+// lumpy series reads as a line rather than spikes.
+function sparkRatio(daily, num, den) {
+  const rows = daily || []; if (rows.length < 2) return null
+  const out = []; let last = 0
+  for (let i = 0; i < rows.length; i++) { let a = 0, b = 0; for (let j = Math.max(0, i - 6); j <= i; j++) { a += rows[j][num] || 0; b += rows[j][den] || 0 } if (b > 0) last = a / b; out.push(last) }
+  return out
+}
+function Sc({ label, value, cur, prev, goodWhenDown, kpi, flat, tip, pop, series, days, fmt, roll }) {
   const labelEl = (pop && pop.rows && pop.rows.length)
     ? <div className="sc-l"><KeCellPop title={pop.title} total={pop.total} rows={pop.rows}><span className="sc-l-tip">{label}</span></KeCellPop></div>
     : <div className={`sc-l${tip ? ' sc-l-tip' : ''}`} title={tip || undefined}>{label}</div>
-  return <div className="sc">{labelEl}<div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{flat ? <div className="sc-flat">{flat}</div> : null}{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
+  return <div className="sc">{labelEl}<div className="sc-v">{value}</div><ScDelta cur={cur} prev={prev} goodWhenDown={goodWhenDown} />{flat ? <div className="sc-flat">{flat}</div> : null}{series && series.length > 1 ? <div className="sc-spark"><HeroSpark series={series} days={days} fmt={fmt} roll={roll} /></div> : null}{kpi && <div className={`sc-kpi ${kpi.cls}`}>{kpi.cls === 'good' ? '✓' : kpi.cls === 'bad' ? '✗' : '◎'} {kpi.text}</div>}</div>
 }
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const dayLabel = (d) => `${parseInt(d.slice(8, 10), 10)} ${MON[parseInt(d.slice(5, 7), 10) - 1]}`
@@ -3018,6 +3026,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
     return [...dm.values()].sort((a, b) => a.date.localeCompare(b.date))
   })() : (m.daily || [])
   const daily = dailySrc.map((d) => ({ ...d, label: dayLabel(d.date), cpl: d.leads ? d.spend / d.leads : 0, cpm: d.impressions ? d.spend / d.impressions * 1000 : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpc: d.clicks ? d.spend / d.clicks : 0 }))
+  const sdays = daily.map((d) => d.date)
   const adsets = (sel ? m.adsets.filter((a) => a.campaign === sel) : m.adsets).filter((a) => !fAdset || fAdset.has(unorm(a.name)))
   const adsFull = (sel ? m.ads.filter((a) => a.campaign === sel) : m.ads).filter((a) => (!selAdset || a.adset === selAdset) && (!fCre || fCre.has(unorm(a.name))))
   // Enrich + sort the full creative set once (default Spend, click a header to
@@ -3089,12 +3098,12 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
       )}
       <div className="sc-sec-lab"><span className="sc-sec-t"><img src={FAVICON('meta.com')} alt="" width="13" height="13" /> Meta metrics</span><span className="sc-sec-sub">delivery &amp; cost from the ad platform</span></div>
       <div className="scorecard sc-fit">
-        <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown />
-        <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
+        <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown series={daily.map((d) => d.spend)} days={sdays} fmt={(v) => fmtCurrency(v, currency)} />
+        <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} series={daily.map((d) => d.impressions)} days={sdays} fmt={(v) => fmtNumber(v)} />
         <Sc label="Reach" value={fmtNumber(t.reach)} cur={t.reach} prev={D((x) => x.reach)} />
         <Sc label="Frequency" value={t.reach ? (t.impressions / t.reach).toFixed(2) : '-'} cur={t.reach ? t.impressions / t.reach : null} prev={D((x) => x.reach ? x.impressions / x.reach : null)} goodWhenDown />
         <Sc label="CPM" value={fmtCurrency(cpm, currency)} cur={cpm} prev={D((x) => x.impressions ? x.spend / x.impressions * 1000 : 0)} goodWhenDown />
-        <Sc label="Link Clicks" value={fmtNumber(t.linkClicks)} cur={t.linkClicks} prev={D((x) => x.linkClicks)} />
+        <Sc label="Link Clicks" value={fmtNumber(t.linkClicks)} cur={t.linkClicks} prev={D((x) => x.linkClicks)} series={daily.map((d) => d.linkClicks)} days={sdays} fmt={(v) => fmtNumber(v)} />
         <Sc label="CPC (Link)" value={fmtCurrency(cpcLink, currency)} cur={cpcLink} prev={D((x) => x.linkClicks ? x.spend / x.linkClicks : 0)} goodWhenDown />
         <Sc label="CTR (All)" value={fmtPct(rate(t.clicks, t.impressions), 2)} cur={rate(t.clicks, t.impressions)} prev={D((x) => rate(x.clicks, x.impressions))} />
         <Sc label="Link CTR" value={fmtPct(rate(t.linkClicks, t.impressions), 2)} cur={rate(t.linkClicks, t.impressions)} prev={D((x) => rate(x.linkClicks, x.impressions))} />
@@ -3105,8 +3114,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
           const resLabel = bd.length === 1 ? bd[0].label : bd.length > 1 ? 'Results' : 'Leads'
           const bdTip = bd.length ? bd.map((x) => `${x.label}: ${fmtNumber(x.count)}`).join(' · ') : null
           return <>
-            <Sc label={resLabel} value={<span title={bdTip || undefined}>{fmtNumber(tRes)}{bd.length > 1 ? <span className="res-ty" title={bdTip}>mixed</span> : null}</span>} cur={tRes} prev={bd.length ? null : D((x) => x.leads)} />
-            <Sc label="Cost / result" value={fmtCurrency(tCpr, currency)} cur={tCpr} prev={bd.length ? null : D((x) => x.leads ? x.spend / x.leads : 0)} goodWhenDown kpi={kpis.metaCpl ? { text: `Target ${fmtCurrency(kpis.metaCpl, currency)}`, cls: kpiClass(tCpr, kpis.metaCpl, true) } : null} />
+            <Sc label={resLabel} value={<span title={bdTip || undefined}>{fmtNumber(tRes)}{bd.length > 1 ? <span className="res-ty" title={bdTip}>mixed</span> : null}</span>} cur={tRes} prev={bd.length ? null : D((x) => x.leads)} series={bd.length ? null : daily.map((d) => d.leads)} days={sdays} fmt={(v) => `${fmtNumber(v)} leads`} />
+            <Sc label="Cost / result" value={fmtCurrency(tCpr, currency)} cur={tCpr} prev={bd.length ? null : D((x) => x.leads ? x.spend / x.leads : 0)} goodWhenDown kpi={kpis.metaCpl ? { text: `Target ${fmtCurrency(kpis.metaCpl, currency)}`, cls: kpiClass(tCpr, kpis.metaCpl, true) } : null} series={bd.length ? null : sparkRatio(daily, 'spend', 'leads')} days={sdays} fmt={(v) => `${fmtCurrency(v, currency)} · 7-day`} />
             <Sc label="CVR" value={fmtPct(rate(tRes, t.linkClicks), 2)} cur={rate(tRes, t.linkClicks)} prev={bd.length ? null : D((x) => rate(x.leads, x.linkClicks))} />
           </>
         })()}
@@ -3564,6 +3573,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
   const geoDim = g.geo && g.geo.dim
   const locMax = Math.max(1, ...locAgg.map((l) => l.conversions))
   const daily = (g.daily || []).map((d) => ({ ...d, label: dayLabel(d.date), cpc: d.clicks ? d.cost / d.clicks : 0, ctr: d.impressions ? d.clicks / d.impressions * 100 : 0, cpconv: d.conversions ? d.cost / d.conversions : 0 }))
+  const sdays = daily.map((d) => d.date)
   const qKw = g.keywords.filter((k) => k.qs !== '' && k.qs != null)
   const avgQs = qKw.length ? qKw.reduce((a, k) => a + k.qs, 0) / qKw.length : 0
   const GHead = ({ first, o360, sort, on }) => (<thead>{o360 && has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={sort} on={on}>{first}</SortTh><SortTh k="cost" sort={sort} on={on}>Cost</SortTh><SortTh k="impressions" sort={sort} on={on}>Impr.</SortTh><SortTh k="ctr" sort={sort} on={on}>CTR</SortTh><SortTh k="cpc" sort={sort} on={on}>CPC</SortTh><SortTh k="conversions" sort={sort} on={on}>Conv.</SortTh><SortTh k="cvr" sort={sort} on={on}>Conv. rate</SortTh><SortTh k="costConv" sort={sort} on={on}>Cost/conv</SortTh>{o360 && has360 && <O360Head sort={sort} on={on} cols={o360cols} />}</tr></thead>)
@@ -3635,13 +3645,13 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
       {scopedEmpty && <div className="alias-warn" style={{ marginTop: 8 }}><b>No campaigns are linked to this pipeline.</b> Link this pipeline's campaigns in <b>Settings → this client → Campaign links</b> (or rename them to match). The green CRM columns still reflect the pipeline.</div>}
       <div className="sc-sec-lab"><span className="sc-sec-t"><img src={FAVICON('ads.google.com')} alt="" width="13" height="13" /> Google metrics</span><span className="sc-sec-sub">delivery &amp; cost from the ad platform</span></div>
       <div className="scorecard sc-fit">
-        <Sc label="Cost" value={fmtCurrency(t.cost, currency)} cur={t.cost} prev={D((x) => x.cost)} goodWhenDown />
-        <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} />
-        <Sc label="Clicks" value={fmtNumber(t.clicks)} cur={t.clicks} prev={D((x) => x.clicks)} />
+        <Sc label="Cost" value={fmtCurrency(t.cost, currency)} cur={t.cost} prev={D((x) => x.cost)} goodWhenDown series={daily.map((d) => d.cost)} days={sdays} fmt={(v) => fmtCurrency(v, currency)} />
+        <Sc label="Impressions" value={fmtNumber(t.impressions)} cur={t.impressions} prev={D((x) => x.impressions)} series={daily.map((d) => d.impressions)} days={sdays} fmt={(v) => fmtNumber(v)} />
+        <Sc label="Clicks" value={fmtNumber(t.clicks)} cur={t.clicks} prev={D((x) => x.clicks)} series={daily.map((d) => d.clicks)} days={sdays} fmt={(v) => fmtNumber(v)} />
         <Sc label="CTR" value={fmtPct(rate(t.clicks, t.impressions), 2)} cur={rate(t.clicks, t.impressions)} prev={D((x) => rate(x.clicks, x.impressions))} />
         <Sc label="Avg CPC" value={fmtCurrency(avgCpc, currency)} cur={avgCpc} prev={D((x) => x.clicks ? x.cost / x.clicks : 0)} goodWhenDown />
-        <Sc label="Conversions" value={fmtNumber(t.conversions)} cur={t.conversions} prev={D((x) => x.conversions)} />
-        <Sc label="Cost / Conv" value={fmtCurrency(costPerConv, currency)} cur={costPerConv} prev={D((x) => x.conversions ? x.cost / x.conversions : 0)} goodWhenDown kpi={kpis.googleCostConv ? { text: `Target ${fmtCurrency(kpis.googleCostConv, currency)}`, cls: kpiClass(costPerConv, kpis.googleCostConv, true) } : null} />
+        <Sc label="Conversions" value={fmtNumber(t.conversions)} cur={t.conversions} prev={D((x) => x.conversions)} series={daily.map((d) => d.conversions)} days={sdays} fmt={(v) => `${fmtNumber(v)} conv.`} />
+        <Sc label="Cost / Conv" value={fmtCurrency(costPerConv, currency)} cur={costPerConv} prev={D((x) => x.conversions ? x.cost / x.conversions : 0)} goodWhenDown kpi={kpis.googleCostConv ? { text: `Target ${fmtCurrency(kpis.googleCostConv, currency)}`, cls: kpiClass(costPerConv, kpis.googleCostConv, true) } : null} series={sparkRatio(daily, 'cost', 'conversions')} days={sdays} fmt={(v) => `${fmtCurrency(v, currency)} · 7-day`} />
         <Sc label="Conv. Rate" value={fmtPct(rate(t.conversions, t.clicks), 2)} cur={rate(t.conversions, t.clicks)} prev={D((x) => rate(x.conversions, x.clicks))} />
         <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
@@ -7529,6 +7539,7 @@ const INTEL_OPEN_KEY = 'caalano_intel_open'
 function IntelBanner({ model, status, tab, pipeName, range }) {
   // Collapsed to one line by default; opening shows every line and is remembered.
   const [open, setOpen] = useState(() => { try { return localStorage.getItem(INTEL_OPEN_KEY) === '1' } catch { return false } })
+  const [more, setMore] = useState(false)
   const toggle = () => setOpen((o) => { const nx = !o; try { localStorage.setItem(INTEL_OPEN_KEY, nx ? '1' : '0') } catch { /* private mode */ } return nx })
   const lines = (model && model.lines) || []
   const key = tab || 'overall'
@@ -7538,6 +7549,32 @@ function IntelBanner({ model, status, tab, pipeName, range }) {
   const worst = ordered[0]
   const n = ordered.length
   const source = model && model.kind === 'ads' ? `the ${model.channel === 'meta' ? 'Meta' : 'Google'} figures on this page` : model && model.kind === 'page' ? `the ${model.page} figures on this page` : 'the CRM figures behind this page'
+  // Every tab but the Overview opens with the story: the three strongest lines
+  // as cards, the rest behind one click. The Overview draws its own strip
+  // under the headline tiles, so there the banner stays a one-line toggle.
+  if (key !== 'overall') {
+    const loading = (status === 'loading' && !model) || (model && model.loading)
+    const top = ordered.slice(0, 3), rest = ordered.slice(3)
+    const headOf = (l) => (/^Biggest leak/.test(l.text) ? 'Biggest leak' : /^(Meta|Google) wins/.test(l.text) ? 'Channels' : / vs the previous period/.test(l.text) ? 'Moving' : /^Cash collected/.test(l.text) ? 'Cash' : l.sev === 'high' ? 'Needs attention' : l.sev === 'med' ? 'Watch' : l.sev === 'good' ? 'Working' : 'Note')
+    return (
+      <div className={`intel-banner story${loading ? ' is-loading' : ''}`}>
+        <div className="intel-h">
+          <span className="intel-mark">360</span><b>Intelligence</b>
+          <span className="sub">· {rangeLabel(range)}{pipeName ? <> · <b>{pipeName}</b> pipeline</> : ''} · read from {source}, against the previous equal window</span>
+          <span className="intel-count">{loading ? 'reading…' : status === 'err' && !model ? 'no read' : !model ? '' : n ? `${n} insight${n === 1 ? '' : 's'}` : 'nothing stands out'}</span>
+        </div>
+        {loading ? <div className="v2-story"><div className="v2-story-c sev-low"><i /><div><div className="k">360 is reading</div><div className="intel-skel" /><div className="intel-skel w2" /></div></div></div>
+          : status === 'err' && !model ? <div className="cap">No read for this period yet, so there is nothing to say.</div>
+            : !model ? null
+              : !n ? <div className="cap">Nothing stands out - everything on this page is within its usual range for the period.</div>
+                : <>
+                  <div className="v2-story">{top.map((l, i) => <div key={i} className={`v2-story-c sev-${l.sev}`}><i /><div><div className="k">{headOf(l)}</div><p>{l.text}</p></div></div>)}</div>
+                  {rest.length ? <button type="button" className="intel-more" onClick={() => setMore((m) => !m)} aria-expanded={more}>{more ? 'Fewer insights ▴' : `${rest.length} more insight${rest.length === 1 ? '' : 's'} ▾`}</button> : null}
+                  {more ? <ul className="intel-lines">{rest.map((l, i) => <li key={i} className={`intel-line sev-${l.sev}`}><span className="intel-dot" />{l.text}</li>)}</ul> : null}
+                </>}
+      </div>
+    )
+  }
   return (
     <div className={`intel-banner${open ? ' open' : ''}${status === 'loading' ? ' is-loading' : ''}`}>
       <button type="button" className="intel-h intel-toggle" onClick={toggle} aria-expanded={open}>

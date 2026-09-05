@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.491.0 - 2026-09-05 · `PENDING` - Calendar events count booked or reached (V2 reach)
+## v3.491.0 - 2026-09-05 · `1267a5c` - Calendar events count booked or reached (V2 reach)
 
 A calendar key event in Key event reach now counts everyone who booked or
 reached its stage or any later one, the way the key-event cells always

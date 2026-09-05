@@ -18,6 +18,31 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.490.0 - 2026-09-05 · `PENDING` - Intelligence across every tab (V2)
+
+Over- and under-indexing and Biggest movers on Caalano360 now speak for the
+whole workspace, not just paid media, and every card says which page it
+came from and opens it on click.
+
+- **New cuts**: calendars by show rate (Appointments); reps by win and
+  booking rate (Users); suburbs and places by win and booking rate
+  (Location); forms by win and booking rate (Forms); and time to close per
+  campaign, channel and source against the account's median (Timing). Lost
+  stages and reasons already sat there (Lost Reasons). Campaign, ad set and
+  creative cuts are tagged Meta or Google by the channel their leads came
+  from; keywords are Google's.
+- **New movers**: show rate per calendar and the median days to win, against
+  the previous period.
+- **Page tags** on every finding and mover, coloured by page, and the cards
+  are clickable: they take you to that tab.
+- The same 10-lead floor and 30% band apply to every new cut, so nothing is
+  called out on a handful of leads.
+
+V1's findings and movers are unchanged. Call Reporting is not yet covered
+because its figures live only on its own tab.
+
+---
+
 ## v3.489.0 - 2026-09-05 · `5002811` - CAC after ROAS in Channel performance (V2)
 
 CAC (spend ÷ won) is always shown, straight after ROAS, per channel and per

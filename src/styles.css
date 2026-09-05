@@ -4761,3 +4761,15 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-pop-p { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px; }
 .v2-bar .fill span { min-width: 2px; }
 .v2-page .v2-tbl thead tr.v2-grp th { text-align: center; }
+/* V2: page tags on findings and movers, clickable */
+.if-page { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border-2); color: var(--muted); white-space: nowrap; margin-right: 8px; align-self: flex-start; }
+.if-page.pg-meta { color: var(--meta); border-color: color-mix(in srgb, var(--meta) 40%, transparent); }
+.if-page.pg-google { color: var(--google); border-color: color-mix(in srgb, var(--google) 40%, transparent); }
+.if-page.pg-lostreasons { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 40%, transparent); }
+.if-page.pg-appts, .if-page.pg-timing, .if-page.pg-users { color: var(--brand-2); border-color: color-mix(in srgb, var(--brand) 40%, transparent); }
+.if-page.pg-location, .if-page.pg-forms { color: #c98500; border-color: rgba(201,133,0,.4); }
+.if-item.if-go { cursor: pointer; }
+.if-item.if-go:hover { background: color-mix(in srgb, var(--brand) 6%, var(--panel-2)); }
+.v2-mv-row.go { cursor: pointer; border-radius: 8px; padding: 4px 6px; margin: 0 -6px; }
+.v2-mv-row.go:hover { background: color-mix(in srgb, var(--brand) 6%, transparent); }
+.v2-mv-row .l .if-page { margin: 0 0 0 8px; vertical-align: 1px; }

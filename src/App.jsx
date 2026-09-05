@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.489.0'
+const APP_VERSION = '3.490.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6677,6 +6677,7 @@ function aggUsersToCrm(j) {
     for (const r of (u.lostReasons || [])) { const e = rs[r.reason] || { reason: r.reason, count: 0, value: 0 }; e.count += r.count; e.value += r.value || 0; rs[r.reason] = e }
   }
   a.lostReasons = Object.values(rs).sort((x, y) => y.count - x.count)
+  a.reps = us.map((u) => ({ id: u.id, name: u.name, leads: u.leads || 0, won: u.won || 0, booked: u.booked || 0, shown: u.shown || 0, lost: u.lost || 0 }))
   return a
 }
 const crmAggUrl = (clientId, range, nonce, channel) => clientId ? `/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
@@ -7127,7 +7128,7 @@ function intelChannels(cc) {
 // What moved most against the previous equal window. Counts and money need a
 // real base on both sides; rates are judged in percentage points. Each mover
 // says which way is good, so the badge colour is right without a lookup.
-function intelMovers(cc, pcc, reach, prevReach) {
+function intelMovers(cc, pcc, reach, prevReach, opts = {}) {
   if (!cc || !pcc) return []
   const out = []
   const t = cc.totals || {}, pt = pcc.totals || {}
@@ -7173,6 +7174,14 @@ function intelMovers(cc, pcc, reach, prevReach) {
     const top = lr[0]; const prevTop = plr.find((x) => x.reason === top.reason)
     if (prevTop) rate(`lost:${top.reason}`, `Lost to "${top.reason}"`, intelRate(top.count, t.lost), intelRate(prevTop.count, pt.lost), t.lost, pt.lost, false, `${top.count} of ${t.lost} losses vs ${prevTop.count} of ${pt.lost}`)
   }
+  // Wider (V2): show rate per calendar and the median days to win.
+  if (opts.wide) {
+    const pcal = new Map(((pcc.bookingByCalendar) || []).map((c) => [c.id || c.calendar, c]))
+    for (const c of (cc.bookingByCalendar || [])) { const p = pcal.get(c.id || c.calendar); if (p) rate(`show:${c.calendar}`, `Show rate · ${c.calendar}`, intelRate(c.shown, c.occurred), intelRate(p.shown, p.occurred), c.occurred || 0, p.occurred || 0, true, `${c.shown} of ${c.occurred} shown vs ${p.shown} of ${p.occurred}`) }
+    const tw = cc.timeToWon, ptw = pcc.timeToWon
+    if (tw && ptw && tw.median != null && ptw.median != null && tw.n >= 5 && ptw.n >= 5) { const pct = intelPct(tw.median, ptw.median); if (pct != null && Math.abs(pct) >= INTEL_MIN_MOVE && Math.abs(tw.median - ptw.median) >= 2) out.push({ key: 'ttw', label: 'Median days to win', kind: 'days', cur: tw.median, prev: ptw.median, pct, score: Math.abs(pct) * 0.8, good: pct < 0, why: `${tw.n} vs ${ptw.n} wins` }) }
+  }
+  for (const m of out) m.page = intelPageOf(m)
   // The headline figures keep their place; the per-channel and per-event cuts
   // fill what is left, so a busy account cannot crowd revenue off the list.
   const HEAD = new Set(['leads', 'won', 'lost', 'revenue', 'result', 'spend', 'cpl', 'cpa'])
@@ -7225,14 +7234,35 @@ function intelIndex(cc, firstKe, fold) {
 // finding is one cut, one measure, against the account's own figure for the
 // same period and pipeline. Thin cuts are never judged.
 const INTEL_DIMS = [['pipeline', 'pipeline'], ['channel', 'channel'], ['campaign', 'campaign'], ['adset', 'ad set'], ['creative', 'creative'], ['keyword', 'keyword'], ['source', 'source']]
+// Which tab a finding or mover belongs to, so the Overview can tag it and
+// take the reader there. Campaign-level cuts go to the ad tab their leads
+// came from; keywords are Google's; stages and reasons are Lost Reasons.
+const INTEL_PAGES = { overall: 'Caalano360', meta: 'Meta Ads', google: 'Google Ads', users: 'Users', calls: 'Call Reporting', appts: 'Appointments', timing: 'Timing', lostreasons: 'Lost Reasons', forms: 'Forms', location: 'Location' }
+function intelPageOf(x) {
+  if (!x) return 'overall'
+  if (x.page) return x.page
+  const d = x.dim, k = String(x.key || '')
+  if (x.metric === 'ttw' || k === 'ttw') return 'timing'
+  if (d === 'calendar' || k.startsWith('show:')) return 'appts'
+  if (d === 'rep' || k.startsWith('rep:')) return 'users'
+  if (d === 'location') return 'location'
+  if (d === 'form') return 'forms'
+  if (d === 'stage' || d === 'reason' || k.startsWith('lost:')) return 'lostreasons'
+  if (d === 'keyword') return 'google'
+  if (d === 'campaign' || d === 'adset' || d === 'creative') return x.chan === 'google' ? 'google' : 'meta'
+  if (k.endsWith(':google')) return 'google'
+  if (k.endsWith(':meta')) return 'meta'
+  return 'overall'
+}
 function intelFindings(cc, pcc, fold, firstKe, opts = {}) {
   const f = cc && cc.oppFacts
   if (!f || !f.rows || !f.keys) return []
   const keys = f.keys, dict = f.dict || {}, iPipe = keys.indexOf('pipeline'), iPos = keys.length + 1
   const nameOf = (dim, r) => { const i = keys.indexOf(dim); if (i < 0) return null; const raw = (dict[dim] || [])[r[i + 1]]; return raw == null ? null : ((fold && fold[dim] && fold[dim][raw]) || raw) }
   const reached = (r) => { if (r[0] === 1) return true; const pn = (dict.pipeline || [])[r[iPipe + 1]]; const k = firstKe && (firstKe[pn] || firstKe['*']); return !!(k && k.pos != null && r[iPos] >= k.pos) }
-  const acc = () => ({ leads: 0, won: 0, lost: 0, reach: 0 })
-  const bump = (a, r) => { a.leads++; if (r[0] === 1) a.won++; else if (r[0] === 2) a.lost++; if (reached(r)) a.reach++ }
+  const iChan = keys.indexOf('channel'), iDays = keys.length + 2
+  const acc = () => ({ leads: 0, won: 0, lost: 0, reach: 0, ch: { meta: 0, google: 0 }, tt: [] })
+  const bump = (a, r) => { a.leads++; if (r[0] === 1) { a.won++; if (r[iDays] != null) a.tt.push(r[iDays]) } else if (r[0] === 2) a.lost++; if (reached(r)) a.reach++; if (iChan >= 0) { const c = (dict.channel || [])[r[iChan + 1]]; if (c === 'meta' || c === 'google') a.ch[c]++ } }
   const base = acc(); const by = new Map(INTEL_DIMS.map(([d]) => [d, new Map()]))
   for (const r of f.rows) {
     bump(base, r)
@@ -7245,6 +7275,7 @@ function intelFindings(cc, pcc, fold, firstKe, opts = {}) {
   const pc = (v) => `${Math.round(v * 100)}%`
   const chanLabel = (k) => (k === 'meta' ? 'Meta' : k === 'google' ? 'Google' : k === 'other' ? 'Non-paid' : k)
   const B = { win: rate(base.won, base.leads), reach: rate(base.reach, base.leads), lost: rate(base.lost, base.leads) }
+  const baseTt = base.tt.length >= 5 ? intelMedian(base.tt) : null
   const skipPipes = by.get('pipeline').size < 2
   for (const [d, dLabel] of INTEL_DIMS) {
     if (d === 'pipeline' && skipPipes) continue
@@ -7253,11 +7284,14 @@ function intelFindings(cc, pcc, fold, firstKe, opts = {}) {
       const label = d === 'channel' ? chanLabel(nm) : nm
       const who = d === 'channel' ? `${label} leads` : `${label} (${dLabel})`
       const M = { win: rate(a.won, a.leads), reach: rate(a.reach, a.leads), lost: rate(a.lost, a.leads) }
-      const push = (metric, v, b, better, text, weight) => { const i = idx(v, b); if (i == null || (i < 130 && i > 70)) return; out.push({ dim: d, label, metric, idx: i, value: v, base: b, n: a.leads, better, text, score: Math.abs(i - 100) * Math.log2(a.leads) * weight }) }
+      const chan = a.ch.google > a.ch.meta ? 'google' : 'meta'
+      const push = (metric, v, b, better, text, weight) => { const i = idx(v, b); if (i == null || (i < 130 && i > 70)) return; out.push({ dim: d, label, chan, metric, idx: i, value: v, base: b, n: a.leads, better, text, score: Math.abs(i - 100) * Math.log2(a.leads) * weight }) }
       // Win rate: at least two deals of difference, so one lucky win cannot make a finding.
       if (B.win && Math.abs(a.won - B.win * a.leads) >= 2) push('win', M.win, B.win, M.win > B.win, M.win > B.win ? `${who} win ${pc(M.win)} of the time, ${(M.win / B.win).toFixed(1)}× the account's ${pc(B.win)} (${fmtNumber(a.won)} of ${fmtNumber(a.leads)} won).` : `${who} win only ${pc(M.win)} of the time against the account's ${pc(B.win)} (${fmtNumber(a.won)} of ${fmtNumber(a.leads)} won).`, 1.2)
       if (B.reach && Math.abs(a.reach - B.reach * a.leads) >= 3) push('reach', M.reach, B.reach, M.reach > B.reach, `${who} reach ${keLabel} ${pc(M.reach)} of the time vs ${pc(B.reach)} across the account (${fmtNumber(a.reach)} of ${fmtNumber(a.leads)}).`, 1)
       if (B.lost && Math.abs(a.lost - B.lost * a.leads) >= 3) push('lost', M.lost, B.lost, M.lost < B.lost, `${pc(M.lost)} of ${who} end up lost, vs ${pc(B.lost)} across the account (${fmtNumber(a.lost)} of ${fmtNumber(a.leads)}).`, 0.9)
+      // Time to close (Timing): the cut's median days to win against the account's, five wins or more.
+      if (opts.wide && baseTt != null && a.tt.length >= 5) { const md = intelMedian(a.tt); const i = baseTt && md ? Math.round((baseTt / md) * 100) : null; if (i != null && (i >= 130 || i <= 70)) out.push({ dim: d, label, chan, metric: 'ttw', idx: i, value: md, base: baseTt, n: a.tt.length, better: md < baseTt, text: `${who} take a median ${Math.round(md)} days to win vs ${Math.round(baseTt)} across the account (${fmtNumber(a.tt.length)} wins).`, score: Math.abs(i - 100) * Math.log2(a.tt.length) * 0.8 }) }
     }
   }
   // Where losses concentrate: the stage, and the reason (with its move vs prev).
@@ -7277,8 +7311,38 @@ function intelFindings(cc, pcc, fold, firstKe, opts = {}) {
       }
     }
   }
+  // The other tabs, when the Overview passes their figures (V2): calendars
+  // (Appointments), reps (Users), places (Location) and forms (Forms), each
+  // cut against the sum of its own kind, the same 10-lead floor and 30% band.
+  if (opts.wide) {
+    const cutRate = (dim, rows, num, den, metric, verb, betterUp, minBase) => {
+      const list = (rows || []).filter((r) => r && (den(r) || 0) > 0)
+      const D = list.reduce((a, r) => a + den(r), 0), N = list.reduce((a, r) => a + num(r), 0)
+      const b = D ? N / D : null; if (!b || D < INTEL_MIN_BASE * 2) return
+      for (const r of list) {
+        const dn = den(r); if (dn < (minBase || INTEL_MIN_BASE)) continue
+        const v = num(r) / dn; const i = idx(v, b); if (i == null || (i < 130 && i > 70)) continue
+        if (Math.abs(num(r) - b * dn) < 2) continue
+        const better = betterUp ? v > b : v < b
+        out.push({ dim, label: r.label, metric, idx: i, value: v, base: b, n: dn, better, text: `${r.label} ${verb} ${pc(v)} of the time vs ${pc(b)} across the account (${fmtNumber(num(r))} of ${fmtNumber(dn)}).`, score: Math.abs(i - 100) * Math.log2(dn) * 0.9 })
+      }
+    }
+    const cals = (opts.calendars || []).map((c) => ({ label: c.calendar || 'Calendar', shown: c.shown || 0, occurred: c.occurred || 0 }))
+    cutRate('calendar', cals, (r) => r.shown, (r) => r.occurred, 'show', '(calendar) sees people show up', true)
+    const reps = (opts.reps || []).map((u) => ({ label: u.name || 'Unassigned', leads: u.leads || 0, won: u.won || 0, booked: u.booked || 0 }))
+    cutRate('rep', reps, (r) => r.won, (r) => r.leads, 'win', '(rep) wins', true)
+    cutRate('rep', reps, (r) => r.booked, (r) => r.leads, 'book', '(rep) books', true)
+    const locs = (opts.locations || []).map((l) => ({ label: l.label || l.value || l.name || 'Unknown', leads: l.leads || 0, won: l.won || 0, booked: l.booked || 0 }))
+    cutRate('location', locs, (r) => r.won, (r) => r.leads, 'win', '(location) leads win', true)
+    cutRate('location', locs, (r) => r.booked, (r) => r.leads, 'book', '(location) leads book', true)
+    const forms = (opts.forms || []).map((f) => ({ label: f.form || f.name || 'Form', leads: f.leads || 0, won: f.won || 0, booked: f.booked || 0 }))
+    cutRate('form', forms, (r) => r.won, (r) => r.leads, 'win', '(form) leads win', true)
+    cutRate('form', forms, (r) => r.booked, (r) => r.leads, 'book', '(form) leads book', true)
+  }
+  for (const x of out) x.page = intelPageOf(x)
   return out.sort((a, b) => b.score - a.score)
 }
+function intelMedian(arr) { const a = [...arr].filter((v) => v != null).sort((x, y) => x - y); if (!a.length) return null; const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2 }
 
 // The banner: ranked, deterministic sentences from the model. Each line carries
 // the tabs it speaks to, so a tab can lead with what concerns it; a line is
@@ -7391,7 +7455,7 @@ function intelAds(d, channel, money) {
 }
 
 // One model from a current and previous (lensed) drill payload.
-function buildIntel(cc, pcc, clientId, money) {
+function buildIntel(cc, pcc, clientId, money, extra = null) {
   if (!cc) return null
   const tot = cc.totals || {}, ptot = (pcc && pcc.totals) || {}
   const kef = ccKeyEventFunnel(cc, clientId, tot.won, tot.leads)
@@ -7411,10 +7475,10 @@ function buildIntel(cc, pcc, clientId, money) {
     firstKe[pname] = { pos, label: r.label }
   }
   const channels = intelChannels(cc)
-  const movers = intelMovers(cc, pcc, reach, prevReach)
+  const movers = intelMovers(cc, pcc, reach, prevReach, extra || {})
   const fold = lrFoldDict(cc, loadAliases(clientId))
   const index = intelIndex(cc, firstKe, fold)
-  const findings = intelFindings(cc, pcc, fold, firstKe)
+  const findings = intelFindings(cc, pcc, fold, firstKe, extra || {})
   const m = { cc, pcc, reach, channels, movers, index, findings, firstKe, usingKe: kef.usingKe, multi: kef.multi, cashOn: loadCashOn(clientId) }
   m.lines = intelLines(m, money || ((v) => `$${fmtNumber(v)}`))
   return m
@@ -7557,19 +7621,20 @@ function IntelMovers({ movers, money, hasPrev }) {
     </div>
   )
 }
-function IntelFindings({ findings, index, money }) {
+function IntelFindings({ findings, index, money, onNav }) {
   if (!findings) return null
   const ahead = findings.filter((x) => x.better).slice(0, 6), behind = findings.filter((x) => !x.better).slice(0, 6)
-  const DIM = { pipeline: 'Pipeline', channel: 'Channel', campaign: 'Campaign', adset: 'Ad set', creative: 'Creative', keyword: 'Keyword', source: 'Source', stage: 'Stage', reason: 'Lost reason' }
+  const DIM = { pipeline: 'Pipeline', channel: 'Channel', campaign: 'Campaign', adset: 'Ad set', creative: 'Creative', keyword: 'Keyword', source: 'Source', stage: 'Stage', reason: 'Lost reason', calendar: 'Calendar', rep: 'Rep', location: 'Location', form: 'Form' }
   const item = (x, i) => (
-    <li key={i} className={`if-item ${x.better ? 'good' : 'bad'}`}>
+    <li key={i} className={`if-item ${x.better ? 'good' : 'bad'}${onNav ? ' if-go' : ''}`} {...(onNav ? { role: 'button', tabIndex: 0, title: `Open ${INTEL_PAGES[x.page || intelPageOf(x)] || 'the page'}`, onClick: () => onNav(x.page || intelPageOf(x)), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNav(x.page || intelPageOf(x)) } } } : {})}>
+      {onNav ? <span className={`if-page pg-${x.page || intelPageOf(x)}`}>{INTEL_PAGES[x.page || intelPageOf(x)] || 'Caalano360'}</span> : null}
       <span className="if-chip">{x.idx != null ? x.idx : `${Math.round(x.value * 100)}%`}</span>
-      <div className="if-body"><span>{x.text}</span><span className="cap">{DIM[x.dim] || x.dim} · {x.metric === 'win' ? 'win rate' : x.metric === 'reach' ? 'reach' : x.metric === 'lost' ? 'lost share' : x.metric === 'loststage' ? 'where losses sit' : 'lost reason'}{x.idx != null ? ` · ${x.idx} against 100` : ''}</span></div>
+      <div className="if-body"><span>{x.text}</span><span className="cap">{DIM[x.dim] || x.dim} · {x.metric === 'ttw' ? 'time to win' : x.metric === 'show' ? 'show rate' : x.metric === 'book' ? 'booking rate' : x.metric === 'win' ? 'win rate' : x.metric === 'reach' ? 'reach' : x.metric === 'lost' ? 'lost share' : x.metric === 'loststage' ? 'where losses sit' : 'lost reason'}{x.idx != null ? ` · ${x.idx} against 100` : ''}</span></div>
     </li>
   )
   return (
     <div className="card">
-      <div className="exec-panel-h">Where this account over- and under-indexes <span className="sub">· every cut measured against the account's own average for this period and pipeline · 100 is the average, 150 is half as much again, 50 is half</span></div>
+      <div className="exec-panel-h">Where this account over- and under-indexes <span className="sub">· {onNav ? 'across every tab - the tag says which, click to open it · ' : ''}every cut measured against the account's own average for this period and pipeline · 100 is the average, 150 is half as much again, 50 is half</span></div>
       {!findings.length ? <p className="cap" style={{ margin: 0 }}>No cut with enough leads (10 or more) sits far enough from the account's average to call out this period.</p>
         : <div className="if-cols">
           <div><div className="if-h good">Pulling ahead</div>{ahead.length ? <ul className="if-list">{ahead.map(item)}</ul> : <p className="cap">Nothing ahead of the average by a clear margin.</p>}</div>
@@ -7901,8 +7966,8 @@ function V2Section({ id, title, children }) {
 }
 // Biggest movers drawn: each change as a bar left or right of a centre line,
 // so the list reads as a picture. Same rows as the V1 list.
-function ExecMovers({ movers, money, hasPrev }) {
-  const fmt = (m, v) => (m.kind === 'money' ? money(Math.round(v)) : m.kind === 'rate' ? `${Math.round(v * 100)}%` : fmtNumber(v))
+function ExecMovers({ movers, money, hasPrev, onNav }) {
+  const fmt = (m, v) => (m.kind === 'money' ? money(Math.round(v)) : m.kind === 'rate' ? `${Math.round(v * 100)}%` : m.kind === 'days' ? `${Math.round(v)} d` : fmtNumber(v))
   const chg = (m) => (m.kind === 'rate' ? `${m.pts > 0 ? '+' : ''}${Math.round(m.pts)} pts` : `${m.pct > 0 ? '+' : ''}${Math.round(m.pct)}%`)
   const mag = (m) => Math.abs(m.kind === 'rate' ? (m.pts || 0) : (m.pct || 0))
   const max = Math.max(1, ...(movers || []).map(mag))
@@ -7914,8 +7979,8 @@ function ExecMovers({ movers, money, hasPrev }) {
           : <div className="v2-mv">{movers.map((m, i) => {
             const w = Math.min(50, (mag(m) / max) * 50), up = (m.kind === 'rate' ? m.pts : m.pct) > 0
             return (
-              <div key={i} className="v2-mv-row">
-                <div className="l"><b>{m.label}</b><small>{fmt(m, m.cur)} from {fmt(m, m.prev)}{m.why ? ` · ${m.why}` : ''}</small></div>
+              <div key={i} className={`v2-mv-row${onNav ? ' go' : ''}`} {...(onNav ? { role: 'button', tabIndex: 0, title: `Open ${INTEL_PAGES[m.page || intelPageOf(m)] || 'the page'}`, onClick: () => onNav(m.page || intelPageOf(m)), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNav(m.page || intelPageOf(m)) } } } : {})}>
+                <div className="l"><b>{m.label}</b>{onNav ? <span className={`if-page pg-${m.page || intelPageOf(m)}`}>{INTEL_PAGES[m.page || intelPageOf(m)] || 'Caalano360'}</span> : null}<small>{fmt(m, m.cur)} from {fmt(m, m.prev)}{m.why ? ` · ${m.why}` : ''}</small></div>
                 <div className={`pct ${m.good ? 'up' : 'down'}`}>{chg(m)}</div>
                 <div className="bar"><span className={m.good ? 'up' : 'down'} style={up ? { left: '50%', width: `${w}%` } : { left: `${50 - w}%`, width: `${w}%` }} /></div>
               </div>
@@ -7940,6 +8005,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // Daily ad spend for the V2 headline sparklines - its own light read, only
   // when V2 is drawing, so V1 never pays for it.
   const spendDaily = useSwrJson(v2 && !isViewer ? spendDailyUrl(clientId, range, nonceX) : null)
+  // V2: the forms feed (forms + located leads) so the indexing and movers can
+  // speak for the Forms and Location tabs too. Not fetched in V1.
+  const formsFeed = useForms(v2 && !isViewer ? clientId : null, range, nonceX)
   // Cash position row: per-client switch in Settings → Account summary.
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
@@ -7990,7 +8058,14 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // The intelligence model: reach with the bottleneck, channels to outcomes,
   // movers, indexing. Same (lensed, channel-scoped) payloads as every tile.
   const keTick = JSON.stringify(loadKeyEvents(clientId))
-  const intel = useMemo(() => buildIntel(cc, pcc, clientId, money), [cc, pcc, clientId, keTick, cashOn]) // eslint-disable-line
+  const intelExtra = useMemo(() => {
+    if (!v2) return null
+    const forms = (formsFeed.data && formsFeed.data.forms) || []
+    const locMap = new Map()
+    for (const f of forms) for (const l of (f.locations || [])) { const k = l.label || l.value || l.name; if (!k) continue; const e = locMap.get(k) || { label: k, leads: 0, booked: 0, won: 0, lost: 0 }; e.leads += l.leads || 0; e.booked += l.booked || 0; e.won += l.won || 0; e.lost += l.lost || 0; locMap.set(k, e) }
+    return { wide: true, reps: (crmAgg && crmAgg.reps) || [], calendars: (cc && cc.bookingByCalendar) || [], locations: [...locMap.values()], forms }
+  }, [v2, formsFeed.data, crmAgg, cc])
+  const intel = useMemo(() => buildIntel(cc, pcc, clientId, money, intelExtra), [cc, pcc, clientId, keTick, cashOn, intelExtra]) // eslint-disable-line
   // Spend for the active channel toggle, from a (lensed) drill payload.
   const spendOf = (d, chn) => { const sp = (d && d.spend) || {}; return chn === 'meta' ? (sp.meta || 0) : chn === 'google' ? (sp.google || 0) : chn === 'nonpaid' ? 0 : (sp.total || 0) }
   const [drill, setDrill] = useState(null)
@@ -8371,8 +8446,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       </div>)}
 
       {/* Biggest movers and Indexing insights - from the same model as the reach above. */}
-      {cc && intel ? (v2 ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} /></V2Section> : <IntelMovers movers={intel.movers} money={money} hasPrev={!!pcc} />) : null}
-      {cc && intel ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} />) : null}
+      {cc && intel ? (v2 ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} onNav={onNav} /></V2Section> : <IntelMovers movers={intel.movers} money={money} hasPrev={!!pcc} />) : null}
+      {cc && intel ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} onNav={v2 ? onNav : undefined} />) : null}
 
       {/* Pipeline performance - per-pipeline overall key-event scorecards (all
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
@@ -10778,7 +10853,9 @@ function useForms(clientId, range, nonce = 0) {
   const [state, setState] = useState({ status: 'loading', data: null })
   const q = rangeQuery(range)
   useEffect(() => {
-    let alive = true; setState({ status: 'loading', data: null })
+    let alive = true
+    if (!clientId) { setState({ status: 'idle', data: null }); return () => { alive = false } }
+    setState({ status: 'loading', data: null })
     fetch(`/.netlify/functions/windsor?scope=forms&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: 'ok', data: j }) })

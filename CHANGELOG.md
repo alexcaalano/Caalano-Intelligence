@@ -18,6 +18,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.481.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 1
+
+The redesigned Overview starts here, behind a switch. Nothing changes for
+anyone until the default is flipped.
+
+- **Layout switch** (super admins only, in the sidebar under the version):
+  V1 is the Overview everyone sees today; V2 is the redesign. The choice is
+  per browser. A second control sets the default for everyone, which stays on
+  V1 until a super admin changes it.
+- **V2, release 1** adds a sticky context bar (client, range, pipeline,
+  channel, won basis, CRM freshness, refresh) and a headline row of five
+  tiles - Ad spend, Opportunities, Won, Revenue, ROAS - each with its change
+  against the previous period and, for the CRM figures, a sparkline over the
+  range with a hover that names the day. Wins and revenue draw a 7-day rolling
+  total so the shape reads. Every V1 section follows beneath, untouched; later
+  releases replace them one at a time.
+- **Daily series** ride in the drill payload (leads by created day; wins and
+  revenue by the day the won basis counts them), account-wide and per pipeline,
+  so the sparklines follow the pipeline picker and channel toggle. Daily ad
+  spend for the Spend and ROAS tiles comes with the next release.
+
+V1's rendering code is not edited. The shared changes are the new payload
+field, the settings key for the default, and the sidebar switch.
+
+---
+
 ## v3.480.0 - 2026-09-04 · `fd1ba72` - Cash collected
 
 A client can now record what each won deal has actually paid on a numeric

@@ -4294,6 +4294,18 @@ export function ccDrillClassify(o, fromMs, toMs, basis) {
   const isOpen = inCohort && !isWonNow && !isLost
   return { inCohort, isWonNow, isWon, isLost, isOpen, counts: inCohort || isWon }
 }
+// Every calendar day from `from` to `to` inclusive (YYYY-MM-DD strings), for
+// the daily series under the headline tiles. Noon UTC steps so a daylight-saving
+// change never skips or doubles a day. Empty when either end is missing or the
+// span is longer than a year - a sparkline of 400 points says nothing.
+export function dayListBetween(from, to, cap = 400) {
+  const a = Date.parse(`${from}T12:00:00Z`), b = Date.parse(`${to}T12:00:00Z`)
+  if (!isFinite(a) || !isFinite(b) || b < a) return []
+  const out = []
+  for (let t = a; t <= b && out.length < cap; t += 86400000) out.push(new Date(t).toISOString().slice(0, 10))
+  return out.length < cap ? out : []
+}
+
 export async function buildCcDrill(locationId, from, to, channel, basis = 'created') {
   const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
@@ -4335,6 +4347,17 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const nowMs = Date.now()
   const contactNameOf = (o) => (o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name || '-'
+  // Calendar day in the client's own timezone, so a deal created at 9am in
+  // Melbourne is dated the day Melbourne saw, not the UTC day before.
+  const dayIn = (ms) => (isFinite(ms) ? new Date(ms).toLocaleDateString('en-CA', { timeZone: tz }) : null)
+  // Daily series for the headline sparklines: leads by created day; wins and
+  // revenue by the day the basis counts them (close day on Closed, created day on
+  // Created). Account-wide plus one set per pipeline, so the lens can carry it.
+  const dayList = dayListBetween(from, to)
+  const dayIdx = new Map(dayList.map((d, i) => [d, i]))
+  const mkDaily = () => ({ leads: new Array(dayList.length).fill(0), won: new Array(dayList.length).fill(0), revenue: new Array(dayList.length).fill(0) })
+  const dailyAll = mkDaily()
+  const bumpDaily = (d, key, day, v) => { const i = day != null ? dayIdx.get(day) : undefined; if (i !== undefined) d[key][i] += v }
   const ttWon = [], ttLost = []   // days from lead-in to being marked, per deal
   let ttWonSkip = 0, ttLostSkip = 0
   // Optional channel filter (first-touch UTM): all | paid | nonpaid | meta | google.
@@ -4452,11 +4475,16 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     }
     if (o.pipelineId) {
       let pa = pipeAgg.get(o.pipelineId)
-      if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, cash: 0, cashEntered: 0, paidInFull: 0, chan: { meta: { leads: 0, won: 0, revenue: 0, cash: 0 }, google: { leads: 0, won: 0, revenue: 0, cash: 0 }, other: { leads: 0, won: 0, revenue: 0, cash: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
+      if (!pa) { pa = { id: o.pipelineId, name: pipeName[o.pipelineId] || 'Pipeline', leads: 0, won: 0, lost: 0, open: 0, revenue: 0, openValue: 0, cash: 0, cashEntered: 0, paidInFull: 0, daily: mkDaily(), chan: { meta: { leads: 0, won: 0, revenue: 0, cash: 0 }, google: { leads: 0, won: 0, revenue: 0, cash: 0 }, other: { leads: 0, won: 0, revenue: 0, cash: 0 } } }; pipeAgg.set(o.pipelineId, pa) }
       if (inCohort) { pa.leads++; pa.chan[cb].leads++ }
       if (isWon) { pa.won++; pa.revenue += val; pa.chan[cb].won++; pa.chan[cb].revenue += val; if (cash != null) { pa.cash += cash; pa.cashEntered++; pa.chan[cb].cash += cash; if (paidInFull) pa.paidInFull++ } }
       else if (isLost) pa.lost++
       else if (isOpen) { pa.open++; pa.openValue += val }
+    }
+    if (dayList.length) {
+      const pd = o.pipelineId ? pipeAgg.get(o.pipelineId) : null
+      if (inCohort) { const cd = dayIn(Date.parse(o.createdAt)); bumpDaily(dailyAll, 'leads', cd, 1); if (pd) bumpDaily(pd.daily, 'leads', cd, 1) }
+      if (isWon) { const wd = dayIn(Date.parse(closedBasis ? (o.lastStatusChangeAt || o.createdAt) : o.createdAt)); bumpDaily(dailyAll, 'won', wd, 1); bumpDaily(dailyAll, 'revenue', wd, val); if (pd) { bumpDaily(pd.daily, 'won', wd, 1); bumpDaily(pd.daily, 'revenue', wd, val) } }
     }
     // The per-opportunity rows are the cohort's, and a cohort deal that is won
     // reads as won there whatever the basis - they feed cohort tools.
@@ -4478,9 +4506,6 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
       revenueTotal += val
       if (ch === 'meta') { metaWon++; paidWon++ } else if (ch === 'google') { googleWon++; paidWon++ }
       const closeMs = Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.createdAt)
-      // Calendar dates in the client's own timezone, so a deal created at 9am in
-      // Melbourne is dated the day Melbourne saw, not the UTC day before.
-      const dayIn = (ms) => (isFinite(ms) ? new Date(ms).toLocaleDateString('en-CA', { timeZone: tz }) : null)
       const closeDate = dayIn(closeMs)
       // Created date and days to close ride along so the Won deals drill can show
       // how long each deal took, not just when it landed.
@@ -4555,7 +4580,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     const stages = (pi ? pi.stages : []).map((s) => { const cc = smc.get(s.id) || { meta: 0, google: 0, other: 0 }; return { id: s.id, name: s.name, pos: s.pos, count: sm.get(s.id) || 0, meta: cc.meta, google: cc.google, other: cc.other } })
     return { id: p.id, name: p.name, stages }
   }).filter((p) => p.stages.some((s) => s.count > 0))
-  const pipeContribution = [...pipeAgg.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue), openValue: Math.round(p.openValue), cash: Math.round(p.cash), chan: { meta: { ...p.chan.meta, revenue: Math.round(p.chan.meta.revenue), cash: Math.round(p.chan.meta.cash) }, google: { ...p.chan.google, revenue: Math.round(p.chan.google.revenue), cash: Math.round(p.chan.google.cash) }, other: { ...p.chan.other, revenue: Math.round(p.chan.other.revenue), cash: Math.round(p.chan.other.cash) } } })).sort((a, b) => b.leads - a.leads)
+  const pipeContribution = [...pipeAgg.values()].map((p) => ({ ...p, revenue: Math.round(p.revenue), openValue: Math.round(p.openValue), cash: Math.round(p.cash), daily: p.daily ? { leads: p.daily.leads, won: p.daily.won, revenue: p.daily.revenue.map(Math.round) } : null, chan: { meta: { ...p.chan.meta, revenue: Math.round(p.chan.meta.revenue), cash: Math.round(p.chan.meta.cash) }, google: { ...p.chan.google, revenue: Math.round(p.chan.google.revenue), cash: Math.round(p.chan.google.cash) }, other: { ...p.chan.other, revenue: Math.round(p.chan.other.revenue), cash: Math.round(p.chan.other.cash) } } })).sort((a, b) => b.leads - a.leads)
   // The MEDIAN, not the mean: a handful of deals that sat open for months drag an
   // average away from the typical case, which is what anyone reading a tile wants.
   // The quartiles come with it, because a median of 4 days means something quite
@@ -4578,6 +4603,8 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     timeToLost: timeTo(ttLost, ttLostSkip),
     oppsBySource: [...bySource.values()].map((s) => ({ ...s, value: Math.round(s.value) })).sort((a, b) => b.count - a.count),
     revenue: { total: Math.round(revenueTotal), count: wonCount, deals: wonDeals },
+    // One value per calendar day of the range, for the headline sparklines.
+    daily: dayList.length ? { days: dayList, leads: dailyAll.leads, won: dailyAll.won, revenue: dailyAll.revenue.map(Math.round) } : null,
     // Cash collected on the won deals above. Null when the account has no such
     // field, so the UI can say so rather than show a zero.
     cash: cashField ? { field: cashField, collected: Math.round(cashTotal), entered: cashEntered, paidInFull: cashPif, won: wonCount, outstanding: Math.max(0, Math.round(revenueTotal - cashTotal)) } : null,

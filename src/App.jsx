@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.480.0'
+const APP_VERSION = '3.481.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -940,6 +940,21 @@ function saveCashOn(clientId, enabled) {
   const next = { ...cur, cash: { ...(cur.cash || {}), enabled: !!enabled } }
   SETTINGS.clients = { ...(SETTINGS.clients || {}), [clientId]: next }
   writeLS(CLIENTS_KEY, SETTINGS.clients); saveSettingsRemote({ clients: { [clientId]: next } }); bumpSettings()
+}
+// Overview layout. V1 is the page everyone sees today; V2 is the redesigned
+// Overview, built one section per release on the same figures. A super admin
+// can pick either for their own browser. The server-side default (V1 until it
+// is flipped) decides what everyone else gets, so no client sees a change until
+// that switch is thrown.
+function loadUiV2Default() { return !!(SETTINGS.ui && SETTINGS.ui.v2Default) }
+function saveUiV2Default(on) { SETTINGS.ui = { ...(SETTINGS.ui || {}), v2Default: !!on }; writeLS(UI_KEY, SETTINGS.ui); saveSettingsRemote({ ui: { v2Default: !!on } }); bumpSettings() }
+function loadUiOverride() { try { const v = localStorage.getItem(UI_LAYOUT_KEY); return v === 'v1' || v === 'v2' ? v : '' } catch { return '' } }
+function saveUiOverride(v) { try { if (v) localStorage.setItem(UI_LAYOUT_KEY, v); else localStorage.removeItem(UI_LAYOUT_KEY) } catch { /* private mode */ } bumpSettings() }
+function uiLayoutOf(override, v2Default) { return override === 'v1' || override === 'v2' ? override : (v2Default ? 'v2' : 'v1') }
+function useUiLayout() {
+  const [v, setV] = useState(() => uiLayoutOf(loadUiOverride(), loadUiV2Default()))
+  useEffect(() => onSettings(() => setV(uiLayoutOf(loadUiOverride(), loadUiV2Default()))), [])
+  return v
 }
 // Resolve the sales-cycle length for a client: manual override first, else CRM.
 function closeDaysFor(clientId, crmAvg) { const ov = loadCloseOverride(clientId); return ov != null && ov > 0 ? { days: ov, manual: true } : (crmAvg != null && crmAvg > 0 ? { days: crmAvg, manual: false } : null) }
@@ -4160,10 +4175,12 @@ const CURATOR_ENABLED = false
 const PROFILE_KEY = 'caalano_client_profile'
 const DAILYPERF_KEY = 'caalano_dailyperf'
 const ADNAMES_KEY = 'caalano_adnames'            // { clientId: { adId: friendlyName } } - friendly names for Google Ad IDs
+const UI_KEY = 'caalano_ui'                    // { v2Default } - which Overview layout everyone gets (server-synced)
+const UI_LAYOUT_KEY = 'caalano_ui_layout'      // 'v1' | 'v2' - this browser's own choice (super admins), never synced
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -4193,8 +4210,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -4303,6 +4320,8 @@ function lensCc(cc, pid) {
     pipelinesFunnel: pf ? [pf] : [], pipeContribution: pc ? [pc] : [],
     totals: { leads: pc ? pc.leads : 0, won: pc ? pc.won : 0, lost: pc ? pc.lost : 0, open: pc ? pc.open : 0 },
     revenue: { ...(cc.revenue || {}), total: pc ? pc.revenue : 0, count: pc ? pc.won : 0, deals: ((cc.revenue && cc.revenue.deals) || []).filter(inPipe) },
+    // Daily series follow the pipeline too - one set per pipeline rides in the payload.
+    daily: cc.daily ? { days: cc.daily.days, ...((pc && pc.daily) || { leads: [], won: [], revenue: [] }) } : null,
     // Cash follows the pipeline exactly - it is summed per pipeline server-side.
     cash: cc.cash ? { ...cc.cash, collected: pc ? (pc.cash || 0) : 0, entered: pc ? (pc.cashEntered || 0) : 0, paidInFull: pc ? (pc.paidInFull || 0) : 0, won: pc ? pc.won : 0, outstanding: pc ? Math.max(0, (pc.revenue || 0) - (pc.cash || 0)) : 0 } : cc.cash,
     open: { ...(cc.open || {}), total: pc ? pc.open : 0, value: pc ? pc.openValue : 0, deals: ((cc.open && cc.open.deals) || []).filter(inPipe) },
@@ -7567,7 +7586,92 @@ function IntelIndex({ index, money, bare }) {
     </div>
   )
 }
-function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe }) {
+/* ---- Overview layout V2 ------------------------------------------------
+   The redesigned Overview, built one section per release. Every figure comes
+   from the same hooks and values V1 computes in ExecutiveDashboard; these
+   components only draw them, so V1 and V2 can never disagree. ---- */
+// A sparkline with an area fill, an emphasised last point and a hover that
+// names the day. `roll` shows a 7-day rolling total, for series that are lumpy
+// day to day (wins, revenue).
+function HeroSpark({ series, days, fmt, roll }) {
+  const [hi, setHi] = useState(null)
+  const ref = React.useRef(null)
+  if (!Array.isArray(series) || series.length < 2) return null
+  const s = roll ? series.map((v, i) => { let a = 0; for (let j = Math.max(0, i - 6); j <= i; j++) a += series[j] || 0; return a }) : series
+  const W = 200, H = 44, pad = 3
+  let min = Math.min(...s), max = Math.max(...s); if (max === min) max = min + 1
+  const x = (i) => pad + (i / (s.length - 1)) * (W - 2 * pad)
+  const y = (v) => H - pad - ((v - min) / (max - min)) * (H - 2 * pad - 6)
+  const pts = s.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`)
+  const line = 'M' + pts.join('L')
+  const area = `${line}L${x(s.length - 1).toFixed(1)},${H}L${x(0).toFixed(1)},${H}Z`
+  const gid = `v2g${roll ? 'r' : 'p'}${s.length}`
+  const onMove = (e) => { const r = ref.current && ref.current.getBoundingClientRect(); if (!r) return; const i = Math.max(0, Math.min(s.length - 1, Math.round(((e.clientX - r.left) / r.width) * (s.length - 1)))); setHi(i) }
+  return (
+    <div className="v2-spark" ref={ref} onMouseMove={onMove} onMouseLeave={() => setHi(null)}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--brand-2)" stopOpacity=".28" /><stop offset="1" stopColor="var(--brand-2)" stopOpacity="0" /></linearGradient></defs>
+        <line x1="0" x2={W} y1={y(min).toFixed(1)} y2={y(min).toFixed(1)} stroke="var(--border-2)" strokeWidth="1" />
+        <path d={area} fill={`url(#${gid})`} />
+        <path d={line} fill="none" stroke="var(--brand-2)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <circle cx={x(s.length - 1).toFixed(1)} cy={y(s[s.length - 1]).toFixed(1)} r="3.2" fill="var(--brand-2)" stroke="var(--panel)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        {hi != null ? <line x1={x(hi)} x2={x(hi)} y1="0" y2={H} stroke="var(--text)" strokeOpacity=".35" strokeWidth="1" vectorEffect="non-scaling-stroke" /> : null}
+      </svg>
+      {hi != null ? <div className="v2-tip" style={{ left: `${(x(hi) / W) * 100}%` }}><b>{fmt ? fmt(s[hi]) : s[hi]}</b>{roll ? ' · 7-day' : ''}{days && days[hi] ? ` · ${fmtDMY(days[hi])}` : ''}</div> : null}
+    </div>
+  )
+}
+// One row that carries every filter the page answers to, plus when the CRM
+// figures were last refreshed. Stays put while the page scrolls.
+function ExecContextBar({ clientName, range, pipes, pipe, onPipe, chan, setChan, wonBasis, cache, onRefresh }) {
+  const age = cache && cache.age != null ? cache.age : null
+  const fresh = age == null ? 'CRM figures live' : age < 90 ? 'CRM figures just now' : age < 3600 ? `CRM figures ${Math.round(age / 60)} min ago` : `CRM figures ${Math.round(age / 3600)} h ago`
+  return (
+    <div className="v2-ctx">
+      <span className="v2-ctx-client">{clientName}</span>
+      <span className="v2-chip"><span className="k">Range</span>{rangeLabel(range)}</span>
+      {pipes && pipes.length > 1 ? <PipelinePicker pipes={pipes} value={pipe} onChange={onPipe} className="v2-pipe" /> : null}
+      <span className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} type="button" className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</span>
+      <span className="v2-chip" title="Set under Won basis in the header. Closed counts wins by the day they were marked won; Created counts wins from leads created in the period."><span className="k">Won</span>{wonBasis === 'closed' ? 'closed in period' : 'created in period'}</span>
+      <span className="v2-fresh"><i className={cache && cache.stale ? 'stale' : ''} />{fresh}{cache && cache.stale ? ' · saved copy' : ''}<button type="button" onClick={onRefresh}>Refresh</button></span>
+    </div>
+  )
+}
+// The headline row: five numbers, each with its change against the previous
+// period and, where a daily series exists, its shape over the range.
+function ExecHero({ tiles }) {
+  return (
+    <div className="v2-hero">
+      {tiles.map((t) => {
+        const clickable = typeof t.onClick === 'function'
+        return (
+          <div key={t.label} className={`card v2-tile${clickable ? ' kpi-click' : ''}${t.lead ? ' lead' : ''}`} onClick={t.onClick} {...(clickable ? { role: 'button', tabIndex: 0, onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.onClick() } } } : {})}>
+            <div className="v2-tile-l"><span>{t.label}</span>{clickable ? <span className="kpi-go">›</span> : null}</div>
+            <div className="v2-tile-v">{t.value}</div>
+            <div className="v2-tile-d">{t.cur != null && t.prev != null && t.prev !== 0 ? <Delta cur={t.cur} prev={t.prev} goodWhenDown={t.goodWhenDown} /> : null}{t.flat ? <span className="flat">{t.flat}</span> : null}</div>
+            {t.series && t.series.length > 1 ? <HeroSpark series={t.series} days={t.days} fmt={t.fmt} roll={t.roll} /> : <div className="v2-spark v2-spark-none" title="No daily series for this figure yet">{t.noSeries || ''}</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+// Super admins only: which Overview layout this browser shows, and which one
+// everyone else gets by default.
+function LayoutSwitch() {
+  useSettingsSync()
+  const def = loadUiV2Default()
+  const cur = uiLayoutOf(loadUiOverride(), def)
+  return (
+    <div className="side-layout" title="Super admins only. V1 is the Overview everyone sees today; V2 is the redesign, built section by section. Your choice applies to this browser only - the default is what everyone else gets.">
+      <span className="side-layout-l">Layout</span>
+      <span className="side-layout-seg"><button type="button" className={cur === 'v1' ? 'on' : ''} onClick={() => saveUiOverride('v1')}>V1</button><button type="button" className={cur === 'v2' ? 'on' : ''} onClick={() => saveUiOverride('v2')}>V2</button></span>
+      <button type="button" className="side-layout-def" onClick={() => { if (window.confirm(def ? 'Make V1 the default Overview for everyone again?' : 'Make V2 the default Overview for everyone? Anyone without their own choice will see the new layout on their next load.')) saveUiV2Default(!def) }}>everyone: {def ? 'V2' : 'V1'}</button>
+    </div>
+  )
+}
+
+function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe, pipes = [] }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
   useEffect(() => { setChan('all') }, [clientId])
@@ -7576,6 +7680,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [retry, setRetry] = useState(0)
   const nonceX = retry ? `${nonce || 0}.${retry}` : nonce
   const isViewer = !!(authUser && authUser.role === 'viewer')
+  // Which Overview layout to draw. V1 is untouched below; V2 adds the context
+  // bar and headline row and, release by release, replaces sections.
+  const v2 = useUiLayout() === 'v2'
   // Cash position row: per-client switch in Settings → Account summary.
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
@@ -7699,6 +7806,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     <div className="exec-wrap">
       {problemStrip}
       {ccStale ? <div className="note cc-stale"><b>Showing a saved copy of the CRM figures from {ccStale.age >= 3600 ? `${Math.round(ccStale.age / 3600)} h` : `${Math.max(1, Math.round(ccStale.age / 60))} min`} ago.</b> {ccStale.error ? <>The live rebuild failed: <code>{ccStale.error}</code>. </> : 'The live rebuild is running behind it. '}Refresh to try again.</div> : null}
+      {v2 ? <ExecContextBar clientName={clientName} range={range} pipes={pipes} pipe={pipe} onPipe={onPipe} chan={chan} setChan={setChan} wonBasis={wonBasis} cache={ccRaw && ccRaw._cache} onRefresh={() => setRetry((r) => r + 1)} /> : null}
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         // Within a pipeline the per-rep aggregation (account-wide) is not a
@@ -7759,10 +7867,30 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
         // Denominator/won come from the ccdrill totals (same opportunity basis as
         // the funnel numerators) in both all and channel views.
         return <div className="exec-cc">
+          {v2 ? (() => {
+            // Headline row (V2). Same values as the tiles below; the daily series
+            // come from the drill payload and follow the pipeline and channel.
+            const pTot = (pcc && pcc.totals) || null
+            const pOpps = pTot ? pTot.leads : (pv.leads != null ? pv.leads : null)
+            const pWon = pTot ? pTot.won : (pv.won != null ? pv.won : null)
+            const pRev = pcc && pcc.revenue ? pcc.revenue.total : (pv.revenue != null ? pv.revenue : null)
+            const pRoas = prevChanSpend && pRev != null ? pRev / prevChanSpend : null
+            const dly = (cc && cc.daily) || null
+            const days = dly ? dly.days : null
+            return <ExecHero tiles={[
+              { label: pipeOn ? 'Ad spend (allocated)' : 'Ad spend', value: chanSpend != null ? money(chanSpend) : '-', cur: prevChanSpend != null ? chanSpend : null, prev: prevChanSpend, goodWhenDown: true, flat: pipeOn ? 'by lead share' : undefined, noSeries: 'daily spend arrives with the next release', onClick: tileClick({ kind: 'spend', title: 'Ad spend by platform' }) },
+              { label: 'Opportunities', value: oppsV != null ? fmtNumber(oppsV) : '-', cur: oppsV, prev: pOpps, series: dly ? dly.leads : null, days, fmt: (v) => `${fmtNumber(v)} new`, onClick: tileClick({ kind: 'opps', title: 'Opportunities by source' }) },
+              { label: 'Won', lead: true, value: wonV != null ? fmtNumber(wonV) : '-', cur: wonV, prev: pWon, flat: wonBasis === 'closed' ? 'closed in period' : 'from leads created in period', series: dly ? dly.won : null, days, roll: true, fmt: (v) => `${fmtNumber(v)} won`, onClick: tileClick({ kind: 'revenue', title: 'Won deals' }) },
+              { label: 'Revenue', value: revV != null ? money(revV) : '-', cur: revV, prev: pRev, flat: avgV != null ? `avg ${money(avgV)}` : undefined, series: dly ? dly.revenue : null, days, roll: true, fmt: (v) => money(v), onClick: tileClick({ kind: 'revenue', title: 'Revenue - won deals' }) },
+              { label: 'ROAS', value: roas != null ? `${roas.toFixed(1)}x` : '-', cur: roas, prev: pRoas, flat: roas == null ? (chanSpend ? 'no revenue yet' : 'no ad spend in this view') : (cashOn && cc && cc.cash && chanSpend ? `cash ${((cc.cash.collected || 0) / chanSpend).toFixed(1)}x` : undefined), noSeries: 'daily spend arrives with the next release' },
+            ]} />
+          })() : null}
+          {!v2 ? <>
           <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <span>Command centre <span className="sub">· {pipeLabel ? <><b>{pipeLabel}</b> pipeline</> : 'all of Caalano Systems'} for {rangeLabel(range)}{chan !== 'all' ? ` · ${CC_CHANS.find((c) => c[0] === chan)[1]}` : ''}</span></span>
             <div className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} className={chan === kk ? 'on' : ''} onClick={() => setChan(kk)}>{lbl}</button>)}</div>
           </div>
+          </> : null}
           <div className="cc-group-lab x-internal">Performance snapshot · spend &amp; efficiency{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
           <div className="scorecard exec-kpis exec-kpis-4 x-internal">
             <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
@@ -14740,7 +14868,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={pipeName} range={range} />
           : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
             : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
-        {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
+        {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'meta' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Meta', range)} />
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
@@ -22413,6 +22541,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
             <span className="fb-ver"><b>v{APP_VERSION}</b>{__COMMIT_REF__ ? <em>{__COMMIT_REF__}</em> : null}</span>
             <span className="fb-when">deployed {fmtBuildTime(__BUILD_TIME__)}</span>
           </div>
+          {role === 'superadmin' ? <LayoutSwitch /> : null}
           {/* Standing notice. People forget what they signed on day one, so the
               claim sits where they work rather than only in a document. */}
           {showTerms ? <TermsViewer onClose={() => setShowTerms(false)} /> : null}

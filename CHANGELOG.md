@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.495.0 - 2026-09-05 · `PENDING` - Pipeline and stage in the Won deals drill
+## v3.495.0 - 2026-09-05 · `feff618` - Pipeline and stage in the Won deals drill
 
 The Won deals drill shows each deal's pipeline (when more than one is in the
 list; otherwise a line under the table names it) and the stage the deal sits

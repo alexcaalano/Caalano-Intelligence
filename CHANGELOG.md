@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.492.0 - 2026-09-05 · `PENDING` - V2 is the layout. One build.
+## v3.492.0 - 2026-09-05 · `6304618` - V2 is the layout. One build.
 
 The redesigned Overview and the shared tab treatment are now what everyone
 sees. The Layout switch, the server default and every V1-only code path are

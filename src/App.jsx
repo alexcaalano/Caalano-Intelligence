@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.490.0'
+const APP_VERSION = '3.491.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4916,7 +4916,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
       const fromStage = Math.max(0, stageReached - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, occurred, shown, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, stageReached, occurred, shown, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -7809,7 +7809,7 @@ function v2ReachSplit(count, meta, google) {
 // One reach bar: the share of leads as width, split by channel, the previous
 // period as a tick. Hovering shows the split as a small card rather than the
 // browser's own tooltip.
-function V2ReachBar({ label, count, split, width, prevAt, leak }) {
+function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
   const [hov, setHov] = useState(null)
   const ref = React.useRef(null)
   const tot = split.meta + split.google + split.other || 1
@@ -7829,6 +7829,7 @@ function V2ReachBar({ label, count, split, width, prevAt, leak }) {
         <div className="v2-pop-r"><i className="m" />Meta<b>{fmtNumber(split.meta)}</b><span>{pc(split.meta)}</span></div>
         <div className="v2-pop-r"><i className="g" />Google<b>{fmtNumber(split.google)}</b><span>{pc(split.google)}</span></div>
         <div className="v2-pop-r"><i className="o" />Organic, referral, direct<b>{fmtNumber(split.other)}</b><span>{pc(split.other)}</span></div>
+        {detail && detail.length ? <div className="v2-pop-d">{detail.map((d, i) => <div key={i} className={`v2-pop-r${d.muted ? ' muted' : ''}${d.head ? ' head' : ''}`}><i className={d.head ? 'none' : 'dot'} />{d.label}<b>{d.value != null ? fmtNumber(d.value) : ''}</b><span>{d.sub || ''}</span></div>)}</div> : null}
         {prevAt != null ? <div className="v2-pop-p">Previous period {Math.round(prevAt * 100)}% of leads</div> : null}
       </div> : null}
     </div>
@@ -7903,18 +7904,37 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
               <div className="st">Opportunities<small>new this period</small></div>
               <V2ReachBar label="Opportunities" count={g.base} split={leadsSplit(g.pid, g.base)} width={1} prevAt={g.rows[0] && g.rows[0].prevBase && g.base ? Math.min(1, g.rows[0].prevBase / g.base) : null} />
               <div className="rate">{fmtNumber(g.base)}<small>{g.rows[0] && g.rows[0].prevBase ? `was ${fmtNumber(g.rows[0].prevBase)}` : 'leads'}</small></div>
-              {g.rows.map((r, i) => {
-                const ch = chanOf(g.pid, r.label)
-                const split = ch ? v2ReachSplit(r.count, ch.meta, ch.google) : { meta: 0, google: 0, other: r.count || 0 }
-                const isBn = r === bn
-                return (
-                  <React.Fragment key={i}>
-                    <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{r.kind === 'calendar' ? 'calendar booking' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
-                    <V2ReachBar label={r.label.replace(/^📅 /, '')} count={r.count} split={split} width={r.rate != null ? r.rate : 0} prevAt={r.prevRate} leak={isBn} />
-                    <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(r.count)}<small>{i === 0 ? `${r.rate != null ? pc(r.rate) : '-'} of leads` : r.step != null ? `${pc(r.step)} of the ${fmtNumber(r.stepBase)} before` : '-'}{spend && r.count ? ` · ${money(Math.round(spend / r.count))} each` : ''}</small></div>
-                  </React.Fragment>
-                )
-              })}
+              {(() => {
+                // A calendar event counts everyone who booked OR reached its stage or
+                // any later one: a deal that is Qualified must have had its call, even
+                // when the booking was made by phone or on another calendar. So the
+                // shown count is the row's own or the largest later row's, whichever
+                // is higher, and the split under it says how many came by booking and
+                // how many by pipeline stage.
+                const effs = g.rows.map((r, i) => { let later = 0; for (let j = i + 1; j < g.rows.length; j++) later = Math.max(later, g.rows[j].count || 0); return r.kind === 'calendar' ? Math.max(r.count || 0, later) : (r.count || 0) })
+                return g.rows.map((r, i) => {
+                  const eff = effs[i], prevEff = i === 0 ? g.base : effs[i - 1]
+                  const ch = chanOf(g.pid, r.label)
+                  const split = ch ? v2ReachSplit(eff, ch.meta, ch.google) : { meta: 0, google: 0, other: eff }
+                  const isBn = r === bn
+                  const isCal = r.kind === 'calendar'
+                  const byStage = isCal ? Math.max(r.stageReached || 0, eff > (r.fromCal || 0) ? eff : 0) : 0
+                  const rateV = g.base ? Math.min(1, eff / g.base) : 0
+                  const stepV = prevEff ? eff / prevEff : null
+                  const detail = isCal ? [
+                    { head: true, label: 'By booking', value: r.fromCal || 0 },
+                    ...((r.perCal || []).map((p) => ({ label: p.name || 'Calendar', value: p.count, sub: p.occurred ? `${fmtNumber(p.shown)}/${fmtNumber(p.occurred)} shown` : '' }))),
+                    { head: true, label: 'By pipeline stage', value: byStage, sub: r.stage ? 'linked stage or later' : 'a later stage' },
+                  ] : null
+                  return (
+                    <React.Fragment key={i}>
+                      <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{isCal ? 'booked or reached the stage' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
+                      <V2ReachBar label={r.label.replace(/^📅 /, '')} count={eff} split={split} width={rateV} prevAt={r.prevRate} leak={isBn} detail={detail} />
+                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{isCal ? <small className="v2-split">{fmtNumber(r.fromCal || 0)} by booking{byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before` : '-'}{spend && eff ? ` · ${money(Math.round(spend / eff))} each` : ''}</small></div>
+                    </React.Fragment>
+                  )
+                })
+              })()}
               {w ? <>
                 <div className="st">Won<small>{wonBasis === 'closed' ? 'closed in period' : 'from leads created in period'}</small></div>
                 <V2ReachBar label="Won" count={w.count} split={w.split} width={w.base ? Math.min(1, w.count / w.base) : 0} prevAt={w.prevRate} />

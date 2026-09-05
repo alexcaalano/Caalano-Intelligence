@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.491.0 - 2026-09-05 · `PENDING` - Calendar events count booked or reached (V2 reach)
+
+A calendar key event in Key event reach now counts everyone who booked or
+reached its stage or any later one, the way the key-event cells always
+have: a deal sitting at Qualified had its call even if the booking was made
+by phone or on another calendar. Under the count the row says how many came
+by booking, with the number that reached the stage in brackets, and the
+hover card lists the bookings per calendar (with shown/occurred) and the
+pipeline-stage figure. The step and share use the same count, so a later
+stage can no longer read higher than the call before it.
+
+---
+
 ## v3.490.0 - 2026-09-05 · `fa4a7d8` - Intelligence across every tab (V2)
 
 Over- and under-indexing and Biggest movers on Caalano360 now speak for the

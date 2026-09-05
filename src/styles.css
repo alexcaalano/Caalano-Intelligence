@@ -4773,3 +4773,10 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-mv-row.go { cursor: pointer; border-radius: 8px; padding: 4px 6px; margin: 0 -6px; }
 .v2-mv-row.go:hover { background: color-mix(in srgb, var(--brand) 6%, transparent); }
 .v2-mv-row .l .if-page { margin: 0 0 0 8px; vertical-align: 1px; }
+/* Reach hover: booking / stage breakdown */
+.v2-pop-d { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.v2-pop-r.head { color: var(--text); font-weight: 700; margin-top: 3px; }
+.v2-pop-r.muted { color: var(--faint); }
+.v2-pop-r i.none { visibility: hidden; }
+.v2-pop-r i.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); margin-left: 2px; }
+.v2-funnel .rate small.v2-split { color: var(--muted); font-weight: 600; }

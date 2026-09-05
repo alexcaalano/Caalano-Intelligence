@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.489.0 - 2026-09-05 · `PENDING` - CAC after ROAS in Channel performance (V2)
+## v3.489.0 - 2026-09-05 · `5002811` - CAC after ROAS in Channel performance (V2)
 
 CAC (spend ÷ won) is always shown, straight after ROAS, per channel and per
 pipeline, under a Return group header. It no longer sits behind More columns;

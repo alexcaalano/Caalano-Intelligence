@@ -4899,12 +4899,20 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   const fromMs = from ? zonedStartMs(from, tz) : null
   const toMs = to ? zonedEndMs(to, tz) : null
   const wideFrom = new Date((fromMs != null ? fromMs : Date.now()) - (lite ? 60 : 120) * DAY).toISOString().slice(0, 10)
-  const [wideOppsAll, pipelines, reasons, appts] = await Promise.all([
+  // Closed won basis: wins count by the day they were marked won (any lead
+  // date), the same rule the Overview drill uses, read from the won-only
+  // snapshot so older leads that closed this range are on file.
+  const closedBasis = opts.wonBasis === 'closed'
+  const [wideOpps0, pipelines, reasons, appts, wonSnap] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, lite ? 900 : 1800),
     fetchPipelines(locTok, locationId),
     lite ? Promise.resolve([]) : ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
     fetchAppointments(locTok, locationId, from, to).catch(() => ({ byContact: new Map(), connected: false })),
+    closedBasis && !lite ? wonSnapshot(locTok, locationId).catch(() => null) : Promise.resolve(null),
   ])
+  let wideOppsAll = wideOpps0
+  if (wonSnap && wonSnap.opps && wonSnap.opps.length) { const byId = new Map(wideOpps0.map((o) => [o.id, o])); for (const o of wonSnap.opps) if (o && o.id && !byId.has(o.id)) byId.set(o.id, o); wideOppsAll = [...byId.values()] }
+  const wonInBasis = (o) => (closedBasis ? ccDrillClassify(o, fromMs, toMs, 'closed').isWon : String(o.status || '').toLowerCase() === 'won')
   // Optional pipeline scope: filter the opportunity set to a single pipeline so
   // every per-entity outcome, funnel and calendar attribution downstream is that
   // pipeline's alone. The appointment feed joins on the (now scoped) contact set,
@@ -4945,7 +4953,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
     const e = ent(map, keyRaw)
     e.leads++
     const st = String(o.status || '').toLowerCase(); const isWon = st === 'won'
-    if (isWon) { e.won++; e.revenue += num(o.monetaryValue) }
+    if (wonInBasis(o)) { e.won++; e.revenue += num(o.monetaryValue) }
     if (!useAppts) {
       const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
       if (isWon || (pi && pi.bookPos != null && pos >= pi.bookPos)) e.booked++
@@ -5028,6 +5036,23 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
     bumpLead(det.medium, u.medium, o, pi)
     bumpLead(det.campaign, u.campaign, o, pi)
     bumpLead(det.content, u.content, o, pi)
+  }
+
+  // Closed basis: wins that closed in the range from leads created before it.
+  // They add to won / revenue on every cut (and the channel rollups), never to
+  // leads, so the per-creative won column agrees with the Overview.
+  const extraWon = { all: { won: 0, revenue: 0 }, meta: { won: 0, revenue: 0 }, google: { won: 0, revenue: 0 }, other: { won: 0, revenue: 0 } }
+  if (closedBasis) {
+    const cohort = new Set(opps.map((o) => o.id))
+    for (const o of wideOpps) {
+      if (cohort.has(o.id) || !wonInBasis(o)) continue
+      const u = utmOf(o); const val = num(o.monetaryValue); const ch = channelOf(u)
+      extraWon.all.won++; extraWon.all.revenue += val; extraWon[ch].won++; extraWon[ch].revenue += val
+      const add = (e) => { if (e) { e.won++; e.revenue += val } }
+      add(ent(dim.source, u.source)); add(ent(dim.medium, u.medium)); add(ent(dim.campaign, u.campaign)); add(ent(dim.content, u.content)); add(ent(dim.term, u.term))
+      add(entIf(dim.ad, u.ad)); add(entIf(dim.termMatch, termMatchKey(u))); add(entIf(dim.url, urlKey(u.url)))
+      const det = sd(u.source); add(ent(det.medium, u.medium)); add(ent(det.campaign, u.campaign)); add(ent(det.content, u.content))
+    }
   }
 
   // Date-of-action booked / shown: a booking counts on the day it was booked; a
@@ -5157,6 +5182,13 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
     google: rollupSubset(buckets.google, idx, reasonName),
     other: rollupSubset(buckets.other, idx, reasonName),
   }
+  if (closedBasis) {
+    for (const k of ['all', 'meta', 'google', 'other']) {
+      const list = k === 'all' ? opps : buckets[k]
+      let won = 0, revenue = 0; for (const o of list) if (wonInBasis(o)) { won++; revenue += num(o.monetaryValue) }
+      chan[k].totals.won = won + extraWon[k].won; chan[k].totals.revenue = Math.round(revenue + extraWon[k].revenue); chan[k].totals.wonBasis = 'closed'
+    }
+  }
   if (useAppts) { for (const k of ['all', 'meta', 'google', 'other']) { chan[k].totals.booked = chanAct[k].booked; chan[k].totals.shown = chanAct[k].shown; chan[k].totals.shownStage = chanAct[k].shownStage; chan[k].totals.cancelled = chanAct[k].cancelled } }
 
   const oppSources = [...oppSourceCounts.entries()].map(([name, count]) => ({ name, count, manual: MANUAL_RE.test(name) })).sort((a, b) => b.count - a.count)
@@ -5175,7 +5207,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   }
   const avgCloseDays = cycN ? Math.round(cycSum / cycN) : null
   return {
-    connected: true, opps: opps.length, attributed, tz,
+    connected: true, opps: opps.length, attributed, tz, wonBasis: closedBasis ? 'closed' : 'created',
     avgCloseDays, avgCloseSample: cycN,
     allPipelines: pipelines.map((p) => ({ id: p.id, name: p.name })),
     pipeline: opts.pipeline || null,

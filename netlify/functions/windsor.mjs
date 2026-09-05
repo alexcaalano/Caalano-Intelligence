@@ -4913,6 +4913,7 @@ export default async (req) => {
     if (!(await isConnected().catch(() => false))) return json({ connected: false, needsSetup: true })
     try {
       const pipeline = url.searchParams.get('pipeline') || null
+      const wonBasis = url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created'
       const fn = url.searchParams.get('debug') ? sampleAttribution : buildAttribution
       // Google/Meta UTMs often carry the numeric campaign ID (e.g. utm_campaign=
       // 24053934849), not the name - so CRM outcomes keyed by that ID never match
@@ -4922,7 +4923,7 @@ export default async (req) => {
       const filtG = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, c.google))
       const filtM = (rows) => rows.filter((r) => !r.account_id || acctEq(r.account_id, c.meta))
       const [attribution, ggIds, fbIds, ggAdIds] = await Promise.all([
-        fn(c.ghl, from, to, pipeline ? { pipeline } : {}),
+        fn(c.ghl, from, to, { ...(pipeline ? { pipeline } : {}), wonBasis }),
         // Google: campaign + ad-group (id ↔ name) so both levels' UTM IDs resolve.
         c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'campaign_id', 'ad_group_name', 'ad_group_id'], from, to, preset, key, { accounts: c.google }).then(filtG).catch(() => []) : Promise.resolve([]),
         // Meta: campaign + ad-set (id ↔ name) + ad (id ↔ name).

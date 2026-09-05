@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.496.0 - 2026-09-05 · `PENDING` - Meta and Google tabs follow the won basis
+
+The attribution feed behind the Caalano360 sections on the Meta and Google
+tabs now takes the workspace's won basis. On Closed, a win counts by the day
+it was marked won, whatever the lead's date, read from the same won-only
+snapshot the Overview uses, so the per-campaign, ad set, creative and
+keyword Won and Revenue columns and the channel totals agree with the
+Overview's Won tile. Leads, booked and shown stay on the created cohort as
+before. A basis chip sits on the section heading. Created is unchanged.
+
+---
+
 ## v3.495.0 - 2026-09-05 · `feff618` - Pipeline and stage in the Won deals drill
 
 The Won deals drill shows each deal's pipeline (when more than one is in the

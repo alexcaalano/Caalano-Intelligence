@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.495.0'
+const APP_VERSION = '3.496.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -2856,9 +2856,9 @@ function DataLoadBar({ label = 'Meta ads', has360, status, pipeLoading }) {
   )
 }
 
-function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp, onPipe }) {
+function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp, onPipe, wonBasis = 'created' }) {
   const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
-  const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr)
+  const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr, wonBasis)
   const pipeLoading = pipe !== 'all' && (!pipeAttr || pipeAttr.status === 'loading')
   // Full pipeline list for the picker comes from the account-wide attribution
   // (always present, even while a scoped fetch is loading).
@@ -2871,7 +2871,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
   const [kePipe, setKePipe] = useState(null) // local pipeline pick for the Key events funnel (null = follow default)
   useEffect(() => { setKePipe(null) }, [pipe]) // reset to default when the top filter changes
   const [keyDrill, setKeyDrill] = useState(null) // scorecard-tile → people drill
-  const prevAttr = usePrevAttr(clientId, range, nonce) // previous-period attribution for vs-prev deltas
+  const prevAttr = usePrevAttr(clientId, range, nonce, wonBasis) // previous-period attribution for vs-prev deltas
   const [formSort, onFormSort] = useSort('adSpend')
   const formsSt = useForms(clientId, range, nonce)
   const [day, setDay] = useState(null)
@@ -3153,7 +3153,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
           const roas = spendP ? rev / spendP : null
           return (
             <React.Fragment key={label}>
-              <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
+              <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label} <WonBasisChip basis={wonBasis} /></span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit kesc-row">
                 <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} onClick={leadsP ? () => setKeyDrill({ kind: 'lead', label: 'Leads', pipeline: pid || null }) : undefined} />
                 {rowsP.map((r, i) => {
@@ -3473,9 +3473,9 @@ function aggByMatchInitial(arr) {
 }
 const MT_COLOR = { Broad: '#f5a524', Phrase: '#4f7cff', Exact: '#12b886' }
 const mtColor = (t) => MT_COLOR[t] || '#8b5cf6'
-function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp, onPipe }) {
+function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp, onPipe, wonBasis = 'created' }) {
   const [pipe, setPipe] = usePipeState(pipeProp, onPipe)
-  const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr)
+  const pipeAttr = usePipelineAttr(clientId, range, nonce, pipe, attr, wonBasis)
   const pipeLoading = pipe !== 'all' && (!pipeAttr || pipeAttr.status === 'loading')
   const allPipes = (attr && attr.data && attr.data.attribution && attr.data.attribution.allPipelines) || []
   const kpis = loadKpis(clientId, pipe !== 'all' ? pipe : undefined)
@@ -3498,7 +3498,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
   const [kePipe, setKePipe] = useState(null)
   useEffect(() => { setKePipe(null) }, [pipe])
   const [keyDrill, setKeyDrill] = useState(null)
-  const prevAttr = usePrevAttr(clientId, range, nonce)
+  const prevAttr = usePrevAttr(clientId, range, nonce, wonBasis)
   const scrollRootRef = React.useRef(null)
   useSyncedTableScroll(scrollRootRef)
   if (!deep?.google) return <EmptyDeep channel="Google Ads" range={range} />
@@ -3686,7 +3686,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
           const roas = spendP ? rev / spendP : null
           return (
             <React.Fragment key={label}>
-              <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label}</span><span className="sc-sec-sub">{sub}</span></div>
+              <div className="sc-sec-lab"><span className="sc-sec-t c360"><span className="c360-dot" /> {label} <WonBasisChip basis={wonBasis} /></span><span className="sc-sec-sub">{sub}</span></div>
               <div className="scorecard sc-fit kesc-row">
                 <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} onClick={leadsP ? () => setKeyDrill({ kind: 'lead', label: 'Leads', pipeline: pid || null }) : undefined} />
                 {rowsP.map((r, i) => {
@@ -3906,9 +3906,9 @@ function DeepError({ channel, error, range, onRetry }) {
 /* ============ CRM - live from GoHighLevel (Caalano Systems) ============ */
 
 /* ============ UTM attribution (GoHighLevel first-touch) ============ */
-function useAttribution(clientId, range, nonce = 0) {
+function useAttribution(clientId, range, nonce = 0, wonBasis = 'created') {
   const [state, setState] = useState({ status: 'loading', data: null })
-  const q = rangeQuery(range)
+  const q = `${rangeQuery(range)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}`
   useEffect(() => {
     let alive = true; setState({ status: 'loading', data: null })
     const url = `/.netlify/functions/windsor?client=${clientId}&channel=attribution&${q}${nonce ? `&_r=${nonce}` : ''}`
@@ -3927,9 +3927,9 @@ function useAttribution(clientId, range, nonce = 0) {
 // Pipeline-scoped attribution: when a specific pipeline is picked, refetch the
 // attribution filtered to it (so every green column / funnel is that pipeline's
 // alone); when 'all', reuse the already-loaded account-wide attribution.
-function usePipelineAttr(clientId, range, nonce, pipe, fallback) {
+function usePipelineAttr(clientId, range, nonce, pipe, fallback, wonBasis = 'created') {
   const [state, setState] = useState(null)
-  const q = rangeQuery(range)
+  const q = `${rangeQuery(range)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}`
   const active = !!pipe && pipe !== 'all'
   useEffect(() => {
     if (!active) { setState(null); return }
@@ -3954,10 +3954,10 @@ function prevRangeOf(range) {
 }
 // Account-wide attribution for the PREVIOUS period, so the Caalano360 metrics can
 // show vs-prev deltas. Returns the attribution payload or null.
-function usePrevAttr(clientId, range, nonce) {
+function usePrevAttr(clientId, range, nonce, wonBasis = 'created') {
   const [state, setState] = useState(null)
   const pr = prevRangeOf(range)
-  const q = pr ? rangeQuery(pr) : null
+  const q = pr ? `${rangeQuery(pr)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}` : null
   useEffect(() => {
     if (!q) { setState(null); return }
     let alive = true
@@ -15267,7 +15267,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
     const wc = live && live.status === 'ok' && live.data && live.data.blend && live.data.blend.wonClosed
     if (wc && wc.avgCloseDays != null) setCrmAvgClose(wc.avgCloseDays)
   }, [live])
-  const attr = useAttribution(client.id, range, nonce)
+  const attr = useAttribution(client.id, range, nonce, wonBasis)
   const tk = TRACK[client.trackingStatus] || TRACK.full
   const presetLabel = rangeLabel(range)
   const liveOK = (ch) => {
@@ -15300,10 +15300,10 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'meta' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Meta', range)} />
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
-            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months - ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /></>)}
+            : <><LiveBadge mode={liveOK('meta') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} />{live.data && live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months - ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}<MetaDeep deep={srcFor('meta')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} wonBasis={wonBasis} /></>)}
         {curTab === 'google' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Google', range)} />
           : (live.status === 'err' && !liveOK('google') && !srcFor('google')?.google) ? <DeepError channel="Google Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
-            : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} /></>)}
+            : <><LiveBadge mode={liveOK('google') ? 'live' : (baked ? 'snapshot' : null)} label={presetLabel} /><GoogleDeep deep={srcFor('google')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} wonBasis={wonBasis} /></>)}
         {curTab === 'analytics' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Analytics', range)} />
           : (live.status === 'err' && !liveOK('ganalytics')) ? <DeepError channel="Google Analytics" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('ganalytics') ? 'live' : null} label={presetLabel} /><AnalyticsDeep deep={srcFor('ganalytics')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}

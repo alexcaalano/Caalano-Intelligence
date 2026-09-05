@@ -4513,7 +4513,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
       const createdDate = dayIn(createdMs)
       const daysToClose = (isFinite(createdMs) && isFinite(closeMs) && closeMs >= createdMs) ? Math.round((closeMs - createdMs) / DAY) : null
       if (cash != null) { cashTotal += cash; cashEntered++; if (paidInFull) cashPif++; cc.cash += cash }
-      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, createdDate, daysToClose, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline', cash: cash != null ? Math.round(cash) : null, paidInFull })
+      if (wonDeals.length < 300) wonDeals.push({ name, value: Math.round(val), closeDate, createdDate, daysToClose, channel: ch, pipeline: pipeName[o.pipelineId] || 'Pipeline', stage: stg ? stg.name : null, cash: cash != null ? Math.round(cash) : null, paidInFull })
       cc.won++; cc.revenue += val; if (cc.deals.length < 120) cc.deals.push({ name, closeDate, value: Math.round(val) })
     } else if (isLost) {
       cc.lost++

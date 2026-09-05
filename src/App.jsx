@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.494.0'
+const APP_VERSION = '3.495.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6850,8 +6850,9 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
     // has been entered (unknown, not zero).
     const cashCol = !!(d.cash && loadCashOn(clientId))
     if (cashCol) subhead += ` · ${money(d.cash.collected || 0)} collected · ${fmtNumber(d.cash.paidInFull || 0)} paid in full`
-    body = deals.length ? <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th><th>Value</th>{cashCol ? <th title="Cash collected on this deal, from the Cash Collected field · ✓ = paid in full">Cash</th> : null}<th>Created on</th><th>Won on</th><th title="Days from the lead arriving to being marked won">Time to close</th><th className="lft">Source</th></tr></thead>
-      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td><td>{money(dl.value)}</td>{cashCol ? <td>{dl.cash == null ? <span className="lrv-z" title="No cash entered on this deal">-</span> : <>{money(dl.cash)}{dl.paidInFull ? <span className="cc-pif" title="Paid in full"> ✓</span> : null}</>}</td> : null}<td>{dl.createdDate ? fmtDMY(dl.createdDate) : '-'}</td><td>{dl.closeDate ? fmtDMY(dl.closeDate) : '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>
+    const multiPipe = new Set(deals.map((x) => x.pipeline || '')).size > 1
+    body = deals.length ? <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Deal</th>{multiPipe ? <th className="lft">Pipeline</th> : null}<th className="lft" title="The stage the deal sits in now">Stage</th><th>Value</th>{cashCol ? <th title="Cash collected on this deal, from the Cash Collected field · ✓ = paid in full">Cash</th> : null}<th>Created on</th><th>Won on</th><th title="Days from the lead arriving to being marked won">Time to close</th><th className="lft">Source</th></tr></thead>
+      <tbody>{deals.slice().sort((a, b) => b.value - a.value).map((dl, i) => <tr key={i}><td className="lft">{dl.name}</td>{multiPipe ? <td className="lft">{dl.pipeline || '-'}</td> : null}<td className="lft">{dl.stage || <span className="cap">-</span>}</td><td>{money(dl.value)}</td>{cashCol ? <td>{dl.cash == null ? <span className="lrv-z" title="No cash entered on this deal">-</span> : <>{money(dl.cash)}{dl.paidInFull ? <span className="cc-pif" title="Paid in full"> ✓</span> : null}</>}</td> : null}<td>{dl.createdDate ? fmtDMY(dl.createdDate) : '-'}</td><td>{dl.closeDate ? fmtDMY(dl.closeDate) : '-'}</td><td>{dl.daysToClose == null ? '-' : dl.daysToClose === 0 ? 'same day' : `${fmtNumber(dl.daysToClose)} d`}</td><td className="lft"><SourcePill source={dl.source} channel={dl.channel} /></td></tr>)}</tbody></table>{!multiPipe && deals[0] && deals[0].pipeline ? <p className="cap" style={{ marginTop: 6 }}>All in the <b>{deals[0].pipeline}</b> pipeline.</p> : null}</div>
       : <div className="cap">No won deals in this period.</div>
   } else if (drill.kind === 'cacplat') {
     // Meta and Google carry spend, so they get CAC and ROAS; everything else

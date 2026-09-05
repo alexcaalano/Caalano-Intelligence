@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.495.0 - 2026-09-05 · `PENDING` - Pipeline and stage in the Won deals drill
+
+The Won deals drill shows each deal's pipeline (when more than one is in the
+list; otherwise a line under the table names it) and the stage the deal sits
+in now, next to the deal name. The stage rides in the drill payload from
+this release, so a saved copy from before it shows a dash until it refreshes.
+
+---
+
 ## v3.494.0 - 2026-09-05 · `708336d` - Funnel by rep, drawn; Call Reporting in the indexing
 
 - **Users: Funnel by rep.** A drawn block above the leaderboard: each rep's

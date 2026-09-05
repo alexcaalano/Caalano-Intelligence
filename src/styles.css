@@ -4708,3 +4708,42 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-tabgrp-l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; padding: 0 6px 10px 4px; white-space: nowrap; }
 .subtabs.v2-tabs button { padding: 9px 9px; font-size: 12.5px; }
 @media (max-width: 900px) { .v2-tabgrp-l { display: none; } }
+/* ---- V2 release 5: one treatment across every client tab (styling only) ---- */
+.v2-page { --v2-tile-pad: 14px 15px 12px; }
+/* Tiles: the three tile families draw the same. */
+.v2-page .tm-sc, .v2-page .sc, .v2-page .card.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--v2-tile-pad); box-shadow: none; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.v2-page .tm-sc.hero { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 8%, var(--panel)); }
+.v2-page .tm-sc .tm-lab, .v2-page .sc .sc-l, .v2-page .card.kpi .label { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; line-height: 1.2; }
+.v2-page .tm-sc b, .v2-page .sc .sc-v, .v2-page .card.kpi .value { font-size: 24px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; margin: 0; font-variant-numeric: tabular-nums; }
+.v2-page .tm-sc .tm-sub, .v2-page .sc .sc-flat, .v2-page .card.kpi .flat { font-size: 11.5px; color: var(--faint); }
+.v2-page .sc .sc-d, .v2-page .card.kpi .delta { font-size: 12px; }
+.v2-page .timing-scards, .v2-page .scorecard { gap: 12px; }
+.v2-page .card.kpi.kpi-click:hover, .v2-page .sc:hover { border-color: var(--border-2); }
+/* Section headings: one size, one rhythm. */
+.v2-page .exec-panel-h, .v2-page .lvl-title, .v2-page .appt-head h3, .v2-page .sc-sec-lab .sc-sec-t { font-size: 14px; font-weight: 800; letter-spacing: -.01em; text-transform: none; color: var(--text); }
+.v2-page .sc-sec-lab { margin: 18px 0 10px; }
+.v2-page .sc-sec-lab .sc-sec-sub, .v2-page .exec-panel-h .sub, .v2-page .lvl-title .sub { font-size: 12px; color: var(--faint); font-weight: 500; }
+.v2-page .cc-group-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 800; margin: 16px 0 8px; }
+.v2-page .cc-group-lab .sub { text-transform: none; letter-spacing: 0; font-weight: 500; }
+/* Cards: one border, no stacked shadows inside a page. */
+.v2-page .card, .v2-page .table-wrap, .v2-page .note { box-shadow: none; border-radius: var(--radius); }
+.v2-page .card + .card { margin-top: 12px; }
+/* Tables: frozen first column, sticky header, tabular figures, row highlight. */
+.v2-page .mini-tbl, .v2-page .appt-tbl, .v2-page .users-tbl { font-size: 12.5px; }
+.v2-page .mini-tbl thead th, .v2-page .appt-tbl thead th { position: sticky; top: 0; background: var(--panel); z-index: 2; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; padding-top: 8px; padding-bottom: 8px; }
+.v2-page .mini-tbl td, .v2-page .appt-tbl td { padding-top: 8px; padding-bottom: 8px; }
+.v2-page .mini-tbl td:not(.lft), .v2-page .mini-tbl th:not(.lft), .v2-page .appt-tbl td:not(.lft), .v2-page .appt-tbl th:not(.lft) { text-align: right; font-variant-numeric: tabular-nums; }
+.v2-page .mini-tbl td.lft, .v2-page .mini-tbl th.lft, .v2-page .appt-tbl td.lft, .v2-page .appt-tbl th.lft { position: sticky; left: 0; background: var(--panel); z-index: 1; text-align: left; }
+.v2-page .mini-tbl thead th.lft, .v2-page .appt-tbl thead th.lft { z-index: 3; }
+.v2-page .mini-tbl tbody tr:hover > td, .v2-page .appt-tbl tbody tr:hover > td { background: color-mix(in srgb, var(--brand) 5%, var(--panel)); }
+.v2-page .mini-tbl tbody tr:nth-child(even) > td { background: color-mix(in srgb, var(--text) 2%, var(--panel)); }
+.v2-page .mini-tbl tbody tr:nth-child(even):hover > td { background: color-mix(in srgb, var(--brand) 5%, var(--panel)); }
+.v2-page .table-wrap { border: 1px solid var(--border); }
+/* Toggles and filter bars share one form. */
+.v2-page .chan-toggle { border-radius: 9px; padding: 2px; }
+.v2-page .chan-toggle button { padding: 5px 11px; font-size: 12.5px; border-radius: 7px; }
+.v2-page .chan-toggle button.on { background: rgba(109,94,252,.16); color: var(--brand-2); }
+.v2-page .pipe-filter-bar, .v2-page .drill-bar { border-radius: 9px; }
+.v2-page .cap { line-height: 1.5; }
+/* Loading and notes keep their place but sit flush with the cards. */
+.v2-page .note { border-style: solid; }

@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.485.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 5
+
+- **One look across every tab (V2).** A shared treatment applied to every
+  client view - Meta, Google, Analytics, Cohorts, Users, Call Reporting,
+  Forms, Location, Appointments, Calendars, Timing, Lost Reasons, Clinic and
+  Change Log - through styling only: tiles share one shape (small caps
+  label, one weight of number, the change under it), section headings share
+  one size and rhythm, every table gets a frozen first column, sticky
+  header, right-aligned tabular figures and a row highlight, and the
+  channel and pipeline toggles share one form. Nothing a tab shows is
+  removed or recalculated; the same elements are drawn to one system.
+
+V1 is unchanged.
+
+---
+
 ## v3.484.0 - 2026-09-05 · `5cb71e6` - Overview layout V2, release 4
 
 - **Grouped tab strip (V2).** The client tabs sit under four areas - Overview

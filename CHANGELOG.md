@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.481.0 - 2026-09-05 · `PENDING` - Overview layout V2, release 1
+## v3.481.0 - 2026-09-05 · `e45ce52` - Overview layout V2, release 1
 
 The redesigned Overview starts here, behind a switch. Nothing changes for
 anyone until the default is flipped.

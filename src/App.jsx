@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.497.0'
+const APP_VERSION = '3.498.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -3081,7 +3081,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
   const meKeSpend = kePipeEff === 'all' ? (m.totals ? m.totals.spend : 0) : (pipeSpend[kePipeEff] || 0)
   return (
     <div ref={scrollRootRef}>
-      {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="meta" range={range} currency={currency} onClose={() => setKeyDrill(null)} /> : null}
+      {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="meta" range={range} currency={currency} wonBasis={wonBasis} onClose={() => setKeyDrill(null)} /> : null}
       <DataLoadBar label="Meta ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · reach &amp; frequency are approximate (summed across campaigns) · link campaigns in Settings → Campaign links</span>}</div>}
@@ -3638,7 +3638,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
   const gKeSpend = kePipeEff === 'all' ? (t.cost || 0) : (pipeSpend[kePipeEff] || 0)
   return (
     <div ref={scrollRootRef}>
-      {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="google" range={range} currency={currency} onClose={() => setKeyDrill(null)} /> : null}
+      {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="google" range={range} currency={currency} wonBasis={wonBasis} onClose={() => setKeyDrill(null)} /> : null}
       <DataLoadBar label="Google ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · link campaigns in Settings → Campaign links</span>}</div>}
@@ -4988,7 +4988,7 @@ function KeyPersonRow({ p, clientId, money, showCal = false }) {
 }
 // Click-through list of the people that make up ONE key event, channel-scoped.
 const KP_STATUSES = [['open', 'Open'], ['won', 'Won'], ['lost', 'Lost'], ['abandoned', 'Abandoned'], ['all', 'All']]
-function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose }) {
+function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose, wonBasis = 'created' }) {
   const [st, setSt] = useState({ status: 'loading', data: null })
   const [filter, setFilter] = useState('open')
   const money = (v) => fmtCurrency(v, currency)
@@ -4996,7 +4996,7 @@ function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose
   useEffect(() => {
     let alive = true; setSt({ status: 'loading', data: null })
     const stageName = event.kind === 'calendar' ? (event.stage || event.ref || event.label) : (event.ref || event.label)
-    const q = new URLSearchParams({ scope: 'keypeople', client: clientId, channel: channel || 'all', from: range.from, to: range.to, kind: event.kind })
+    const q = new URLSearchParams({ scope: 'keypeople', client: clientId, channel: channel || 'all', from: range.from, to: range.to, kind: event.kind, wonBasis: wonBasis === 'closed' ? 'closed' : 'created' })
     if (stageName && (event.kind === 'stage' || event.kind === 'calendar')) q.set('stage', String(stageName).replace(/^📅 /, ''))
     if (event.pipeline) q.set('pipeline', event.pipeline)
     if (event.refs && event.refs.length) q.set('cals', event.refs.join(','))
@@ -5010,7 +5010,7 @@ function KeyPeopleModal({ event, clientId, channel, ad, range, currency, onClose
       setFilter(ppl.some((p) => p.status === 'open') ? 'open' : 'all')
     }).catch(() => { if (alive) setSt({ status: 'err', data: null }) })
     return () => { alive = false }
-  }, [event, clientId, channel, ad, range.from, range.to])
+  }, [event, clientId, channel, ad, range.from, range.to, wonBasis])
   useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') onClose() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
   const d = st.data || {}
   const people = d.people || []

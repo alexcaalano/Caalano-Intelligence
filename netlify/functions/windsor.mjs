@@ -4093,7 +4093,7 @@ export default async (req) => {
     const pipeline = url.searchParams.get('pipeline') || null
     const cals = (url.searchParams.get('cals') || '').split(',').filter(Boolean)
     const ad = url.searchParams.get('ad') || null // scope to one creative (utm_content ≈ ad name)
-    try { return json({ scope: 'keypeople', client, ...(await buildKeyPeople(cc.ghl, from, to, { channel: channel === 'attribution' || channel === 'blend' ? 'all' : channel, pipeline, stage, kind, cals, ad })) }, 200, true) }
+    try { return json({ scope: 'keypeople', client, ...(await buildKeyPeople(cc.ghl, from, to, { channel: channel === 'attribution' || channel === 'blend' ? 'all' : channel, pipeline, stage, kind, cals, ad, wonBasis: url.searchParams.get('wonBasis') === 'closed' ? 'closed' : 'created' })) }, 200, true) }
     catch (e) { return json({ scope: 'keypeople', client, error: String(e.message || e).slice(0, 200), people: [] }, 200) }
   }
 

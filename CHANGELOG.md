@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.498.0 - 2026-09-06 · `PENDING` - Won people drill follows the won basis
+
+On the Meta and Google tabs the people behind the Won key event now follow
+the workspace's won basis, as the count next to it has since v3.496.0. On
+Closed, clicking Won lists the deals marked won in the range whatever
+their lead date, so the drill no longer says nobody was found beside a
+count of one.
+
+---
+
 ## v3.497.0 - 2026-09-06 · `85e2bb3` - CAC and ROAS by platform, easier to read
 
 The platform drill opens with four tiles - blended CAC, blended ROAS,

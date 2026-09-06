@@ -4631,7 +4631,8 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
 // Given a key event descriptor (a pipeline stage, a won event, or a set of booked
 // calendars linked to a stage) + a channel, return every opportunity/contact that
 // makes up that count, with the details a rep needs to work them.
-export async function buildKeyPeople(locationId, from, to, { channel, pipeline, stage, kind, cals, ad }) {
+export async function buildKeyPeople(locationId, from, to, opts = {}) {
+  const { channel, pipeline, stage, kind, cals, ad } = opts
   const locTok = await locationTokenOrDemo(locationId)
   const tz = await locationTimezone(locationId)
   const DAY = 86400000
@@ -4644,19 +4645,26 @@ export async function buildKeyPeople(locationId, from, to, { channel, pipeline, 
   // name the same way the dashboard does (lower-case, strip non-alphanumerics).
   const unorm = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
   const adKey = ad ? unorm(ad) : null
-  const [wideOpps, pipelines, appts, reasons] = await Promise.all([
+  // Closed won basis for the Won event: the people are the deals marked won
+  // in the range, whatever their lead date, from the won-only snapshot - the
+  // same rule the counts on the page use.
+  const closedBasis = opts.wonBasis === 'closed' && kind === 'won'
+  const [wideOpps0, pipelines, appts, reasons, wonSnap] = await Promise.all([
     allOpportunities(locTok, locationId, wideFrom, to, 2500),
     fetchPipelines(locTok, locationId),
     needAppts ? fetchAppointments(locTok, locationId, from, to).catch(() => null) : Promise.resolve(null),
     ghlGet(locTok, '/opportunities/lost-reason', { locationId, limit: 200 }).then((j) => j.lostReasons || []).catch(() => []),
+    closedBasis ? wonSnapshot(locTok, locationId).catch(() => null) : Promise.resolve(null),
   ])
+  let wideOpps = wideOpps0
+  if (wonSnap && wonSnap.opps && wonSnap.opps.length) { const byId = new Map(wideOpps0.map((o) => [o.id, o])); for (const o of wonSnap.opps) if (o && o.id && !byId.has(o.id)) byId.set(o.id, o); wideOpps = [...byId.values()] }
   const idx = stageIndexFrom(pipelines)
   const reasonName = {}; for (const r of reasons) reasonName[r._id || r.id] = r.name
   const lostReasonOf = (o) => { const rid = o.lostReasonId || o.lost_reason_id || (o.lostReason && (o.lostReason.id || o.lostReason._id)) || null; return (rid && reasonName[rid]) || (typeof o.lostReason === 'string' && o.lostReason) || 'Unspecified' }
   const nz = (s) => String(s || '').trim().toLowerCase()
   const chan = channel && channel !== 'all' ? channel : null
   const inWin = (o) => { const ms = Date.parse(o.createdAt); return (fromMs == null || ms >= fromMs) && (toMs == null || ms <= toMs) }
-  let opps = wideOpps.filter(inWin)
+  let opps = closedBasis ? wideOpps.filter((o) => ccDrillClassify(o, fromMs, toMs, 'closed').isWon) : wideOpps.filter(inWin)
   // A creative filter (utm_content) is more specific than the channel filter and
   // matches exactly what the creative card counted, so it takes precedence.
   if (adKey) opps = opps.filter((o) => unorm(utmOf(o).content) === adKey)

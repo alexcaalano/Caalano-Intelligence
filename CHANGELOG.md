@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.499.0 - 2026-09-06 · `PENDING` - Calendar key-event drill matches its count
+## v3.499.0 - 2026-09-06 · `4ba014c` - Calendar key-event drill matches its count
 
 A calendar key event counts bookings made in the period whoever the lead
 is, credited to the contact's opportunity even when that lead came in

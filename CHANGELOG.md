@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.497.0 - 2026-09-06 · `PENDING` - CAC and ROAS by platform, easier to read
+## v3.497.0 - 2026-09-06 · `85e2bb3` - CAC and ROAS by platform, easier to read
 
 The platform drill opens with four tiles - blended CAC, blended ROAS,
 average deal and average time to close, each with its working underneath -

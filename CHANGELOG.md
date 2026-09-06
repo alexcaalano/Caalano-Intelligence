@@ -18,6 +18,14 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.501.0 - 2026-09-06 · `PENDING` - Client column keeps only the logo when scrolled on a phone
+
+On a phone, once the agency client table is scrolled sideways, the frozen
+client column collapses to the logo so the figures get the screen back. Scroll
+back to the left and the name and industry return.
+
+---
+
 ## v3.500.0 - 2026-09-06 · `117c644` - Calendar key events count booked or reached, exactly
 
 A calendar key event linked to a stage now counts every contact who booked

@@ -4819,3 +4819,12 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-plat-notes li + li { margin-top: 4px; }
 .v2-plat-notes b { color: var(--text); }
 @media (max-width: 640px) { .v2-plat-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Phone: once the client table scrolls sideways, the frozen client column
+   keeps only the logo so the figures get the screen back. */
+@media (max-width: 760px) {
+  .ov-cmp-wrap.scrolled .ov-name .client-cell > div { display: none; }
+  .ov-cmp-wrap.scrolled .ov-name { width: 56px; min-width: 56px; padding-right: 6px; }
+  .ov-cmp-wrap.scrolled .ov-name .client-cell { gap: 0; }
+  .ov-cmp-wrap.scrolled th.ov-name { font-size: 0; }
+}

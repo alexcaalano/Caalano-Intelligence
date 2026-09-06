@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.500.0'
+const APP_VERSION = '3.501.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -1143,7 +1143,7 @@ function AgencyComparison({ rows, currency, range, onPick, ov }) {
             : <><span className="ov-warn-dot">!</span><b>{crmErrors} client{crmErrors === 1 ? '' : 's'} couldn't load CRM data.</b><span className="ov-crm-sub">Hover the ⚠ on a row for the reason, or hit Refresh to retry.</span></>}
         </div>
       )}
-      <div className="table-wrap"><table className="ov-cmp">
+      <div className="table-wrap ov-cmp-wrap" onScroll={(e) => { const el = e.currentTarget; const on = el.scrollLeft > 8; if (on !== el.classList.contains('scrolled')) el.classList.toggle('scrolled', on) }}><table className="ov-cmp">
         <thead><tr>
           <OvTh k="name" cls="ov-name">Client</OvTh>
           <OvTh k="spend">Spend</OvTh><OvTh k="results">Results</OvTh><OvTh k="costResult">Cost / Result</OvTh>

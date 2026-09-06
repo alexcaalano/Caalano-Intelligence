@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.499.0 - 2026-09-06 · `PENDING` - Calendar key-event drill matches its count
+
+A calendar key event counts bookings made in the period whoever the lead
+is, credited to the contact's opportunity even when that lead came in
+before the range. The people drill behind it listed only leads created in
+the range, so it could show seven beside a count of ten. It now includes the
+earlier leads who booked in the period, qualifying by their booking only,
+under the same channel or creative filter as the count.
+
+---
+
 ## v3.498.0 - 2026-09-06 · `515217a` - Won people drill follows the won basis
 
 On the Meta and Google tabs the people behind the Won key event now follow

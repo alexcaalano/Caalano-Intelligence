@@ -4705,6 +4705,19 @@ export async function buildKeyPeople(locationId, from, to, opts = {}) {
     const list = e.calendars.filter((c) => !calSet.size || (c.id && calSet.has(String(c.id)))).map((c) => ({ name: c.name, occurred: !!c.occurred, shown: !!c.shown, cancelled: !!c.cancelled }))
     return list.length ? list : null
   }
+  // A calendar event counts bookings made in the period whoever the lead is,
+  // credited to the contact's opportunity across the wide window - the same
+  // date-of-action rule the counts on the page use. So the people behind it
+  // include leads that came in before the range and booked inside it; those
+  // qualify by their booking only, never by stage, as in the count.
+  const extraIds = new Set()
+  if (needAppts && bookedCids.size) {
+    const have = new Set(opps.map((o) => o.id))
+    const passes = (o) => (adKey ? unorm(utmOf(o).content) === adKey : chan ? (() => { const c = channelOf(utmOf(o)); return chan === 'paid' ? (c === 'meta' || c === 'google') : chan === 'nonpaid' ? c === 'other' : c === chan })() : true)
+    const extra = wideOpps.filter((o) => !have.has(o.id) && bookedCids.has(contactIdOf(o)) && passes(o))
+    for (const o of extra) extraIds.add(o.id)
+    opps = [...opps, ...extra]
+  }
   const seen = new Set(); const people = []
   for (const o of opps) {
     const st = String(o.status || '').toLowerCase(); const isWon = st === 'won'
@@ -4715,6 +4728,7 @@ export async function buildKeyPeople(locationId, from, to, opts = {}) {
     else if (kind === 'lead' || kind === 'leads') { if (!pipeline || o.pipelineId === pipeline) via = 'lead' }
     else {
       const booked = needAppts && cid && bookedCids.has(cid)
+      if (extraIds.has(o.id) && !booked) continue
       const reached = targetPos != null && (!targetPid || o.pipelineId === targetPid) && (() => { const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1; return isWon || pos >= targetPos })()
       if (booked) via = 'calendar'; else if (reached) via = 'stage'
     }

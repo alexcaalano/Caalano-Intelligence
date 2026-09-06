@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.498.0 - 2026-09-06 · `PENDING` - Won people drill follows the won basis
+## v3.498.0 - 2026-09-06 · `515217a` - Won people drill follows the won basis
 
 On the Meta and Google tabs the people behind the Won key event now follow
 the workspace's won basis, as the count next to it has since v3.496.0. On

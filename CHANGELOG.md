@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.501.0 - 2026-09-06 · `PENDING` - Client column keeps only the logo when scrolled on a phone
+## v3.501.0 - 2026-09-06 · `1411f9c` - Client column keeps only the logo when scrolled on a phone
 
 On a phone, once the agency client table is scrolled sideways, the frozen
 client column collapses to the logo so the figures get the screen back. Scroll

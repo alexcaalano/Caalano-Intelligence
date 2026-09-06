@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.496.0'
+const APP_VERSION = '3.497.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6869,14 +6869,42 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
     })
     const totSpend = (spend.meta || 0) + (spend.google || 0), totWon = rows.reduce((a, r) => a + r.won, 0), totRev = rows.reduce((a, r) => a + r.revenue, 0), totLeads = rows.reduce((a, r) => a + r.leads, 0)
     const ttAll = deals.filter((x) => x.daysToClose != null).map((x) => x.daysToClose)
-    subhead = `${money(totSpend)} ad spend ÷ ${fmtNumber(totWon)} won, any channel = ${totWon && totSpend ? money(Math.round(totSpend / totWon)) : '-'} blended CAC · ${totSpend ? `${(totRev / totSpend).toFixed(1)}x` : '-'} blended ROAS`
+    const m0 = (v) => money(Math.round(v))
     const days = (v) => (v == null ? '-' : v < 1 ? 'same day' : `${Math.round(v)} d`)
-    body = <div className="tbl-scroll"><table className="mini-tbl users-tbl"><thead><tr><th className="lft">Platform</th><th>Spend</th><th>Leads</th><th>Won</th><th title="Spend ÷ won deals">CAC</th><th>Revenue</th><th title="Revenue ÷ spend">ROAS</th><th title="Revenue ÷ won deals">Avg deal</th><th title="Average days from the lead arriving to being marked won, over the won deals listed">Avg time to close</th></tr></thead>
-      <tbody>
-        {rows.map((r) => <tr key={r.k}><td className="lft"><span className="bn-src"><i style={{ background: r.k === 'other' ? '#c98500' : sourceDotChan(r.k) }} />{r.label}</span></td><td>{r.spend == null ? <span className="lrv-z" title="No ad spend is attributed to organic, referral or direct leads">–</span> : money(r.spend)}</td><td>{fmtNumber(r.leads)}</td><td>{fmtNumber(r.won)}</td><td>{r.cac != null ? money(Math.round(r.cac)) : '-'}</td><td>{money(r.revenue)}</td><td>{r.roas != null ? `${r.roas.toFixed(1)}x` : '-'}</td><td>{r.avgDeal != null ? money(Math.round(r.avgDeal)) : '-'}</td><td>{days(r.avgClose)}{r.n ? <span className="cap"> · {fmtNumber(r.n)}</span> : null}</td></tr>)}
-        <tr className="tot"><td className="lft"><b>All</b></td><td>{money(totSpend)}</td><td>{fmtNumber(totLeads)}</td><td>{fmtNumber(totWon)}</td><td>{totWon && totSpend ? money(Math.round(totSpend / totWon)) : '-'}</td><td>{money(totRev)}</td><td>{totSpend ? `${(totRev / totSpend).toFixed(1)}x` : '-'}</td><td>{totWon ? money(Math.round(totRev / totWon)) : '-'}</td><td>{days(ttAll.length ? ttAll.reduce((a, v) => a + v, 0) / ttAll.length : null)}</td></tr>
-      </tbody></table>
-      <p className="cap" style={{ marginTop: 8 }}>Blended CAC counts every won deal against paid spend, so it is lower than Meta's or Google's own CAC when organic and referral deals close too. Time to close is over the won deals in this period ({fmtNumber(ttAll.length)} with usable dates).</p></div>
+    const blendedCac = totWon && totSpend ? totSpend / totWon : null, blendedRoas = totSpend ? totRev / totSpend : null
+    subhead = null
+    body = <div>
+      <div className="v2-plat-sum">
+        <div className="v2-plat-tile"><span>Blended CAC</span><b>{blendedCac != null ? m0(blendedCac) : '-'}</b><small>{m0(totSpend)} spend ÷ {fmtNumber(totWon)} won, any channel</small></div>
+        <div className="v2-plat-tile"><span>Blended ROAS</span><b>{blendedRoas != null ? `${blendedRoas.toFixed(1)}x` : '-'}</b><small>{m0(totRev)} revenue ÷ {m0(totSpend)} spend</small></div>
+        <div className="v2-plat-tile"><span>Avg deal</span><b>{totWon ? m0(totRev / totWon) : '-'}</b><small>{fmtNumber(totWon)} won deals</small></div>
+        <div className="v2-plat-tile"><span>Avg time to close</span><b>{days(ttAll.length ? ttAll.reduce((a, v) => a + v, 0) / ttAll.length : null)}</b><small>{fmtNumber(ttAll.length)} deals with usable dates</small></div>
+      </div>
+      <div className="tbl-scroll"><table className="mini-tbl users-tbl v2-tbl">
+        <thead>
+          <tr className="v2-grp"><th className="lft"></th><th colSpan={3}><span>Volume</span></th><th colSpan={2}><span>Money</span></th><th colSpan={2}><span>Return</span></th><th><span>Speed</span></th></tr>
+          <tr><th className="lft">Platform</th><th>Spend</th><th>Leads</th><th>Won</th><th>Revenue</th><th title="Revenue ÷ won deals">Avg deal</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ spend">ROAS</th><th title="Average days from the lead arriving to being marked won, over the won deals listed">Time to close</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => <tr key={r.k}>
+            <td className="lft"><span className="bn-src"><i style={{ background: r.k === 'other' ? '#c98500' : sourceDotChan(r.k) }} />{r.label}</span></td>
+            <td>{r.spend == null ? <span className="lrv-z" title="No ad spend is attributed to organic, referral or direct leads">no spend</span> : r.spend === 0 ? <span className="lrv-z" title="No spend came back for this platform in this scope. If the ad read failed, the note at the top of the page says so.">$0</span> : m0(r.spend)}</td>
+            <td>{fmtNumber(r.leads)}</td>
+            <td>{fmtNumber(r.won)}</td>
+            <td>{m0(r.revenue)}</td>
+            <td>{r.avgDeal != null ? m0(r.avgDeal) : '-'}</td>
+            <td>{r.cac != null ? m0(r.cac) : <span className="lrv-z">-</span>}</td>
+            <td>{r.roas != null ? `${r.roas.toFixed(1)}x` : <span className="lrv-z">-</span>}</td>
+            <td>{days(r.avgClose)}{r.n ? <small className="v2-plat-n">{fmtNumber(r.n)} {r.n === 1 ? 'deal' : 'deals'}</small> : null}</td>
+          </tr>)}
+          <tr className="tot"><td className="lft"><b>All</b></td><td>{m0(totSpend)}</td><td>{fmtNumber(totLeads)}</td><td>{fmtNumber(totWon)}</td><td>{m0(totRev)}</td><td>{totWon ? m0(totRev / totWon) : '-'}</td><td>{blendedCac != null ? m0(blendedCac) : '-'}</td><td>{blendedRoas != null ? `${blendedRoas.toFixed(1)}x` : '-'}</td><td>{days(ttAll.length ? ttAll.reduce((a, v) => a + v, 0) / ttAll.length : null)}</td></tr>
+        </tbody></table></div>
+      <ul className="v2-plat-notes">
+        <li><b>Blended CAC</b> divides paid spend by every won deal, organic and referral included, so it sits below Meta's or Google's own CAC.</li>
+        <li><b>Organic, referral, direct</b> has no spend to divide by, so its CAC and ROAS are blank on purpose.</li>
+        <li><b>Time to close</b> is the average days from the lead arriving to being marked won, over the won deals in this period with usable dates.</li>
+      </ul>
+    </div>
   } else if (drill.kind === 'spend') {
     subhead = `${money(spend.total || 0)} total ad spend`
     body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Platform</th><th>Spend</th><th>Share</th></tr></thead>

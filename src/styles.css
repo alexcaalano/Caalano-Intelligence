@@ -4808,3 +4808,14 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-repf-row .r em { font-style: normal; color: var(--faint); }
 .if-page.pg-calls { color: var(--brand-2); border-color: color-mix(in srgb, var(--brand) 40%, transparent); }
 @media (max-width: 760px) { .v2-repf-row { grid-template-columns: 110px 1fr; } .v2-repf-row .r { grid-column: 1 / -1; justify-content: flex-start; } }
+/* CAC and ROAS by platform drill */
+.v2-plat-sum { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 2px 0 14px; }
+.v2-plat-tile { display: flex; flex-direction: column; gap: 3px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; min-width: 0; }
+.v2-plat-tile span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.v2-plat-tile b { font-size: 22px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.v2-plat-tile small { font-size: 11.5px; color: var(--faint); }
+.v2-plat-n { display: block; font-size: 10.5px; color: var(--faint); font-weight: 500; }
+.v2-plat-notes { margin: 12px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.v2-plat-notes li + li { margin-top: 4px; }
+.v2-plat-notes b { color: var(--text); }
+@media (max-width: 640px) { .v2-plat-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

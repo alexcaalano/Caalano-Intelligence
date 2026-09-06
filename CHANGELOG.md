@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.497.0 - 2026-09-06 · `PENDING` - CAC and ROAS by platform, easier to read
+
+The platform drill opens with four tiles - blended CAC, blended ROAS,
+average deal and average time to close, each with its working underneath -
+then the table under grouped headers (Volume, Money, Return, Speed) with
+the deal count for time to close on its own small line. Money is shown
+without cents, a platform with no spend says so rather than showing a
+dash, and the three footnotes each explain one thing.
+
+---
+
 ## v3.496.0 - 2026-09-05 · `f96b86c` - Meta and Google tabs follow the won basis
 
 The attribution feed behind the Caalano360 sections on the Meta and Google

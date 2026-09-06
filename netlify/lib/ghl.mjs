@@ -4436,6 +4436,7 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   // value entered at all, and how many are paid in full (cash at or above the
   // deal value, on a deal that has a value).
   let cashTotal = 0, cashEntered = 0, cashPif = 0
+  const reachSet = new Map() // stage key -> Set(contactId) reached that stage or beyond
   const stageAt = new Map() // pipelineId -> Map(stageId -> count), for the key-events funnel
   const stageAtChan = new Map() // pipelineId -> Map(stageId -> {meta,google,other}) for the per-channel funnel
   const chBucket = (ch) => (ch === 'meta' ? 'meta' : ch === 'google' ? 'google' : 'other')
@@ -4452,6 +4453,9 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
     const cash = isWon && cashField ? oppCashValue(o, cashField) : null
     const paidInFull = cash != null && val > 0 && cash >= val
     if (inCohort && o.pipelineId && o.pipelineStageId) {
+      // Which stages this contact reached (or beyond; won reaches all), for the
+      // booked-or-reached count on calendar key events.
+      { const rcid = contactIdOf(o); if (rcid && pi && pi.stages) { const pos = stg ? stg.pos : -1; for (const s2 of (isWonNow ? pi.stages : pi.stages.filter((x) => x.pos <= pos))) for (const key of [s2.name, o.pipelineId + '::' + s2.name]) { let m = reachSet.get(key); if (!m) { m = new Set(); reachSet.set(key, m) } m.add(rcid) } } }
       let sm = stageAt.get(o.pipelineId); if (!sm) { sm = new Map(); stageAt.set(o.pipelineId, sm) } sm.set(o.pipelineStageId, (sm.get(o.pipelineStageId) || 0) + 1)
       let smc = stageAtChan.get(o.pipelineId); if (!smc) { smc = new Map(); stageAtChan.set(o.pipelineId, smc) }
       let cobj = smc.get(o.pipelineStageId); if (!cobj) { cobj = { meta: 0, google: 0, other: 0 }; smc.set(o.pipelineStageId, cobj) }
@@ -4561,15 +4565,16 @@ export async function buildCcDrill(locationId, from, to, channel, basis = 'creat
   }
   const perCal = appts && appts.perCalendar instanceof Map ? appts.perCalendar : new Map()
   const bookingByCalendar = [...perCal.values()].map((rec) => {
-    let booked = 0, occurred = 0, shown = 0; const people = []
+    let booked = 0, occurred = 0, shown = 0; const people = []; const bookedSet = new Set()
     for (const [cid, f] of rec.byContact) {
       if (chanContacts && !chanContacts.has(cid)) continue
       const isBooked = !!f.bookedInPeriod, isOcc = !!f.hasCallInPeriod, isShown = !!f.shownByStatus
       if (!isBooked && !isOcc && !isShown) continue
-      if (isBooked) booked++; if (isOcc) occurred++; if (isShown) shown++
+      if (isBooked) { booked++; bookedSet.add(cid) } if (isOcc) occurred++; if (isShown) shown++
       if (people.length < 100) people.push({ name: apptNames.get(cid) || oppNameById.get(cid) || 'Lead', occurred: isOcc, shown: isShown })
     }
-    return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, shown, people }
+    const union = {}; for (const [key, set] of reachSet) { let n = bookedSet.size; for (const c of set) if (!bookedSet.has(c)) n++; union[key] = n }
+    return { id: rec.id || null, calendar: rec.name || 'Calendar', booked, occurred, shown, people, union }
   }).filter((c) => c.booked || c.occurred || c.shown).sort((a, b) => b.booked - a.booked)
   const closeArr = [...closeByChannel.values()].map((c) => { const closed = c.won + c.lost; return { channel: c.channel, won: c.won, closed, leads: c.leads, revenue: Math.round(c.revenue), cash: Math.round(c.cash || 0), closeRate: closed ? Math.round((c.won / closed) * 100) : null, deals: c.deals.slice(0, 100) } }).sort((a, b) => b.won - a.won)
   openDeals.sort((a, b) => b.value - a.value)
@@ -4997,6 +5002,10 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
   // "public api", a form name, etc.) so tracking health can exclude manual
   // entries and show the true ad-vs-CRM gap.
   const MANUAL_RE = /crm\s*ui|manual/i
+  // Contacts who reached each stage (or beyond), per channel, so a calendar key
+  // event can count booked OR reached exactly - the population its people drill
+  // lists - instead of approximating the overlap from two totals.
+  const reachSets = { all: new Map(), meta: new Map(), google: new Map(), other: new Map() }
   const oppSourceCounts = new Map()
   let manualLeads = 0
   let attributed = 0
@@ -5006,7 +5015,8 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
     if (MANUAL_RE.test(osrc)) manualLeads++
     const u = utmOf(o)
     if (u.source || u.campaign) attributed++
-    buckets[channelOf(u)].push(o)
+    const chn = channelOf(u)
+    buckets[chn].push(o)
     const pi = idx.get(o.pipelineId)
     bumpLead(dim.source, u.source, o, pi)
     bumpLead(dim.medium, u.medium, o, pi)
@@ -5027,8 +5037,10 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
       // multi-pipeline clients (e.g. FINR) without over-counting a same-named
       // stage in another pipeline.
       const pid = o.pipelineId
+      const rcid = contactIdOf(o)
       for (const s of reached) {
         for (const key of pid ? [s.name, pid + '::' + s.name] : [s.name]) {
+          if (rcid) { for (const kk of ['all', chn]) { let m = reachSets[kk].get(key); if (!m) { m = new Set(); reachSets[kk].set(key, m) } m.add(rcid) } }
           bumpKey(ent(dim.campaign, u.campaign), 'stages', key)
           bumpKey(ent(dim.medium, u.medium), 'stages', key)
           bumpKey(ent(dim.content, u.content), 'stages', key)
@@ -5137,13 +5149,14 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
     const mkCh = () => ({ booked: 0, occurred: 0, shown: 0, cancelled: 0 })
     for (const [calId, rec] of appts.perCalendar) {
       const cal = { id: calId, name: rec.name, booked: 0, occurred: 0, shown: 0, cancelled: 0, ch: { meta: mkCh(), google: mkCh(), other: mkCh() } }
+      const bookedBy = { all: new Set(), meta: new Set(), google: new Set(), other: new Set() }
       for (const [cid, f] of rec.byContact) {
         f.cancelledInPeriod = f._cancelled && !f._live
         if (!f.bookedInPeriod && !f.shownByStatus && !f.cancelledInPeriod && !f.hasCallInPeriod) continue
         const o = contactUtm.get(cid); if (!o) continue // only attributable leads
         const u = utmOf(o); const ch = channelOf(u)
         if (f.bookedInPeriod) {
-          cal.booked++; cal.ch[ch].booked++
+          cal.booked++; cal.ch[ch].booked++; bookedBy.all.add(cid); bookedBy[ch].add(cid)
           // Per-entity booked-into-this-calendar for the green key-event columns.
           bumpKey(ent(dim.campaign, u.campaign), 'cals', calId)
           bumpKey(ent(dim.medium, u.medium), 'cals', calId)
@@ -5178,6 +5191,9 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
         }
         if (f.cancelledInPeriod) { cal.cancelled++; cal.ch[ch].cancelled++ }
       }
+      // Booked-or-reached per stage key, for this calendar, per channel.
+      const unionFor = (kk) => { const out = {}; for (const [key, set] of reachSets[kk]) { let n = bookedBy[kk].size; for (const c of set) if (!bookedBy[kk].has(c)) n++; out[key] = n } return out }
+      cal.union = unionFor('all'); for (const kk of ['meta', 'google', 'other']) cal.ch[kk].union = unionFor(kk)
       if (cal.booked || cal.occurred || cal.shown || cal.cancelled) byCalendar.push(cal)
     }
     byCalendar.sort((a, b) => b.booked - a.booked)

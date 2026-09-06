@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.500.0 - 2026-09-06 · `PENDING` - Calendar key events count booked or reached, exactly
+
+A calendar key event linked to a stage now counts every contact who booked
+that calendar in the period or reached the linked stage (or beyond), each
+person once. Before, the count was bookings plus whatever the stage reach
+exceeded them by, which undercounts when the two groups only partly
+overlap: ten beside a drill of twelve. Both the ad-tab feed and the
+Overview drill now carry the exact count per calendar and stage, and the
+key-event tables use it; the older approximation stays as the fallback for
+a saved copy from before this release.
+
+---
+
 ## v3.499.0 - 2026-09-06 · `4ba014c` - Calendar key-event drill matches its count
 
 A calendar key event counts bookings made in the period whoever the lead

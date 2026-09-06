@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.499.0'
+const APP_VERSION = '3.500.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4887,7 +4887,7 @@ function calCountMap(attribData, chan) {
   if (Array.isArray(list)) {
     for (const cal of list) {
       const src = (chan && chan !== 'all' && cal.ch && cal.ch[chan]) ? cal.ch[chan] : cal
-      m.set(cal.id, { name: cal.name, count: src.booked || 0, occurred: src.occurred || 0, shown: src.shown || 0, cancelled: src.cancelled || 0 })
+      m.set(cal.id, { name: cal.name, count: src.booked || 0, occurred: src.occurred || 0, shown: src.shown || 0, cancelled: src.cancelled || 0, union: src.union || null })
     }
   }
   return m
@@ -4909,9 +4909,17 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       // Linked stage acts as a fallback: leads that reached the stage but we have
       // no calendar booking for. Approximated as stageReached - calendar bookings.
       const stageReached = k.stage ? stageReachOf(rmap, k.pipeline, k.stage) : 0
-      const fromStage = Math.max(0, stageReached - cal)
+      // Exact booked-or-reached when the feed carries it (one count per calendar
+      // and stage, de-duplicated by contact); otherwise the older approximation.
+      let union = -1
+      if (k.stage) {
+        const keys = k.pipeline ? [k.pipeline + '::' + k.stage, k.stage] : [k.stage]
+        for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (!c || !c.union) continue; for (const key of keys) { if (c.union[key] != null) { union = Math.max(union, c.union[key]); break } } }
+      }
+      const count = union >= 0 ? Math.max(union, cal) : cal + Math.max(0, stageReached - cal)
+      const fromStage = Math.max(0, count - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count: cal + fromStage, fromCal: cal, fromStage, stageReached, occurred, shown, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count, fromCal: cal, fromStage, stageReached, exact: union >= 0, occurred, shown, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -6390,7 +6398,7 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const keList = ccKeyEventsOf(cc, clientId)
   const rmap = reachedByStage(pipes)
   const stagePos = stagePosMap(pipes)
-  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, cancelled: 0 }]))
+  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, cancelled: 0, union: c.union || null }]))
   const rows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, wonTotal) : []
   const leadTotal = leadsFallback || rmap.total || 0
   // Per-pipeline lead totals so a pipeline-scoped key event (multi-pipeline client)
@@ -7022,7 +7030,7 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   const money = (v) => fmtCurrency(v, currency)
   const stagePos = stagePosMap(funnels)
   const keList = loadKeyEvents(clientId)
-  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, cancelled: 0 }]))
+  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, cancelled: 0, union: c.union || null }]))
   const rmap = reachedByStage(funnels), calMap = mkCalMap(cc)
   const pRmap = reachedByStage((pcc && pcc.pipelinesFunnel) || []), pCalMap = mkCalMap(pcc)
   const pPipes = {}; for (const p of ((pcc && pcc.pipeContribution) || [])) pPipes[p.id] = p

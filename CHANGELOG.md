@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.500.0 - 2026-09-06 · `PENDING` - Calendar key events count booked or reached, exactly
+## v3.500.0 - 2026-09-06 · `117c644` - Calendar key events count booked or reached, exactly
 
 A calendar key event linked to a stage now counts every contact who booked
 that calendar in the period or reached the linked stage (or beyond), each

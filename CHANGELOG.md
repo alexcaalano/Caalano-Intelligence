@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.504.0 - 2026-09-08 · `PENDING` - CAC and ROAS by platform, easier to read
+## v3.504.0 - 2026-09-08 · `0855cb5` - CAC and ROAS by platform, easier to read
 
 - **The platform table laid out properly.** The group header row that sat
   out of line with the columns is gone. The platform column has a fixed

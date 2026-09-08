@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.502.0 - 2026-09-08 · `PENDING` - Forms: ideal client, cross-question filter, export
+## v3.502.0 - 2026-09-08 · `c584d8f` - Forms: ideal client, cross-question filter, export
 
 - **Ideal client per form.** Inside each form, an Ideal client panel lists
   every multiple-choice question with its answers as chips. Pick the answers

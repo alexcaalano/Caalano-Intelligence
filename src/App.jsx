@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.501.0'
+const APP_VERSION = '3.502.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -11017,14 +11017,152 @@ function PersonRow({ p, clientId, money, cols, ke }) {
     </React.Fragment>
   )
 }
-function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
+// ---- Forms: per-lead rows, ideal-client criteria, cross-question filter, export ----
+// Decode a form's lead rows into people with their answers ({ question: value }).
+function formLeadsOf(f) {
+  const lr = f && f.leadRows; if (!lr || !Array.isArray(lr.rows)) return null
+  const K = lr.keys || [], nK = K.length, qs = lr.questions || [], vals = lr.values || []
+  return lr.rows.map((r) => {
+    const p = {}; K.forEach((k, i) => { p[k] = r[i] })
+    p.status = p.status === 1 ? 'won' : p.status === 2 ? 'lost' : 'open'
+    p.booked = !!p.booked; p.shown = !!p.shown; p.occurred = !!p.occurred
+    p.answers = {}; qs.forEach((q, i) => { const k = r[nK + i]; if (k != null && k >= 0) p.answers[q] = vals[i][k] })
+    return p
+  })
+}
+// Ideal-client criteria: { question: [accepted answers] }. A lead qualifies when,
+// for every question with a selection, their answer is one of them. Null when no
+// criteria are set (so "0 of 40" and "not set" never read the same).
+function formQualMatch(answers, qual) {
+  const qs = Object.entries(qual || {}).filter(([, v]) => Array.isArray(v) && v.length)
+  if (!qs.length) return null
+  for (const [q, accepted] of qs) { const v = answers ? answers[q] : undefined; if (v == null || !accepted.includes(v)) return false }
+  return true
+}
+// Cross-question filter: { question: [values] }. A lead passes when, for every
+// filtered question (other than `except`), its answer is one of the values.
+function formFilterMatch(answers, filt, except) {
+  for (const [q, vs] of Object.entries(filt || {})) { if (q === except || !vs || !vs.length) continue; const v = answers ? answers[q] : undefined; if (v == null || !vs.includes(v)) return false }
+  return true
+}
+// Segments (question → answers with their funnel and people) rebuilt from the
+// lead rows, so they can follow a filter. Same shape as the server's.
+function formSegmentsFrom(leads, questions, kindByQ, filt, cap = 60) {
+  return (questions || []).map((q) => {
+    const m = new Map()
+    for (const p of leads) {
+      if (!formFilterMatch(p.answers, filt, q)) continue
+      const v = p.answers[q]; if (v == null) continue
+      let a = m.get(v); if (!a) { a = { value: v, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, people: [] }; m.set(v, a) }
+      a.leads++; if (p.booked) a.booked++; if (p.shown) a.shown++; if (p.status === 'won') { a.won++; a.revenue += p.value || 0 }
+      if (a.people.length < 80) a.people.push(p)
+    }
+    const answers = [...m.values()].sort((a, b) => b.leads - a.leads)
+    const total = answers.reduce((t, a) => t + a.leads, 0)
+    const kind = kindByQ.get(q) || (answers.length > 12 && answers.every((x) => x.leads <= 1) ? 'written' : 'choice')
+    const shown = answers.slice(0, cap).map((a) => (kind === 'written' ? (({ people, ...rest }) => rest)(a) : a))
+    return { question: q, kind, total, distinct: answers.length, more: Math.max(0, answers.length - shown.length), answers: shown }
+  }).filter((s) => s.total >= 1).sort((a, b) => (a.kind === b.kind ? b.total - a.total : a.kind === 'choice' ? -1 : 1))
+}
+// CSV of one row per lead, every answer a column. Built in the browser from the
+// feed already loaded; nothing is fetched. Quotes are doubled per RFC 4180.
+function formsCsv(forms, kEvents, reached, qualByForm) {
+  const qset = []; const qseen = new Set()
+  for (const f of forms) for (const q of ((f.leadRows && f.leadRows.questions) || [])) if (!qseen.has(q)) { qseen.add(q); qset.push(q) }
+  const head = ['Form', 'Name', 'Status', 'Pipeline', 'Stage', 'Value', 'Booked', 'Shown', 'Won', ...kEvents.map((k) => k.label.replace(/^📅 /, '')), 'Ideal client', 'Channel', 'Campaign', 'Ad set', 'Creative', 'Created', 'Days since activity', 'Contact ID', ...qset]
+  const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+  const lines = [head.map(esc).join(',')]
+  for (const f of forms) {
+    const leads = formLeadsOf(f) || []
+    const qual = qualByForm[f.form] || null
+    for (const p of leads) {
+      const qm = formQualMatch(p.answers, qual)
+      lines.push([
+        f.form, p.name, p.status, p.pipelineName, p.stageName, p.value, p.booked ? 'yes' : 'no', p.shown ? 'yes' : 'no', p.status === 'won' ? 'yes' : 'no',
+        ...kEvents.map((k) => (reached(p, k) ? 'yes' : 'no')),
+        qm == null ? '' : qm ? 'yes' : 'no',
+        p.channel, p.campaign, p.adset, p.creative, p.createdMs ? fmtDMY(new Date(p.createdMs).toISOString().slice(0, 10)) : '', p.ageDays, p.contactId,
+        ...qset.map((q) => p.answers[q]),
+      ].map(esc).join(','))
+    }
+  }
+  return lines.join('\r\n')
+}
+function downloadText(name, text, type = 'text/csv') {
+  try {
+    const blob = new Blob(['﻿' + text], { type: `${type};charset=utf-8` })
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  } catch { /* download blocked */ }
+}
+// The ideal-client panel for one form: pick the answers that make a lead the
+// client you want, see how many of this period's leads fit and how they convert
+// against the rest, and save it with the form.
+function FormQual({ clientId, form, leads, segments, kEvents, reached, money, evLabel }) {
+  const saved = (loadFormMeta(clientId)[form.form] || {}).qual || {}
+  const [draft, setDraft] = useState(() => saved)
+  const [dirty, setDirty] = useState(false)
+  const [open, setOpen] = useState(() => Object.keys(saved).length > 0)
+  useEffect(() => { setDraft((loadFormMeta(clientId)[form.form] || {}).qual || {}); setDirty(false) }, [clientId, form.form])
+  const choice = (segments || []).filter((s) => s.kind !== 'written' && s.answers && s.answers.length > 1)
+  const toggle = (q, v) => { setDraft((d) => { const cur = new Set(d[q] || []); cur.has(v) ? cur.delete(v) : cur.add(v); const nx = { ...d }; if (cur.size) nx[q] = [...cur]; else delete nx[q]; return nx }); setDirty(true) }
+  const save = () => { saveFormMeta(clientId, form.form, { qual: draft }); setDirty(false) }
+  const clear = () => { setDraft({}); saveFormMeta(clientId, form.form, { qual: {} }); setDirty(false) }
+  const active = Object.keys(draft).length > 0
+  const fit = leads ? leads.filter((p) => formQualMatch(p.answers, draft) === true) : []
+  const rest = leads && active ? leads.filter((p) => formQualMatch(p.answers, draft) === false) : []
+  const sum = (arr) => ({ leads: arr.length, booked: arr.filter((p) => p.booked).length, shown: arr.filter((p) => p.shown).length, won: arr.filter((p) => p.status === 'won').length, revenue: arr.reduce((t, p) => t + (p.status === 'won' ? (p.value || 0) : 0), 0), ke: kEvents.map((k) => arr.filter((p) => reached(p, k)).length) })
+  const A = sum(fit), B = sum(rest)
+  const pc = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
+  const total = leads ? leads.length : form.leads
+  if (!leads) return null
+  return (
+    <div className="fq">
+      <div className="fq-h">
+        <button type="button" className="fq-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          <b>Ideal client</b>
+          <span className="sub">{active ? <>· <b>{fmtNumber(A.leads)}</b> of {fmtNumber(total)} leads fit ({pc(A.leads, total)})</> : '· not set for this form - pick the answers that describe the client you want'}</span>
+          <span className="fq-chev">{open ? '▴' : '▾'}</span>
+        </button>
+        {open ? <div className="fq-actions">{dirty ? <button type="button" className="fq-save" onClick={save}>Save</button> : null}{active ? <button type="button" className="fq-clear" onClick={clear}>Clear</button> : null}</div> : null}
+      </div>
+      {open ? <>
+        {!choice.length ? <div className="cap">This form has no multiple-choice questions to set criteria on.</div> : <div className="fq-qs">
+          {choice.map((s) => <div key={s.question} className="fq-q">
+            <div className="fq-qn">{s.question}<small>{draft[s.question] && draft[s.question].length ? `${draft[s.question].length} accepted` : 'any answer'}</small></div>
+            <div className="fq-opts">{s.answers.map((a) => { const on = (draft[s.question] || []).includes(a.value); return <button type="button" key={a.value} className={`fq-opt${on ? ' on' : ''}`} onClick={() => toggle(s.question, a.value)} title={`${fmtNumber(a.leads)} leads gave this answer`}>{on ? '✓ ' : ''}{a.value}<em>{fmtNumber(a.leads)}</em></button> })}</div>
+          </div>)}
+        </div>}
+        {active ? <div className="tbl-scroll"><table className="mini-tbl users-tbl fq-tbl">
+          <thead><tr><th className="lft"></th><th>Leads</th><th>Booked</th><th>Shown</th>{kEvents.map((k, i) => <th key={i} className="fke-col">{evLabel(k)}</th>)}<th>Won</th><th>Win %</th><th>Revenue</th></tr></thead>
+          <tbody>
+            <tr className="fq-fit"><td className="lft"><b>Fit the profile</b></td><td>{fmtNumber(A.leads)} <span className="cap">{pc(A.leads, total)}</span></td><td>{fmtNumber(A.booked)} <span className="cap">{pc(A.booked, A.leads)}</span></td><td>{fmtNumber(A.shown)}</td>{A.ke.map((n, i) => <td key={i} className="fke-col">{fmtNumber(n)} <span className="cap">{pc(n, A.leads)}</span></td>)}<td>{fmtNumber(A.won)}</td><td>{pc(A.won, A.leads)}</td><td>{money(A.revenue)}</td></tr>
+            <tr><td className="lft">Everyone else</td><td>{fmtNumber(B.leads)} <span className="cap">{pc(B.leads, total)}</span></td><td>{fmtNumber(B.booked)} <span className="cap">{pc(B.booked, B.leads)}</span></td><td>{fmtNumber(B.shown)}</td>{B.ke.map((n, i) => <td key={i} className="fke-col">{fmtNumber(n)} <span className="cap">{pc(n, B.leads)}</span></td>)}<td>{fmtNumber(B.won)}</td><td>{pc(B.won, B.leads)}</td><td>{money(B.revenue)}</td></tr>
+          </tbody></table></div> : null}
+        <p className="cap" style={{ margin: '8px 0 0' }}>A lead fits when their answer to every question you set is one of the accepted ones. Questions with nothing selected are ignored. Saved with the form, so the Ideal client column and the export use it.</p>
+      </> : null}
+    </div>
+  )
+}
+
+function FormSegments({ segments, captured, currency, clientId, pipes, pipe, leads, questions }) {
   const money = (v) => fmtCurrency(v, currency)
   const [sel, setSel] = useState(0)
   const [openAns, setOpenAns] = useState(() => new Set())
   const [sort, setSort] = useState({ key: 'leads', dir: -1 })
+  // Cross-question filter: { question: [values] }. Each question's answers are
+  // counted over the leads who pass the filters on every OTHER question.
+  const [filt, setFilt] = useState({})
   const ke = formKeyEvents(clientId, pipe, pipes)
-  if (!segments || !segments.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form - its submissions only carried contact details (name / email / phone).'}</div>
-  const s = segments[Math.min(sel, segments.length - 1)]
+  const kindByQ = new Map((segments || []).map((q) => [q.question, q.kind]))
+  const filtN = Object.values(filt).reduce((n, v) => n + (v ? v.length : 0), 0)
+  const segs = leads && questions && questions.length ? formSegmentsFrom(leads, questions, kindByQ, filt) : (segments || [])
+  const toggleFilt = (q, a) => setFilt((f) => { const vals = (a.members && a.members.length ? a.members.map((m) => m.value) : [a.value]); const cur = new Set(f[q] || []); const on = vals.some((v) => cur.has(v)); for (const v of vals) { if (on) cur.delete(v); else cur.add(v) } const nx = { ...f }; if (cur.size) nx[q] = [...cur]; else delete nx[q]; return nx })
+  const isFilt = (q, a) => { const cur = f_(filt[q]); return (a.members && a.members.length ? a.members : [{ value: a.value }]).some((m) => cur.has(m.value)) }
+  const f_ = (arr) => new Set(arr || [])
+  const passing = leads && filtN ? leads.filter((p) => formFilterMatch(p.answers, filt)).length : null
+  if (!segs.length) return <div className="form-seg-none">{captured > 0 ? `This form carried ${captured} field${captured === 1 ? '' : 's'}, but they were all name / email / phone / system fields we don't segment on.` : 'No question fields were captured on this form - its submissions only carried contact details (name / email / phone).'}</div>
+  const s = segs[Math.min(sel, segs.length - 1)]
   const events = ke.events || []
   const hasKe = events.length > 0
   // Per-answer count of people who reached each key event (people are capped
@@ -11055,10 +11193,11 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
   return (
     <div className="fseg">
       <div className="fseg-sel">
-        <div className="fm-lab">Question / field <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· pick one to see its answers</span></div>
+        <div className="fm-lab">Question / field <span className="cap" style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>· pick one to see its answers{leads ? ' · use filter on an answer to narrow every other question to those leads' : ''}</span></div>
+        {filtN ? <div className="fseg-filtbar"><span className="k">Showing leads who answered</span>{Object.entries(filt).map(([q, vs]) => (vs || []).map((v) => <button type="button" key={q + '|' + v} className="fseg-chip" onClick={() => setFilt((f) => { const cur = (f[q] || []).filter((x) => x !== v); const nx = { ...f }; if (cur.length) nx[q] = cur; else delete nx[q]; return nx })} title={q}><span className="q">{q.length > 28 ? q.slice(0, 27) + '…' : q}</span> {v} ✕</button>))}<b>{fmtNumber(passing || 0)} of {fmtNumber(leads.length)} leads</b><button type="button" className="fseg-clear" onClick={() => setFilt({})}>Clear</button></div> : null}
         <div className="fseg-qlist">
-          {segments.map((q, i) => (
-            <button key={q.question} className={`fseg-qbtn ${i === sel ? 'on' : ''}`} onClick={() => setSel(i)} title={q.question}>
+          {segs.map((q, i) => (
+            <button key={q.question} className={`fseg-qbtn ${i === sel ? 'on' : ''}${filt[q.question] && filt[q.question].length ? ' filt' : ''}`} onClick={() => setSel(i)} title={q.question}>
               <span className="fseg-qtxt">{q.question}</span>
               <span className={`form-seg-kind ${q.kind || 'choice'}`}>{q.kind === 'written' ? 'written' : 'choice'}</span>
             </button>
@@ -11119,7 +11258,7 @@ function FormSegments({ segments, captured, currency, clientId, pipes, pipe }) {
               <React.Fragment key={a.value}>
                 <tr className={isOpen ? 'row-sel' : ''} style={{ cursor: clickable ? 'pointer' : 'default' }} onClick={clickable ? () => toggleAns(a.value) : undefined}>
                   <td className="num" style={{ color: 'var(--faint)' }}>{clickable ? (isOpen ? '▾' : '▸') : ''}</td>
-                  <td title={a.merged ? `Combines: ${a.members.sort((x, y) => y.leads - x.leads).map((m) => `${m.value} (${m.leads})`).join(', ')}` : a.value}>{a.value}{a.merged ? <span className="ans-merged" title={`Combines ${a.members.length} spellings`}> ⓘ{a.members.length}</span> : null}</td>
+                  <td title={a.merged ? `Combines: ${a.members.sort((x, y) => y.leads - x.leads).map((m) => `${m.value} (${m.leads})`).join(', ')}` : a.value}>{a.value}{leads ? <button type="button" className={`fseg-filt${isFilt(s.question, a) ? ' on' : ''}`} onClick={(e) => { e.stopPropagation(); toggleFilt(s.question, a) }} title="Narrow every other question to the leads who gave this answer">{isFilt(s.question, a) ? '✓ filter' : 'filter'}</button> : null}{a.merged ? <span className="ans-merged" title={`Combines ${a.members.length} spellings`}> ⓘ{a.members.length}</span> : null}</td>
                   <td className="num">{fmtNumber(a.leads)}</td>
                   <td className="num">{totalLeads ? fmtPct((a.leads / totalLeads) * 100, 0) : '-'}</td>
                   <td className="num">{fmtNumber(a.booked)}</td>
@@ -12413,7 +12552,7 @@ function FormsCharts({ forms, kEvents, reached, evLabel }) {
     </div>
   )
 }
-function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe }) {
+function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe, authUser }) {
   const st = useForms(clientId, range, nonce)
   const [pipeFilter, setPipeFilter] = usePipeState(pipeProp, onPipe)
   const [sort, setSort] = useState({ key: 'leads', dir: -1 })
@@ -12451,7 +12590,12 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe })
   const keCountsFor = (f) => kEvents.map((k) => (f.people || []).reduce((n, p) => n + (ke.reached(p, k) ? 1 : 0), 0))
   const rows = forms.map((f) => {
     const counts = keCountsFor(f)
-    const row = { ...f, bookRate: f.leads ? (f.booked / f.leads) * 100 : null, showRate: f.booked ? (f.shown / f.booked) * 100 : null, winRate: f.leads ? (f.won / f.leads) * 100 : null, avgDeal: f.won ? f.revenue / f.won : null, _keCounts: counts }
+    // Ideal-client fit from the saved criteria and the per-lead rows.
+    const leadsAll = formLeadsOf(f)
+    const qual = (fmeta[f.form] || {}).qual || null
+    const hasQual = !!(qual && Object.values(qual).some((v) => Array.isArray(v) && v.length))
+    const qualified = hasQual && leadsAll ? leadsAll.filter((p) => formQualMatch(p.answers, qual) === true).length : null
+    const row = { ...f, _leads: leadsAll, qualified, bookRate: f.leads ? (f.booked / f.leads) * 100 : null, showRate: f.booked ? (f.shown / f.booked) * 100 : null, winRate: f.leads ? (f.won / f.leads) * 100 : null, avgDeal: f.won ? f.revenue / f.won : null, _keCounts: counts }
     counts.forEach((c, i) => { row['ke' + i] = c })
     return row
   })
@@ -12459,8 +12603,12 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe })
   const tot = rows.reduce((a, f) => ({ leads: a.leads + f.leads, booked: a.booked + f.booked, shown: a.shown + f.shown, won: a.won + f.won, revenue: a.revenue + f.revenue, ke: a.ke.map((v, i) => v + (f._keCounts[i] || 0)) }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, ke: kEvents.map(() => 0) })
   // Columns after Form/Leads and before Revenue/Avg deal: one per key event, or
   // the legacy Booked/Won when the client has no key events configured.
+  const anyQual = rows.some((r) => r.qualified != null)
+  const qualTot = rows.reduce((a, r) => a + (r.qualified || 0), 0)
+  const canExport = !authUser || authUser.role === 'admin' || authUser.role === 'superadmin'
+  const exportCsv = () => { const qb = {}; for (const r of rows) qb[r.form] = (fmeta[r.form] || {}).qual || null; downloadText(`forms-${clientId}-${range.from}-${range.to}.csv`, formsCsv(rows, kEvents, ke.reached, qb)) }
   const metricCount = hasKe ? kEvents.length : 2
-  const bodySpan = 4 + metricCount // Form + Leads + metrics + Revenue + Avg deal
+  const bodySpan = 4 + metricCount + (anyQual ? 1 : 0) // Form + Leads + metrics + Revenue + Avg deal (+ Ideal client)
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
@@ -12472,12 +12620,13 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe })
           ? kEvents.map((k, i) => <Sc key={i} label={evLabel(k)} value={fmtNumber(tot.ke[i])} />)
           : <><Sc label="Booked" value={fmtNumber(tot.booked)} /><Sc label="Won" value={fmtNumber(tot.won)} /></>}
         <Sc label="Revenue" value={money(tot.revenue)} />
+        {anyQual ? <Sc label="Ideal client" value={fmtNumber(qualTot)} flat={tot.leads ? `${Math.round((qualTot / tot.leads) * 100)}% of leads fit a saved profile` : undefined} /> : null}
       </div>
       <FormPipeFilter pipes={pipes} value={pipeFilter} onChange={setPipeFilter} />
       <FormsCharts forms={forms} kEvents={kEvents} reached={ke.reached} evLabel={evLabel} />
-      <div className="lvl-title" style={{ marginTop: 14 }}>Form performance <span className="sub">· {hasKe ? 'leads → key events' : 'leads → booked → won'} by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></div>
+      <div className="lvl-title forms-title" style={{ marginTop: 14 }}><span>Form performance <span className="sub">· {hasKe ? 'leads → key events' : 'leads → booked → won'} by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></span>{canExport && rows.some((r) => r._leads) ? <button type="button" className="forms-export" onClick={exportCsv} title="One row per lead, every answer as a column, with status, stage, key events, ideal-client fit and source">Export CSV</button> : null}</div>
       <div className="table-wrap"><table>
-        <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th>{hasKe ? kEvents.map((k, i) => <Th key={i} k={'ke' + i}>{evLabel(k)}</Th>) : <><Th k="booked">Booked</Th><Th k="won">Won</Th></>}<Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
+        <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th>{anyQual ? <Th k="qualified">Ideal client</Th> : null}{hasKe ? kEvents.map((k, i) => <Th key={i} k={'ke' + i}>{evLabel(k)}</Th>) : <><Th k="booked">Booked</Th><Th k="won">Won</Th></>}<Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
         {sorted.map((f) => {
           const isOpen = open.has(f.form)
           const fm = fmeta[f.form] || {}
@@ -12488,6 +12637,7 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe })
                 <td className="num" style={{ color: 'var(--faint)' }}>{isOpen ? '▾' : '▸'}</td>
                 <td className="lft" title={f.form}><span className="form-kind">{f.kind === 'facebook' ? '📱' : f.kind === 'website' ? '🌐' : '📄'}</span> {f.form}{pipeName ? <span className="form-pipe-chip">{pipeName}</span> : null}{fm.notes ? <span className="form-note-chip" title={fm.notes}>📝</span> : null}</td>
                 <td className="num">{fmtNumber(f.leads)}</td>
+                {anyQual ? <td className="num">{f.qualified == null ? <span className="cap" title="No ideal-client profile saved for this form">-</span> : <>{fmtNumber(f.qualified)}{f.leads ? <span className="fke-pct"> {fmtPct((f.qualified / f.leads) * 100, 0)}</span> : null}</>}</td> : null}
                 {hasKe
                   ? kEvents.map((k, i) => <td key={i} className="num fke-col">{fmtNumber(f['ke' + i])}{f.leads ? <span className="fke-pct"> {fmtPct((f['ke' + i] / f.leads) * 100, 0)}</span> : null}</td>)
                   : <><td className="num">{fmtNumber(f.booked)}</td><td className="num">{fmtNumber(f.won)}</td></>}
@@ -12496,8 +12646,9 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe })
               </tr>
               {isOpen && <tr className="form-seg-row"><td /><td colSpan={bodySpan}>
                 <FormMetaPanel clientId={clientId} form={f} pipes={pipes} onEdit={setEditForm} />
+                <FormQual clientId={clientId} form={f} leads={f._leads} segments={f.segments} kEvents={kEvents} reached={ke.reached} money={money} evLabel={evLabel} />
                 <FormLocations form={f} />
-                <FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} clientId={clientId} pipes={pipes} pipe={pipeFilter} />
+                <FormSegments segments={f.segments} captured={f.capturedQuestions} currency={currency} clientId={clientId} pipes={pipes} pipe={pipeFilter} leads={f._leads} questions={f.leadRows ? f.leadRows.questions : null} />
               </td></tr>}
             </tbody>
           )
@@ -15344,7 +15495,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           : (live.status === 'err' && !liveOK('ganalytics')) ? <DeepError channel="Google Analytics" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
             : <><LiveBadge mode={liveOK('ganalytics') ? 'live' : null} label={presetLabel} /><AnalyticsDeep deep={srcFor('ganalytics')} currency={data.currency} attr={attr} clientId={client.id} range={range} nonce={nonce} /></>)}
         {curTab === 'cohorts' && <CohortView clientId={client.id} currency={data.currency} nonce={nonce} />}
-        {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} />}
+        {curTab === 'forms' && <FormsView clientId={client.id} currency={data.currency} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} authUser={authUser} />}
         {curTab === 'location' && <LocationView clientId={client.id} currency={data.currency} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'appts' && <AppointmentsView clientId={client.id} range={range} nonce={nonce} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'calls' && <CallReportView clientId={client.id} range={range} nonce={nonce} currency={data.currency} pipe={pipe} onPipe={setPipe} />}

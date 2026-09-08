@@ -1378,7 +1378,7 @@ export async function buildForms(locationId, from, to) {
   // the location breakdown.
   const LOC_RE = /(location|suburb|postcode|postal|\barea\b|region|\btown\b|\bcity\b|where.*(build|project|located))/i
   const agg = new Map()
-  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map(), people: [] } ; agg.set(L.label, e) } return e }
+  const ent = (L) => { let e = agg.get(L.label); if (!e) { e = { form: L.label, kind: L.kind, leads: 0, booked: 0, shown: 0, won: 0, revenue: 0, seg: new Map(), byPipe: new Map(), loc: new Map(), people: [], all: [], allCapped: false } ; agg.set(L.label, e) } return e }
   const bump = (o, booked, shown, won, rev) => { o.leads++; if (booked) o.booked++; if (shown) o.shown++; if (won) { o.won++; o.revenue += rev } }
   // Per-location totals, split by pipeline AND by channel. The channel split is
   // kept as its own tally rather than derived from `people`, which is capped - a
@@ -1425,6 +1425,9 @@ export async function buildForms(locationId, from, to) {
     // so the frontend can run the form's people through the client's key events
     // (same shape as the per-answer people). Capped to keep the payload small.
     if (e.people.length < 120) e.people.push(person)
+    // Every lead with every answer, compactly, so the Forms tab can filter across
+    // questions, test an ideal-client profile and export - uncapped in practice.
+    if (e.all.length < 3000) e.all.push({ person, answers }); else e.allCapped = true
     // A richer record for the location drill-down: the same funnel fields PLUS this
     // lead's initial form answers, so a postcode can list who's there, their status /
     // value / stage / time-in-stage, and what they first told us (drill to notes).
@@ -1487,8 +1490,19 @@ export async function buildForms(locationId, from, to) {
     // Per-pipeline performance (multi-pipeline clients) + location distribution.
     const byPipeline = [...e.byPipe.values()].sort((a, b) => b.leads - a.leads)
     const locations = [...e.loc.values()].sort((a, b) => b.leads - a.leads).slice(0, 200).map(({ _seen, ...L }) => L)
-    const { seg, byPipe, loc, ...rest } = e
-    return { ...rest, capturedQuestions: seg.size, questions, byPipeline, locations, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments }
+    // Lead rows: one array per lead - fixed fields, then one answer index per
+    // question (into that question's value list; -1 = not answered).
+    const LEAD_KEYS = ['contactId', 'name', 'status', 'stagePos', 'pipelineId', 'value', 'booked', 'shown', 'occurred', 'channel', 'campaign', 'adset', 'creative', 'createdMs', 'ageDays', 'stageName', 'pipelineName']
+    const qs = [...e.seg.keys()]
+    const vals = qs.map(() => []); const vIdx = qs.map(() => new Map())
+    const rows = e.all.map(({ person: p, answers: a }) => [
+      p.contactId, p.name, p.status === 'won' ? 1 : p.status === 'lost' ? 2 : 0, p.stagePos, p.pipelineId, Math.round(p.value || 0), p.booked ? 1 : 0, p.shown ? 1 : 0, p.occurred ? 1 : 0,
+      p.channel, p.campaign, p.adset, p.creative, p.createdMs, p.ageDays, p.stageName, p.pipelineName,
+      ...qs.map((q, i) => { const v = a[q]; if (v == null || v === '') return -1; let k = vIdx[i].get(v); if (k === undefined) { k = vals[i].length; vals[i].push(v); vIdx[i].set(v, k) } return k }),
+    ])
+    const leadRows = { keys: LEAD_KEYS, questions: qs, values: vals, rows, capped: e.allCapped }
+    const { seg, byPipe, loc, all, allCapped, ...rest } = e
+    return { ...rest, capturedQuestions: seg.size, questions, byPipeline, locations, campaigns: [...fu.campaigns], adsets: [...fu.adsets], creatives: [...fu.creatives], segments, leadRows }
   })
   // Pipelines carry their ordered stages (id + name + position) so the frontend
   // can map configured key events to stage positions for the per-answer funnel.

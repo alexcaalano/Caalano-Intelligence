@@ -18,6 +18,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.502.0 - 2026-09-08 · `PENDING` - Forms: ideal client, cross-question filter, export
+
+- **Ideal client per form.** Inside each form, an Ideal client panel lists
+  every multiple-choice question with its answers as chips. Pick the answers
+  that describe the client you want, save, and the tab shows how many of
+  this period's leads fit and how they convert against everyone else, with
+  the key events beside them. An Ideal client column and tile appear on the
+  forms table once a profile is saved.
+- **Filter across questions.** Every answer has a filter button. Turn one on
+  and every other question, its chart and its people list narrow to the
+  leads who gave that answer. Stack as many as you like; the bar at the top
+  says how many leads remain and clears in one click.
+- **Export CSV.** One row per lead across the forms shown, with status,
+  pipeline, stage, value, booked, shown, won, each key event, ideal-client
+  fit, channel, campaign, ad set, creative, created date and every answer as
+  a column. Admins only.
+- The forms feed now carries every lead's answers compactly, so the answer
+  counts and people lists come from all leads rather than the first eighty.
+
+---
+
 ## v3.501.0 - 2026-09-06 · `1411f9c` - Client column keeps only the logo when scrolled on a phone
 
 On a phone, once the agency client table is scrolled sideways, the frozen

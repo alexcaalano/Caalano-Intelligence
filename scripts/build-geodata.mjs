@@ -17,13 +17,23 @@
 //               Offbeatmammal/AU_Postcode_Map. © Commonwealth of Australia
 //               (Australian Bureau of Statistics), CC BY 4.0.
 //   Regions     matthewproctor/australianpostcodes, a community dataset carrying
-//               the ABS SA4 and LGA name for every postcode. CC BY 4.0.
+//               the ABS SA4 and SA3 name for every postcode. CC BY 4.0.
+//   Councils    ABS Local Government Areas 2022 (ASGS Edition 3), via the
+//               simplified copy published by geoBoundaries (wmgeolab). © Commonwealth
+//               of Australia (Australian Bureau of Statistics), CC BY 4.0. Each
+//               postcode is filed under the council most of its area sits in, worked
+//               out here by overlaying the two boundary sets - the community dataset
+//               carries a council name per postcode too, but it is wrong often enough
+//               to matter (it filed Castle Hill under Hornsby and Baulkham Hills under
+//               Parramatta), so it is only the fallback for a postcode with no shape.
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 
 const POA_URL = 'https://raw.githubusercontent.com/Offbeatmammal/AU_Postcode_Map/main/POA_2021_AUST_GDA2020_15percent.json'
 const PC_URL = 'https://raw.githubusercontent.com/matthewproctor/australianpostcodes/master/australian_postcodes.json'
+// Stored in Git LFS, so the raw.githubusercontent.com path only returns a pointer.
+const LGA_URL = 'https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/AUS/ADM2/geoBoundaries-AUS-ADM2_simplified.geojson'
 const OUT = path.join(process.cwd(), 'src', 'data')
 
 // The SA4s that make up each Greater Capital City Statistical Area. Taken from
@@ -87,9 +97,75 @@ function ring(r) {
   return ded.length >= 4 ? ded : null
 }
 
+// --- postcode -> council by area ------------------------------------------------
+// Which council a postcode belongs to, decided by where its area actually is: a
+// grid of points is laid over each postcode's boundary and every point inside it
+// is looked up against the council boundaries. The council holding the most
+// points wins, and its share is kept so a genuinely split postcode can be told
+// apart from a clean one. Point-in-polygon with holes, bounding boxes to skip
+// councils that cannot contain the point.
+const bboxOf = (rings) => { let a = 1e9, b = 1e9, c = -1e9, d = -1e9; for (const r of rings) for (const [x, y] of r) { if (x < a) a = x; if (y < b) b = y; if (x > c) c = x; if (y > d) d = y } return [a, b, c, d] }
+const inRing = (x, y, r) => {
+  let inside = false
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const xi = r[i][0], yi = r[i][1], xj = r[j][0], yj = r[j][1]
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+const polysOf = (g) => (!g ? [] : g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : []).map((p) => ({ outer: p[0], holes: p.slice(1), bb: bboxOf([p[0]]) }))
+const inShape = (x, y, polys) => {
+  for (const p of polys) {
+    if (x < p.bb[0] || x > p.bb[2] || y < p.bb[1] || y > p.bb[3]) continue
+    if (inRing(x, y, p.outer) && !p.holes.some((h) => inRing(x, y, h))) return true
+  }
+  return false
+}
+// Planar area of a shape in square degrees with longitude scaled to the latitude,
+// good enough for comparing shares; holes subtracted.
+const ringArea = (r) => { let a = 0; for (let i = 0, j = r.length - 1; i < r.length; j = i++) a += (r[j][0] + r[i][0]) * (r[j][1] - r[i][1]); return Math.abs(a / 2) }
+const shapeArea = (polys) => polys.reduce((t, p) => { const lat = (p.bb[1] + p.bb[3]) / 2, k = Math.cos((lat * Math.PI) / 180); return t + k * (ringArea(p.outer) - p.holes.reduce((h, r) => h + ringArea(r), 0)) }, 0)
+// The state suffix geoBoundaries adds to a council whose name is used in more
+// than one state ("Bayside (Vic.)"). The state is carried separately.
+const lgaName = (n) => String(n || '').replace(/\s*\((NSW|Vic\.|Qld|SA|WA|Tas\.|NT|ACT)\)$/, '')
+function poaToLga(poa, lga) {
+  const areas = lga.features.map((f) => ({ name: lgaName(f.properties.shapeName), polys: polysOf(f.geometry) })).filter((a) => a.name && a.polys.length)
+  const lgaArea = {}
+  for (const a of areas) { a.bb = bboxOf(a.polys.map((p) => p.outer)); lgaArea[a.name] = (lgaArea[a.name] || 0) + shapeArea(a.polys) }
+  const out = {}
+  for (const f of poa.features) {
+    const polys = polysOf(f.geometry); if (!polys.length) continue
+    const bb = bboxOf(polys.map((p) => p.outer))
+    const cands = areas.filter((a) => !(a.bb[2] < bb[0] || a.bb[0] > bb[2] || a.bb[3] < bb[1] || a.bb[1] > bb[3]))
+    // Finer grids for small postcodes, so a CBD block still gets enough points
+    // to be judged; coarser for the outback ones that would otherwise take minutes.
+    let n = 24, tally = null, total = 0
+    while (n <= 96) {
+      tally = new Map(); total = 0
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+        const x = bb[0] + ((i + 0.5) / n) * (bb[2] - bb[0]), y = bb[1] + ((j + 0.5) / n) * (bb[3] - bb[1])
+        if (!inShape(x, y, polys)) continue
+        total++
+        const a = cands.find((c) => inShape(x, y, c.polys))
+        if (a) tally.set(a.name, (tally.get(a.name) || 0) + 1)
+      }
+      if (total >= 40) break
+      n *= 2
+    }
+    if (!tally.size) continue
+    const [name, hits] = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]
+    const shares = {}; for (const [k, v] of tally) shares[k] = v / total
+    out[f.properties.POA_CODE21] = { name, share: Math.round((hits / total) * 100), shares, area: shapeArea(polys) }
+  }
+  return { by: out, lgaArea, areas }
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true })
-  const [poa, pcs] = await Promise.all([getJson(POA_URL, 'postcode boundaries'), getJson(PC_URL, 'postcode regions')])
+  const [poa, pcs, lga] = await Promise.all([getJson(POA_URL, 'postcode boundaries'), getJson(PC_URL, 'postcode regions'), getJson(LGA_URL, 'council boundaries')])
+  process.stdout.write('overlaying postcodes on councils… ')
+  const { by: lgaOf, lgaArea, areas: lgaShapes } = poaToLga(poa, lga)
+  console.log(`${Object.keys(lgaOf).length} postcodes placed`)
 
   // --- shapes ---------------------------------------------------------------
   const shapes = {}
@@ -126,16 +202,18 @@ async function main() {
   //             real communities. Measurably the tighter grouping - a median
   //             spread of 8km around its own centre against the council list's
   //             23km, and fewer scattered groups.
-  //   council   the LGA name, which is what people ask for by name even though
-  //             the source assigns some postcodes to a neighbouring council.
+  //   council   the LGA, which is what people ask for by name. A postcode goes
+  //             to the council most of its area sits in (see poaToLga); the
+  //             community dataset's own council column is only used for the few
+  //             postcodes that have no boundary to overlay.
   //
   // Both are emitted and the UI lets you switch, with the caveat stated there.
-  const build = (field) => {
+  const build = (nameOf) => {
     const byState = new Map()
     for (const r of live) {
       const st = r.state
       const grp = GREATER[st] && GREATER[st].sa4.includes(String(r.sa4)) ? GREATER[st].label : `Rest of ${STATE_NAME[st] || st}`
-      const name = r[field]
+      const name = nameOf(r)
       if (!name) continue
       let m = byState.get(st); if (!m) { m = new Map(); byState.set(st, m) }
       let e = m.get(name); if (!e) { e = { st, name, pcs: new Set(), groups: new Map() }; m.set(name, e) }
@@ -154,8 +232,45 @@ async function main() {
     })).sort((a, b) => a.s.localeCompare(b.s) || a.g.localeCompare(b.g) || a.n.localeCompare(b.n))
   }
   for (const r of live) if (r.locality && !sub2pc[r.locality.toUpperCase()]) sub2pc[r.locality.toUpperCase()] = r.postcode
-  const districts = build('sa3name')
-  const councils = build('lgaregion')
+  const districts = build((r) => r.sa3name)
+  const councils = build((r) => (lgaOf[r.postcode] ? lgaOf[r.postcode].name : r.lgaregion))
+  // A council smaller than the postcode around it (Orange inside 2800, which is
+  // mostly Cabonne) wins no postcode outright and would vanish from the list.
+  // It is kept, carrying every postcode that holds at least a fifth of the
+  // council's own area, and flagged (b) so the app knows those postcodes belong
+  // first to a neighbour: the picker still offers them, the per-postcode index
+  // does not let them override the majority council.
+  const named = new Set(councils.map((c) => c.n))
+  const cover = {}                  // council -> postcode -> share of the council's area
+  for (const [pc, o] of Object.entries(lgaOf)) for (const [c, sh] of Object.entries(o.shares)) { if (!lgaArea[c]) continue; (cover[c] = cover[c] || {})[pc] = (sh * o.area) / lgaArea[c] }
+  let borrowed = 0
+  for (const c of Object.keys(lgaArea)) {
+    if (named.has(c)) continue
+    const pcs = Object.entries(cover[c] || {}).filter(([, sh]) => sh >= 0.2).map(([pc]) => pc).filter((pc) => live.some((r) => r.postcode === pc))
+    if (!pcs.length) continue
+    const rows = live.filter((r) => pcs.includes(r.postcode))
+    const top = (xs) => [...xs.reduce((m, x) => m.set(x, (m.get(x) || 0) + 1), new Map()).entries()].sort((a, b) => b[1] - a[1])[0][0]
+    // The state comes from the localities that actually sit inside the council,
+    // not from the postcode as a whole: 0872 is mostly NT localities, but the
+    // APY Lands council inside it is in SA.
+    const shape = lgaShapes.find((a) => a.name === c)
+    const inside = shape ? rows.filter((r) => inShape(Number(r.long), Number(r.lat), shape.polys)) : []
+    const base = inside.length ? inside : rows
+    const st = top(base.map((r) => r.state))
+    const g = top(base.map((r) => (GREATER[r.state] && GREATER[r.state].sa4.includes(String(r.sa4)) ? GREATER[r.state].label : `Rest of ${STATE_NAME[r.state] || r.state}`)))
+    councils.push({ s: st, n: c, p: pcs.sort(), g, b: true }); borrowed++
+  }
+  councils.sort((a, b) => a.s.localeCompare(b.s) || a.g.localeCompare(b.g) || a.n.localeCompare(b.n))
+  // How much the overlay disagrees with the community dataset's council column,
+  // and which postcodes are a real split rather than a clean fit.
+  const moved = [], split = []
+  for (const pc of new Set(live.map((r) => r.postcode))) {
+    const o = lgaOf[pc]; if (!o) continue
+    const src = (live.find((r) => r.postcode === pc) || {}).lgaregion
+    if (src && src !== o.name) moved.push(pc)
+    if (o.share < 60) split.push(`${pc} ${o.name} ${o.share}%`)
+  }
+  console.log(`councils         ${moved.length} postcodes differ from the community dataset's council column; ${split.length} sit less than 60% in their council; ${borrowed} councils kept on borrowed postcodes`)
   const regions = districts
   // ABS Remoteness Areas: the official measure of how far a place sits from
   // services, and the only defensible basis for calling somewhere metro, regional
@@ -171,7 +286,7 @@ async function main() {
     ra,
     raLabels: { 1: 'Major cities', 2: 'Inner regional', 3: 'Outer regional', 4: 'Remote', 5: 'Very remote' },
     sub2pc,
-    attribution: 'Boundaries and region names: Australian Bureau of Statistics, ASGS Edition 3 (CC BY 4.0).',
+    attribution: 'Boundaries and region names: Australian Bureau of Statistics, ASGS Edition 3 and Local Government Areas 2022 (CC BY 4.0), council boundaries via geoBoundaries.',
   }
   const regJson = JSON.stringify(out)
   fs.writeFileSync(path.join(OUT, 'auregions.json'), regJson)

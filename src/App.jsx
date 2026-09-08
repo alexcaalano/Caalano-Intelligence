@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.502.0'
+const APP_VERSION = '3.503.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -9696,10 +9696,17 @@ function areaIndexOf(regions) {
   if (!regions) return null
   const idx = new Map()
   for (const kind of ['districts', 'councils']) {
-    for (const r of (regions[kind] || [])) {
+    // A council flagged b (borrowed) is smaller than the postcode around it and
+    // lists that postcode so it can be picked, but the postcode belongs first to
+    // the council most of its area sits in - so borrowed entries go last and
+    // never override one already set.
+    const list = [...(regions[kind] || [])].sort((a, b) => (a.b ? 1 : 0) - (b.b ? 1 : 0))
+    for (const r of list) {
       for (const p of r.p) {
         let e = idx.get(p); if (!e) { e = {}; idx.set(p, e) }
-        e[kind === 'districts' ? 'district' : 'council'] = r.n
+        const key = kind === 'districts' ? 'district' : 'council'
+        if (r.b && e[key]) continue
+        e[key] = r.n
         e.state = r.s
         e.stateName = STATE_FULL[r.s] || r.s
       }
@@ -9773,7 +9780,7 @@ function RegionPicker({ regions, onAdd, existing, ownZone, setOwnZone, zoneName 
         <input type="checkbox" checked={ownZone} onChange={(e) => setOwnZone(e.target.checked)} />
         <span>Add each area as <b>its own zone</b>, named after it - so the Location tab reports leads per area rather than one combined total.{ownZone ? '' : ` Unticked, everything is added to ${zoneName}.`}</span>
       </label>
-      <p className="cap geo-reg-note">Postcodes do not line up with council boundaries, so an area here is the set of postcodes that mostly sit in it, not an exact match. <b>District</b> is the ABS statistical area and groups postcodes about three times more tightly than the council list, which files a few postcodes under a neighbouring council - so check what gets added and trim it on the map below.</p>
+      <p className="cap geo-reg-note">Postcodes do not line up with council boundaries, so an area here is the set of postcodes that mostly sit in it, not an exact match: each postcode is filed under the council holding the largest share of its area, worked out from the ABS boundaries. A postcode split between two councils is listed under one - so check what gets added and trim it on the map below. <b>District</b> is the ABS statistical area and groups postcodes about three times more tightly.</p>
       <div className="geo-reg-list">
         {!list.length ? <p className="cap" style={{ margin: 0 }}>No councils match “{q}”.</p>
           : list.map((r) => {
@@ -9781,7 +9788,7 @@ function RegionPicker({ regions, onAdd, existing, ownZone, setOwnZone, zoneName 
             const all = already === r.p.length
             return (
               <button key={`${r.s}${r.n}`} type="button" className={`geo-reg-item${all ? ' in' : ''}`}
-                title={all ? 'Every postcode in this council is already in the zone' : `Add ${r.p.length - already} postcodes to the zone`}
+                title={all ? 'Every postcode in this council is already in the zone' : `Add ${r.p.length - already} postcodes to the zone${r.b ? ' - this council is smaller than the postcodes around it, so they cover the neighbouring council too' : ''}`}
                 disabled={all} onClick={() => onAdd(r)}>
                 <b>{r.n}</b>
                 <span>{fmtNumber(r.p.length)} postcode{r.p.length === 1 ? '' : 's'}{already && !all ? ` · ${fmtNumber(already)} already in` : ''}{all ? ' · all added' : ''}</span>

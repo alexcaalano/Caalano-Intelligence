@@ -18,7 +18,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.502.0 - 2026-09-08 · `c584d8f` - Forms: ideal client, cross-question filter, export
+## v3.503.0 - 2026-09-08 · `PENDING` - Councils rebuilt from the ABS boundaries
+
+- **Council mapping corrected.** 2154 (Castle Hill) sat under Hornsby, 2153
+  (Baulkham Hills) under Parramatta, 2155 (Kellyville) under Blacktown, and
+  the same fault ran across Sydney and the rest of the country: the community
+  dataset's council column was wrong for roughly a third of all postcodes.
+  Councils are now worked out by laying the ABS postcode boundaries over the
+  ABS Local Government Area boundaries (LGA 2022, via geoBoundaries) and
+  filing each postcode under the council holding the largest share of its
+  area. The Hills now carries 2125, 2153, 2154, 2155 and 2156.
+- **Small councils kept.** A council smaller than the postcode around it
+  (Orange inside 2800, which is mostly Cabonne) no longer vanishes: it is
+  listed with the postcodes that cover it, flagged so the picker still offers
+  it while lead grouping keeps the postcode with its majority council.
+- Every existing zone keeps its postcodes; only the council picker and the
+  council grouping on Lead locations read the new mapping. Districts, states
+  and remoteness are unchanged. The catchment note and attribution updated.
+
+ · `c584d8f` - Forms: ideal client, cross-question filter, export
 
 - **Ideal client per form.** Inside each form, an Ideal client panel lists
   every multiple-choice question with its answers as chips. Pick the answers

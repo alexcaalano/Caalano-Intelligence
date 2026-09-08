@@ -1,4 +1,5 @@
 const ROOT = new URL('../', import.meta.url).pathname
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 const req = createRequire(import.meta.url)
 const reg = req(ROOT + 'src/data/auregions.json')
@@ -55,13 +56,42 @@ for (const [kind, list] of [['districts', reg.districts], ['councils', reg.counc
 // The Hills Shire should carry the postcodes anyone would expect.
 const hills = reg.councils.find((r) => r.s === 'NSW' && r.n === 'The Hills')
 ok(hills, 'The Hills council is present')
-// The documented limitation, asserted rather than wished away: every postcode is
-// filed under exactly ONE area, so a council whose postcodes are shared with its
-// neighbours comes back small. The Hills gets four, because 2153/2154/2155 are
-// filed under Parramatta, Hornsby and Blacktown. This is why the UI says to check
-// what was added and trim it, and why districts are the default.
-ok(hills.p.length >= 3, `The Hills carries the postcodes filed to it (${hills.p.length})`)
-ok(!hills.p.includes('2155'), 'and 2155 is filed under Blacktown by the source, not The Hills - the known limitation')
+// Councils come from overlaying the ABS postcode and council boundaries, each
+// postcode filed under the council holding most of its area. The community
+// dataset's own council column filed Castle Hill under Hornsby, Baulkham Hills
+// under Parramatta and Kellyville under Blacktown; the overlay does not.
+for (const pc of ['2153', '2154', '2155', '2156']) ok(hills.p.includes(pc), `The Hills carries ${pc}`)
+const nswC = (n) => reg.councils.find((r) => r.s === 'NSW' && r.n === n)
+ok(!nswC('Hornsby').p.includes('2154'), '2154 is not filed under Hornsby')
+ok(!nswC('Parramatta').p.includes('2153'), '2153 is not filed under Parramatta')
+ok(!nswC('Blacktown').p.includes('2155'), '2155 is not filed under Blacktown')
+ok(nswC('Ku-ring-gai').p.includes('2076') && nswC('Woollahra').p.includes('2030') && nswC('Inner West').p.includes('2042'), 'Wahroonga, Vaucluse and Newtown sit under their real councils')
+// A council smaller than the postcode around it is kept on borrowed postcodes and
+// flagged, so the picker offers it while the per-postcode index keeps the majority.
+const orange = nswC('Orange')
+ok(orange && orange.b === true && orange.p.includes('2800'), 'Orange is kept, flagged as borrowed, carrying 2800')
+ok(nswC('Cabonne').p.includes('2800') && !nswC('Cabonne').b, '2800 still belongs first to Cabonne')
+// (A council straddling a state border is listed once per state, as before, so
+// the check is on distinct council names.)
+const perPc = {}; for (const r of reg.councils) if (!r.b) for (const p of r.p) (perPc[p] = perPc[p] || new Set()).add(r.n)
+eq(Object.values(perPc).filter((v) => v.size > 1).length, 0, 'no postcode is filed under two majority councils')
+ok(reg.councils.filter((r) => r.b).length < 40, `only a handful of councils are borrowed (${reg.councils.filter((r) => r.b).length})`)
+{
+  // The app's index must prefer the majority council over a borrowed one.
+  const src = fs.readFileSync(ROOT + 'src/App.jsx', 'utf8')
+  const lift = (name) => {
+    const a = src.indexOf(`function ${name}(`); if (a < 0) throw new Error('missing ' + name)
+    let i = src.indexOf('{', src.indexOf(')', a)), depth = 0
+    for (; i < src.length; i++) { const c = src[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) break } }
+    return src.slice(a, i + 1)
+  }
+  const areaIndexOf = new Function("const RA_BUCKET = { 1: 'Metro', 2: 'Regional', 3: 'Rural', 4: 'Remote', 5: 'Remote' }; const STATE_FULL = { NSW: 'New South Wales' }\n" + lift('areaIndexOf') + '\nreturn areaIndexOf')()
+  const idx = areaIndexOf(reg)
+  eq(idx.get('2800').council, 'Cabonne', 'the index files 2800 under Cabonne, not borrowed Orange')
+  eq(idx.get('2154').council, 'The Hills', 'the index files 2154 under The Hills')
+  const small = areaIndexOf({ districts: [], councils: [{ s: 'NSW', n: 'Small', p: ['2800'], g: 'x', b: true }, { s: 'NSW', n: 'Big', p: ['2800'], g: 'x' }] })
+  eq(small.get('2800').council, 'Big', 'a borrowed council listed first still loses to the majority one')
+}
 
 // --- boundaries
 ok(Object.keys(poa).length > 2500, `boundaries for most postcodes (${Object.keys(poa).length})`)

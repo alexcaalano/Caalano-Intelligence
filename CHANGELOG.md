@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.503.0 - 2026-09-08 · `PENDING` - Councils rebuilt from the ABS boundaries
+## v3.503.0 - 2026-09-08 · `e118892` - Councils rebuilt from the ABS boundaries
 
 - **Council mapping corrected.** 2154 (Castle Hill) sat under Hornsby, 2153
   (Baulkham Hills) under Parramatta, 2155 (Kellyville) under Blacktown, and

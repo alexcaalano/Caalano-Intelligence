@@ -4814,6 +4814,23 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-plat-tile span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
 .v2-plat-tile b { font-size: 22px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .v2-plat-tile small { font-size: 11.5px; color: var(--faint); }
+/* The platform table: a fixed platform column and the rest shared evenly, so
+   the figures line up under their headers instead of bunching to the right;
+   the formula under each derived column; CAC and ROAS tinted. */
+.v2-plat-tbl { table-layout: fixed; min-width: 760px; margin-top: 4px; }
+.v2-plat-tbl th.lft, .v2-plat-tbl td.lft { width: 176px; }
+.v2-plat-tbl th, .v2-plat-tbl td { padding-top: 9px; padding-bottom: 9px; }
+.v2-plat-tbl thead th { vertical-align: bottom; padding-bottom: 7px; border-bottom: 2px solid var(--border-2); }
+.v2-plat-tbl .v2-plat-h { display: block; font-size: 10.5px; }
+.v2-plat-tbl thead th small { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--faint); }
+.v2-plat-tbl tbody td { font-size: 13px; white-space: nowrap; }
+.v2-plat-tbl th.key, .v2-plat-tbl td.key { background: color-mix(in srgb, var(--brand) 7%, transparent); }
+.v2-plat-tbl td.key { font-weight: 700; }
+.v2-plat-tbl td.v2-plat-note { text-align: left; padding-left: 14px; color: var(--faint); font-style: italic; }
+.v2-plat-tbl tr.v2-plat-quiet td { color: var(--faint); }
+.v2-plat-tbl td.v2-plat-ttc small { margin-left: 3px; font-size: 11px; font-weight: 500; color: var(--faint); }
+.v2-plat-tbl tr.tot td { font-weight: 700; border-top: 2px solid var(--border-2); border-bottom: 0; }
+.v2-plat-tbl tr.tot td.lft b { font-weight: 800; }
 .v2-plat-n { display: block; font-size: 10.5px; color: var(--faint); font-weight: 500; }
 .v2-plat-notes { margin: 12px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 .v2-plat-notes li + li { margin-top: 4px; }

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.503.0'
+const APP_VERSION = '3.504.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -6888,28 +6888,49 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
         <div className="v2-plat-tile"><span>Avg deal</span><b>{totWon ? m0(totRev / totWon) : '-'}</b><small>{fmtNumber(totWon)} won deals</small></div>
         <div className="v2-plat-tile"><span>Avg time to close</span><b>{days(ttAll.length ? ttAll.reduce((a, v) => a + v, 0) / ttAll.length : null)}</b><small>{fmtNumber(ttAll.length)} deals with usable dates</small></div>
       </div>
-      <div className="tbl-scroll"><table className="mini-tbl users-tbl v2-tbl">
+      {/* One row per platform, the formula under each derived column, CAC and
+          ROAS tinted as the columns the drill exists for. A platform with
+          nothing this period, or no win yet, says so in one cell rather than
+          a row of dashes and $0.00s. */}
+      <div className="tbl-scroll"><table className="mini-tbl users-tbl v2-plat-tbl">
         <thead>
-          <tr className="v2-grp"><th className="lft"></th><th colSpan={3}><span>Volume</span></th><th colSpan={2}><span>Money</span></th><th colSpan={2}><span>Return</span></th><th><span>Speed</span></th></tr>
-          <tr><th className="lft">Platform</th><th>Spend</th><th>Leads</th><th>Won</th><th>Revenue</th><th title="Revenue ÷ won deals">Avg deal</th><th title="Spend ÷ won deals">CAC</th><th title="Revenue ÷ spend">ROAS</th><th title="Average days from the lead arriving to being marked won, over the won deals listed">Time to close</th></tr>
+          <tr>
+            <th className="lft">Platform</th>
+            <th><span className="v2-plat-h">Spend</span></th>
+            <th><span className="v2-plat-h">Leads</span></th>
+            <th><span className="v2-plat-h">Won</span></th>
+            <th><span className="v2-plat-h">Revenue</span></th>
+            <th><span className="v2-plat-h">Avg deal</span><small>revenue ÷ won</small></th>
+            <th className="key"><span className="v2-plat-h">CAC</span><small>spend ÷ won</small></th>
+            <th className="key"><span className="v2-plat-h">ROAS</span><small>revenue ÷ spend</small></th>
+            <th><span className="v2-plat-h">Time to close</span><small>lead to won</small></th>
+          </tr>
         </thead>
         <tbody>
-          {rows.map((r) => <tr key={r.k}>
-            <td className="lft"><span className="bn-src"><i style={{ background: r.k === 'other' ? '#c98500' : sourceDotChan(r.k) }} />{r.label}</span></td>
-            <td>{r.spend == null ? <span className="lrv-z" title="No ad spend is attributed to organic, referral or direct leads">no spend</span> : r.spend === 0 ? <span className="lrv-z" title="No spend came back for this platform in this scope. If the ad read failed, the note at the top of the page says so.">$0</span> : m0(r.spend)}</td>
-            <td>{fmtNumber(r.leads)}</td>
-            <td>{fmtNumber(r.won)}</td>
-            <td>{m0(r.revenue)}</td>
-            <td>{r.avgDeal != null ? m0(r.avgDeal) : '-'}</td>
-            <td>{r.cac != null ? m0(r.cac) : <span className="lrv-z">-</span>}</td>
-            <td>{r.roas != null ? `${r.roas.toFixed(1)}x` : <span className="lrv-z">-</span>}</td>
-            <td>{days(r.avgClose)}{r.n ? <small className="v2-plat-n">{fmtNumber(r.n)} {r.n === 1 ? 'deal' : 'deals'}</small> : null}</td>
-          </tr>)}
-          <tr className="tot"><td className="lft"><b>All</b></td><td>{m0(totSpend)}</td><td>{fmtNumber(totLeads)}</td><td>{fmtNumber(totWon)}</td><td>{m0(totRev)}</td><td>{totWon ? m0(totRev / totWon) : '-'}</td><td>{blendedCac != null ? m0(blendedCac) : '-'}</td><td>{blendedRoas != null ? `${blendedRoas.toFixed(1)}x` : '-'}</td><td>{days(ttAll.length ? ttAll.reduce((a, v) => a + v, 0) / ttAll.length : null)}</td></tr>
+          {rows.map((r) => {
+            const spendCell = r.spend == null ? <span className="lrv-z" title="No ad spend is attributed to organic, referral or direct leads">–</span> : r.spend === 0 ? <span className="lrv-z" title="No spend came back for this platform in this scope. If the ad read failed, the note at the top of the page says so.">$0</span> : m0(r.spend)
+            const quiet = !r.leads && !r.won && !r.spend
+            return <tr key={r.k} className={quiet ? 'v2-plat-quiet' : ''}>
+              <td className="lft"><span className="bn-src"><i style={{ background: r.k === 'other' ? '#c98500' : sourceDotChan(r.k) }} />{r.label}</span></td>
+              <td>{spendCell}</td>
+              {quiet ? <td colSpan={7} className="v2-plat-note">Nothing this period - no leads, deals or spend</td> : <>
+                <td>{fmtNumber(r.leads)}</td>
+                <td>{fmtNumber(r.won)}</td>
+                {!r.won ? <td colSpan={5} className="v2-plat-note">No won deals yet{r.spend ? ' - CAC and ROAS need a win to divide into' : ''}</td> : <>
+                  <td>{m0(r.revenue)}</td>
+                  <td>{m0(r.avgDeal)}</td>
+                  <td className="key">{r.cac != null ? m0(r.cac) : <span className="lrv-z" title="No spend to divide by">no spend</span>}</td>
+                  <td className="key">{r.roas != null ? `${r.roas.toFixed(1)}x` : <span className="lrv-z" title="No spend to divide by">no spend</span>}</td>
+                  <td className="v2-plat-ttc">{days(r.avgClose)}{r.n ? <small>· {fmtNumber(r.n)} {r.n === 1 ? 'deal' : 'deals'}</small> : null}</td>
+                </>}
+              </>}
+            </tr>
+          })}
+          <tr className="tot"><td className="lft"><b>All</b></td><td>{m0(totSpend)}</td><td>{fmtNumber(totLeads)}</td><td>{fmtNumber(totWon)}</td><td>{m0(totRev)}</td><td>{totWon ? m0(totRev / totWon) : <span className="lrv-z">–</span>}</td><td className="key">{blendedCac != null ? m0(blendedCac) : <span className="lrv-z">–</span>}</td><td className="key">{blendedRoas != null ? `${blendedRoas.toFixed(1)}x` : <span className="lrv-z">–</span>}</td><td className="v2-plat-ttc">{days(ttAll.length ? ttAll.reduce((a, v) => a + v, 0) / ttAll.length : null)}{ttAll.length ? <small>· {fmtNumber(ttAll.length)} {ttAll.length === 1 ? 'deal' : 'deals'}</small> : null}</td></tr>
         </tbody></table></div>
       <ul className="v2-plat-notes">
         <li><b>Blended CAC</b> divides paid spend by every won deal, organic and referral included, so it sits below Meta's or Google's own CAC.</li>
-        <li><b>Organic, referral, direct</b> has no spend to divide by, so its CAC and ROAS are blank on purpose.</li>
+        <li><b>Organic, referral, direct</b> has no spend to divide by, so its CAC and ROAS read "no spend" on purpose.</li>
         <li><b>Time to close</b> is the average days from the lead arriving to being marked won, over the won deals in this period with usable dates.</li>
       </ul>
     </div>

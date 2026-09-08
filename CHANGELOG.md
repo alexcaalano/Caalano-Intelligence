@@ -18,7 +18,21 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.503.0 - 2026-09-08 · `e118892` - Councils rebuilt from the ABS boundaries
+## v3.504.0 - 2026-09-08 · `PENDING` - CAC and ROAS by platform, easier to read
+
+- **The platform table laid out properly.** The group header row that sat
+  out of line with the columns is gone. The platform column has a fixed
+  width and the eight figures share the rest evenly, so each number sits
+  under its heading. Derived columns carry their formula under the label
+  (revenue ÷ won, spend ÷ won, revenue ÷ spend). CAC and ROAS, the two
+  columns the drill exists for, are tinted and bold.
+- **Empty rows say what they mean.** A platform with no leads, deals or
+  spend reads "Nothing this period" in one cell instead of a row of $0.00s
+  and dashes; a platform with leads but no win yet reads "No won deals
+  yet". Organic's CAC and ROAS read "no spend" rather than a blank dash.
+- Time to close shows its deal count on the same line.
+
+ · `e118892` - Councils rebuilt from the ABS boundaries
 
 - **Council mapping corrected.** 2154 (Castle Hill) sat under Hornsby, 2153
   (Baulkham Hills) under Parramatta, 2155 (Kellyville) under Blacktown, and

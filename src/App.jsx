@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.518.0'
+const APP_VERSION = '3.519.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8387,12 +8387,12 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             {kef.usingKe && kef.rows.length && intel ? <ExecReach quiet={isViewer} reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={clientId} money={money} spend={chanSpend || 0} wonBasis={wonBasis} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
             <div className="cc-group-lab x-internal">Efficiency &amp; pipeline health{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
             <div className="scorecard exec-kpis v2-eff x-internal">
-              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
-              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
-              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
-              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
-              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
-              <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
+              <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '-'} cur={paidCpl} flat={paidCpl == null ? 'no paid leads in this view' : undefined} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead - paid attributed' })} />
+              <Kpi label="Cost / booked" value={cpBookedV != null ? money(cpBookedV) : '-'} cur={cpBookedV} flat={cpBookedV == null ? 'no ad spend in this view' : undefined} goodWhenDown onClick={tileClick({ kind: 'booking', title: 'Booked - by calendar' })} />
+              <Kpi label="Cost / won (paid)" value={paidCpa != null ? money(paidCpa) : '-'} cur={paidCpa} flat={paidCpa == null ? 'no paid wins in this view' : undefined} goodWhenDown onClick={tileClick({ kind: 'cpwon', title: 'Cost per won - paid attributed' })} />
+              <Kpi label="Open pipeline" value={openV != null ? fmtNumber(openV) : '-'} flat={openValV != null ? `${money(openValV)} in play` : ' '} onClick={tileClick({ kind: 'openvalue', title: 'Open pipeline' })} />
+              <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
+              <Kpi label="Result rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ resulted" onClick={tileClick({ kind: 'close', title: 'Result rate - by channel' })} />
             </div>
           </>
           {cashOn && cc ? (() => {

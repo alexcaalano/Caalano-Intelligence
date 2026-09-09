@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.519.0 - 2026-09-09 · `PENDING` - Efficiency row shows its six tiles
+
+- **The Efficiency & pipeline health row showed "Ad spend" six times.** The
+  row was cut in v3.482.0 with six copies of the Ad spend tile in place of the
+  tiles the release notes promised. It now shows Cost / lead (paid), Cost /
+  booked, Cost / won (paid), Open pipeline, Lost and Result rate, each opening
+  the same drill as before, with a plain note instead of a dash when there is
+  no ad spend or no paid lead in the view. Ad spend keeps its place in the
+  headline row above.
+
+---
+
 ## v3.518.0 - 2026-09-09 · `aa959d4` - Opportunities bar splits by CRM attribution
 
 - **The Opportunities row in Key event reach now splits by the CRM's own

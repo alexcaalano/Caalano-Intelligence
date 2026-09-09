@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.510.0 - 2026-09-09 · `PENDING` - No intelligence for viewers
+## v3.510.0 - 2026-09-09 · `c1d71c6` - No intelligence for viewers
 
 - **Viewers see figures only.** On the Caalano360 tab the story cards, the
   biggest-leak callout on the key event reach, Biggest movers, Over- and

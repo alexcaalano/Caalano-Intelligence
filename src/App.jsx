@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.510.0'
+const APP_VERSION = '3.511.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -17714,6 +17714,40 @@ function allowedTabsFE(user, offered) {
   return keep.length ? keep : offered.slice(0, 1)
 }
 const ROLE_LABEL = { superadmin: 'Super Admin', admin: 'Admin', user: 'User', viewer: 'Viewer' }
+// Super Admin only: pick a person, or a role, and see the app as they do. The
+// people come from the same users list Settings shows; the two role presets
+// stand in for "a typical viewer" and "a typical admin" when no one specific
+// is being checked.
+// A function, not a constant: VIEWER_DEFAULT_TABS is declared further down the
+// file, and a module-scope constant here would read it before it exists.
+const viewAsPresets = () => [
+  { key: 'role:viewer', label: 'Any viewer · default tabs, every client', user: { email: 'viewer@view-as', name: 'A viewer', role: 'viewer', allClients: true, clients: [], tabs: VIEWER_DEFAULT_TABS, reports: false } },
+  { key: 'role:admin', label: 'Any admin', user: { email: 'admin@view-as', name: 'An admin', role: 'admin', allClients: true, clients: [] } },
+]
+function ViewAsControl({ current, onViewAs }) {
+  const [users, setUsers] = useState(null)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open || users != null) return
+    let alive = true
+    authApi('users').then((r) => { if (alive) setUsers(r && r.ok ? (r.users || []).filter((u) => u.status !== 'disabled' && u.role !== 'superadmin') : []) })
+    return () => { alive = false }
+  }, [open, users])
+  if (current) return <div className="side-viewas on"><span className="side-viewas-l">Viewing as <b>{current.name || current.email}</b></span><button type="button" onClick={() => onViewAs(null)}>Exit</button></div>
+  if (!open) return <div className="side-viewas"><button type="button" className="side-viewas-btn" onClick={() => setOpen(true)} title="Super Admin only. See the app exactly as another person sees it - their role, clients, tabs and sections. Your own sign-in and data access stay yours.">👁 View as…</button></div>
+  const pickValue = (v) => {
+    if (!v) return
+    const p = viewAsPresets().find((x) => x.key === v)
+    const u = p ? p.user : (users || []).find((x) => x.email === v)
+    if (u) onViewAs({ email: u.email, name: u.name, role: u.role, clients: u.clients || [], allClients: u.allClients !== false, tabs: u.tabs, reports: u.reports === true })
+    setOpen(false)
+  }
+  return <div className="side-viewas"><select autoFocus onChange={(e) => pickValue(e.target.value)} onBlur={() => setOpen(false)} aria-label="View as">
+    <option value="">{users == null ? 'Loading people…' : 'Choose a person or a role'}</option>
+    {viewAsPresets().map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+    {(users || []).map((u) => <option key={u.email} value={u.email}>{u.name || u.email} · {ROLE_LABEL[u.role] || u.role}</option>)}
+  </select></div>
+}
 function LoginForm({ onSignedIn }) {
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
@@ -23024,7 +23058,7 @@ function rangeFromUrl(u) {
 }
 const wbPatch = (wb) => ({ wb: wb === 'created' ? 'created' : null })
 
-function Dashboard({ authUser, authEnabled, onLogout }) {
+function Dashboard({ authUser, authEnabled, onLogout, realUser, onViewAs }) {
   const [data, setData] = useState(null)
   const [config, setConfig] = useState(null)
   const [err, setErr] = useState(null)
@@ -23174,7 +23208,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
       {/* Records where this person is. A component rather than a hook call in
           Dashboard: Dashboard returns early while data loads, so a hook here
           would change the hook count between renders. */}
-      <NavAudit on={!!(authEnabled && authUser)} view={curView} clientId={curPicked && curPicked.id} tab={curView === 'clients' ? clientTab : null} />
+      <NavAudit on={!!(authEnabled && authUser && !authUser.viewAs)} view={curView} clientId={curPicked && curPicked.id} tab={curView === 'clients' ? clientTab : null} />
       {navOpen && <div className="nav-overlay" onClick={() => setNavOpen(false)} />}
       {collapsed && <button className="sb-expand" onClick={() => setCollapsed(false)} aria-label="Show sidebar" title="Show sidebar">»</button>}
       <aside className={`side ${navOpen ? 'open' : ''}`}>
@@ -23205,6 +23239,7 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
         </nav>
         <div className="side-foot">
           <button className={`settings-btn ${view === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><span className="ic"><NavIcon name="settings" /></span>Settings</button>
+          {realUser && realUser.role === 'superadmin' && onViewAs ? <ViewAsControl current={authUser && authUser.viewAs ? authUser : null} onViewAs={onViewAs} /> : null}
           {authUser && <div className="side-user"><span className="side-user-av">{(authUser.name || authUser.email || '?').trim().charAt(0).toUpperCase()}</span><div className="side-user-txt"><b>{authUser.name || authUser.email}</b><span>{ROLE_LABEL[authUser.role] || authUser.role}</span></div><button className="side-user-out" onClick={onLogout} title="Sign out">Sign out</button></div>}
           {/* Two deliberate lines rather than one that wraps mid-timestamp - the
               sidebar is too narrow to hold version, date and commit on one row. */}
@@ -23229,6 +23264,11 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
           <div className="logo logo-360 sm"><span>360</span></div>
           <b className="mtop-name">Caalano<span className="b360">360</span></b>
         </div>
+        {authUser && authUser.viewAs ? <div className="viewas-bar" role="status">
+          <span>👁 Viewing as <b>{authUser.name || authUser.email}</b> · {ROLE_LABEL[authUser.role] || authUser.role}{authUser.role !== 'superadmin' && authUser.allClients === false ? ` · ${(authUser.clients || []).length} client${(authUser.clients || []).length === 1 ? '' : 's'}` : ''}</span>
+          <span className="viewas-note">This is what they see. Your sign-in and data access stay yours, and any change you make here is a real change made as you.</span>
+          <button type="button" onClick={() => onViewAs(null)}>Exit view as</button>
+        </div> : null}
         <div className="head">
           <div>
             <h2>{curView === 'overview' ? 'Agency Overview' : curView === 'trends' ? 'Daily Performance' : curView === 'weekly' ? 'Weekly Traffic Light' : curView === 'forecast' ? 'Funnel Forecaster' : curView === 'cockpit' ? 'Creative Cockpit' : curView === 'curator' ? 'Creative Curator' : curView === 'insights' ? 'Meta Insights' : curView === 'update' ? 'Client Update' : curView === 'monthly' ? 'Monthly Report' : curView === 'social' ? 'Organic Social Media' : curView === 'reports' ? 'Monthly Reports' : curView === 'settings' ? 'Settings' : isViewer ? 'Your report' : 'Clients'}</h2>
@@ -23264,6 +23304,11 @@ function Dashboard({ authUser, authEnabled, onLogout }) {
 // straight through, preserving the app's previous single-password behaviour.
 export default function App() {
   const [auth, setAuth] = useState({ status: 'loading' })
+  // View as: a Super Admin sees the app exactly as another person does - their
+  // role, clients, tabs and sections - without signing in as them. Held in
+  // state only, so a reload is always yourself again; the session, and so the
+  // data access and every change made, stay the Super Admin's own.
+  const [viewAs, setViewAs] = useState(null)
   const inviteToken = (() => { try { return new URLSearchParams(window.location.search).get('invite') } catch { return null } })()
   const previewTerms = (() => { try { return new URLSearchParams(window.location.search).get('preview') === 'terms' } catch { return false } })()
   const check = () => authApi('me').then((r) => {
@@ -23295,6 +23340,7 @@ export default function App() {
   // everyone back through the gate - a signature stands until the minimum
   // accepted version is deliberately raised. The fallback covers an older
   // function still being live mid-deploy: sign only if nothing is on file.
+  const effUser = auth.enabled && viewAs && auth.user && auth.user.role === 'superadmin' ? { ...viewAs, viewAs: true } : auth.user
   const needsTerms = auth.user && (auth.user.needsTerms !== undefined ? auth.user.needsTerms : !auth.user.termsVersion)
   if (auth.enabled && auth.user && needsTerms) {
     return <TermsGate
@@ -23310,11 +23356,11 @@ export default function App() {
     return <TermsGate preview user={auth.user} onAccepted={() => {}} onLogout={() => { clearInvite(); window.location.reload() }} />
   }
   return (
-    <ViewerCtx.Provider value={!!(auth.enabled && auth.user && auth.user.role === 'viewer')}>
+    <ViewerCtx.Provider value={!!(auth.enabled && effUser && effUser.role === 'viewer')}>
       {/* Legacy single-password mode has no identity, so it counts as owner - the
           same rule `isSuper` uses everywhere else. */}
-      <SuperCtx.Provider value={!auth.enabled || !!(auth.user && auth.user.role === 'superadmin')}>
-        <Dashboard authUser={auth.user} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator />
+      <SuperCtx.Provider value={!auth.enabled || !!(effUser && effUser.role === 'superadmin')}>
+        <Dashboard key={effUser && effUser.viewAs ? 'as:' + effUser.email : 'me'} authUser={effUser} realUser={auth.user} onViewAs={auth.user && auth.user.role === 'superadmin' ? setViewAs : null} authEnabled={auth.enabled} onLogout={onLogout} /><GlobalLoadIndicator />
       </SuperCtx.Provider>
     </ViewerCtx.Provider>
   )

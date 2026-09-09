@@ -18,7 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.510.0 - 2026-09-09 · `c1d71c6` - No intelligence for viewers
+## v3.511.0 - 2026-09-09 · `PENDING` - View as, for Super Admins
+
+- **View as.** A Super Admin can pick any person from the users list, or a
+  role preset (any viewer, any admin), from the bottom of the sidebar and see
+  the app exactly as they do: their clients, their tabs, the sections and
+  intelligence their role gets, the Reports view if they have it. A banner
+  stays up while it is on, with one click to exit. It is held in memory only,
+  so a reload is always yourself again.
+- Your sign-in and data access stay your own while viewing as someone else,
+  and any change made is a real change made as you. Page views are not logged
+  while viewing as someone else.
+
+ · `c1d71c6` - No intelligence for viewers
 
 - **Viewers see figures only.** On the Caalano360 tab the story cards, the
   biggest-leak callout on the key event reach, Biggest movers, Over- and

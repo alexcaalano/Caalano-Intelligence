@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.518.0 - 2026-09-09 · `PENDING` - Opportunities bar splits by CRM attribution
+## v3.518.0 - 2026-09-09 · `aa959d4` - Opportunities bar splits by CRM attribution
 
 - **The Opportunities row in Key event reach now splits by the CRM's own
   attribution**, the same basis as every stage row under it and the Channels

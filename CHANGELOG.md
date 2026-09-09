@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.506.0 - 2026-09-09 · `PENDING` - A no-show counts as an appointment that occurred
+## v3.506.0 - 2026-09-09 · `e26d023` - A no-show counts as an appointment that occurred
 
 - **Show rate now includes no-shows in its denominator.** An appointment
   marked no-show is a resulted appointment: it occurred and the person did

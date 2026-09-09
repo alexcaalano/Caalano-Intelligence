@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.522.0 - 2026-09-09 · `PENDING` - Users: leaderboard first
+## v3.522.0 - 2026-09-09 · `d8872cc` - Users: leaderboard first
 
 - **The Leaderboard now sits directly under the scorecards on the Users
   tab**, ahead of the Won & revenue chart, the funnel by rep and the activity

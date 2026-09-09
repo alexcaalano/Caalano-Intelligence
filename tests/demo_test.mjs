@@ -3,7 +3,7 @@
 // toggle needs an opportunity field, Lost Reasons needs ids, Call Reporting
 // needs inbound calls, Analytics needs GA4 rows, the Google tab needs keywords.
 import { demoData, demoGhl, demoWindsor, DEMO_LOCATION, DEMO_GA4_PROP } from '../netlify/lib/demo.mjs'
-import { buildForms, buildCrm, buildUserCalls, buildCcDrill, buildSpeedToLead } from '../netlify/lib/ghl.mjs'
+import { buildForms, buildCrm, buildUserCalls, buildCcDrill, buildSpeedToLead, buildAppointmentInsights, buildCalPerf, buildUserPerformance } from '../netlify/lib/ghl.mjs'
 let n = 0, f = 0
 const ok = (c, m) => { n++; if (!c) { f++; console.log('FAIL:', m) } }
 const to = new Date().toISOString().slice(0, 10), from = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
@@ -59,6 +59,18 @@ ok(drill.bookingByCalendar.every((c) => (c.people || []).every((p) => [p.shown, 
 ok(drill.cash && drill.cash.collected > 0 && drill.cash.paidInFull > 0 && drill.cash.paidInFull < drill.cash.won, 'cash collected reads with some paid in full')
 const speed = await buildSpeedToLead(DEMO_LOCATION, from, to)
 ok(speed.contactRate.rate < 100 && speed.onlyAuto > 0, 'speed to lead sees unworked leads and auto-only leads')
+
+// One appointment rule on every tab: show rate = shown ÷ (shown + no-show),
+// cancelled is neither, unresulted = occurred with no result.
+const ai = await buildAppointmentInsights(DEMO_LOCATION, from, to)
+const A = ai.channels.all
+ok(A.showRate === Math.round((A.shown / (A.shown + A.noShow)) * 100), 'Appointments tab show rate is on resulted appointments')
+ok(A.unresulted === A.occurredNotResulted && A.occurred === A.shown + A.noShow + A.unresulted, 'Appointments tab: occurred = shown + no-show + unresulted')
+ok(A.byUser.every((u) => u.showRate == null || u.showRate === Math.round((u.shown / (u.shown + u.noShow)) * 100)), 'per-user show rate on the same basis')
+const cp = await buildCalPerf(DEMO_LOCATION, from, to)
+ok('unresulted' in cp.totals && cp.calendars.every((c) => c.unresulted >= 0), 'Calendars tab carries unresulted per calendar')
+const up = await buildUserPerformance(DEMO_LOCATION, from, to)
+ok(up.users.every((u) => u.showRate == null || u.showRate === Math.round((u.shown / (u.shown + u.noShow)) * 100)), 'Users tab show rate on resulted appointments')
 
 // Windsor surface
 ok(demoWindsor('googleanalytics4', ['account_id', 'sessions'], from, to)[0].account_id === DEMO_GA4_PROP, 'GA4 totals row')

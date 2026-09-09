@@ -18,7 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.507.0 - 2026-09-09 · `dd560e3` - Show rate on resulted appointments, cancellation rate, unresulted count
+## v3.508.0 - 2026-09-09 · `PENDING` - One appointment rule on every tab, with unresulted called out
+
+- **The same definitions now apply on the Appointments, Calendars and Users
+  tabs** as on the key-event tiles: occurred = reached its time and not
+  cancelled in advance; resulted = the team set showed or no-show; show
+  rate = shown ÷ resulted; unresulted = occurred with no result set.
+- **Unresulted is called out wherever appointments are reported.** A card
+  on the Appointments tab, a card and a column on the Calendars tab, a note
+  beside each rep's show rate on the Users tab, and the existing warning
+  and drill on the Appointments tab now name it: occurred but still
+  confirmed, so the team can see exactly which appointments need a status.
+- The Appointments tab no longer counts a cancelled appointment whose time
+  has passed as occurred, and recognises attended, arrived and completed as
+  shown alongside showed.
+
+ · `dd560e3` - Show rate on resulted appointments, cancellation rate, unresulted count
 
 - **Show rate is now shown ÷ resulted.** Resulted means the team set a
   result: showed or no-show. Appointments cancelled in advance, still to

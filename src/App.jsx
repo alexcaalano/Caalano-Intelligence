@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.507.0'
+const APP_VERSION = '3.508.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -10848,7 +10848,7 @@ function CalPerfView({ clientId, range, nonce }) {
   if (d.ghl === false || d.connected === false) return <div className="card empty-deep"><div className="big">🔌</div><b>Caalano Systems isn’t connected for this client.</b></div>
   const rows = d.calendars || []
   if (!rows.length) return <div className="card empty-deep"><div className="big">📅</div><b>No bookings on any calendar in this range.</b></div>
-  const pick = (r) => (ch === 'all' ? r : (r.byChannel || {})[ch] || { booked: 0, shown: 0, noShow: 0, cancelled: 0, showRate: null })
+  const pick = (r) => (ch === 'all' ? r : (r.byChannel || {})[ch] || { booked: 0, shown: 0, noShow: 0, unresulted: 0, cancelled: 0, showRate: null })
   const tot = ch === 'all' ? d.totals : (d.byChannel || {})[ch] || {}
   const shown = rows.map((r) => ({ r, v: pick(r) })).filter((x) => x.v.booked || x.v.shown || x.v.noShow || x.v.cancelled)
   const top = Math.max(...shown.map((x) => x.v.booked), 0)
@@ -10864,9 +10864,10 @@ function CalPerfView({ clientId, range, nonce }) {
       <div className="timing-scards cl-hero">
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(tot.booked)}</b><span className="tm-sub">{ch === 'all' ? 'all sources' : CALPERF_CH.find((c) => c.id === ch).label}</span></div>
         <div className="tm-sc"><span className="tm-lab">Attended</span><b>{fmtNumber(tot.shown)}</b><span className="tm-sub">marked as arrived / showed</span></div>
-        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{pct(tot.showRate)}</b><span className="tm-sub">of bookings with a known outcome</span></div>
+        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{pct(tot.showRate)}</b><span className="tm-sub">shown ÷ resulted (shown + no-show)</span></div>
         <div className="tm-sc warn"><span className="tm-lab">No-show</span><b>{fmtNumber(tot.noShow)}</b><span className="tm-sub">marked as no-show / DNA</span></div>
         <div className="tm-sc warn"><span className="tm-lab">Cancelled</span><b>{fmtNumber(tot.cancelled)}</b><span className="tm-sub">net of reschedules</span></div>
+        <div className={`tm-sc${tot.unresulted ? ' warn' : ''}`}><span className="tm-lab">Unresulted</span><b>{fmtNumber(tot.unresulted || 0)}</b><span className="tm-sub">occurred, no result set</span></div>
       </div>
 
       <div className="card">
@@ -10879,17 +10880,17 @@ function CalPerfView({ clientId, range, nonce }) {
           </div>
         ))}</div> : null}
         <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
-          <thead><tr><th className="lft">Calendar</th><th className="lft">Type</th><th>Booked</th><th>Attended</th><th>No-show</th><th>Cancelled</th><th>Show rate</th></tr></thead>
+          <thead><tr><th className="lft">Calendar</th><th className="lft">Type</th><th>Booked</th><th>Attended</th><th>No-show</th><th>Cancelled</th><th title="Past its time, not cancelled, and neither showed nor no-show set">Unresulted</th><th title="Shown ÷ resulted (shown + no-show)">Show rate</th></tr></thead>
           <tbody>{shown.map(({ r, v }) => (
             <tr key={r.id}>
               <td className="lft" title={r.name}>{r.name}</td>
               <td className="lft">{r.kind === 'service' ? 'Service' : 'Calendar'}</td>
-              <td>{fmtNumber(v.booked)}</td><td>{fmtNumber(v.shown)}</td><td>{fmtNumber(v.noShow)}</td><td>{fmtNumber(v.cancelled)}</td>
+              <td>{fmtNumber(v.booked)}</td><td>{fmtNumber(v.shown)}</td><td>{fmtNumber(v.noShow)}</td><td>{fmtNumber(v.cancelled)}</td><td>{fmtNumber(v.unresulted || 0)}</td>
               <td>{pct(v.showRate)}</td>
             </tr>
           ))}</tbody>
         </table></div>
-        <Caveat>Show rate is measured against bookings with a <b>known outcome</b> (attended or no-show) - a booking whose status was never set isn&rsquo;t counted as a miss, so clinics that don&rsquo;t mark attendance aren&rsquo;t punished for it. Service Calendars are included alongside ordinary calendars; where a location runs a service menu, each service is reported on its own line.</Caveat>
+        <Caveat>Show rate = shown ÷ resulted (attended + no-show). A booking whose status was never set isn&rsquo;t counted as a miss; it is counted as <b>unresulted</b> so the gap is visible rather than hidden. Service Calendars are included alongside ordinary calendars; where a location runs a service menu, each service is reported on its own line.</Caveat>
       </div>
 
       <div className="card">
@@ -12730,7 +12731,7 @@ function bucketResultC(C, b) {
   const people = (C.people || []).filter((p) => p.leadBucket === b.key)
   const bs = { showed: 0, noshow: 0, cancelled: 0, confirmed: 0, other: 0 }
   let occ = 0, res = 0
-  for (const p of people) { bs[p.status] = (bs[p.status] || 0) + 1; if (p.occurred && p.status === 'confirmed') occ++; if (!p.occurred && p.status !== 'confirmed') res++ }
+  for (const p of people) { bs[p.status] = (bs[p.status] || 0) + 1; if (p.unresulted != null ? p.unresulted : (p.occurred && p.status === 'confirmed')) occ++; if (!p.occurred && (p.status === 'showed' || p.status === 'noshow')) res++ }
   return { booked: b.booked, resulted: b.resulted, showRate: b.showRate, people, byStatus: bs, occurredNotResulted: occ, resultedNotOccurred: res }
 }
 function ApptResultedDrill({ C, onClose, label }) {
@@ -12751,7 +12752,7 @@ function ApptResultedDrill({ C, onClose, label }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal set-modal appt-drill-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="m-head"><div><h3>Resulted appointments{label ? ` · ${label}` : ''} - {fmtNumber(C.resulted)} of {fmtNumber(C.booked)} booked</h3><span className="cap">Outcome recorded (moved out of confirmed). Show rate {C.showRate == null ? '-' : `${C.showRate}%`} of occurred.</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
+        <div className="m-head"><div><h3>Resulted appointments{label ? ` · ${label}` : ''} - {fmtNumber(C.resulted)} of {fmtNumber(C.booked)} booked</h3><span className="cap">Showed or no-show set by the team. Show rate {C.showRate == null ? '-' : `${C.showRate}%`} = shown ÷ resulted. Cancelled in advance is neither; unresulted = past its time, still confirmed.</span></div><button className="icon-btn" onClick={onClose}>✕</button></div>
         <div className="m-body">
           <div className="appt-drill-counts">
             {groups.map(([k, lbl, col]) => <span key={k} className="appt-drill-pill" style={{ borderColor: col }}><span className="dot" style={{ background: col }} />{lbl} <b>{fmtNumber(bs[k] || 0)}</b></span>)}
@@ -12759,7 +12760,7 @@ function ApptResultedDrill({ C, onClose, label }) {
           </div>
           {!people.length && <p className="cap" style={{ marginTop: 4 }}>Per-person detail is available on the <b>All</b> channel filter.</p>}
           {(C.occurredNotResulted > 0 || occNotRes.length > 0) && <div className="appt-drill-sec warn">
-            <div className="appt-drill-h">⚠ Occurred but still confirmed - {fmtNumber(C.occurredNotResulted)} · reporting errors to fix</div>
+            <div className="appt-drill-h">⚠ Unresulted - occurred but still confirmed - {fmtNumber(C.occurredNotResulted)} · set showed or no-show on these</div>
             {tbl(occNotRes)}
           </div>}
           {(C.resultedNotOccurred > 0 || resNotOcc.length > 0) && <div className="appt-drill-sec">
@@ -12833,14 +12834,15 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
       {calChips}
       <div className="timing-scards appt-status-row">
         <div className="tm-sc"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">in period</span></div>
-        <div className="tm-sc"><span className="tm-lab">Occurred</span><b>{fmtNumber(C.occurred)}</b><span className="tm-sub">appt time passed</span></div>
+        <div className="tm-sc"><span className="tm-lab">Occurred</span><b>{fmtNumber(C.occurred)}</b><span className="tm-sub">time passed, not cancelled</span></div>
         <button type="button" className="tm-sc tm-sc-btn" onClick={() => setApptDrill(true)}><span className="tm-lab">Resulted ▸</span><b>{fmtNumber(C.resulted)}</b><span className="tm-sub">outcome recorded · click for detail</span></button>
-        <div className="tm-sc"><span className="tm-lab">Shown</span><b>{fmtNumber(C.shown)}</b><span className="tm-sub">of {fmtNumber(C.occurred)} occurred</span></div>
-        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">shown ÷ occurred{C.resultShowRate != null ? ` · ${C.resultShowRate}% of resulted` : ''}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Shown</span><b>{fmtNumber(C.shown)}</b><span className="tm-sub">of {fmtNumber(C.resulted)} resulted · {fmtNumber(C.noShow || 0)} no-show</span></div>
+        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">shown ÷ resulted (shown + no-show)</span></div>
+        <div className={`tm-sc${C.unresulted ? ' warn' : ''}`}><span className="tm-lab">Unresulted</span><b>{fmtNumber(C.unresulted || 0)}</b><span className="tm-sub">occurred, still confirmed</span></div>
       </div>
       {(C.occurredNotResulted > 0 || C.resultedNotOccurred > 0) && (
         <div className={`appt-gap-warn${C.occurredNotResulted > 0 ? '' : ' info'}`}>
-          {C.occurredNotResulted > 0 && <span>⚠ <b>{fmtNumber(C.occurredNotResulted)}</b> occurred but not resulted - needs status updating.</span>}
+          {C.occurredNotResulted > 0 && <span>⚠ <b>{fmtNumber(C.occurredNotResulted)}</b> unresulted - occurred but still confirmed; the team needs to set showed or no-show.</span>}
           {C.resultedNotOccurred > 0 && <span className="appt-gap-sub">{C.occurredNotResulted > 0 ? ' · ' : ''}{fmtNumber(C.resultedNotOccurred)} resulted before the appt time (odd).</span>}
           <button type="button" className="appt-gap-link" onClick={() => setApptDrill(true)}>view people</button>
         </div>
@@ -12851,7 +12853,7 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">appointments</span></div>
         <div className="tm-sc"><span className="tm-lab">Time to book</span><b>{fmtDays(C.medianTimeToBookDays)}</b><span className="tm-sub">median · avg {fmtDays(C.avgTimeToBookDays)} · lead → booked</span></div>
         <div className="tm-sc"><span className="tm-lab">Avg booked ahead</span><b>{fmtDays(C.avgLeadDays)}</b><span className="tm-sub">median {fmtDays(C.medianLeadDays)}</span></div>
-        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">of {C.occurred} occurred</span></div>
+        <div className="tm-sc"><span className="tm-lab">Show rate</span><b>{C.showRate == null ? '-' : `${C.showRate}%`}</b><span className="tm-sub">of {fmtNumber(C.resulted)} resulted{C.unresulted ? ` · ${fmtNumber(C.unresulted)} unresulted` : ''}</span></div>
         <div className="tm-sc"><span className="tm-lab">Win rate</span><b>{C.winRate == null ? '-' : `${C.winRate}%`}</b><span className="tm-sub">won ÷ booked</span></div>
         <div className="tm-sc"><span className="tm-lab">Avg time to close</span><b>{fmtDays(C.avgCloseDays)}</b><span className="tm-sub">booked → won</span></div>
         <div className="tm-sc warn"><span className="tm-lab">Cancelled</span><b>{C.cancelRate == null ? '-' : `${C.cancelRate}%`}</b><span className="tm-sub">{C.cancelled} · resched {C.rescheduleRate == null ? '-' : `${C.rescheduleRate}%`}</span></div>
@@ -12889,7 +12891,7 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
             </tr>
           ))}</tbody>
         </table></div>
-        <Caveat style={{ marginTop: 10 }}>Show rate is over appointments that have already happened, so far-out bookings don't drag it down. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy - read the trend.</Caveat>
+        <Caveat style={{ marginTop: 10 }}>Show rate = shown ÷ resulted (shown + no-show). Appointments still to come, cancelled in advance, or past their time with no result set are left out; the last group is reported as <b>unresulted</b>. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy - read the trend.</Caveat>
       </div>
 
       <div className="card">
@@ -14853,7 +14855,9 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
     wonDeals: users.flatMap((u) => (u.wonDeals || []).map((d) => ({ ...d, user: u.name, userId: u.id }))),
     lostDeals: users.flatMap((u) => (u.lostDeals || []).map((d) => ({ ...d, user: u.name, userId: u.id }))),
     bookRate: tot.leads ? Math.round((tot.booked / tot.leads) * 100) : null,
-    showRate: tot.booked ? Math.round((tot.shown / tot.booked) * 100) : null,
+    // Show rate on resulted appointments (shown + no-show), as everywhere else.
+    showRate: (() => { const ns = users.reduce((a, u) => a + (u.noShow || 0), 0); const res = tot.shown + ns; return res ? Math.round((tot.shown / res) * 100) : null })(),
+    noShow: users.reduce((a, u) => a + (u.noShow || 0), 0), unresulted: users.reduce((a, u) => a + (u.unresulted || 0), 0),
     winRate: tot.leads ? Math.round((tot.won / tot.leads) * 100) : null,
     avgDeal: tot.won ? Math.round(tot.revenue / tot.won) : null,
     avgCloseDays: ccN ? Math.round(ccS / ccN) : null,
@@ -14940,7 +14944,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl u-lb">
-          <thead><tr><th className="u-rank-h" title="Rank by wins; arrow shows movement vs the previous equal-length period">#</th><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
+          <thead><tr><th className="u-rank-h" title="Rank by wins; arrow shows movement vs the previous equal-length period">#</th><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate" title="Shown ÷ resulted (shown + no-show). Unresulted appointments - past their time, status never set - are shown on hover and left out">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
           <tbody>{leaderboardRows.map((u) => {
             const isOpen = open === u.id
             return (
@@ -14949,7 +14953,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
                   {rankCell(u)}
                   <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {u.name}</td>
                   <td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{u.bookRate == null ? '-' : `${u.bookRate}%`}</td>
-                  <td>{fmtNumber(u.shown)}</td><td>{u.showRate == null ? '-' : `${u.showRate}%`}</td>
+                  <td>{fmtNumber(u.shown)}</td><td title={`${fmtNumber(u.shown)} shown · ${fmtNumber(u.noShow || 0)} no-show${u.unresulted ? ` · ${fmtNumber(u.unresulted)} unresulted` : ''}`}>{u.showRate == null ? '-' : `${u.showRate}%`}{u.unresulted ? <small className="u-unres" title="Past their time with no showed or no-show set"> · {fmtNumber(u.unresulted)} unresulted</small> : null}</td>
                   <td>{fmtNumber(u.won)}</td><td>{u.winRate == null ? '-' : `${u.winRate}%`}</td>
                   <td>{money(u.revenue)}</td><td>{u.avgDeal != null ? money(u.avgDeal) : '-'}</td><td>{u.avgCloseDays != null ? `${u.avgCloseDays}d` : '-'}</td>
                   <td>{u.costWon != null ? money(u.costWon) : '-'}</td>

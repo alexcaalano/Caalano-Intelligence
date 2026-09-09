@@ -2521,25 +2521,29 @@ export async function buildCalPerf(locationId, from, to) {
     // "we have no attribution at all", which is the honest default here.
     chanOf.set(cid, u && u.sig ? channelOf(u) : null)
   }
-  const mk = () => ({ booked: 0, shown: 0, noShow: 0, cancelled: 0 })
+  const mk = () => ({ booked: 0, shown: 0, noShow: 0, unresulted: 0, cancelled: 0 })
   const rows = []
   for (const rec of (appts.perCalendar instanceof Map ? appts.perCalendar.values() : [])) {
     const total = mk()
     const byChannel = { meta: mk(), google: mk(), other: mk(), unattributed: mk() }
     for (const [cid, f] of rec.byContact) {
       const booked = !!f.bookedInPeriod, shown = !!f.shownByStatus
-      const noShow = !!f.noShowByStatus, cancelled = !!(f._cancelled && !f._live)
-      if (!booked && !shown && !noShow && !cancelled) continue
+      const noShow = !shown && !!f.noShowByStatus, cancelled = !!(f._cancelled && !f._live)
+      // Unresulted: reached its time, not cancelled, and nobody set showed or
+      // no-show. Reported beside the show rate so the gap is visible.
+      const unresulted = !shown && !noShow && !!f.hasCallInPeriod
+      if (!booked && !shown && !noShow && !cancelled && !unresulted) continue
       const ch = chanOf.get(cid)
       const bucket = byChannel[ch === 'meta' ? 'meta' : ch === 'google' ? 'google' : ch ? 'other' : 'unattributed']
       for (const b of [total, bucket]) {
         if (booked) b.booked++
         if (shown) b.shown++
         if (noShow) b.noShow++
+        if (unresulted) b.unresulted++
         if (cancelled) b.cancelled++
       }
     }
-    if (!total.booked && !total.shown && !total.noShow && !total.cancelled) continue
+    if (!total.booked && !total.shown && !total.noShow && !total.cancelled && !total.unresulted) continue
     // Show rate is measured against bookings with a KNOWN outcome. Counting a
     // booking whose status was never set as a miss would punish clinics that
     // simply don't mark attendance.
@@ -2556,7 +2560,7 @@ export async function buildCalPerf(locationId, from, to) {
   const totals = mk()
   const totalsByChannel = Object.fromEntries(CALPERF_CHANNELS.map((c) => [c, mk()]))
   for (const r of rows) {
-    for (const k of ['booked', 'shown', 'noShow', 'cancelled']) {
+    for (const k of ['booked', 'shown', 'noShow', 'unresulted', 'cancelled']) {
       totals[k] += r[k]
       for (const c of CALPERF_CHANNELS) totalsByChannel[c][k] += r.byChannel[c][k]
     }
@@ -3522,11 +3526,12 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
       const cur = recs.get(key)
       // Prefer a live (non-cancelled) booking; otherwise keep the latest-added one.
       if (!cur || (cur.cancelled && !cancelled) || (cur.cancelled === cancelled && added > cur.added)) {
-        recs.set(key, { cid, calId, added, start, lead, cancelled, shown: st === 'showed', status: nstatus, name: evName, bookedBy, apptUser: apptUserId(ev) })
+        const shown = apptShown(st), noShow = !shown && APPT_NOSHOW_RE.test(st)
+        recs.set(key, { cid, calId, added, start, lead, cancelled, shown, noShow, status: shown ? 'showed' : noShow ? 'noshow' : nstatus, name: evName, bookedBy, apptUser: apptUserId(ev) })
       }
     }
   }))
-  const CH = () => ({ booked: 0, occurred: 0, shown: 0, won: 0, cancelled: 0, rescheduled: 0, resulted: 0, occurredNotResulted: 0, resultedNotOccurred: 0, byStatus: { showed: 0, noshow: 0, cancelled: 0, confirmed: 0, other: 0 }, people: [], self: 0, staff: 0, leadSum: 0, leads: [], closeSum: 0, closeN: 0, ttbSum: 0, ttbN: 0, ttbList: [], buckets: LEADTIME_BUCKETS.map((b) => ({ key: b.key, label: b.label, booked: 0, occurred: 0, shown: 0, won: 0, cancelled: 0, rescheduled: 0, resulted: 0, closeSum: 0, closeN: 0 })), byBookedBy: { self: { booked: 0, occurred: 0, shown: 0, won: 0, leadSum: 0 }, staff: { booked: 0, occurred: 0, shown: 0, won: 0, leadSum: 0 } }, byUser: new Map(), dow: Array.from({ length: 7 }, () => ({ booked: 0, occurred: 0, shown: 0 })), slots: HOUR_SLOTS.map(() => ({ booked: 0, occurred: 0, shown: 0 })) })
+  const CH = () => ({ booked: 0, occurred: 0, shown: 0, noShow: 0, unresulted: 0, won: 0, cancelled: 0, rescheduled: 0, resulted: 0, occurredNotResulted: 0, resultedNotOccurred: 0, byStatus: { showed: 0, noshow: 0, cancelled: 0, confirmed: 0, other: 0 }, people: [], self: 0, staff: 0, leadSum: 0, leads: [], closeSum: 0, closeN: 0, ttbSum: 0, ttbN: 0, ttbList: [], buckets: LEADTIME_BUCKETS.map((b) => ({ key: b.key, label: b.label, booked: 0, occurred: 0, shown: 0, noShow: 0, unresulted: 0, won: 0, cancelled: 0, rescheduled: 0, resulted: 0, closeSum: 0, closeN: 0 })), byBookedBy: { self: { booked: 0, occurred: 0, shown: 0, noShow: 0, unresulted: 0, won: 0, leadSum: 0 }, staff: { booked: 0, occurred: 0, shown: 0, noShow: 0, unresulted: 0, won: 0, leadSum: 0 } }, byUser: new Map(), dow: Array.from({ length: 7 }, () => ({ booked: 0, occurred: 0, shown: 0, noShow: 0, unresulted: 0 })), slots: HOUR_SLOTS.map(() => ({ booked: 0, occurred: 0, shown: 0, noShow: 0, unresulted: 0 })) })
   const chans = { all: CH(), meta: CH(), google: CH(), paid: CH(), other: CH() }
   const calCounts = {} // calId -> bookings (after pipeline filter, before calIds filter)
   const userCounts = {} // uid -> bookings (after pipeline/cal filter, before user filter)
@@ -3544,8 +3549,13 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
     const won = !!(o && String(o.status || '').toLowerCase() === 'won')
     const wonMs = won ? Date.parse(o.lastStatusChangeAt || o.lastStageChangeAt || o.updatedAt || '') : NaN
     const closeDays = won && isFinite(wonMs) ? Math.max(0, (wonMs - r.added) / DAY) : null
-    const occurred = r.start <= now
-    const resulted = r.status !== 'confirmed'
+    // The one rule for appointments: occurred = reached its time and was not
+    // cancelled in advance; resulted = the team set showed or no-show;
+    // unresulted = occurred with no result set (still "confirmed") - the number
+    // to chase. Show rate = shown ÷ resulted.
+    const occurred = r.start <= now && !r.cancelled
+    const resulted = r.shown || r.noShow
+    const unresulted = occurred && !resulted
     const bk = LEADTIME_BUCKETS.findIndex((b) => r.lead < b.max)
     const rescheduled = (evCount.get(r.cid + '|' + r.calId) || 1) > 1
     // Time to book = lead-in (contact created / opp created) -> appointment booked.
@@ -3562,35 +3572,38 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
       if (r.cancelled) C.cancelled++
       if (rescheduled) C.rescheduled++
       if (ttb != null) { C.ttbSum += ttb; C.ttbN++; C.ttbList.push(ttb) }
-      if (occurred) { C.occurred++; if (r.shown) C.shown++ }
+      if (occurred) C.occurred++
+      if (r.shown) C.shown++; if (r.noShow) C.noShow++; if (unresulted) { C.unresulted++; C.occurredNotResulted++ }
       C.byStatus[r.status] = (C.byStatus[r.status] || 0) + 1
       if (resulted) C.resulted++
-      if (occurred && !resulted) C.occurredNotResulted++
-      if (resulted && !occurred) C.resultedNotOccurred++
+      if (resulted && !occurred && !r.cancelled) C.resultedNotOccurred++
       if (won) { C.won++; if (closeDays != null) { C.closeSum += closeDays; C.closeN++ } }
-      const b = C.buckets[bk]; if (b) { b.booked++; if (r.cancelled) b.cancelled++; if (rescheduled) b.rescheduled++; if (resulted) b.resulted++; if (occurred) { b.occurred++; if (r.shown) b.shown++ } if (won) { b.won++; if (closeDays != null) { b.closeSum += closeDays; b.closeN++ } } }
-      const bb = C.byBookedBy[r.bookedBy]; bb.booked++; bb.leadSum += r.lead; if (occurred) { bb.occurred++; if (r.shown) bb.shown++ } if (won) bb.won++
-      let um = C.byUser.get(uid); if (!um) { um = { id: uid, booked: 0, occurred: 0, shown: 0, won: 0, self: { booked: 0, occurred: 0, shown: 0 }, staff: { booked: 0, occurred: 0, shown: 0 } }; C.byUser.set(uid, um) }
-      um.booked++; if (occurred) { um.occurred++; if (r.shown) um.shown++ } if (won) um.won++
-      const ub = r.bookedBy === 'self' ? um.self : um.staff; ub.booked++; if (occurred) { ub.occurred++; if (r.shown) ub.shown++ }
-      const dd2 = C.dow[dow]; dd2.booked++; if (occurred) { dd2.occurred++; if (r.shown) dd2.shown++ }
-      const sl = slotIdx >= 0 ? C.slots[slotIdx] : null; if (sl) { sl.booked++; if (occurred) { sl.occurred++; if (r.shown) sl.shown++ } }
+      const b = C.buckets[bk]; if (b) { b.booked++; if (r.cancelled) b.cancelled++; if (rescheduled) b.rescheduled++; if (resulted) b.resulted++; if (occurred) b.occurred++; if (r.shown) b.shown++; if (r.noShow) b.noShow++; if (unresulted) b.unresulted++; if (won) { b.won++; if (closeDays != null) { b.closeSum += closeDays; b.closeN++ } } }
+      const tally = (x) => { x.booked++; if (occurred) x.occurred++; if (r.shown) x.shown++; if (r.noShow) x.noShow++; if (unresulted) x.unresulted++ }
+      const bb = C.byBookedBy[r.bookedBy]; tally(bb); bb.leadSum += r.lead; if (won) bb.won++
+      const mkU = () => ({ booked: 0, occurred: 0, shown: 0, noShow: 0, unresulted: 0 })
+      let um = C.byUser.get(uid); if (!um) { um = { id: uid, ...mkU(), won: 0, self: mkU(), staff: mkU() }; C.byUser.set(uid, um) }
+      tally(um); if (won) um.won++
+      tally(r.bookedBy === 'self' ? um.self : um.staff)
+      tally(C.dow[dow])
+      const sl = slotIdx >= 0 ? C.slots[slotIdx] : null; if (sl) tally(sl)
     }
     apply(chans.all); apply(chans[ch] || chans.other)
     if (ch === 'meta' || ch === 'google') apply(chans.paid)
     if (chans.all.people.length < 200) {
       const nm = (o && ((o.contact && (o.contact.name || [o.contact.firstName, o.contact.lastName].filter(Boolean).join(' '))) || o.contactName || o.name)) || r.name || ('Contact ' + String(r.cid).slice(-4))
-      chans.all.people.push({ contactId: r.cid, name: nm, calendar: calName[r.calId] || 'Calendar', status: r.status, occurred, start: r.start, booked: true, channel: ch, leadBucket: (LEADTIME_BUCKETS[bk] && LEADTIME_BUCKETS[bk].key) || null })
+      chans.all.people.push({ contactId: r.cid, name: nm, calendar: calName[r.calId] || 'Calendar', status: r.status, occurred, unresulted, start: r.start, booked: true, channel: ch, leadBucket: (LEADTIME_BUCKETS[bk] && LEADTIME_BUCKETS[bk].key) || null })
     }
     if (opts.debug && debugRows.length < 25) debugRows.push({ leadDays: Math.round(r.lead), bookedBy: r.bookedBy, occurred, shown: r.shown, cancelled: r.cancelled, won, channel: ch, calendar: calName[r.calId], user: nameOfUser(uid) })
   }
   const finalize = (C) => {
     const leads = C.leads.slice().sort((a, b) => a - b)
     const median = leads.length ? leads[Math.floor((leads.length - 1) / 2)] : null
-    const bb = (x) => ({ booked: x.booked, occurred: x.occurred, shown: x.shown, won: x.won, showRate: x.occurred ? Math.round((x.shown / x.occurred) * 100) : null, winRate: x.booked ? Math.round((x.won / x.booked) * 100) : null, avgLeadDays: x.booked ? Math.round(x.leadSum / x.booked) : null })
-    const rt = (x) => ({ booked: x.booked, occurred: x.occurred, shown: x.shown, showRate: x.occurred ? Math.round((x.shown / x.occurred) * 100) : null })
+    const sr = (x) => { const res = (x.shown || 0) + (x.noShow || 0); return res ? Math.round((x.shown / res) * 100) : null }
+    const bb = (x) => ({ booked: x.booked, occurred: x.occurred, shown: x.shown, noShow: x.noShow, unresulted: x.unresulted, won: x.won, showRate: sr(x), winRate: x.booked ? Math.round((x.won / x.booked) * 100) : null, avgLeadDays: x.booked ? Math.round(x.leadSum / x.booked) : null })
+    const rt = (x) => ({ booked: x.booked, occurred: x.occurred, shown: x.shown, noShow: x.noShow, unresulted: x.unresulted, showRate: sr(x) })
     return {
-      booked: C.booked, occurred: C.occurred, shown: C.shown, won: C.won, cancelled: C.cancelled, rescheduled: C.rescheduled,
+      booked: C.booked, occurred: C.occurred, shown: C.shown, noShow: C.noShow, unresulted: C.unresulted, won: C.won, cancelled: C.cancelled, rescheduled: C.rescheduled,
       cancelRate: C.booked ? Math.round((C.cancelled / C.booked) * 100) : null,
       rescheduleRate: C.booked ? Math.round((C.rescheduled / C.booked) * 100) : null,
       self: C.self, staff: C.staff, selfPct: C.booked ? Math.round((C.self / C.booked) * 100) : null,
@@ -3598,16 +3611,16 @@ export async function buildAppointmentInsights(locationId, from, to, opts = {}) 
       medianLeadDays: median == null ? null : Math.round(median),
       avgTimeToBookDays: C.ttbN ? Math.round(C.ttbSum / C.ttbN) : null,
       medianTimeToBookDays: (() => { const a = C.ttbList.slice().sort((x, y) => x - y); return a.length ? Math.round(a[Math.floor((a.length - 1) / 2)]) : null })(),
-      showRate: C.occurred ? Math.round((C.shown / C.occurred) * 100) : null,
+      showRate: sr(C),
       resulted: C.resulted, byStatus: C.byStatus,
       occurredNotResulted: C.occurredNotResulted, resultedNotOccurred: C.resultedNotOccurred,
-      resultShowRate: C.resulted ? Math.round((C.shown / C.resulted) * 100) : null,
+      resultShowRate: sr(C),
       people: C.people,
       winRate: C.booked ? Math.round((C.won / C.booked) * 100) : null,
       avgCloseDays: C.closeN ? Math.round(C.closeSum / C.closeN) : null,
-      buckets: C.buckets.map((b) => ({ key: b.key, label: b.label, booked: b.booked, occurred: b.occurred, shown: b.shown, won: b.won, cancelled: b.cancelled, rescheduled: b.rescheduled, resulted: b.resulted, showRate: b.occurred ? Math.round((b.shown / b.occurred) * 100) : null, winRate: b.booked ? Math.round((b.won / b.booked) * 100) : null, cancelRate: b.booked ? Math.round((b.cancelled / b.booked) * 100) : null, avgCloseDays: b.closeN ? Math.round(b.closeSum / b.closeN) : null })),
+      buckets: C.buckets.map((b) => ({ key: b.key, label: b.label, booked: b.booked, occurred: b.occurred, shown: b.shown, noShow: b.noShow, unresulted: b.unresulted, won: b.won, cancelled: b.cancelled, rescheduled: b.rescheduled, resulted: b.resulted, showRate: sr(b), winRate: b.booked ? Math.round((b.won / b.booked) * 100) : null, cancelRate: b.booked ? Math.round((b.cancelled / b.booked) * 100) : null, avgCloseDays: b.closeN ? Math.round(b.closeSum / b.closeN) : null })),
       byBookedBy: { self: bb(C.byBookedBy.self), staff: bb(C.byBookedBy.staff) },
-      byUser: [...C.byUser.values()].map((u) => ({ name: nameOfUser(u.id), id: u.id, booked: u.booked, occurred: u.occurred, shown: u.shown, won: u.won, showRate: u.occurred ? Math.round((u.shown / u.occurred) * 100) : null, winRate: u.booked ? Math.round((u.won / u.booked) * 100) : null, selfBooked: u.self.booked, userBooked: u.staff.booked, showRateSelf: u.self.occurred ? Math.round((u.self.shown / u.self.occurred) * 100) : null, showRateUser: u.staff.occurred ? Math.round((u.staff.shown / u.staff.occurred) * 100) : null })).sort((a, b) => b.booked - a.booked),
+      byUser: [...C.byUser.values()].map((u) => ({ name: nameOfUser(u.id), id: u.id, booked: u.booked, occurred: u.occurred, shown: u.shown, noShow: u.noShow, unresulted: u.unresulted, won: u.won, showRate: sr(u), winRate: u.booked ? Math.round((u.won / u.booked) * 100) : null, selfBooked: u.self.booked, userBooked: u.staff.booked, showRateSelf: u.self.occurred ? Math.round((u.self.shown / u.self.occurred) * 100) : null, showRateUser: u.staff.occurred ? Math.round((u.staff.shown / u.staff.occurred) * 100) : null })).sort((a, b) => b.booked - a.booked),
       byDow: C.dow.map((x, i) => ({ label: DOW_NAMES[i], ...rt(x) })),
       byTimeOfDay: C.slots.map((x, i) => ({ label: HOUR_SLOTS[i].label, ...rt(x) })),
     }
@@ -4178,7 +4191,7 @@ function _aggregateUserPerf(inp, opts = {}) {
     }
     const pid = o.pipelineId || 'none'; let bp = u.byPipe.get(pid); if (!bp) { bp = { id: pid, name: pipeName[pid] || 'Pipeline', leads: 0, won: 0, revenue: 0 }; u.byPipe.set(pid, bp) } bp.leads++; if (st === 'won') { bp.won++; bp.revenue += val }
     const cid = contactIdOf(o); const f = cid && apptByContact.get(cid)
-    if (f) { if (f.bookedInPeriod) u.booked++; if (f.shownByStatus) u.shown++; if (f.cancelledInPeriod) u.cancelled++ }
+    if (f) { if (f.bookedInPeriod) u.booked++; if (f.shownByStatus) u.shown++; else if (f.noShowByStatus) u.noShow++; else if (f.hasCallInPeriod) u.unresulted++; if (f.cancelledInPeriod) u.cancelled++ }
     // Qualified lead (scalable definition - see isQualified). Counted per rep and
     // for the whole client so the funnel can show Lead → Qualified → Booked → Won.
     const entryPos = pi && pi.stages.length ? pi.stages[0].pos : 0
@@ -4186,10 +4199,12 @@ function _aggregateUserPerf(inp, opts = {}) {
   }
   const users = [...U.values()].map((u) => ({
     id: u.id, name: nameOf(u.id),
-    leads: u.leads, qualified: u.qualified, open: u.open, lost: u.lost, booked: u.booked, shown: u.shown, cancelled: u.cancelled, won: u.won, revenue: Math.round(u.revenue),
+    leads: u.leads, qualified: u.qualified, open: u.open, lost: u.lost, booked: u.booked, shown: u.shown, noShow: u.noShow || 0, unresulted: u.unresulted || 0, cancelled: u.cancelled, won: u.won, revenue: Math.round(u.revenue),
     qualRate: u.leads ? Math.round((u.qualified / u.leads) * 100) : null,
     bookRate: u.leads ? Math.round((u.booked / u.leads) * 100) : null,
-    showRate: u.booked ? Math.round((u.shown / u.booked) * 100) : null,
+    // Show rate on resulted appointments (shown + no-show), the same rule as
+    // every other appointment surface; unresulted is reported beside it.
+    showRate: (u.shown + (u.noShow || 0)) ? Math.round((u.shown / (u.shown + (u.noShow || 0))) * 100) : null,
     winRate: u.leads ? Math.round((u.won / u.leads) * 100) : null,
     avgDeal: u.won ? Math.round(u.revenue / u.won) : null,
     avgCloseDays: u.closeN ? Math.round(u.closeSum / u.closeN) : null,

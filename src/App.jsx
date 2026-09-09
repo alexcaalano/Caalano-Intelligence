@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.508.0'
+const APP_VERSION = '3.509.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -15532,7 +15532,8 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
         <div className="subtabs v2-tabs" role="tablist">{v2TabGroups(tabs).map((g, gi) => <div key={gi} className="v2-tabgrp">{g.name ? <span className="v2-tabgrp-l">{g.name}</span> : null}{g.tabs.map((t) => <button key={t.id} role="tab" aria-selected={curTab === t.id} className={curTab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>)}</div>
       </div>
       <LoadCtx.Provider value={curTab}><IntelPubCtx.Provider value={intelCtx}><div className="v2-page" style={{ marginTop: 16 }}>
-        {(curTab === 'meta' || curTab === 'google')
+        {/* The Intelligence banner is the agency's read of the page. Viewers (client-side logins) get the figures without it. */}
+        {authUser && authUser.role === 'viewer' ? null : (curTab === 'meta' || curTab === 'google')
           ? <IntelBanner model={liveOK(curTab) ? intelAds(live.data[curTab], curTab, (v) => fmtCurrency(v, data.currency)) : null} status={live.status === 'ok' && !liveOK(curTab) ? 'err' : live.status} tab={curTab} pipeName={pipeName} range={range} />
           : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
             : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}

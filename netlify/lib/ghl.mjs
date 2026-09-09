@@ -38,7 +38,11 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 const BUDGET_MIN_MS = 2500      // no attempt is ever given less than this
 const BUDGET_RETRY_MS = 3500    // below this much left, do not start another try
 let _budgetEnd = 0
-export function startRequestBudget(ms) { _budgetEnd = ms ? Date.now() + ms : 0 }
+export function startRequestBudget(ms) { _budgetEnd = ms ? Date.now() + ms : 0; for (const k of Object.keys(upstream)) upstream[k] = 0 }
+// Where a request's time went, per upstream, so a slow row in the reliability
+// log says "CRM 9.1s across 14 calls" rather than just "8 seconds". Reset with
+// the budget at the start of every request.
+export const upstream = { ghl: 0, ghlN: 0, windsor: 0, windsorN: 0, wq: 0, wqStale: 0, blob: 0, blobN: 0 }
 const budgetLeft = () => (_budgetEnd ? _budgetEnd - Date.now() : Infinity)
 const budgetedTimeout = (want) => Math.max(BUDGET_MIN_MS, Math.min(want, budgetLeft()))
 const budgetAllowsRetry = () => budgetLeft() > BUDGET_RETRY_MS
@@ -123,6 +127,7 @@ function _ghlDone() { _ghlActive = Math.max(0, _ghlActive - 1); const w = _ghlWa
 // cooldown across calls so a 429 backs the whole location off rather than
 // triggering a thundering-herd retry. Used by ghlGet / ghlPost.
 async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries = 3, loc = null } = {}) {
+  const _t = Date.now()
   await _ghlSlot()
   try {
     let lastErr
@@ -153,7 +158,7 @@ async function ghlFetch(url, opts, { label = 'ghl', timeoutMs = 9000, maxTries =
       }
     }
     throw lastErr || new Error(`${label} failed`)
-  } finally { _ghlDone() }
+  } finally { _ghlDone(); upstream.ghl += Date.now() - _t; upstream.ghlN++ }
 }
 
 export async function loadTokens() { try { return await store().get('agency', { type: 'json' }) } catch { return null } }

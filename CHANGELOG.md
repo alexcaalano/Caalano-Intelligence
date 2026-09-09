@@ -18,6 +18,35 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.524.0 - 2026-09-09 · `PENDING` - Reliability batch 3: warm what people open, refresh without the stampede
+
+From the three-day reliability log.
+
+- **The warmer now builds the views people actually open.** Both won bases,
+  the previous period's drill, the daily spend read and the heavy scans (speed
+  to lead, user calls, forms, appointments, cohorts) join the plan, most-opened
+  first. Every one of those was a live build before, because none of them was
+  warmed.
+- **Retry the reads refires only what failed.** The button used to force a
+  live rebuild of all seven of the tab's reads at once - the exact contention
+  it was trying to recover from. Each feed now retries on its own.
+- **Refresh rebuilds in the background.** On the Caalano360 tab, Refresh asks
+  the warmer to rebuild the tab's views and polls for the copies for a minute,
+  with an amber "Refreshing in the background" note, instead of firing seven
+  live builds against one CRM location in the same instant.
+- **Day-old copies for the slow scans.** Speed to lead, user calls, forms,
+  cohorts, appointments and the other 10-25 second builds now fall back to a
+  copy up to a day old, with its age on screen; the tiles keep six hours.
+- **The reliability log says where the time went.** Slow and error rows carry
+  whether the request was a cache hit, a saved copy or a live build, and the
+  time spent in the CRM, Windsor (with cached and stand-in reads counted) and
+  the store, as a "where" column in the table and the CSV.
+- **Key event reach hover card** is one fixed width wherever the cursor is on
+  the bar, held inside the window, with the arrow following the cursor. It
+  used to squeeze to a narrow column near a bar's right end.
+
+---
+
 ## v3.523.0 - 2026-09-09 · `2c2d6aa` - Ad reads: one copy per query, and a saved copy over n/a
 
 The reliability log showed every scope a client page opens finishing at the

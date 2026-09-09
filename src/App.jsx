@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.523.0'
+const APP_VERSION = '3.524.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -5146,7 +5146,7 @@ function useHealth(clientId, range, nonce = 0, reload = 0, wonBasis = 'closed') 
   useEffect(() => {
     let alive = true
     setSt({ status: 'loading', data: null })
-    const url = `/.netlify/functions/windsor?client=${clientId}&scope=health&${q}&wonBasis=${wonBasis}${nonce ? `&_r=${nonce}` : ''}${reload ? `&_b=${reload}` : ''}`
+    const url = `/.netlify/functions/windsor?client=${clientId}&scope=health&${q}&wonBasis=${wonBasis}${nonceParam(nonce)}${reload ? `&_b=${reload}` : ''}`
     // Heavy build - retry a couple of times with backoff before showing an error,
     // so a transient timeout on a range change self-heals instead of erroring.
     const attempt = (n) => fetch(`${url}&_a=${n}`)
@@ -6701,7 +6701,7 @@ function aggUsersToCrm(j) {
   a.reps = us.map((u) => ({ id: u.id, name: u.name, leads: u.leads || 0, won: u.won || 0, booked: u.booked || 0, shown: u.shown || 0, lost: u.lost || 0 }))
   return a
 }
-const crmAggUrl = (clientId, range, nonce, channel) => clientId ? `/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
+const crmAggUrl = (clientId, range, nonce, channel) => clientId ? `/.netlify/functions/windsor?scope=users&client=${clientId}&channel=${channel}&${rangeQuery(range)}${nonceParam(nonce)}` : null
 function useCrmAgg(clientId, range, nonce, channel = 'all') {
   return useSwrJson(crmAggUrl(clientId, range, nonce, channel), { transform: aggUsersToCrm }).data
 }
@@ -6712,8 +6712,12 @@ function useCrmAgg(clientId, range, nonce, channel = 'all') {
 // change landing in the range (the CRM's own filter), `created` counts wins
 // among the leads that arrived in it. Leads, open and lost are always the
 // created cohort. Cohort tools (Lost Reasons, the forecaster) ask for `created`.
-const spendDailyUrl = (clientId, range, nonce) => clientId && range && range.from && range.to ? `/.netlify/functions/windsor?scope=spenddaily&client=${clientId}&${rangeQuery(range)}${nonce ? `&_r=${nonce}` : ''}` : null
-const ccDrillUrl = (clientId, range, nonce, channel, wonBasis = 'closed') => clientId ? `/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${rangeQuery(range)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}${nonce ? `&_r=${nonce}` : ''}` : null
+// A nonce of the form `p:<n>` is a poll, not a rebuild: the URL changes so the
+// hook refetches, but the server serves whatever copy it holds (`_p` is stripped
+// from its cache key and never busts it). Anything else is `_r`, a live rebuild.
+const nonceParam = (n) => (n ? (String(n).startsWith('p:') ? `&_p=${String(n).slice(2)}` : `&_r=${n}`) : '')
+const spendDailyUrl = (clientId, range, nonce) => clientId && range && range.from && range.to ? `/.netlify/functions/windsor?scope=spenddaily&client=${clientId}&${rangeQuery(range)}${nonceParam(nonce)}` : null
+const ccDrillUrl = (clientId, range, nonce, channel, wonBasis = 'closed') => clientId ? `/.netlify/functions/windsor?scope=ccdrill&client=${clientId}&channel=${channel}&${rangeQuery(range)}&wonBasis=${wonBasis === 'closed' ? 'closed' : 'created'}${nonceParam(nonce)}` : null
 function useCcDrill(clientId, range, nonce = 0, channel = 'all', wonBasis = 'closed') {
   return useSwrJson(ccDrillUrl(clientId, range, nonce, channel, wonBasis))
 }
@@ -7936,7 +7940,18 @@ function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
   const ref = React.useRef(null)
   const tot = split.meta + split.google + split.other || 1
   const pc = (v) => `${Math.round((v / (count || tot || 1)) * 100)}%`
-  const onMove = (e) => { const r = ref.current && ref.current.getBoundingClientRect(); if (!r) return; setHov(Math.max(0.08, Math.min(0.92, (e.clientX - r.left) / r.width))) }
+  // The card is a fixed width and slides along the bar with the cursor, held
+  // inside the viewport; the arrow keeps pointing at the cursor. It used to be
+  // positioned by percentage with a width left to the browser, which squeezed
+  // it to a narrow column near the right end of a bar.
+  const POP_W = 340
+  const onMove = (e) => {
+    const r = ref.current && ref.current.getBoundingClientRect(); if (!r) return
+    const x = Math.max(0, Math.min(r.width, e.clientX - r.left))
+    const vw = window.innerWidth || 1200
+    const left = Math.max(8 - r.left, Math.min(vw - 8 - POP_W - r.left, x - POP_W / 2))
+    setHov({ left, ax: Math.max(14, Math.min(POP_W - 14, x - left)) })
+  }
   return (
     <div ref={ref} className={`v2-bar${leak ? ' leak' : ''}`} onMouseMove={onMove} onMouseLeave={() => setHov(null)}>
       <div className="track" />
@@ -7946,7 +7961,7 @@ function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
         {split.other ? <span className="o" style={{ flex: split.other / tot }} /> : null}
       </div>
       {prevAt != null ? <div className="prev" style={{ left: `${Math.max(0, Math.min(100, prevAt * 100))}%` }} /> : null}
-      {hov != null ? <div className="v2-pop" style={{ left: `${hov * 100}%` }}>
+      {hov ? <div className="v2-pop" style={{ left: hov.left, width: POP_W, '--ax': `${hov.ax}px` }}>
         <div className="v2-pop-t">{label} <b>{fmtNumber(count)}</b></div>
         <div className="v2-pop-r"><i className="m" />Meta<b>{fmtNumber(split.meta)}</b><span>{pc(split.meta)}</span></div>
         <div className="v2-pop-r"><i className="g" />Google<b>{fmtNumber(split.google)}</b><span>{pc(split.google)}</span></div>
@@ -8146,26 +8161,33 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   useEffect(() => { setChan('all') }, [clientId])
   // A local retry re-issues every read on this tab (the app Refresh does the
   // same for the whole app). It rides on the nonce so every hook sees it.
-  const [retry, setRetry] = useState(0)
-  const nonceX = retry ? `${nonce || 0}.${retry}` : nonce
+  // Retry refires only the reads that failed (each feed has its own counter,
+  // sent as a live `_r`). Refresh - the page's nonce - asks the warmer to
+  // rebuild this tab's views and then polls for the copies with `_p`, so a
+  // refresh no longer fires seven live builds at once.
+  const [retries, setRetries] = useState({})
+  const [poll, setPoll] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)   // the tab's own Refresh button
+  const nx = (k) => (retries[k] ? `r${retries[k]}.${nonce || 0}` : (poll ? `p:${poll}` : (nonce ? `p:${nonce}` : 0)))
   const isViewer = !!(authUser && authUser.role === 'viewer')
   // Daily ad spend for the V2 headline sparklines - its own light read, only
   // when V2 is drawing, so V1 never pays for it.
-  const spendDaily = useSwrJson(!isViewer ? spendDailyUrl(clientId, range, nonceX) : null)
+  const spendDaily = useSwrJson(!isViewer ? spendDailyUrl(clientId, range, nx('ads')) : null)
   // V2: the forms feed (forms + located leads) so the indexing and movers can
   // speak for the Forms and Location tabs too. Not fetched in V1.
-  const formsFeed = useForms(!isViewer ? clientId : null, range, nonceX)
+  const formsFeed = useForms(!isViewer ? clientId : null, range, nx('forms'))
   // Call Reporting figures per rep, one light read (calls only, no cadence) for
   // ranges up to a month, so the indexing can speak for that tab as well.
   const rangeDays = range && range.from && range.to ? Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86400000) + 1 : 0
-  const callsFeed = useSwrJson(!isViewer && rangeDays > 0 && rangeDays <= 31 ? `/.netlify/functions/windsor?scope=usercalls&client=${clientId}&${rangeQuery(range)}&callsonly=1${nonceX ? `&_r=${nonceX}` : ''}` : null)
+  const callsFeed = useSwrJson(!isViewer && rangeDays > 0 && rangeDays <= 31 ? `/.netlify/functions/windsor?scope=usercalls&client=${clientId}&${rangeQuery(range)}&callsonly=1${nonceParam(nx('calls'))}` : null)
   // Cash position row: per-client switch in Settings → Account summary.
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
-  const health = useHealth(clientId, range, nonceX, reload, wonBasis)
-  const crmAggSt = useSwrJson(crmAggUrl(clientId, range, nonceX, chan), { transform: aggUsersToCrm })
+  const health = useHealth(clientId, range, nx('ads'), reload, wonBasis)
+  const crmAggSt = useSwrJson(crmAggUrl(clientId, range, nx('users'), chan), { transform: aggUsersToCrm })
   const crmAgg = crmAggSt.data
-  const ccDrill = useCcDrill(clientId, range, nonceX, chan, wonBasis)
+  const ccDrill = useCcDrill(clientId, range, nx('drill'), chan, wonBasis)
   const ccRaw = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null
   // A saved copy served because the live rebuild failed is said out loud, with
   // the failure, rather than passed off as the live figure.
@@ -8202,7 +8224,27 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   // Previous-period CRM drill, so the per-pipeline key-event scorecards can show
   // vs-prev deltas (same shape, one period back).
   const prevRange = prevRangeOf(range)
-  const prevCcDrill = useCcDrill(clientId, prevRange || range, nonceX, chan, wonBasis)
+  const prevCcDrill = useCcDrill(clientId, prevRange || range, nx('drill'), chan, wonBasis)
+  // Refresh: queue the warm rebuild of this tab's views, then poll for a minute.
+  useEffect(() => {
+    if ((!nonce && !refreshTick) || isViewer || !clientId || !range || !range.from) return
+    let alive = true
+    const strip = (u) => (u ? u.replace(/^\/\.netlify\/functions\/windsor\?/, '') : null)
+    const views = [
+      `client=${clientId}&scope=health&${rangeQuery(range)}&wonBasis=${wonBasis}`,
+      strip(ccDrillUrl(clientId, range, 0, chan, wonBasis)),
+      prevRange ? strip(ccDrillUrl(clientId, prevRange, 0, chan, wonBasis)) : null,
+      strip(crmAggUrl(clientId, range, 0, chan)),
+      strip(spendDailyUrl(clientId, range, 0)),
+      `scope=forms&client=${clientId}&${rangeQuery(range)}`,
+      rangeDays > 0 && rangeDays <= 31 ? `scope=usercalls&client=${clientId}&${rangeQuery(range)}&callsonly=1` : null,
+    ].filter(Boolean)
+    setRefreshing(true)
+    fetch(`/.netlify/functions/windsor?scope=revalidate&client=${clientId}&${views.map((v) => `u=${encodeURIComponent(v)}`).join('&')}`).catch(() => {})
+    let n = 0
+    const t = setInterval(() => { if (!alive) return; n++; setPoll((p) => p + 1); if (n >= 6) { clearInterval(t); setRefreshing(false) } }, 10000)
+    return () => { alive = false; clearInterval(t); setRefreshing(false) }
+  }, [nonce, refreshTick])
   const pccRaw = (prevRange && prevCcDrill.status === 'ok' && prevCcDrill.data && prevCcDrill.data.oppsBySource) ? prevCcDrill.data : null
   const pcc = useMemo(() => lensCc(pccRaw, pipe), [pccRaw, pipe])
   const money = (v) => fmtCurrency(v, currency)
@@ -8269,11 +8311,12 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   if (waiting) return <TabLoading kind="exec" label="Scoring business health…" />
   // What did not come back is said before any number is read.
   const problems = []
-  if (health.status === 'err' || !health.data) problems.push('The health score and ad spend read failed, so spend, the cost tiles and Priority actions are missing.')
+  const failed = new Set()
+  if (health.status === 'err' || !health.data) { failed.add('ads'); problems.push('The health score and ad spend read failed, so spend, the cost tiles and Priority actions are missing.') }
   else {
     const ok = health.data.adsOk || {}
-    if (ok.meta === false) problems.push('Meta spend did not come back, so Meta cost figures read n/a.')
-    if (ok.google === false) problems.push('Google spend did not come back, so Google cost figures read n/a.')
+    if (ok.meta === false) { failed.add('ads'); problems.push('Meta spend did not come back, so Meta cost figures read n/a.') }
+    if (ok.google === false) { failed.add('ads'); problems.push('Google spend did not come back, so Google cost figures read n/a.') }
   }
   // Softer than a problem: the figure is there, from a saved copy of the ad read.
   const notes = []
@@ -8283,12 +8326,16 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     if (st.meta) notes.push(`Meta spend is a saved copy from ${agef(st.meta)} ago: the live ad read timed out, so the last good read stands in until the warmer refreshes it.`)
     if (st.google) notes.push(`Google spend is a saved copy from ${agef(st.google)} ago: the live ad read timed out, so the last good read stands in until the warmer refreshes it.`)
   }
+  if (!isViewer && (ccDrill.status === 'err' || !ccRaw)) failed.add('drill')
+  if (!isViewer && prevRange && (prevCcDrill.status === 'err' || !pccRaw)) failed.add('drill')
+  if (crmAggSt.status === 'err') failed.add('users')
+  if (ccRaw && ccRaw.wonRead && ccRaw.wonRead.failed) failed.add('drill')
   if (!isViewer && (ccDrill.status === 'err' || !ccRaw)) problems.push('The CRM drill did not load. Opportunities, wins, revenue, key events and lost reasons below come from the health score instead, and the tiles will not open.')
   if (!isViewer && prevRange && (prevCcDrill.status === 'err' || !pccRaw)) problems.push('The previous period did not load, so vs-prev changes and Biggest movers are missing.')
   if (crmAggSt.status === 'err') problems.push('The per-rep read failed, so Team performance may be empty.')
   if (ccRaw && ccRaw.wonRead && ccRaw.wonRead.failed) problems.push('The wins read failed, so Won on the Closed basis is short of the CRM.')
   if (ccRaw && ccRaw.wonRead && ccRaw.wonRead.truncated) problems.push('The wins read was cut short, so the oldest wins may be missing. The warmer completes it within five minutes.')
-  const problemStrip = problems.length ? <div className="note cc-problems"><b>Some of this page did not load.</b><ul>{problems.map((t, i) => <li key={i}>{t}</li>)}</ul><button type="button" className="set-relink" onClick={() => setRetry((n) => n + 1)}>↻ Retry the reads</button></div> : null
+  const problemStrip = problems.length ? <div className="note cc-problems"><b>Some of this page did not load.</b><ul>{problems.map((t, i) => <li key={i}>{t}</li>)}</ul><button type="button" className="set-relink" onClick={() => setRetries((r) => { const n = { ...r }; for (const fk of (failed.size ? failed : ['ads'])) n[fk] = (n[fk] || 0) + 1; return n })}>↻ Retry the reads</button></div> : null
   if (health.status === 'err' || !health.data) return <div className="exec-wrap">{problemStrip}</div>
   const h = health.data
   const sc = h.score || {}
@@ -8299,9 +8346,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   return (
     <div className="exec-wrap">
       {problemStrip}
+      {refreshing ? <div className="note cc-stale">Refreshing in the background. Each figure updates as its rebuilt read lands, usually within a minute.</div> : null}
       {notes.length ? <div className="note cc-stale">{notes.map((t, i) => <div key={i}>{t}</div>)}</div> : null}
       {ccStale ? <div className="note cc-stale"><b>Showing a saved copy of the CRM figures from {ccStale.age >= 3600 ? `${Math.round(ccStale.age / 3600)} h` : `${Math.max(1, Math.round(ccStale.age / 60))} min`} ago.</b> {ccStale.error ? <>The live rebuild failed: <code>{ccStale.error}</code>. </> : 'The live rebuild is running behind it. '}Refresh to try again.</div> : null}
-      <ExecContextBar clientName={clientName} range={range} pipes={pipes} pipe={pipe} onPipe={onPipe} chan={chan} setChan={setChan} wonBasis={wonBasis} cache={ccRaw && ccRaw._cache} onRefresh={() => setRetry((r) => r + 1)} />
+      <ExecContextBar clientName={clientName} range={range} pipes={pipes} pipe={pipe} onPipe={onPipe} chan={chan} setChan={setChan} wonBasis={wonBasis} cache={ccRaw && ccRaw._cache} onRefresh={() => setRefreshTick((t) => t + 1)} />
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         // Within a pipeline the per-rep aggregation (account-wide) is not a
@@ -10973,7 +11021,7 @@ function useForms(clientId, range, nonce = 0) {
     let alive = true
     if (!clientId) { setState({ status: 'idle', data: null }); return () => { alive = false } }
     setState({ status: 'loading', data: null })
-    fetch(`/.netlify/functions/windsor?scope=forms&client=${clientId}&${q}${nonce ? `&_r=${nonce}` : ''}`)
+    fetch(`/.netlify/functions/windsor?scope=forms&client=${clientId}&${q}${nonceParam(nonce)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http'))))
       .then((j) => { if (alive) setState({ status: 'ok', data: j }) })
       .catch(() => { if (alive) setState({ status: 'err', data: null }) })
@@ -16915,12 +16963,12 @@ function LogsPanel({ clients }) {
   // file - so it can be handed off for diagnosis without needing live log access.
   const exportLog = (fmt) => {
     const d = (log && log.data) || {}
-    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, user: e.user || null, userName: e.userName || null, userRole: e.userRole || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, error: e.error || null }))
+    const entries = (d.entries || []).map((e) => ({ when: new Date(e.t).toISOString(), sev: e.sev, scope: e.scope, client: nameOf(e.client), clientId: e.client || null, user: e.user || null, userName: e.userName || null, userRole: e.userRole || null, ms: e.ms != null ? e.ms : null, ageMs: e.ageMs != null ? e.ageMs : null, cache: e.cache || null, where: e.where || null, error: e.error || null }))
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     let blob, name
     if (fmt === 'csv') {
       const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
-      const head = ['when', 'sev', 'scope', 'client', 'user', 'userName', 'userRole', 'ms', 'ageMs', 'error']
+      const head = ['when', 'sev', 'scope', 'client', 'user', 'userName', 'userRole', 'ms', 'ageMs', 'cache', 'where', 'error']
       const lines = [head.join(','), ...entries.map((e) => head.map((k) => esc(e[k])).join(','))]
       blob = new Blob([lines.join('\n')], { type: 'text/csv' }); name = `caalano360-reliability-log-${days}d-${stamp}.csv`
     } else {
@@ -17083,7 +17131,7 @@ function LogsPanel({ clients }) {
                       {e.user ? <>{e.userName || e.user}{e.userRole ? <small>{ROLE_LABEL[e.userRole] || e.userRole}</small> : null}</> : <span className="cap">system</span>}
                     </td>
                     <td>{e.ms != null ? fmtNumber(e.ms) : '-'}</td>
-                    <td className="lft logs-detail">{e.error || (e.sev === 'slow' ? 'Slow build (approaching the 10s function limit)' : '')}{e.ageMs != null ? ` · served cached ${Math.round(e.ageMs / 60000)}m old` : ''}</td>
+                    <td className="lft logs-detail">{e.error || (e.sev === 'slow' ? 'Slow build (approaching the 10s function limit)' : '')}{e.ageMs != null ? ` · served cached ${Math.round(e.ageMs / 60000)}m old` : ''}{e.where ? <span className="logs-where"> · {e.where}</span> : ''}</td>
                   </tr>
                 ) })}</tbody>
               </table></div>

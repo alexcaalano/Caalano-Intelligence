@@ -11,8 +11,9 @@ const cacheKeyFrom = new Function(lift(w, /function cacheKeyFrom\(url\)/, /\n}\n
 // Frontend builders. rangeQuery + the two consts are real; health / deep / agency
 // are the template literals from useHealth, the deep tab and useAgencyLive.
 const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
-const ccDrillUrl = new Function('rangeQuery', lift(app, /const ccDrillUrl = /, /\n/) + '; return ccDrillUrl')(rangeQuery)
-const crmAggUrl = new Function('rangeQuery', lift(app, /const crmAggUrl = /, /\n/) + '; return crmAggUrl')(rangeQuery)
+const nonceParam = new Function(lift(app, /const nonceParam = /, /\n/) + '; return nonceParam')()
+const ccDrillUrl = new Function('rangeQuery', 'nonceParam', lift(app, /const ccDrillUrl = /, /\n/) + '; return ccDrillUrl')(rangeQuery, nonceParam)
+const crmAggUrl = new Function('rangeQuery', 'nonceParam', lift(app, /const crmAggUrl = /, /\n/) + '; return crmAggUrl')(rangeQuery, nonceParam)
 const healthUrl = (clientId, r, wonBasis) => `/.netlify/functions/windsor?client=${clientId}&scope=health&${rangeQuery(r)}&wonBasis=${wonBasis}`
 const deepUrl = (clientId, channel, r) => `/.netlify/functions/windsor?client=${clientId}&channel=${channel}&${rangeQuery(r)}`
 const agencyUrl = (r, wonBasis) => `/.netlify/functions/windsor?scope=agency&${rangeQuery(r)}&wonBasis=${wonBasis}`
@@ -37,6 +38,16 @@ const want = {
   meta30: key(deepUrl('nexia-health', 'meta', r30)),
   meta7: key(deepUrl('nexia-health', 'meta', r7)),
   google30: key(deepUrl('nexia-health', 'google', r30)),
+  // Batch 3: the views the log showed building live - both won bases, the
+  // daily spend read and the heavy scans - in the exact shapes the tabs request.
+  healthCreated: key(healthUrl('nexia-health', r30, 'created')),
+  ccdrillCreated: key(ccDrillUrl('nexia-health', r30, 0, 'all', 'created')),
+  spenddaily: key(`/.netlify/functions/windsor?scope=spenddaily&client=nexia-health&${rangeQuery(r30)}`),
+  usercalls: key(`/.netlify/functions/windsor?scope=usercalls&client=nexia-health&${rangeQuery(r30)}&callsonly=1`),
+  forms: key(`/.netlify/functions/windsor?scope=forms&client=nexia-health&${rangeQuery(r30)}`),
+  speed: key(`/.netlify/functions/windsor?scope=speed&client=nexia-health&${rangeQuery(r30)}`),
+  appts: key(`/.netlify/functions/windsor?scope=appts&client=nexia-health&${rangeQuery(r30)}`),
+  cohorts: key('/.netlify/functions/windsor?scope=cohorts&client=nexia-health&weeks=12'),
 }
 for (const [k, v] of Object.entries(want)) ok(`warms the browser's ${k} key`, warmKeys.has(v), v)
 ok('warms nothing extra', warmKeys.size === Object.keys(want).length, [...warmKeys].join('\n'))
@@ -44,8 +55,11 @@ ok('agency key matches', key('/.netlify/functions/windsor?' + planForAgency(rang
 // A retry counter / refresh nonce on the browser side must not fragment the key.
 ok('_a and nonce stripped', key(ccDrillUrl('nexia-health', r30, 0, 'all') + '&_a=2&nonce=9') === want.ccdrill)
 ok('_r=warm stripped', key(deepUrl('nexia-health', 'meta', r30) + '&_r=warm') === want.meta30)
+// A poll (`p:` nonce -> _p) reads the same key as the plain request, so the
+// refresh-then-poll flow lands on the copy the warmer just wrote.
+ok('poll nonce reads the same key', key(ccDrillUrl('nexia-health', r30, 'p:7', 'all')) === want.ccdrill && /_p=7/.test(ccDrillUrl('nexia-health', r30, 'p:7', 'all')))
 // A client with no CRM must get no CRM views; no Meta, no Meta views.
-ok('no ghl -> no crm views', planForClient('x', { meta: '1' }, ranges).every((q) => !/scope=|channel=blend/.test(q)))
+ok('no ghl -> no crm views', planForClient('x', { meta: '1' }, ranges).every((q) => !/scope=(?!spenddaily)|channel=blend/.test(q)))
 ok('no meta -> no meta views', planForClient('x', { ghl: '1' }, ranges).every((q) => !/channel=meta/.test(q)))
 // prevRangeOf parity with the app's.
 const appPrev = new Function(lift(app, /function prevRangeOf\(range\)/, /\n}\n/) + '\n}; return prevRangeOf')()

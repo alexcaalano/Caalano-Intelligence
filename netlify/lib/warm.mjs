@@ -111,12 +111,28 @@ export function prevRangeOf(r) {
 export function planForClient(id, cc, ranges) {
   const q = (params) => new URLSearchParams(params).toString()
   const urls = []
-  const r30 = ranges.r30, r7 = ranges.r7
+  const r30 = ranges.r30, r7 = ranges.r7, p30 = ranges.p30
+  // The views people actually open, most-opened first so a run cut short by
+  // the deadline still leaves the common ones warm. The reliability log showed
+  // every Created-basis open, every previous-period drill and every heavy scan
+  // (speed to lead, user calls, forms, appointments, cohorts) building live,
+  // because none of them were in this plan.
   if (cc.ghl) {
-    urls.push(q({ client: id, scope: 'health', from: r30.from, to: r30.to, wonBasis: 'closed' }))
-    urls.push(q({ scope: 'ccdrill', client: id, channel: 'all', from: r30.from, to: r30.to, wonBasis: 'closed' }))
+    for (const wb of ['closed', 'created']) {
+      urls.push(q({ client: id, scope: 'health', from: r30.from, to: r30.to, wonBasis: wb }))
+      urls.push(q({ scope: 'ccdrill', client: id, channel: 'all', from: r30.from, to: r30.to, wonBasis: wb }))
+    }
     urls.push(q({ scope: 'users', client: id, channel: 'all', from: r30.from, to: r30.to }))
     urls.push(q({ client: id, channel: 'blend', from: r30.from, to: r30.to }))
+  }
+  if (cc.meta || cc.google) urls.push(q({ scope: 'spenddaily', client: id, from: r30.from, to: r30.to }))
+  if (cc.ghl) {
+    if (p30) for (const wb of ['closed', 'created']) urls.push(q({ scope: 'ccdrill', client: id, channel: 'all', from: p30.from, to: p30.to, wonBasis: wb }))
+    urls.push(q({ scope: 'usercalls', client: id, from: r30.from, to: r30.to, callsonly: '1' }))
+    urls.push(q({ scope: 'forms', client: id, from: r30.from, to: r30.to }))
+    urls.push(q({ scope: 'speed', client: id, from: r30.from, to: r30.to }))
+    urls.push(q({ scope: 'appts', client: id, from: r30.from, to: r30.to }))
+    urls.push(q({ scope: 'cohorts', client: id, weeks: '12' }))
   }
   if (cc.meta) for (const r of [r30, r7]) urls.push(q({ client: id, channel: 'meta', from: r.from, to: r.to }))
   if (cc.google) urls.push(q({ client: id, channel: 'google', from: r30.from, to: r30.to }))
@@ -128,7 +144,8 @@ export function planForAgency(ranges) {
 }
 export function currentRanges() {
   const today = sydneyToday()
-  return { r30: rollingRange(30, today), r7: rollingRange(7, today) }
+  const r30 = rollingRange(30, today)
+  return { r30, r7: rollingRange(7, today), p30: prevRangeOf(r30) }
 }
 
 // --- triggering -------------------------------------------------------------

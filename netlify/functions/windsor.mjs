@@ -18,6 +18,7 @@ const DEMO_KEY = 'demo::windsor'
 import { getStore } from '@netlify/blobs'
 import { currentUser, canSeeClient, isAdminish, canSeeReports } from '../lib/auth.mjs'
 import { isWarmRequest, triggerWarm, claimRevalidate } from '../lib/warm.mjs'
+import { upstream } from '../lib/ghl.mjs'
 // Parse working-hours query params (bhDays / bhStart / bhEnd) into an hours object.
 function parseHours(url) {
   const bhStart = url.searchParams.get('bhStart'), bhEnd = url.searchParams.get('bhEnd'), bhDays = url.searchParams.get('bhDays')
@@ -377,10 +378,11 @@ async function windsorFetch(connector, fields, from, to, preset, key, opts = {})
   const retries = _warmReq ? 1 : days > 60 ? 0 : 1
   const ck = wqKey(connector, fields, from, to, preset, opts.accounts)
   const cached = await readResultCache(ck)
-  if (cached && !_wqBust && Array.isArray(cached.payload) && (Date.now() - cached.at) < WQ_FRESH_MS) return withDemo(cached.payload)
+  if (cached && !_wqBust && Array.isArray(cached.payload) && (Date.now() - cached.at) < WQ_FRESH_MS) { upstream.wq++; return withDemo(cached.payload) }
   let rows
+  const _tw = Date.now()
   try {
-    const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries })
+    const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries }).finally(() => { upstream.windsor += Date.now() - _tw; upstream.windsorN++ })
     if (!r.ok) {
       const body = (await r.text()).slice(0, 400)
       // Scoping by `accounts` changes what an UNCONNECTED account looks like. Asking
@@ -410,6 +412,7 @@ async function windsorFetch(connector, fields, from, to, preset, key, opts = {})
     // failure is never papered over - the key is wrong and someone must know.
     if (cached && !e.auth && Array.isArray(cached.payload) && (Date.now() - cached.at) < WQ_STALE_MS) {
       windsorStale.set(`${connector}:${opts.accounts ? String(opts.accounts) : '*'}`, Date.now() - cached.at)
+      upstream.wqStale++
       return withDemo(cached.payload)
     }
     throw e
@@ -2684,6 +2687,22 @@ function applyClosedBasisBlend(blend, wc) {
 // cache is read, so a hit can never leak across accounts.
 const RESULT_TTL_MS = 10 * 60 * 1000            // serve a cached payload fresh for 10 min
 const STALE_ON_ERROR_MS = 6 * 60 * 60 * 1000    // on a rebuild failure, fall back to a payload up to 6h old
+// The heavy scans (per-lead calls and conversations, form submissions, the
+// appointment sweep) take 10-25s to build live and rarely change hour to hour,
+// so a day-old copy with its age on screen beats the wait or a 502. The tiles
+// keep the six-hour window.
+const STALE_SLOW_MS = 24 * 60 * 60 * 1000
+const SLOW_SCOPES = new Set(['speed', 'usercalls', 'forms', 'cohorts', 'appts', 'calperf', 'stagetiming', 'enqtimes', 'callcohort', 'clinic', 'social', 'socialtrend', 'updateextra'])
+const staleWindowFor = (scope) => (SLOW_SCOPES.has(scope) ? STALE_SLOW_MS : STALE_ON_ERROR_MS)
+// A compact "where the time went" for the reliability log.
+function whereStr() {
+  const s = (ms) => `${(ms / 1000).toFixed(1)}s`
+  const parts = []
+  if (upstream.ghlN) parts.push(`crm ${s(upstream.ghl)}/${upstream.ghlN}`)
+  if (upstream.windsorN || upstream.wq || upstream.wqStale) parts.push(`windsor ${s(upstream.windsor)}/${upstream.windsorN}${upstream.wq ? ` +${upstream.wq} cached` : ''}${upstream.wqStale ? ` +${upstream.wqStale} stale` : ''}`)
+  if (upstream.blobN) parts.push(`store ${s(upstream.blob)}/${upstream.blobN}`)
+  return parts.join(' · ')
+}
 // Historical ad-platform data is immutable: once Meta/Google's attribution window has
 // closed, a past range's spend / impressions / results never change. So for the pure
 // ad channels (meta / google) we cache a finalised past range far longer than the
@@ -2724,7 +2743,7 @@ const CACHEABLE_CHANNELS = new Set(['meta', 'google', 'attribution', 'blend'])
 // per-caller filtering) - the gate below enforces that, and each builder already
 // returns cache=!filtered, so a restricted caller still rebuilds live.
 const CACHEABLE_SCOPES_NOCLIENT = new Set(['agency', 'coverage', 'clinics'])
-async function readResultCache(key) { try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } }
+async function readResultCache(key) { const t = Date.now(); try { return await cacheStore().get(key, { type: 'json' }) } catch { return null } finally { upstream.blob += Date.now() - t; upstream.blobN++ } }
 function writeResultCache(key, payload) { try { cacheStore().setJSON(key, { at: Date.now(), payload }).catch(() => {}) } catch { /* non-fatal */ } }
 function cacheKeyFrom(url) {
   const p = new URLSearchParams(url.search)
@@ -2732,7 +2751,7 @@ function cacheKeyFrom(url) {
   // counter (a per-attempt browser cache-buster). None should fragment the SERVER
   // cache: stripping _a lets retries share one entry AND lets the Meta/Google warmer
   // (which has no _a) write the exact key the interactive request reads.
-  p.delete('_r'); p.delete('debug'); p.delete('nonce'); p.delete('_a')
+  p.delete('_r'); p.delete('debug'); p.delete('nonce'); p.delete('_a'); p.delete('_p'); p.delete('_w')
   const entries = [...p.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : 1)))
   return 'v1:' + encodeURIComponent(entries.map(([k, v]) => `${k}=${v}`).join('&'))
 }
@@ -3091,6 +3110,7 @@ export default async (req) => {
   // would be in its temporal dead zone at that point.
   let _actor = null
   let _warm = false    // this request is the background warmer replaying a view
+  let _cacheStatus = 'live'   // hit | stale | stale-error | live - for the reliability log
   const mkResponse = (obj, status, cache) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
   const json = async (obj, status = 200, cache = false) => {
     const softErr = status === 200 && obj && obj.error
@@ -3099,19 +3119,20 @@ export default async (req) => {
     // payload instead of surfacing an error to the user. Only for cacheable
     // requests that actually have a recent-enough cached copy. The diag write is
     // awaited so the failure is durably recorded before the lambda can freeze.
-    if (_ckey && _staleHit && softErr && (Date.now() - _staleHit.at) < STALE_ON_ERROR_MS) {
-      await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at, ..._actor })
+    if (_ckey && _staleHit && softErr && (Date.now() - _staleHit.at) < staleWindowFor(scope)) {
+      _cacheStatus = 'stale-error'
+      await diagLog({ sev: 'error-stale', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ageMs: Date.now() - _staleHit.at, cache: _cacheStatus, where: whereStr(), ..._actor })
       // The rebuild's own error rides along, so the page can say WHY it is showing
       // a saved copy instead of leaving a silent, out-of-date number on screen.
       return mkResponse({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true, error: String(obj.error).slice(0, 240) } }, 200, true)
     }
-    if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ..._actor })
+    if (softErr) await diagLog({ sev: 'error', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), cache: _cacheStatus, where: whereStr(), ..._actor })
     // Write-through: cache a freshly-built success, and flag builds that came close
     // to the timeout so we can see which scopes to make live-safe first.
     if (_ckey && cache && status === 200 && obj && !obj.error && !obj._cache) {
       writeResultCache(_ckey, obj)
       const ms = Date.now() - _t0
-      if (ms > 6000 && !_warm) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms, ..._actor })
+      if (ms > 6000 && !_warm) await diagLog({ sev: 'slow', scope: scope || `channel:${channel}`, client, ms, cache: _cacheStatus, where: whereStr(), ..._actor })
     }
     return mkResponse(obj, status, cache)
   }
@@ -3207,6 +3228,7 @@ export default async (req) => {
     const bust = !!url.searchParams.get('_r')
     const ttl = resultTtlFor(scope, channel, to)
     if (_staleHit && !bust && (Date.now() - _staleHit.at) < ttl) {
+      _cacheStatus = 'hit'
       return json({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000) } }, 200, true)
     }
     // Stale-while-revalidate. Past the fresh window, the old behaviour was to
@@ -3215,7 +3237,8 @@ export default async (req) => {
     // and the background warmer rebuilds this exact request behind it; the next
     // open is fresh. The Refresh button (_r) still forces a live rebuild, and the
     // warmer's own calls never take this branch or they would never rebuild.
-    if (_staleHit && !bust && !_warm && (Date.now() - _staleHit.at) < STALE_ON_ERROR_MS) {
+    if (_staleHit && !bust && !_warm && (Date.now() - _staleHit.at) < staleWindowFor(scope)) {
+      _cacheStatus = 'stale'
       if (await claimRevalidate(_ckey)) await triggerWarm({ urls: [url.search] })
       return json({ ..._staleHit.payload, _cache: { age: Math.round((Date.now() - _staleHit.at) / 1000), stale: true, revalidating: true } }, 200, true)
     }
@@ -3971,6 +3994,27 @@ export default async (req) => {
   // V2). Its own light read - account, date, spend - so the health build is not
   // touched. Best effort per platform: a platform that fails reads as failed in
   // adsOk, never as a measured zero.
+  // Refresh, done the warm way: queue a rebuild of these exact views in the
+  // background and answer at once. The page keeps its current copy and polls
+  // the same URLs (no cache-buster) until the rebuilt copies land, so a refresh
+  // no longer fires seven live builds against one CRM location and the same
+  // ad reads in the same instant - the contention the reliability log is full
+  // of. Only views this caller may see, for this client, and only cacheable
+  // ones; the warmer's own dedupe (one rebuild per view per 90s) still applies.
+  if (scope === 'revalidate') {
+    const urls = []
+    for (const u of url.searchParams.getAll('u').slice(0, 16)) {
+      const p = new URLSearchParams(String(u).replace(/^\?/, ''))
+      const sc = p.get('scope'), ch = p.get('channel') || 'meta'
+      if (p.get('client') !== client) continue
+      if (!(sc ? CACHEABLE_SCOPES.has(sc) : CACHEABLE_CHANNELS.has(ch))) continue
+      for (const k of ['_r', '_p', '_w', '_a', 'nonce', 'debug']) p.delete(k)
+      const qs = '?' + p.toString()
+      if (await claimRevalidate(cacheKeyFrom(new URL('https://x/' + qs)))) urls.push(qs)
+    }
+    const t = urls.length ? await triggerWarm({ urls }) : { triggered: false, reason: 'nothing to rebuild' }
+    return json({ scope: 'revalidate', client, queued: urls.length, triggered: !!(t && t.triggered), reason: (t && t.reason) || null })
+  }
   if (url.searchParams.get('scope') === 'spenddaily') {
     const cc = CLIENTS[client]
     if (!cc) return json({ scope: 'spenddaily', client, error: `unknown client ${client}` }, 404)

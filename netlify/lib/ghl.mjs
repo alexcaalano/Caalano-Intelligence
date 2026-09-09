@@ -944,10 +944,13 @@ async function _fetchAppointments(locTok, locationId, from, to) {
     }
     if (apptShown(s) && inPeriod(startTimeMs)) e.shownByStatus = true
     if (APPT_NOSHOW_RE.test(s) && inPeriod(startTimeMs)) e.noShowByStatus = true
-    // A live (not cancelled/invalid) call that took place in-period. Lets the
-    // caller fall back to "shown by pipeline stage" when the appointment status
-    // was never set but the opportunity was advanced past the shown stage.
-    if (!invalid && !cancelled && !APPT_NOSHOW_RE.test(s) && inPeriod(startTimeMs)) e.hasCallInPeriod = true
+    // An appointment that reached its time in-period and was not cancelled in
+    // advance: it occurred, whether the person showed, did not show, or nobody
+    // updated the status. A no-show is a resulted appointment and belongs in the
+    // show-rate denominator; a cancellation was called off before it happened and
+    // does not. Callers that fall back to "shown by pipeline stage" must check
+    // noShowByStatus first, so an explicit no-show is never promoted to a show.
+    if (!invalid && !cancelled && inPeriod(startTimeMs)) e.hasCallInPeriod = true
     map.set(contactId, e)
   }
   let events = 0
@@ -4859,7 +4862,7 @@ export async function buildUpdateExtra(locationId, from, to) {
     const isBooked = calBooked || reachedBook || st === 'won'
     const callOccurred = !!(f && f.hasCallInPeriod)
     const shown = !!(f && f.shownByStatus)
-    const isNoShow = NOSHOW_RE.test(stageName)
+    const isNoShow = NOSHOW_RE.test(stageName) || !!(f && f.noShowByStatus)
     if (calBooked) {
       booked++
       if (shown) { attended++; occurred++ }
@@ -5132,7 +5135,7 @@ export async function buildAttribution(locationId, from, to, opts = {}) {
       // of marking the appointment). Both are dated by the in-period call, and
       // the stage-inferred ones are tracked separately for the (Np) marker.
       let shownHit = !!f.shownByStatus, viaStage = false
-      if (!shownHit && f.hasCallInPeriod) {
+      if (!shownHit && f.hasCallInPeriod && !f.noShowByStatus) {
         const pi = idx.get(o.pipelineId); const stg = pi ? pi.byId[o.pipelineStageId] : null; const pos = stg ? stg.pos : -1
         if (String(o.status || '').toLowerCase() === 'won' || (pi && pi.showPos != null && pos >= pi.showPos)) { shownHit = true; viaStage = true }
       }

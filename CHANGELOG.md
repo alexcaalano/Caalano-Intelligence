@@ -18,7 +18,24 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.505.0 - 2026-09-09 · `3c1aeea` - Demo account fills every tab; Forms scorecards in one row
+## v3.506.0 - 2026-09-09 · `PENDING` - A no-show counts as an appointment that occurred
+
+- **Show rate now includes no-shows in its denominator.** An appointment
+  marked no-show is a resulted appointment: it occurred and the person did
+  not show. Until now it was left out of "occurred" the same way a
+  cancellation is, so a calendar's show rate only ever counted shown
+  appointments against unactioned ones and read too high. This applies to
+  the calendar tiles on the Meta and Google tabs, the Caalano360 reach rows,
+  the calendar drill, the Forms and Location feeds and the show-rate
+  findings. The Appointments tab already worked this way, so the two now
+  agree.
+- **Cancellations are unchanged.** A booking cancelled in advance still
+  counts as booked on the day it was made and is neither occurred nor shown.
+- The "shown by pipeline stage" fallback, for teams that advance the stage
+  instead of marking the appointment, no longer applies to an appointment
+  explicitly marked no-show.
+
+ · `3c1aeea` - Demo account fills every tab; Forms scorecards in one row
 
 - **The demo account (Norwest Multi-Disciplinary) now has data for every
   client tab.** Every patient carries a street address, suburb and postcode

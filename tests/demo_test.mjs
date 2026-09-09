@@ -47,6 +47,12 @@ ok(crm.totals.openValue > 0, 'open pipeline has value')
 const calls = await buildUserCalls(DEMO_LOCATION, from, to, false, true)
 ok(calls.totals.inbound > 0 && calls.totals.missedInbound > 0, 'Call Reporting has inbound and missed calls')
 const drill = await buildCcDrill(DEMO_LOCATION, from, to, 'all', 'created')
+// A no-show is an appointment that occurred and was not shown; a cancellation
+// was called off in advance and is neither. So on calendars where the demo has
+// no-shows, occurred exceeds shown and the show rate sits under 100%.
+const fup = drill.bookingByCalendar.filter((c) => /Follow-up/.test(c.calendar))
+ok(fup.length > 0 && fup.every((c) => c.occurred >= c.shown) && fup.some((c) => c.occurred > c.shown), 'no-shows count as occurred but not shown on the calendar tiles')
+ok(fup.every((c) => c.booked >= c.occurred), 'cancelled bookings stay booked and are never occurred')
 ok(drill.cash && drill.cash.collected > 0 && drill.cash.paidInFull > 0 && drill.cash.paidInFull < drill.cash.won, 'cash collected reads with some paid in full')
 const speed = await buildSpeedToLead(DEMO_LOCATION, from, to)
 ok(speed.contactRate.rate < 100 && speed.onlyAuto > 0, 'speed to lead sees unworked leads and auto-only leads')

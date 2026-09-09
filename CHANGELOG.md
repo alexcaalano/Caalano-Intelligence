@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.521.0 - 2026-09-09 · `PENDING` - Key event reach costs on the same basis as Pipeline performance
+## v3.521.0 - 2026-09-09 · `8e54ffb` - Key event reach costs on the same basis as Pipeline performance
 
 - **Cost per event in Key event reach now allocates ad spend across pipelines
   by lead share**, the rule Pipeline performance already used. The bars and

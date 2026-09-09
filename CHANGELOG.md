@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.516.0 - 2026-09-09 · `PENDING` - Lost deals on both bases in the monthly report
+## v3.516.0 - 2026-09-09 · `6d69b36` - Lost deals on both bases in the monthly report
 
 - **Lost reasons stay on the status-change basis.** The lost-reasons block
   reads the deals marked lost this month whatever month their lead arrived,

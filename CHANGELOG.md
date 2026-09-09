@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.524.0 - 2026-09-09 · `PENDING` - Reliability batch 3: warm what people open, refresh without the stampede
+## v3.524.0 - 2026-09-09 · `4e212e1` - Reliability batch 3: warm what people open, refresh without the stampede
 
 From the three-day reliability log.
 

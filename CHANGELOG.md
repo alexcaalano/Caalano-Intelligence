@@ -18,7 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.515.0 - 2026-09-09 · `0689011` - People drill carries the no-show flag
+## v3.516.0 - 2026-09-09 · `PENDING` - Lost deals on both bases in the monthly report
+
+- **Lost reasons stay on the status-change basis.** The lost-reasons block
+  reads the deals marked lost this month whatever month their lead arrived,
+  and now says so, so it reads as what the team has just been through.
+- **Deals lost and Lost value join the status-change vs created-on table**
+  on the Account summary slide, next to the won figures. Status change =
+  marked lost this month; created on = this month's leads already lost.
+- **Click a lost count to see why.** The drill lists every reason with its
+  deal count, share and value lost, the total value lost at the top, and
+  each reason opens to the people behind it with their source, pipeline,
+  stage, owner and value.
+- Reports published before this release carry the status-change side only;
+  regenerate and republish a month to fill the created-on column.
+
+ · `0689011` - People drill carries the no-show flag
 
 - The key-event people feed now sends the no-show flag per calendar, so the
   drill's new Unresulted badge applies only to appointments still on

@@ -3,7 +3,7 @@
 // toggle needs an opportunity field, Lost Reasons needs ids, Call Reporting
 // needs inbound calls, Analytics needs GA4 rows, the Google tab needs keywords.
 import { demoData, demoGhl, demoWindsor, DEMO_LOCATION, DEMO_GA4_PROP } from '../netlify/lib/demo.mjs'
-import { buildForms, buildCrm, buildUserCalls, buildCcDrill, buildSpeedToLead, buildAppointmentInsights, buildCalPerf, buildUserPerformance } from '../netlify/lib/ghl.mjs'
+import { buildForms, buildCrm, buildUserCalls, buildCcDrill, buildSpeedToLead, buildAppointmentInsights, buildCalPerf, buildUserPerformance, monthlyDeals } from '../netlify/lib/ghl.mjs'
 let n = 0, f = 0
 const ok = (c, m) => { n++; if (!c) { f++; console.log('FAIL:', m) } }
 const to = new Date().toISOString().slice(0, 10), from = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)
@@ -74,6 +74,15 @@ const cp = await buildCalPerf(DEMO_LOCATION, from, to)
 ok('unresulted' in cp.totals && cp.calendars.every((c) => c.unresulted >= 0), 'Calendars tab carries unresulted per calendar')
 const up = await buildUserPerformance(DEMO_LOCATION, from, to)
 ok(up.users.every((u) => u.showRate == null || u.showRate === Math.round((u.shown / (u.shown + u.noShow)) * 100)), 'Users tab show rate on resulted appointments')
+
+// Monthly report deals: lost on both bases, each with reasons and a value.
+const md = await monthlyDeals(DEMO_LOCATION, from, to)
+ok(md.lost.total.count > 0 && md.lostCreatedOn.total.count > 0 && md.lost.total.count !== md.lostCreatedOn.total.count, 'lost by status change and lost by created-on are both present and differ')
+// Dates on a deal are UTC days; the window is the client's local month, so a
+// lead created late on the last UTC day before the month can sit inside it.
+const dayBefore = new Date(Date.parse(from) - 86400000).toISOString().slice(0, 10), dayAfter = new Date(Date.parse(to) + 86400000).toISOString().slice(0, 10)
+ok(md.lostCreatedOn.deals.every((d) => d.createdAt >= dayBefore && d.createdAt <= dayAfter), 'created-on lost deals all have their lead created in the month')
+ok(md.lostCreatedOn.byReason.reduce((a, r) => a + r.value, 0) === md.lostCreatedOn.total.value, 'reasons sum to the value lost')
 
 // Windsor surface
 ok(demoWindsor('googleanalytics4', ['account_id', 'sessions'], from, to)[0].account_id === DEMO_GA4_PROP, 'GA4 totals row')

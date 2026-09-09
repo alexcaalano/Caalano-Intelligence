@@ -3606,6 +3606,7 @@ export default async (req) => {
       for (const d of md.statusChange.won.deals) d.userName = nm(d.userId)
       for (const d of md.createdOn.won.deals) d.userName = nm(d.userId)
       for (const d of md.lost.deals) d.userName = nm(d.userId)
+      if (md.lostCreatedOn) for (const d of md.lostCreatedOn.deals) d.userName = nm(d.userId)
       md.userNames = uName
       return json({ deals: md, period: { from, to } }, 200)
     } catch (e) { return json({ deals: null, error: String(e.message || e) }, 200) }

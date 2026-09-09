@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.515.0'
+const APP_VERSION = '3.516.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -20949,6 +20949,7 @@ function MRFormDrill({ clientId, range, form, event, pipeKey, currency, onClose 
 }
 function MRDrill({ drill, currency, campMap, medMap, onClose }) {
   const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
+  const n0f = (v) => fmtNumber(Math.round(Number(v) || 0))
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
@@ -20965,6 +20966,17 @@ function MRDrill({ drill, currency, campMap, medMap, onClose }) {
   // scales to the column count so more data never forces horizontal scrolling.
   const hasAd = deals.some((d) => d.ad || d.campaign)
   const colCount = 7 + (isLost ? 1 : 1) + (hasAd ? 1 : 0)
+  const isLostSum = drill.kind === 'lostsum' && drill.lost
+  const lostPeople = (rows) => (
+    <table className="mr-table mr-kids-tbl">
+      <thead><tr><th>Contact</th><th>Lead created</th><th>Lost</th><th>Source</th><th>Pipeline · stage</th><th>Owner</th><th className="r">Value</th></tr></thead>
+      <tbody>{rows.map((d, i) => <tr key={i}>
+        <td>{d.name}</td><td>{fmtDate(d.createdAt)}</td><td>{fmtDate(d.statusAt)}</td>
+        <td><span className={`mr-src mr-src-${d.channel || 'other'}`}>{d.channel === 'meta' ? 'Meta' : d.channel === 'google' ? 'Google' : mrPrettySource(d.source)}</span></td>
+        <td>{[d.pipeline, d.stage].filter(Boolean).join(' · ') || '-'}</td><td>{d.userName || '-'}</td><td className="r">{money(d.value)}</td>
+      </tr>)}</tbody>
+    </table>
+  )
   return (
     <div className="mr-drill-overlay no-print" onClick={onClose}>
       <div className="mr-drill" onClick={(e) => e.stopPropagation()} style={{ '--mr-drill-cols': colCount }}>
@@ -20973,7 +20985,24 @@ function MRDrill({ drill, currency, campMap, medMap, onClose }) {
           <button className="mr-drill-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="mr-drill-body">
-          {deals.length ? (
+          {isLostSum ? (
+            <>
+              {drill.basis ? <p className="mr-drill-basis">{drill.basis}. {n0f(drill.lost.total.count)} deal{drill.lost.total.count === 1 ? '' : 's'} · {money(drill.lost.total.value)} lost in total. Click a reason to see who.</p> : null}
+              <MRDrillTable
+                cols={[
+                  { k: 'name', label: 'Reason' },
+                  { k: 'count', label: 'Deals', align: 'r', render: (r) => n0f(r.count) },
+                  { k: 'share', label: '%', align: 'r', render: (r) => (drill.lost.total.count ? Math.round((r.count / drill.lost.total.count) * 100) + '%' : '-') },
+                  { k: 'value', label: 'Value lost', align: 'r', render: (r) => money(r.value) },
+                ]}
+                rows={drill.lost.byReason || []}
+                rowKey={(r) => r.name}
+                childrenOf={(r) => (drill.lost.deals || []).filter((d) => (d.reason || 'Not set') === r.name)}
+                renderChildren={(kids) => lostPeople(kids)}
+                empty="No lost deals on this basis."
+              />
+            </>
+          ) : deals.length ? (
             <table className="mr-table">
               <thead><tr>
                 <th>Contact</th><th>Lead created</th><th>{isLost ? 'Lost' : 'Won'}</th>
@@ -21118,9 +21147,16 @@ function MRCreative({ a, money, n0, clientId, range, channel, currency }) {
 
 // Status Change vs Created On revenue matrix - the same figures side by side so
 // the client can see cash banked this month vs how this month's leads are doing.
-function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
+function MRRevMatrix({ sc, co, spend, money, n0, onDrill, lostSc, lostCo }) {
   const cell = (v, deals, title) => onDrill && deals && deals.length
     ? <button className="mr-cellbtn" onClick={() => onDrill({ title, deals })}>{v}</button> : v
+  // Lost on the same two bases. A click opens the reasons behind the number,
+  // with the value lost, and each reason opens to the people.
+  const lostCell = (L, title, basis) => {
+    if (!L) return <span className="mr-cell-na" title="Regenerate this month's snapshot to read lost deals on this basis">-</span>
+    const v = n0(L.total.count)
+    return onDrill && L.total.count ? <button className="mr-cellbtn" onClick={() => onDrill({ kind: 'lostsum', title, basis, lost: L, deals: L.deals })}>{v}</button> : v
+  }
   const days = (v) => (v == null ? '-' : `${v} day${v === 1 ? '' : 's'}`)
   const roas = (rev) => (spend ? (rev / spend).toFixed(1) + 'x' : '-')
   const cac = (paidWon) => (spend && paidWon ? money(spend / paidWon) : '-')
@@ -21135,6 +21171,10 @@ function MRRevMatrix({ sc, co, spend, money, n0, onDrill }) {
         <tr><td>Deals won</td><td className="r">{cell(n0(sc.count), sc.deals, 'Deals won - closed this month')}</td><td className="r">{cell(n0(co.count), co.deals, 'Deals won - leads created this month')}</td></tr>
         <tr><td>Avg won value</td><td className="r">{sc.avgValue ? money(sc.avgValue) : '-'}</td><td className="r">{co.avgValue ? money(co.avgValue) : '-'}</td></tr>
         <tr><td>Avg time to close</td><td className="r">{days(sc.avgCloseDays)}</td><td className="r">{days(co.avgCloseDays)}</td></tr>
+        {(lostSc || lostCo) ? <>
+          <tr className="mr-revmatrix-lost"><td>Deals lost <small>click for the reasons</small></td><td className="r">{lostCell(lostSc, 'Deals lost - marked lost this month', 'Marked lost this month, whatever month the lead arrived')}</td><td className="r">{lostCell(lostCo, 'Deals lost - leads created this month', "This month's leads that are already lost")}</td></tr>
+          <tr className="mr-revmatrix-lost"><td>Lost value</td><td className="r">{lostSc ? money(lostSc.total.value) : '-'}</td><td className="r">{lostCo ? money(lostCo.total.value) : '-'}</td></tr>
+        </> : null}
       </tbody>
     </table>
   )
@@ -22063,9 +22103,9 @@ function renderMonthlyDeck(rep, h) {
 
         <section className="mr-bubble">
           <div className="mr-bubble-lab">📉 Lost reasons &amp; pipeline status</div>
-          <p className="mr-bubble-sub">Why this month's closed-lost deals were lost, and where this month's leads currently stand.</p>
+          <p className="mr-bubble-sub">Why the deals marked lost this month were lost - by status change, whatever month the lead arrived, so it reads as what the team has just been through - and where this month's leads currently stand.</p>
           <div className="mr-kpirow">
-            <MRKpi label="Deals lost" value={n0(lost.total.count)} sub="closed-lost this month" />
+            <MRKpi label="Deals lost" value={n0(lost.total.count)} sub="marked lost this month (status change)" />
             <MRKpi label="Value lost" value={money(lost.total.value)} />
             <MRKpi label="Win rate" value={pc(dealsWon, dealsWon + lost.total.count)} sub="won ÷ resulted this month" />
             <MRKpi label="Still open" value={n0(crm.open)} sub={`${money(crm.openValue)} in pipeline`} />
@@ -22145,7 +22185,7 @@ function renderMonthlyDeck(rep, h) {
         <div className="mr-two mr-two-viz">
           <div>
             <div className="mr-section-lab">Revenue - status change vs created on</div>
-            <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} /></div>
+            <div className="mr-revmatrix-wrap"><MRRevMatrix sc={scWon} co={coWon} spend={totalSpend} money={money} n0={n0} onDrill={openDrill} lostSc={md ? md.lost : null} lostCo={md && md.lostCreatedOn ? md.lostCreatedOn : null} /></div>
             {roiRows.length > 0 && (
               <>
                 <div className="mr-section-lab">ROI by channel (closed this month)</div>

@@ -2857,7 +2857,10 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
       userId: o.assignedTo || 'unassigned', reason: o.lostReasonId ? (reasonName[o.lostReasonId] || 'Other') : null,
     }
   }
-  const wonSC = [], wonCO = [], lost = []
+  // Lost on two bases, like won: status change (marked lost this month, whatever
+  // month the lead arrived - what the team did) and created on (this month's
+  // leads that are already lost - how the cohort is faring).
+  const wonSC = [], wonCO = [], lost = [], lostCO = []
   for (const o of opps) {
     const st = String(o.status || '').toLowerCase()
     const scMs = Date.parse(o.lastStatusChangeAt), crMs = Date.parse(o.createdAt)
@@ -2866,6 +2869,7 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
       if (isFinite(crMs) && inWin(crMs)) wonCO.push(deal(o, scMs))
     } else if (st === 'lost' || st === 'abandoned') {
       if (isFinite(scMs) && inWin(scMs)) lost.push(deal(o, scMs))
+      if (isFinite(crMs) && inWin(crMs)) lostCO.push(deal(o, scMs))
     }
   }
   const isPaid = (c) => c === 'meta' || c === 'google'
@@ -2891,16 +2895,20 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
       deals: deals.sort((a, b) => b.value - a.value).slice(0, 500),
     }
   }
-  const lostByReason = {}
-  for (const d of lost) { const r = d.reason || 'Not set'; const e = lostByReason[r] = lostByReason[r] || { count: 0, value: 0 }; e.count++; e.value += d.value }
+  const aggLost = (list) => {
+    const byReason = {}
+    for (const d of list) { const r = d.reason || 'Not set'; const e = byReason[r] = byReason[r] || { count: 0, value: 0 }; e.count++; e.value += d.value }
+    return {
+      total: { count: list.length, value: Math.round(sumV(list)) },
+      byReason: Object.entries(byReason).map(([name, v]) => ({ name, count: v.count, value: Math.round(v.value) })).sort((a, b) => b.count - a.count),
+      deals: list.sort((a, b) => b.value - a.value).slice(0, 500),
+    }
+  }
   return {
     statusChange: { won: aggWon(wonSC) },
     createdOn: { won: aggWon(wonCO) },
-    lost: {
-      total: { count: lost.length, value: Math.round(sumV(lost)) },
-      byReason: Object.entries(lostByReason).map(([name, v]) => ({ name, count: v.count, value: Math.round(v.value) })).sort((a, b) => b.count - a.count),
-      deals: lost.sort((a, b) => b.value - a.value).slice(0, 500),
-    },
+    lost: aggLost(lost),              // status change - the report's lost-reasons basis
+    lostCreatedOn: aggLost(lostCO),   // created on - this month's leads already lost
     capped: opps.length >= CAP,
   }
 }

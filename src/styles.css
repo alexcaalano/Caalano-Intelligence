@@ -4903,3 +4903,12 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .u-lb tr.u-agg-row td.u-ke, .u-lb tr.row-sel td.u-ke { color: inherit; }
 
 .kp-cal-badge.unres { background: color-mix(in srgb, #f5a524 18%, var(--panel)); color: #8a5a00; }
+
+/* Lost rows on the status-change vs created-on table, and the reasons drill. */
+.mr-revmatrix-lost td:first-child small { display: block; font-size: 10.5px; color: var(--faint); font-weight: 500; }
+.mr-revmatrix-lost td { border-top: 1px dashed var(--border-2); }
+.mr-revmatrix-lost + .mr-revmatrix-lost td { border-top: 0; }
+.mr-cell-na { color: var(--faint); cursor: help; }
+.mr-drill-basis { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.mr-kids-tbl { font-size: 12px; }
+.mr-kids-tbl th { font-weight: 600; color: var(--muted); }

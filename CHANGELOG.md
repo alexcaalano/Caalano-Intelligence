@@ -18,7 +18,13 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.514.0 - 2026-09-09 · `b9ab2b6` - The people drill names unresulted appointments
+## v3.515.0 - 2026-09-09 · `PENDING` - People drill carries the no-show flag
+
+- The key-event people feed now sends the no-show flag per calendar, so the
+  drill's new Unresulted badge applies only to appointments still on
+  confirmed; a real no-show reads as No-show. Follows v3.514.0.
+
+ · `b9ab2b6` - The people drill names unresulted appointments
 
 - **Unresulted is its own badge in the key-event people drill.** The drill
   had four appointment states and labelled anything past its time and not

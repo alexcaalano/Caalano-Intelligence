@@ -4745,7 +4745,7 @@ export async function buildKeyPeople(locationId, from, to, opts = {}) {
     if (!apptByContact || !cid) return null
     const e = apptByContact.get(cid)
     if (!e || !e.calendars) return null
-    const list = e.calendars.filter((c) => !calSet.size || (c.id && calSet.has(String(c.id)))).map((c) => ({ name: c.name, occurred: !!c.occurred, shown: !!c.shown, cancelled: !!c.cancelled }))
+    const list = e.calendars.filter((c) => !calSet.size || (c.id && calSet.has(String(c.id)))).map((c) => ({ name: c.name, occurred: !!c.occurred, shown: !!c.shown, noShow: !!c.noShow, cancelled: !!c.cancelled }))
     return list.length ? list : null
   }
   // A calendar event counts bookings made in the period whoever the lead is,

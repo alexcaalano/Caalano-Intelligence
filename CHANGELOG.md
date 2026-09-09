@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.508.0 - 2026-09-09 · `PENDING` - One appointment rule on every tab, with unresulted called out
+## v3.508.0 - 2026-09-09 · `16ef41d` - One appointment rule on every tab, with unresulted called out
 
 - **The same definitions now apply on the Appointments, Calendars and Users
   tabs** as on the key-event tiles: occurred = reached its time and not

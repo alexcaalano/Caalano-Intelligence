@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.505.0 - 2026-09-09 · `PENDING` - Demo account fills every tab; Forms scorecards in one row
+## v3.505.0 - 2026-09-09 · `3c1aeea` - Demo account fills every tab; Forms scorecards in one row
 
 - **The demo account (Norwest Multi-Disciplinary) now has data for every
   client tab.** Every patient carries a street address, suburb and postcode

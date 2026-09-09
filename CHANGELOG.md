@@ -18,7 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.512.0 - 2026-09-09 · `176ce4a` - Client reports open as slides; one basis for the leads-by-status line
+## v3.513.0 - 2026-09-09 · `PENDING` - Key events on the Users leaderboard, sortable
+
+- **Key events per rep sit in the leaderboard.** Each configured key event
+  is a column between Show % and Won, in pipeline order, on every rep and on
+  the All users row, and every one of them sorts like the other columns. The
+  separate "Key events reached, per rep" table below the leaderboard is
+  folded in; its explanation moves to the leaderboard's note.
+
+ · `176ce4a` - Client reports open as slides; one basis for the leads-by-status line
 
 - **Client reports open in Slides.** The Reports view that viewers get now
   has the same Slides / Scroll switch as the staff view, with slides the

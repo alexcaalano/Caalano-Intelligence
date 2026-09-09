@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.512.0'
+const APP_VERSION = '3.513.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -14829,7 +14829,8 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
   // CAC per rep: ad spend allocated by each rep's SHARE of leads (not the full
   // spend, which every rep would otherwise carry), then ÷ their wins.
   const totalLeadsAll = users.reduce((a, u) => a + (u.leads || 0), 0)
-  const withCost = users.map((u) => ({ ...u, costWon: u.won && totalSpend ? totalSpend / u.won : null, costBooked: u.booked && totalSpend ? totalSpend / u.booked : null, cac: (u.leads && u.won && totalSpend && totalLeadsAll) ? (totalSpend * (u.leads / totalLeadsAll)) / u.won : null }))
+  const keOf = (u) => Object.fromEntries(stageCols.map((sName, i) => ['ke' + i, (u.stages && u.stages[sName]) || 0]))
+  const withCost = users.map((u) => ({ ...u, ...keOf(u), costWon: u.won && totalSpend ? totalSpend / u.won : null, costBooked: u.booked && totalSpend ? totalSpend / u.booked : null, cac: (u.leads && u.won && totalSpend && totalLeadsAll) ? (totalSpend * (u.leads / totalLeadsAll)) / u.won : null }))
   const setKey = (k) => setSort((s) => ({ key: k, dir: s.key === k ? -s.dir : -1 }))
   const sorted = [...withCost].sort((a, b) => { const av = a[sort.key], bv = b[sort.key]; if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sort.dir; if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1; return (av - bv) * sort.dir })
   const tot = users.reduce((a, u) => ({ leads: a.leads + u.leads, booked: a.booked + u.booked, shown: a.shown + u.shown, won: a.won + u.won, revenue: a.revenue + u.revenue }), { leads: 0, booked: 0, shown: 0, won: 0, revenue: 0 })
@@ -14846,7 +14847,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
   const ccS = users.reduce((a, u) => a + (u.avgCloseDays != null ? u.avgCloseDays * u.won : 0), 0)
   const aggStages = {}; for (const u of users) for (const s of Object.keys(u.stages || {})) aggStages[s] = (aggStages[s] || 0) + (u.stages[s] || 0)
   const allUser = {
-    id: '__all', name: 'All users', _agg: true,
+    id: '__all', name: 'All users', _agg: true, ...Object.fromEntries(stageCols.map((sName, i) => ['ke' + i, aggStages[sName] || 0])),
     leads: tot.leads, booked: tot.booked, shown: tot.shown, won: tot.won, revenue: tot.revenue,
     open: users.reduce((a, u) => a + (u.open || 0), 0), lost: users.reduce((a, u) => a + (u.lost || 0), 0),
     openValue: users.reduce((a, u) => a + (u.openValue || 0), 0), lostValue: users.reduce((a, u) => a + (u.lostValue || 0), 0),
@@ -14946,7 +14947,7 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl u-lb">
-          <thead><tr><th className="u-rank-h" title="Rank by wins; arrow shows movement vs the previous equal-length period">#</th><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate" title="Shown ÷ resulted (shown + no-show). Unresulted appointments - past their time, status never set - are shown on hover and left out">Show %</Th><Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
+          <thead><tr><th className="u-rank-h" title="Rank by wins; arrow shows movement vs the previous equal-length period">#</th><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate" title="Shown ÷ resulted (shown + no-show). Unresulted appointments - past their time, status never set - are shown on hover and left out">Show %</Th>{stageCols.map((sName, i) => <Th key={sName} k={'ke' + i} title={`${sName} - how many of this rep's leads reached this key event or any later one`}>{sName.length > 14 ? sName.slice(0, 13) + '…' : sName}</Th>)}<Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
           <tbody>{leaderboardRows.map((u) => {
             const isOpen = open === u.id
             return (
@@ -14956,12 +14957,13 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
                   <td className="lft"><span className="u-chev">{isOpen ? '▾' : '▸'}</span> {u.name}</td>
                   <td>{fmtNumber(u.leads)}</td><td>{fmtNumber(u.booked)}</td><td>{u.bookRate == null ? '-' : `${u.bookRate}%`}</td>
                   <td>{fmtNumber(u.shown)}</td><td title={`${fmtNumber(u.shown)} shown · ${fmtNumber(u.noShow || 0)} no-show${u.unresulted ? ` · ${fmtNumber(u.unresulted)} unresulted` : ''}`}>{u.showRate == null ? '-' : `${u.showRate}%`}{u.unresulted ? <small className="u-unres" title="Past their time with no showed or no-show set"> · {fmtNumber(u.unresulted)} unresulted</small> : null}</td>
+                  {stageCols.map((sName, i) => <td key={sName} className="u-ke" title={sName}>{fmtNumber(u['ke' + i] || 0)}</td>)}
                   <td>{fmtNumber(u.won)}</td><td>{u.winRate == null ? '-' : `${u.winRate}%`}</td>
                   <td>{money(u.revenue)}</td><td>{u.avgDeal != null ? money(u.avgDeal) : '-'}</td><td>{u.avgCloseDays != null ? `${u.avgCloseDays}d` : '-'}</td>
                   <td>{u.costWon != null ? money(u.costWon) : '-'}</td>
                   <td>{u.cac != null ? money(u.cac) : '-'}</td>
                 </tr>
-                {isOpen && <tr className="u-detail-row"><td colSpan={14}>
+                {isOpen && <tr className="u-detail-row"><td colSpan={14 + stageCols.length}>
                   <div className="u-detail">
                     <div className="u-detail-main">
                       {(() => { const wv = u.wonValue != null ? u.wonValue : u.revenue; const lv = u.lostValue || 0; const decided = wv + lv; const vwr = decided ? Math.round((wv / decided) * 100) : null; return (
@@ -15036,19 +15038,9 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
             )
           })}</tbody>
         </table></div>
-        <Caveat style={{ marginTop: 10 }}>Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended - it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</Caveat>
+        <Caveat style={{ marginTop: 10 }}>{stageCols.length ? <>The key event columns count how many of each rep's leads reached that stage or any later one (cumulative), in pipeline order; click a heading to sort by it. Configure them in Settings → the client → Key events. </> : null}Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended - it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</Caveat>
       </div>
 
-      {stageCols.length > 0 && <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Key events reached, per rep</div>
-        <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl">
-          <thead><tr><th className="lft">Rep</th><th>Leads</th>{stageCols.map((s) => <th key={s} title={s}>{s.length > 14 ? s.slice(0, 13) + '…' : s}</th>)}<th>Won</th></tr></thead>
-          <tbody>{sorted.map((u) => (
-            <tr key={u.id}><td className="lft">{u.name}</td><td>{fmtNumber(u.leads)}</td>{stageCols.map((s) => <td key={s}>{fmtNumber(u.stages[s] || 0)}</td>)}<td>{fmtNumber(u.won)}</td></tr>
-          ))}</tbody>
-        </table></div>
-        <Caveat style={{ marginTop: 10 }}>How many of each rep's leads reached each configured key stage (cumulative - reaching a later stage counts the earlier ones). Configure the stages in Settings → the client → Key events.</Caveat>
-      </div>}
       {drill && (() => {
         const repTabs = [...new Set(drill.deals.map((x) => x.user).filter(Boolean))].sort((a, b) => a.localeCompare(b))
         const multi = repTabs.length > 1

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.512.0 - 2026-09-09 · `PENDING` - Client reports open as slides; one basis for the leads-by-status line
+## v3.512.0 - 2026-09-09 · `176ce4a` - Client reports open as slides; one basis for the leads-by-status line
 
 - **Client reports open in Slides.** The Reports view that viewers get now
   has the same Slides / Scroll switch as the staff view, with slides the

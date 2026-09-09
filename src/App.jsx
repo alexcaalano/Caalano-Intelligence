@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.511.0'
+const APP_VERSION = '3.512.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -20571,6 +20571,10 @@ function ClientReports({ clients, currency }) {
   const [drill, setDrill] = useState(null)
   const [formDrill, setFormDrill] = useState(null) // {form, event, pipeKey} - who is behind one Form performance cell
   const [copied, setCopied] = useState(false)
+  // Slides by default, as on the staff view: one page at a time reads better
+  // than a long scroll. Scroll stays one click away.
+  const [view, setView] = useState('slides')
+  const [idx, setIdx] = useState(0)
   const copyLink = () => { try { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* clipboard blocked */ } }
   const deckRef = useRef(null)
   const money = (v) => (v == null || isNaN(v) ? '-' : fmtCurrency(v, currency))
@@ -20597,6 +20601,20 @@ function ClientReports({ clients, currency }) {
   }, [clientId, month])
   const rep = st.status === 'ok' ? st.report : null
   const deck = React.useMemo(() => (rep ? renderMonthlyDeck(rep, { currency, money, n0, pc, openDrill: (d) => setDrill(d), setFormDrill }) : []), [rep, currency])
+  const total = deck.length
+  const cur = Math.max(0, Math.min(idx, total - 1))
+  const slideTitle = (el, i) => (el && el.props && (el.props.title || el.props.kicker)) || (el && el.key === 'cover' ? 'Cover' : `Slide ${i + 1}`)
+  useEffect(() => { setIdx(0) }, [clientId, month, view])
+  useEffect(() => {
+    if (view !== 'slides' || !total || drill || formDrill) return
+    const onKey = (e) => {
+      if (/^(input|select|textarea)$/i.test((e.target && e.target.tagName) || '')) return
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') { setIdx((i) => Math.min(i + 1, total - 1)); e.preventDefault() }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { setIdx((i) => Math.max(i - 1, 0)); e.preventDefault() }
+      else if (e.key === 'Home') { setIdx(0) } else if (e.key === 'End') { setIdx(total - 1) }
+    }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  }, [view, total, drill, formDrill])
   async function downloadPdf() {
     if (!deckRef.current) return
     setExporting(true); deckRef.current.classList.add('mr-exporting')
@@ -20617,13 +20635,27 @@ function ClientReports({ clients, currency }) {
         </select>
         <div className="mr-bar-spacer" />
         {st.publishedAt && <span className="mr-saved pub" title={`Published ${new Date(st.publishedAt).toLocaleString('en-AU')}`}>🟢 Published {new Date(st.publishedAt).toLocaleDateString('en-AU')}</span>}
+        {rep && <span className="mr-seg" role="group" aria-label="Layout">
+          <button className={view === 'slides' ? 'on' : ''} onClick={() => setView('slides')}>▤ Slides</button>
+          <button className={view === 'scroll' ? 'on' : ''} onClick={() => setView('scroll')}>▦ Scroll</button>
+        </span>}
         {rep && <button className="mr-btn" onClick={copyLink} title="Copy a direct link to this report">{copied ? '✓ Link copied' : '🔗 Copy link'}</button>}
         {canDownload && <button className="mr-btn" onClick={downloadPdf} disabled={!rep || exporting} title="Download as PDF">{exporting ? 'Exporting…' : '⤓ Download PDF'}</button>}
       </div>
       {months && !months.length && <div className="mr-note mr-empty-deep"><div className="big">🗓️</div><b>No published reports yet.</b><p style={{ maxWidth: 460, margin: '8px auto 0' }}>When your agency publishes a monthly report for {client ? client.name : 'your account'}, it will appear here.</p></div>}
       {st.status === 'loading' && <div className="mr-note"><Spinner label="Loading report…" /></div>}
       {st.status === 'err' && <div className="mr-note mr-err">Couldn’t load this report - please try again shortly.</div>}
-      {rep && <div className="mr-deck" ref={deckRef}><div className="mr-track">{deck}</div></div>}
+      {rep && view === 'slides' && total > 0 && (
+        <div className="mr-nav no-print">
+          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={cur === 0} aria-label="Previous slide">‹</button>
+          <div className="mr-nav-chips">
+            {deck.map((el, i) => <button key={i} className={'mr-nav-chip' + (i === cur ? ' on' : '')} onClick={() => setIdx(i)} title={slideTitle(el, i)}><span className="mr-nav-num">{i + 1}</span><span className="mr-nav-t">{slideTitle(el, i)}</span></button>)}
+          </div>
+          <button className="mr-nav-arrow" onClick={() => setIdx((i) => Math.min(total - 1, i + 1))} disabled={cur === total - 1} aria-label="Next slide">›</button>
+          <span className="mr-nav-count">{cur + 1} / {total}</span>
+        </div>
+      )}
+      {rep && <div className={'mr-deck' + (view === 'slides' ? ' mr-slides' : '')} ref={deckRef}><div className="mr-track" style={view === 'slides' ? { transform: `translateX(-${cur * 100}%)` } : undefined}>{deck}</div></div>}
       {drill && <MRDrill drill={drill} currency={currency} campMap={rep && rep.campIdMap} medMap={rep && rep.mediumIdMap} onClose={() => setDrill(null)} />}
       {formDrill && rep && rep.client && <MRFormDrill clientId={rep.client.id} range={rep.period} form={formDrill.form} event={formDrill.event} pipeKey={formDrill.pipeKey} currency={currency} onClose={() => setFormDrill(null)} />}
     </div>
@@ -22085,7 +22117,7 @@ function renderMonthlyDeck(rep, h) {
                 />
               )
             })()}
-            <p className="mr-foot-note" style={{ marginTop: 8 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(lost.total.count)} lost, {n0(crm.open)} still open. The Meta / Google / Other columns split each lost reason by the platform its lead first came from.</p>
+            <p className="mr-foot-note" style={{ marginTop: 8 }}>Of {n0(crm.leads)} leads created this month: {n0(coWon.count)} won, {n0(crm.lost != null ? crm.lost : Math.max(0, n0(crm.leads) - n0(coWon.count) - n0(crm.open)))} lost, {n0(crm.open)} still open. The table above counts deals marked lost this month whatever month their lead arrived, so its total can differ. The Meta / Google / Other columns split each lost reason by the platform its lead first came from.</p>
           </div>
         </section>
       </MRSlide>

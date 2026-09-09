@@ -9,6 +9,7 @@
 // NOTE: metric field names marked VERIFY are best-guess until confirmed via a
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
+import { createHash } from 'node:crypto'
 import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween } from '../lib/ghl.mjs'
 import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, DEMO_GA4_PROP, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
@@ -318,6 +319,29 @@ function windowDays(from, to, preset) {
 // windsorFetch; surfaced by the connection diagnostics rather than thrown, since
 // it is a setup problem (the ad account was never granted) and not a fault.
 const unavailableAccounts = new Set()
+// --- Windsor query cache ----------------------------------------------------
+// Every scope a client page opens asks Windsor for the same few account reads
+// at the same instant (health, blend, daily spend, the drill's ad-name maps),
+// and the warmer asks again every ten minutes. Windsor queues them and the
+// per-read cap trips on all of them together - the reliability log shows it
+// as a whole page of ~7.9s scopes and "Meta spend did not come back". So each
+// exact query is cached for ten minutes, and when a live read times out the
+// last good rows (up to six hours old) stand in and are flagged, so the page
+// shows a dated figure instead of n/a.
+const WQ_FRESH_MS = 10 * 60 * 1000
+const WQ_STALE_MS = 6 * 60 * 60 * 1000
+const WQ_MAX_BYTES = 2_500_000
+let _wqBust = false            // this request asked for a rebuild (_r): skip fresh hits, keep the stale fallback
+let _warmReq = false           // the warmer has minutes, not seconds - its reads may run longer
+const windsorStale = new Map() // `${connector}:${accounts}` -> age (ms) of the copy that stood in
+function wqKey(connector, fields, from, to, preset, accounts) {
+  return 'wq:' + createHash('sha1').update([connector, fields.join(','), accounts ? String(accounts) : '*', from || '', to || '', preset || ''].join('|')).digest('hex')
+}
+// Which of a client's ad reads were answered from a saved copy on this request.
+function windsorStaleAges(c) {
+  const g = (k, a) => (a ? (windsorStale.get(`${k}:${String(a)}`) ?? null) : null)
+  return { meta: g('facebook', c && c.meta), google: g('google_ads', c && c.google) }
+}
 async function windsorFetch(connector, fields, from, to, preset, key, opts = {}) {
   // Demo account: answer from the generated dataset. The signal is the KEY, not
   // a module-level flag - the key is resolved once per request from the client
@@ -349,30 +373,49 @@ async function windsorFetch(connector, fields, from, to, preset, key, opts = {})
   // in time aborts cleanly and the caller surfaces a real "try a smaller range"
   // message instead of hanging.
   const days = windowDays(from, to, preset)
-  const timeoutMs = days > 120 ? 8500 : days > 60 ? 8000 : 7500
-  const retries = days > 60 ? 0 : 1
-  const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries })
-  if (!r.ok) {
-    const body = (await r.text()).slice(0, 400)
-    // Scoping by `accounts` changes what an UNCONNECTED account looks like. Asking
-    // for every account and filtering used to leave nothing; asking for one Windsor
-    // does not hold is a hard error instead. Two clients are in exactly that state
-    // (their Meta account was never granted to the Windsor connection), and turning
-    // their previously-empty read into a thrown error would take a whole tab down.
-    // So it stays empty - which is the truth, there is no data for them - and is
-    // recorded so it can be told apart from a real failure.
-    if (opts.accounts && /is not available|Grant access to your accounts/i.test(body)) {
-      unavailableAccounts.add(`${connector}:${opts.accounts}`)
-      return withDemo([])
+  const timeoutMs = _warmReq ? 20000 : days > 120 ? 8500 : days > 60 ? 8000 : 9000
+  const retries = _warmReq ? 1 : days > 60 ? 0 : 1
+  const ck = wqKey(connector, fields, from, to, preset, opts.accounts)
+  const cached = await readResultCache(ck)
+  if (cached && !_wqBust && Array.isArray(cached.payload) && (Date.now() - cached.at) < WQ_FRESH_MS) return withDemo(cached.payload)
+  let rows
+  try {
+    const r = await resilientFetch(url, {}, { label: `Windsor ${connector}`, timeoutMs, retries })
+    if (!r.ok) {
+      const body = (await r.text()).slice(0, 400)
+      // Scoping by `accounts` changes what an UNCONNECTED account looks like. Asking
+      // for every account and filtering used to leave nothing; asking for one Windsor
+      // does not hold is a hard error instead. Two clients are in exactly that state
+      // (their Meta account was never granted to the Windsor connection), and turning
+      // their previously-empty read into a thrown error would take a whole tab down.
+      // So it stays empty - which is the truth, there is no data for them - and is
+      // recorded so it can be told apart from a real failure.
+      if (opts.accounts && /is not available|Grant access to your accounts/i.test(body)) {
+        unavailableAccounts.add(`${connector}:${opts.accounts}`)
+        rows = []
+      } else {
+        const err = new Error(`Windsor ${connector} ${r.status}: ${body.slice(0, 200)}`)
+        // An access problem is the one failure a retry cannot fix, so it is marked
+        // here and carried up to the browser, which shows an error only for these.
+        err.auth = r.status === 401 || r.status === 403 || /api[_ ]?key|unauthori[sz]ed|forbidden|invalid.*(key|token)|not authenticated/i.test(body)
+        throw err
+      }
+    } else {
+      const j = await r.json()
+      rows = j.data || j.result || []
     }
-    const err = new Error(`Windsor ${connector} ${r.status}: ${body.slice(0, 200)}`)
-    // An access problem is the one failure a retry cannot fix, so it is marked
-    // here and carried up to the browser, which shows an error only for these.
-    err.auth = r.status === 401 || r.status === 403 || /api[_ ]?key|unauthori[sz]ed|forbidden|invalid.*(key|token)|not authenticated/i.test(body)
-    throw err
+  } catch (e) {
+    // A timeout or upstream error with a recent good copy on file: the copy
+    // stands in and is flagged, rather than the page reading n/a. An access
+    // failure is never papered over - the key is wrong and someone must know.
+    if (cached && !e.auth && Array.isArray(cached.payload) && (Date.now() - cached.at) < WQ_STALE_MS) {
+      windsorStale.set(`${connector}:${opts.accounts ? String(opts.accounts) : '*'}`, Date.now() - cached.at)
+      return withDemo(cached.payload)
+    }
+    throw e
   }
-  const j = await r.json()
-  return withDemo(j.data || j.result || [])
+  try { if (JSON.stringify(rows).length <= WQ_MAX_BYTES) writeResultCache(ck, rows) } catch { /* non-fatal */ }
+  return withDemo(rows)
 }
 
 // Aggregate a set of Meta rows by a key field into a metrics map. Leads use the
@@ -3092,6 +3135,16 @@ export default async (req) => {
   // like the owner path - unrestricted, so what it writes to the cache is what
   // an unrestricted caller would be served - and named in the log as itself.
   _warm = isWarmRequest(req)
+  // Per-request state for the Windsor query cache: a rebuild (_r, from the
+  // Refresh button or the warmer) skips fresh hits but keeps the stale fallback;
+  // the copies that stood in are re-collected from scratch each request.
+  _warmReq = _warm
+  _wqBust = !!url.searchParams.get('_r')
+  windsorStale.clear()
+  // The warmer runs inside a background function with minutes to spare, so its
+  // rebuilds get the time a live request cannot afford - which is how the cache
+  // fills with complete copies for the live path to serve.
+  if (_warm) startRequestBudget(55000)
   // Stamp every subsequent log line with who was on the screen. Name and role
   // ride along so the log reads without a second lookup, and so an entry stays
   // meaningful after someone is renamed or removed.
@@ -3928,7 +3981,7 @@ export default async (req) => {
       cc.meta ? windsorFetch('facebook', ['account_id', 'date', 'spend'], from, to, preset, key, { accounts: cc.meta }).then(filt(cc.meta)).catch(() => { adsOk.meta = false; return [] }) : Promise.resolve([]),
       cc.google ? windsorFetch('google_ads', ['account_id', 'date', 'spend'], from, to, preset, key, { accounts: cc.google }).then(filt(cc.google)).catch(() => { adsOk.google = false; return [] }) : Promise.resolve([]),
     ])
-    return json({ scope: 'spenddaily', client, period: { from, to }, adsOk, ...spendByDay(dayListBetween(from, to), mRows, gRows) }, 200, true)
+    return json({ scope: 'spenddaily', client, period: { from, to }, adsOk, adsStale: windsorStaleAges(cc), ...spendByDay(dayListBetween(from, to), mRows, gRows) }, 200, true)
   }
 
   if (url.searchParams.get('scope') === 'health') {
@@ -3952,7 +4005,7 @@ export default async (req) => {
         buildHealth(cc, from, to, preset, key, cfg.weights, wonBasis, { blend: preBlend }),
         readHealthHistory(client).catch(() => []),
       ])
-      return json({ scope: 'health', client, period: { from, to, preset }, wonBasis, ...health, history }, 200, true)
+      return json({ scope: 'health', client, period: { from, to, preset }, wonBasis, ...health, adsStale: windsorStaleAges(cc), history }, 200, true)
     } catch (e) { return json({ scope: 'health', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 

@@ -18,6 +18,30 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.523.0 - 2026-09-09 · `PENDING` - Ad reads: one copy per query, and a saved copy over n/a
+
+The reliability log showed every scope a client page opens finishing at the
+same ~8 seconds, including the tiny daily-spend read, with "Meta read did not
+answer in time" behind it: the page fires the same few Windsor account reads
+from several functions at once, the warmer fires them again every ten
+minutes, and Windsor queues the lot past the per-read cap.
+
+- **Each exact Windsor query is cached for ten minutes**, so the health score,
+  the blend, the daily spend and the drill's ad-name maps share one read
+  instead of four, and a second open inside ten minutes asks Windsor nothing.
+- **A timed-out read falls back to its last good copy** (up to six hours old)
+  and says so: the tab shows "Meta spend is a saved copy from 12 min ago"
+  in amber instead of "$0.00" and a red "did not come back". An access error
+  still surfaces as an error - a wrong key is never papered over.
+- **The warmer's reads run with the time it actually has.** Rebuilds from the
+  background warmer get a 20-second ad read and a 55-second budget instead of
+  the live request's 9 and 22, so the cache fills with complete copies for
+  the live path to serve.
+- Live ad reads on windows up to 60 days get 9 seconds rather than 7.5; the
+  log shows many answers landing just past the old cap.
+
+---
+
 ## v3.522.0 - 2026-09-09 · `d8872cc` - Users: leaderboard first
 
 - **The Leaderboard now sits directly under the scorecards on the Users

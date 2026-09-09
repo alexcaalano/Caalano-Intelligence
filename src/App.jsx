@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.522.0'
+const APP_VERSION = '3.523.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8275,6 +8275,14 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     if (ok.meta === false) problems.push('Meta spend did not come back, so Meta cost figures read n/a.')
     if (ok.google === false) problems.push('Google spend did not come back, so Google cost figures read n/a.')
   }
+  // Softer than a problem: the figure is there, from a saved copy of the ad read.
+  const notes = []
+  if (health.status !== 'err' && health.data) {
+    const st = health.data.adsStale || {}
+    const agef = (ms) => (ms >= 3600000 ? `${Math.round(ms / 3600000)} h` : `${Math.max(1, Math.round(ms / 60000))} min`)
+    if (st.meta) notes.push(`Meta spend is a saved copy from ${agef(st.meta)} ago: the live ad read timed out, so the last good read stands in until the warmer refreshes it.`)
+    if (st.google) notes.push(`Google spend is a saved copy from ${agef(st.google)} ago: the live ad read timed out, so the last good read stands in until the warmer refreshes it.`)
+  }
   if (!isViewer && (ccDrill.status === 'err' || !ccRaw)) problems.push('The CRM drill did not load. Opportunities, wins, revenue, key events and lost reasons below come from the health score instead, and the tiles will not open.')
   if (!isViewer && prevRange && (prevCcDrill.status === 'err' || !pccRaw)) problems.push('The previous period did not load, so vs-prev changes and Biggest movers are missing.')
   if (crmAggSt.status === 'err') problems.push('The per-rep read failed, so Team performance may be empty.')
@@ -8291,6 +8299,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   return (
     <div className="exec-wrap">
       {problemStrip}
+      {notes.length ? <div className="note cc-stale">{notes.map((t, i) => <div key={i}>{t}</div>)}</div> : null}
       {ccStale ? <div className="note cc-stale"><b>Showing a saved copy of the CRM figures from {ccStale.age >= 3600 ? `${Math.round(ccStale.age / 3600)} h` : `${Math.max(1, Math.round(ccStale.age / 60))} min`} ago.</b> {ccStale.error ? <>The live rebuild failed: <code>{ccStale.error}</code>. </> : 'The live rebuild is running behind it. '}Refresh to try again.</div> : null}
       <ExecContextBar clientName={clientName} range={range} pipes={pipes} pipe={pipe} onPipe={onPipe} chan={chan} setChan={setChan} wonBasis={wonBasis} cache={ccRaw && ccRaw._cache} onRefresh={() => setRetry((r) => r + 1)} />
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}

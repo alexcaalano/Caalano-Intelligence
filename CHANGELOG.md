@@ -18,7 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.513.0 - 2026-09-09 · `1ac6ec0` - Key events on the Users leaderboard, sortable
+## v3.514.0 - 2026-09-09 · `PENDING` - The people drill names unresulted appointments
+
+- **Unresulted is its own badge in the key-event people drill.** The drill
+  had four appointment states and labelled anything past its time and not
+  showed as "No-show", so an appointment still sitting on confirmed read as
+  a no-show while the tile counted it as unresulted. The drill now uses the
+  tile's five states: Cancelled, Upcoming, Showed, No-show, Unresulted.
+
+ · `1ac6ec0` - Key events on the Users leaderboard, sortable
 
 - **Key events per rep sit in the leaderboard.** Each configured key event
   is a column between Show % and Won, in pipeline order, on every rep and on

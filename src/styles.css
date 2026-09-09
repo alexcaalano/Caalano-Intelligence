@@ -4901,3 +4901,5 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 
 .u-lb td.u-ke { color: var(--muted); }
 .u-lb tr.u-agg-row td.u-ke, .u-lb tr.row-sel td.u-ke { color: inherit; }
+
+.kp-cal-badge.unres { background: color-mix(in srgb, #f5a524 18%, var(--panel)); color: #8a5a00; }

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.513.0'
+const APP_VERSION = '3.514.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4963,9 +4963,14 @@ function CalCell({ cals }) {
   return (
     <div className="kp-cals">
       {cals.map((c, i) => {
+        // The same five states the tiles count: cancelled in advance, not yet
+        // reached its time, showed, no-show as the team set it, or unresulted -
+        // past its time and still confirmed, which is the one to chase.
         const badge = c.cancelled ? { cls: 'canc', txt: '🚫 Cancelled' }
           : !c.occurred ? { cls: 'up', txt: '⏳ Upcoming' }
-            : c.shown ? { cls: 'shown', txt: '✅ Showed' } : { cls: 'noshow', txt: '❌ No-show' }
+            : c.shown ? { cls: 'shown', txt: '✅ Showed' }
+              : c.noShow ? { cls: 'noshow', txt: '❌ No-show' }
+                : { cls: 'unres', txt: '⚠ Unresulted' }
         return <div className="kp-cal" key={i}><span className="kp-cal-nm">📅 {c.name}</span> <span className={`kp-cal-badge ${badge.cls}`}>{badge.txt}</span></div>
       })}
     </div>

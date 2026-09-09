@@ -289,7 +289,7 @@ export async function locationProfile(locationId) {
 }
 
 // Offset (tz local - UTC) in ms at a given instant, DST-aware.
-function tzOffsetMs(tz, atMs) {
+export function tzOffsetMs(tz, atMs) {
   const dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
   const p = {}; for (const x of dtf.formatToParts(new Date(atMs))) p[x.type] = x.value
   const hh = p.hour === '24' ? 0 : +p.hour
@@ -312,7 +312,7 @@ function zonedEndMs(dateStr, tz) {
 }
 // Local calendar date (YYYY-MM-DD) of an instant, in `tz`. Use this whenever we
 // display which day something happened on, so it matches the counting windows.
-function zonedDateStr(ms, tz) {
+export function zonedDateStr(ms, tz) {
   if (ms == null || isNaN(ms)) return null
   return new Date(ms + tzOffsetMs(tz, ms)).toISOString().slice(0, 10)
 }
@@ -1735,7 +1735,7 @@ async function _clinicApptHistory(locTok, locationId, { deadlineMs = 7000, lookb
       fwd.set(k, e)
     }
     if (start >= dowStart && start < nowRef) {
-      const d = new Date(start).getUTCDay()
+      const d = new Date(start + tzOffsetMs(tz, start)).getUTCDay()   // weekday in the clinic's clock, not UTC
       if (clinical) dow[d].appts++
       dow[d].minutes += mins; dow[d].dates.add(dayKeyTz(start))
     }
@@ -2251,7 +2251,7 @@ export async function buildClinic(locationId, opts = {}) {
         contactId: cid, name: p.name, spent: p.ltv || 0, visits: p.arrived, channel: p.channel,
         typicalDays: Math.round(typical), sinceDays: Math.round(since),
         overdueDays: Math.round(since - typical),
-        lastAppt: starts[starts.length - 1] ? new Date(starts[starts.length - 1]).toISOString().slice(0, 10) : null,
+        lastAppt: starts[starts.length - 1] ? zonedDateStr(starts[starts.length - 1], tz) : null,
       })
     }
   }
@@ -2845,8 +2845,8 @@ export async function monthlyDeals(locationId, from, to, lookbackDays = 400) {
     const u = utmOf(o)
     return {
       name: nameOf(o),
-      createdAt: o.createdAt ? String(o.createdAt).slice(0, 10) : null,
-      statusAt: isFinite(whenMs) ? new Date(whenMs).toISOString().slice(0, 10) : null,
+      createdAt: o.createdAt ? (zonedDateStr(Date.parse(o.createdAt), tz) || String(o.createdAt).slice(0, 10)) : null,
+      statusAt: isFinite(whenMs) ? zonedDateStr(whenMs, tz) : null,
       value: num(o.monetaryValue), channel: channelOf(u),
       pipeline: p ? p.name : null, stage: stg ? stg.name : null,
       // ad = utm_content, campaign = utm_campaign, medium = utm_medium (ad group).
@@ -2969,7 +2969,7 @@ export async function socialDMs(locationId, from, to, opts = {}) {
       if (fromMs != null && s < fromMs) continue
       if (toMs != null && s > toMs) continue
       res[ch]++
-      const d = new Date(s).toISOString().slice(0, 10); (res.daily[d] = res.daily[d] || { ig: 0, fb: 0 })[ch]++
+      const d = zonedDateStr(s, tz); (res.daily[d] = res.daily[d] || { ig: 0, fb: 0 })[ch]++
     }
     const last = convs[convs.length - 1]
     startAfterDate = ms(last.lastMessageDate) || null; startAfter = last.id || last._id || null

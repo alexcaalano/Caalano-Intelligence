@@ -18,6 +18,36 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.517.0 - 2026-09-09 · `PENDING` - One clock everywhere (timezone audit)
+
+Audit of every place Caalano360 decides which day something happened on. The
+counting windows were already cut on each client's Caalano Systems timezone;
+the fixes below bring the labels, defaults and the demo account onto the same
+clock so a 9am Sydney enquiry never reads as "yesterday".
+
+- **Preset ranges follow the business day.** Today, Yesterday, Last 7 days
+  and the rest are worked out from Sydney's date, not the viewer's browser, so
+  a preset picked from Perth or overseas asks the server for the same days
+  the team in Sydney sees.
+- **Monthly report deal dates are local.** The created-on and status-change
+  dates shown behind Deals won / Deals lost now name the day the deal was
+  counted in, rather than the UTC date (which flips after 10-11am Sydney).
+- **Social DM day buckets, due-back patients' last visit and the clinic
+  weekday load** are all placed on the location's day, not UTC.
+- **Server "today" is Sydney's today.** Daily health and clinic snapshots,
+  the social snapshot, the diary trim, the speed-to-lead cache cut-off and
+  the default look-back windows all use the business date; the functions run
+  in UTC, where a plain date is yesterday until mid-morning here.
+- **Forms CSV created dates and ISO datetimes** shown through the standard
+  date formatter are on the business day.
+- **Demo account generated in Sydney time.** Enquiries land 8am-7pm and
+  appointments sit inside clinic hours on weekdays in the practice's own
+  clock; ad-platform spend days line up with the days the leads arrived.
+- New `tz_audit_test` runs under a far-away process timezone to catch any
+  slip back to local or UTC dates.
+
+---
+
 ## v3.516.0 - 2026-09-09 · `6d69b36` - Lost deals on both bases in the monthly report
 
 - **Lost reasons stay on the status-change basis.** The lost-reasons block

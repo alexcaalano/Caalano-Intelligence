@@ -288,6 +288,12 @@ function tzToday() {
   const g = (t) => p.find((x) => x.type === t).value
   return new Date(`${g('year')}-${g('month')}-${g('day')}T00:00:00Z`)
 }
+// "Today" as a YYYY-MM-DD in the business timezone. The function runs in UTC, so
+// a plain toISOString() is yesterday's date until 10-11am Sydney - every
+// snapshot key, cache cut-off and default window must use this instead.
+function todayTZ() { return tzToday().toISOString().slice(0, 10) }
+// N days before today, same clock.
+function daysAgoTZ(n) { const d = tzToday(); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10) }
 
 // The equal-length period immediately before [from,to] - for ±vs-previous deltas.
 function prevRange(from, to) {
@@ -567,7 +573,7 @@ export async function runHealthSnapshots(dates) {
   const key = process.env.WINDSOR_API_KEY
   if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
   try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayTZ()
   const targets = (dates && dates.length) ? dates : [today]
   const results = []
   for (const [id, cc] of Object.entries(CLIENTS)) {
@@ -626,7 +632,7 @@ async function readClinicHistory(clientId) {
 // the fortnight ahead of whenever the snapshot ran.
 function _trimDiary(diary) {
   if (!diary || !Array.isArray(diary.days)) return diary
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayTZ()
   const days = diary.days.filter((d) => d.date >= today)
   if (days.length === diary.days.length) return diary
   const capacity = days.reduce((n, d) => n + (d.capacity || 0), 0)
@@ -667,7 +673,7 @@ async function writeClinicSnapshot(clientId, date, point, derived) {
 // attended); rates are reported as a simple point difference.
 function clinicDeltas(history, today, days = 30) {
   if (!history.length) return null
-  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10)
+  const cutoff = daysAgoTZ(days)
   // Nearest point on or before the cutoff; otherwise the oldest we hold.
   const older = history.filter((p) => p.date <= cutoff)
   const base = older.length ? older[older.length - 1] : history[0]
@@ -692,7 +698,7 @@ function clinicDeltas(history, today, days = 30) {
 // skipped by the cheap probe rather than paying for a full build.
 export async function runClinicSnapshots(dates) {
   try { Object.assign(CLIENTS, await customClients()); for (const id of await deletedClients()) delete CLIENTS[id] } catch { /* non-fatal */ }
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayTZ()
   const targets = (dates && dates.length) ? dates : [today]
   const results = []
   for (const [id, cc] of Object.entries(CLIENTS)) {
@@ -2474,8 +2480,8 @@ export async function runSocialSnapshots() {
   const key = process.env.WINDSOR_API_KEY
   if (!key) return { ok: false, error: 'WINDSOR_API_KEY not set' }
   const store = socialStore()
-  const today = new Date().toISOString().slice(0, 10)
-  const dayStr = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+  const today = todayTZ()
+  const dayStr = (n) => daysAgoTZ(n)
   const results = []
   for (const [id, soc] of Object.entries(SOCIAL)) {
     if (!soc || (!soc.ig && !soc.fbo)) continue
@@ -3876,7 +3882,7 @@ export default async (req) => {
       // range wholly in the past cannot change and is kept indefinitely.
       const DONE_TTL_MS = 6 * 3600000
       if (state && state.status === 'done') {
-        const endsToday = !to || to >= new Date().toISOString().slice(0, 10)
+        const endsToday = !to || to >= todayTZ()
         const age = Date.now() - (state.at || 0)
         if (endsToday && age > DONE_TTL_MS) state = null
       }
@@ -3968,7 +3974,7 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc) return json({ scope: 'healthbackfill', client, error: `unknown client ${client}` }, 404)
     const key2 = process.env.WINDSOR_API_KEY
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayTZ()
     const before = url.searchParams.get('before') || today
     // Each point is a full blend computation; keep the batch small so a single
     // call stays well under the function timeout. The UI walks the cursor.
@@ -4198,7 +4204,7 @@ export default async (req) => {
         d.diary = _trimDiary(derived.diary) || d.diary
         d.derivedFrom = { at: derived.at, ageHours: derivedAgeH != null ? Math.round(derivedAgeH) : null, stale: true }
       }
-      const today = { date: new Date().toISOString().slice(0, 10), ...clinicPoint(d) }
+      const today = { date: todayTZ(), ...clinicPoint(d) }
       const deltas = d.hasClinic ? clinicDeltas(history, today, 30) : null
       return json({ scope: 'clinic', client, ...d, history: history.slice(-180), deltas, asAt: new Date().toISOString() }, 200, true)
     }
@@ -4280,8 +4286,8 @@ export default async (req) => {
     // but short enough that Windsor's per-account aggregation returns inside the
     // ~10s function budget. A 2-year window timed out (Windsor took too long),
     // which surfaced as "a connector is erroring" with 0 accounts.
-    const dTo = new Date().toISOString().slice(0, 10)
-    const dFrom = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10)
+    const dTo = todayTZ()
+    const dFrom = daysAgoTZ(365)
     // A metric-based listing (spend / sessions) only surfaces accounts that had
     // DELIVERY in the window - so a connected-but-paused ad account (zero spend,
     // zero impressions) is silently dropped, which is why fewer Meta/Google show
@@ -4353,8 +4359,8 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.meta) return json({ scope: 'metaactions', client, meta: false, actions: [] })
     const DAY = 86400000
-    const f90 = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10)
-    const t0 = new Date().toISOString().slice(0, 10)
+    const f90 = daysAgoTZ(90)
+    const t0 = todayTZ()
     // Candidate list + any custom conversion fields this client already saved, so a
     // previously-added custom event still shows its live count.
     let savedCustom = []
@@ -4381,8 +4387,8 @@ export default async (req) => {
     const ev = event.trim()
     if (!ev) return json({ scope: 'metaprobe', client, found: [], error: 'Enter a conversion event name.' })
     const DAY = 86400000
-    const f90 = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10)
-    const t0 = new Date().toISOString().slice(0, 10)
+    const f90 = daysAgoTZ(90)
+    const t0 = todayTZ()
     try {
       // Primary source: Windsor's Custom Conversions table (the only place custom
       // conversions live - the per-id insights columns don't exist). Match the typed
@@ -4413,8 +4419,8 @@ export default async (req) => {
     const cc = CLIENTS[client]
     if (!cc || !cc.meta) return json({ scope: 'metadetect', client, meta: false, actions: [] })
     const DAY = 86400000
-    const from = new Date(Date.now() - 30 * DAY).toISOString().slice(0, 10)
-    const t0 = new Date().toISOString().slice(0, 10)
+    const from = daysAgoTZ(30)
+    const t0 = todayTZ()
     const acct = (r) => !r.account_id || acctEq(r.account_id, cc.meta)
     // 1. Optimisation intent - the highest-spend ad set's goal, any custom event names,
     //    and any custom-conversion IDs named in its promoted object (a custom conversion

@@ -48,6 +48,28 @@ const chance = (r, p) => r() < p
 const id16 = (r) => { let s = ''; const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; for (let i = 0; i < 20; i++) s += c[Math.floor(r() * c.length)]; return s }
 const iso = (ms) => new Date(ms).toISOString()
 const DAY = 86400000
+// The practice's clock. Enquiry hours, appointment slots and day boundaries are
+// generated in Sydney local time (DST-aware) rather than UTC - 8am UTC is 6pm
+// in Sydney, so a UTC-hour generator puts every "morning" enquiry in the
+// evening and half the clinic day on the wrong date once the server counts on
+// the location's day.
+const DEMO_TZ = 'Australia/Sydney'
+function tzOff(ms) {
+  const p = {}; for (const x of new Intl.DateTimeFormat('en-US', { timeZone: DEMO_TZ, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ms))) p[x.type] = x.value
+  return Date.UTC(+p.year, +p.month - 1, +p.day, p.hour === '24' ? 0 : +p.hour, +p.minute, +p.second) - ms
+}
+// Local midnight (as a UTC instant) of the Sydney day containing `ms`.
+function localMidnight(ms) {
+  const off = tzOff(ms); const wall = Math.floor((ms + off) / DAY) * DAY
+  let m = wall - off; const off2 = tzOff(m); if (off2 !== off) m = wall - off2
+  return m
+}
+// Local midnight n days on from the day containing `ms` (noon-anchored so a
+// DST change can't slide it onto the neighbouring day).
+const dayShift = (ms, n) => localMidnight(localMidnight(ms) + n * DAY + 12 * 3600000)
+const localDate = (ms) => new Date(ms + tzOff(ms)).toISOString().slice(0, 10)
+const localDow = (ms) => new Date(ms + tzOff(ms)).getUTCDay()
+const HOUR = 3600000
 
 // ---- the practice ---------------------------------------------------------
 const PRACTITIONERS = [
@@ -118,8 +140,7 @@ export function demoData() {
   if (_cache) return _cache
   const r = rng(20260825)
   const now = Date.now()
-  const today = new Date(now); today.setUTCHours(0, 0, 0, 0)
-  const t0 = today.getTime()
+  const t0 = localMidnight(now)
   const HISTORY = 150
 
   const pipelineId = 'demoPipeNorwest01'
@@ -176,8 +197,8 @@ export function demoData() {
 
   // Lead volume climbs gently over the period - a flat line reads as fake.
   for (let d = HISTORY; d >= 0; d--) {
-    const dayMs = t0 - d * DAY
-    const dow = new Date(dayMs).getUTCDay()
+    const dayMs = dayShift(t0, -d)
+    const dow = localDow(dayMs)
     if (dow === 0) continue                       // closed Sundays
     const ramp = 1 + (HISTORY - d) / HISTORY * 0.55
     const base = dow === 6 ? 1.6 : 3.5
@@ -186,7 +207,7 @@ export function demoData() {
       const disc = pick(r, DISCIPLINES)
       const chRoll = r()
       const ch = chRoll < 0.5 ? 'meta' : chRoll < 0.74 ? 'google' : chRoll < 0.87 ? 'organic' : 'referral'
-      const createdMs = dayMs + between(r, 8, 19) * 3600000 + between(r, 0, 59) * 60000
+      const createdMs = dayMs + between(r, 8, 19) * HOUR + between(r, 0, 59) * 60000   // 8am-7pm Sydney
       const cid = id16(r), oid = id16(r)
       const name = `${pick(r, FIRST)} ${pick(r, LAST)}`
       const prac = pick(r, PRACTITIONERS.filter((p) => p.discipline === disc))
@@ -247,8 +268,11 @@ export function demoData() {
       // appointment on that discipline's service calendar.
       if (bookedInitial) {
         const di = DISCIPLINES.indexOf(disc)
-        const bookedAtMs = createdMs + between(r, 0, 3) * DAY + between(r, 1, 8) * 3600000
-        let visitMs = bookedAtMs + between(r, 2, 12) * DAY + between(r, 8, 16) * 3600000
+        const bookedAtMs = createdMs + between(r, 0, 3) * DAY + between(r, 1, 8) * HOUR
+        // Visits sit inside clinic hours on a weekday, in the clinic's clock.
+        const slotMs = between(r, 8, 16) * HOUR
+        const onOpenDay = (ms) => { let day = localMidnight(ms); if (localDow(day) === 0) day = dayShift(day, 1); return day + slotMs }
+        let visitMs = onOpenDay(dayShift(bookedAtMs, between(r, 2, 12)))
         const total = Math.max(1, planVisits || 1)
         for (let v = 0; v < total; v++) {
           if (visitMs > now + 45 * DAY) break
@@ -261,7 +285,7 @@ export function demoData() {
             dateAdded: iso(v === 0 ? bookedAtMs : visitMs - between(r, 3, 20) * DAY),
             assignedUserId: pracUser.id, createdBy: { source: v === 0 ? 'booking_widget' : 'user' },
           })
-          visitMs += between(r, 7, 21) * DAY
+          visitMs = onOpenDay(dayShift(visitMs, between(r, 7, 21)))
         }
       }
 
@@ -292,9 +316,9 @@ export function demoData() {
           upcoming_appt_start_time: upcoming ? iso(now + between(r, 2, 21) * DAY) : '',
           upcoming_appt_practitioner: upcoming ? prac.name : '',
           upcoming_appt_type: upcoming ? `${disc} Follow-up` : '',
-          first_appointment_date: firstVisitMs ? iso(firstVisitMs).slice(0, 10) : '',
-          first_visit_date: firstVisitMs ? iso(firstVisitMs).slice(0, 10) : '',
-          last_appointment_date: attendedVisits > 0 ? iso(now - between(r, 1, 60) * DAY).slice(0, 10) : '',
+          first_appointment_date: firstVisitMs ? localDate(firstVisitMs) : '',
+          first_visit_date: firstVisitMs ? localDate(firstVisitMs) : '',
+          last_appointment_date: attendedVisits > 0 ? localDate(now - between(r, 1, 60) * DAY) : '',
           last_appt_practitioner: attendedVisits > 0 ? prac.name : '',
           last_appt_type: attendedVisits > 0 ? `${disc} ${attendedVisits > 1 ? 'Follow-up' : 'Initial Appointment'}` : '',
           last_appt_cancel_reason: chance(r, 0.1) ? pick(r, ['Unwell', 'Work commitment', 'Rescheduled', 'Transport']) : '',
@@ -542,7 +566,6 @@ function demoAdRows() {
   if (_ads) return _ads
   const d = demoData()
   const r = rng(77123)
-  const t0 = new Date(); t0.setUTCHours(0, 0, 0, 0)
   // Leads per (channel, campaign, ad, day) straight from the opportunities.
   const key = (o) => { const a = (o.attributions || [])[0] || {}; return a }
   const meta = [], google = []
@@ -552,7 +575,7 @@ function demoAdRows() {
     const src = String(a.utmSource || '')
     const ch = src === 'facebook' ? 'meta' : src === 'google' && a.medium === 'cpc' ? 'google' : null
     if (!ch) continue
-    const day = o.createdAt.slice(0, 10)
+    const day = localDate(Date.parse(o.createdAt))   // ad platforms report on the account's local day
     const k = [ch, day, a.campaign, a.utmMedium, a.utmContent].join('|')
     byDay.set(k, (byDay.get(k) || 0) + 1)
   }
@@ -643,8 +666,8 @@ function demoGa4Rows(fields, from, to) {
   const clicksByDay = new Map()
   for (const rw of [...meta, ...google]) clicksByDay.set(rw.date, (clicksByDay.get(rw.date) || 0) + rw.clicks)
   const leadsByDay = new Map()
-  for (const o of d.opportunities) { const k = o.createdAt.slice(0, 10); leadsByDay.set(k, (leadsByDay.get(k) || 0) + 1) }
-  const t0 = new Date(); t0.setUTCHours(0, 0, 0, 0)
+  for (const o of d.opportunities) { const k = localDate(Date.parse(o.createdAt)); leadsByDay.set(k, (leadsByDay.get(k) || 0) + 1) }
+  const t0 = new Date(localDate(Date.now()) + 'T00:00:00Z')
   const start = from ? Date.parse(from) : t0.getTime() - 29 * DAY, end = to ? Date.parse(to) : t0.getTime()
   const days = []
   for (let t = start; t <= end; t += DAY) {
@@ -677,7 +700,7 @@ export function demoWindsor(connector, fields, from, to) {
   }
   if (connector === 'gohighlevel') {
     const d = demoData()
-    return d.opportunities.filter((o) => { const day = o.createdAt.slice(0, 10); return (!from || day >= from) && (!to || day <= to) }).map((o) => ({
+    return d.opportunities.filter((o) => { const day = localDate(Date.parse(o.createdAt)); return (!from || day >= from) && (!to || day <= to) }).map((o) => ({
       account_id: DEMO_LOCATION, opportunity_status: o.status, opportunity_monetary_value: o.monetaryValue,
       opportunity_pipeline_id: o.pipelineId, opportunity_pipeline_stage_id: o.pipelineStageId,
       opportunity_created_at: o.createdAt, opportunity_source: o.source,

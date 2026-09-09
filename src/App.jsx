@@ -13,12 +13,21 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.516.0'
+const APP_VERSION = '3.517.0'
+// The business clock. Every server window is cut on the client's local day
+// (Caalano Systems location timezone), so any day the app derives on its own -
+// preset ranges, "today", CSV dates - must use the same clock rather than the
+// viewer's browser or UTC (toISOString), or a 9am Sydney enquiry reads as
+// "yesterday" and a preset picked from Perth misses a day.
+const APP_TZ = 'Australia/Sydney'
+// YYYY-MM-DD of an instant in the business timezone ('' if unparseable).
+const tzDateStr = (v) => { const d = v instanceof Date ? v : new Date(v); return isFinite(d.getTime()) ? d.toLocaleDateString('en-CA', { timeZone: APP_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }) : '' }
+const tzTodayStr = () => tzDateStr(new Date())
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
   try {
-    return new Date(iso).toLocaleString('en-AU', { timeZone: 'Australia/Sydney', day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+    return new Date(iso).toLocaleString('en-AU', { timeZone: APP_TZ, day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
   } catch { return iso || 'unknown' }
 }
 const AVATAR = ['#6d5efc', '#12b886', '#4f7cff', '#f5a524', '#ec4899', '#0ea5e9', '#f0435b', '#8b5cf6']
@@ -4426,7 +4435,7 @@ let _discoverPromise = null
 function fetchDiscover(force) {
   if (force) _discoverPromise = null
   if (!_discoverPromise) {
-    const to = new Date().toISOString().slice(0, 10)
+    const to = tzTodayStr()
     // Wide (1-year) window so any account with activity in the last year is
     // surfaced, not just very recent spenders. A brand-new account with no spend
     // yet still won't appear until Windsor has data for it.
@@ -8591,7 +8600,9 @@ const PRESETS = [
   { id: 'max', label: 'Maximum' },
 ]
 function presetRange(id) {
-  const now = new Date(); now.setHours(12, 0, 0, 0)
+  // Anchor on today's date in the business timezone (noon, so DST edges and the
+  // viewer's own offset can't move it), then do plain calendar arithmetic.
+  const now = (() => { const [y, m, d] = tzTodayStr().split('-').map(Number); return new Date(y, m - 1, d, 12, 0, 0, 0) })()
   const shift = (n) => { const d = new Date(now); d.setDate(d.getDate() - n); return d }
   const monday = (d) => { const x = new Date(d); const wd = (x.getDay() + 6) % 7; x.setDate(x.getDate() - wd); return x }
   const label = PRESETS.find((p) => p.id === id)?.label || 'Last 30 days'
@@ -8617,14 +8628,15 @@ function presetRange(id) {
 }
 const rangeQuery = (r) => `from=${r.from}&to=${r.to}`
 // Dates are shown DD/MM/YYYY throughout. Accepts YYYY-MM-DD or an ISO
-// datetime (shown in the viewer's local day); anything else passes through.
+// datetime (shown on the business-timezone day, matching the server's counting
+// windows); anything else passes through.
 function fmtDMY(v) {
   if (v == null || v === '') return ''
   const s = String(v)
   const m = s.match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:$|T)/)
   if (m && s.length === 10) return `${m[3]}/${m[2]}/${m[1]}`
   const when = new Date(s)
-  return isFinite(when.getTime()) ? when.toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : s
+  return isFinite(when.getTime()) ? when.toLocaleDateString('en-AU', { timeZone: APP_TZ, day: '2-digit', month: '2-digit', year: 'numeric' }) : s
 }
 const rangeLabel = (r) => r.label || `${fmtDMY(r.from)} → ${fmtDMY(r.to)}`
 // The equal-length period immediately BEFORE this range, for period-over-period
@@ -11138,7 +11150,7 @@ function formsCsv(forms, kEvents, reached, qualByForm) {
         f.form, p.name, p.status, p.pipelineName, p.stageName, p.value, p.booked ? 'yes' : 'no', p.shown ? 'yes' : 'no', p.status === 'won' ? 'yes' : 'no',
         ...kEvents.map((k) => (reached(p, k) ? 'yes' : 'no')),
         qm == null ? '' : qm ? 'yes' : 'no',
-        p.channel, p.campaign, p.adset, p.creative, p.createdMs ? fmtDMY(new Date(p.createdMs).toISOString().slice(0, 10)) : '', p.ageDays, p.contactId,
+        p.channel, p.campaign, p.adset, p.creative, p.createdMs ? fmtDMY(tzDateStr(p.createdMs)) : '', p.ageDays, p.contactId,
         ...qset.map((q) => p.answers[q]),
       ].map(esc).join(','))
     }
@@ -14527,7 +14539,7 @@ function callChunkGet(clientId, from, to, nonce) {
 function callChunkSet(clientId, from, to, j) {
   // Today's window is still being written to; anything that ends before today is
   // finished and safe to keep.
-  if (to >= new Date().toISOString().slice(0, 10)) return
+  if (to >= tzTodayStr()) return
   if (_callChunks.size >= CALL_CHUNK_MAX) { const k = _callChunks.keys().next().value; _callChunks.delete(k) }
   _callChunks.set(callChunkKey(clientId, from, to), j)
 }
@@ -18824,7 +18836,7 @@ function TermsRegister() {
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `caalano360-terms-register-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `caalano360-terms-register-${tzTodayStr()}.csv`
     a.click(); URL.revokeObjectURL(a.href)
   }
   return (

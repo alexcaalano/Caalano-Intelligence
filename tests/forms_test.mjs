@@ -9,7 +9,7 @@ const lift = (name) => {
   for (; i < src.length; i++) { const c = src[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (!depth) break } }
   return src.slice(a, i + 1)
 }
-const { formLeadsOf, formQualMatch, formFilterMatch, formSegmentsFrom, formsCsv } = new Function("const fmtDMY = (v) => String(v).split('-').reverse().join('/')\n" + ['formLeadsOf', 'formQualMatch', 'formFilterMatch', 'formSegmentsFrom', 'formsCsv'].map(lift).join('\n') + '\nreturn { formLeadsOf, formQualMatch, formFilterMatch, formSegmentsFrom, formsCsv }')()
+const { formLeadsOf, formQualMatch, formFilterMatch, formSegmentsFrom, formsCsv } = new Function("const fmtDMY = (v) => String(v).split('-').reverse().join('/')\nconst tzDateStr = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' })\n" + ['formLeadsOf', 'formQualMatch', 'formFilterMatch', 'formSegmentsFrom', 'formsCsv'].map(lift).join('\n') + '\nreturn { formLeadsOf, formQualMatch, formFilterMatch, formSegmentsFrom, formsCsv }')()
 let n = 0, bad = 0
 const ok = (name, c, x) => { n++; if (!c) { bad++; console.log('FAIL', name, JSON.stringify(x)) } }
 

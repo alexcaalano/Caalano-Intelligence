@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.507.0 - 2026-09-09 · `PENDING` - Show rate on resulted appointments, cancellation rate, unresulted count
+## v3.507.0 - 2026-09-09 · `dd560e3` - Show rate on resulted appointments, cancellation rate, unresulted count
 
 - **Show rate is now shown ÷ resulted.** Resulted means the team set a
   result: showed or no-show. Appointments cancelled in advance, still to

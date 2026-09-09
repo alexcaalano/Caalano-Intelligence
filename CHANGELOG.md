@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.522.0 - 2026-09-09 · `PENDING` - Users: leaderboard first
+
+- **The Leaderboard now sits directly under the scorecards on the Users
+  tab**, ahead of the Won & revenue chart, the funnel by rep and the activity
+  panel, so the per-rep table is the first thing on the page. Nothing else on
+  the tab changes.
+
+---
+
 ## v3.521.0 - 2026-09-09 · `8e54ffb` - Key event reach costs on the same basis as Pipeline performance
 
 - **Cost per event in Key event reach now allocates ad spend across pipelines

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.521.0'
+const APP_VERSION = '3.522.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -14944,48 +14944,6 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
       </div>
 
       <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Won &amp; revenue by rep</div>
-        <ResponsiveContainer width="100%" height={Math.max(160, chartData.length * 34 + 30)}>
-          <ComposedChart data={chartData} layout="vertical" margin={{ left: 10, right: 12, top: 6 }}>
-            <CartesianGrid stroke="var(--border)" horizontal={false} />
-            <XAxis type="number" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
-            <YAxis type="category" dataKey="name" width={130} fontSize={11} stroke="var(--muted)" interval={0} />
-            <Tooltip formatter={(v, n) => [n === 'Revenue' ? money(v) : fmtNumber(v), n]} />
-            <Bar dataKey="Won" fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={16} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-
-      {(() => {
-        // Funnel by rep, drawn: each rep's leads as a track scaled to the busiest
-        // rep, with booked, shown and won nested inside it. The leaderboard below
-        // carries every figure; this is the same data as a picture.
-        const rows = [...users].filter((u) => (u.leads || 0) > 0).sort((a, b) => (b.leads || 0) - (a.leads || 0)).slice(0, 16)
-        if (!rows.length) return null
-        const mx = Math.max(1, ...rows.map((u) => u.leads || 0))
-        const pc = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
-        return <div className="card">
-          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Funnel by rep <span style={{ fontWeight: 400 }}>· leads as the track, scaled to the busiest rep · booked, shown and won nested inside · top {rows.length}</span></div>
-          <div className="v2-repf">
-            {rows.map((u) => { const L = u.leads || 0; return (
-              <div key={u.id || u.name} className="v2-repf-row">
-                <div className="n"><b>{u.name || 'Unassigned'}</b><small>{fmtNumber(L)} leads</small></div>
-                <div className="t"><div className="bars" style={{ width: `${(L / mx) * 100}%` }}>
-                  <span className="b" style={{ width: `${L ? Math.min(100, ((u.booked || 0) / L) * 100) : 0}%` }} />
-                  <span className="s" style={{ width: `${L ? Math.min(100, ((u.shown || 0) / L) * 100) : 0}%` }} />
-                  <span className="w" style={{ width: `${L ? Math.min(100, ((u.won || 0) / L) * 100) : 0}%` }} />
-                </div></div>
-                <div className="r"><span title="Booked ÷ leads"><i className="b" />{fmtNumber(u.booked || 0)} <em>{pc(u.booked || 0, L)}</em></span><span title="Shown ÷ booked"><i className="s" />{fmtNumber(u.shown || 0)} <em>{pc(u.shown || 0, u.booked || 0)}</em></span><span title="Won ÷ leads"><i className="w" />{fmtNumber(u.won || 0)} <em>{pc(u.won || 0, L)}</em></span></div>
-              </div>
-            ) })}
-          </div>
-          <div className="v2-leg" style={{ marginTop: 10 }}><span><i style={{ background: 'var(--border-2)' }} />Leads</span><span><i className="m" />Booked</span><span><i className="g" />Shown</span><span><i style={{ background: 'var(--brand-2)' }} />Won</span></div>
-        </div>
-      })()}
-
-      {repActivity}
-
-      <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl u-lb">
           <thead><tr><th className="u-rank-h" title="Rank by wins; arrow shows movement vs the previous equal-length period">#</th><Th k="name" l>Rep</Th><Th k="leads">Leads</Th><Th k="booked">Booked</Th><Th k="bookRate">Book %</Th><Th k="shown">Shown</Th><Th k="showRate" title="Shown ÷ resulted (shown + no-show). Unresulted appointments - past their time, status never set - are shown on hover and left out">Show %</Th>{stageCols.map((sName, i) => <Th key={sName} k={'ke' + i} title={`${sName} - how many of this rep's leads reached this key event or any later one`}>{sName.length > 14 ? sName.slice(0, 13) + '…' : sName}</Th>)}<Th k="won">Won</Th><Th k="winRate">Win %</Th><Th k="revenue">Revenue</Th><Th k="avgDeal">Avg deal</Th><Th k="avgCloseDays">Avg close</Th><Th k="costWon">Cost / Won</Th><Th k="cac" title="Ad spend allocated by this rep's share of leads ÷ their wins">CAC</Th></tr></thead>
@@ -15081,6 +15039,48 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
         </table></div>
         <Caveat style={{ marginTop: 10 }}>{stageCols.length ? <>The key event columns count how many of each rep's leads reached that stage or any later one (cumulative), in pipeline order; click a heading to sort by it. Configure them in Settings → the client → Key events. </> : null}Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended - it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</Caveat>
       </div>
+
+      <div className="card">
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Won &amp; revenue by rep</div>
+        <ResponsiveContainer width="100%" height={Math.max(160, chartData.length * 34 + 30)}>
+          <ComposedChart data={chartData} layout="vertical" margin={{ left: 10, right: 12, top: 6 }}>
+            <CartesianGrid stroke="var(--border)" horizontal={false} />
+            <XAxis type="number" fontSize={10} stroke="var(--muted)" allowDecimals={false} />
+            <YAxis type="category" dataKey="name" width={130} fontSize={11} stroke="var(--muted)" interval={0} />
+            <Tooltip formatter={(v, n) => [n === 'Revenue' ? money(v) : fmtNumber(v), n]} />
+            <Bar dataKey="Won" fill="#12b886" radius={[0, 3, 3, 0]} maxBarSize={16} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      {(() => {
+        // Funnel by rep, drawn: each rep's leads as a track scaled to the busiest
+        // rep, with booked, shown and won nested inside it. The leaderboard below
+        // carries every figure; this is the same data as a picture.
+        const rows = [...users].filter((u) => (u.leads || 0) > 0).sort((a, b) => (b.leads || 0) - (a.leads || 0)).slice(0, 16)
+        if (!rows.length) return null
+        const mx = Math.max(1, ...rows.map((u) => u.leads || 0))
+        const pc = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
+        return <div className="card">
+          <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Funnel by rep <span style={{ fontWeight: 400 }}>· leads as the track, scaled to the busiest rep · booked, shown and won nested inside · top {rows.length}</span></div>
+          <div className="v2-repf">
+            {rows.map((u) => { const L = u.leads || 0; return (
+              <div key={u.id || u.name} className="v2-repf-row">
+                <div className="n"><b>{u.name || 'Unassigned'}</b><small>{fmtNumber(L)} leads</small></div>
+                <div className="t"><div className="bars" style={{ width: `${(L / mx) * 100}%` }}>
+                  <span className="b" style={{ width: `${L ? Math.min(100, ((u.booked || 0) / L) * 100) : 0}%` }} />
+                  <span className="s" style={{ width: `${L ? Math.min(100, ((u.shown || 0) / L) * 100) : 0}%` }} />
+                  <span className="w" style={{ width: `${L ? Math.min(100, ((u.won || 0) / L) * 100) : 0}%` }} />
+                </div></div>
+                <div className="r"><span title="Booked ÷ leads"><i className="b" />{fmtNumber(u.booked || 0)} <em>{pc(u.booked || 0, L)}</em></span><span title="Shown ÷ booked"><i className="s" />{fmtNumber(u.shown || 0)} <em>{pc(u.shown || 0, u.booked || 0)}</em></span><span title="Won ÷ leads"><i className="w" />{fmtNumber(u.won || 0)} <em>{pc(u.won || 0, L)}</em></span></div>
+              </div>
+            ) })}
+          </div>
+          <div className="v2-leg" style={{ marginTop: 10 }}><span><i style={{ background: 'var(--border-2)' }} />Leads</span><span><i className="m" />Booked</span><span><i className="g" />Shown</span><span><i style={{ background: 'var(--brand-2)' }} />Won</span></div>
+        </div>
+      })()}
+
+      {repActivity}
 
       {drill && (() => {
         const repTabs = [...new Set(drill.deals.map((x) => x.user).filter(Boolean))].sort((a, b) => a.localeCompare(b))

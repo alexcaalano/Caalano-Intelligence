@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.513.0 - 2026-09-09 · `PENDING` - Key events on the Users leaderboard, sortable
+## v3.513.0 - 2026-09-09 · `1ac6ec0` - Key events on the Users leaderboard, sortable
 
 - **Key events per rep sit in the leaderboard.** Each configured key event
   is a column between Show % and Won, in pipeline order, on every rep and on

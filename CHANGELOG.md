@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.517.0 - 2026-09-09 · `PENDING` - One clock everywhere (timezone audit)
+## v3.517.0 - 2026-09-09 · `691c363` - One clock everywhere (timezone audit)
 
 Audit of every place Caalano360 decides which day something happened on. The
 counting windows were already cut on each client's Caalano Systems timezone;

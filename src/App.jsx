@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.520.0'
+const APP_VERSION = '3.521.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -7691,6 +7691,20 @@ function IntelBanner({ model, status, tab, pipeName, range }) {
     </div>
   )
 }
+// Spend allocated to each pipeline by its share of leads - the rule Pipeline
+// performance uses for cost per event - so a two-pipeline client is not charged
+// the whole account's spend twice over. One pipeline (or one picked from the
+// filter) carries the full spend.
+function reachSpendAlloc(list, spend) {
+  const own = list.filter((g) => g.pid !== '__all__')
+  const tot = own.reduce((a, g) => a + (g.base || 0), 0)
+  return (pid) => {
+    if (!spend) return 0
+    if (own.length < 2 || pid === '__all__' || !tot) return spend
+    const g = own.find((x) => x.pid === pid)
+    return g ? spend * ((g.base || 0) / tot) : 0
+  }
+}
 // Key event reach, with the step from the row before and the bottleneck flagged.
 function IntelReach({ reach, multi, leadTotal, chanLabel, money, spend }) {
   const groups = new Map()
@@ -7698,6 +7712,7 @@ function IntelReach({ reach, multi, leadTotal, chanLabel, money, spend }) {
   const list = [...groups.entries()].map(([pid, rows]) => ({ pid, name: pid === '__all__' ? 'All pipelines' : (rows[0].pipelineName || 'Pipeline'), rows, base: rows[0].base }))
   list.sort((a, b) => (a.pid === '__all__' ? 1 : b.pid === '__all__' ? -1 : b.base - a.base))
   const pc = (v) => `${Math.round(v * 100)}%`
+  const spendOf = reachSpendAlloc(list, spend)
   return <>
     <div className="cc-group-lab">Key event reach <span className="sub" style={{ fontWeight: 500 }}>· {multi ? "share of each event's pipeline leads" : `share of ${fmtNumber(leadTotal)} ${chanLabel ? `${chanLabel} ` : ''}leads`} · the step is the share of the row before · the lowest step is the bottleneck</span></div>
     {list.map((g) => <div key={g.pid}>
@@ -7711,7 +7726,7 @@ function IntelReach({ reach, multi, leadTotal, chanLabel, money, spend }) {
               <div className="value">{r.rate != null ? pc(r.rate) : '-'}</div>
               <div className="ir-sub">{fmtNumber(r.count)} of {fmtNumber(r.base)}{r.over ? <span className="ir-over" title="More deals resulted at this stage than arrived as leads in the period. On the Closed won basis wins are counted by close date, so this is not a rate of these leads - switch Won basis to Created for a true cohort read.">more than arrived</span> : dPts != null ? <span className={`ir-delta ${dPts > 0 ? 'up' : dPts < 0 ? 'down' : 'flat'}`}>{dPts > 0 ? '▲' : dPts < 0 ? '▼' : '·'} {Math.abs(dPts)} pts</span> : null}</div>
               <div className="ir-step">{i === 0 ? 'first key event' : r.step != null ? <>{pc(r.step)} of the {fmtNumber(r.stepBase)} before{r.prevStep != null ? <span className="ir-was"> · was {pc(r.prevStep)}</span> : null}</> : '-'}</div>
-              {spend && r.count ? <div className="ir-cost">{money(Math.round(spend / r.count))} each</div> : null}
+              {spendOf(g.pid) && r.count ? <div className="ir-cost">{money(Math.round(spendOf(g.pid) / r.count))} each</div> : null}
             </div>
           )
         })}
@@ -7978,17 +7993,19 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
     return v2ReachSplit(base, m, g)
   }
   const pc = (v) => `${Math.round(v * 100)}%`
+  // Spend per pipeline by lead share - the rule Pipeline performance uses - so
+  // every "each" figure here, the CAC pill and that table agree.
+  const spendOf = reachSpendAlloc(list, spend)
   // The Won row that closes each chain, with cost per won (CAC): the pipeline's
-  // own wins over its own leads, spend allocated by its share of leads - the
-  // same rule Pipeline performance uses. Account-wide when one pipeline.
+  // own wins over its own leads on that allocated spend. Account-wide when one
+  // pipeline.
   const contrib = new Map(((cc && cc.pipeContribution) || []).map((p) => [p.id, p]))
-  const totLeads = [...contrib.values()].reduce((a, p) => a + (p.leads || 0), 0)
   const pContrib = new Map(((pcc && pcc.pipeContribution) || []).map((p) => [p.id, p]))
   const wonRow = (g) => {
     if (multi) {
       const p = contrib.get(g.pid); if (!p) return null
       const pp = pContrib.get(g.pid)
-      const sp = totLeads ? (spend || 0) * ((p.leads || 0) / totLeads) : 0
+      const sp = spendOf(g.pid)
       return { count: p.won || 0, base: p.leads || 0, spend: sp, prevRate: pp && pp.leads ? (pp.won || 0) / pp.leads : null, split: v2ReachSplit(p.won || 0, p.chan ? p.chan.meta.won : 0, p.chan ? p.chan.google.won : 0) }
     }
     const t = (cc && cc.totals) || {}, pt = (pcc && pcc.totals) || null
@@ -7998,7 +8015,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
   return (
     <div className="card v2-reach" data-sec="reach">
       <div className="v2-sec-h">
-        <h3>Key event reach <span className="sub">· {multi ? "share of each pipeline's own leads" : `share of ${fmtNumber(leadTotal)} ${chanLabel ? `${chanLabel} ` : ''}leads`} · the step is the share of the row before · tick = previous period</span></h3>
+        <h3>Key event reach <span className="sub">· {multi ? "share of each pipeline's own leads" : `share of ${fmtNumber(leadTotal)} ${chanLabel ? `${chanLabel} ` : ''}leads`} · the step is the share of the row before · tick = previous period{list.length > 1 && spend ? ' · cost = spend allocated by lead share' : ''}</span></h3>
         <div className="tools"><button type="button" className={table ? 'on' : ''} onClick={() => setTable((t) => !t)}>{table ? 'Bars' : 'Table'}</button></div>
       </div>
       {table ? <IntelReach reach={reach} multi={multi} leadTotal={leadTotal} chanLabel={chanLabel} money={money} spend={spend} /> : <div className={`v2-reach-grid${list.length > 1 ? ' two' : ''}`}>{list.map((g) => {
@@ -8009,7 +8026,8 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
         const wouldBe = bn && bn.prevStep != null && bn.stepBase ? Math.round(bn.stepBase * bn.prevStep) - (bn.count || 0) : null
         const lastIsWon = g.rows.length && g.rows[g.rows.length - 1].kind === 'won'
         const w = lastIsWon ? null : wonRow(g)
-        const cac = cacOf(w) || (lastIsWon && spend && g.rows[g.rows.length - 1].count ? money(Math.round(spend / g.rows[g.rows.length - 1].count)) : null)
+        const gSpend = spendOf(g.pid)
+        const cac = cacOf(w) || (lastIsWon && gSpend && g.rows[g.rows.length - 1].count ? money(Math.round(gSpend / g.rows[g.rows.length - 1].count)) : null)
         return (
           <div key={g.pid} className="v2-reach-g">
             {g.name || cac ? <div className="v2-pipe-lab">{g.name ? <><span className="c360-dot" /> {g.name} <span className="sub">· {fmtNumber(g.base)} leads</span></> : <span className="sub">All pipelines · {fmtNumber(g.base)} leads</span>}{cac ? <span className="v2-cac" title="Cost per won deal: this scope's ad spend ÷ deals won (spend allocated to a pipeline by its share of leads)">CAC {cac}</span> : null}</div> : null}
@@ -8043,7 +8061,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
                     <React.Fragment key={i}>
                       <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{isCal ? 'booked or reached the stage' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
                       <V2ReachBar label={r.label.replace(/^📅 /, '')} count={eff} split={split} width={rateV} prevAt={r.prevRate} leak={isBn} detail={detail} />
-                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{isCal ? <small className="v2-split">{fmtNumber(r.fromCal || 0)} by booking{byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before` : '-'}{spend && eff ? ` · ${money(Math.round(spend / eff))} each` : ''}</small></div>
+                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{isCal ? <small className="v2-split">{fmtNumber(r.fromCal || 0)} by booking{byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before` : '-'}{gSpend && eff ? ` · ${money(Math.round(gSpend / eff))} each` : ''}</small></div>
                     </React.Fragment>
                   )
                 })

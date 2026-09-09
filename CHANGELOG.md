@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.521.0 - 2026-09-09 · `PENDING` - Key event reach costs on the same basis as Pipeline performance
+
+- **Cost per event in Key event reach now allocates ad spend across pipelines
+  by lead share**, the rule Pipeline performance already used. The bars and
+  the table were dividing the whole account's spend by each pipeline's own
+  count, so a two-pipeline client saw every "each" figure inflated (a $127
+  booked call read as $232). The CAC pill next to the pipeline name was
+  already on lead share; all three now agree, and the header says so when
+  more than one pipeline is drawn.
+- Single-pipeline clients, and one pipeline picked from the filter, are
+  unchanged: that pipeline carries the full spend.
+
+---
+
 ## v3.520.0 - 2026-09-09 · `89eb3d7` - Key event reach: pipelines side by side
 
 - **Two or more pipelines sit two-up in Key event reach**, each chain at half

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.504.0'
+const APP_VERSION = '3.505.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -4152,6 +4152,8 @@ const SEED_KEYEVENTS = {
 // list). loadOptLog falls back to these, so the tab appears without manual setup;
 // a URL saved in Settings overrides its seed.
 const SEED_OPTLOG = {
+  // Demo account: a generated log served by the optlog function for any "demo-" id.
+  'norwest-mdc': 'https://docs.google.com/spreadsheets/d/demo-norwest-mdc-change-log-0001/edit?gid=0#gid=0',
   'a2z': 'https://docs.google.com/spreadsheets/d/1kY4VpDQTdotnU7CX6Bm54r4SlYlVrz1lJHn7NdANGRM/edit?gid=0#gid=0',
   'finr-advisory': 'https://docs.google.com/spreadsheets/d/1rfPd307wLwy7by6mgihCssuFOBIun1mBLn6Oi1qh7Po/edit?gid=0#gid=0',
   'healan-centre': 'https://docs.google.com/spreadsheets/d/1heLwQD4eejpzCN08X4BFxl8VkvC3Dh_lNrLuhumH97E/edit?gid=0#gid=0',

@@ -10,7 +10,7 @@
 // debug call; they live in one place (FIELDS) so they are trivial to correct.
 
 import { buildAttribution, sampleAttribution, sampleChannels, buildCrm, auditLocation, isConnected, bookedTrends, crmTrends, attributionCoverage, wonInPeriod, monthlyDeals, oppTimestampFields, socialDMs, tagAudit, locationTimezone, locationProfile, periodBounds, listCalendars, listPipelines, ghlOpportunityRows, ghlPipelineRows, ghlUserRows, listLocations, checkLocationAccess, customClients, deletedClients, sampleForms, buildForms, buildSpeedToLead, speedLeadList, speedScanChunk, finalizeSpeed, buildAppointmentInsights, buildUserPerformance, buildUserPerformanceCombos, buildCreativePerf, buildUpdateExtra, fetchOppNotes, deriveBusinessHours, isQualified, buildCohorts as ghlCohorts, buildCcDrill, buildKeyPeople, buildStageTiming, buildEnquiryTimes, buildUserCalls, buildCallCohort, buildClinic, warmOppSnapshot, resilientFetch, startRequestBudget, buildCalPerf, clinicConfig, dayListBetween } from '../lib/ghl.mjs'
-import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, demoWindsor } from '../lib/demo.mjs'
+import { DEMO_CLIENT_ID, DEMO_LOCATION, DEMO_META_ACCT, DEMO_GOOGLE_ACCT, DEMO_GA4_PROP, demoWindsor } from '../lib/demo.mjs'
 // Stand-in for the Windsor API key, used only when the request is for the demo
 // client. windsorFetch reads it as "generate, don't fetch".
 const DEMO_KEY = 'demo::windsor'
@@ -29,7 +29,7 @@ const CLIENTS = {
   // Demo account - no real integrations behind it; every response is generated.
   // Registered like any other client so it flows through the same access control,
   // caching and scope handling as the rest.
-  [DEMO_CLIENT_ID]: { meta: DEMO_META_ACCT, google: DEMO_GOOGLE_ACCT, ghl: DEMO_LOCATION, name: 'Norwest Multi-Disciplinary', demo: true },
+  [DEMO_CLIENT_ID]: { meta: DEMO_META_ACCT, google: DEMO_GOOGLE_ACCT, ghl: DEMO_LOCATION, ga4: DEMO_GA4_PROP, name: 'Norwest Multi-Disciplinary', demo: true },
   'ablycalm':        { meta: '2531025873751747', google: null, ghl: 'KQtHuOcsMrdrADDBl7vD' },
   'finr-advisory':   { meta: '562656435170426',  google: null, ghl: 'A2lu96mobIYMdB9gcHte' },
   'nexia-health':    { meta: '538799668712983',  google: '774-276-3045', ghl: 'rQJAY6L6qt1JJfj16fZ8' },
@@ -1819,6 +1819,8 @@ const GA4_CONNECTOR = 'google_analytics_4'
 const GA4_SLUG_CANDIDATES = ['googleanalytics4', 'google_analytics_4', 'google_analytics', 'ga4', 'google_analytics4']
 let _ga4Slug = null, _ga4SlugInflight = null
 async function resolveGa4Slug(key) {
+  // The demo key never reaches Windsor; the generator answers any GA4 slug.
+  if (key === DEMO_KEY) return GA4_SLUG_CANDIDATES[0]
   if (_ga4Slug) return _ga4Slug
   // Share one probe across concurrent callers (buildGanalytics fires many GA4
   // queries at once) so a cold start doesn't run the candidate loop N times.

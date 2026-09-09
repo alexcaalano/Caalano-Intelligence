@@ -18,7 +18,35 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.504.0 - 2026-09-08 · `0855cb5` - CAC and ROAS by platform, easier to read
+## v3.505.0 - 2026-09-09 · `PENDING` - Demo account fills every tab; Forms scorecards in one row
+
+- **The demo account (Norwest Multi-Disciplinary) now has data for every
+  client tab.** Every patient carries a street address, suburb and postcode
+  across the Hills district, so Location and the catchment map draw. Form
+  answers sit where the real API puts them, so the Forms tab shows its
+  questions, a written-answer segment, the postcode breakdown and the
+  campaigns behind each form; Meta lead forms are named as such. Lost deals
+  carry a lost-reason id that resolves to a name. Won deals carry Cash
+  Collected and Service Sold opportunity fields, so the cash toggle has
+  paid-in-full, part-paid and not-entered states. Open and lost deals that
+  reached a booking carry an estimated value. Patients ring in and reply, some
+  calls are missed, an automated acknowledgement goes out before the human
+  reply, and a few leads are never worked, so Call Reporting and speed to
+  lead read like a real front desk. Conversations answer per contact.
+- **Analytics, Google keywords and creatives.** A GA4 property is wired to
+  the demo with sessions, sources, channels, events, landing pages and
+  devices that agree with the ad rows and the CRM. The Google tab gets
+  keywords with match type and quality score, search terms and their daily
+  rows. Meta ads carry a generated thumbnail, an objective and optimisation
+  goal, and the video creatives report views. The Change Log shows a
+  generated optimisation log dated relative to today.
+- **Forms scorecards fill the row.** However many key events a client has,
+  the tiles share the full width in a single row; on a phone they fall back
+  to two per row.
+- Form submissions honour the date window, so the Forms tab counts the same
+  period as the funnel rather than the whole history.
+
+ · `0855cb5` - CAC and ROAS by platform, easier to read
 
 - **The platform table laid out properly.** The group header row that sat
   out of line with the columns is gone. The platform column has a fixed

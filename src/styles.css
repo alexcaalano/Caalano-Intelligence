@@ -1162,7 +1162,12 @@ th.c360-col { color: #12b886; font-size: 10.5px; }
 .fm-edit-btn { margin-left: auto; align-self: center; background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 12px; color: var(--brand); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .fm-edit-btn:hover { border-color: var(--brand); }
 .ans-merged { font-size: 9.5px; color: var(--brand); font-weight: 700; cursor: help; margin-left: 3px; }
-.scorecard.forms-sc { width: 100%; margin-bottom: 4px; }
+/* One row, always: however many tiles the client's key events make, they share
+   the full width evenly instead of wrapping or leaving the right side empty. */
+.scorecard.forms-sc { width: 100%; margin-bottom: 4px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.scorecard.forms-sc .sc { min-width: 0; }
+.scorecard.forms-sc .sc-l { overflow-wrap: anywhere; }
+@media (max-width: 860px) { .scorecard.forms-sc { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .fke-pct { font-size: 10px; color: var(--faint); font-weight: 600; }
 /* Donut + first bar chart share row 1; the conversion chart gets the full width on
    row 2, so the busy multi-series bars aren't squeezed into a third of the screen. */

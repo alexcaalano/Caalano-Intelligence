@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.517.0'
+const APP_VERSION = '3.518.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -7964,11 +7964,17 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
     const i = src.labels.findIndex((l) => l.label === label)
     return i < 0 ? null : { meta: src.meta[i] || 0, google: src.google[i] || 0 }
   }
-  // Leads split: the pipeline's own contribution, or the account's paid feed.
+  // Leads split by the CRM's own attribution (UTM on the opportunity), the
+  // same basis every stage row below uses: the pipeline's contribution, or all
+  // pipelines summed. The ad-reported lead counts are a different base - Meta's
+  // results for the ads, not opportunities - and read as zero the moment the
+  // ad feed is empty, which painted a Meta-heavy month entirely as organic.
   const leadsSplit = (pid, base) => {
-    const pc = multi ? ((cc && cc.pipeContribution) || []).find((p) => p.id === pid) : null
-    const m = pc ? ((pc.chan && pc.chan.meta.leads) || 0) : ((cc && cc.paid && cc.paid.metaLeads) || 0)
-    const g = pc ? ((pc.chan && pc.chan.google.leads) || 0) : ((cc && cc.paid && cc.paid.googleLeads) || 0)
+    const all = (cc && cc.pipeContribution) || []
+    const pcs = multi ? all.filter((p) => p.id === pid) : all
+    if (!pcs.length) return v2ReachSplit(base, (cc && cc.paid && cc.paid.metaLeads) || 0, (cc && cc.paid && cc.paid.googleLeads) || 0)
+    const m = pcs.reduce((a, p) => a + ((p.chan && p.chan.meta.leads) || 0), 0)
+    const g = pcs.reduce((a, p) => a + ((p.chan && p.chan.google.leads) || 0), 0)
     return v2ReachSplit(base, m, g)
   }
   const pc = (v) => `${Math.round(v * 100)}%`

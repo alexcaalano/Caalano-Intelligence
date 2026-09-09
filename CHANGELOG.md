@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.518.0 - 2026-09-09 · `PENDING` - Opportunities bar splits by CRM attribution
+
+- **The Opportunities row in Key event reach now splits by the CRM's own
+  attribution**, the same basis as every stage row under it and the Channels
+  callout. It was reading Meta's and Google's ad-reported result counts, a
+  different base that reads as zero whenever the ad feed has no rows for the
+  window, which painted a month of Meta-attributed leads entirely as organic
+  while the Contact Made row beneath showed them as Meta.
+- Pipelines with no contribution data fall back to the ad-reported split as
+  before.
+
+---
+
 ## v3.517.0 - 2026-09-09 · `691c363` - One clock everywhere (timezone audit)
 
 Audit of every place Caalano360 decides which day something happened on. The

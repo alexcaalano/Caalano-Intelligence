@@ -36,7 +36,7 @@ const dict = { pipeline: ['P'], stage: ['New', 'Won'], campaign: ['A', 'B'], ads
 const rows = []
 for (let i = 0; i < 30; i++) rows.push([i < 6 ? 1 : 0, 0, i < 6 ? 1 : 0, 0, 0, 0, 0, 0, 0, i < 6 ? 1 : 0, i < 6 ? 4 : null])   // campaign A (meta): 6 of 30 win, fast
 for (let i = 0; i < 30; i++) rows.push([i < 6 ? 1 : 0, 0, i < 6 ? 1 : 0, 1, 0, 0, 0, 1, 1, i < 6 ? 1 : 0, i < 6 ? 30 : null])  // campaign B (google): 6 of 30 win, slow
-const cc = { oppFacts: { keys, dict, rows }, lostFacts: null, bookingByCalendar: [{ id: 'c1', calendar: 'Consult', booked: 40, occurred: 30, shown: 12 }, { id: 'c2', calendar: 'Follow-up', booked: 40, occurred: 30, shown: 27 }] }
+const cc = { oppFacts: { keys, dict, rows }, lostFacts: null, bookingByCalendar: [{ id: 'c1', calendar: 'Consult', booked: 40, occurred: 30, shown: 12, noShow: 18 }, { id: 'c2', calendar: 'Follow-up', booked: 40, occurred: 30, shown: 27, noShow: 3 }] }
 const f = intelFindings(cc, null, null, null, { wide: true, calendars: cc.bookingByCalendar, reps: [{ name: 'Ann', leads: 40, won: 12, booked: 20 }, { name: 'Bob', leads: 40, won: 2, booked: 20 }], locations: [{ label: 'Frankston', leads: 30, booked: 24, won: 3 }, { label: 'Berwick', leads: 30, booked: 6, won: 3 }], forms: [{ form: 'Enquiry', leads: 50, booked: 25, won: 5 }, { form: 'Callback', leads: 50, booked: 5, won: 5 }] })
 const has = (dim, label, metric) => f.find((x) => x.dim === dim && x.label === label && (!metric || x.metric === metric))
 ok('calendar show-rate finding', has('calendar', 'Consult', 'show') && has('calendar', 'Consult').better === false && has('calendar', 'Consult').page === 'appts', f.filter((x) => x.dim === 'calendar'))
@@ -51,7 +51,7 @@ const narrow = intelFindings(cc, null, null, null, {})
 ok('V1 (no wide) adds nothing new', !narrow.some((x) => ['calendar', 'rep', 'location', 'form'].includes(x.dim) || x.metric === 'ttw'))
 
 // Wide movers: show rate per calendar and median days to win, tagged.
-const mk = (shown, ttw) => ({ totals: { leads: 100, won: 10, lost: 10 }, revenue: { total: 1000 }, spend: {}, paid: {}, bookingByCalendar: [{ id: 'c1', calendar: 'Consult', occurred: 40, shown }], timeToWon: { median: ttw, n: 10 }, lostByReason: [] })
+const mk = (shown, ttw) => ({ totals: { leads: 100, won: 10, lost: 10 }, revenue: { total: 1000 }, spend: {}, paid: {}, bookingByCalendar: [{ id: 'c1', calendar: 'Consult', occurred: 40, shown, noShow: 40 - shown }], timeToWon: { median: ttw, n: 10 }, lostByReason: [] })
 const mv = intelMovers(mk(20, 6), mk(32, 12), [], [], { wide: true })
 ok('show-rate mover', mv.some((m) => m.key === 'show:Consult' && m.page === 'appts' && m.good === false), mv)
 ok('days-to-win mover', mv.some((m) => m.key === 'ttw' && m.kind === 'days' && m.good === true && m.page === 'timing'), mv)

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.506.0'
+const APP_VERSION = '3.507.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -117,9 +117,9 @@ function buildO360Cols(keyEvents, stagePos, calNames) {
       cols.push({ key: `e${i}b`, sub: 'Booked', ty: 'count', metric: 'calBooked', gfirst: true, title: `Bookings for ${k.label}`, ...ctx })
       cols.push({ key: `e${i}br`, sub: 'Book Rate', ty: 'rate', metric: 'calBookRate', title: "Booked ÷ this row's ad-reported leads (not CRM leads)", ...ctx })
       cols.push({ key: `e${i}cb`, sub: 'Cost / Booked', ty: 'cost', metric: 'calCost', title: `Spend ÷ ${k.label} bookings`, ...ctx })
-      cols.push({ key: `e${i}o`, sub: 'Occurred', ty: 'count', metric: 'calOccurred', title: `Appointments whose date has passed (occurred) for ${k.label}`, ...ctx })
+      cols.push({ key: `e${i}o`, sub: 'Occurred', ty: 'count', metric: 'calOccurred', title: `Appointments that reached their time for ${k.label} - shown, no-show or not yet resulted; cancelled in advance excluded`, ...ctx })
       cols.push({ key: `e${i}s`, sub: 'Shown', ty: 'count', metric: 'calShown', title: `Showed for ${k.label}`, ...ctx })
-      cols.push({ key: `e${i}sr`, sub: 'Show Rate', ty: 'rate', metric: 'calShowRate', title: 'Shown ÷ occurred (past-date appointments only)', ...ctx })
+      cols.push({ key: `e${i}sr`, sub: 'Show Rate', ty: 'rate', metric: 'calShowRate', title: 'Shown ÷ resulted (shown + no-show). Cancellations and appointments not yet given a result are excluded', ...ctx })
     } else if (WON_RE.test(k.label)) {
       // Won event: revenue-truth group from the won opportunity STATUS/value
       // (not the pipeline stage) - Won, Win Rate, Cost/Won, Won Val, Avg Deal, ROAS.
@@ -158,18 +158,19 @@ function o360Fields(o, spend, leads, desc) {
     if (m && m.slice(0, 3) === 'cal') {
       let g = agg[c.g]
       if (!g) {
-        const b = calSum(c.refs, 'cals'), sh = calSum(c.refs, 'calsShown'), oc = calSum(c.refs, 'calsOccurred')
+        const b = calSum(c.refs, 'cals'), sh = calSum(c.refs, 'calsShown'), oc = calSum(c.refs, 'calsOccurred'), ns = calSum(c.refs, 'calsNoShow')
         const stageN = stg(c.stage, c.pipeline)
         const fromStage = Math.max(0, stageN - b.t)
-        g = agg[c.g] = { booked: b.t + fromStage, fromCal: b.t, fromStage, bookedPer: b.per, occurred: oc.t, occurredPer: oc.per, shown: sh.t, shownPer: sh.per }
+        g = agg[c.g] = { booked: b.t + fromStage, fromCal: b.t, fromStage, bookedPer: b.per, occurred: oc.t, occurredPer: oc.per, shown: sh.t, shownPer: sh.per, noShow: ns.t }
       }
       if (m === 'calBooked') { f[c.key] = g.booked; f[c.key + 'B'] = { per: g.bookedPer, fromStage: g.fromStage } }
       else if (m === 'calBookRate') { f[c.key] = L ? (g.booked / L) * 100 : null }
       else if (m === 'calCost') { f[c.key] = g.booked && spend ? spend / g.booked : null; f[c.key + 'N'] = g.booked }
       else if (m === 'calOccurred') { f[c.key] = g.occurred; f[c.key + 'B'] = { per: g.occurredPer } }
       else if (m === 'calShown') { f[c.key] = g.shown; f[c.key + 'B'] = { per: g.shownPer } }
-      // Show rate on OCCURRED appointments only (past their date), not all bookings.
-      else if (m === 'calShowRate') { f[c.key] = g.occurred ? (g.shown / g.occurred) * 100 : null }
+      // Show rate on RESULTED appointments: shown ÷ (shown + no-show). Upcoming,
+      // cancelled and not-yet-resulted appointments are all left out.
+      else if (m === 'calShowRate') { const res = g.shown + (g.noShow || 0); f[c.key] = res ? (g.shown / res) * 100 : null }
     } else if (m === 'stageReached') { f[c.key] = stg(c.ref, c.pipeline) }
     else if (m === 'stageRate') { const n = stg(c.ref, c.pipeline); f[c.key] = L ? (n / L) * 100 : null }
     else if (m === 'stageCost') { const n = stg(c.ref, c.pipeline); f[c.key] = n && spend ? spend / n : null; f[c.key + 'N'] = n }
@@ -3158,7 +3159,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
                 <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} onClick={leadsP ? () => setKeyDrill({ kind: 'lead', label: 'Leads', pipeline: pid || null }) : undefined} />
                 {rowsP.map((r, i) => {
                   const pr = pByLabel[r.label]; const prevCount = pr ? pr.count : 0
-                  const show = r.kind === 'calendar' && r.occurred ? { rate: (r.shown / r.occurred) * 100, shown: r.shown, occurred: r.occurred, prevRate: (pr && pr.occurred) ? (pr.shown / pr.occurred) * 100 : null } : null
+                  const show = calShowOf(r, pr)
                   return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={r.count} prev={hasPrev ? prevCount : null} currency={currency} pop={calPopRows(r)}
                     pctLeads={pctOf(r.count, leadsP)} prevPctLeads={hasPrev ? pctOf(prevCount, pCrm.leads) : null}
                     cost={costOf(spendP, r.count)} prevCost={costOf(spendPrevP, prevCount)} show={show}
@@ -3691,7 +3692,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
                 <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(spendP, leadsP)} prevCost={costOf(spendPrevP, pCrm.leads)} onClick={leadsP ? () => setKeyDrill({ kind: 'lead', label: 'Leads', pipeline: pid || null }) : undefined} />
                 {rowsP.map((r, i) => {
                   const pr = pByLabel[r.label]; const prevCount = pr ? pr.count : 0
-                  const show = r.kind === 'calendar' && r.occurred ? { rate: (r.shown / r.occurred) * 100, shown: r.shown, occurred: r.occurred, prevRate: (pr && pr.occurred) ? (pr.shown / pr.occurred) * 100 : null } : null
+                  const show = calShowOf(r, pr)
                   return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={r.count} prev={hasPrev ? prevCount : null} currency={currency} pop={calPopRows(r)}
                     pctLeads={pctOf(r.count, leadsP)} prevPctLeads={hasPrev ? pctOf(prevCount, pCrm.leads) : null}
                     cost={costOf(spendP, r.count)} prevCost={costOf(spendPrevP, prevCount)} show={show}
@@ -4889,7 +4890,7 @@ function calCountMap(attribData, chan) {
   if (Array.isArray(list)) {
     for (const cal of list) {
       const src = (chan && chan !== 'all' && cal.ch && cal.ch[chan]) ? cal.ch[chan] : cal
-      m.set(cal.id, { name: cal.name, count: src.booked || 0, occurred: src.occurred || 0, shown: src.shown || 0, cancelled: src.cancelled || 0, union: src.union || null })
+      m.set(cal.id, { name: cal.name, count: src.booked || 0, occurred: src.occurred || 0, shown: src.shown || 0, noShow: src.noShow || 0, cancelled: src.cancelled || 0, union: src.union || null })
     }
   }
   return m
@@ -4902,11 +4903,11 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
   const rows = []
   for (const k of resolveKeyEvents(keyEvents, stagePos)) {
     if (k.kind === 'calendar') {
-      let cal = 0, occurred = 0, shown = 0, cancelled = 0, any = false
+      let cal = 0, occurred = 0, shown = 0, noShow = 0, cancelled = 0, any = false
       // Per-calendar split so the merged key event can show which calendars (and how
       // many bookings each) make up its total on hover.
       const perCal = []
-      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; occurred += (c.occurred || 0); shown += c.shown; cancelled += c.cancelled; if (c.count) perCal.push({ name: c.name || 'Calendar', count: c.count, shown: c.shown || 0, occurred: c.occurred || 0 }) } }
+      for (const r of (k.refs || [k.ref])) { const c = calMap && calMap.get(r); if (c) { any = true; cal += c.count; occurred += (c.occurred || 0); shown += c.shown; noShow += (c.noShow || 0); cancelled += (c.cancelled || 0); if (c.count) perCal.push({ name: c.name || 'Calendar', count: c.count, shown: c.shown || 0, occurred: c.occurred || 0 }) } }
       perCal.sort((a, b) => b.count - a.count)
       // Linked stage acts as a fallback: leads that reached the stage but we have
       // no calendar booking for. Approximated as stageReached - calendar bookings.
@@ -4921,7 +4922,7 @@ function keyEventRows(keyEvents, rmap, calMap, stagePos, wonTotal) {
       const count = union >= 0 ? Math.max(union, cal) : cal + Math.max(0, stageReached - cal)
       const fromStage = Math.max(0, count - cal)
       if (!any && !fromStage) continue
-      rows.push({ label: k.label, count, fromCal: cal, fromStage, stageReached, exact: union >= 0, occurred, shown, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
+      rows.push({ label: k.label, count, fromCal: cal, fromStage, stageReached, exact: union >= 0, occurred, shown, noShow, cancelled, perCal, refs: (k.refs || [k.ref]).filter(Boolean), stage: k.stage || null, kind: 'calendar', pipeline: k.pipeline || null })
     } else if (WON_RE.test(k.label)) {
       // Won event counts on the won STATUS (not the pipeline stage).
       const n = wonTotal != null ? wonTotal : stageReachOf(rmap, k.pipeline, k.ref)
@@ -6400,7 +6401,7 @@ function ccKeyEventFunnel(cc, clientId, wonTotal, leadsFallback) {
   const keList = ccKeyEventsOf(cc, clientId)
   const rmap = reachedByStage(pipes)
   const stagePos = stagePosMap(pipes)
-  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, shown: c.shown, cancelled: 0, union: c.union || null }]))
+  const calMap = new Map(((cc && cc.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred || 0, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
   const rows = (keList && keList.length && pipes.length) ? keyEventRows(keList, rmap, calMap, stagePos, wonTotal) : []
   const leadTotal = leadsFallback || rmap.total || 0
   // Per-pipeline lead totals so a pipeline-scoped key event (multi-pipeline client)
@@ -6592,8 +6593,9 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
       })}
     </div>
   )
-  // Calendar show-rate bars - shown / occurred per calendar (own card).
-  const showCals = ((cc && cc.bookingByCalendar) || []).filter((c) => c.occurred > 0)
+  // Calendar show-rate bars - shown / resulted (shown + no-show) per calendar.
+  const resOf = (c) => (c.shown || 0) + (c.noShow || 0)
+  const showCals = ((cc && cc.bookingByCalendar) || []).filter((c) => resOf(c) > 0)
   // Open pipeline by stage - who's still in play, and where they came from.
   const openStages = (cc && cc.openByStage) || []
   const multiPipe = new Set(openStages.map((s) => s.pipeline)).size > 1
@@ -6648,13 +6650,13 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
       <Caveat>Step % is each stage as a share of the one above it. The flagged step is where the most opportunities are lost - the place a small improvement moves the most revenue.{paidMode ? ` Cost = ${chanLbl} spend (${money(Math.round(stageSpend))}) ÷ everyone who reached that stage; → Next = the share who move on to the following step.` : ''}{usingKe ? ' Funnel steps are this client’s configured key events.' : ''}{openStages.length ? ' Open-by-stage counts are the deals sitting in each stage right now (not the cumulative funnel above).' : ''}</Caveat>
     </div>
     {showCals.length ? <div className="card exec-bottleneck">
-      <div className="exec-panel-h">Show rate by calendar <span className="sub">· shown ÷ occurred per booked calendar{onNav ? ' · click a calendar to open every appointment, per user' : ''}</span></div>
+      <div className="exec-panel-h">Show rate by calendar <span className="sub">· shown ÷ resulted (shown + no-show) per booked calendar · cancellations and unresulted appointments excluded{onNav ? ' · click a calendar to open every appointment, per user' : ''}</span></div>
       <div className="bn-funnel bn-cal">
-        {showCals.map((c, i) => { const sr = c.occurred ? c.shown / c.occurred : 0; const RowTag = onNav ? 'button' : 'div'; return (
+        {showCals.map((c, i) => { const sr = resOf(c) ? c.shown / resOf(c) : 0; const RowTag = onNav ? 'button' : 'div'; return (
           <RowTag className={`bn-row bn-cal-row${onNav ? ' is-link' : ''}`} key={i} onClick={onNav ? () => onNav('appts') : undefined} title={onNav ? `Open the Appointments tab to see every ${c.calendar} appointment, filterable by user` : c.calendar}>
             <span className="bn-lab" title={c.calendar}>{c.calendar}</span>
             <span className="bn-track"><span className="bn-fill" style={{ width: `${Math.max(2, sr * 100)}%`, background: sr >= 0.6 ? '#12b886' : sr >= 0.4 ? 'var(--brand)' : '#d64545' }} /></span>
-            <span className="bn-count">{fmtNumber(c.shown)}/{fmtNumber(c.occurred)}</span>
+            <span className="bn-count" title={`${fmtNumber(c.shown)} shown · ${fmtNumber(c.noShow || 0)} no-show${c.cancelled ? ` · ${fmtNumber(c.cancelled)} cancelled` : ''}${c.unresulted ? ` · ${fmtNumber(c.unresulted)} unresulted` : ''}`}>{fmtNumber(c.shown)}/{fmtNumber(resOf(c))}</span>
             <span className="bn-conv">{Math.round(sr * 100)}%</span>
             {onNav ? <span className="bn-cal-go">→</span> : null}
           </RowTag>
@@ -6842,14 +6844,15 @@ function CcDrillModal({ drill, cc, money, clientId, onClose }) {
     if (sub) {
       const cal = sub
       title = cal.calendar
-      subhead = `${fmtNumber(cal.booked)} booked · ${fmtNumber(cal.occurred)} occurred · ${fmtNumber(cal.shown)} shown`
-      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Contact</th><th>Occurred</th><th>Shown</th></tr></thead>
-        <tbody>{(cal.people || []).map((p, i) => <tr key={i}><td className="lft">{p.name}</td><td>{p.occurred ? '✓' : '-'}</td><td>{p.shown ? '✓' : '-'}</td></tr>)}</tbody></table>
+      subhead = `${fmtNumber(cal.booked)} booked · ${fmtNumber(cal.cancelled || 0)} cancelled · ${fmtNumber(cal.shown)} shown · ${fmtNumber(cal.noShow || 0)} no-show${cal.unresulted ? ` · ${fmtNumber(cal.unresulted)} unresulted` : ''}`
+      const resultOf = (p) => (p.shown ? '✓ showed' : p.noShow ? '✗ no-show' : p.cancelled ? 'cancelled' : p.occurred ? 'unresulted' : 'upcoming')
+      body = <table className="mini-tbl users-tbl"><thead><tr><th className="lft">Contact</th><th className="lft" title="Showed or no-show as the team set it; unresulted = past its time with no status; upcoming = still to come">Result</th></tr></thead>
+        <tbody>{(cal.people || []).map((p, i) => <tr key={i}><td className="lft">{p.name}</td><td className="lft">{resultOf(p)}</td></tr>)}</tbody></table>
     } else {
       const cals = d.bookingByCalendar || []
       subhead = `${fmtNumber(cals.length)} ${cals.length === 1 ? 'calendar' : 'calendars'} · click a calendar for who booked in`
       body = cals.length ? cals.map((c, i) => <button key={i} className="cc-drill-row" onClick={() => setSub(c)}>
-        <b>{c.calendar}</b> <span className="cc-drill-ans">{fmtNumber(c.booked)} booked · {fmtNumber(c.occurred)} occurred · {fmtNumber(c.shown)} shown{c.occurred ? ` · ${pctOf(c.shown, c.occurred)} show rate` : ''}</span></button>)
+        <b>{c.calendar}</b> <span className="cc-drill-ans">{fmtNumber(c.booked)} booked · {fmtNumber(c.cancelled || 0)} cancelled · {fmtNumber(c.shown)} of {fmtNumber((c.shown || 0) + (c.noShow || 0))} resulted shown{(c.shown || 0) + (c.noShow || 0) ? ` · ${pctOf(c.shown, (c.shown || 0) + (c.noShow || 0))} show rate` : ''}{c.unresulted ? ` · ${fmtNumber(c.unresulted)} unresulted` : ''}</span></button>)
         : <div className="cap">No calendar bookings in this period.</div>
     }
   } else if (drill.kind === 'revenue') {
@@ -7023,6 +7026,19 @@ function ChanBar({ meta = 0, google = 0, other = 0 }) {
 // per-pipeline tiles but reads ALL-channel CRM: the count (with vs-prev arrow),
 // then stacked sub-lines - % of leads, blended cost per event, and (calendar
 // events) show rate with shown/occurred - each with its own vs-prev delta.
+// The appointment figures behind a calendar key-event tile. Show rate is
+// shown ÷ resulted, where resulted = shown + no-show: a no-show is an
+// appointment that happened and the person did not come, so it belongs in the
+// denominator. Cancelled in advance is neither, and is reported as its own rate
+// against bookings. Unresulted = past its time, no status set - a hygiene number.
+function calShowOf(r, pr) {
+  if (!r || r.kind !== 'calendar') return null
+  const res = (x) => (x.shown || 0) + (x.noShow || 0)
+  const rateOf = (x) => (x && res(x) ? ((x.shown || 0) / res(x)) * 100 : null)
+  const booked = r.fromCal || 0, occurred = r.occurred || 0
+  if (!booked && !occurred) return null
+  return { rate: rateOf(r), shown: r.shown || 0, noShow: r.noShow || 0, resulted: res(r), occurred, unresulted: Math.max(0, occurred - res(r)), booked, cancelled: r.cancelled || 0, prevRate: rateOf(pr) }
+}
 function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctLeads, cost, prevCost, costUnit = 'event', show, note, pop, onClick }) {
   const money = (v) => fmtCurrency(v, currency)
   const labelEl = (pop && pop.rows && pop.rows.length)
@@ -7034,7 +7050,8 @@ function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctL
       <div className="kesc-v">{isMoney ? money(value) : fmtNumber(value)}{prev != null ? <MiniDelta cur={value} prev={prev} /> : null}</div>
       {pctLeads != null ? <div className="kesc-line"><span>{Math.round(pctLeads)}% of leads</span>{prevPctLeads != null ? <MiniDelta cur={pctLeads} prev={prevPctLeads} /> : null}</div> : null}
       {cost != null && isFinite(cost) ? <div className="kesc-line"><span>{money(Math.round(cost))}/{costUnit}</span>{prevCost != null && isFinite(prevCost) ? <MiniDelta cur={cost} prev={prevCost} goodWhenDown /> : null}</div> : null}
-      {show ? <div className="kesc-line"><span>{show.rate == null ? '-' : `${Math.round(show.rate)}% show`} · {fmtNumber(show.shown)}/{fmtNumber(show.occurred)} occurred</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
+      {show ? <div className="kesc-line" title="Show rate = shown ÷ resulted (shown + no-show). Appointments cancelled in advance, still to come, or past their time with no result set are left out."><span>{show.rate == null ? 'no resulted appointments yet' : `${Math.round(show.rate)}% show · ${fmtNumber(show.shown)} of ${fmtNumber(show.resulted)} resulted`}</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
+      {show && (show.cancelled || show.unresulted) ? <div className="kesc-line kesc-sub" title="Cancelled = booked in the period and called off in advance, as a share of bookings. Unresulted = past its time with neither showed nor no-show set - ask the team to result these."><span>{[show.cancelled ? `${fmtNumber(show.cancelled)} cancelled (${Math.round((show.cancelled / Math.max(1, show.booked)) * 100)}%)` : null, show.unresulted ? `${fmtNumber(show.unresulted)} unresulted` : null].filter(Boolean).join(' · ')}</span></div> : null}
       {note ? <div className="kesc-line">{note}</div> : null}
     </div>
   )
@@ -7053,7 +7070,7 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
   const money = (v) => fmtCurrency(v, currency)
   const stagePos = stagePosMap(funnels)
   const keList = loadKeyEvents(clientId)
-  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, cancelled: 0, union: c.union || null }]))
+  const mkCalMap = (d) => new Map(((d && d.bookingByCalendar) || []).map((c) => [c.id, { name: c.calendar, count: c.booked, occurred: c.occurred, shown: c.shown, noShow: c.noShow || 0, cancelled: c.cancelled || 0, union: c.union || null }]))
   const rmap = reachedByStage(funnels), calMap = mkCalMap(cc)
   const pRmap = reachedByStage((pcc && pcc.pipelinesFunnel) || []), pCalMap = mkCalMap(pcc)
   const pPipes = {}; for (const p of ((pcc && pcc.pipeContribution) || [])) pPipes[p.id] = p
@@ -7087,7 +7104,7 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
               <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(pipeSpend, leadsP)} prevCost={costOf(pipeSpendPrev, prevLeadsP)} />
               {rows.map((r, i) => {
                 const pr = pByLabel[r.label]; const prevCount = pr ? pr.count : 0
-                const show = r.kind === 'calendar' && r.occurred ? { rate: (r.shown / r.occurred) * 100, shown: r.shown, occurred: r.occurred, prevRate: (pr && pr.occurred) ? (pr.shown / pr.occurred) * 100 : null } : null
+                const show = calShowOf(r, pr)
                 return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={r.count} prev={pp ? prevCount : null} currency={currency} pop={calPopRows(r)}
                   pctLeads={leadsP ? (r.count / leadsP) * 100 : null} prevPctLeads={prevLeadsP ? (prevCount / prevLeadsP) * 100 : null}
                   cost={costOf(pipeSpend, r.count)} prevCost={costOf(pipeSpendPrev, prevCount)} show={show} />
@@ -7232,7 +7249,7 @@ function intelMovers(cc, pcc, reach, prevReach, opts = {}) {
   // Wider (V2): show rate per calendar and the median days to win.
   if (opts.wide) {
     const pcal = new Map(((pcc.bookingByCalendar) || []).map((c) => [c.id || c.calendar, c]))
-    for (const c of (cc.bookingByCalendar || [])) { const p = pcal.get(c.id || c.calendar); if (p) rate(`show:${c.calendar}`, `Show rate · ${c.calendar}`, intelRate(c.shown, c.occurred), intelRate(p.shown, p.occurred), c.occurred || 0, p.occurred || 0, true, `${c.shown} of ${c.occurred} shown vs ${p.shown} of ${p.occurred}`) }
+    for (const c of (cc.bookingByCalendar || [])) { const p = pcal.get(c.id || c.calendar); if (!p) continue; const cr = (c.shown || 0) + (c.noShow || 0), prr = (p.shown || 0) + (p.noShow || 0); rate(`show:${c.calendar}`, `Show rate · ${c.calendar}`, intelRate(c.shown, cr), intelRate(p.shown, prr), cr, prr, true, `${c.shown} of ${cr} resulted shown vs ${p.shown} of ${prr}`) }
     const tw = cc.timeToWon, ptw = pcc.timeToWon
     if (tw && ptw && tw.median != null && ptw.median != null && tw.n >= 5 && ptw.n >= 5) { const pct = intelPct(tw.median, ptw.median); if (pct != null && Math.abs(pct) >= INTEL_MIN_MOVE && Math.abs(tw.median - ptw.median) >= 2) out.push({ key: 'ttw', label: 'Median days to win', kind: 'days', cur: tw.median, prev: ptw.median, pct, score: Math.abs(pct) * 0.8, good: pct < 0, why: `${tw.n} vs ${ptw.n} wins` }) }
   }
@@ -7383,8 +7400,10 @@ function intelFindings(cc, pcc, fold, firstKe, opts = {}) {
         out.push({ dim, label: r.label, metric, idx: i, value: v, base: b, n: dn, better, text: `${r.label} ${verb} ${pc(v)} of the time vs ${pc(b)} across the account (${fmtNumber(num(r))} of ${fmtNumber(dn)}).`, score: Math.abs(i - 100) * Math.log2(dn) * 0.9 })
       }
     }
-    const cals = (opts.calendars || []).map((c) => ({ label: c.calendar || 'Calendar', shown: c.shown || 0, occurred: c.occurred || 0 }))
-    cutRate('calendar', cals, (r) => r.shown, (r) => r.occurred, 'show', '(calendar) sees people show up', true)
+    // Show rate on resulted appointments (shown + no-show), the same basis as
+    // the tiles and the show-rate card.
+    const cals = (opts.calendars || []).map((c) => ({ label: c.calendar || 'Calendar', shown: c.shown || 0, resulted: (c.shown || 0) + (c.noShow || 0) }))
+    cutRate('calendar', cals, (r) => r.shown, (r) => r.resulted, 'show', '(calendar) sees people show up', true)
     const reps = (opts.reps || []).map((u) => ({ label: u.name || 'Unassigned', leads: u.leads || 0, won: u.won || 0, booked: u.booked || 0 }))
     cutRate('rep', reps, (r) => r.won, (r) => r.leads, 'win', '(rep) wins', true)
     cutRate('rep', reps, (r) => r.booked, (r) => r.leads, 'book', '(rep) books', true)

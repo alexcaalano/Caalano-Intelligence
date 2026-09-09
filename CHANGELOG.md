@@ -18,7 +18,27 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.506.0 - 2026-09-09 · `e26d023` - A no-show counts as an appointment that occurred
+## v3.507.0 - 2026-09-09 · `PENDING` - Show rate on resulted appointments, cancellation rate, unresulted count
+
+- **Show rate is now shown ÷ resulted.** Resulted means the team set a
+  result: showed or no-show. Appointments cancelled in advance, still to
+  come, or past their time with no status set are left out of both sides.
+  This is the clinic convention (no-shows over completed plus no-shows) and
+  it now applies everywhere: the calendar key-event tiles on the Meta,
+  Google and Caalano360 tabs, the key-event table's Show Rate column, the
+  Show rate by calendar card, the calendar drill and the intelligence
+  findings and movers.
+- **Cancellation rate and unresulted count on every calendar tile.** A
+  second line reads, for example, "4 cancelled (9%) · 3 unresulted".
+  Cancelled is against bookings, because a cancellation was called off in
+  advance and points at booking friction rather than reminders. Unresulted
+  is the number of past appointments nobody has marked showed or no-show,
+  so the front desk can see what to clean up. The line only appears when
+  either is non-zero.
+- The calendar drill now shows one result per person: showed, no-show,
+  cancelled, unresulted or upcoming.
+
+ · `e26d023` - A no-show counts as an appointment that occurred
 
 - **Show rate now includes no-shows in its denominator.** An appointment
   marked no-show is a resulted appointment: it occurred and the person did

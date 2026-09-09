@@ -2257,6 +2257,7 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .kesc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .kesc-v { font-size: 23px; font-weight: 780; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 6px; }
 .kesc-line { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.kesc-line.kesc-sub { color: var(--faint); }
 .kesc-line .mini-delta { font-size: 9.5px; }
 
 /* ============ Monthly Report (slide deck) ============ */

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.511.0 - 2026-09-09 · `PENDING` - View as, for Super Admins
+## v3.511.0 - 2026-09-09 · `f97a8b1` - View as, for Super Admins
 
 - **View as.** A Super Admin can pick any person from the users list, or a
   role preset (any viewer, any admin), from the bottom of the sidebar and see

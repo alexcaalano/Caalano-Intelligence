@@ -18,7 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.509.0 - 2026-09-09 · `64bc72c` - Intelligence banner hidden from viewers
+## v3.510.0 - 2026-09-09 · `PENDING` - No intelligence for viewers
+
+- **Viewers see figures only.** On the Caalano360 tab the story cards, the
+  biggest-leak callout on the key event reach, Biggest movers, Over- and
+  under-indexing and Priority actions are hidden for viewer logins, on top
+  of the tab banner hidden in v3.509.0. The reach chart, tiles, tables and
+  drills stay as they were. Admins and super admins are unchanged.
+
+ · `64bc72c` - Intelligence banner hidden from viewers
 
 - **Viewers no longer see the Intelligence banner** at the top of a client's
   tabs. It is the agency's read of the page; a viewer login gets the figures

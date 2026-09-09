@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.509.0'
+const APP_VERSION = '3.510.0'
 // Format the injected build timestamp in Australian local time (dashboard is
 // AEST/AEDT), e.g. "20 Jul 2026, 1:32 pm". Falls back gracefully if unset.
 function fmtBuildTime(iso) {
@@ -7932,7 +7932,7 @@ function V2ReachBar({ label, count, split, width, prevAt, leak, detail }) {
 // share of that pipeline's leads, split by channel, with the previous period as
 // a tick and the leak marked where it happens. Same rows and rules as the
 // reach cards (intelReach); the table view shows those cards.
-function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLabel, leadTotal, wonBasis }) {
+function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLabel, leadTotal, wonBasis, quiet }) {
   const [table, setTable] = useState(false)
   const rows = reach || []
   if (!rows.length) return null
@@ -8033,7 +8033,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
                 <V2ReachBar label="Won" count={w.count} split={w.split} width={w.base ? Math.min(1, w.count / w.base) : 0} prevAt={w.prevRate} />
                 <div className="rate">{fmtNumber(w.count)}<small>{w.base ? `${pc(w.count / w.base)} of leads` : '-'}{cacOf(w) ? ` · CAC ${cacOf(w)}` : ''}</small></div>
               </> : null}
-              {bn ? <div className="v2-leakcard"><span className="tag">Biggest leak</span><p><b>{fmtNumber(missed)} {missed === 1 ? 'person' : 'people'} reached {before ? before.label.replace(/^📅 /, '') : 'the funnel'} and did not go on to {bn.label.replace(/^📅 /, '')}.</b> {bn.prevStep != null ? (wouldBe > 0 ? `At the previous period's ${pc(bn.prevStep)} this step would have produced ${fmtNumber(wouldBe)} more.` : `This step held at ${pc(bn.step)} against ${pc(bn.prevStep)} last period.`) : `${pc(bn.step)} of those who reached the step before went on.`}</p></div> : null}
+              {bn && !quiet ? <div className="v2-leakcard"><span className="tag">Biggest leak</span><p><b>{fmtNumber(missed)} {missed === 1 ? 'person' : 'people'} reached {before ? before.label.replace(/^📅 /, '') : 'the funnel'} and did not go on to {bn.label.replace(/^📅 /, '')}.</b> {bn.prevStep != null ? (wouldBe > 0 ? `At the previous period's ${pc(bn.prevStep)} this step would have produced ${fmtNumber(wouldBe)} more.` : `This step held at ${pc(bn.step)} against ${pc(bn.prevStep)} last period.`) : `${pc(bn.step)} of those who reached the step before went on.`}</p></div> : null}
             </div>
           </div>
         )
@@ -8361,8 +8361,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             ]} />
           })()}
           <>
-            <ExecStory lines={intel ? intel.lines : []} loading={!intel && !!cc} />
-            {kef.usingKe && kef.rows.length && intel ? <ExecReach reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={clientId} money={money} spend={chanSpend || 0} wonBasis={wonBasis} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
+            {/* No intelligence for viewers: the story cards, the leak callout, movers,
+                indexing and priority actions are the agency's read; a viewer gets the figures. */}
+            {isViewer ? null : <ExecStory lines={intel ? intel.lines : []} loading={!intel && !!cc} />}
+            {kef.usingKe && kef.rows.length && intel ? <ExecReach quiet={isViewer} reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={clientId} money={money} spend={chanSpend || 0} wonBasis={wonBasis} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
             <div className="cc-group-lab x-internal">Efficiency &amp; pipeline health{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
             <div className="scorecard exec-kpis v2-eff x-internal">
               <Kpi label={pipeOn ? 'Ad spend (allocated)' : 'Ad spend'} value={chanSpend != null ? money(chanSpend) : '-'} cur={prevChanSpend != null ? chanSpend : null} prev={prevChanSpend} flat={pipeOn && prevChanSpend == null ? 'by lead share' : undefined} goodWhenDown onClick={tileClick({ kind: 'spend', title: 'Ad spend by platform' })} />
@@ -8503,8 +8505,8 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       </div>)}
 
       {/* Biggest movers and Indexing insights - from the same model as the reach above. */}
-      {cc && intel ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} onNav={onNav} /></V2Section> : null}
-      {cc && intel ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} onNav={onNav} />) : null}
+      {cc && intel && !isViewer ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} onNav={onNav} /></V2Section> : null}
+      {cc && intel && !isViewer ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} onNav={onNav} />) : null}
 
       {/* Pipeline performance - per-pipeline overall key-event scorecards (all
           channels) + Meta/Google contribution + vs-prev. Staff-only (ccdrill). */}
@@ -8535,7 +8537,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       </div>}
 
       {/* Priority actions - a prioritised read of the command centre */}
-      {sec('actions', 'Priority actions', <div className="card exec-actions">
+      {isViewer ? null : sec('actions', 'Priority actions', <div className="card exec-actions">
         <div className="exec-panel-h">Priority actions{pipeOn ? <span className="sub"> · account-wide, from the health score</span> : null}</div>
         {actions.length ? <ul className="exec-act-list">{actions.map((a, i) => <li key={i} className={`exec-act sev-${a.sev}`}><span className="exec-act-dot" />{a.text}</li>)}</ul>
           : <div className="cap">Nothing flagged this period - the numbers are tracking with or ahead of last period.</div>}

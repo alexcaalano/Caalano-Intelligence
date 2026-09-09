@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.519.0 - 2026-09-09 · `PENDING` - Efficiency row shows its six tiles
+## v3.519.0 - 2026-09-09 · `f914f45` - Efficiency row shows its six tiles
 
 - **The Efficiency & pipeline health row showed "Ad spend" six times.** The
   row was cut in v3.482.0 with six copies of the Ad spend tile in place of the

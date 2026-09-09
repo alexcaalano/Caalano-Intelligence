@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.523.0 - 2026-09-09 · `PENDING` - Ad reads: one copy per query, and a saved copy over n/a
+## v3.523.0 - 2026-09-09 · `2c2d6aa` - Ad reads: one copy per query, and a saved copy over n/a
 
 The reliability log showed every scope a client page opens finishing at the
 same ~8 seconds, including the tiny daily-spend read, with "Meta read did not

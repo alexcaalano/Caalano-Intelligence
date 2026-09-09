@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.514.0 - 2026-09-09 · `PENDING` - The people drill names unresulted appointments
+## v3.514.0 - 2026-09-09 · `b9ab2b6` - The people drill names unresulted appointments
 
 - **Unresulted is its own badge in the key-event people drill.** The drill
   had four appointment states and labelled anything past its time and not

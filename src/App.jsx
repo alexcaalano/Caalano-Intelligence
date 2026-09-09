@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.519.0'
+const APP_VERSION = '3.520.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8001,7 +8001,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
         <h3>Key event reach <span className="sub">· {multi ? "share of each pipeline's own leads" : `share of ${fmtNumber(leadTotal)} ${chanLabel ? `${chanLabel} ` : ''}leads`} · the step is the share of the row before · tick = previous period</span></h3>
         <div className="tools"><button type="button" className={table ? 'on' : ''} onClick={() => setTable((t) => !t)}>{table ? 'Bars' : 'Table'}</button></div>
       </div>
-      {table ? <IntelReach reach={reach} multi={multi} leadTotal={leadTotal} chanLabel={chanLabel} money={money} spend={spend} /> : list.map((g) => {
+      {table ? <IntelReach reach={reach} multi={multi} leadTotal={leadTotal} chanLabel={chanLabel} money={money} spend={spend} /> : <div className={`v2-reach-grid${list.length > 1 ? ' two' : ''}`}>{list.map((g) => {
         const bn = g.rows.find((r) => r.bottleneck) || null
         const bnIdx = bn ? g.rows.indexOf(bn) : -1
         const before = bnIdx > 0 ? g.rows[bnIdx - 1] : null
@@ -8057,7 +8057,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
             </div>
           </div>
         )
-      })}
+      })}</div>}
       {!table ? <div className="v2-leg"><span><i className="m" />Meta</span><span><i className="g" />Google</span><span><i className="o" />Organic, referral, direct</span><span><i className="pv" />Previous period</span></div> : null}
     </div>
   )

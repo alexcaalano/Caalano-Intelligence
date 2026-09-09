@@ -4653,7 +4653,18 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .v2-sec-h .tools button { background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 4px 9px; font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer; }
 .v2-sec-h .tools button.on { background: rgba(109,94,252,.14); border-color: var(--brand); color: var(--brand-2); }
 .v2-reach { margin-bottom: 14px; }
-.v2-reach-g { margin-top: 12px; }
+.v2-reach-g { margin-top: 12px; min-width: 0; }
+/* Pipelines sit two-up when more than one is drawn, so the chains read side by
+   side; a single pipeline (or one picked from the filter) takes the full width. */
+.v2-reach-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 28px; }
+.v2-reach-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.v2-reach-grid.two .v2-funnel { grid-template-columns: 132px 1fr 150px; gap: 8px 10px; }
+.v2-reach-grid.two .v2-funnel .st { font-size: 12.5px; }
+.v2-reach-grid.two .v2-funnel .rate { font-size: 12.5px; }
+.v2-reach-grid.two .v2-funnel .rate small, .v2-reach-grid.two .v2-funnel .st small { font-size: 11px; }
+.v2-reach-grid.two .v2-funnel .v2-leakcard { grid-template-columns: 1fr; gap: 6px; }
+.v2-reach-grid.two .v2-funnel .v2-leakcard .tag { justify-self: start; }
+@media (max-width: 1100px) { .v2-reach-grid.two { grid-template-columns: minmax(0, 1fr); } .v2-reach-grid.two .v2-funnel { grid-template-columns: 170px 1fr 190px; gap: 8px 14px; } .v2-reach-grid.two .v2-funnel .v2-leakcard { grid-template-columns: 170px 1fr; gap: 14px; } .v2-reach-grid.two .v2-funnel .v2-leakcard .tag { justify-self: end; } }
 .v2-pipe-lab { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; margin: 12px 0 8px; }
 .v2-pipe-lab .sub { color: var(--faint); font-weight: 500; font-size: 12px; }
 .v2-funnel { display: grid; grid-template-columns: 170px 1fr 190px; gap: 8px 14px; align-items: center; }

@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.520.0 - 2026-09-09 · `PENDING` - Key event reach: pipelines side by side
+
+- **Two or more pipelines sit two-up in Key event reach**, each chain at half
+  width with slightly tighter label and figure columns, so both funnels are
+  read together without scrolling. A single pipeline, or one picked from the
+  pipeline filter, takes the full width as before. Below 1100px the chains
+  stack again.
+
+---
+
 ## v3.519.0 - 2026-09-09 · `f914f45` - Efficiency row shows its six tiles
 
 - **The Efficiency & pipeline health row showed "Ad spend" six times.** The

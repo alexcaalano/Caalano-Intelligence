@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.520.0 - 2026-09-09 · `PENDING` - Key event reach: pipelines side by side
+## v3.520.0 - 2026-09-09 · `89eb3d7` - Key event reach: pipelines side by side
 
 - **Two or more pipelines sit two-up in Key event reach**, each chain at half
   width with slightly tighter label and figure columns, so both funnels are

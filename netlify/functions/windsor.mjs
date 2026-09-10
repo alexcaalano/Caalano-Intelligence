@@ -2061,11 +2061,13 @@ async function buildBlend(c, from, to, preset, key) {
   // the agency key: measured at over 60 seconds against a 7.5s budget, so it
   // timed out on every single request and Meta spend read as $0.00 while Google -
   // a far smaller pull that happened to fit - came through fine.
-  let metaOk = true, googleOk = true
+  let metaOk = true, googleOk = true, crmOk = true
   const [fb, gg, oppsRaw, pipes, userRows, pFb, pGg, pOppsRaw] = await Promise.all([
     c.meta ? windsorFetch('facebook', ['account_id', 'campaign', 'spend', ...FB_LEAD_FIELDS, 'impressions', 'clicks'], from, to, preset, key, { accounts: c.meta }).then(filt(c.meta)).catch(() => { metaOk = false; return [] }) : Promise.resolve([]),
     c.google ? windsorFetch('google_ads', ['account_id', 'campaign', 'spend', 'conversions', 'impressions', 'clicks'], from, to, preset, key, { accounts: c.google }).then(filt(c.google)).catch(() => { googleOk = false; return [] }) : Promise.resolve([]),
-    c.ghl ? ghlOpportunityRows(c.ghl, from, to).catch(() => []) : Promise.resolve([]),
+    // A failed CRM read is a gap, never zero leads: flagged like the ad reads,
+    // so the health score says so and the payload is not cached as a measured 0.
+    c.ghl ? ghlOpportunityRows(c.ghl, from, to).catch(() => { crmOk = false; return [] }) : Promise.resolve([]),
     c.ghl ? ghlPipelineRows(c.ghl).catch(() => []) : Promise.resolve([]),
     c.ghl ? ghlUserRows(c.ghl).catch(() => []) : Promise.resolve([]),
     pr.from && c.meta ? windsorFetch('facebook', ['account_id', 'spend', ...FB_LEAD_FIELDS], pr.from, pr.to, null, key, { accounts: c.meta }).then(filt(c.meta)).catch(() => []) : Promise.resolve([]),
@@ -2143,8 +2145,9 @@ async function buildBlend(c, from, to, preset, key) {
   return {
     hasCrm: !!c.ghl, hasMeta: !!c.meta, hasGoogle: !!c.google,
     // False = the ad read failed, so every paid figure below is missing rather
-    // than genuinely zero. Callers must not present these as measured.
-    metaOk, googleOk,
+    // than genuinely zero. Callers must not present these as measured. crmOk is
+    // the same flag for the period's opportunity read.
+    metaOk, googleOk, crmOk,
     paid: {
       adSpend: Math.round(metaSpend + googleSpend), metaSpend: Math.round(metaSpend), googleSpend: Math.round(googleSpend),
       metaLeads: Math.round(metaLeads), googleConv: Math.round(googleConv), adConversions: Math.round(metaLeads + googleConv),
@@ -2296,6 +2299,7 @@ async function buildHealth(c, from, to, preset, key, weights, wonBasis = 'create
     // confident $0.00 rather than as a gap. Passed through so the UI can say which
     // one it is.
     adsOk: { meta: blend.metaOk !== false, google: blend.googleOk !== false },
+    crmOk: blend.crmOk !== false,
     kpis, channels, pipelines, forecast, has,
   }
 }
@@ -3132,6 +3136,9 @@ export default async (req) => {
   const mkResponse = (obj, status, cache) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': cache ? `${cacheScope}, max-age=600` : 'no-store' } })
   const json = async (obj, status = 200, cache = false) => {
     const softErr = status === 200 && obj && obj.error
+    // A refused read is logged too: a viewer whose grant does not cover a view
+    // shows up as a denied row with their name, not as a blank section.
+    if (status === 403 && obj && obj.error) await diagLog({ sev: 'denied', scope: scope || `channel:${channel}`, client, ms: Date.now() - _t0, error: String(obj.error).slice(0, 240), ..._actor })
     // Stale-on-error: a transient rebuild failure (upstream timeout / 5xx that the
     // branch caught and returned as a 200 { error }) falls back to the last good
     // payload instead of surfacing an error to the user. Only for cacheable
@@ -4067,7 +4074,9 @@ export default async (req) => {
         buildHealth(cc, from, to, preset, key, cfg.weights, wonBasis, { blend: preBlend }),
         readHealthHistory(client).catch(() => []),
       ])
-      return json({ scope: 'health', client, period: { from, to, preset }, wonBasis, ...health, adsStale: windsorStaleAges(cc), history }, 200, true)
+      // A health score built on a failed CRM read reads as zero leads; it is served
+      // once, flagged, and never cached, so the next open rebuilds it.
+      return json({ scope: 'health', client, period: { from, to, preset }, wonBasis, ...health, adsStale: windsorStaleAges(cc), history }, 200, health.crmOk !== false)
     } catch (e) { return json({ scope: 'health', client, error: String(e.message || e).slice(0, 200) }, 200) }
   }
 

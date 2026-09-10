@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.532.0'
+const APP_VERSION = '3.533.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8564,6 +8564,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   if (health.status === 'err' || !health.data) { failed.add('ads'); problems.push('The health score and ad spend read failed, so spend, the cost tiles and Priority actions are missing.') }
   else {
     const ok = health.data.adsOk || {}
+    if (health.data.crmOk === false) { failed.add('ads'); problems.push('The CRM read behind the health score did not come back, so opportunities, won and revenue read n/a until it does.') }
     if (ok.meta === false) { failed.add('ads'); problems.push('Meta spend did not come back, so Meta cost figures read n/a.') }
     if (ok.google === false) { failed.add('ads'); problems.push('Google spend did not come back, so Google cost figures read n/a.') }
   }
@@ -8575,6 +8576,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     if (st.meta) notes.push(`Meta spend is a saved copy from ${agef(st.meta)} ago: the live ad read timed out, so the last good read stands in until the warmer refreshes it.`)
     if (st.google) notes.push(`Google spend is a saved copy from ${agef(st.google)} ago: the live ad read timed out, so the last good read stands in until the warmer refreshes it.`)
   }
+  // A viewer on a custom dashboard is not shown the staff problem strip, so the
+  // one gap that removes whole sections (the CRM drill) is said in plain words.
+  if (isViewer && layout && ccDrill.status === 'err') notes.push('Some sections could not load: the CRM detail behind them did not come back. Refresh to try again, or tell us if it keeps happening.')
   if (!isViewer && (ccDrill.status === 'err' || !ccRaw)) failed.add('drill')
   if (!isViewer && prevRange && (prevCcDrill.status === 'err' || !pccRaw)) failed.add('drill')
   if (crmAggSt.status === 'err') failed.add('users')
@@ -8683,11 +8687,13 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
           : cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.booked || 0), 0) : null
         const ccShown = pipeOn ? (kefCal.length ? kefCal.reduce((s, r) => s + (r.shown || 0), 0) : null)
           : cc && Array.isArray(cc.bookingByCalendar) ? cc.bookingByCalendar.reduce((s, c) => s + (c.shown || 0), 0) : null
-        const oppsV = ccTot ? ccTot.leads : (ca.opps != null ? ca.opps : k.leads)
-        const bookedV = ccBooked != null ? ccBooked : pipeOn ? null : (ca.booked != null ? ca.booked : k.booked)
-        const shownV = ccShown != null ? ccShown : pipeOn ? null : (ca.shown != null ? ca.shown : k.shown)
-        const wonV = ccTot ? ccTot.won : (ca.won != null ? ca.won : k.won)
-        const revV = (cc && cc.revenue) ? cc.revenue.total : (ca.revenue != null ? ca.revenue : k.revenue)
+        // The health score's CRM figures stand in only when its CRM read came back.
+        const crmDead = h.crmOk === false
+        const oppsV = ccTot ? ccTot.leads : (ca.opps != null ? ca.opps : (crmDead ? null : k.leads))
+        const bookedV = ccBooked != null ? ccBooked : pipeOn ? null : (ca.booked != null ? ca.booked : (crmDead ? null : k.booked))
+        const shownV = ccShown != null ? ccShown : pipeOn ? null : (ca.shown != null ? ca.shown : (crmDead ? null : k.shown))
+        const wonV = ccTot ? ccTot.won : (ca.won != null ? ca.won : (crmDead ? null : k.won))
+        const revV = (cc && cc.revenue) ? cc.revenue.total : (ca.revenue != null ? ca.revenue : (crmDead ? null : k.revenue))
         const avgV = wonV ? Math.round((revV || 0) / wonV) : ((ccTot || ca.won != null || pipeOn) ? null : k.avgDeal)
         const openV = ccTot ? ccTot.open : (ca.open != null ? ca.open : null)
         const openValV = (cc && cc.open) ? cc.open.value : (ca.openValue != null ? ca.openValue : (k.openValue != null && !pipeOn ? k.openValue : null))

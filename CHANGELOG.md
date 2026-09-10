@@ -18,6 +18,22 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.533.0 - 2026-09-10 · `PENDING` - A failed CRM read is a gap, never zero
+
+- **The health score flags a failed CRM read** the way it already flags a
+  failed ad read. The period's opportunity read used to fail silently into
+  zero leads, which the headline tiles then showed as "0 opportunities,
+  -100% vs prev" and cached for ten minutes. Now the tiles read n/a, the
+  problem strip says why, and the payload is never cached.
+- **Refused reads are logged.** A view a viewer's grant does not cover now
+  appears in the reliability log as a denied row with their name and the
+  scope, instead of vanishing as a blank section.
+- **Viewers on a custom dashboard are told** when the CRM detail behind
+  sections did not load, in plain words, rather than the sections quietly
+  disappearing.
+
+---
+
 ## v3.532.0 - 2026-09-10 · `69c2a1c` - Permissions: the Custom dashboard chip says what it will grant
 
 - **The Custom dashboard chip names the dashboards it grants** for the

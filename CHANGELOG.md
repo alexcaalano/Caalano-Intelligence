@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.534.0 - 2026-09-10 · `PENDING` - Viewers get the CRM drill their grant covers; tiles stop reading zero
+## v3.534.0 - 2026-09-10 · `5ae34e9` - Viewers get the CRM drill their grant covers; tiles stop reading zero
 
 - **The CRM drill no longer refuses every viewer.** A blanket "Staff only"
   check in that scope predated the grant model, so a viewer granted

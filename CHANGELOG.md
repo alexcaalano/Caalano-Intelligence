@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.530.0 - 2026-09-10 · `PENDING` - Key event reach two-up: the column fix, actually shipped
+## v3.530.0 - 2026-09-10 · `d636981` - Key event reach two-up: the column fix, actually shipped
 
 - v3.529.0 described this change but its edit did not land; this release
   carries it. When two pipelines sit side by side, the figure column is

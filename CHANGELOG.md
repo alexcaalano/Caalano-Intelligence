@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.525.0 - 2026-09-10 · `PENDING` - Custom dashboards per client (Super Admin)
+## v3.525.0 - 2026-09-10 · `617f0e5` - Custom dashboards per client (Super Admin)
 
 - **A custom dashboard per client, composed from modules.** Under a client's
   settings, a new Custom dashboard tab (Super Admin only) lists the modules:

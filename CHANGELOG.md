@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.532.0 - 2026-09-10 · `PENDING` - Permissions: the Custom dashboard chip says what it will grant
+
+- **The Custom dashboard chip names the dashboards it grants** for the
+  ticked clients, e.g. "Custom dashboard · Finr client view". When none of
+  the ticked clients has a dashboard opened to viewers, the chip is dimmed
+  and, if it is ticked, an amber note says which client's dashboard is still
+  set to Super Admins only, or that none is built, and where to change that.
+  The grant itself is unchanged.
+
+---
+
 ## v3.531.0 - 2026-09-10 · `f18d990` - Custom dashboards: section headings; Creatives and Creative performance apart
 
 - **Section headings.** A Layout group in the module list offers a Section

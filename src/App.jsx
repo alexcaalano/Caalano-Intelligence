@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.531.0'
+const APP_VERSION = '3.532.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -18572,6 +18572,9 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
   const v = value
   const toggleClient = (id) => { const s = new Set(v.clients || []); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, clients: [...s] }) }
   const toggleTab = (id) => { const cur = v.tabs == null ? TAB_OPTIONS.map((t) => t.id) : v.tabs; const s = new Set(cur); s.has(id) ? s.delete(id) : s.add(id); onChange({ ...v, tabs: [...s] }) }
+  // Custom dashboards among the ticked clients: built at all, and opened to viewers.
+  const dashBuilt = (clients || []).filter((c) => (v.clients || []).includes(c.id)).map((c) => ({ c, d: loadDashboard(c.id) })).filter((x) => x.d)
+  const dashOpen = dashBuilt.filter((x) => x.d.audience === 'viewers')
   const isSuper = actorRole === 'superadmin'
   // Only a Super Admin can grant Admin / Super Admin. Keep the current value as a
   // (disabled) option so an existing role still shows even if you can't set it.
@@ -18596,7 +18599,16 @@ function AllocationEditor({ value, clients, onChange, actorRole }) {
         <div className="alloc-lab">Which clients can they see?</div>
         <ClientPicker clients={clients} selected={v.clients || []} onToggle={toggleClient} />
         <div className="alloc-lab">Which tabs can they see?</div>
-        <div className="alloc-chips">{TAB_OPTIONS.map((t) => { const on = v.tabs == null || v.tabs.includes(t.id); return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}`} onClick={() => toggleTab(t.id)}>{t.label}</button> })}</div>
+        <div className="alloc-chips">{TAB_OPTIONS.map((t) => {
+          const on = v.tabs == null || v.tabs.includes(t.id)
+          if (t.id !== 'custom') return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}`} onClick={() => toggleTab(t.id)}>{t.label}</button>
+          // The custom-dashboard grant only does something for a ticked client whose
+          // dashboard a Super Admin has opened to viewers, so the chip says which.
+          const lbl = dashOpen.length ? `Custom dashboard · ${dashOpen.map((x) => x.d.name || x.c.name).join(', ')}` : 'Custom dashboard'
+          const tip = dashOpen.length ? 'The custom dashboards opened to viewers for the ticked clients' : dashBuilt.length ? 'A ticked client has a custom dashboard, but it is still set to Super Admins only. Open it to viewers under that client’s settings → Custom dashboard.' : 'No ticked client has a custom dashboard yet. Build one under the client’s settings → Custom dashboard and open it to viewers.'
+          return <button type="button" key={t.id} className={`chip ${on ? 'on' : ''}${dashOpen.length ? '' : ' chip-dim'}`} title={tip} onClick={() => toggleTab(t.id)}>{lbl}</button>
+        })}</div>
+        {(v.tabs == null || v.tabs.includes('custom')) && !dashOpen.length ? <p className="alloc-note alloc-warn">Custom dashboard is ticked, but {dashBuilt.length ? `${dashBuilt.map((x) => x.c.name).join(', ')} ${dashBuilt.length === 1 ? 'has a dashboard that is' : 'have dashboards that are'} still set to Super Admins only` : 'none of the ticked clients has a custom dashboard yet'}. Nothing will show for this person until a dashboard is opened to viewers under the client’s settings → Custom dashboard.</p> : null}
         <div className="alloc-lab" style={{ marginTop: 10 }}>Extra access</div>
         <label className="alloc-check"><input type="checkbox" checked={v.reports === true} onChange={(e) => onChange({ ...v, reports: e.target.checked })} /> <b>Monthly Reports</b> - can view the <b>published</b> monthly reports for the clients above</label>
         <p className="alloc-note">Client access - only the ticked clients and tabs, and no agency-wide views. Monthly Reports shows only reports you've <b>published</b> (frozen snapshots), and can be granted on its own.</p>

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.529.0 - 2026-09-10 · `PENDING` - Key event reach two-up: figures fit their column
+## v3.529.0 - 2026-09-10 · `711e843` - Key event reach two-up: figures fit their column
 
 - **The figure column no longer crowds the card edge** when two pipelines sit
   side by side. The column is wider, the label column a touch narrower, and

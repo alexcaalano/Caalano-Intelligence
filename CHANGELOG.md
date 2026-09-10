@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.536.0 - 2026-09-10 · `PENDING` - Pipeline performance counts calendar events as Key event reach does
+## v3.536.0 - 2026-09-10 · `eae15ed` - Pipeline performance counts calendar events as Key event reach does
 
 - **The two views agree to the number.** Pipeline performance now counts a
   calendar key event as everyone who booked it OR reached its stage or any

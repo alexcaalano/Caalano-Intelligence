@@ -4658,7 +4658,10 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
    side; a single pipeline (or one picked from the filter) takes the full width. */
 .v2-reach-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 28px; }
 .v2-reach-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.v2-reach-grid.two .v2-funnel { grid-template-columns: 132px 1fr 150px; gap: 8px 10px; }
+.v2-reach-grid.two .v2-funnel { grid-template-columns: 118px minmax(0, 1fr) 168px; gap: 8px 10px; }
+.v2-reach-grid.two .v2-funnel .rate, .v2-reach-grid.two .v2-funnel .st { min-width: 0; overflow-wrap: anywhere; }
+.v2-reach-grid.two .v2-reach-g { padding-right: 6px; }
+.v2-reach-grid.two .v2-pipe-lab { flex-wrap: wrap; }
 .v2-reach-grid.two .v2-funnel .st { font-size: 12.5px; }
 .v2-reach-grid.two .v2-funnel .rate { font-size: 12.5px; }
 .v2-reach-grid.two .v2-funnel .rate small, .v2-reach-grid.two .v2-funnel .st small { font-size: 11px; }

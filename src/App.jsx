@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.529.0'
+const APP_VERSION = '3.530.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -8201,6 +8201,8 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
   const groups = new Map()
   for (const r of rows) { if (!groups.has(r.pipelineId)) groups.set(r.pipelineId, []); groups.get(r.pipelineId).push(r) }
   const list = [...groups.entries()].map(([pid, rs]) => ({ pid, name: pid === '__all__' ? null : (rs[0].pipelineName || 'Pipeline'), rows: rs, base: rs[0].base }))
+  // Two-up: the figure column is half as wide, so its wording is shorter.
+  const two = list.length > 1
   list.sort((a, b) => (a.pid === '__all__' ? 1 : b.pid === '__all__' ? -1 : b.base - a.base))
   // Channel counts per row label, per pipeline (multi) or account-wide.
   const byPipe = new Map()
@@ -8294,7 +8296,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
                     <React.Fragment key={i}>
                       <div className={`st${isBn ? ' bn' : ''}`}>{r.label.replace(/^📅 /, '')}<small>{isCal ? 'booked or reached the stage' : r.kind === 'won' ? 'won status' : 'stage reached'}{r.over ? ' · more than arrived' : ''}</small></div>
                       <V2ReachBar label={r.label.replace(/^📅 /, '')} count={eff} split={split} width={rateV} prevAt={r.prevRate} leak={isBn} detail={detail} />
-                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{isCal ? <small className="v2-split">{fmtNumber(r.fromCal || 0)} by booking{byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before` : '-'}{gSpend && eff ? ` · ${money(Math.round(gSpend / eff))} each` : ''}</small></div>
+                      <div className={`rate${isBn ? ' bn' : ''}`}>{fmtNumber(eff)}{isCal ? <small className="v2-split">{two ? `${fmtNumber(r.fromCal || 0)} booked${byStage ? ` · ${fmtNumber(byStage)} reached` : ''}` : `${fmtNumber(r.fromCal || 0)} by booking${byStage ? ` (${fmtNumber(byStage)} reached the stage)` : ''}`}</small> : null}<small>{i === 0 ? `${pc(rateV)} of leads` : stepV != null ? (two ? `${pc(Math.min(1, stepV))} of ${fmtNumber(prevEff)}` : `${pc(Math.min(1, stepV))} of the ${fmtNumber(prevEff)} before`) : '-'}{gSpend && eff ? ` · ${money(Math.round(gSpend / eff))}${two ? '' : ' each'}` : ''}</small></div>
                     </React.Fragment>
                   )
                 })

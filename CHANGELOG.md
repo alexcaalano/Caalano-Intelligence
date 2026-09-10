@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.530.0 - 2026-09-10 · `PENDING` - Key event reach two-up: the column fix, actually shipped
+
+- v3.529.0 described this change but its edit did not land; this release
+  carries it. When two pipelines sit side by side, the figure column is
+  wider, the label column a touch narrower, cells may wrap inside their
+  column, and the wording is shorter at half width ("27 booked · 50
+  reached", "36% of 50 · $347.00"). Full-width chains keep the longer
+  wording.
+
+---
+
 ## v3.529.0 - 2026-09-10 · `711e843` - Key event reach two-up: figures fit their column
 
 - **The figure column no longer crowds the card edge** when two pipelines sit

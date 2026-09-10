@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.531.0 - 2026-09-10 · `PENDING` - Custom dashboards: section headings; Creatives and Creative performance apart
+## v3.531.0 - 2026-09-10 · `f18d990` - Custom dashboards: section headings; Creatives and Creative performance apart
 
 - **Section headings.** A Layout group in the module list offers a Section
   heading, addable as many times as needed. Its title is the heading, drawn

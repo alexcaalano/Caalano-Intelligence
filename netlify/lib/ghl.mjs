@@ -3036,22 +3036,79 @@ function nextDateStr(dateStr) { const d = new Date(dateStr + 'T00:00:00Z'); d.se
 // weekdays + open/close minute-of-day) in the location timezone. Without hours
 // it's just wall-clock. Used so a lead that arrives at 11pm and gets a reply at
 // 9am isn't scored as a 10-hour response - it's ~0 working minutes.
-function businessMinutesBetween(aMs, bMs, hours, tz) {
-  if (!(bMs > aMs)) return 0
-  if (!hours) return (bMs - aMs) / 60000
-  let total = 0, guard = 0, dateStr = zonedDateStr(aMs, tz)
-  while (guard++ < 120) {
+// Next opening time at or after `ms` under the configured work hours (returns
+// `ms` itself when it already falls inside an open window).
+export function nextOpenMs(ms, hours, tz) {
+  if (!hours || !hours.days || !hours.days.length) return ms
+  let dateStr = zonedDateStr(ms, tz), guard = 0
+  while (guard++ < 21) {
     const dayMid = zonedStartMs(dateStr, tz)
-    if (dayMid > bMs) break
     const dow = new Date(dayMid + tzOffsetMs(tz, dayMid)).getUTCDay()
     if (hours.days.includes(dow)) {
-      const s = Math.max(dayMid + hours.startMin * 60000, aMs)
-      const e = Math.min(dayMid + hours.endMin * 60000, bMs)
-      if (e > s) total += (e - s) / 60000
+      const s = dayMid + hours.startMin * 60000, e = dayMid + hours.endMin * 60000
+      if (ms < s) return s
+      if (ms < e) return ms
     }
     dateStr = nextDateStr(dateStr)
   }
-  return total
+  return ms
+}
+// Speed-to-lead statistics over leads that got a manual reply. Leads that came
+// in DURING work hours are measured in raw wall-clock minutes (no pausing - a
+// 4:58pm lead answered next morning is a 16-hour wait). Leads that came in
+// AFTER hours are kept out of the headline numbers and measured separately,
+// from the next opening time, so the headline can't be flattered by overnight
+// leads that were answered at 9:02am. With no hours configured every lead is
+// treated as in-hours and measured raw.
+export function speedStats(rows, hours, tz) {
+  const bagg = Object.fromEntries(SPEED_BUCKETS.map((b) => [b.key, { count: 0, booked: 0, shown: 0, won: 0 }]))
+  const mins = [], afterMins = []
+  let measured = 0, viaAppt = 0, afterMeasured = 0, afterViaAppt = 0
+  for (const r of rows) {
+    if (r.manual == null) continue
+    const open = hours ? nextOpenMs(r.leadIn, hours, tz) : r.leadIn
+    if (open > r.leadIn) {
+      afterMeasured++; afterMins.push(Math.max(0, (r.manual - open) / 60000)); if (r.via === 'appt') afterViaAppt++
+      continue
+    }
+    const mm = Math.max(0, (r.manual - r.leadIn) / 60000)
+    measured++; mins.push(mm); if (r.via === 'appt') viaAppt++
+    const b = SPEED_BUCKETS.find((x) => mm < x.max) || SPEED_BUCKETS[SPEED_BUCKETS.length - 1]
+    const g = bagg[b.key]; g.count++; if (r.booked) g.booked++; if (r.shown) g.shown++; if (r.won) g.won++
+  }
+  const pct = (n, d) => (d ? Math.round((n / d) * 100) : null)
+  const summarise = (arr) => {
+    arr.sort((a, b) => a - b)
+    const median = arr.length ? arr[Math.floor((arr.length - 1) / 2)] : null
+    const avg = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null
+    const within5 = arr.length ? arr.filter((m) => m < 5).length / arr.length : null
+    return { medianMin: median == null ? null : Math.round(median), avgMin: avg == null ? null : Math.round(avg), within5Pct: within5 == null ? null : Math.round(within5 * 100) }
+  }
+  return {
+    measured, viaAppt, ...summarise(mins),
+    measuredAll: measured + afterMeasured, viaApptAll: viaAppt + afterViaAppt,
+    buckets: SPEED_BUCKETS.map((b) => { const g = bagg[b.key]; return { label: b.label, count: g.count, booked: g.booked, shown: g.shown, won: g.won, bookRate: pct(g.booked, g.count), showRate: pct(g.shown, g.booked), winRate: pct(g.won, g.count) } }),
+    after: { measured: afterMeasured, viaAppt: afterViaAppt, ...summarise(afterMins) },
+  }
+}
+// Common response fields for both the sampled and the full-scan endpoints.
+// `measured` / median / avg / within5 / buckets describe IN-HOURS leads only;
+// `measuredAll` is every lead with a manual reply; `after` is the after-hours group.
+function speedShape(stats, afterCount, onlyAuto, noOutbound) {
+  return {
+    measured: stats.measured, measuredAll: stats.measuredAll, onlyAuto, noOutbound,
+    viaAppt: stats.viaApptAll, viaMessage: stats.measuredAll - stats.viaApptAll,
+    medianMin: stats.medianMin, avgMin: stats.avgMin, within5Pct: stats.within5Pct,
+    buckets: stats.buckets,
+    after: { count: afterCount, ...stats.after },
+  }
+}
+// How many of these lead-in timestamps arrived outside work hours.
+export function afterHoursCount(leadIns, hours, tz) {
+  if (!hours) return 0
+  let n = 0
+  for (const ms of leadIns) { if (ms != null && nextOpenMs(ms, hours, tz) > ms) n++ }
+  return n
 }
 // Auto-detect a location's working hours from its calendars' openHours (union of
 // open weekdays + earliest open / latest close). Falls back to Mon-Fri 9-5.
@@ -3258,31 +3315,19 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   } else {
     results = (await mapPool(pick, 6, firstOutbound)).filter(Boolean)
   }
-  // Buckets of manual response time (minutes). "No manual yet" = a lead we saw
-  // that has had no human outbound (may have had only automation).
-  const BUCKETS = [
-    { key: 'u5', label: 'Under 5 min', max: 5 },
-    { key: 'u15', label: '5-15 min', max: 15 },
-    { key: 'u60', label: '15-60 min', max: 60 },
-    { key: 'u240', label: '1-4 hrs', max: 240 },
-    { key: 'u1440', label: '4-24 hrs', max: 1440 },
-    { key: 'over', label: 'Over 24 hrs', max: Infinity },
-  ]
-  const bagg = Object.fromEntries(BUCKETS.map((b) => [b.key, { count: 0, booked: 0, shown: 0, won: 0 }]))
-  const mins = []
-  let measured = 0, onlyAuto = 0, noOutbound = 0, skipped = 0, viaAppt = 0
+  // In-hours vs after-hours split of manual response time (see speedStats).
+  // "No manual yet" = a lead we saw that has had no human outbound (may have had
+  // only automation).
+  let onlyAuto = 0, noOutbound = 0, skipped = 0
+  const rows = []
   for (const r of results) {
     if (r.skipped) { skipped++; continue }
-    if (r.manual != null) {
-      // Response time honouring working hours (when configured), so after-hours
-      // gaps don't count against the team.
-      const mm = businessMinutesBetween(r.leadIn, r.manual, hours, tz); if (mm < 0) continue
-      measured++; mins.push(mm); if (r.via === 'appt') viaAppt++
-      const b = BUCKETS.find((x) => mm < x.max) || BUCKETS[BUCKETS.length - 1]
-      const g = bagg[b.key]; g.count++; if (r.booked) g.booked++; if (r.shown) g.shown++; if (r.won) g.won++
-    } else if (r.any != null) onlyAuto++
+    if (r.manual != null) rows.push(r)
+    else if (r.any != null) onlyAuto++
     else noOutbound++
   }
+  const stats = speedStats(rows, hours, tz)
+  const afterCount = afterHoursCount(results.filter((r) => !r.skipped).map((r) => r.leadIn), hours, tz)
   // Contact rate: of the sampled leads, how many did we make human contact with -
   // a manual message OR any appointment booked. Appointments split into
   // user-booked (a staff member booked it) vs customer self-booked. A lead can be
@@ -3292,21 +3337,12 @@ export async function buildSpeedToLead(locationId, from, to, opts = {}) {
   let crBase = 0
   for (const r of results) { if (r.skipped) continue; crBase++; contactAccrue(cr, r, r.msgMs != null) }
   const contactRate = contactSummarise(cr, crBase)
-  mins.sort((a, b) => a - b)
-  const median = mins.length ? mins[Math.floor((mins.length - 1) / 2)] : null
-  const avg = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null
-  const within5 = mins.length ? mins.filter((m) => m < 5).length / mins.length : null
-  const pct = (n, d) => (d ? Math.round((n / d) * 100) : null)
   return {
     connected: true, tz, full: useBulk,
     totalLeads: leads.length, sampled: useBulk ? leads.length : (pick.length - skipped), skipped,
     outcome, contactRate,
-    measured, onlyAuto, noOutbound, viaAppt, viaMessage: measured - viaAppt,
-    medianMin: median == null ? null : Math.round(median),
-    avgMin: avg == null ? null : Math.round(avg),
-    within5Pct: within5 == null ? null : Math.round(within5 * 100),
+    ...speedShape(stats, afterCount, onlyAuto, noOutbound),
     hours: hours ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin } : null,
-    buckets: BUCKETS.map((b) => { const g = bagg[b.key]; return { label: b.label, count: g.count, booked: g.booked, shown: g.shown, won: g.won, bookRate: pct(g.booked, g.count), showRate: pct(g.shown, g.booked), winRate: pct(g.won, g.count) } }),
     sourceBreakdown: Object.entries(srcCounts).map(([source, v]) => ({ source, count: v.count, kind: v.kind })).sort((a, b) => b.count - a.count),
     ...(opts.debug ? { debug: debugRows } : {}),
   }
@@ -3420,29 +3456,14 @@ export async function speedScanChunk(locationId, leads, startIdx, budgetMs, agg)
 export function finalizeSpeed(agg, total, processed, hours, tz, outcome) {
   const cr = agg.contact || { messaged: [], userBooked: [], selfBooked: [], booked: [], contacted: [], none: [] }
   const contactRate = contactSummarise(cr, agg.contactBase || 0)
-  const bagg = Object.fromEntries(SPEED_BUCKETS.map((b) => [b.key, { count: 0, booked: 0, shown: 0, won: 0 }]))
-  const mins = []; let measured = 0, viaAppt = 0
-  for (const r of agg.manualRaw) {
-    const mm = businessMinutesBetween(r.leadIn, r.manual, hours, tz); if (mm < 0) continue
-    measured++; mins.push(mm); if (r.via === 'appt') viaAppt++
-    const b = SPEED_BUCKETS.find((x) => mm < x.max) || SPEED_BUCKETS[SPEED_BUCKETS.length - 1]
-    const g = bagg[b.key]; g.count++; if (r.booked) g.booked++; if (r.shown) g.shown++; if (r.won) g.won++
-  }
-  mins.sort((a, b) => a - b)
-  const median = mins.length ? mins[Math.floor((mins.length - 1) / 2)] : null
-  const avg = mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null
-  const within5 = mins.length ? mins.filter((m) => m < 5).length / mins.length : null
-  const pct = (n, d) => (d ? Math.round((n / d) * 100) : null)
+  const stats = speedStats(agg.manualRaw, hours, tz)
+  const afterCount = afterHoursCount([...cr.contacted, ...cr.none].map((d) => Date.parse(d.createdAt)), hours, tz)
   return {
     connected: true, tz, full: true,
-    totalLeads: total, sampled: processed, measured, onlyAuto: agg.onlyAuto, noOutbound: agg.noOutbound,
+    totalLeads: total, sampled: processed,
     contactRate, ...(outcome ? { outcome } : {}),
-    viaAppt, viaMessage: measured - viaAppt,
-    medianMin: median == null ? null : Math.round(median),
-    avgMin: avg == null ? null : Math.round(avg),
-    within5Pct: within5 == null ? null : Math.round(within5 * 100),
+    ...speedShape(stats, afterCount, agg.onlyAuto, agg.noOutbound),
     hours: hours ? { days: hours.days, startMin: hours.startMin, endMin: hours.endMin } : null,
-    buckets: SPEED_BUCKETS.map((b) => { const g = bagg[b.key]; return { label: b.label, count: g.count, booked: g.booked, shown: g.shown, won: g.won, bookRate: pct(g.booked, g.count), showRate: pct(g.shown, g.booked), winRate: pct(g.won, g.count) } }),
     sourceBreakdown: Object.entries(agg.srcCounts).map(([source, v]) => ({ source, count: v.count, kind: v.kind })).sort((a, b) => b.count - a.count),
   }
 }

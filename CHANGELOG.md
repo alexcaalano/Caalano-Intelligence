@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.538.0 - 2026-09-10 · `PENDING`
+
+**Speed to Lead: in-hours vs after-hours split**
+- Leads that arrive **during work hours** are now measured in real minutes with no pausing (a 4:58pm lead answered next morning is a 16-hour wait, not 3 minutes). Only these leads feed the median, average, "under 5 min" figure, reply-time bars and the outcomes-by-speed table.
+- Leads that arrive **after hours** are kept out of the headline numbers and measured from the next opening time. New "After-hours leads" tile (count + share answered within 5 min of opening) on the Timing tab and the Caalano360 speed section; the working-hours note explains the split.
+- "Manually contacted" still counts every lead with a human reply (`measuredAll`), so in-hours + after-hours + only-automation + no-outreach add up to the lead total.
+- With no working hours configured every lead is in-hours and measured raw, as before.
+- Server: `nextOpenMs`, `speedStats`, `afterHoursCount` in `netlify/lib/ghl.mjs`, shared by the sampled and full-scan endpoints; `businessMinutesBetween` removed. Test `tests/speedhours_test.mjs`.
+
+---
+
 ## v3.537.0 - 2026-09-10 · `46c686b` - Revenue tile stays inside its card
 
 - **A seven-figure Revenue and its change badge no longer spill past the

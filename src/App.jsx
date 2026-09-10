@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.537.0'
+const APP_VERSION = '3.538.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -981,6 +981,7 @@ function saveHours(clientId, hours) {
 }
 const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+const speedGroupLabel = (d) => (d.hours ? `in-hours leads (${fmtNumber(d.measured)} of ${fmtNumber(d.measuredAll ?? d.measured)})` : 'typical human response')
 function fmtHours(h) { if (!h) return null; const cons = h.days.length > 1 && h.days.every((d, i) => i === 0 || d === h.days[i - 1] + 1); const ds = cons ? `${DOW_LABELS[h.days[0]]}–${DOW_LABELS[h.days[h.days.length - 1]]}` : h.days.map((d) => DOW_LABELS[d]).join(', '); return `${ds} · ${hhmm(h.startMin)}–${hhmm(h.endMin)}` }
 const hoursQuery = (h) => (h ? `&bhDays=${h.days.join(',')}&bhStart=${h.startMin}&bhEnd=${h.endMin}` : '')
 function rangeMaturity(closeDays, range) {
@@ -5535,15 +5536,16 @@ function TimingSummary({ clientId, range, nonce, onNav }) {
   }, [clientId, range.from, range.to, nonce])
   if (st.status === 'loading') return null
   const d = st.data
-  if (st.status === 'err' || !d || d.connected === false || !d.measured) return null
+  if (st.status === 'err' || !d || d.connected === false || !(d.measuredAll || d.measured)) return null
   return (
     <div className="card">
       <div className="exec-panel-h">Speed to lead <span className="sub">· how fast leads get a human reply - one of the strongest conversion predictors</span></div>
       <div className="timing-scards">
-        <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
-        <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
-        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
-        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{fmtNumber(d.measured)}</b><span className="tm-sub">of {fmtNumber(d.sampled)} {d.full ? 'leads (full range)' : 'sampled'}</span></div>
+        <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">{speedGroupLabel(d)}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean, same leads</span></div>
+        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">{d.hours ? 'of in-hours leads' : 'of measured leads'}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{fmtNumber(d.measuredAll ?? d.measured)}</b><span className="tm-sub">of {fmtNumber(d.sampled)} {d.full ? 'leads (full range)' : 'sampled'}</span></div>
+        {d.after && d.after.count ? <div className="tm-sc"><span className="tm-lab">After-hours leads</span><b>{fmtNumber(d.after.count)}</b><span className="tm-sub">{d.after.measured ? `${d.after.within5Pct}% answered within 5 min of opening` : 'arrived outside work hours'}</span></div> : null}
         {d.noOutbound ? <div className="tm-sc warn"><span className="tm-lab">No outreach yet</span><b>{fmtNumber(d.noOutbound)}</b><span className="tm-sub">no outbound at all</span></div> : null}
       </div>
       {onNav ? <div className="exec-nav"><button className="link-btn" onClick={() => onNav('timing')}>Open the Timing tab →</button></div> : null}
@@ -14514,18 +14516,19 @@ function TimingView({ clientId, range, nonce, currency }) {
             <button className="set-relink" onClick={stopScan}>{scan.status === 'running' ? 'Stop' : 'Back to sample'}</button>
           </>}
         </div>
-        {d.viaAppt > 0 && <div className="tm-hours">📌 <b>{fmtNumber(d.viaAppt)} of {fmtNumber(d.measured)}</b> measured leads had <b>no manual message or call</b>, so their <b>first staff-booked appointment</b> was used as the speed signal instead (automated / self-bookings don't count). Useful for clients who work leads by phone/booking rather than messaging.</div>}
+        {d.viaAppt > 0 && <div className="tm-hours">📌 <b>{fmtNumber(d.viaAppt)} of {fmtNumber(d.measuredAll ?? d.measured)}</b> contacted leads had <b>no manual message or call</b>, so their <b>first staff-booked appointment</b> was used as the speed signal instead (automated / self-bookings don't count). Useful for clients who work leads by phone/booking rather than messaging.</div>}
         {d.hours
-          ? <div className="tm-hours on">🕘 Measured within working hours · <b>{fmtHours(d.hours)}</b> - after-hours gaps don't count against response time. Change in Settings → client → Summary.</div>
-          : <div className="tm-hours">🕘 Measuring raw round-the-clock time. Set the team's <b>working hours</b> in Settings → client → Summary so overnight leads aren't counted as slow responses.</div>}
+          ? <div className="tm-hours on">🕘 Working hours · <b>{fmtHours(d.hours)}</b>. Leads that arrived <b>in hours</b> ({fmtNumber(d.measured)} contacted) drive the median, average, under-5-min and reply-time figures, measured in real minutes with no pausing. Leads that arrived <b>after hours</b> ({fmtNumber((d.after && d.after.count) || 0)}) are kept out of those and measured from the next opening time instead{d.after && d.after.measured ? <> - median <b>{fmtDuration(d.after.medianMin)}</b> after opening, <b>{d.after.within5Pct}%</b> within 5 min of opening ({fmtNumber(d.after.measured)} contacted)</> : null}. Change in Settings → client → Summary.</div>
+          : <div className="tm-hours">🕘 Measuring raw round-the-clock time for every lead. Set the team's <b>working hours</b> in Settings → client → Summary so overnight leads are reported separately instead of dragging the headline down.</div>}
       </div>
       </Blk>
       <Blk id="timing:scorecards">
       <div className="timing-scards">
-        <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
-        <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
-        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">of measured leads</span></div>
-        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{d.measured}</b><span className="tm-sub">of {d.sampled} {d.full ? 'leads (full range)' : 'sampled'}</span></div>
+        <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">{speedGroupLabel(d)}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean, same leads</span></div>
+        <div className="tm-sc"><span className="tm-lab">Contacted &lt; 5 min</span><b>{d.within5Pct == null ? '-' : `${d.within5Pct}%`}</b><span className="tm-sub">{d.hours ? 'of in-hours leads' : 'of measured leads'}</span></div>
+        <div className="tm-sc"><span className="tm-lab">Manually contacted</span><b>{d.measuredAll ?? d.measured}</b><span className="tm-sub">of {d.sampled} {d.full ? 'leads (full range)' : 'sampled'}</span></div>
+        {d.after && d.after.count ? <div className="tm-sc"><span className="tm-lab">After-hours leads</span><b>{fmtNumber(d.after.count)}</b><span className="tm-sub">{d.after.measured ? `${d.after.within5Pct}% answered within 5 min of opening` : 'arrived outside work hours'}</span></div> : null}
         <div className="tm-sc warn"><span className="tm-lab">Only automation</span><b>{d.onlyAuto}</b><span className="tm-sub">no human message yet</span></div>
         <div className="tm-sc warn"><span className="tm-lab">No outreach</span><b>{d.noOutbound}</b><span className="tm-sub">no outbound at all</span></div>
       </div>
@@ -14570,7 +14573,7 @@ function TimingView({ clientId, range, nonce, currency }) {
       {drill && <TimingDrill drill={drill} money={money} onClose={() => setDrill(null)} />}
       <Blk id="timing:reply">
       <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>How fast leads get a human reply</div>
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>How fast leads get a human reply{d.hours ? <span style={{ fontWeight: 400 }}> · in-hours leads</span> : null}</div>
         <div className="timing-bars">
           {d.buckets.map((b) => (
             <div className="tm-bar-row" key={b.label}>
@@ -14580,12 +14583,12 @@ function TimingView({ clientId, range, nonce, currency }) {
             </div>
           ))}
         </div>
-        <Caveat style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion - the first few minutes matter most.</Caveat>
+        <Caveat style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} ${d.hours ? 'in-hours ' : ''}measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion - the first few minutes matter most.</Caveat>
       </div>
       </Blk>
       <Blk id="timing:convert">
       <div className="card">
-        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Does responding faster convert better? - outcomes by response speed</div>
+        <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Does responding faster convert better? - outcomes by response speed{d.hours ? ' · in-hours leads' : ''}</div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl">
           <thead><tr><th className="lft">Response time</th><th>Leads</th><th>Booked</th><th>Book %</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th></tr></thead>
           <tbody>{d.buckets.map((b) => (

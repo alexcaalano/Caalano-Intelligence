@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.526.0'
+const APP_VERSION = '3.527.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4751,6 +4751,9 @@ const DASH_MODULES = [
   { type: 'sec:atrisk', label: 'Revenue at risk', group: 'Caalano360', needs: 'ghl' },
   { type: 'sec:locations', label: 'Lead locations', group: 'Caalano360', needs: 'ghl' },
   { type: 'sec:speed', label: 'Speed to lead', group: 'Caalano360', needs: 'ghl' },
+  { type: 'tab:meta', label: 'Meta Ads', group: 'Tabs', hint: 'The whole Meta Ads tab', needs: 'meta' },
+  { type: 'tab:google', label: 'Google Ads', group: 'Tabs', hint: 'The whole Google Ads tab', needs: 'google' },
+  { type: 'tab:analytics', label: 'Analytics', group: 'Tabs', hint: 'The whole Analytics tab (GA4)', needs: 'ga4' },
   { type: 'tab:users', label: 'Users', group: 'Tabs', hint: 'The whole Users tab: scorecards, leaderboard, funnel by rep', needs: 'ghl' },
   { type: 'tab:appts', label: 'Appointments', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:calperf', label: 'Calendars', group: 'Tabs', needs: 'ghl' },
@@ -4762,7 +4765,7 @@ const DASH_MODULES = [
   { type: 'tab:cohorts', label: 'Cohorts', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:clinic', label: 'Clinic', group: 'Tabs', hint: 'Clinic clients only', needs: 'ghl' },
 ]
-const dashModuleFits = (m, c) => !m.needs || (m.needs === 'ghl' ? !!c.ghl : m.needs === 'meta' ? !!c.meta : true)
+const dashModuleFits = (m, c) => !m.needs || (m.needs === 'ghl' ? !!c.ghl : m.needs === 'meta' ? !!c.meta : m.needs === 'google' ? !!c.google : m.needs === 'ga4' ? !!c.ga4 : true)
 const DASH_PRESETS = [
   { key: 'exec', label: 'Executive summary', types: ['tiles', 'story', 'reach', 'eff', 'sec:channels', 'sec:pipelines', 'sec:actions'] },
   { key: 'sales', label: 'Sales team', types: ['tiles', 'reach', 'sec:bottleneck', 'sec:team', 'tab:users', 'sec:lostreasons', 'sec:atrisk', 'sec:speed'] },
@@ -8202,6 +8205,27 @@ function ExecMovers({ movers, money, hasPrev, onNav }) {
     </div>
   )
 }
+// Meta Ads, Google Ads and Analytics as dashboard modules. The workspace feeds
+// those tabs from its own deep ad read; a module makes the same read for itself
+// (same URL, so the server cache and the warmer's copies apply) and renders the
+// tab exactly as the workspace does, minus the roster snapshot fallback.
+function DashAdTab({ channel, clientId, currency, range, nonce, pipe, onPipe, wonBasis }) {
+  const [retry, setRetry] = useState(0)
+  const live = useLiveDeep(clientId, channel, range, `${nonce || 0}.${retry}`)
+  const attr = useAttribution(clientId, range, nonce, wonBasis)
+  const label = channel === 'meta' ? 'Meta' : channel === 'google' ? 'Google' : 'Analytics'
+  const d = live.status === 'ok' && live.data ? live.data[channel] : null
+  const ok = !!d && (channel === 'ganalytics' ? !!(d.totals || (d.daily && d.daily.length)) : !!((d.campaigns && d.campaigns.length) || (d.ads && d.ads.length)))
+  if (live.status === 'loading' || live.status === 'idle') return <TabLoading kind="ads" label={deepLoadLabel(live.progress, label, range)} />
+  if (!ok) return <DeepError channel={channel === 'meta' ? 'Meta Ads' : channel === 'google' ? 'Google Ads' : 'Google Analytics'} error={live.data && live.data.error} range={range} onRetry={() => setRetry((n) => n + 1)} />
+  return <>
+    <LiveBadge mode="live" label={rangeLabel(range)} />
+    {live.data.chunked ? <div className="cap chunk-note">{live.data.partial ? `⚠ Loaded ${live.data.monthsLoaded} of ${live.data.monthsTotal} months - ${live.data.monthsTotal - live.data.monthsLoaded} timed out, so totals are undercounted. Hit Refresh to retry the missing months.` : `Full-range view assembled from ${live.data.monthsTotal} monthly pulls. Period-over-period deltas are off for this long a window.`}</div> : null}
+    {channel === 'meta' ? <MetaDeep deep={live.data} currency={currency} attr={attr} clientId={clientId} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} wonBasis={wonBasis} />
+      : channel === 'google' ? <GoogleDeep deep={live.data} currency={currency} attr={attr} clientId={clientId} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} wonBasis={wonBasis} />
+        : <AnalyticsDeep deep={live.data} currency={currency} attr={attr} clientId={clientId} range={range} nonce={nonce} />}
+  </>
+}
 function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe, pipes = [], layout = null }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
@@ -8404,6 +8428,9 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     const pipeName = ((pipes || []).find((p) => p && p.id === pipe) || {}).name || null
     const tabNode = (t) => {
       switch (t) {
+        case 'meta': return <DashAdTab channel="meta" clientId={clientId} currency={currency} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} wonBasis={wonBasis} />
+        case 'google': return <DashAdTab channel="google" clientId={clientId} currency={currency} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} wonBasis={wonBasis} />
+        case 'analytics': return <DashAdTab channel="ganalytics" clientId={clientId} currency={currency} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} wonBasis={wonBasis} />
         case 'users': return <UsersView clientId={clientId} range={range} nonce={nonce} currency={currency} wonBasis={wonBasis} pipe={pipe} onPipe={onPipe} />
         case 'appts': return <AppointmentsView clientId={clientId} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} />
         case 'calperf': return <CalPerfView clientId={clientId} range={range} nonce={nonce} />

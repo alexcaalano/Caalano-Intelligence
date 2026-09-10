@@ -18,6 +18,19 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.527.0 - 2026-09-10 · `PENDING` - Custom dashboards: Meta Ads, Google Ads and Analytics as modules
+
+- **Meta Ads, Google Ads and Analytics join the module list**, each offered
+  only when the client has that account linked. A module makes the same deep
+  ad read the tab makes, through the same cache, and renders the tab as the
+  workspace does.
+- Viewers granted a dashboard carrying one of them may read that channel
+  while the dashboard is open to viewers, and only then.
+- Fixed on the way: the Analytics tab was never in the viewer permission map,
+  so a viewer granted it was refused its read. It is mapped now.
+
+---
+
 ## v3.526.0 - 2026-09-10 · `28a82fd` - Custom dashboards: grant them viewer by viewer
 
 - **Who can see it**, in the builder: Super Admins only (the default), or

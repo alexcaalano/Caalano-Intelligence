@@ -2603,6 +2603,9 @@ const VIEWER_REQ_TABS = {
   'channel:blend': ['overall'],
   'channel:meta': ['meta'],
   'channel:google': ['google'],
+  // Analytics was never in this map, so a viewer granted the tab was denied its
+  // read. Mapping it is the permission check, as for the Timing sections above.
+  'channel:ganalytics': ['analytics'],
   'scope:health': ['overall'],
   'scope:ccdrill': ['overall', 'lostreasons'],
   'scope:users': ['overall', 'users'],
@@ -2640,7 +2643,7 @@ const VIEWER_REQ_TABS = {
 // need - the Caalano360 reads for its sections and blocks, a tab's own reads
 // for an embedded tab - without those tabs being ticked for them separately.
 // Only while a Super Admin has opened that dashboard to viewers.
-const DASH_TAB_OF = { users: 'users', appts: 'appts', calperf: 'calperf', calls: 'calls', forms: 'forms', location: 'location', timing: 'timing', lostreasons: 'lostreasons', cohorts: 'cohorts', clinic: 'clinic' }
+const DASH_TAB_OF = { meta: 'meta', google: 'google', analytics: 'analytics', users: 'users', appts: 'appts', calperf: 'calperf', calls: 'calls', forms: 'forms', location: 'location', timing: 'timing', lostreasons: 'lostreasons', cohorts: 'cohorts', clinic: 'clinic' }
 async function dashboardTabsFor(client) {
   try {
     const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })

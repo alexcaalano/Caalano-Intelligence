@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.537.0 - 2026-09-10 · `PENDING` - Revenue tile stays inside its card
+## v3.537.0 - 2026-09-10 · `46c686b` - Revenue tile stays inside its card
 
 - **A seven-figure Revenue and its change badge no longer spill past the
   tile.** The value wraps inside the card and the badge drops to a second

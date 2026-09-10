@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.538.0'
+const APP_VERSION = '3.539.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -17476,7 +17476,7 @@ function LogsPanel({ clients }) {
                 <h3 style={{ margin: 0 }}>Activity trail</h3>
                 <p className="cap terms-reg-intro" style={{ margin: '4px 0 0', maxWidth: 760 }}>
                   Where each person went and how long they stayed - views, clients and tabs. Navigation only: within-page
-                  clicks aren&rsquo;t recorded. Kept for 90 days. Disclosed in clause 5 of the terms everyone signs.
+                  clicks aren&rsquo;t recorded. Kept for 90 days. Disclosed in clause 6 of the terms everyone signs.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

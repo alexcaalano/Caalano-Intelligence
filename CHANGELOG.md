@@ -18,6 +18,15 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.539.0 - 2026-09-10 · `PENDING`
+
+**Terms of Use v1.4: protect the Platform, not standard metrics**
+- New clause 2 "What these terms do not restrict": clients may track and report standard marketing and sales measures (leads, appointments, show rates, cost per lead, ROAS) about their own business with any tool, and their own figures are theirs to use and share. What is protected is the code, design and layouts, proprietary scoring/benchmarking/analysis methods, and other clients' data.
+- Ownership (clause 1), the copy restriction (clause 4), confidentiality (clause 5) and data (clause 6) narrowed to match; "anything learned from it" and the claim over metric definitions removed. The AI-tools bullet covers the Platform's code, screens and structure only; screenshots and exports are allowed for ordinary business use including sharing within the organisation and with advisers.
+- Sections renumbered (13 clauses). Minimum accepted version stays 1.3, so nobody is asked to sign again. Built-in text only: a custom document published in Settings → Terms is unaffected until it is edited or reverted.
+
+---
+
 ## v3.538.0 - 2026-09-10 · `c6242ac`
 
 **Speed to Lead: in-hours vs after-hours split**

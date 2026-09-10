@@ -14,13 +14,15 @@
 // ---------------------------------------------------------------------------
 import { getStore } from '@netlify/blobs'
 
-export const TERMS_VERSION = '1.3'
-export const TERMS_EFFECTIVE = '2026-08-25'
+export const TERMS_VERSION = '1.4'
+export const TERMS_EFFECTIVE = '2026-09-10'
 // The oldest acceptance still accepted. Raise it only to force a re-sign.
 // 1.3 is the first version that both covers every future release of the Platform
 // and places a duty on the reader to report anything they can see but shouldn't.
 // That duty is new, so it needs a fresh signature; ordinary version bumps after
 // this never send anyone back through the gate.
+// 1.4 narrows what is protected (standard metrics and a client's own figures are
+// expressly free to use), so it loosens rather than tightens: no re-sign.
 export const TERMS_MIN_VERSION = '1.3'
 
 
@@ -43,12 +45,20 @@ export const TERMS_SECTIONS = [
   {
     h: '1. What Caalano360 is, and who owns it',
     p: [
-      'Caalano360 (the "Platform") is proprietary software owned by Caalano Digital ("we", "us"). It includes the interface, the reporting views, the metrics and how they are defined and calculated, the data models, the integrations, the source code and the underlying design and structure.',
+      'Caalano360 (the "Platform") is proprietary software owned by Caalano Digital ("we", "us"). It includes the interface, the reporting views, our proprietary scoring, benchmarking and analysis methods, the data models, the integrations, the source code and the underlying design and structure.',
       'Nothing in these terms transfers ownership of any part of the Platform to you or to your organisation. You are being given access to use it, and nothing more.',
     ],
   },
   {
-    h: '2. Your access',
+    h: '2. What these terms do not restrict',
+    p: [
+      'Nothing in these terms stops you tracking, calculating or reporting standard marketing and sales measures about your own business - such as leads, appointments, show rates, conversion rates, cost per lead or return on ad spend - using any tool you like, including one you build or buy. Those measures are common to the industry and are not ours.',
+      'Your own figures are yours to use, share and analyse however you wish, whether you read them from the Platform, export them, or work them out yourself.',
+      'What these terms protect is the Platform itself: its code, its design and layouts, its proprietary scoring, benchmarking and analysis methods, and data belonging to us or to other clients. You must not copy those, or have someone copy them, to build a substitute for the Platform.',
+    ],
+  },
+  {
+    h: '3. Your access',
     p: [
       'We grant you a personal, non-exclusive, non-transferable, revocable right to access the Platform for the purpose of viewing and working with the accounts you have been given access to.',
       'These terms apply to everyone with a login, whether you work for Caalano Digital or you are a client viewing reporting on your own accounts. If you are a client, the access you are given is to your own accounts and to nothing else.',
@@ -57,39 +67,39 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    h: '3. What you must not do',
+    h: '4. What you must not do',
     p: ['You must not, directly or indirectly:'],
     list: [
       'Copy, reproduce, republish or redistribute any part of the Platform, its interface, its layouts, its reports or its underlying code.',
       'Reverse engineer, decompile, disassemble or otherwise attempt to derive the source code, structure, logic or calculation methods of the Platform.',
-      'Use the Platform, or anything learned from it, to build, specify, brief, commission or assist any product or service that competes with it - including by recreating its reports, metrics, calculations or layouts elsewhere.',
+      'Copy - or brief, commission or assist someone else to copy - the Platform\'s design, layouts, code or proprietary methods in order to build a substitute for it, whether for yourself or for others. Tracking standard measures about your own business is not copying the Platform (see clause 2).',
       'Scrape, crawl, harvest or bulk-extract data or content from the Platform, or use any automated tool, script, bot or AI agent to do so.',
-      'Feed the Platform, its screens, its outputs or its code into any third-party system - including AI or machine-learning tools - for the purpose of analysing, indexing, training on, or reproducing it.',
-      'Take screenshots, recordings or exports for any purpose other than your ordinary use of the accounts you have access to.',
+      'Feed the Platform\'s code, screens, layouts or structure into any third-party system - including AI or machine-learning tools - for the purpose of analysing, indexing, training on, or reproducing the Platform. This does not restrict what you do with your own figures.',
+      'Take screenshots, recordings or exports for any purpose other than the ordinary running of your business - which includes sharing your own reporting within your organisation and with your advisers - or use them to reproduce the Platform.',
       'Remove, obscure or alter any notice of ownership, confidentiality or authorship.',
       'Attempt to access any account, client or view that has not been allocated to you, or probe, scan or test the security of the Platform.',
       'Share your access, or any output that identifies another client, with anyone outside your organisation.',
     ],
   },
   {
-    h: '4. Confidentiality',
+    h: '5. Confidentiality',
     p: [
-      'The Platform and everything in it is confidential. That includes how it works, what it measures, how those measures are defined and calculated, the way information is presented, and any data belonging to us or to any client.',
+      'The Platform is confidential. That includes how it works internally, its proprietary scoring, benchmarking and analysis methods, its design and the way information is presented, and any data belonging to us or to another client. Standard industry measures, and your own figures, are not confidential to us.',
       'You must keep it confidential both while you have access and after your access ends. This obligation continues indefinitely.',
       'If you are given access to data belonging to a client, you may use it only for the purpose it was given to you for.',
     ],
   },
   {
-    h: '5. Data',
+    h: '6. Data',
     p: [
-      'Client data shown in the Platform belongs to the client it relates to. Data we generate - including our metrics, benchmarks, aggregations and calculated fields - belongs to us.',
-      'If you are a client, the underlying data about your own business, campaigns, leads and customers remains yours, and nothing here limits what you may do with it in your own business. What you may not do is take the Platform itself - its reports, layouts, metric definitions, calculations or design - and reproduce it, or have it reproduced, elsewhere. The numbers are yours; the instrument that produces them is not.',
+      'Client data shown in the Platform belongs to the client it relates to. Figures about your business are yours even where we calculated them. What belongs to us is the method: our proprietary scoring and analysis approaches, and benchmarks and aggregations we build across clients.',
+      'If you are a client, the underlying data about your own business, campaigns, leads and customers remains yours, and nothing here limits what you may do with it in your own business. What you may not do is take the Platform itself - its reports, layouts, code, design or proprietary methods - and reproduce it, or have it reproduced, elsewhere. The numbers are yours; the instrument that produces them is not.',
       'The Platform records your activity for security and support purposes: when you sign in, when you are active, what you access, and errors you encounter. It also records your acceptance of these terms, including the date, time and signature you provide.',
       'We handle personal information in line with the Australian Privacy Principles.',
     ],
   },
   {
-    h: '6. If you can see something you should not',
+    h: '7. If you can see something you should not',
     p: [
       'Access is scoped deliberately: you should only ever see the accounts allocated to you. If at any point you can see data, a client, an account, a report or a screen that does not belong to you - or you suspect you can - you must tell us immediately at alex@caalanodigital.com.au.',
       'Until we confirm it is resolved, you must not use, copy, export, screenshot, share or act on anything you were not meant to see, and you must not investigate further or attempt to reach any more of it.',
@@ -98,28 +108,28 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    h: '7. Accuracy and availability',
+    h: '8. Accuracy and availability',
     p: [
       'The Platform reports on data drawn from third-party systems including advertising platforms and CRMs. Those systems can be delayed, incomplete or inconsistent, and their figures may not always match ours.',
       'The Platform is provided on an "as is" basis. We do not warrant that it will be available without interruption, or that every figure is free from error. It is a decision-support tool and should not be treated as a substitute for your own judgement, or as financial, legal or medical advice.',
     ],
   },
   {
-    h: '8. If these terms are breached',
+    h: '9. If these terms are breached',
     p: [
-      'A breach of clause 3, clause 4 or clause 6 causes harm that money alone may not fix. We may seek an injunction or other equitable relief in addition to any other remedy available to us.',
+      'A breach of clause 4, clause 5 or clause 7 causes harm that money alone may not fix. We may seek an injunction or other equitable relief in addition to any other remedy available to us.',
       'We may suspend or terminate access immediately on breach, and may pursue recovery of any loss suffered.',
     ],
   },
   {
-    h: '9. Liability',
+    h: '10. Liability',
     p: [
       'To the extent permitted by law, our total liability arising out of your use of the Platform is limited to resupplying access to it.',
       'Nothing in these terms excludes any right or guarantee that cannot lawfully be excluded, including under the Australian Consumer Law.',
     ],
   },
   {
-    h: '10. Your agreement is ongoing, and covers future versions',
+    h: '11. Your agreement is ongoing, and covers future versions',
     p: [
       'This agreement applies to Caalano360 as it exists on the day you sign and to every future version of it - every release, update, fix, redesign, new tab, new report, new metric, new integration and new module we add, whether or not it existed when you signed. We ship changes frequently, and your acceptance carries across to all of them without you having to sign again.',
       'Your acceptance is not a one-off formality. Every time you sign in and use the Platform you reaffirm these terms and confirm you are still complying with them, in respect of whatever the Platform has become by then.',
@@ -127,7 +137,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    h: '11. Changes to these terms',
+    h: '12. Changes to these terms',
     p: [
       'We may update these terms. An updated version takes effect when it is published in the Platform, and your continued use of the Platform after that is your acceptance of it. The current version is always available from the footer of every screen.',
       'We will only ask you to sign again where a change is material enough that an existing signature should not be taken to cover it. Routine revisions do not require a new signature.',
@@ -135,7 +145,7 @@ export const TERMS_SECTIONS = [
     ],
   },
   {
-    h: '12. Governing law',
+    h: '13. Governing law',
     p: ['These terms are governed by the laws of New South Wales, Australia, and you submit to the non-exclusive jurisdiction of its courts.'],
   },
 ]

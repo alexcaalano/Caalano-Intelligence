@@ -2792,7 +2792,7 @@ const diagStore = () => getStore({ name: 'caalano-diag', consistency: 'strong' }
 // Where someone went, and for how long, is what actually answers the questions
 // people ask of an audit log. Same shape as the reliability log above: a capped
 // per-day bucket plus a small index, in its own store so the two never crowd
-// each other out. Terms clause 5 already discloses this ("what you access").
+// each other out. Terms clause 6 already discloses this ("what you access").
 const auditStore = () => getStore({ name: 'caalano-audit', consistency: 'strong' })
 const AUDIT_DAY_CAP = 4000
 const AUDIT_DAYS_KEEP = 90

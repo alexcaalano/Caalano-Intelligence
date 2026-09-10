@@ -18,6 +18,12 @@ const tabIds = new Set([...src.matchAll(/curTab === '([a-z]+)' &&/g)].map((m) =>
 for (const t of types.filter((x) => x.startsWith('tab:'))) ok(tabIds.has(t.slice(4)), `tab module ${t} is a workspace tab`)
 const rendered = new Set([...src.matchAll(/case '([a-z]+)': return </g)].map((m) => m[1]))
 for (const t of types.filter((x) => x.startsWith('tab:'))) ok(rendered.has(t.slice(4)), `tab module ${t} is rendered by the layout`)
+// Card modules: the tab exists, and the card is wrapped as a pickable block.
+const cardBlkIds = new Set([...src.matchAll(/<Blk id="([a-z]+:[a-z]+)">/g)].map((m) => m[1]))
+const cards = types.filter((x) => x.includes(':') && !x.startsWith('sec:') && !x.startsWith('tab:'))
+ok(cards.length >= 70, `card modules registered (${cards.length})`)
+for (const t of cards) { ok(tabIds.has(t.split(':')[0]) && rendered.has(t.split(':')[0]), `card module ${t} belongs to a rendered tab`); ok(cardBlkIds.has(t), `card module ${t} is wrapped as a block`) }
+for (const id of cardBlkIds) ok(types.includes(id), `block ${id} is offered as a module`)
 for (const p of DASH_PRESETS) { ok(p.types.length > 0, `preset ${p.key} has modules`); for (const t of p.types) ok(types.includes(t), `preset ${p.key} uses a known module (${t})`) }
 ok(/'dashboards'\]/.test(fs.readFileSync(new URL('../netlify/functions/settings.mjs', import.meta.url), 'utf8')), 'the server accepts the dashboards section')
 ok(/id: 'custom'/.test(src) && /\['overall', 'custom', 'clinic'\]/.test(src), 'the custom tab is offered and grouped under Overview')

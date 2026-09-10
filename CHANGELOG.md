@@ -18,6 +18,25 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.528.0 - 2026-09-10 · `PENDING` - Custom dashboards: every card of every tab is a module
+
+- **78 card modules.** Each card on Users, Appointments, Calendars, Call
+  Reporting, Forms, Location, Timing, Lost Reasons, Cohorts, Clinic, Meta
+  Ads, Google Ads and Analytics can now be picked on its own, grouped by tab
+  in the module list and named as the tab names it. A picked card renders
+  its tab in picked-cards mode: the tab makes its own read from the shared
+  cache and shows only that card, so the figure is the tab's figure.
+- Whole-tab modules stay available. Viewer permissions follow a card to its
+  tab's read, as for whole tabs.
+- **Biggest leak fix.** The bottleneck was chosen on raw counts while the
+  reach bars draw calendar events on the implied count (booked, or reached
+  the stage or any later one). A calendar step with few bookings but many
+  deals further down could read as the leak while its bar plainly was not.
+  The bottleneck, the step percentages and the leak sentence now use the
+  same numbers the bars show.
+
+---
+
 ## v3.527.0 - 2026-09-10 · `4590812` - Custom dashboards: Meta Ads, Google Ads and Analytics as modules
 
 - **Meta Ads, Google Ads and Analytics join the module list**, each offered

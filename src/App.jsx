@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.527.0'
+const APP_VERSION = '3.528.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -3092,6 +3092,7 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
   return (
     <div ref={scrollRootRef}>
       {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="meta" range={range} currency={currency} wonBasis={wonBasis} onClose={() => setKeyDrill(null)} /> : null}
+      <Blk id="head">
       <DataLoadBar label="Meta ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · reach &amp; frequency are approximate (summed across campaigns) · link campaigns in Settings → Campaign links</span>}</div>}
@@ -3106,6 +3107,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
           <button className="drill-clear" onClick={clearDrill}>Clear all</button>
         </div>
       )}
+      </Blk>
+      <Blk id="meta:scorecards">
       <div className="sc-sec-lab"><span className="sc-sec-t"><img src={FAVICON('meta.com')} alt="" width="13" height="13" /> Meta metrics</span><span className="sc-sec-sub">delivery &amp; cost from the ad platform</span></div>
       <div className="scorecard sc-fit">
         <Sc label="Cost" value={fmtCurrency(t.spend, currency)} cur={t.spend} prev={D((x) => x.spend)} goodWhenDown series={daily.map((d) => d.spend)} days={sdays} fmt={(v) => fmtCurrency(v, currency)} />
@@ -3130,6 +3133,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
           </>
         })()}
       </div>
+      </Blk>
+      <Blk id="meta:crm">
       {has360 && crmTot && (() => {
         // Caalano360 (blended) metrics. Each tile: count · vs-prev delta · % of the
         // pipeline's leads + cost beneath. Multi-pipeline clients are two
@@ -3188,6 +3193,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
         }
         return groupFor(null, 'Caalano360 metrics', m.totals ? m.totals.spend : t.spend, totalSpendPrev, crmTot, meCh ? meCh.totals.leads : 0, 'Meta-attributed CRM outcomes vs Meta spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
       })()}
+      </Blk>
+      <Blk id="meta:trend">
       <div className="meta-split">
         {daily.length > 0 && <div className="card chart-card meta-split-col">
           <h3>Daily trend</h3><p className="cap">Spend, Leads and CPL by day{sel ? ` · ${sel}` : pipe !== 'all' ? ' · this pipeline' : ' · whole account'}</p>
@@ -3219,17 +3226,25 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
           caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Meta. {allPipes.length > 1 ? 'Narrowing to one pipeline scopes the spend to that pipeline\u2019s linked campaigns too, so cost per event always divides the spend that produced those events. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
         />}
       </div>
+      </Blk>
+      <Blk id="meta:campaigns">
       <div className="lvl-title">Campaigns <span className="sub">· {m.campaigns.length}{sel ? ` · filtered to "${sel}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={campSort} on={onCampSort}>Campaign</SortTh><SortTh k="spend" sort={campSort} on={onCampSort}>Spend</SortTh><SortTh k="impressions" sort={campSort} on={onCampSort}>Impr.</SortTh><SortTh k="linkCtr" sort={campSort} on={onCampSort}>Link CTR</SortTh><SortTh k="hook" sort={campSort} on={onCampSort}>Hook</SortTh><SortTh k="results" sort={campSort} on={onCampSort}>Results</SortTh><SortTh k="cvr" sort={campSort} on={onCampSort}>CVR</SortTh><SortTh k="cpr" sort={campSort} on={onCampSort}>Cost/result</SortTh>{has360 && <O360Head sort={campSort} on={onCampSort} cols={o360cols} />}</tr></thead>
         <tbody>{sortRows(m.campaigns.filter((c) => !fCamp || fCamp.has(unorm(c.name))).map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, results: c.results != null ? c.results : c.leads, resType: c.resultType, cvr: rate(c.results != null ? c.results : c.leads, c.linkClicks), cpr: c.costPerResult != null ? c.costPerResult : (c.leads ? c.spend / c.leads : null), ...o360Fields(oCamp.get(unorm(c.name)), c.spend, c.leads, o360cols) })), campSort).map((c) => (<tr key={c.name} className={sel === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCampaign(c.name)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td className="res-cell">{c.breakdown && c.breakdown.length ? <ResBreakdownPop breakdown={c.breakdown} primary={c.resType}><span className="res-n">{fmtNumber(c.results)}{c.breakdown.length > 1 ? <span className="res-more">+{c.breakdown.length - 1}</span> : null}</span>{c.resType ? <span className="res-ty">{c.resType}</span> : null}</ResBreakdownPop> : <><span className="res-n">{fmtNumber(c.results)}</span>{c.resType ? <span className="res-ty">{c.resType}</span> : null}</>}</td><td className={c.results ? gb(c.cvr, avgCvr) : ''}>{c.results ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpr != null ? (c.cpr <= cpl ? 'good' : 'bad') : ''}>{c.cpr != null ? fmtCurrency(c.cpr, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+      </Blk>
+      <Blk id="meta:adsets">
       <div className="lvl-title">Ad sets <span className="sub">· {adsets.length}{sel ? ` in "${sel}"` : ''} · click a row to drill into its creatives &amp; forms</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={adsetSort} on={onAdsetSort}>Ad set</SortTh><SortTh k="spend" sort={adsetSort} on={onAdsetSort}>Spend</SortTh><SortTh k="impressions" sort={adsetSort} on={onAdsetSort}>Impr.</SortTh><SortTh k="linkCtr" sort={adsetSort} on={onAdsetSort}>Link CTR</SortTh><SortTh k="hook" sort={adsetSort} on={onAdsetSort}>Hook</SortTh><SortTh k="results" sort={adsetSort} on={onAdsetSort}>Results</SortTh><SortTh k="cvr" sort={adsetSort} on={onAdsetSort}>CVR</SortTh><SortTh k="cpr" sort={adsetSort} on={onAdsetSort}>Cost/result</SortTh>{has360 && <O360Head sort={adsetSort} on={onAdsetSort} cols={o360cols} />}</tr></thead>
         <tbody>{sortRows(adsets.map((c) => ({ ...c, linkCtr: rate(c.linkClicks, c.impressions), hook: c.videoViews ? rate(c.videoViews, c.impressions) : null, results: c.results != null ? c.results : c.leads, resType: c.resultType, cvr: rate(c.results != null ? c.results : c.leads, c.linkClicks), cpr: c.costPerResult != null ? c.costPerResult : (c.leads ? c.spend / c.leads : null), ...o360Fields(oAdset.get(unorm(c.name)), c.spend, c.leads, o360cols) })), adsetSort).map((c) => (<tr key={c.name} className={selAdset === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAdset(c)}><td>{c.name}</td><td>{fmtCurrency(c.spend, currency)}</td><td>{fmtNumber(c.impressions)}</td><td className={gb(c.linkCtr, avgLinkCtr)}>{fmtPct(c.linkCtr, 2)}</td><td className={c.hook != null ? gb(c.hook, avgHook) : ''}>{c.hook != null ? fmtPct(c.hook, 1) : '-'}</td><td className="res-cell">{c.breakdown && c.breakdown.length ? <ResBreakdownPop breakdown={c.breakdown} primary={c.resType}><span className="res-n">{fmtNumber(c.results)}{c.breakdown.length > 1 ? <span className="res-more">+{c.breakdown.length - 1}</span> : null}</span>{c.resType ? <span className="res-ty">{c.resType}</span> : null}</ResBreakdownPop> : <><span className="res-n">{fmtNumber(c.results)}</span>{c.resType ? <span className="res-ty">{c.resType}</span> : null}</>}</td><td className={c.results ? gb(c.cvr, avgCvr) : ''}>{c.results ? fmtPct(c.cvr, 1) : '-'}</td><td className={c.cpr != null ? (c.cpr <= cpl ? 'good' : 'bad') : ''}>{c.cpr != null ? fmtCurrency(c.cpr, currency) : '-'}</td>{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+      </Blk>
+      <Blk id="meta:formats">
       {formats.length > 0 && <>
         <div className="lvl-title">Performance by format <span className="sub">· image vs video</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><th>Format</th><th>Ads</th><th>Spend</th><th>Impr.</th><th>Link CTR</th><th>Hook</th><th>Leads</th><th>CVR</th><th>CPL</th>{has360 && <O360Head cols={o360cols} />}</tr></thead>
           <tbody>{formats.map((f) => (<tr key={f.type}><td>{f.type}</td><td>{fmtNumber(f.count)}</td><td>{fmtCurrency(f.spend, currency)}</td><td>{fmtNumber(f.impressions)}</td><td>{fmtPct(rate(f.linkClicks, f.impressions), 2)}</td><td>{f.type === 'Video' ? fmtPct(rate(f.videoViews, f.impressions), 1) : '-'}</td><td>{fmtNumber(f.leads)}</td><td>{f.leads ? fmtPct(rate(f.leads, f.linkClicks), 1) : '-'}</td><td>{f.leads ? fmtCurrency(f.spend / f.leads, currency) : '-'}</td>{has360 && o360Cells(f, currency, o360cols)}</tr>))}</tbody></table></div>
       </>}
+      </Blk>
+      <Blk id="meta:forms">
       {formPerf.length > 0 && <>
         <div className="lvl-title">Performance by form <span className="sub">· {formPerfShown.length}{formPerfShown.length !== formPerf.length ? ` of ${formPerf.length}` : ''} form{formPerfShown.length === 1 ? '' : 's'}{sel || selAdset || selCreative ? ' · filtered to the drill-in above' : ''} · click a form to drill the tab into its ads</span></div>
         {formPerfShown.length === 0 ? <div className="card" style={{ padding: 14 }}><p className="cap" style={{ margin: 0 }}>No forms received leads from this {selCreative ? 'creative' : selAdset ? 'ad set' : 'campaign'}.</p></div> : <div className="table-wrap"><table>
@@ -3254,6 +3269,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
         </table></div>}
         <Caveat>Spend / Impr. / CVR come from the Meta ads whose creative matches this form's submissions (utm_content); Leads / Booked / Shown / Won / Revenue are the CRM outcomes for leads that came through the form. CPL = spend ÷ CRM leads. Click a form to filter the campaigns, ad sets and creatives above to just the ads that drove it, or click a campaign / ad set / creative to filter this table to the forms it drove.</Caveat>
       </>}
+      </Blk>
+      <Blk id="meta:creatives">
       {deep.meta.coreOnly ? <div className="lvl-title">Creatives <span className="sub">· loading…</span><div className="card" style={{ padding: 14, marginTop: 8 }}><Spinner label="Loading creative-level detail…" /></div></div> : <>
       <div className="lvl-title">Creatives <span className="sub">· {adsFull.length}{sel ? ` in "${sel}"` : ''} · table + visuals · green/red vs account average</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr>
@@ -3281,6 +3298,8 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
           />
         : <div className="card" style={{ padding: 14 }}><p className="cap" style={{ margin: 0 }}>No creatives with spend in this range.</p></div>}
       </>}
+      </Blk>
+      <Blk id="meta:daily">
       <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{m.adDaily ? ' · click a day to break it down' : ''}</span></div>
       <div className="table-wrap"><table><thead><tr><th>Day</th><th>Spend</th><th>CPM</th><th>CTR</th><th>CPC</th><th>Leads</th><th>CPL</th></tr></thead>
         <tbody>{[...daily].reverse().map((d) => (<tr key={d.date} className={day === d.date ? 'row-sel' : ''} style={{ cursor: m.adDaily ? 'pointer' : 'default' }} onClick={() => m.adDaily && setDay(day === d.date ? null : d.date)}><td>{d.label}</td><td>{fmtCurrency(d.spend, currency)}</td><td>{fmtCurrency(d.cpm, currency)}</td><td>{fmtPct(d.ctr, 2)}</td><td>{fmtCurrency(d.cpc, currency)}</td><td>{fmtNumber(d.leads)}</td><td>{d.leads ? <span className="cpl-cell" style={{ background: cplColor(d.cpl, cpl) }}>{fmtCurrency(d.cpl, currency)}</span> : '-'}</td></tr>))}</tbody></table></div>
@@ -3298,7 +3317,10 @@ function MetaDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipeProp
           </div>
         )
       })()}
+      </Blk>
+      <Blk id="head">
       <Caveat>Creative thumbnails from the Meta and Google API (Meta CDN), refreshed each pull. Hook rate = 3-second plays ÷ impressions. ThruPlay-based Hold Rate and inline video playback aren't exposed by the API; ↗ opens the Instagram post where available.</Caveat>
+      </Blk>
       {preview && <img className="cre-preview" src={preview.src} alt="" style={{ left: Math.min(preview.x + 18, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 268), top: Math.min(Math.max(12, preview.y - 120), (typeof window !== 'undefined' ? window.innerHeight : 800) - 300) }} onError={() => setPreview(null)} />}
     </div>
   )
@@ -3335,6 +3357,7 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
   return (
     <div className="ga-view" ref={scrollRootRef}>
       {/* Headline KPI cards */}
+      <Blk id="analytics:kpis">
       <div className="ga-kpis">
         {[
           ['Sessions', fmtNumber(sessions), prev && <Delta cur={sessions} pv={prev.sessions} />],
@@ -3351,8 +3374,10 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
           <div className="ga-kpi" key={label}><div className="ga-kpi-l">{label}</div><div className="ga-kpi-v">{value} {d}</div></div>
         ))}
       </div>
+      </Blk>
 
       {/* Full funnel: website engagement (GA4) → CRM outcomes (Caalano Systems) */}
+      <Blk id="analytics:funnel">
       {crm && (() => {
         const steps = [
           { k: 'Sessions', v: sessions, c: GA_C.sessions, src: 'GA4' },
@@ -3381,7 +3406,9 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
         )
       })()}
 
+      </Blk>
       {/* Daily trend */}
+      <Blk id="analytics:trend">
       {daily.length > 0 && <div className="card">
         <div className="lvl-title" style={{ marginTop: 0 }}>Daily traffic <span className="sub">· {daily.length} days · sessions, engaged sessions &amp; key events</span></div>
         <ResponsiveContainer width="100%" height={240}>
@@ -3398,8 +3425,10 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>}
+      </Blk>
 
       {/* Channel grouping + CRM enrichment side by side */}
+      <Blk id="analytics:channels">
       <div className="ga-2col">
         {chan.length > 0 && <div className="card">
           <div className="lvl-title" style={{ marginTop: 0 }}>Traffic by channel <span className="sub">· GA4 default channel grouping</span></div>
@@ -3413,22 +3442,28 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
               <tr className="ga-tot"><td>All</td><td>{fmtNumber(crm.leads || 0)}</td><td>{fmtNumber(crm.booked || 0)}</td><td>{fmtNumber(crm.won || 0)}</td><td>{fmtCurrency(crm.revenue || 0, currency)}</td></tr></tbody></table></div>
         </div>}
       </div>
+      </Blk>
 
       {/* Source / medium */}
+      <Blk id="analytics:sources">
       {src.length > 0 && <div className="card">
         <div className="lvl-title" style={{ marginTop: 0 }}>Traffic by source / medium <span className="sub">· {src.length} · where sessions came from</span></div>
         <div className="table-wrap"><table><thead><tr><SortTh k="name" sort={srcSort} on={onSrcSort}>Source / medium</SortTh><SortTh k="sessions" sort={srcSort} on={onSrcSort}>Sessions</SortTh><SortTh k="engaged" sort={srcSort} on={onSrcSort}>Engaged</SortTh><SortTh k="engagementRate" sort={srcSort} on={onSrcSort}>Eng. rate</SortTh><SortTh k="keyEvents" sort={srcSort} on={onSrcSort}>Key events</SortTh></tr></thead>
           <tbody>{sortRows(src, srcSort).slice(0, 30).map((s) => (<tr key={s.name}><td>{s.name}</td><td>{fmtNumber(s.sessions)}</td><td>{fmtNumber(s.engaged)}</td><td>{fmtPct(s.engagementRate, 1)}</td><td>{fmtNumber(s.keyEvents)}</td></tr>))}</tbody></table></div>
       </div>}
+      </Blk>
 
       {/* Landing pages */}
+      <Blk id="analytics:landing">
       {lps.length > 0 && <div className="card">
         <div className="lvl-title" style={{ marginTop: 0 }}>Landing page performance <span className="sub">· {lps.length} · first page of each session</span></div>
         <div className="table-wrap"><table><thead><tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="sessions" sort={lpSort} on={onLpSort}>Sessions</SortTh><SortTh k="engaged" sort={lpSort} on={onLpSort}>Engaged</SortTh><SortTh k="engagementRate" sort={lpSort} on={onLpSort}>Eng. rate</SortTh><SortTh k="bounceRate" sort={lpSort} on={onLpSort}>Bounce</SortTh><SortTh k="keyEvents" sort={lpSort} on={onLpSort}>Key events</SortTh></tr></thead>
           <tbody>{sortRows(lps, lpSort).slice(0, 40).map((lp) => { const short = String(lp.url).replace(/^https?:\/\//, ''); return (<tr key={lp.url}><td title={lp.url}>{short.length > 60 ? short.slice(0, 58) + '…' : short}</td><td>{fmtNumber(lp.sessions)}</td><td>{fmtNumber(lp.engaged)}</td><td>{fmtPct(lp.engagementRate, 1)}</td><td>{fmtPct(lp.bounceRate, 1)}</td><td>{fmtNumber(lp.keyEvents)}</td></tr>) })}</tbody></table></div>
       </div>}
+      </Blk>
 
       {/* Events + devices */}
+      <Blk id="analytics:events">
       <div className="ga-2col">
         {events.length > 0 && <div className="card">
           <div className="lvl-title" style={{ marginTop: 0 }}>Top events <span className="sub">· {events.length} · by count</span></div>
@@ -3442,8 +3477,10 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
           ) })}</div>
         </div>}
       </div>
+      </Blk>
 
       {/* Diagnostic - only when something didn't come back, so empties are explainable */}
+      <Blk id="head">
       {Object.entries(diag).some(([k, v]) => k !== 'connector' && !v) && (
         <details className="gdiag">
           <summary>Some Analytics sections are empty · why?</summary>
@@ -3454,6 +3491,7 @@ function AnalyticsDeep({ deep, currency, attr, clientId, range, nonce }) {
           </div>
         </details>
       )}
+      </Blk>
     </div>
   )
 }
@@ -3649,10 +3687,13 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
   return (
     <div ref={scrollRootRef}>
       {keyDrill ? <KeyPeopleModal event={keyDrill} clientId={clientId} channel="google" range={range} currency={currency} wonBasis={wonBasis} onClose={() => setKeyDrill(null)} /> : null}
+      <Blk id="head">
       <DataLoadBar label="Google ads" has360={has360} status={attr && attr.status} pipeLoading={pipeLoading} />
       <AttrDiag attr={attr} />
       {allPipes.length > 1 && <div className="pipe-filter-bar"><PipelineFilter pipelines={allPipes} value={pipe} onChange={setPipe} loading={pipeLoading} />{pipe !== 'all' && <span className="pipe-filter-note">Scoped to this pipeline's linked campaigns · link campaigns in Settings → Campaign links</span>}</div>}
       {scopedEmpty && <div className="alias-warn" style={{ marginTop: 8 }}><b>No campaigns are linked to this pipeline.</b> Link this pipeline's campaigns in <b>Settings → this client → Campaign links</b> (or rename them to match). The green CRM columns still reflect the pipeline.</div>}
+      </Blk>
+      <Blk id="google:scorecards">
       <div className="sc-sec-lab"><span className="sc-sec-t"><img src={FAVICON('ads.google.com')} alt="" width="13" height="13" /> Google metrics</span><span className="sc-sec-sub">delivery &amp; cost from the ad platform</span></div>
       <div className="scorecard sc-fit">
         <Sc label="Cost" value={fmtCurrency(t.cost, currency)} cur={t.cost} prev={D((x) => x.cost)} goodWhenDown series={daily.map((d) => d.cost)} days={sdays} fmt={(v) => fmtCurrency(v, currency)} />
@@ -3666,6 +3707,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
         <Sc label="Keywords" value={fmtNumber(g.keywordsTotal)} />
         <Sc label="Search Terms" value={fmtNumber(g.searchTermsTotal)} />
       </div>
+      </Blk>
+      <Blk id="google:crm">
       {has360 && (() => {
         // Per-pipeline Caalano360 metrics - same treatment as Meta (Leads first,
         // count · vs-prev · % of leads, combined cost tiles), for Google.
@@ -3722,6 +3765,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
         }
         return groupFor(null, 'Caalano360 metrics', t.cost, totalSpendPrev, totalsCrm, gCh ? gCh.totals.leads : 0, 'Google-attributed CRM outcomes vs Google spend · count · vs prev · cost/event · revenue on a lead-created basis (the monthly report uses deal-won)')
       })()}
+      </Blk>
+      <Blk id="google:keyevents">
       {has360 && gRows.some((r) => r.count > 0) && <KeyEventsFunnel
         rows={gRows} total={gTotal} spend={gKeSpend} currency={currency}
         drill={{ clientId, channel: 'google', range, pipeline: kePipeEff !== 'all' ? kePipeEff : null }}
@@ -3733,6 +3778,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
         sub={`Google-attributed leads through your key pipeline stages and booked calendars · ${kePipeEff === 'all' ? 'all pipelines · cost per event = whole Google spend ÷ count' : `${(allPipes.find((p) => p.id === kePipeEff) || {}).name || 'pipeline'} only · cost per event = that pipeline's Google spend ÷ count`}`}
         caveat={<>📅 = a booked calendar appointment (cost per booked call). Counts are opportunities the CRM attributes to Google. {allPipes.length > 1 ? 'Narrowing to one pipeline scopes the spend to that pipeline\u2019s linked campaigns too, so cost per event always divides the spend that produced those events. ' : ''}Configure which stages and calendars count in Settings → Key events.</>}
       />}
+      </Blk>
+      <Blk id="google:trend">
       {daily.length > 0 && <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Daily trend</h3><p className="cap">Spend, Conversions and Cost / Conversion by day{pipe !== 'all' ? ' · whole account' : ''}</p>
         <ResponsiveContainer width="100%" height={250}>
@@ -3749,6 +3796,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
           </ComposedChart>
         </ResponsiveContainer>
       </div>}
+      </Blk>
+      <Blk id="google:matchtype">
       <div className="grid g3" style={{ marginTop: 14 }}>
         <div className="card chart-card"><h3>Spend by match type</h3><p className="cap">{selLabel ? `In ${selLabel}` : 'Where the budget is landing'}</p>
           {matchAgg.length ? <>
@@ -3773,12 +3822,18 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
           ))}</div> : <p className="cap">No location data in this range{g.geo ? '.' : ' - geo not available for this account.'}</p>}
         </div>
       </div>
+      </Blk>
+      <Blk id="google:campaigns">
       <div className="lvl-title">Campaigns <span className="sub">· {g.campaigns.length}{sel.campaign ? ` · filtered to "${sel.campaign}" (click to clear)` : ' · click a row to drill in'}{has360 ? ' · green = Caalano360 outcomes (UTM-matched) · Booked counts on the day the call was booked; (Nc) = later cancelled, (Np) = shown via pipeline stage · Book% = booked/leads, Show% = shown/booked, Win% = won/leads' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><GHead first="Campaign" o360 sort={cSort} on={onCSort} />
         <tbody>{sortRows(g.campaigns.map((c) => ({ ...gMetrics(c), ...o360Fields(oCampG.get(unorm(c.name)), c.cost, c.conversions, o360cols) })), cSort).map((c) => (<tr key={c.name} className={sel.campaign === c.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickCamp(c.name)}><td>{c.name}{c.status && c.status !== 'Enabled' ? <span className="q-badge q-unk" style={{ marginLeft: 6 }}>{c.status}</span> : null}</td>{GCells(c)}{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+      </Blk>
+      <Blk id="google:adgroups">
       <div className="lvl-title">Ad groups <span className="sub">· {adGroups.length}{sel.campaign ? ` in "${sel.campaign}"` : ''}{sel.adGroup ? ` · filtered to "${sel.adGroup}"` : adGroups.length ? ' · click to drill in' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><GHead first="Ad group" o360 sort={aSort} on={onASort} />
         <tbody>{sortRows(adGroups.map((c) => ({ ...gMetrics(c), ...o360Fields(oAgG.get(unorm(c.name)), c.cost, c.conversions, o360cols) })), aSort).map((c) => (<tr key={c.campaign + '|' + c.name} className={sel.adGroup === c.name && sel.campaign === c.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickAg(c)}><td>{c.name}</td>{GCells(c)}{has360 && o360Cells(c, currency, o360cols)}</tr>))}</tbody></table></div>
+      </Blk>
+      <Blk id="google:adgroupcrm">
       {has360 && (() => {
         // Ad-group green columns only light up when the CRM's utm_medium/utm_content
         // carries a value that resolves to a live ad-group name. Google auto-tagging
@@ -3812,27 +3867,37 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
           </details>
         )
       })()}
+      </Blk>
+      <Blk id="google:ads">
       {(g.ads && g.ads.length > 0) && <>
         <div className="lvl-title">Ads <span className="sub">· {adsFiltered.length}{selLabel ? ` in ${selLabel}` : ''} · Search RSAs have no name, so each defaults to its ad group + spend rank; set a Google Ads label or a name you type (✎){has360 ? ' · green = CRM outcomes (utm_ad_id)' : ''}</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={9} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={9} cols={o360cols} />}<tr><SortTh k="name" sort={adSort} on={onAdSort}>Ad</SortTh><SortTh k="adGroup" sort={adSort} on={onAdSort}>Ad group</SortTh><SortTh k="cost" sort={adSort} on={onAdSort}>Cost</SortTh><SortTh k="impressions" sort={adSort} on={onAdSort}>Impr.</SortTh><SortTh k="ctr" sort={adSort} on={onAdSort}>CTR</SortTh><SortTh k="cpc" sort={adSort} on={onAdSort}>CPC</SortTh><SortTh k="conversions" sort={adSort} on={onAdSort}>Conv.</SortTh><SortTh k="cvr" sort={adSort} on={onAdSort}>Conv. rate</SortTh><SortTh k="costConv" sort={adSort} on={onAdSort}>Cost/conv</SortTh>{has360 && <O360Head sort={adSort} on={onAdSort} cols={o360cols} />}</tr></thead>
           <tbody>{adView.map((a) => { const src = adNameSrc(a.id); return (<tr key={a.campaign + '|' + a.adGroup + '|' + a.id}><td><b>{adNameOf(a.id)}</b>{src === 'label' ? <span className="ad-lbl"> · label</span> : src === 'auto' ? <span className="ad-lbl"> · auto</span> : null} <button className="ad-ren" title="Set a friendly name for this ad" onClick={() => { const v = window.prompt('Friendly name for Google ad ' + a.id + ' (ad group: ' + (a.adGroup || '-') + ')', adNames[a.id] || adLabels[a.id] || ''); if (v !== null) setAdName(clientId, a.id, v) }}>✎</button></td><td style={{ color: 'var(--muted)', fontSize: 12, whiteSpace: 'normal' }} title={a.campaign}>{a.adGroup || '-'}</td>{GCells(a)}{has360 && o360Cells(a, currency, o360cols)}</tr>) })}</tbody></table></div>
         <Pager page={adPg} pages={adPages} onPage={setAdPage} total={adsFiltered.length} unit="ads" />
       </>}
+      </Blk>
+      <Blk id="google:keywords">
       <div className="lvl-title">Keywords <span className="sub">· {keywords.length} of {fmtNumber(g.keywordsTotal)} by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter search terms{has360 ? ' · green = CRM outcomes (utm_term)' : ''}</span></div>
       <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={10} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={10} cols={o360cols} />}<tr><SortTh k="text" sort={kSort} on={onKSort}>Keyword</SortTh><SortTh k="match" sort={kSort} on={onKSort}>Match</SortTh><SortTh k="cost" sort={kSort} on={onKSort}>Cost</SortTh><SortTh k="impressions" sort={kSort} on={onKSort}>Impr.</SortTh><SortTh k="ctr" sort={kSort} on={onKSort}>CTR</SortTh><SortTh k="cpc" sort={kSort} on={onKSort}>CPC</SortTh><SortTh k="conversions" sort={kSort} on={onKSort}>Conv.</SortTh><SortTh k="cvr" sort={kSort} on={onKSort}>Conv. rate</SortTh><SortTh k="costConv" sort={kSort} on={onKSort}>Cost/conv</SortTh><SortTh k="qs" sort={kSort} on={onKSort}>QS</SortTh>{has360 && <O360Head sort={kSort} on={onKSort} cols={o360cols} />}</tr></thead>
         <tbody>{kwView.map((k) => (<tr key={k.campaign + '|' + k.adGroup + '|' + k.text + '|' + k.match} className={sel.keyword === k.text && sel.adGroup === k.adGroup && sel.campaign === k.campaign ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickKw(k)}><td>{k.text}</td><td><span className="q-badge q-unk">{k.match}</span></td><td>{fmtCurrency(k.cost, currency)}</td><td>{fmtNumber(k.impressions)}</td><td>{fmtPct(rate(k.clicks, k.impressions), 2)}</td><td>{fmtCurrency(k.clicks ? k.cost / k.clicks : 0, currency)}</td><td>{fmtNumber(k.conversions)}</td><td>{fmtPct(rate(k.conversions, k.clicks), 1)}</td><td>{k.conversions ? fmtCurrency(k.cost / k.conversions, currency) : '-'}</td><td><span className={`q-badge ${qsClass(k.qs)}`}>{k.qs === '' || k.qs == null ? '-' : k.qs}</span></td>{has360 && o360Cells(k, currency, o360cols)}</tr>))}</tbody></table></div>
       <Pager page={kwPg} pages={kwPages} onPage={setKwPage} total={keywords.length} unit="keywords" />
+      </Blk>
+      <Blk id="google:matchrows">
       {matchRows.length > 0 && <>
         <div className="lvl-title">Match type <span className="sub">· Broad / Phrase / Exact{selLabel ? ` · in ${selLabel}` : ''}{has360 ? ' · green = CRM outcomes (rolled up from each keyword)' : ''}</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="name" sort={mtSort} on={onMtSort}>Match type</SortTh><SortTh k="cost" sort={mtSort} on={onMtSort}>Cost</SortTh><SortTh k="impressions" sort={mtSort} on={onMtSort}>Impr.</SortTh><SortTh k="ctr" sort={mtSort} on={onMtSort}>CTR</SortTh><SortTh k="cpc" sort={mtSort} on={onMtSort}>CPC</SortTh><SortTh k="conversions" sort={mtSort} on={onMtSort}>Conv.</SortTh><SortTh k="cvr" sort={mtSort} on={onMtSort}>Conv. rate</SortTh><SortTh k="costConv" sort={mtSort} on={onMtSort}>Cost/conv</SortTh>{has360 && <O360Head sort={mtSort} on={onMtSort} cols={o360cols} />}</tr></thead>
           <tbody>{sortRows(matchRows.map((m) => ({ ...gMetrics(m), ...o360Fields(oMatchG.get(unorm(m.name)), m.cost, m.conversions, o360cols) })), mtSort).map((m) => (<tr key={m.name} className={sel.matchType === m.name ? 'row-sel' : ''} style={{ cursor: 'pointer' }} onClick={() => pickMatch(m.name)}><td><span className="q-badge q-unk">{m.name}</span></td><td>{fmtCurrency(m.cost, currency)}</td><td>{fmtNumber(m.impressions)}</td><td>{fmtPct(rate(m.clicks, m.impressions), 2)}</td><td>{fmtCurrency(m.clicks ? m.cost / m.clicks : 0, currency)}</td><td>{fmtNumber(m.conversions)}</td><td>{fmtPct(rate(m.conversions, m.clicks), 1)}</td><td>{m.conversions ? fmtCurrency(m.cost / m.conversions, currency) : '-'}</td>{has360 && o360Cells(m, currency, o360cols)}</tr>))}</tbody></table></div>
       </>}
+      </Blk>
+      <Blk id="google:searchterms">
       <div className="lvl-title">Search terms <span className="sub">· {searchTerms.length} of {fmtNumber(g.searchTermsTotal)} actual queries by spend{selLabel ? ` · in ${selLabel}` : ''} · click to filter by the matched keyword</span></div>
       {searchTerms.length ? (<>
         <div className="table-wrap"><table><thead><tr><SortTh k="term" sort={sSort} on={onSSort}>Search term</SortTh><SortTh k="campaign" sort={sSort} on={onSSort}>Campaign</SortTh><SortTh k="adGroup" sort={sSort} on={onSSort}>Ad group</SortTh><SortTh k="cost" sort={sSort} on={onSSort}>Cost</SortTh><SortTh k="ctr" sort={sSort} on={onSSort}>CTR</SortTh><SortTh k="clicks" sort={sSort} on={onSSort}>Clicks</SortTh><SortTh k="conversions" sort={sSort} on={onSSort}>Conv.</SortTh><SortTh k="cvr" sort={sSort} on={onSSort}>Conv. rate</SortTh><SortTh k="costConv" sort={sSort} on={onSSort}>Cost / conv</SortTh></tr></thead>
           <tbody>{stView.map((s, i) => (<tr key={s.campaign + '|' + s.adGroup + '|' + s.term + i} className={sel.keyword && s.keyword === sel.keyword ? 'row-sel' : ''} style={{ cursor: s.keyword ? 'pointer' : 'default' }} onClick={() => s.keyword && pickTerm(s)}><td>{s.term}</td><td style={{ color: 'var(--muted)', fontSize: 12 }}>{s.campaign || '-'}</td><td style={{ color: 'var(--muted)', fontSize: 12 }}>{s.adGroup || '-'}</td><td>{fmtCurrency(s.cost, currency)}</td><td>{fmtPct(rate(s.clicks, s.impressions), 2)}</td><td>{fmtNumber(s.clicks)}</td><td>{fmtNumber(s.conversions)}</td><td>{fmtPct(rate(s.conversions, s.clicks), 1)}</td><td>{s.conversions ? fmtCurrency(s.cost / s.conversions, currency) : '-'}</td></tr>))}</tbody></table></div>
         <Pager page={stPg} pages={stPages} onPage={setStPage} total={searchTerms.length} unit="terms" />
       </>) : <Caveat>No search-term data in this range{selLabel ? ` for ${selLabel}` : ''}.</Caveat>}
+      </Blk>
+      <Blk id="google:landing">
       {g.landingPages && g.landingPages.length > 0 && <>
         <div className="lvl-title">Landing page performance <span className="sub">· {g.landingPages.length} destination URLs by spend · where the budget sent traffic · account-wide{has360 ? ' · green = CRM outcomes (matched by first-touch URL)' : ''}</span></div>
         <div className="table-wrap"><table className="o360-tbl"><O360ColGroup left={8} green={has360} cols={o360cols} /><thead>{has360 && <C360GrpRow left={8} cols={o360cols} />}<tr><SortTh k="url" sort={lpSort} on={onLpSort}>Landing page</SortTh><SortTh k="cost" sort={lpSort} on={onLpSort}>Cost</SortTh><SortTh k="impressions" sort={lpSort} on={onLpSort}>Impr.</SortTh><SortTh k="ctr" sort={lpSort} on={onLpSort}>CTR</SortTh><SortTh k="clicks" sort={lpSort} on={onLpSort}>Clicks</SortTh><SortTh k="conversions" sort={lpSort} on={onLpSort}>Conv.</SortTh><SortTh k="cvr" sort={lpSort} on={onLpSort}>Conv. rate</SortTh><SortTh k="costConv" sort={lpSort} on={onLpSort}>Cost/conv</SortTh>{has360 && <O360Head sort={lpSort} on={onLpSort} cols={o360cols} />}</tr></thead>
@@ -3840,6 +3905,8 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
             <tr key={lp.url}><td className="lp-cell"><a href={lp.url} target="_blank" rel="noopener noreferrer" title={lp.url} className="lp-link">{short.length > 150 ? short.slice(0, 148) + '…' : short}</a></td><td>{fmtCurrency(lp.cost, currency)}</td><td>{fmtNumber(lp.impressions)}</td><td>{fmtPct(rate(lp.clicks, lp.impressions), 2)}</td><td>{fmtNumber(lp.clicks)}</td><td>{fmtNumber(lp.conversions)}</td><td>{fmtPct(rate(lp.conversions, lp.clicks), 1)}</td><td>{lp.conversions ? fmtCurrency(lp.cost / lp.conversions, currency) : '-'}</td>{has360 && o360Cells(lp, currency, o360cols)}</tr>
           ) })}</tbody></table></div>
       </>}
+      </Blk>
+      <Blk id="google:daily">
       {daily.length > 0 && <>
         <div className="lvl-title">Day by day <span className="sub">· {daily.length} days · newest first{g.adGroupDaily ? ' · click a day to break it down' : ''}</span></div>
         <div className="table-wrap"><table><thead><tr><th>Day</th><th>Cost</th><th>Impr.</th><th>CTR</th><th>CPC</th><th>Conv.</th><th>Cost/conv</th></tr></thead>
@@ -3864,6 +3931,7 @@ function GoogleDeep({ deep, currency, attr, clientId, range, nonce, pipe: pipePr
           )
         })()}
       </>}
+      </Blk>
     </div>
   )
 }
@@ -4733,6 +4801,14 @@ function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashb
 // `sec:` modules are the Caalano360 sections by id; the plain ones are that
 // tab's other blocks; `tab:` modules embed a whole tab. `needs` gates a module
 // on what the client has linked.
+// Picked-cards mode for a tab. When a custom dashboard names one card of a
+// tab, the tab renders inside a provider naming that card, and every other
+// card - and the tab's own header and filters - returns nothing. The tab still
+// makes its own read, from the shared cache, so the card's figure is the tab's
+// figure. With no provider (the tab itself, or a whole-tab module) every card
+// renders as it always has.
+const DashPick = React.createContext(null)
+function Blk({ id, children }) { const pick = React.useContext(DashPick); if (pick && !pick.has(id)) return null; return <>{children}</> }
 const DASH_MODULES = [
   { type: 'tiles', label: 'Headline tiles', group: 'Caalano360', hint: 'Ad spend, opportunities, won, revenue, ROAS, blended CAC' },
   { type: 'story', label: 'Story strip', group: 'Caalano360', hint: 'Biggest leak, channels, what moved', internal: true },
@@ -4764,6 +4840,85 @@ const DASH_MODULES = [
   { type: 'tab:lostreasons', label: 'Lost Reasons', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:cohorts', label: 'Cohorts', group: 'Tabs', needs: 'ghl' },
   { type: 'tab:clinic', label: 'Clinic', group: 'Tabs', hint: 'Clinic clients only', needs: 'ghl' },
+  // One card of a tab. Type is `<tab>:<card>`; the tab renders in picked-cards mode.
+  { type: 'users:scorecards', label: 'Scorecards', group: 'Users', needs: 'ghl' },
+  { type: 'users:leaderboard', label: 'Leaderboard', group: 'Users', needs: 'ghl' },
+  { type: 'users:wonrev', label: 'Won & revenue by rep', group: 'Users', needs: 'ghl' },
+  { type: 'users:funnel', label: 'Funnel by rep', group: 'Users', needs: 'ghl' },
+  { type: 'users:activity', label: 'Rep activity', group: 'Users', needs: 'ghl' },
+  { type: 'appts:status', label: 'Appointment status', group: 'Appointments', needs: 'ghl' },
+  { type: 'appts:scorecards', label: 'Booking scorecards', group: 'Appointments', needs: 'ghl' },
+  { type: 'appts:leadtime', label: 'Booking lead time', group: 'Appointments', needs: 'ghl' },
+  { type: 'appts:slots', label: 'When the call is scheduled', group: 'Appointments', needs: 'ghl' },
+  { type: 'appts:selfstaff', label: 'Self-booked vs staff-booked', group: 'Appointments', needs: 'ghl' },
+  { type: 'appts:byuser', label: 'Performance by user', group: 'Appointments', needs: 'ghl' },
+  { type: 'calperf:hero', label: 'Calendar scorecards', group: 'Calendars', needs: 'ghl' },
+  { type: 'calperf:bycal', label: 'By calendar', group: 'Calendars', needs: 'ghl' },
+  { type: 'calperf:sources', label: 'Where the bookings came from', group: 'Calendars', needs: 'ghl' },
+  { type: 'calls:activity', label: 'Call activity', group: 'Call Reporting', needs: 'ghl' },
+  { type: 'calls:cadence', label: 'Call cadence', group: 'Call Reporting', needs: 'ghl' },
+  { type: 'calls:daily', label: 'Daily calls', group: 'Call Reporting', needs: 'ghl' },
+  { type: 'calls:scoreboard', label: 'Rep scoreboard', group: 'Call Reporting', needs: 'ghl' },
+  { type: 'forms:scorecards', label: 'Form scorecards', group: 'Forms', needs: 'ghl' },
+  { type: 'forms:charts', label: 'Form charts', group: 'Forms', needs: 'ghl' },
+  { type: 'forms:table', label: 'Form performance', group: 'Forms', needs: 'ghl' },
+  { type: 'timing:scorecards', label: 'Speed-to-lead scorecards', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:contact', label: 'Contact rate', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:outcomes', label: 'Lead outcomes', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:reply', label: 'How fast leads get a human reply', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:convert', label: 'Does responding faster convert better', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:enqtimes', label: 'When enquiries land', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:enqpaid', label: 'Enquiry times, paid channels', group: 'Timing', needs: 'ghl' },
+  { type: 'timing:stagetime', label: 'Time in stage', group: 'Timing', needs: 'ghl' },
+  { type: 'lostreasons:scorecards', label: 'Lost scorecards', group: 'Lost Reasons', needs: 'ghl' },
+  { type: 'lostreasons:table', label: 'Lost reasons', group: 'Lost Reasons', needs: 'ghl' },
+  { type: 'cohorts:scorecards', label: 'Cohort scorecards', group: 'Cohorts', needs: 'ghl' },
+  { type: 'cohorts:chart', label: 'Conversion by cohort', group: 'Cohorts', needs: 'ghl' },
+  { type: 'cohorts:table', label: 'Cohort table', group: 'Cohorts', needs: 'ghl' },
+  { type: 'clinic:hero', label: 'Clinic scorecards', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:growth', label: 'Growth', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:book', label: 'The book', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:capacity', label: 'Capacity & recovery', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:retention', label: 'Retention', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:cohorts', label: 'Cohorts', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:acq', label: 'Acquisition', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:ops', label: 'Operations', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:bench', label: 'Benchmark', group: 'Clinic', needs: 'ghl' },
+  { type: 'clinic:work', label: 'Worklists', group: 'Clinic', needs: 'ghl' },
+  { type: 'meta:scorecards', label: 'Meta scorecards', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:crm', label: 'Caalano360 outcomes', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:trend', label: 'Daily trend', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:campaigns', label: 'Campaigns', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:adsets', label: 'Ad sets', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:formats', label: 'Formats', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:forms', label: 'Lead forms', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:creatives', label: 'Creatives & creative performance', group: 'Meta Ads', needs: 'meta' },
+  { type: 'meta:daily', label: 'Day by day', group: 'Meta Ads', needs: 'meta' },
+  { type: 'google:scorecards', label: 'Google scorecards', group: 'Google Ads', needs: 'google' },
+  { type: 'google:crm', label: 'Caalano360 outcomes', group: 'Google Ads', needs: 'google' },
+  { type: 'google:keyevents', label: 'Key events funnel', group: 'Google Ads', needs: 'google' },
+  { type: 'google:trend', label: 'Daily trend', group: 'Google Ads', needs: 'google' },
+  { type: 'google:matchtype', label: 'Spend by match type', group: 'Google Ads', needs: 'google' },
+  { type: 'google:campaigns', label: 'Campaigns', group: 'Google Ads', needs: 'google' },
+  { type: 'google:adgroups', label: 'Ad groups', group: 'Google Ads', needs: 'google' },
+  { type: 'google:adgroupcrm', label: 'Ad groups, CRM outcomes', group: 'Google Ads', needs: 'google' },
+  { type: 'google:ads', label: 'Ads', group: 'Google Ads', needs: 'google' },
+  { type: 'google:keywords', label: 'Keywords', group: 'Google Ads', needs: 'google' },
+  { type: 'google:matchrows', label: 'Match type', group: 'Google Ads', needs: 'google' },
+  { type: 'google:searchterms', label: 'Search terms', group: 'Google Ads', needs: 'google' },
+  { type: 'google:landing', label: 'Landing pages', group: 'Google Ads', needs: 'google' },
+  { type: 'google:daily', label: 'Day by day', group: 'Google Ads', needs: 'google' },
+  { type: 'analytics:kpis', label: 'Analytics scorecards', group: 'Analytics', needs: 'ga4' },
+  { type: 'analytics:funnel', label: 'Website-to-revenue funnel', group: 'Analytics', needs: 'ga4' },
+  { type: 'analytics:trend', label: 'Daily trend', group: 'Analytics', needs: 'ga4' },
+  { type: 'analytics:channels', label: 'Channels', group: 'Analytics', needs: 'ga4' },
+  { type: 'analytics:sources', label: 'Source / medium', group: 'Analytics', needs: 'ga4' },
+  { type: 'analytics:landing', label: 'Landing pages', group: 'Analytics', needs: 'ga4' },
+  { type: 'analytics:events', label: 'Events & devices', group: 'Analytics', needs: 'ga4' },
+  { type: 'location:scorecards', label: 'Location scorecards', group: 'Location', needs: 'ghl' },
+  { type: 'location:map', label: 'Lead map', group: 'Location', needs: 'ghl' },
+  { type: 'location:outcomes', label: 'Key events by location', group: 'Location', needs: 'ghl' },
+  { type: 'location:list', label: 'Every location', group: 'Location', needs: 'ghl' },
 ]
 const dashModuleFits = (m, c) => !m.needs || (m.needs === 'ghl' ? !!c.ghl : m.needs === 'meta' ? !!c.meta : m.needs === 'google' ? !!c.google : m.needs === 'ga4' ? !!c.ga4 : true)
 const DASH_PRESETS = [
@@ -6208,7 +6363,10 @@ function LostReasonsView({ clientId, range, nonce, currency, pipeName }) {
   const peopleOf = (g) => g.rows.map((r) => byContact.get(r.contactId) || { contactId: r.contactId, name: r.name, stage: r.stage, pipeline: r.pipeline, value: r.value, channelSource: r.source, utmContent: r.creative, formAnswers: [] })
   return (
     <>
+      <Blk id="lostreasons:scorecards">
       <LostScorecards cc={cc} range={range} money={money} cohort={cohort} filterNote={active.length ? active.map(([d, vals]) => `${LR_LABEL[d]}: ${vals.join(', ')}`).join(' · ') : null} />
+      </Blk>
+      <Blk id="lostreasons:table">
       <div className="card">
         <div className="exec-panel-h">Lost reasons <span className="sub">· {fmtNumber(rows.length)}{rows.length !== allTot ? ` of ${fmtNumber(allTot)}` : ''} lost{totVal ? `, ${money(totVal)}` : ''} · {rangeLabel(range)}</span></div>
         {st.status === 'loading' && !cc ? <Spinner big label="Loading lost deals…" />
@@ -6352,6 +6510,7 @@ function LostReasonsView({ clientId, range, nonce, currency, pipeName }) {
                   </>}
               </>}
       </div>
+      </Blk>
     </>
   )
 }
@@ -7222,8 +7381,17 @@ function intelReach(rows, leadTotal, prevRows, prevLeadTotal, multi = true) {
     const pr0 = prevBy.get(keyOf(rs[0]))
     const prevBase = (pr0 && pr0.leadBase) || prevLeadTotal || 0
     let above = base, prevAbove = prevBase
-    const mine = rs.map((r) => {
-      const pr = prevBy.get(keyOf(r))
+    // A calendar event counts everyone who booked OR reached its stage or any
+    // later one - the rule the reach bars draw with - so the bottleneck is
+    // chosen on the same numbers the bars show. Judged on raw counts, a calendar
+    // step with few bookings but many deals further down read as the leak while
+    // its bar, drawn on the implied count, plainly was not.
+    const effOf = (list) => list.map((r, i) => { const own = (r && r.count) || 0; if (!r || r.kind !== 'calendar') return own; let later = 0; for (let j = i + 1; j < list.length; j++) later = Math.max(later, (list[j] && list[j].count) || 0); return Math.max(own, later) })
+    const eff = effOf(rs), prevEff = effOf(rs.map((r) => prevBy.get(keyOf(r)) || null))
+    const mine = rs.map((r0, i) => {
+      const pr0 = prevBy.get(keyOf(r0))
+      const r = { ...r0, count: eff[i] }
+      const pr = pr0 ? { ...pr0, count: prevEff[i] } : undefined
       // On the Closed won basis, wins are counted by close date while leads are
       // counted by arrival, and every won deal is assumed to have passed every
       // stage - so a stage can carry more deals than the period's leads. That is
@@ -8449,6 +8617,10 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       if (def.internal && isViewer) return null   // the agency's own reads never reach a client
       const title = m.title || def.label
       if (m.type.startsWith('tab:')) { const node = tabNode(m.type.slice(4)); return node ? <div className="dash-mod" key={i}><div className="cc-group-lab dash-mod-t">{title}</div>{node}</div> : null }
+      if (!m.type.startsWith('sec:') && m.type.includes(':')) {
+        const tab = m.type.split(':')[0]; const node = tabNode(tab)
+        return node ? <div className="dash-mod" key={i}><div className="cc-group-lab dash-mod-t">{title}</div><DashPick.Provider value={new Set([m.type])}>{node}</DashPick.Provider></div> : null
+      }
       const b = reg.get(m.type); if (!b) return null
       if (m.type.startsWith('sec:')) return <V2Section key={i} id={m.type.slice(4)} title={title}>{b.node}</V2Section>
       return <div className="dash-mod" key={i}>{m.title ? <div className="cc-group-lab dash-mod-t">{m.title}</div> : null}{b.node}</div>
@@ -9327,11 +9499,14 @@ function CohortView({ clientId, currency, nonce }) {
   const chart = W.map((w) => ({ label: w.label, book: +rate(w.booked, w.leads).toFixed(1), win: +rate(w.won, w.leads).toFixed(1) }))
   return (
     <>
+      <Blk id="head">
       <div className="c360-head">
         <div className="section-title" style={{ margin: 0 }}>Cohort maturation <span className="sub">· leads by acquisition week, tracked to booked → shown → won · last {N} weeks{cur !== 'all' ? ` · ${opts.find(([k]) => k === cur)[1]}` : ''}</span></div>
         {opts.length > 1 && <div className="c360-controls"><div className="chan-toggle">{opts.map(([k, l]) => <button key={k} className={cur === k ? 'on' : ''} onClick={() => setChan(k)}>{l}</button>)}</div></div>}
       </div>
       {co.data.hasCrm && !co.data.crmConnected && <p className="cap" style={{ color: 'var(--warn)', marginTop: 0 }}>Caalano Systems isn't returning CRM data - funnel columns will be blank.</p>}
+      </Blk>
+      <Blk id="cohorts:scorecards">
       <div className="scorecard">
         <Sc label="Spend" value={T.spend ? money(T.spend) : '-'} />
         <Sc label="Leads" value={fmtNumber(T.leads)} />
@@ -9345,6 +9520,8 @@ function CohortView({ clientId, currency, nonce }) {
         <Sc label="Avg days → book" value={avgBook != null ? `${avgBook}d` : '-'} />
         <Sc label="Avg days → win" value={avgWon != null ? `${avgWon}d` : '-'} />
       </div>
+      </Blk>
+      <Blk id="cohorts:chart">
       <div className="card chart-card" style={{ marginTop: 14 }}>
         <h3>Conversion by cohort</h3><p className="cap">Book% and Win% for each acquisition week. Recent weeks sit lower because their deals are still closing.</p>
         <ResponsiveContainer width="100%" height={230}>
@@ -9359,6 +9536,8 @@ function CohortView({ clientId, currency, nonce }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      </Blk>
+      <Blk id="cohorts:table">
       <div className="table-wrap" style={{ marginTop: 14 }}><table style={{ minWidth: 1180 }}><thead><tr>
         <th style={{ textAlign: 'left' }}>Cohort week</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Booked</th><th>Book %</th><th>C/Book</th><th>Shown</th><th>Show %</th><th>Won</th><th>Win %</th><th>CAC</th><th>Revenue</th><th>ROAS</th><th>→ Book</th><th>→ Win</th>
       </tr></thead><tbody>
@@ -9381,6 +9560,7 @@ function CohortView({ clientId, currency, nonce }) {
         })}
       </tbody></table></div>
       <Caveat style={{ marginTop: 8 }}>Cohorts group opportunities by the week the lead was created (client timezone), then follow them to booked / shown / won as of now, using the same appointment-accurate logic as the ad tabs: (Nc) = booked then cancelled, (Np) = shown counted from the pipeline stage. The most recent {MATURING} weeks are flagged "maturing" - their Win% keeps rising as deals close, so compare like-aged cohorts. "→ Book" / "→ Win" are the average days from lead to booking / to won. Channel: <b>All</b> = every lead source against total ad spend (blended MER - flatters paid efficiency if you get organic/referral leads); <b>Non-Paid</b> = organic / referral / direct leads (no ad spend, so cost columns are blank); <b>Paid</b> = Meta + Google combined; <b>Meta</b> / <b>Google</b> = only leads whose first-touch UTM is that channel, vs that channel's own spend (true paid efficiency).</Caveat>
+      </Blk>
     </>
   )
 }
@@ -10554,6 +10734,7 @@ function ClinicView({ clientId, currency, nonce }) {
   const workTab = workTabs.some((t) => t.id === work) ? work : (workTabs[0] ? workTabs[0].id : null)
   return (
     <>
+      <Blk id="head">
       <div className="lvl-title">🏥 Health Clinic <span className="sub">· {fmtNumber(d.patientsWithData)} of {fmtNumber(d.patients)} contacts carry patient data{sy.identified ? ` · ${fmtNumber(sy.identified)} matched to a practice ID` : ''}{asAt ? ` · read ${asAt}` : ''}</span></div>
       <div className="cl-note">
         <p><b>This is a point-in-time view, not a date-range report.</b> The practice-management sync overwrites each patient&rsquo;s stats every run, so the CRM only ever holds today&rsquo;s values - the date range selected above doesn&rsquo;t apply here. Period and trend figures come from our own daily snapshots instead.</p>
@@ -10573,7 +10754,9 @@ function ClinicView({ clientId, currency, nonce }) {
         </div>
       </div> : null}
 
+      </Blk>
       {/* Five numbers, not nine. Everything else lives in the section it belongs to. */}
+      <Blk id="clinic:hero">
       <div className="timing-scards cl-hero">
         <div className="tm-sc hero"><span className="tm-lab">Lifetime value</span><b>{money(m.ltv)}</b><span className="tm-sub">{fmtNumber(m.ltvPatients || d.patientsWithData)} patients valued <ClinicDelta value={dl && dl.revenue} money={money} /></span></div>
         <div className="tm-sc"><span className="tm-lab">Avg LTV / patient</span><b>{money(m.avgLtv)}</b><span className="tm-sub">across patients with a value <ClinicDelta value={dl && dl.avgLtvDelta} money={money} /></span></div>
@@ -10583,6 +10766,8 @@ function ClinicView({ clientId, currency, nonce }) {
         <div className="tm-sc warn"><span className="tm-lab">Revenue at risk</span><b>{money(re.lostRevenue)}</b><span className="tm-sub">one &amp; done × the LTV gap</span></div>
       </div>
 
+      </Blk>
+      <Blk id="clinic:growth">
       <ClinicSection id="cl-growth" title="Growth" note="what actually moved, from our daily snapshots" src="snapshot" fields={['nightly clinic snapshot']}>
         {dl ? <div className="card">
           <div className="cap cl-cap">Last {dl.spanDays} days <span>· measured against our snapshot from {dl.since}</span></div>
@@ -10619,6 +10804,8 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection>
 
+      </Blk>
+      <Blk id="clinic:book">
       {di ? <ClinicSection id="cl-capacity" title="The book" note={`what's scheduled over the next ${di.windowDays || di.days.length} days`} src="diary" fields={['calendar events', 'openHours']}>
         <div className="card">
           <div className="timing-scards">
@@ -10654,6 +10841,8 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection> : null}
 
+      </Blk>
+      <Blk id="clinic:capacity">
       {(ut && ut.available) || (crec && crec.judged) || d.revPerAppt != null ? (
         <ClinicSection id="cl-util" title="Capacity &amp; recovery" note="how full the book is, and what the gaps cost" src="diary" fields={['calendar events', 'openHours', 'total_amount_spent', 'total_arrived']}>
           <div className="card">
@@ -10713,6 +10902,8 @@ function ClinicView({ clientId, currency, nonce }) {
         </ClinicSection>
       ) : null}
 
+      </Blk>
+      <Blk id="clinic:retention">
       <ClinicSection id="cl-retention" title="Retention" note="who comes back, and what it costs when they don't" src="diary" fields={['calendar events', 'total_arrived', 'total_appointments', 'total_amount_spent']}>
         <div className="card">
           <div className="cap cl-cap">Patient Visit Average <span>· and the averages that sit around it</span></div>
@@ -10805,6 +10996,8 @@ function ClinicView({ clientId, currency, nonce }) {
         </div>
       </ClinicSection>
 
+      </Blk>
+      <Blk id="clinic:cohorts">
       <ClinicSection id="cl-cohorts" title="Cohorts" note="patients grouped by when they first came in" src="synced" fields={['first_appointment_date', 'first_visit_date', 'total_arrived', 'total_amount_spent']}>
         <div className="card">
           <div className="cap cl-cap">Cohort value <span>· by first-appointment month</span></div>
@@ -10846,6 +11039,8 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection>
 
+      </Blk>
+      <Blk id="clinic:acq">
       <ClinicSection id="cl-acq" title="Acquisition" note="where patients come from, and what they end up worth" src="crm" fields={['attributions', 'how_did_you_hear_about_us', 'total_amount_spent']}>
         <div className="mr-two">
           {d.channels && d.channels.length ? <div className="card">
@@ -10885,6 +11080,8 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection>
 
+      </Blk>
+      <Blk id="clinic:ops">
       <ClinicSection id="cl-ops" title="Operations" note="attendance, billing and who delivers the care" src="synced" fields={['total_appointments', 'total_arrived', 'total_unpaid_balance', 'last_appt_practitioner', 'last_appt_type', 'last_appt_cancel_reason']}>
         <div className="mr-three">
           <div className="card">
@@ -10946,10 +11143,14 @@ function ClinicView({ clientId, currency, nonce }) {
         </div> : null}
       </ClinicSection>
 
+      </Blk>
+      <Blk id="clinic:bench">
       <ClinicSection id="cl-bench" title="Benchmark" note="how this clinic compares to the rest of the cohort">
         <ClinicBenchmark clientId={clientId} currency={currency} nonce={nonce} />
       </ClinicSection>
 
+      </Blk>
+      <Blk id="clinic:work">
       {workTab ? <ClinicSection id="cl-work" title="Worklists" note="click any patient to read their CRM notes" src="synced" fields={['upcoming_appt_count', 'last_appointment_date', 'total_arrived', 'total_unpaid_balance', 'total_amount_spent']}>
         <div className="card">
           <div className="cl-tabs">{workTabs.map((t) => (
@@ -10995,6 +11196,7 @@ function ClinicView({ clientId, currency, nonce }) {
         </div>
       </ClinicSection> : null}
 
+      </Blk>
       {peek ? (
         <Overlay>
           <div className="mr-drill-overlay no-print" onClick={() => setPeek(null)}>
@@ -11025,7 +11227,9 @@ function ClinicView({ clientId, currency, nonce }) {
         </Overlay>
       ) : null}
 
+      <Blk id="head">
       <Caveat>Patient stats come from the practice-management sync (Universal Plugins → your booking system) written onto each contact. Every sync <b>overwrites</b> them with current values, so everything here is a snapshot of right now. Period and trend figures come from the daily snapshots we take ourselves; rebooking and the retention curve are read from the calendars, which keep real per-booking history.</Caveat>
+      </Blk>
     </>
   )
 }
@@ -11071,12 +11275,15 @@ function CalPerfView({ clientId, range, nonce }) {
   const pct = (v) => (v == null ? '-' : `${v}%`)
   return (
     <>
+      <Blk id="head">
       <div className="lvl-title">📅 Calendar performance <span className="sub">· {fmtNumber(rows.length)} calendar{rows.length === 1 ? '' : 's'}{d.services ? ` · ${fmtNumber(d.services)} service calendar${d.services === 1 ? '' : 's'}` : ''}</span></div>
 
       <div className="cl-tabs" style={{ marginBottom: 12 }}>
         {CALPERF_CH.map((c) => <button key={c.id} type="button" className={`cl-tab ${ch === c.id ? 'on' : ''}`} onClick={() => setCh(c.id)}>{c.label}{c.id !== 'all' && d.byChannel && d.byChannel[c.id] ? <em>{fmtNumber(d.byChannel[c.id].booked)}</em> : null}</button>)}
       </div>
 
+      </Blk>
+      <Blk id="calperf:hero">
       <div className="timing-scards cl-hero">
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(tot.booked)}</b><span className="tm-sub">{ch === 'all' ? 'all sources' : CALPERF_CH.find((c) => c.id === ch).label}</span></div>
         <div className="tm-sc"><span className="tm-lab">Attended</span><b>{fmtNumber(tot.shown)}</b><span className="tm-sub">marked as arrived / showed</span></div>
@@ -11086,6 +11293,8 @@ function CalPerfView({ clientId, range, nonce }) {
         <div className={`tm-sc${tot.unresulted ? ' warn' : ''}`}><span className="tm-lab">Unresulted</span><b>{fmtNumber(tot.unresulted || 0)}</b><span className="tm-sub">occurred, no result set</span></div>
       </div>
 
+      </Blk>
+      <Blk id="calperf:bycal">
       <div className="card">
         <div className="cap cl-cap">By calendar <span>· {ch === 'all' ? 'all sources' : CALPERF_CH.find((c) => c.id === ch).label}</span></div>
         {top ? <div style={{ marginBottom: 14 }}>{shown.map(({ r, v }) => (
@@ -11109,6 +11318,8 @@ function CalPerfView({ clientId, range, nonce }) {
         <Caveat>Show rate = shown ÷ resulted (attended + no-show). A booking whose status was never set isn&rsquo;t counted as a miss; it is counted as <b>unresulted</b> so the gap is visible rather than hidden. Service Calendars are included alongside ordinary calendars; where a location runs a service menu, each service is reported on its own line.</Caveat>
       </div>
 
+      </Blk>
+      <Blk id="calperf:sources">
       <div className="card">
         <div className="cap cl-cap">Where the bookings came from</div>
         <div className="tbl-scroll"><table className="mini-tbl appt-tbl">
@@ -11125,6 +11336,7 @@ function CalPerfView({ clientId, range, nonce }) {
         {d.attributedPct < 50 ? <Caveat extra="cl-warn"><b>Only {d.attributedPct}% of bookings can be attributed to a source yet.</b> Channel comes from first-touch UTMs on the patient&rsquo;s contact, so a booking made by someone who never came through a tracked link has none. This split becomes the real answer once UTMs are captured on the booking journey - the view is here and will fill in on its own, with no change needed at that point.</Caveat>
           : <Caveat>Channel is the patient&rsquo;s first-touch attribution, so a calendar&rsquo;s show rate can be read per source - useful when paid traffic books readily but attends less reliably than a referral.</Caveat>}
       </div>
+      </Blk>
     </>
   )
 }
@@ -12696,11 +12908,14 @@ function LocationView({ clientId, range, nonce, currency, pipe: pipeProp, onPipe
   const max = Math.max(1, ...locs.map((l) => l.leads))
   return (
     <>
+      <Blk id="head">
       <div className="lvl-title">Lead locations <span className="sub">· where leads come from, who booked, who won · {rangeLabel(range)}</span></div>
       <FormPipeFilter pipes={pipes} value={pipe} onChange={setPipe} />
+      </Blk>
       {/* sc-fit, not the default: auto-fill leaves empty tracks on the right, so
           five tiles bunched at the left edge of a wide screen. auto-fit collapses
           them and the tiles take the width. */}
+      <Blk id="location:scorecards">
       <div className="scorecard sc-fit">
         <Sc label="Locations" value={fmtNumber(locs.length)} />
         <Sc label="Leads mapped" value={fmtNumber(tot.leads)} />
@@ -12708,10 +12923,14 @@ function LocationView({ clientId, range, nonce, currency, pipe: pipeProp, onPipe
         <Sc label="Won" value={fmtNumber(tot.won)} />
         <Sc label="Lost" value={fmtNumber(tot.lost)} />
       </div>
+      </Blk>
+      <Blk id="location:map">
       <LeadMap locs={locs} tall clientId={clientId} currency={currency} pipes={pipes} pipe={pipe} />
+      </Blk>
       {/* Which locations fire the most of a chosen outcome / key event. The pipeline
           filter above scopes both the map and this ranking; the metric dropdown adds
           every configured key event on top of Leads / Booked / Won / Lost. */}
+      <Blk id="location:outcomes">
       <div className="card" style={{ marginTop: 14 }}>
         <div className="exec-panel-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
           <span>Key events by location <span className="sub">· which suburbs / postcodes fire the most <b>{rank.cur.label}</b>{pipe !== 'all' ? ' · this pipeline' : (pipes.length > 1 ? ' · all pipelines (filter above)' : '')} · click a place for its leads</span></span>
@@ -12736,6 +12955,8 @@ function LocationView({ clientId, range, nonce, currency, pipe: pipeProp, onPipe
           : <div className="cap">No {rank.cur.label.toLowerCase()} recorded across these locations.</div>}
         {locMetric.startsWith('ke:') ? <Caveat style={{ marginTop: 8 }}>Key-event counts are over the leads we captured per location (people are sampled per location server-side), so treat them as directional where a suburb has a very large lead count.</Caveat> : null}
       </div>
+      </Blk>
+      <Blk id="location:list">
       <div className="lvl-title" style={{ fontSize: 12.5, marginTop: 14 }}>Every location <span className="sub">· ranked by leads</span></div>
       <div className="fm-loc-list" style={{ marginTop: 8 }}>
         {allPg.slice(locs).map((l) => (
@@ -12747,6 +12968,7 @@ function LocationView({ clientId, range, nonce, currency, pipe: pipeProp, onPipe
         ))}
       </div>
       <Pager pg={allPg} unit="places" />
+      </Blk>
       {locDrill && <LocationLeadsModal loc={locDrill} clientId={clientId} currency={currency} onClose={() => setLocDrill(null)} />}
     </>
   )
@@ -12879,6 +13101,7 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe, a
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
     <>
+      <Blk id="forms:scorecards">
       <div className="scorecard forms-sc">
         <Sc label="Forms" value={fmtNumber(forms.length)} />
         <Sc label="Leads" value={fmtNumber(tot.leads)} />
@@ -12888,8 +13111,14 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe, a
         <Sc label="Revenue" value={money(tot.revenue)} />
         {anyQual ? <Sc label="Ideal client" value={fmtNumber(qualTot)} flat={tot.leads ? `${Math.round((qualTot / tot.leads) * 100)}% of leads fit a saved profile` : undefined} /> : null}
       </div>
+      </Blk>
+      <Blk id="head">
       <FormPipeFilter pipes={pipes} value={pipeFilter} onChange={setPipeFilter} />
+      </Blk>
+      <Blk id="forms:charts">
       <FormsCharts forms={forms} kEvents={kEvents} reached={ke.reached} evLabel={evLabel} />
+      </Blk>
+      <Blk id="forms:table">
       <div className="lvl-title forms-title" style={{ marginTop: 14 }}><span>Form performance <span className="sub">· {hasKe ? 'leads → key events' : 'leads → booked → won'} by form · {rangeLabel(range)} · 📱 Meta lead form · 🌐 website form · click a form to expand</span></span>{canExport && rows.some((r) => r._leads) ? <button type="button" className="forms-export" onClick={exportCsv} title="One row per lead, every answer as a column, with status, stage, key events, ideal-client fit and source">Export CSV</button> : null}</div>
       <div className="table-wrap"><table>
         <thead><tr><th style={{ width: 22 }} /><Th k="form" l>Form</Th><Th k="leads">Leads</Th>{anyQual ? <Th k="qualified">Ideal client</Th> : null}{hasKe ? kEvents.map((k, i) => <Th key={i} k={'ke' + i}>{evLabel(k)}</Th>) : <><Th k="booked">Booked</Th><Th k="won">Won</Th></>}<Th k="revenue">Revenue</Th><Th k="avgDeal">Avg Deal</Th></tr></thead>
@@ -12921,6 +13150,7 @@ function FormsView({ clientId, currency, range, nonce, pipe: pipeProp, onPipe, a
         })}
       </table></div>
       <Caveat>Leads = distinct contacts whose first form in this period was this one. {hasKe ? <>Each key-event column counts the form&apos;s leads who reached that step of <b>this client&apos;s configured key events</b> (set in Settings), with % of the form&apos;s leads beside it; Revenue is from won opportunities.</> : <>Booked comes from the date-of-action appointment feed; Won / Revenue from won opportunities. Set this client&apos;s <b>key events</b> in Settings to funnel every form by them.</>} <b>Meta Lead Forms</b> are grouped by their Facebook form name so different friction / qualification versions stay separate; <b>website forms</b> by their Caalano Systems form name. A higher-friction form usually shows fewer Leads but higher conversion. <b>Click a form</b> to break its leads down by the answers they gave (budget, type, timeframe…) and see which answers convert. Similar text answers (e.g. NSW / nsw / New South Wales) are merged - hover an answer to see what it combines.</Caveat>
+      </Blk>
       {editForm && <FormSettingsModal clientId={clientId} form={editForm} pipes={pipes} onClose={() => setEditForm(null)} />}
     </>
   )
@@ -13046,8 +13276,11 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
   const bd = C.byBookedBy
   return (
     <div className="timing-view">
+      <Blk id="head">
       <div className="appt-head"><div><h3 style={{ margin: '0 0 2px' }}>Appointments - booking timing &amp; outcomes</h3><p className="cap" style={{ margin: 0 }}>How far in advance calls are booked, who books them, and how that affects show / win rates and time-to-close. Bookings are counted on the day they were booked{usedNames.length ? ` · based on: ${usedNames.slice(0, 4).join(', ')}${usedNames.length > 4 ? ` +${usedNames.length - 4}` : ''}` : ''}.</p></div>{selectors}</div>
       {calChips}
+      </Blk>
+      <Blk id="appts:status">
       <div className="timing-scards appt-status-row">
         <div className="tm-sc"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">in period</span></div>
         <div className="tm-sc"><span className="tm-lab">Occurred</span><b>{fmtNumber(C.occurred)}</b><span className="tm-sub">time passed, not cancelled</span></div>
@@ -13063,8 +13296,10 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
           <button type="button" className="appt-gap-link" onClick={() => setApptDrill(true)}>view people</button>
         </div>
       )}
+      </Blk>
       {apptDrill && <ApptResultedDrill C={C} onClose={() => setApptDrill(false)} />}
       {bucketDrill && <ApptResultedDrill C={bucketResultC(C, bucketDrill)} label={`booked ${bucketDrill.label.toLowerCase()} ahead`} onClose={() => setBucketDrill(null)} />}
+      <Blk id="appts:scorecards">
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Booked</span><b>{fmtNumber(C.booked)}</b><span className="tm-sub">appointments</span></div>
         <div className="tm-sc"><span className="tm-lab">Time to book</span><b>{fmtDays(C.medianTimeToBookDays)}</b><span className="tm-sub">median · avg {fmtDays(C.avgTimeToBookDays)} · lead → booked</span></div>
@@ -13076,6 +13311,8 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
         <div className="tm-sc"><span className="tm-lab">Self-booked</span><b>{C.selfPct == null ? '-' : `${C.selfPct}%`}</b><span className="tm-sub">{C.self} self · {C.staff} staff</span></div>
       </div>
 
+      </Blk>
+      <Blk id="appts:leadtime">
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Booking lead time - volume, downstream rates &amp; momentum</div>
         <ResponsiveContainer width="100%" height={280}>
@@ -13110,6 +13347,8 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
         <Caveat style={{ marginTop: 10 }}>Show rate = shown ÷ resulted (shown + no-show). Appointments still to come, cancelled in advance, or past their time with no result set are left out; the last group is reported as <b>unresulted</b>. <b>Cancel %</b> = cancelled ÷ booked (do far-out bookings cancel more?). <b>Time to close</b> = average days from booking to won (momentum: do sooner bookings close faster / more?). Small samples make single rows noisy - read the trend.</Caveat>
       </div>
 
+      </Blk>
+      <Blk id="appts:slots">
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>When the call is scheduled - show rate by day &amp; time</div>
         <div className="appt-when">
@@ -13145,6 +13384,8 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
         <Caveat style={{ marginTop: 8 }}>Bars = appointments that have occurred; line = show rate. Times are in the client's timezone ({dd.tz || '-'}). Use this to spot the days / times leads actually turn up.</Caveat>
       </div>
 
+      </Blk>
+      <Blk id="appts:selfstaff">
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Self-booked vs staff-booked</div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl">
@@ -13165,6 +13406,8 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
         <Caveat style={{ marginTop: 10 }}>Self-booked = the lead booked the call themselves (no staff user on the calendar event); staff-booked = a team member set it. Comparing show/win rates tells you whether pushing self-booking links helps or hurts.</Caveat>
       </div>
 
+      </Blk>
+      <Blk id="appts:byuser">
       {(C.byUser || []).length > 1 && <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Performance by user{dd.userMismatch ? <span className="cap" style={{ fontWeight: 400 }}> · {dd.userMismatch} bookings where the appointment user differs from the opportunity owner</span> : null}</div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl">
@@ -13184,6 +13427,8 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
         <Caveat style={{ marginTop: 10 }}>"User" is the person the appointment is assigned to on the calendar. Use the User filter above to scope the whole tab to one person.</Caveat>
       </div>}
 
+      </Blk>
+      <Blk id="head">
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How self vs staff is decided ({(dd.bookedBySources || []).length} booking sources)</button>
         {showDbg && <>
@@ -13191,6 +13436,7 @@ function AppointmentsView({ clientId, range, nonce, pipe: pipeProp, onPipe }) {
           <div className="table-wrap"><table className="mini-tbl"><thead><tr><th>Event source · classification</th><th>Count</th></tr></thead><tbody>{(dd.bookedBySources || []).map((s) => <tr key={s.source}><td>{s.source}</td><td>{s.count}</td></tr>)}{!(dd.bookedBySources || []).length && <tr><td colSpan={2} className="cap">No booking sources in the sample.</td></tr>}</tbody></table></div>
         </>}
       </div>
+      </Blk>
     </div>
   )
 }
@@ -13923,6 +14169,7 @@ function EnquiryTimesSection({ clientId, range, nonce, pipe: pipeProp, onPipe })
   const hoursLabel = hrs ? `${ENQ_DAYS.filter((_, i) => hrs.days.includes((i + 1) % 7)).join(' ')} ${enqHourLabel(Math.floor(hrs.startMin / 60))}\u2013${enqHourLabel(Math.floor(hrs.endMin / 60))}` : null
   return (
     <div className="stagetime" style={{ marginBottom: 18 }}>
+      <Blk id="timing:enqtimes">
       <div className="lvl-title collapse-t" style={{ marginTop: 0 }} onClick={() => setOpen(!open)} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}>
         <span className={`collapse-x${open ? ' on' : ''}`}>▸</span>
@@ -14028,6 +14275,8 @@ function EnquiryTimesSection({ clientId, range, nonce, pipe: pipeProp, onPipe })
           </Caveat>
         </div>
       ) : null}
+      </Blk>
+      <Blk id="timing:enqpaid">
       <div className="lvl-title collapse-t" style={{ marginTop: 14 }} onClick={() => setPaidOpen(!paidOpen)} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPaidOpen(!paidOpen) } }}>
         <span className={`collapse-x${paidOpen ? ' on' : ''}`}>▸</span>
@@ -14047,6 +14296,7 @@ function EnquiryTimesSection({ clientId, range, nonce, pipe: pipeProp, onPipe })
         </div>
         <PaidByHour d={d} chan={paidChan} gran={paidGran} />
       </div> : null}
+      </Blk>
     </div>
   )
 }
@@ -14078,6 +14328,7 @@ function StageTimingSection({ clientId, nonce }) {
   const fmtDays = (n) => (n == null ? '-' : n >= 1 ? `${n < 10 ? n.toFixed(1) : Math.round(n)}d` : `${Math.round(n * 24)}h`)
   return (
     <div className="stagetime" style={{ marginBottom: 18 }}>
+      <Blk id="timing:stagetime">
       <div className="lvl-title collapse-t" style={{ marginTop: 0 }} onClick={() => setOpen(!open)} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}>
         <span className={`collapse-x${open ? ' on' : ''}`}>▸</span>
@@ -14115,6 +14366,7 @@ function StageTimingSection({ clientId, nonce }) {
         const pct = tot ? Math.round((dt.inflated / tot) * 100) : 0
         return <> <b>{fmtNumber(dt.inflated)} of {fmtNumber(tot)} deals ({pct}%) have no stage-change date recorded</b>, so their wait is measured from when the lead arrived instead. For those the figures are an <b>upper bound</b> - a deal that spent months in earlier stages and moved here yesterday still reads as months. Stages carrying any are marked <span className="st-est">~n</span>.{pct >= 40 ? ' At this proportion, treat the whole table as indicative rather than measured.' : ''}</>
       })()}</p> : null}
+      </Blk>
     </div>
   )
 }
@@ -14216,6 +14468,7 @@ function TimingView({ clientId, range, nonce, currency }) {
   const fastCount = d.buckets.filter((b) => /5 min|5-15|15-60/.test(b.label)).reduce((a, b) => a + b.count, 0)
   return (
     <div className="timing-view">
+      <Blk id="head">
       <div className="card timing-intro">
         <h3 style={{ margin: '0 0 4px' }}>Speed to Lead</h3>
         <p className="cap" style={{ margin: 0 }}>Time from a lead coming in to the <b>first manual (human) message or call</b> made to them. Automated workflow / campaign / bulk sends are excluded, so this reflects how fast a person actually reaches out (an outbound call counts even if the dialer didn't attribute a user). {d.full ? <>Covers the <b>whole date range</b> - {fmtNumber(d.totalLeads)} leads.</> : <>Based on a sample of the {d.sampled} most recent lead{d.sampled === 1 ? '' : 's'} in this range{d.totalLeads > d.sampled ? ` (of ${d.totalLeads})` : ''}.</>}</p>
@@ -14233,6 +14486,8 @@ function TimingView({ clientId, range, nonce, currency }) {
           ? <div className="tm-hours on">🕘 Measured within working hours · <b>{fmtHours(d.hours)}</b> - after-hours gaps don't count against response time. Change in Settings → client → Summary.</div>
           : <div className="tm-hours">🕘 Measuring raw round-the-clock time. Set the team's <b>working hours</b> in Settings → client → Summary so overnight leads aren't counted as slow responses.</div>}
       </div>
+      </Blk>
+      <Blk id="timing:scorecards">
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Median speed to lead</span><b>{fmtDuration(d.medianMin)}</b><span className="tm-sub">typical human response</span></div>
         <div className="tm-sc"><span className="tm-lab">Average</span><b>{fmtDuration(d.avgMin)}</b><span className="tm-sub">mean of manual replies</span></div>
@@ -14241,6 +14496,8 @@ function TimingView({ clientId, range, nonce, currency }) {
         <div className="tm-sc warn"><span className="tm-lab">Only automation</span><b>{d.onlyAuto}</b><span className="tm-sub">no human message yet</span></div>
         <div className="tm-sc warn"><span className="tm-lab">No outreach</span><b>{d.noOutbound}</b><span className="tm-sub">no outbound at all</span></div>
       </div>
+      </Blk>
+      <Blk id="timing:contact">
       {(() => {
         const cr = (d && d.contactRate) || (st.data && st.data.contactRate) || null
         if (!cr || !cr.base) return null
@@ -14259,6 +14516,8 @@ function TimingView({ clientId, range, nonce, currency }) {
           </div>
         )
       })()}
+      </Blk>
+      <Blk id="timing:outcomes">
       {(() => {
         const oc = (d && d.outcome) || (st.data && st.data.outcome) || null
         if (!oc) return null
@@ -14274,7 +14533,9 @@ function TimingView({ clientId, range, nonce, currency }) {
           </div>
         )
       })()}
+      </Blk>
       {drill && <TimingDrill drill={drill} money={money} onClose={() => setDrill(null)} />}
+      <Blk id="timing:reply">
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>How fast leads get a human reply</div>
         <div className="timing-bars">
@@ -14288,6 +14549,8 @@ function TimingView({ clientId, range, nonce, currency }) {
         </div>
         <Caveat style={{ marginTop: 12 }}>{d.measured ? `${fastCount} of ${d.measured} measured leads got a human reply within the hour.` : 'No manual replies measured in the sample.'} Speed to Lead is one of the strongest predictors of conversion - the first few minutes matter most.</Caveat>
       </div>
+      </Blk>
+      <Blk id="timing:convert">
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Does responding faster convert better? - outcomes by response speed</div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl">
@@ -14307,6 +14570,8 @@ function TimingView({ clientId, range, nonce, currency }) {
         </table></div>
         <Caveat style={{ marginTop: 10 }}>Each row is the measured leads whose first human reply fell in that window. Book % = booked ÷ leads, Show % = shown ÷ booked, Win % = won ÷ leads. If the top rows convert best, faster response is paying off. Small samples make single rows noisy - read the trend, not one cell.</Caveat>
       </div>
+      </Blk>
+      <Blk id="head">
       <div className="card">
         <button className="linker-toggle" onClick={() => setShowDbg((v) => !v)}>{showDbg ? '▾' : '▸'} How manual vs automated is decided ({(d.sourceBreakdown || []).length} message sources)</button>
         {showDbg && <>
@@ -14315,6 +14580,7 @@ function TimingView({ clientId, range, nonce, currency }) {
           <TimingDebug clientId={clientId} range={range} />
         </>}
       </div>
+      </Blk>
     </div>
   )
 }
@@ -14892,6 +15158,7 @@ function CallReportView({ clientId, range, nonce, pipe, onPipe }) {
   const nameOf = (r) => r.name || (r.userId === 'unassigned' ? 'Unassigned / automated' : 'User ' + String(r.userId).slice(-4))
   return (
     <>
+      <Blk id="calls:activity">
       <div className="card">
         <div className="exec-panel-h">Call activity <span className="sub">· Caalano Systems dialer · {rangeLabel(range)}{d.partial ? ' · high volume — showing the most recent calls in range' : ''}</span>{d.loading ? <span className="call-more" title="Earlier days are still loading - the figures below are rising as they land">still loading {prog.done}/{prog.total} days…</span> : null}</div>
         <div className="timing-scards">
@@ -14905,9 +15172,13 @@ function CallReportView({ clientId, range, nonce, pipe, onPipe }) {
           {t.missedInbound ? <div className="tm-sc warn"><span className="tm-lab">Missed inbound</span><b>{fmtNumber(t.missedInbound)}</b><span className="tm-sub">unanswered / voicemail</span></div> : null}
         </div>
       </div>
+      </Blk>
+      <Blk id="calls:cadence">
       <CallCadenceSection clientId={clientId} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe}
         cadence={d.cadence} cohort={cohort} loading={cohort === undefined}
         pipes={(cohort && cohort.pipelines) || null} />
+      </Blk>
+      <Blk id="calls:daily">
       {d.daily && d.daily.length > 1 && (() => {
         // Pick the chart series: all reps (the merged daily) or one rep's per-day
         // data, mapped onto every date in range so gaps read as 0 not blanks.
@@ -14941,6 +15212,8 @@ function CallReportView({ clientId, range, nonce, pipe, onPipe }) {
           </div>
         )
       })()}
+      </Blk>
+      <Blk id="calls:scoreboard">
       <div className="card">
         <div className="exec-panel-h">Rep scoreboard <span className="sub">· ranked by outbound volume · ★ top caller</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl">
@@ -14967,6 +15240,7 @@ function CallReportView({ clientId, range, nonce, pipe, onPipe }) {
         </table></div>
         {!d.speedAvailable && <p className="cap" style={{ margin: '8px 2px 0' }}>{d.batched ? 'Speed-to-lead needs the full range in one pull, so it’s omitted on wide windows - pick a shorter range (≤ a few days) to see it.' : 'Speed-to-lead is omitted this load (the lead-timing pull didn’t finish in time) - refresh to try again.'}</p>}
       </div>
+      </Blk>
     </>
   )
 }
@@ -15104,10 +15378,13 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
   const Th = ({ k, children, l }) => <th className={l ? 'lft' : 'num'} onClick={() => setKey(k)} style={{ cursor: 'pointer' }}>{children}{sort.key === k ? (sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>
   return (
     <div className="timing-view">
+      <Blk id="head">
       <div className="appt-head">
         <div><h3 style={{ margin: '0 0 2px' }}>Users - sales-rep performance</h3><p className="cap" style={{ margin: 0 }}>Opportunities grouped by their <b>assigned user</b>: full funnel, per-stage reach, win rate, revenue and time-to-close. The channel filter scopes each rep's leads by their first-touch UTM; cost figures use the <b>{chan === 'nonpaid' ? 'n/a - no ad spend for non-paid' : chan === 'meta' ? 'Meta' : chan === 'google' ? 'Google' : chan === 'paid' ? 'Meta + Google' : 'total'}</b> ad spend ÷ that rep's outcomes (blended - spend isn't caused by the rep).</p></div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>{chanSel}{pipeSel}</div>
       </div>
+      </Blk>
+      <Blk id="users:scorecards">
       <div className="timing-scards">
         <div className="tm-sc hero"><span className="tm-lab">Reps</span><b>{fmtNumber(users.length)}</b><span className="tm-sub">with assigned leads</span></div>
         <div className="tm-sc"><span className="tm-lab">Leads</span><b>{fmtNumber(tot.leads)}</b><span className="tm-sub">assigned in range</span></div>
@@ -15116,6 +15393,8 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
         <div className="tm-sc"><span className="tm-lab">Revenue</span><b>{money(tot.revenue)}</b><span className="tm-sub">{totalSpend ? `${money(totalSpend)} ad spend` : ''}</span></div>
       </div>
 
+      </Blk>
+      <Blk id="users:leaderboard">
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Leaderboard <span style={{ fontWeight: 400 }}>· click a rep to expand their funnel &amp; pipelines</span></div>
         <div className="table-wrap"><table className="mini-tbl appt-tbl users-tbl u-lb">
@@ -15213,6 +15492,8 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
         <Caveat style={{ marginTop: 10 }}>{stageCols.length ? <>The key event columns count how many of each rep's leads reached that stage or any later one (cumulative), in pipeline order; click a heading to sort by it. Configure them in Settings → the client → Key events. </> : null}Booked / Shown come from the appointment feed for each rep's assigned leads; Won / Revenue from won opportunities. <b>Cost / Won</b> = the account's total ad spend ÷ this rep's won deals (blended - it shows which rep turns the shared ad spend into revenue most efficiently, not that the rep caused the spend).</Caveat>
       </div>
 
+      </Blk>
+      <Blk id="users:wonrev">
       <div className="card">
         <div className="cap" style={{ fontWeight: 700, marginBottom: 8 }}>Won &amp; revenue by rep</div>
         <ResponsiveContainer width="100%" height={Math.max(160, chartData.length * 34 + 30)}>
@@ -15226,6 +15507,8 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
         </ResponsiveContainer>
       </div>
 
+      </Blk>
+      <Blk id="users:funnel">
       {(() => {
         // Funnel by rep, drawn: each rep's leads as a track scaled to the busiest
         // rep, with booked, shown and won nested inside it. The leaderboard below
@@ -15253,7 +15536,10 @@ function UsersView({ clientId, range, nonce, currency, wonBasis = 'closed', pipe
         </div>
       })()}
 
+      </Blk>
+      <Blk id="users:activity">
       {repActivity}
+      </Blk>
 
       {drill && (() => {
         const repTabs = [...new Set(drill.deals.map((x) => x.user).filter(Boolean))].sort((a, b) => a.localeCompare(b))

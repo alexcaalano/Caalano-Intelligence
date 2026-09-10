@@ -18,6 +18,16 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.529.0 - 2026-09-10 · `PENDING` - Key event reach two-up: figures fit their column
+
+- **The figure column no longer crowds the card edge** when two pipelines sit
+  side by side. The column is wider, the label column a touch narrower, and
+  the wording is shorter at half width: "27 booked · 50 reached" and "36% of
+  50 · $347.00" instead of the full-width phrasing, which wrapped onto three
+  lines and ran to the edge. Full-width chains keep the longer wording.
+
+---
+
 ## v3.528.0 - 2026-09-10 · `5ed2d80` - Custom dashboards: every card of every tab is a module
 
 - **78 card modules.** Each card on Users, Appointments, Calendars, Call

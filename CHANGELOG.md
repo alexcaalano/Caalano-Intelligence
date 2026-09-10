@@ -18,6 +18,23 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.534.0 - 2026-09-10 · `PENDING` - Viewers get the CRM drill their grant covers; tiles stop reading zero
+
+- **The CRM drill no longer refuses every viewer.** A blanket "Staff only"
+  check in that scope predated the grant model, so a viewer granted
+  Caalano360, Lost Reasons or a custom dashboard never received the drill,
+  and every section built on it (Key event reach, Pipeline performance,
+  Revenue bottleneck, Lost reasons, Team performance and the rest) silently
+  disappeared for them. The scope now follows the same grant check as every
+  other view.
+- **Headline tiles no longer read 0 for viewers.** With the drill absent, the
+  tiles fell back to the per-rep payload at a field that stopped existing
+  when that payload became a pipeline × channel grid, so opportunities, won
+  and revenue summed to zero against a real previous period ("-100% vs
+  prev"). The fallback reads the right row now.
+
+---
+
 ## v3.533.0 - 2026-09-10 · `1c9fe43` - A failed CRM read is a gap, never zero
 
 - **The health score flags a failed CRM read** the way it already flags a

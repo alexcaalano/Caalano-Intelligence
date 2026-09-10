@@ -4151,7 +4151,10 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'ccdrill') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'ccdrill', client, ghl: false })
-    if (me && me.role === 'viewer') return json({ scope: 'ccdrill', client, error: 'Staff only.' }, 403)
+    // Viewers reach this scope through the same grant check as every other view
+    // (Caalano360, Lost Reasons, or a custom dashboard that needs it); the old
+    // blanket "Staff only" refusal here predated that and silently emptied every
+    // drill-based section for a viewer, whatever they were granted.
     if (!(await isConnected().catch(() => false))) return json({ scope: 'ccdrill', client, connected: false })
     const channel = url.searchParams.get('channel') || 'all'
     try {

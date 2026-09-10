@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.533.0'
+const APP_VERSION = '3.534.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -6898,8 +6898,14 @@ function BottleneckPanel({ kpis, money, clientId, cc, health, currency, chan = '
 // breakdown (with names), which the health payload doesn't carry.
 // Aggregate the scope=users feed into the command-centre CRM rollup. Pure so it can
 // be a stale-while-revalidate transform (cached across tab/filter switches).
-function aggUsersToCrm(j) {
-  const us = (j && j.users) || []
+function aggUsersToCrm(j, chan = 'all') {
+  // The per-rep payload carries every pipeline × channel combo; the account-wide
+  // fallback for the tiles reads the all-pipelines row for the asked channel. It
+  // used to read a top-level list that no longer exists, so it summed to zero -
+  // which the tiles showed as "0 opportunities" whenever the drill was absent.
+  const cb = j && j.combos
+  const hit = cb && cb.all && (cb.all[chan] || cb.all.all)
+  const us = (hit && hit.users) || (j && j.users) || []
   const a = { opps: 0, open: 0, openValue: 0, lost: 0, lostValue: 0, won: 0, revenue: 0, booked: 0, shown: 0 }
   const rs = {}
   for (const u of us) {
@@ -8429,7 +8435,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [cashOn, setCashOn] = useState(() => loadCashOn(clientId))
   useEffect(() => { setCashOn(loadCashOn(clientId)); return onSettings(() => setCashOn(loadCashOn(clientId))) }, [clientId])
   const health = useHealth(clientId, range, nx('ads'), reload, wonBasis)
-  const crmAggSt = useSwrJson(crmAggUrl(clientId, range, nx('users'), chan), { transform: aggUsersToCrm })
+  const crmAggSt = useSwrJson(crmAggUrl(clientId, range, nx('users'), chan), { transform: (j) => aggUsersToCrm(j, chan) })
   const crmAgg = crmAggSt.data
   const ccDrill = useCcDrill(clientId, range, nx('drill'), chan, wonBasis)
   const ccRaw = (ccDrill.status === 'ok' && ccDrill.data && ccDrill.data.oppsBySource) ? ccDrill.data : null

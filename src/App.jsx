@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.536.0'
+const APP_VERSION = '3.537.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -912,7 +912,12 @@ function MiniDelta({ cur, prev, goodWhenDown = false, neutral = false }) {
   if (!isFinite(pct)) return null
   const up = pct >= 0
   const cls = neutral ? 'flat' : (goodWhenDown ? (up ? 'down' : 'up') : (up ? 'up' : 'down'))
-  return <span className={`mini-delta ${cls}`}>{up ? '▲' : '▼'} {fmtPct(Math.abs(pct), 0)}</span>
+  // Past ten-fold the exact figure says nothing a reader can use ("▲ 60,206%"
+  // from a $10k prior period) and spills out of its tile; it reads as a
+  // multiple instead, with the exact change on hover.
+  const abs = Math.abs(pct)
+  const big = abs >= 1000
+  return <span className={`mini-delta ${cls}`} title={big ? `${up ? '+' : '-'}${fmtPct(abs, 0)} vs previous period` : undefined}>{up ? '▲' : '▼'} {big ? `${Math.round(abs / 100 + 1)}×` : fmtPct(abs, 0)}</span>
 }
 // --- Data maturity ---------------------------------------------------------
 // A date range shorter than a typical sales cycle can't contain fully-closed

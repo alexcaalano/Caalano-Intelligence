@@ -18,6 +18,17 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.537.0 - 2026-09-10 · `PENDING` - Revenue tile stays inside its card
+
+- **A seven-figure Revenue and its change badge no longer spill past the
+  tile.** The value wraps inside the card and the badge drops to a second
+  line when there is no room.
+- **Very large changes read as a multiple.** Past ten-fold, "▲ 60,206%" says
+  nothing a reader can use; the badge shows "▲ 603×" instead, with the exact
+  percentage on hover. Everything under ten-fold is unchanged.
+
+---
+
 ## v3.536.0 - 2026-09-10 · `eae15ed` - Pipeline performance counts calendar events as Key event reach does
 
 - **The two views agree to the number.** Pipeline performance now counts a

@@ -2255,7 +2255,11 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .kesc-clickable { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
 .kesc-clickable:hover { border-color: var(--brand, #4f7cff); box-shadow: 0 3px 12px rgba(79,124,255,.14); }
 .kesc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
-.kesc-v { font-size: 23px; font-weight: 780; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 6px; }
+/* A seven-figure value and its badge wrap inside the tile rather than running
+   past its edge; the badge drops to a second line when there is no room. */
+.kesc { min-width: 0; }
+.kesc-v { font-size: 23px; font-weight: 780; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+.kesc-v .mini-delta { white-space: nowrap; }
 /* One fact per line: the text takes the row, the delta sits at the right edge
    and never wraps into the sentence. */
 .kesc-line { font-size: 11.5px; color: var(--muted); display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: start; line-height: 1.35; }

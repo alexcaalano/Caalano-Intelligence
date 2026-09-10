@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.527.0 - 2026-09-10 · `PENDING` - Custom dashboards: Meta Ads, Google Ads and Analytics as modules
+## v3.527.0 - 2026-09-10 · `4590812` - Custom dashboards: Meta Ads, Google Ads and Analytics as modules
 
 - **Meta Ads, Google Ads and Analytics join the module list**, each offered
   only when the client has that account linked. A module makes the same deep

@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.533.0 - 2026-09-10 · `PENDING` - A failed CRM read is a gap, never zero
+## v3.533.0 - 2026-09-10 · `1c9fe43` - A failed CRM read is a gap, never zero
 
 - **The health score flags a failed CRM read** the way it already flags a
   failed ad read. The period's opportunity read used to fail silently into

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.535.0'
+const APP_VERSION = '3.536.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -7338,13 +7338,23 @@ function PipelinePerformance({ cc, pcc, clientId, currency, spend }) {
             </div>
             <div className="scorecard sc-fit kesc-row">
               <KeScorecard label="Leads" value={leadsP} prev={prevLeadsP} currency={currency} costUnit="lead" cost={costOf(pipeSpend, leadsP)} prevCost={costOf(pipeSpendPrev, prevLeadsP)} />
-              {rows.map((r, i) => {
-                const pr = pByLabel[r.label]; const prevCount = pr ? pr.count : 0
-                const show = calShowOf(r, pr)
-                return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={r.count} prev={pp ? prevCount : null} currency={currency} pop={calPopRows(r)}
-                  pctLeads={leadsP ? (r.count / leadsP) * 100 : null} prevPctLeads={prevLeadsP ? (prevCount / prevLeadsP) * 100 : null}
-                  cost={costOf(pipeSpend, r.count)} prevCost={costOf(pipeSpendPrev, prevCount)} show={show} />
-              })}
+              {(() => {
+                // Same rule as Key event reach: a calendar event counts everyone who
+                // booked OR reached its stage or any later one, so a deal at Lodged
+                // has had its strategy session even if the booking was never logged
+                // against that calendar. The two views then agree to the number.
+                const effOf = (list) => list.map((r, i) => { const own = (r && r.count) || 0; if (!r || r.kind !== 'calendar') return own; let later = 0; for (let j = i + 1; j < list.length; j++) later = Math.max(later, (list[j] && list[j].count) || 0); return Math.max(own, later) })
+                const eff = effOf(rows), prevEff = effOf(rows.map((r) => pByLabel[r.label] || null))
+                return rows.map((r, i) => {
+                  const pr = pByLabel[r.label]; const count = eff[i], prevCount = pr ? prevEff[i] : 0
+                  const show = calShowOf(r, pr)
+                  const implied = r.kind === 'calendar' && count > (r.count || 0) ? count - (r.count || 0) : 0
+                  return <KeScorecard key={i} label={r.label.replace(/^📅 /, '')} value={count} prev={pp ? prevCount : null} currency={currency} pop={calPopRows(r)}
+                    pctLeads={leadsP ? (count / leadsP) * 100 : null} prevPctLeads={prevLeadsP ? (prevCount / prevLeadsP) * 100 : null}
+                    cost={costOf(pipeSpend, count)} prevCost={costOf(pipeSpendPrev, prevCount)} show={show}
+                    note={implied ? <span title="Deals that reached a later key event without a booking or the linked stage recorded against this one. They must have passed it, so they are counted here - as Key event reach does.">{fmtNumber(implied)} implied by later stages</span> : null} />
+                })
+              })()}
               <KeScorecard label="Won" value={p.won} prev={pp ? pp.won : null} currency={currency} costUnit="won"
                 pctLeads={leadsP ? (p.won / leadsP) * 100 : null} prevPctLeads={prevLeadsP ? ((pp.won || 0) / prevLeadsP) * 100 : null}
                 cost={costOf(pipeSpend, p.won)} prevCost={costOf(pipeSpendPrev, pp ? pp.won : 0)} />

@@ -18,6 +18,18 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.536.0 - 2026-09-10 · `PENDING` - Pipeline performance counts calendar events as Key event reach does
+
+- **The two views agree to the number.** Pipeline performance now counts a
+  calendar key event as everyone who booked it OR reached its stage or any
+  later one, the rule Key event reach draws with. A deal sitting at Lodged
+  has had its strategy session whether or not the booking was logged
+  against that calendar. Where the later stages add people, the tile says
+  "N implied by later stages" so the gap between recorded and implied stays
+  visible. Share of leads and cost per event follow the same count.
+
+---
+
 ## v3.535.0 - 2026-09-10 · `314d28d` - Key-event tiles and the platform drill: room to read
 
 - **Key-event scorecards read one fact per line.** The show line is now

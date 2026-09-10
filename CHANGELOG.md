@@ -18,6 +18,29 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.526.0 - 2026-09-10 · `PENDING` - Custom dashboards: grant them viewer by viewer
+
+- **Who can see it**, in the builder: Super Admins only (the default), or
+  viewers you tick in Permissions. Once a dashboard is opened to viewers it
+  appears as a Custom dashboard tick box in each viewer's allocation for that
+  client, and nobody sees it until their box is ticked. Staff roles see
+  nothing new. The access preview shows it like any other tab.
+- **Viewers only ever get client-safe modules.** The story strip, priority
+  actions, biggest movers, indexing, channel performance and the efficiency
+  row are marked agency-internal in the builder and are skipped for a viewer
+  automatically, whatever the layout says.
+- **The server side follows.** A viewer holding the custom tab may read the
+  scopes its modules need, and only those, while the dashboard is open to
+  viewers; viewers now receive their clients' dashboards in their settings
+  feed.
+- **Fixed on the way:** the server's list of grantable tabs stopped at eight,
+  so ticking Call Reporting, Location, Calendars, Clinic, Analytics, Lost
+  Reasons or the Change Log for a viewer was silently dropped on save. Every
+  tab the app offers can now be granted, and a test keeps the two lists in
+  step.
+
+---
+
 ## v3.525.0 - 2026-09-10 · `617f0e5` - Custom dashboards per client (Super Admin)
 
 - **A custom dashboard per client, composed from modules.** Under a client's

@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.525.0'
+const APP_VERSION = '3.526.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4735,17 +4735,17 @@ function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashb
 // on what the client has linked.
 const DASH_MODULES = [
   { type: 'tiles', label: 'Headline tiles', group: 'Caalano360', hint: 'Ad spend, opportunities, won, revenue, ROAS, blended CAC' },
-  { type: 'story', label: 'Story strip', group: 'Caalano360', hint: 'Biggest leak, channels, what moved' },
+  { type: 'story', label: 'Story strip', group: 'Caalano360', hint: 'Biggest leak, channels, what moved', internal: true },
   { type: 'reach', label: 'Key event reach', group: 'Caalano360', hint: 'The funnel per pipeline, split by channel', needs: 'ghl' },
-  { type: 'eff', label: 'Efficiency & pipeline health', group: 'Caalano360', hint: 'Cost per lead, booked and won; open, lost, result rate' },
+  { type: 'eff', label: 'Efficiency & pipeline health', group: 'Caalano360', hint: 'Cost per lead, booked and won; open, lost, result rate', internal: true },
   { type: 'cash', label: 'Cash position', group: 'Caalano360', hint: 'Only when Cash collected is switched on', needs: 'ghl' },
-  { type: 'sec:channels', label: 'Channel performance', group: 'Caalano360', hint: 'Spend to key events to outcomes per paid channel' },
-  { type: 'sec:movers', label: 'Biggest movers', group: 'Caalano360', hint: 'What changed most against the previous period' },
-  { type: 'sec:findings', label: 'Over- and under-indexing', group: 'Caalano360', hint: 'Where a segment outperforms or lags' },
+  { type: 'sec:channels', label: 'Channel performance', group: 'Caalano360', hint: 'Spend to key events to outcomes per paid channel', internal: true },
+  { type: 'sec:movers', label: 'Biggest movers', group: 'Caalano360', hint: 'What changed most against the previous period', internal: true },
+  { type: 'sec:findings', label: 'Over- and under-indexing', group: 'Caalano360', hint: 'Where a segment outperforms or lags', internal: true },
   { type: 'sec:pipelines', label: 'Pipeline performance', group: 'Caalano360', hint: 'Key events per pipeline with cost and show rate', needs: 'ghl' },
   { type: 'sec:bottleneck', label: 'Revenue bottleneck', group: 'Caalano360', hint: 'The funnel and where it leaks', needs: 'ghl' },
   { type: 'sec:lostreasons', label: 'Lost reasons', group: 'Caalano360', needs: 'ghl' },
-  { type: 'sec:actions', label: 'Priority actions', group: 'Caalano360' },
+  { type: 'sec:actions', label: 'Priority actions', group: 'Caalano360', internal: true },
   { type: 'sec:team', label: 'Team performance', group: 'Caalano360', needs: 'ghl' },
   { type: 'sec:lostpanel', label: 'Lost reasons - people', group: 'Caalano360', needs: 'ghl' },
   { type: 'sec:atrisk', label: 'Revenue at risk', group: 'Caalano360', needs: 'ghl' },
@@ -8419,6 +8419,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
     }
     const shown = (layout.modules || []).map((m, i) => {
       const def = DASH_MODULES.find((x) => x.type === m.type); if (!def) return null
+      if (def.internal && isViewer) return null   // the agency's own reads never reach a client
       const title = m.title || def.label
       if (m.type.startsWith('tab:')) { const node = tabNode(m.type.slice(4)); return node ? <div className="dash-mod" key={i}><div className="cc-group-lab dash-mod-t">{title}</div>{node}</div> : null }
       const b = reg.get(m.type); if (!b) return null
@@ -15662,8 +15663,9 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // appears where the practice-management sync has created its patient fields.
   // A custom dashboard, when one is built for this client. Super Admin only for
   // now: the builder and the view both sit behind the role.
-  const dash = (!authUser || authUser.role === 'superadmin') ? loadDashboard(client.id) : null
-  if (dash) allTabs.push({ id: 'custom', label: dash.name || 'Custom view' })
+  const dashAll = loadDashboard(client.id)
+  const dash = dashAll && (!authUser || authUser.role === 'superadmin' || (authUser.role === 'viewer' && dashAll.audience === 'viewers')) ? dashAll : null
+  if (dash) allTabs.push({ id: 'custom', label: dash.name || 'Custom view' })   // viewers still need the tab ticked: allowedTabsFE filters below
   if (isClinic) allTabs.push({ id: 'clinic', label: 'Clinic' })
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
@@ -17667,7 +17669,7 @@ function ClientProfileEditor({ clientId }) {
 // Admin only. Presets give a starting point; nothing here computes a figure.
 function DashboardBuilder({ client: c }) {
   useSettingsSync()
-  const blank = { name: 'Client view', chan: 'all', modules: [] }
+  const blank = { name: 'Client view', chan: 'all', audience: 'super', modules: [] }
   const [d, setD] = useState(() => loadDashboard(c.id) || blank)
   const [dirty, setDirty] = useState(false)
   const [savedAt, setSavedAt] = useState(0)
@@ -17686,7 +17688,15 @@ function DashboardBuilder({ client: c }) {
   const saved = loadDashboard(c.id)
   return (
     <div className="dash-builder">
-      <p className="cap" style={{ margin: 0 }}>Pick the modules this client should see, in order. Every module is the same component the tabs use, reading the same figures, so the custom view reconciles with the tabs to the number. The dashboard appears as a <b>{d.name || 'Client view'}</b> tab on the client's workspace, next to Caalano360. Super Admins only, for now.</p>
+      <p className="cap" style={{ margin: 0 }}>Pick the modules this client should see, in order. Every module is the same component the tabs use, reading the same figures, so the custom view reconciles with the tabs to the number. The dashboard appears as a <b>{d.name || 'Client view'}</b> tab on the client's workspace, next to Caalano360.</p>
+      <div className="dash-add">
+        <span className="cap">Who can see it</span>
+        <span className="chan-toggle sm">
+          <button type="button" className={(d.audience || 'super') === 'super' ? 'on' : ''} onClick={() => up({ audience: 'super' })}>Super Admins only</button>
+          <button type="button" className={d.audience === 'viewers' ? 'on' : ''} onClick={() => up({ audience: 'viewers' })}>Viewers you tick in Permissions</button>
+        </span>
+        {d.audience === 'viewers' ? <span className="cap">Opened to viewers: it now appears as a <b>Custom dashboard</b> tick box in each viewer's allocation for this client. Nobody sees it until their box is ticked. Modules marked agency-internal are hidden from viewers automatically.</span> : <span className="cap">Only Super Admins see the tab. Staff and viewers see nothing new.</span>}
+      </div>
       <div className="dash-add">
         <label className="dash-name">Tab name <input value={d.name || ''} onChange={(e) => up({ name: e.target.value })} placeholder="Client view" maxLength={32} /></label>
         <span className="cap">Channel</span>
@@ -17697,7 +17707,7 @@ function DashboardBuilder({ client: c }) {
         const def = DASH_MODULES.find((x) => x.type === m.type) || { label: m.type }
         return <div className="dash-row" key={`${m.type}:${i}`}>
           <span className="dash-n">{i + 1}</span>
-          <div className="dash-lab"><b>{def.label}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={`Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
+          <div className="dash-lab"><b>{def.label}{def.internal ? <span className="dash-int">agency-internal · hidden from viewers</span> : null}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={`Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
           <div className="dash-btns"><button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">▲</button><button type="button" onClick={() => move(i, 1)} disabled={i === d.modules.length - 1} title="Move down">▼</button><button type="button" onClick={() => remove(i)} title="Remove">✕</button></div>
         </div>
       }) : <div className="cap">No modules yet. Add one below, or start from a preset.</div>}
@@ -18127,11 +18137,11 @@ function AcceptInvite({ token, onSignedIn }) {
 // What a newly invited client starts with. Everything else is a deliberate tick.
 const VIEWER_DEFAULT_TABS = ['users']
 const TAB_OPTIONS = [
-  { id: 'overall', label: 'Caalano360' }, { id: 'meta', label: 'Meta Ads' }, { id: 'google', label: 'Google Ads' },
+  { id: 'overall', label: 'Caalano360' }, { id: 'custom', label: 'Custom dashboard' }, { id: 'meta', label: 'Meta Ads' }, { id: 'google', label: 'Google Ads' },
   { id: 'analytics', label: 'Analytics' }, { id: 'cohorts', label: 'Cohorts' }, { id: 'users', label: 'Users' },
   { id: 'calls', label: 'Call Reporting' }, { id: 'forms', label: 'Forms' }, { id: 'location', label: 'Location' },
   { id: 'appts', label: 'Appointments' }, { id: 'calperf', label: 'Calendars' }, { id: 'clinic', label: 'Clinic' },
-  { id: 'timing', label: 'Timing' }, { id: 'optlog', label: 'Optimisation Log' },
+  { id: 'timing', label: 'Timing' }, { id: 'lostreasons', label: 'Lost Reasons' }, { id: 'optlog', label: 'Optimisation Log' },
 ]
 function ClientPicker({ clients, selected, onToggle }) {
   if (!clients || !clients.length) return <div className="cap">No clients available.</div>
@@ -18144,6 +18154,7 @@ function ClientPicker({ clients, selected, onToggle }) {
    allocation through `allowedTabsFE`, the same function the client workspace
    uses to build its tab strip, so what's listed here is what renders. */
 const SENSITIVE_TABS = {
+  custom: 'The custom dashboard built for this client. Agency-internal modules on it (story strip, priority actions, movers, indexing, channel performance, efficiency row) are hidden from viewers automatically.',
   timing: 'Grades their own sales team’s response times.',
   users: 'Per-rep performance inside their business.',
   optlog: 'Our change log for the account.',
@@ -18152,6 +18163,10 @@ const SENSITIVE_TABS = {
 // Mirrors the list built in ClientWorkspace.
 function offeredTabsFor(c) {
   const out = [{ id: 'overall', label: 'Caalano360' }]
+  // A client's custom dashboard is offered to viewers only once a Super Admin
+  // has opened it to them in the builder; until then it is not a tab they can hold.
+  const dash = loadDashboard(c.id)
+  if (dash && dash.audience === 'viewers') out.push({ id: 'custom', label: dash.name || 'Custom view' })
   if (c.meta) out.push({ id: 'meta', label: 'Meta Ads' })
   if (c.google) out.push({ id: 'google', label: 'Google Ads' })
   if (c.ga4) out.push({ id: 'analytics', label: 'Analytics' })

@@ -2636,7 +2636,22 @@ const VIEWER_REQ_TABS = {
   // Key-event people drill - reachable from the Meta/Google/Caalano360 funnels.
   'scope:keypeople': VIEWER_TABS_ALL,
 }
-function viewerAllowed(me, scope, channel) {
+// A viewer granted a client's custom dashboard may reach the reads its modules
+// need - the Caalano360 reads for its sections and blocks, a tab's own reads
+// for an embedded tab - without those tabs being ticked for them separately.
+// Only while a Super Admin has opened that dashboard to viewers.
+const DASH_TAB_OF = { users: 'users', appts: 'appts', calperf: 'calperf', calls: 'calls', forms: 'forms', location: 'location', timing: 'timing', lostreasons: 'lostreasons', cohorts: 'cohorts', clinic: 'clinic' }
+async function dashboardTabsFor(client) {
+  try {
+    const s = await getStore({ name: 'caalano-settings', consistency: 'strong' }).get('all', { type: 'json' })
+    const d = s && s.dashboards && s.dashboards[client]
+    if (!d || d.audience !== 'viewers' || !Array.isArray(d.modules)) return []
+    const tabs = new Set()
+    for (const m of d.modules) { const t = String((m && m.type) || ''); if (t.startsWith('tab:')) { const x = DASH_TAB_OF[t.slice(4)]; if (x) tabs.add(x) } else tabs.add('overall') }
+    return [...tabs]
+  } catch { return [] }
+}
+function viewerAllowed(me, scope, channel, extraTabs = []) {
   // Attribution loads at the workspace shell on every tab, so it's always allowed
   // for a client the viewer can see (the client check runs separately).
   if (channel === 'attribution') return true
@@ -2647,7 +2662,7 @@ function viewerAllowed(me, scope, channel) {
   const kkey = scope ? 'scope:' + scope : (channel ? 'channel:' + channel : null)
   const permit = kkey && VIEWER_REQ_TABS[kkey]
   if (!permit) return false // agency/admin scope, or an unmapped request → deny
-  const myTabs = Array.isArray(me.tabs) ? me.tabs : VIEWER_TABS_ALL
+  const myTabs = Array.isArray(me.tabs) ? [...me.tabs, ...(extraTabs || [])] : VIEWER_TABS_ALL
   return permit.some((t) => myTabs.includes(t))
 }
 
@@ -3202,7 +3217,7 @@ export default async (req) => {
     // so a client can never reach an unassigned view, an agency tool (creative
     // cockpit, report generation, diagnostics) or another view's data by crafting
     // a direct request, even for a client they're allowed to see.
-    if (client && me.role === 'viewer' && !viewerAllowed(me, scope, channel)) return json({ error: 'This view isn’t available on your account.' }, 403)
+    if (client && me.role === 'viewer' && !viewerAllowed(me, scope, channel, Array.isArray(me.tabs) && me.tabs.includes('custom') ? await dashboardTabsFor(client) : [])) return json({ error: 'This view isn’t available on your account.' }, 403)
   }
   // Restricted staff (a User limited to specific accounts) only ever see their
   // own accounts inside agency-wide aggregates - enforced server-side so the
@@ -4192,7 +4207,7 @@ export default async (req) => {
   if (url.searchParams.get('scope') === 'keypeople') {
     const cc = CLIENTS[client]
     if (!cc || !cc.ghl) return json({ scope: 'keypeople', client, people: [] })
-    if (me && me.role === 'viewer' && !viewerAllowed(me, 'keypeople', channel)) return json({ scope: 'keypeople', client, error: 'Not allowed.' }, 403)
+    if (me && me.role === 'viewer' && !viewerAllowed(me, 'keypeople', channel, Array.isArray(me.tabs) && me.tabs.includes('custom') && client ? await dashboardTabsFor(client) : [])) return json({ scope: 'keypeople', client, error: 'Not allowed.' }, 403)
     if (!(await isConnected().catch(() => false))) return json({ scope: 'keypeople', client, connected: false, people: [] })
     const kind = url.searchParams.get('kind') || 'stage'
     const stage = url.searchParams.get('stage') || null

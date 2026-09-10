@@ -104,7 +104,12 @@ export function randomToken(bytes = 24) {
 // viewer     - client; only assigned clients + only allowed sub-tabs
 export const ROLES = ['superadmin', 'admin', 'user', 'viewer']
 const normRole = (r) => (ROLES.includes(r) ? r : 'viewer')
-export const ALL_TABS = ['overall', 'users', 'meta', 'google', 'cohorts', 'forms', 'appts', 'timing']
+// Every tab the workspace can offer, so a tick in Permissions survives the
+// save. It used to list eight; Call Reporting, Location, Calendars, Clinic,
+// Analytics, Lost Reasons and the Change Log were silently dropped on write.
+// 'custom' is a client's custom dashboard, offered only when a Super Admin has
+// opened that dashboard to viewers.
+export const ALL_TABS = ['overall', 'custom', 'users', 'meta', 'google', 'analytics', 'cohorts', 'forms', 'location', 'appts', 'calperf', 'clinic', 'timing', 'calls', 'lostreasons', 'optlog']
 const RANK = { superadmin: 3, admin: 2, user: 1, viewer: 0 }
 export const rankOf = (r) => (RANK[r] != null ? RANK[r] : 0)
 export const isAdminish = (r) => r === 'admin' || r === 'superadmin'

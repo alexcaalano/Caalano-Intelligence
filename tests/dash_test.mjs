@@ -21,5 +21,13 @@ for (const t of types.filter((x) => x.startsWith('tab:'))) ok(rendered.has(t.sli
 for (const p of DASH_PRESETS) { ok(p.types.length > 0, `preset ${p.key} has modules`); for (const t of p.types) ok(types.includes(t), `preset ${p.key} uses a known module (${t})`) }
 ok(/'dashboards'\]/.test(fs.readFileSync(new URL('../netlify/functions/settings.mjs', import.meta.url), 'utf8')), 'the server accepts the dashboards section')
 ok(/id: 'custom'/.test(src) && /\['overall', 'custom', 'clinic'\]/.test(src), 'the custom tab is offered and grouped under Overview')
+// Permissions parity: every tab the app lets you tick must survive the server's
+// save filter, and the custom dashboard must be one of them.
+const TAB_OPTIONS = new Function(lift(/const TAB_OPTIONS = \[/, /\n\]\n/) + '\n]; return TAB_OPTIONS')()
+const auth = fs.readFileSync(new URL('../netlify/lib/auth.mjs', import.meta.url), 'utf8')
+const ALL_TABS = new Function(auth.match(/export const ALL_TABS = (\[[^\]]*\])/)[1].replace(/^/, 'return ') )()
+for (const t of TAB_OPTIONS) ok(ALL_TABS.includes(t.id), `tab ${t.id} can be granted and saved`)
+ok(TAB_OPTIONS.some((t) => t.id === 'custom'), 'the custom dashboard is a tickable tab')
+ok(DASH_MODULES.filter((m) => m.internal).map((m) => m.type).sort().join() === ['story', 'eff', 'sec:channels', 'sec:movers', 'sec:findings', 'sec:actions'].sort().join(), 'the agency-internal modules are exactly the six guarded ones')
 console.log(f ? `${f}/${n} FAILED` : `${n} assertions passed`)
 process.exit(f ? 1 : 0)

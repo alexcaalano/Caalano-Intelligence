@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.526.0 - 2026-09-10 · `PENDING` - Custom dashboards: grant them viewer by viewer
+## v3.526.0 - 2026-09-10 · `28a82fd` - Custom dashboards: grant them viewer by viewer
 
 - **Who can see it**, in the builder: Super Admins only (the default), or
   viewers you tick in Permissions. Once a dashboard is opened to viewers it

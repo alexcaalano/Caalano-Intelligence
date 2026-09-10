@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.528.0 - 2026-09-10 · `PENDING` - Custom dashboards: every card of every tab is a module
+## v3.528.0 - 2026-09-10 · `5ed2d80` - Custom dashboards: every card of every tab is a module
 
 - **78 card modules.** Each card on Users, Appointments, Calendars, Call
   Reporting, Forms, Location, Timing, Lost Reasons, Cohorts, Clinic, Meta

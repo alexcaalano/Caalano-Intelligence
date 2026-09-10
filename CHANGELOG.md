@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.532.0 - 2026-09-10 · `PENDING` - Permissions: the Custom dashboard chip says what it will grant
+## v3.532.0 - 2026-09-10 · `69c2a1c` - Permissions: the Custom dashboard chip says what it will grant
 
 - **The Custom dashboard chip names the dashboards it grants** for the
   ticked clients, e.g. "Custom dashboard · Finr client view". When none of

@@ -9,7 +9,7 @@ import { CLIENT_PROFILE_SEEDS } from '../lib/profiles.mjs'
 
 const store = () => getStore({ name: 'caalano-settings', consistency: 'strong' })
 const KEY = 'all'
-const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'clinic', 'geo', 'forecasts', 'ui']
+const SECTIONS = ['keyevents', 'kpis', 'campmap', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'health', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'clinic', 'geo', 'forecasts', 'ui', 'dashboards']
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 })
@@ -67,6 +67,7 @@ export default async (req) => {
         if (!me) return json({ ok: false, error: 'Not signed in.' }, 401)
         if (me.role !== 'admin' && me.role !== 'superadmin') return json({ ok: false, error: 'Admins only.' }, 403)
         if (me.role !== 'superadmin' && body && body.clients) return json({ ok: false, error: 'Only a Super Admin can add, remove or relink client accounts.' }, 403)
+        if (me.role !== 'superadmin' && body && body.dashboards) return json({ ok: false, error: 'Only a Super Admin can change custom dashboards.' }, 403)
       }
       const cur = (await store().get(KEY, { type: 'json' }).catch(() => null)) || {}
       const next = { ...cur }

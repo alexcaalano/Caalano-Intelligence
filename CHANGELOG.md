@@ -18,6 +18,32 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.525.0 - 2026-09-10 · `PENDING` - Custom dashboards per client (Super Admin)
+
+- **A custom dashboard per client, composed from modules.** Under a client's
+  settings, a new Custom dashboard tab (Super Admin only) lists the modules:
+  every Caalano360 block and section (headline tiles, story strip, Key event
+  reach, efficiency row, cash position, channel performance, movers,
+  indexing, pipeline performance, bottleneck, lost reasons, priority actions,
+  team, revenue at risk, locations, speed to lead) and whole tabs (Users,
+  Appointments, Calendars, Call Reporting, Forms, Location, Timing, Lost
+  Reasons, Cohorts, Clinic). Pick, order, retitle, choose a default channel,
+  name the tab, save.
+- **Three presets** to start from: Executive summary, Sales team, Full
+  Caalano360.
+- **The dashboard appears as its own tab** on the client's workspace, next to
+  Caalano360, following the same range, pipeline and won basis. Super Admins
+  only for now; other roles see nothing new.
+- Every module is the component the tabs already use, reading the figures
+  they already show, so the custom view reconciles with the tabs to the
+  number. A module with no data for the range is skipped rather than shown
+  empty.
+- The server accepts the new dashboards section and only a Super Admin may
+  write it. A test pins the registry to the sections, blocks and tabs that
+  exist.
+
+---
+
 ## v3.524.0 - 2026-09-09 · `4e212e1` - Reliability batch 3: warm what people open, refresh without the stampede
 
 From the three-day reliability log.

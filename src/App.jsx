@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.524.0'
+const APP_VERSION = '3.525.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -4131,6 +4131,7 @@ const KPI_KEY = 'caalano_kpis'
 const KEV_KEY = 'caalano_keyevents'
 const ANNOT_KEY = 'caalano_annot'   // global: show the methodology prose or not
 const FORECAST_KEY = 'caalano_forecasts'   // { [scenarioId]: scenario } - saved Funnel Forecaster scenarios, shared
+const DASH_KEY = 'caalano_dashboards'  // { clientId: { name, chan, modules: [{ type, title? }] } } - Super Admin custom dashboards
 const GEO_KEY = 'caalano_geo'             // { clientId: { mode, origin, place, radiusKm, byPipeline } }
 const CLINIC_CFG_KEY = 'caalano_clinic'   // { clientId: { cals: { [calendarId]: 'clinical'|'triage' } } }
 const ENABLED_KEY = 'caalano_enabled'
@@ -4187,7 +4188,7 @@ const UI_LAYOUT_KEY = 'caalano_ui_layout'      // 'v1' | 'v2' - this browser's o
 const PDFDL_KEY = 'caalano_pdfdl'                // { clientId: bool } - per-client "clients may download the report PDF" (admin-toggled)
 const readLS = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') } catch { return {} } }
 const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
-const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), loaded: false }
+const SETTINGS = { campmap: readLS(CMAP_KEY), kpis: readLS(KPI_KEY), keyevents: readLS(KEV_KEY), annotations: readLS(ANNOT_KEY), enabled: readLS(ENABLED_KEY), restricted: readLS(RESTRICTED_KEY), insights: readLS(AI_KEY), clients: readLS(CLIENTS_KEY), formmeta: readLS(FORMMETA_KEY), metaconv: readLS(METACONV_KEY), creativemeta: readLS(CREATIVEMETA_KEY), creativetax: readLS(CREATIVETAX_KEY), clientctx: readLS(CLIENTCTX_KEY), fatigue: readLS(FATIGUE_KEY), competitors: readLS(COMPETITORS_KEY), socialkpis: readLS(SOCIALKPIS_KEY), optlog: readLS(OPTLOG_KEY), qualstage: readLS(QUALSTAGE_KEY), aliases: readLS(ALIASES_KEY), logos: readLS(LOGOS_KEY), curator: readLS(CURATOR_KEY), profile: readLS(PROFILE_KEY), dailyperf: readLS(DAILYPERF_KEY), adnames: readLS(ADNAMES_KEY), pdfdl: readLS(PDFDL_KEY), clinic: readLS(CLINIC_CFG_KEY), geo: readLS(GEO_KEY), forecasts: readLS(FORECAST_KEY), ui: readLS(UI_KEY), dashboards: readLS(DASH_KEY), loaded: false }
 const settingsSubs = new Set()
 const bumpSettings = () => { for (const fn of settingsSubs) fn() }
 function onSettings(fn) { settingsSubs.add(fn); return () => settingsSubs.delete(fn) }
@@ -4217,8 +4218,8 @@ async function hydrateSettings() {
       // First run: migrate whatever this browser holds up to the server.
       saveSettingsRemote({ campmap: SETTINGS.campmap, kpis: SETTINGS.kpis, keyevents: SETTINGS.keyevents, enabled: SETTINGS.enabled, restricted: SETTINGS.restricted, insights: SETTINGS.insights, clients: SETTINGS.clients, formmeta: SETTINGS.formmeta, metaconv: SETTINGS.metaconv, creativemeta: SETTINGS.creativemeta, creativetax: SETTINGS.creativetax, clientctx: SETTINGS.clientctx, fatigue: SETTINGS.fatigue })
     } else {
-      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
-      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
+      for (const s of ['campmap', 'kpis', 'keyevents', 'enabled', 'restricted', 'insights', 'clients', 'formmeta', 'metaconv', 'creativemeta', 'creativetax', 'clientctx', 'fatigue', 'competitors', 'socialkpis', 'optlog', 'qualstage', 'aliases', 'logos', 'curator', 'profile', 'dailyperf', 'adnames', 'pdfdl', 'geo', 'annotations', 'forecasts', 'ui', 'dashboards']) SETTINGS[s] = { ...SETTINGS[s], ...(d[s] || {}) }
+      writeLS(CMAP_KEY, SETTINGS.campmap); writeLS(KPI_KEY, SETTINGS.kpis); writeLS(KEV_KEY, SETTINGS.keyevents); writeLS(ENABLED_KEY, SETTINGS.enabled); writeLS(RESTRICTED_KEY, SETTINGS.restricted); writeLS(AI_KEY, SETTINGS.insights); writeLS(CLIENTS_KEY, SETTINGS.clients); writeLS(FORMMETA_KEY, SETTINGS.formmeta); writeLS(METACONV_KEY, SETTINGS.metaconv); writeLS(CREATIVEMETA_KEY, SETTINGS.creativemeta); writeLS(CREATIVETAX_KEY, SETTINGS.creativetax); writeLS(CLIENTCTX_KEY, SETTINGS.clientctx); writeLS(FATIGUE_KEY, SETTINGS.fatigue); writeLS(COMPETITORS_KEY, SETTINGS.competitors); writeLS(SOCIALKPIS_KEY, SETTINGS.socialkpis); writeLS(OPTLOG_KEY, SETTINGS.optlog); writeLS(QUALSTAGE_KEY, SETTINGS.qualstage); writeLS(ALIASES_KEY, SETTINGS.aliases); writeLS(LOGOS_KEY, SETTINGS.logos); writeLS(CURATOR_KEY, SETTINGS.curator); writeLS(PROFILE_KEY, SETTINGS.profile); writeLS(DAILYPERF_KEY, SETTINGS.dailyperf); writeLS(ADNAMES_KEY, SETTINGS.adnames); writeLS(PDFDL_KEY, SETTINGS.pdfdl); writeLS(FORECAST_KEY, SETTINGS.forecasts); writeLS(UI_KEY, SETTINGS.ui); writeLS(DASH_KEY, SETTINGS.dashboards); writeLS(GEO_KEY, SETTINGS.geo); writeLS(ANNOT_KEY, SETTINGS.annotations)
     }
   } catch { /* offline: keep the localStorage cache */ }
   SETTINGS.loaded = true
@@ -4721,6 +4722,52 @@ function loadKeyEvents(clientId) {
   }
   return out
 }
+// Custom dashboards, per client: an ordered list of modules composed from the
+// Caalano360 sections and the other tabs, so a client gets the view their
+// business needs without a new build. Super Admin only - to build and, for
+// now, to see. Every module is an existing component reading the existing
+// figures, never a variant, so what the custom view shows reconciles with the
+// tabs to the number.
+function loadDashboard(clientId) { const d = SETTINGS.dashboards && SETTINGS.dashboards[clientId]; return d && Array.isArray(d.modules) && d.modules.length ? d : null }
+function saveDashboard(clientId, d) { SETTINGS.dashboards = { ...(SETTINGS.dashboards || {}), [clientId]: d }; writeLS(DASH_KEY, SETTINGS.dashboards); saveSettingsRemote({ dashboards: { [clientId]: d } }); bumpSettings() }
+// `sec:` modules are the Caalano360 sections by id; the plain ones are that
+// tab's other blocks; `tab:` modules embed a whole tab. `needs` gates a module
+// on what the client has linked.
+const DASH_MODULES = [
+  { type: 'tiles', label: 'Headline tiles', group: 'Caalano360', hint: 'Ad spend, opportunities, won, revenue, ROAS, blended CAC' },
+  { type: 'story', label: 'Story strip', group: 'Caalano360', hint: 'Biggest leak, channels, what moved' },
+  { type: 'reach', label: 'Key event reach', group: 'Caalano360', hint: 'The funnel per pipeline, split by channel', needs: 'ghl' },
+  { type: 'eff', label: 'Efficiency & pipeline health', group: 'Caalano360', hint: 'Cost per lead, booked and won; open, lost, result rate' },
+  { type: 'cash', label: 'Cash position', group: 'Caalano360', hint: 'Only when Cash collected is switched on', needs: 'ghl' },
+  { type: 'sec:channels', label: 'Channel performance', group: 'Caalano360', hint: 'Spend to key events to outcomes per paid channel' },
+  { type: 'sec:movers', label: 'Biggest movers', group: 'Caalano360', hint: 'What changed most against the previous period' },
+  { type: 'sec:findings', label: 'Over- and under-indexing', group: 'Caalano360', hint: 'Where a segment outperforms or lags' },
+  { type: 'sec:pipelines', label: 'Pipeline performance', group: 'Caalano360', hint: 'Key events per pipeline with cost and show rate', needs: 'ghl' },
+  { type: 'sec:bottleneck', label: 'Revenue bottleneck', group: 'Caalano360', hint: 'The funnel and where it leaks', needs: 'ghl' },
+  { type: 'sec:lostreasons', label: 'Lost reasons', group: 'Caalano360', needs: 'ghl' },
+  { type: 'sec:actions', label: 'Priority actions', group: 'Caalano360' },
+  { type: 'sec:team', label: 'Team performance', group: 'Caalano360', needs: 'ghl' },
+  { type: 'sec:lostpanel', label: 'Lost reasons - people', group: 'Caalano360', needs: 'ghl' },
+  { type: 'sec:atrisk', label: 'Revenue at risk', group: 'Caalano360', needs: 'ghl' },
+  { type: 'sec:locations', label: 'Lead locations', group: 'Caalano360', needs: 'ghl' },
+  { type: 'sec:speed', label: 'Speed to lead', group: 'Caalano360', needs: 'ghl' },
+  { type: 'tab:users', label: 'Users', group: 'Tabs', hint: 'The whole Users tab: scorecards, leaderboard, funnel by rep', needs: 'ghl' },
+  { type: 'tab:appts', label: 'Appointments', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:calperf', label: 'Calendars', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:calls', label: 'Call Reporting', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:forms', label: 'Forms', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:location', label: 'Location', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:timing', label: 'Timing', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:lostreasons', label: 'Lost Reasons', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:cohorts', label: 'Cohorts', group: 'Tabs', needs: 'ghl' },
+  { type: 'tab:clinic', label: 'Clinic', group: 'Tabs', hint: 'Clinic clients only', needs: 'ghl' },
+]
+const dashModuleFits = (m, c) => !m.needs || (m.needs === 'ghl' ? !!c.ghl : m.needs === 'meta' ? !!c.meta : true)
+const DASH_PRESETS = [
+  { key: 'exec', label: 'Executive summary', types: ['tiles', 'story', 'reach', 'eff', 'sec:channels', 'sec:pipelines', 'sec:actions'] },
+  { key: 'sales', label: 'Sales team', types: ['tiles', 'reach', 'sec:bottleneck', 'sec:team', 'tab:users', 'sec:lostreasons', 'sec:atrisk', 'sec:speed'] },
+  { key: 'full', label: 'Full Caalano360', types: DASH_MODULES.filter((m) => m.group === 'Caalano360').map((m) => m.type) },
+]
 function saveKeyEvents(clientId, arr) { SETTINGS.keyevents = { ...SETTINGS.keyevents, [clientId]: arr }; writeLS(KEV_KEY, SETTINGS.keyevents); saveSettingsRemote({ keyevents: { [clientId]: arr } }); bumpSettings() }
 // Organic-social competitors assigned to a client (name + IG/FB handle). Handles
 // are stored bare (no @, no URL); the tab derives profile links + Windsor lookups.
@@ -8100,7 +8147,7 @@ function ExecReach({ reach, multi, kef, cc, pcc, clientId, money, spend, chanLab
 // laptop. Every allowed tab keeps its id and label; a tab outside the known
 // groups goes in a trailing unlabelled group rather than being dropped.
 const V2_TAB_GROUPS = [
-  ['Overview', ['overall', 'clinic']],
+  ['Overview', ['overall', 'custom', 'clinic']],
   ['Acquisition', ['meta', 'google', 'analytics', 'optlog']],
   ['Pipeline', ['cohorts', 'users', 'calls', 'appts', 'calperf', 'timing', 'lostreasons']],
   ['Audience', ['forms', 'location']],
@@ -8155,9 +8202,10 @@ function ExecMovers({ movers, money, hasPrev, onNav }) {
     </div>
   )
 }
-function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe, pipes = [] }) {
+function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNav, authUser, wonBasis = 'closed', pipe = 'all', onPipe, pipes = [], layout = null }) {
   const [reload, setReload] = useState(0)
   const [chan, setChan] = useState('all')
+  useEffect(() => { if (layout && layout.chan) setChan(layout.chan) }, [layout && layout.chan])
   useEffect(() => { setChan('all') }, [clientId])
   // A local retry re-issues every read on this tab (the app Refresh does the
   // same for the whole app). It rides on the nonce so every hook sees it.
@@ -8264,7 +8312,12 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const [drill, setDrill] = useState(null)
   // V2: secondary table columns shown on demand; sections wrap as collapsible.
   const [moreCols, setMoreCols] = useState(false)
-  const sec = (id, title, node) => <V2Section id={id} title={title}>{node}</V2Section>
+  // A custom dashboard (Super Admin, per client) is the same page re-composed:
+  // in layout mode each block registers itself here instead of rendering, and
+  // the layout renders the modules it names, in its order, from this registry.
+  const reg = layout ? new Map() : null
+  const sec = (id, title, node) => { if (reg) { reg.set('sec:' + id, { title, node }); return null } return <V2Section id={id} title={title}>{node}</V2Section> }
+  const blk = (type, title, node) => { if (reg) { reg.set(type, { title, node }); return null } return node }
   const [openPillar, setOpenPillar] = useState(null)
   const [ai, setAi] = useState(() => loadInsights(clientId + ':exec'))
   const [aiLoading, setAiLoading] = useState(false)
@@ -8343,6 +8396,37 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
   const pv = k.prev || {}
   const hist = (h.history || []).filter((p) => p.composite != null)
   const actions = priorityActions(h, money, crmAgg)
+  // The custom dashboard: the layout's modules in its order. Section and block
+  // modules come from the registry the body just filled; tab modules embed the
+  // tab itself with the same props the workspace passes it. A module with no
+  // data for this client and range (a section that did not render) is skipped.
+  const renderLayout = () => {
+    const pipeName = ((pipes || []).find((p) => p && p.id === pipe) || {}).name || null
+    const tabNode = (t) => {
+      switch (t) {
+        case 'users': return <UsersView clientId={clientId} range={range} nonce={nonce} currency={currency} wonBasis={wonBasis} pipe={pipe} onPipe={onPipe} />
+        case 'appts': return <AppointmentsView clientId={clientId} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} />
+        case 'calperf': return <CalPerfView clientId={clientId} range={range} nonce={nonce} />
+        case 'calls': return <CallReportView clientId={clientId} range={range} nonce={nonce} currency={currency} pipe={pipe} onPipe={onPipe} />
+        case 'forms': return <FormsView clientId={clientId} currency={currency} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} authUser={authUser} />
+        case 'location': return <LocationView clientId={clientId} currency={currency} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} />
+        case 'timing': return <><EnquiryTimesSection clientId={clientId} range={range} nonce={nonce} pipe={pipe} onPipe={onPipe} /><TimingView clientId={clientId} range={range} nonce={nonce} currency={currency} /><StageTimingSection clientId={clientId} nonce={nonce} /></>
+        case 'lostreasons': return <LostReasonsView clientId={clientId} range={range} nonce={nonce} currency={currency} pipeName={pipeName} />
+        case 'cohorts': return <CohortView clientId={clientId} currency={currency} nonce={nonce} />
+        case 'clinic': return <ClinicView clientId={clientId} currency={currency} nonce={nonce} />
+        default: return null
+      }
+    }
+    const shown = (layout.modules || []).map((m, i) => {
+      const def = DASH_MODULES.find((x) => x.type === m.type); if (!def) return null
+      const title = m.title || def.label
+      if (m.type.startsWith('tab:')) { const node = tabNode(m.type.slice(4)); return node ? <div className="dash-mod" key={i}><div className="cc-group-lab dash-mod-t">{title}</div>{node}</div> : null }
+      const b = reg.get(m.type); if (!b) return null
+      if (m.type.startsWith('sec:')) return <V2Section key={i} id={m.type.slice(4)} title={title}>{b.node}</V2Section>
+      return <div className="dash-mod" key={i}>{m.title ? <div className="cc-group-lab dash-mod-t">{m.title}</div> : null}{b.node}</div>
+    }).filter(Boolean)
+    return <div className="dash-custom">{shown.length ? shown : <div className="cap">Nothing in this dashboard has data for the current range. Edit it under the client's settings.</div>}</div>
+  }
   return (
     <div className="exec-wrap">
       {problemStrip}
@@ -8350,6 +8434,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       {notes.length ? <div className="note cc-stale">{notes.map((t, i) => <div key={i}>{t}</div>)}</div> : null}
       {ccStale ? <div className="note cc-stale"><b>Showing a saved copy of the CRM figures from {ccStale.age >= 3600 ? `${Math.round(ccStale.age / 3600)} h` : `${Math.max(1, Math.round(ccStale.age / 60))} min`} ago.</b> {ccStale.error ? <>The live rebuild failed: <code>{ccStale.error}</code>. </> : 'The live rebuild is running behind it. '}Refresh to try again.</div> : null}
       <ExecContextBar clientName={clientName} range={range} pipes={pipes} pipe={pipe} onPipe={onPipe} chan={chan} setChan={setChan} wonBasis={wonBasis} cache={ccRaw && ccRaw._cache} onRefresh={() => setRefreshTick((t) => t + 1)} />
+      {(() => { const body = <>
       {/* Command centre - all of Caalano Systems + spend, pivoting on the range */}
       {(() => {
         // Within a pipeline the per-rep aggregation (account-wide) is not a
@@ -8446,20 +8531,21 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               let last = 0
               cacSeries = spendSeries.map((v, i) => { const w7 = roll(dly.won, i); if (w7 > 0) last = roll(spendSeries, i) / w7; return last })
             }
-            return <ExecHero tiles={[
+            return blk('tiles', 'Headline tiles', <ExecHero tiles={[
               { label: pipeOn ? 'Ad spend (allocated)' : 'Ad spend', value: chanSpend != null ? money(chanSpend) : '-', cur: prevChanSpend != null ? chanSpend : null, prev: prevChanSpend, goodWhenDown: true, flat: pipeOn ? 'by lead share' : undefined, series: spendSeries, days: sd ? sd.days : null, fmt: (v) => money(Math.round(v)), noSeries: spendWait, onClick: tileClick({ kind: 'spend', title: 'Ad spend by platform' }) },
               { label: 'Opportunities', value: oppsV != null ? fmtNumber(oppsV) : '-', cur: oppsV, prev: pOpps, series: dly ? dly.leads : null, days, fmt: (v) => `${fmtNumber(v)} new`, onClick: tileClick({ kind: 'opps', title: 'Opportunities by source' }) },
               { label: 'Won', value: wonV != null ? fmtNumber(wonV) : '-', cur: wonV, prev: pWon, flat: wonBasis === 'closed' ? 'closed in period' : 'from leads created in period', series: dly ? dly.won : null, days, roll: true, fmt: (v) => `${fmtNumber(v)} won`, onClick: tileClick({ kind: 'revenue', title: 'Won deals' }) },
               { label: 'Revenue', value: revV != null ? money(revV) : '-', cur: revV, prev: pRev, flat: avgV != null ? `avg ${money(avgV)}` : undefined, series: dly ? dly.revenue : null, days, roll: true, fmt: (v) => money(v), onClick: tileClick({ kind: 'revenue', title: 'Revenue - won deals' }) },
               { label: 'ROAS', value: roas != null ? `${roas.toFixed(1)}x` : '-', cur: roas, prev: pRoas, flat: roas == null ? (chanSpend ? 'no revenue yet' : 'no ad spend in this view') : (cashOn && cc && cc.cash && chanSpend ? `cash ${((cc.cash.collected || 0) / chanSpend).toFixed(1)}x` : undefined), series: roasSeries, days: sd ? sd.days : null, fmt: (v) => `${v.toFixed(1)}x · 7-day`, noSeries: spendWait, onClick: tileClick({ kind: 'cacplat', title: 'ROAS and CAC by platform' }) },
               { label: 'Blended CAC', value: cacV != null ? money(Math.round(cacV)) : '-', cur: cacV, prev: pCac, goodWhenDown: true, flat: cacV == null ? (chanSpend ? 'no deals won yet' : 'no ad spend in this view') : `${money(chanSpend)} ÷ ${fmtNumber(wonV)} won, any channel`, series: cacSeries, days: sd ? sd.days : null, fmt: (v) => `${money(Math.round(v))} · 7-day`, noSeries: spendWait, onClick: tileClick({ kind: 'cacplat', title: 'CAC and ROAS by platform' }) },
-            ]} />
+            ]} />)
           })()}
           <>
             {/* No intelligence for viewers: the story cards, the leak callout, movers,
                 indexing and priority actions are the agency's read; a viewer gets the figures. */}
-            {isViewer ? null : <ExecStory lines={intel ? intel.lines : []} loading={!intel && !!cc} />}
-            {kef.usingKe && kef.rows.length && intel ? <ExecReach quiet={isViewer} reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={clientId} money={money} spend={chanSpend || 0} wonBasis={wonBasis} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} /> : null}
+            {isViewer ? null : blk('story', 'Story strip', <ExecStory lines={intel ? intel.lines : []} loading={!intel && !!cc} />)}
+            {kef.usingKe && kef.rows.length && intel ? blk('reach', 'Key event reach', <ExecReach quiet={isViewer} reach={intel.reach} multi={kef.multi} kef={kef} cc={cc} pcc={pcc} clientId={clientId} money={money} spend={chanSpend || 0} wonBasis={wonBasis} chanLabel={chActive ? CC_CHANS.find((c) => c[0] === chan)[1] : null} leadTotal={kef.leadTotal} />) : null}
+            {blk('eff', 'Efficiency & pipeline health', <>
             <div className="cc-group-lab x-internal">Efficiency &amp; pipeline health{chActive ? <span className="sub" style={{ fontWeight: 500 }}> · {CC_CHANS.find((c) => c[0] === chan)[1]}</span> : null}</div>
             <div className="scorecard exec-kpis v2-eff x-internal">
               <Kpi label="Cost / lead (paid)" value={paidCpl != null ? money(paidCpl) : '-'} cur={paidCpl} flat={paidCpl == null ? 'no paid leads in this view' : undefined} goodWhenDown onClick={tileClick({ kind: 'cpl', title: 'Cost per lead - paid attributed' })} />
@@ -8469,6 +8555,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
               <Kpi label="Lost" value={lost != null ? fmtNumber(lost) : '-'} flat={ca.lostValue != null ? `${money(ca.lostValue)} lost` : ' '} goodWhenDown onClick={tileClick({ kind: 'lost', title: 'Lost opportunities' })} />
               <Kpi label="Result rate" value={lost != null ? pctOf(wonV, (wonV || 0) + lost) : '-'} flat="won ÷ resulted" onClick={tileClick({ kind: 'close', title: 'Result rate - by channel' })} />
             </div>
+            </>)}
           </>
           {cashOn && cc ? (() => {
             // Cash position: what the won deals above have actually paid, from the
@@ -8480,7 +8567,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
             const cashV = cs.collected || 0
             const cashRoas = chanSpend ? cashV / chanSpend : null
             const notEntered = Math.max(0, (cs.won || 0) - (cs.entered || 0))
-            return <>
+            return blk('cash', 'Cash position', <>
               <div className="cc-group-lab">Cash position <span className="sub" style={{ fontWeight: 500 }}>· what the won deals have actually paid, from the Cash Collected field · {fmtNumber(cs.entered || 0)} of {fmtNumber(cs.won || 0)} won deals have a figure entered</span></div>
               <div className="scorecard exec-kpis exec-kpis-4">
                 <Kpi label="Cash collected" value={money(cashV)} cur={pcs ? cashV : null} prev={pcs ? (pcs.collected || 0) : null} flat={pcs ? undefined : (revV ? `${pctOf(cashV, revV)} of ${money(revV)} closed` : ' ')} onClick={tileClick({ kind: 'revenue', title: 'Won deals - cash collected' })} />
@@ -8488,7 +8575,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
                 <Kpi label="Paid in full" value={fmtNumber(cs.paidInFull || 0)} flat={cs.won ? `${pctOf(cs.paidInFull || 0, cs.won)} of won · cash at or above deal value` : ' '} onClick={tileClick({ kind: 'revenue', title: 'Won deals - paid in full' })} />
                 <Kpi label="Outstanding" value={money(cs.outstanding || 0)} flat={`${money(revV || 0)} closed less ${money(cashV)} collected${notEntered ? ` · ${fmtNumber(notEntered)} ${notEntered === 1 ? 'deal has' : 'deals have'} no cash entered` : ''}`} goodWhenDown onClick={tileClick({ kind: 'revenue', title: 'Won deals - outstanding' })} />
               </div>
-            </>
+            </>)
           })() : null}
         </div>
       })()}
@@ -8600,7 +8687,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       </div>)}
 
       {/* Biggest movers and Indexing insights - from the same model as the reach above. */}
-      {cc && intel && !isViewer ? <V2Section id="movers" title="Biggest movers"><ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} onNav={onNav} /></V2Section> : null}
+      {cc && intel && !isViewer ? sec('movers', 'Biggest movers', <ExecMovers movers={intel.movers} money={money} hasPrev={!!pcc} onNav={onNav} />) : null}
       {cc && intel && !isViewer ? sec('findings', 'Over- and under-indexing', <IntelFindings findings={intel.findings} index={intel.index} money={money} onNav={onNav} />) : null}
 
       {/* Pipeline performance - per-pipeline overall key-event scorecards (all
@@ -8656,6 +8743,7 @@ function ExecutiveDashboard({ clientId, clientName, currency, range, nonce, onNa
       {pipeOn ? <div className="cap exec-foot">Within the <b>{pipeLabel}</b> pipeline: opportunities, key events, wins, revenue, lost reasons and time-to figures are that pipeline's own. Ad spend is allocated to it by its share of each channel's leads, so cost per lead reads as the account's while cost per event and per win are the pipeline's. Calendars and lead sources are not pipeline-aware in the CRM feed and stay account-wide.</div> : null}
       <div className="cap exec-foot">All figures pivot on the selected date range, live from Caalano Systems and the ad platforms. Open any tab above to dive deeper. Messaging/response signals are indicative only - clients may reply on channels outside Caalano Systems.</div>
 
+      </>; return layout ? renderLayout() : body })()}
       {drill && cc && <CcDrillModal drill={drill} cc={cc} money={money} clientId={clientId} onClose={() => setDrill(null)} />}
     </div>
   )
@@ -15572,6 +15660,10 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
   // tab that answers "how is the business doing", so it belongs ahead of the
   // channel tabs rather than at the end of them. Self-detecting - it only
   // appears where the practice-management sync has created its patient fields.
+  // A custom dashboard, when one is built for this client. Super Admin only for
+  // now: the builder and the view both sit behind the role.
+  const dash = (!authUser || authUser.role === 'superadmin') ? loadDashboard(client.id) : null
+  if (dash) allTabs.push({ id: 'custom', label: dash.name || 'Custom view' })
   if (isClinic) allTabs.push({ id: 'clinic', label: 'Clinic' })
   if (cfg.meta || client.meta) allTabs.push({ id: 'meta', label: 'Meta Ads' })
   if (cfg.google || client.google) allTabs.push({ id: 'google', label: 'Google Ads' })
@@ -15630,6 +15722,7 @@ function ClientWorkspace({ client, index, data, config, range, nonce, wonBasis =
           : tabIntel[curTab] ? <IntelBanner model={tabIntel[curTab]} status="ok" tab={curTab} pipeName={pipeName} range={range} />
             : crmId && INTEL_TABS.has(curTab) ? <IntelBanner model={intel} status={ccForPipes.status} tab={curTab} pipeName={pipeName} range={range} /> : null}
         {curTab === 'overall' && <ExecutiveDashboard clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} />}
+        {curTab === 'custom' && dash && <ExecutiveDashboard key={`custom:${dash.updatedAt || ''}`} clientId={client.id} clientName={client.name} currency={data.currency} range={range} nonce={nonce} onNav={setTab} authUser={authUser} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} pipes={pipes} layout={dash} />}
         {curTab === 'users' && <UsersView clientId={client.id} range={range} nonce={nonce} currency={data.currency} wonBasis={wonBasis} pipe={pipe} onPipe={setPipe} />}
         {curTab === 'meta' && (live.status === 'loading' ? <TabLoading kind="ads" label={deepLoadLabel(live.progress, 'Meta', range)} />
           : (live.status === 'err' && !liveOK('meta') && !srcFor('meta')?.meta) ? <DeepError channel="Meta Ads" error={live.data && live.data.error} range={range} onRetry={() => setDeepRetry((n) => n + 1)} />
@@ -17569,6 +17662,60 @@ function ClientProfileEditor({ clientId }) {
     </div>
   )
 }
+// Composes a client's custom dashboard from the module registry: pick, order,
+// retitle, save. The result appears as a tab on the client's workspace, Super
+// Admin only. Presets give a starting point; nothing here computes a figure.
+function DashboardBuilder({ client: c }) {
+  useSettingsSync()
+  const blank = { name: 'Client view', chan: 'all', modules: [] }
+  const [d, setD] = useState(() => loadDashboard(c.id) || blank)
+  const [dirty, setDirty] = useState(false)
+  const [savedAt, setSavedAt] = useState(0)
+  const [pick, setPick] = useState('')
+  const up = (patch) => { setD((x) => ({ ...x, ...patch })); setDirty(true) }
+  const avail = DASH_MODULES.filter((m) => dashModuleFits(m, c))
+  const used = new Set(d.modules.map((m) => m.type))
+  const groups = [...new Set(avail.map((m) => m.group))]
+  const move = (i, dir) => { const arr = [...d.modules]; const j = i + dir; if (j < 0 || j >= arr.length) return; const t = arr[i]; arr[i] = arr[j]; arr[j] = t; up({ modules: arr }) }
+  const remove = (i) => up({ modules: d.modules.filter((_, k) => k !== i) })
+  const add = (type) => { if (!type || used.has(type)) return; up({ modules: [...d.modules, { type }] }); setPick('') }
+  const setTitle = (i, title) => up({ modules: d.modules.map((m, k) => (k === i ? { ...m, title: title || undefined } : m)) })
+  const preset = (key) => { const p = DASH_PRESETS.find((x) => x.key === key); if (!p) return; up({ modules: p.types.filter((t) => avail.some((m) => m.type === t)).map((type) => ({ type })) }) }
+  const save = () => { if (!d.modules.length) return; saveDashboard(c.id, { ...d, name: (d.name || '').trim() || 'Client view', updatedAt: new Date().toISOString() }); setDirty(false); setSavedAt(Date.now()) }
+  const clear = () => { if (!window.confirm('Remove this client’s custom dashboard? The tab disappears from the workspace.')) return; saveDashboard(c.id, null); setD(blank); setDirty(false) }
+  const saved = loadDashboard(c.id)
+  return (
+    <div className="dash-builder">
+      <p className="cap" style={{ margin: 0 }}>Pick the modules this client should see, in order. Every module is the same component the tabs use, reading the same figures, so the custom view reconciles with the tabs to the number. The dashboard appears as a <b>{d.name || 'Client view'}</b> tab on the client's workspace, next to Caalano360. Super Admins only, for now.</p>
+      <div className="dash-add">
+        <label className="dash-name">Tab name <input value={d.name || ''} onChange={(e) => up({ name: e.target.value })} placeholder="Client view" maxLength={32} /></label>
+        <span className="cap">Channel</span>
+        <span className="chan-toggle sm">{CC_CHANS.map(([kk, lbl]) => <button key={kk} type="button" className={(d.chan || 'all') === kk ? 'on' : ''} onClick={() => up({ chan: kk })}>{lbl}</button>)}</span>
+      </div>
+      <div className="dash-presets"><span className="cap">Start from</span>{DASH_PRESETS.map((p) => <button key={p.key} type="button" onClick={() => preset(p.key)}>{p.label}</button>)}</div>
+      {d.modules.length ? d.modules.map((m, i) => {
+        const def = DASH_MODULES.find((x) => x.type === m.type) || { label: m.type }
+        return <div className="dash-row" key={`${m.type}:${i}`}>
+          <span className="dash-n">{i + 1}</span>
+          <div className="dash-lab"><b>{def.label}</b>{def.hint ? <small>{def.hint}</small> : null}<input value={m.title || ''} onChange={(e) => setTitle(i, e.target.value)} placeholder={`Title shown to the client (default: ${def.label})`} maxLength={60} /></div>
+          <div className="dash-btns"><button type="button" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">▲</button><button type="button" onClick={() => move(i, 1)} disabled={i === d.modules.length - 1} title="Move down">▼</button><button type="button" onClick={() => remove(i)} title="Remove">✕</button></div>
+        </div>
+      }) : <div className="cap">No modules yet. Add one below, or start from a preset.</div>}
+      <div className="dash-add">
+        <select value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">Add a module…</option>
+          {groups.map((g) => <optgroup key={g} label={g}>{avail.filter((m) => m.group === g).map((m) => <option key={m.type} value={m.type} disabled={used.has(m.type)}>{m.label}{used.has(m.type) ? ' (added)' : ''}</option>)}</optgroup>)}
+        </select>
+        <button type="button" className="set-relink" onClick={() => add(pick)} disabled={!pick || used.has(pick)}>Add</button>
+      </div>
+      <div className="dash-add">
+        <button type="button" className="set-open" onClick={save} disabled={!dirty || !d.modules.length}>{saved ? 'Save changes' : 'Create dashboard'}</button>
+        {saved ? <button type="button" className="set-relink" onClick={clear}>Remove dashboard</button> : null}
+        {savedAt && !dirty ? <span className="cap">Saved. Open the client view and pick the <b>{d.name || 'Client view'}</b> tab.</span> : dirty ? <span className="cap">Unsaved changes.</span> : null}
+      </div>
+    </div>
+  )
+}
 function SettingsEditModal({ client: c, names, currency, canManageAccounts, onClose, onOpen, onRelink }) {
   const canLink = (c.meta || c.google) && c.ghl
   const nm = (kind, id) => (names && id ? names[kind][normId(id)] : null)
@@ -17600,6 +17747,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
   // that wraps onto two lines. Each entry: [key, label, group, hint].
   const tabs = [['summary', 'Summary', 'Account', 'Name, linked accounts, logo']]
   if (c.ghl) tabs.push(['timing', 'Timing', 'Account', 'Timezone, sales cycle, work hours, maturity'])
+  if (canManageAccounts) tabs.push(['dashboard', 'Custom dashboard', 'Account', 'Compose a view from existing modules'])
   if (c.ghl) tabs.push(['keyevents', 'Key events', 'Tracking', 'The stages and calendars that count as progress'])
   if (c.meta) tabs.push(['metaconv', 'Meta conversions', 'Tracking', 'Which Meta result counts as a lead'])
   if (canLink) tabs.push(['links', 'Campaign links', 'Tracking', 'Campaign → pipeline'])
@@ -17687,6 +17835,7 @@ function SettingsEditModal({ client: c, names, currency, canManageAccounts, onCl
           </div>}
           {tab === 'keyevents' && <div className="set-tabpane"><div className="set-sec-t">Key events</div><KeyEventsEditor clientId={c.id} embedded nonce={sig} /></div>}
           {tab === 'timing' && <div className="set-tabpane"><TimingSettings clientId={c.id} hasMeta={!!c.meta} /></div>}
+          {tab === 'dashboard' && canManageAccounts && <div className="set-tabpane"><div className="set-sec-t">Custom dashboard</div><DashboardBuilder client={c} /></div>}
           {tab === 'geo' && <GeoSettings clientId={c.id} />}
           {tab === 'clinic' && <ClinicSettings clientId={c.id} nonce={sig} />}
           {tab === 'metaconv' && <div className="set-tabpane"><div className="set-sec-t">Meta conversions - primary &amp; secondary results</div><MetaConversionsEditor clientId={c.id} currency={currency} /></div>}

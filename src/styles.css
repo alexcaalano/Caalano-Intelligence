@@ -4924,3 +4924,21 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 .mr-drill-basis { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
 .mr-kids-tbl { font-size: 12px; }
 .mr-kids-tbl th { font-weight: 600; color: var(--muted); }
+
+/* --- Custom dashboard builder + view (Super Admin) --------------------------- */
+.dash-builder { display: grid; gap: 12px; }
+.dash-row { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.dash-row .dash-n { color: var(--faint); font-variant-numeric: tabular-nums; text-align: right; }
+.dash-row .dash-lab { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dash-row .dash-lab small { color: var(--faint); }
+.dash-row input, .dash-name input { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--panel-2); color: var(--text); min-width: 0; }
+.dash-row .dash-btns { display: flex; gap: 4px; }
+.dash-row .dash-btns button { border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); border-radius: 7px; padding: 3px 8px; cursor: pointer; }
+.dash-row .dash-btns button:disabled { opacity: .4; cursor: default; }
+.dash-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.dash-add select { font: inherit; font-size: 12.5px; padding: 5px 8px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--panel-2); color: var(--text); max-width: 100%; }
+.dash-name { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.dash-presets { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.dash-presets button { border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text); border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.dash-mod { margin: 14px 0; }
+.dash-mod-t { margin-bottom: 8px; }

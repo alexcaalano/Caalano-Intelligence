@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.538.0 - 2026-09-10 · `PENDING`
+## v3.538.0 - 2026-09-10 · `c6242ac`
 
 **Speed to Lead: in-hours vs after-hours split**
 - Leads that arrive **during work hours** are now measured in real minutes with no pausing (a 4:58pm lead answered next morning is a 16-hour wait, not 3 minutes). Only these leads feed the median, average, "under 5 min" figure, reply-time bars and the outcomes-by-speed table.

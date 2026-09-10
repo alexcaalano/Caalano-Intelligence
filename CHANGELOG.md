@@ -18,7 +18,7 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
-## v3.539.0 - 2026-09-10 · `PENDING`
+## v3.539.0 - 2026-09-10 · `638ce05`
 
 **Terms of Use v1.4: protect the Platform, not standard metrics**
 - New clause 2 "What these terms do not restrict": clients may track and report standard marketing and sales measures (leads, appointments, show rates, cost per lead, ROAS) about their own business with any tool, and their own figures are theirs to use and share. What is protected is the code, design and layouts, proprietary scoring/benchmarking/analysis methods, and other clients' data.

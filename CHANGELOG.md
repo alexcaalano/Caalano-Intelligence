@@ -18,6 +18,20 @@ The version number also appears in the app sidebar. Newest first.
 
 ---
 
+## v3.535.0 - 2026-09-10 · `PENDING` - Key-event tiles and the platform drill: room to read
+
+- **Key-event scorecards read one fact per line.** The show line is now
+  "56% show rate" with its change at the right edge, "9 showed of 16
+  resulted" beneath it, and cancelled / unresulted on their own line with
+  unresulted in amber. The change badge no longer wraps into the sentence.
+- **CAC and ROAS by platform sizes to its figures.** The table was squeezed
+  to the modal until Revenue and Avg deal ran together and the last columns
+  fell off the edge. It now sizes to its content, right-aligns the numbers
+  with proper padding, and scrolls inside the modal when the window is
+  narrower than the table.
+
+---
+
 ## v3.534.0 - 2026-09-10 · `5ae34e9` - Viewers get the CRM drill their grant covers; tiles stop reading zero
 
 - **The CRM drill no longer refuses every viewer.** A blanket "Staff only"

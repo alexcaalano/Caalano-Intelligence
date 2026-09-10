@@ -2251,13 +2251,19 @@ button.bn-cal-row.is-link:hover .bn-cal-go { color: var(--brand); }
 .pp-block-h .pp-contrib { margin-left: auto; flex-direction: row; gap: 12px; }
 .pp-block-h .pp-cb { min-width: 120px; }
 .kesc-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.kesc { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 3px; }
+.kesc { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 4px; }
 .kesc-clickable { cursor: pointer; transition: box-shadow .12s, border-color .12s; }
 .kesc-clickable:hover { border-color: var(--brand, #4f7cff); box-shadow: 0 3px 12px rgba(79,124,255,.14); }
 .kesc-l { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .kesc-v { font-size: 23px; font-weight: 780; letter-spacing: -.01em; display: flex; align-items: baseline; gap: 6px; }
-.kesc-line { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
-.kesc-line.kesc-sub { color: var(--faint); }
+/* One fact per line: the text takes the row, the delta sits at the right edge
+   and never wraps into the sentence. */
+.kesc-line { font-size: 11.5px; color: var(--muted); display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: start; line-height: 1.35; }
+.kesc-line > span { min-width: 0; }
+.kesc-line.kesc-show { margin-top: 3px; color: var(--text); }
+.kesc-line.kesc-show b { font-weight: 800; }
+.kesc-line.kesc-sub { color: var(--faint); font-size: 11px; }
+.kesc-unres { font-style: normal; color: #b26a00; font-weight: 600; }
 .kesc-line .mini-delta { font-size: 9.5px; }
 
 /* ============ Monthly Report (slide deck) ============ */
@@ -4838,9 +4844,12 @@ td.lm-ker-n { font-weight: 600; color: var(--muted); font-variant-numeric: tabul
 /* The platform table: a fixed platform column and the rest shared evenly, so
    the figures line up under their headers instead of bunching to the right;
    the formula under each derived column; CAC and ROAS tinted. */
-.v2-plat-tbl { table-layout: fixed; min-width: 760px; margin-top: 4px; }
+/* Sized to its content and scrolled inside the modal when narrower than the
+   table, rather than squeezed until the figures run together. */
+.v2-plat-tbl { table-layout: auto; min-width: 960px; margin-top: 4px; }
 .v2-plat-tbl th.lft, .v2-plat-tbl td.lft { width: 176px; }
-.v2-plat-tbl th, .v2-plat-tbl td { padding-top: 9px; padding-bottom: 9px; }
+.v2-plat-tbl th, .v2-plat-tbl td { padding: 9px 12px; }
+.v2-plat-tbl th:not(.lft), .v2-plat-tbl td:not(.lft) { text-align: right; }
 .v2-plat-tbl thead th { vertical-align: bottom; padding-bottom: 7px; border-bottom: 2px solid var(--border-2); }
 .v2-plat-tbl .v2-plat-h { display: block; font-size: 10.5px; }
 .v2-plat-tbl thead th small { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--faint); }

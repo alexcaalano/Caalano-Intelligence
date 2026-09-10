@@ -13,7 +13,7 @@ import {
 
 // Current release number - bump this with each release and add a matching entry
 // (with the commit hash) to CHANGELOG.md so any version can be reverted to.
-const APP_VERSION = '3.534.0'
+const APP_VERSION = '3.535.0'
 // The business clock. Every server window is cut on the client's local day
 // (Caalano Systems location timezone), so any day the app derives on its own -
 // preset ranges, "today", CSV dates - must use the same clock rather than the
@@ -7285,8 +7285,9 @@ function KeScorecard({ label, value, prev, isMoney, currency, pctLeads, prevPctL
       <div className="kesc-v">{isMoney ? money(value) : fmtNumber(value)}{prev != null ? <MiniDelta cur={value} prev={prev} /> : null}</div>
       {pctLeads != null ? <div className="kesc-line"><span>{Math.round(pctLeads)}% of leads</span>{prevPctLeads != null ? <MiniDelta cur={pctLeads} prev={prevPctLeads} /> : null}</div> : null}
       {cost != null && isFinite(cost) ? <div className="kesc-line"><span>{money(Math.round(cost))}/{costUnit}</span>{prevCost != null && isFinite(prevCost) ? <MiniDelta cur={cost} prev={prevCost} goodWhenDown /> : null}</div> : null}
-      {show ? <div className="kesc-line" title="Show rate = shown ÷ resulted (shown + no-show). Appointments cancelled in advance, still to come, or past their time with no result set are left out."><span>{show.rate == null ? 'no resulted appointments yet' : `${Math.round(show.rate)}% show · ${fmtNumber(show.shown)} of ${fmtNumber(show.resulted)} resulted`}</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
-      {show && (show.cancelled || show.unresulted) ? <div className="kesc-line kesc-sub" title="Cancelled = booked in the period and called off in advance, as a share of bookings. Unresulted = past its time with neither showed nor no-show set - ask the team to result these."><span>{[show.cancelled ? `${fmtNumber(show.cancelled)} cancelled (${Math.round((show.cancelled / Math.max(1, show.booked)) * 100)}%)` : null, show.unresulted ? `${fmtNumber(show.unresulted)} unresulted` : null].filter(Boolean).join(' · ')}</span></div> : null}
+      {show ? <div className="kesc-line kesc-show" title="Show rate = shown ÷ resulted (shown + no-show). Appointments cancelled in advance, still to come, or past their time with no result set are left out."><span>{show.rate == null ? 'No resulted appointments yet' : <><b>{Math.round(show.rate)}%</b> show rate</>}</span>{show.prevRate != null && show.rate != null ? <MiniDelta cur={show.rate} prev={show.prevRate} /> : null}</div> : null}
+      {show && show.rate != null ? <div className="kesc-line kesc-sub"><span>{fmtNumber(show.shown)} showed of {fmtNumber(show.resulted)} resulted</span></div> : null}
+      {show && (show.cancelled || show.unresulted) ? <div className="kesc-line kesc-sub" title="Cancelled = booked in the period and called off in advance, as a share of bookings. Unresulted = past its time with neither showed nor no-show set - ask the team to result these."><span>{show.cancelled ? `${fmtNumber(show.cancelled)} cancelled (${Math.round((show.cancelled / Math.max(1, show.booked)) * 100)}%)` : null}{show.cancelled && show.unresulted ? ' · ' : null}{show.unresulted ? <em className="kesc-unres">{fmtNumber(show.unresulted)} unresulted</em> : null}</span></div> : null}
       {note ? <div className="kesc-line">{note}</div> : null}
     </div>
   )
